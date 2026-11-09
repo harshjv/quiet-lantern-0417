@@ -142,7 +142,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Push the images
-        run: installer/release/release.sh push-images --out out --repository "$IMAGES"
+        run: installer/release/retry.sh installer/release/release.sh push-images --out out --repository "$IMAGES"
 
       - name: Write the release manifest
         run: installer/release/release.sh manifest --out out --releases "$RELEASES" --channel "$CHANNEL"
@@ -159,7 +159,7 @@ jobs:
       - name: Sign every image digest the manifest pins
         run: |
           while IFS= read -r ref; do
-            cosign sign --yes "$ref"
+            installer/release/retry.sh cosign sign --yes "$ref"
           done <out/build/images.txt
 
       - name: Check the manifest signature against the release identity
@@ -172,7 +172,7 @@ jobs:
 
       - name: Push the release artifact
         run: |
-          digest=$(installer/release/release.sh push-release --out out --releases "$RELEASES")
+          digest=$(installer/release/retry.sh installer/release/release.sh push-release --out out --releases "$RELEASES")
           {
             echo "## Stationly $VERSION ($CHANNEL)"
             echo
