@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-STATIONLY_RELEASE='0.1.0-rc.4'
+STATIONLY_RELEASE='0.1.0-rc.5'
 STATIONLY_RELEASES='https://ghcr.io/harshjv/stationly/release'
-STATIOND_SHA256_AMD64='609eff718dd018825170cf54d6bff71616fc764e86ee02c0ce6844a912ff7569'
+STATIOND_SHA256_AMD64='8061a3d7c0118e5a5ea2dc45900a0cb697eaf97b5527e9e5d857cdd53d1f20a7'
 STATIOND_SHA256_ARM64=''
 TEST_TRUST_URL='@TEST_TRUST_URL@'
 TEST_TRUST_SHA256='@TEST_TRUST_SHA256@'
@@ -33,8 +33,8 @@ fail() { printf '%s\n' "stationly: error: $*" >&2; exit 1; }
 
 usage() {
 	cat >&2 <<EOF
-usage: curl -fsSL https://stationly.harshjv.com/install.sh | sudo sh
-       curl -fsSL https://stationly.harshjv.com/install.sh | sudo sh -s -- [options]
+usage: curl -fsSL https://stationly.netlify.app/install.sh | sudo sh
+       curl -fsSL https://stationly.netlify.app/install.sh | sudo sh -s -- [options]
 
 Installs Stationly release ${STATIONLY_RELEASE} on this Ubuntu 22.04, Ubuntu 24.04 or Debian 12 host
 (amd64 or arm64): host prerequisites, Docker Engine ${DOCKER_MAJOR}.x, then stationd, which verifies and

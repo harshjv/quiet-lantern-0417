@@ -104,7 +104,8 @@ export const networkMap = (sources: NetworkSources, env: EnvironmentRow, options
       const from = text(cutover?.detail.from) ?? null
       const target = { id: green.id, number: green.number, address: to }
       const blue = current && current.id !== green.id ? { id: current.id, number: current.number, address: from, since: iso(cutover?.finished_at) } : null
-      if (!switchAddress || !to) return { state: 'pending', deployment: target, draining: blue }
+      const reportedBeforeCutover = !report || !cutover?.finished_at || Date.parse(report.observed_at) < cutover.finished_at.getTime()
+      if (!switchAddress || !to || reportedBeforeCutover) return { state: 'pending', deployment: target, draining: blue }
       return { state: switchAddress === to ? 'serving' : 'mismatch', deployment: target, draining: blue }
     }
     const containers = (seen?.containers ?? []).filter(c => c.deployment_id === current!.id && c.address)

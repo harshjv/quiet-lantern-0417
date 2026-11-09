@@ -1,12 +1,12 @@
 #!/bin/sh
 set -eu
 
-SLY_RELEASE='0.1.0-rc.4'
+SLY_RELEASE='0.1.0-rc.5'
 STATIONLY_RELEASES='https://ghcr.io/harshjv/stationly/release'
-SLY_SHA256_LINUX_AMD64='d0c289e99a8dc35b41e7b3456afd05002fe7ae69025fae0d391e4721d48445b3'
-SLY_SHA256_LINUX_ARM64='18bcc84807abe09d5f35eb6e3083ded967bdd69cf5fa18d8fa7ad112181b30fc'
-SLY_SHA256_DARWIN_ARM64='52954dc01d649c6baa32cb545df244ef507795af25281c29b5055a2b0fbd3eea'
-SLY_SHA256_DARWIN_AMD64='cad837e705801d2aa672b751aa3669c8ed2809ce0e2117cce7d840083e762c91'
+SLY_SHA256_LINUX_AMD64='be8077d869a2fdd8503393fb1f121f6ee195c9de0b6fbc40af0d899c35112f59'
+SLY_SHA256_LINUX_ARM64='e4746ce4a5a4694d60b014aaeeebbcd803e4afe1144c1f195ec16623d48830ea'
+SLY_SHA256_DARWIN_ARM64='2d2668b734c9fe62bf941f8f4967961d6cd845e8dfbb303fdad5800f7c4bc2ec'
+SLY_SHA256_DARWIN_AMD64='ec852ffb44087f5932e834109e5699c98c0f0c0a8d4e960364c49fab0379c7b3'
 
 dir=
 work=
@@ -16,8 +16,8 @@ fail() { printf '%s\n' "sly installer: error: $*" >&2; exit 1; }
 
 usage() {
 	cat >&2 <<EOF
-usage: curl -fsSL https://stationly.harshjv.com/install-sly.sh | sh
-       curl -fsSL https://stationly.harshjv.com/install-sly.sh | sh -s -- [--dir DIR]
+usage: curl -fsSL https://stationly.netlify.app/install-sly.sh | sh
+       curl -fsSL https://stationly.netlify.app/install-sly.sh | sh -s -- [--dir DIR]
 
 Installs sly ${SLY_RELEASE}, the Stationly CLI, as a single binary on macOS (arm64, x86_64) or Linux
 (amd64, arm64). The binary comes from ${STATIONLY_RELEASES} and is checked against the SHA-256
