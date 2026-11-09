@@ -1,0 +1,608 @@
+{
+  "errors": [
+    {
+      "code": "VALIDATION_FAILED",
+      "http": 400,
+      "area": "validation",
+      "close": null
+    },
+    {
+      "code": "NAME_TAKEN",
+      "http": 409,
+      "area": "validation",
+      "close": null
+    },
+    {
+      "code": "IDEMPOTENCY_MISMATCH",
+      "http": 409,
+      "area": "validation",
+      "close": null
+    },
+    {
+      "code": "SETTING_FROZEN",
+      "http": 409,
+      "area": "validation",
+      "close": null
+    },
+    {
+      "code": "HOSTNAME_DOMAIN_MISMATCH",
+      "http": 422,
+      "area": "validation",
+      "close": null
+    },
+    {
+      "code": "PASSKEY_RESET_REQUIRED",
+      "http": 409,
+      "area": "validation",
+      "close": null
+    },
+    {
+      "code": "WRONG_HOST",
+      "http": 404,
+      "area": "routing",
+      "close": null
+    },
+    {
+      "code": "UNAUTHENTICATED",
+      "http": 401,
+      "area": "auth",
+      "close": null
+    },
+    {
+      "code": "ACCESS_REQUIRED",
+      "http": 401,
+      "area": "auth",
+      "close": null
+    },
+    {
+      "code": "FORBIDDEN_SCOPE",
+      "http": 403,
+      "area": "scope",
+      "close": null
+    },
+    {
+      "code": "INSTANCE_SCOPE_REQUIRED",
+      "http": 403,
+      "area": "scope",
+      "close": null
+    },
+    {
+      "code": "RATE_LIMITED",
+      "http": 429,
+      "area": "auth",
+      "close": null
+    },
+    {
+      "code": "PROTECTED_ENVIRONMENT",
+      "http": 403,
+      "area": "protected",
+      "close": null
+    },
+    {
+      "code": "STAGED_CHANGE_SUPERSEDED",
+      "http": 409,
+      "area": "protected",
+      "close": null
+    },
+    {
+      "code": "DEPLOY_IN_PROGRESS",
+      "http": 409,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "DEPLOY_PREFLIGHT_FAILED",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "NO_CURRENT_DEPLOYMENT",
+      "http": 409,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "DEPLOYMENT_NOT_CANCELLABLE",
+      "http": 409,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "SHARED_SERVICE_INTERMITTENT",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "ROLLBACK_SECRET_REVOKED",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "STALE_SECRETS_CONFIRM_REQUIRED",
+      "http": 409,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "STRATEGY_VOLUME_CONFLICT",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "HEALTH_TIMEOUT",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "OOM_KILLED",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "EXIT_NONZERO",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "IMAGE_PRUNED",
+      "http": 422,
+      "area": "deploy",
+      "close": null
+    },
+    {
+      "code": "STATION_INVARIANT_VIOLATION",
+      "http": 422,
+      "area": "station",
+      "close": null
+    },
+    {
+      "code": "BUILD_FAILED",
+      "http": 422,
+      "area": "build",
+      "close": null
+    },
+    {
+      "code": "SOURCE_UNREACHABLE",
+      "http": 422,
+      "area": "build",
+      "close": null
+    },
+    {
+      "code": "SOURCE_SHA_MISMATCH",
+      "http": 409,
+      "area": "build",
+      "close": null
+    },
+    {
+      "code": "EVENT_CURSOR_EXPIRED",
+      "http": 410,
+      "area": "events",
+      "close": null
+    },
+    {
+      "code": "SUBNET_EXHAUSTED",
+      "http": 507,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "PORT_RANGE_EXHAUSTED",
+      "http": 507,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "DOMAIN_INVALID",
+      "http": 422,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "TUNNEL_UNSUPPORTED_PROTOCOL",
+      "http": 422,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "GATEWAY_NOT_PINNED",
+      "http": 409,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "NETWORK_TARGET_INVALID",
+      "http": 422,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "CERTIFICATE_RATE_LIMITED",
+      "http": 422,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "CERTIFICATE_ISSUANCE_FAILED",
+      "http": 422,
+      "area": "network",
+      "close": null
+    },
+    {
+      "code": "VARIABLE_REFERENCE_INVALID",
+      "http": 422,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "VARIABLE_UNRESOLVED",
+      "http": 422,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "VARIABLE_TARGET_MISSING",
+      "http": 422,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "VARIABLE_NOT_GRANTED",
+      "http": 403,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "VARIABLE_CYCLE",
+      "http": 422,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "VARIABLE_PROTECTED_SOURCE",
+      "http": 422,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "SECRETS_NEED_REENTRY",
+      "http": 422,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "SEALED_VALUE_UNREADABLE",
+      "http": 403,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "SECRET_VERSION_IN_USE",
+      "http": 409,
+      "area": "secret",
+      "close": null
+    },
+    {
+      "code": "VOLUME_NOT_ADOPTABLE",
+      "http": 409,
+      "area": "volume",
+      "close": null
+    },
+    {
+      "code": "VOLUME_BACKUP_TARGET_MISSING",
+      "http": 422,
+      "area": "volume",
+      "close": null
+    },
+    {
+      "code": "RELEASE_NOT_FOUND",
+      "http": 404,
+      "area": "platform",
+      "close": null
+    },
+    {
+      "code": "UNSIGNED_ARTIFACT",
+      "http": 422,
+      "area": "platform",
+      "close": null
+    },
+    {
+      "code": "UPGRADE_IN_PROGRESS",
+      "http": 409,
+      "area": "platform",
+      "close": null
+    },
+    {
+      "code": "UPGRADE_FAILED",
+      "http": 409,
+      "area": "platform",
+      "close": null
+    },
+    {
+      "code": "MIGRATION_IRREVERSIBLE",
+      "http": 409,
+      "area": "platform",
+      "close": null
+    },
+    {
+      "code": "GITHUB_NOT_CONNECTED",
+      "http": 409,
+      "area": "github",
+      "close": null
+    },
+    {
+      "code": "GITHUB_STATE_INVALID",
+      "http": 400,
+      "area": "github",
+      "close": null
+    },
+    {
+      "code": "ATTACHMENT_EXISTS",
+      "http": 409,
+      "area": "attachment",
+      "close": null
+    },
+    {
+      "code": "ATTACH_HOOK_FAILED",
+      "http": 422,
+      "area": "attachment",
+      "close": null
+    },
+    {
+      "code": "ATTACHMENT_ALIAS_TAKEN",
+      "http": 409,
+      "area": "attachment",
+      "close": null
+    },
+    {
+      "code": "FIREWALL_CIDR_RESERVED",
+      "http": 422,
+      "area": "firewall",
+      "close": null
+    },
+    {
+      "code": "STATION_OFFLINE",
+      "http": 503,
+      "area": "station",
+      "close": null
+    },
+    {
+      "code": "STATION_VERSION_SKEW",
+      "http": 503,
+      "area": "station",
+      "close": null
+    },
+    {
+      "code": "STATION_CAPABILITY_MISSING",
+      "http": 422,
+      "area": "station",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_NOT_RUNNING",
+      "http": 409,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_STATE_CONFLICT",
+      "http": 409,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_QUOTA_EXCEEDED",
+      "http": 422,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_DISK_FULL",
+      "http": 422,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_START_FAILED",
+      "http": 422,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_STORAGE_GROW_FAILED",
+      "http": 422,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "SANDBOX_IMAGE_UNPACK_FAILED",
+      "http": 422,
+      "area": "sandbox",
+      "close": null
+    },
+    {
+      "code": "ENVIRONMENT_IS_DEFAULT",
+      "http": 409,
+      "area": "lifecycle",
+      "close": null
+    },
+    {
+      "code": "DELETE_HAS_DEPENDENTS",
+      "http": 409,
+      "area": "lifecycle",
+      "close": null
+    },
+    {
+      "code": "NOT_FOUND",
+      "http": 404,
+      "area": "lifecycle",
+      "close": null
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "http": 500,
+      "area": "internal",
+      "close": null
+    },
+    {
+      "code": "INPUT_REQUIRED",
+      "http": null,
+      "area": "sly",
+      "close": null
+    },
+    {
+      "code": "SETUP_DONE",
+      "http": null,
+      "area": "root socket",
+      "close": null
+    },
+    {
+      "code": "HOST_ADMIN_FORBIDDEN",
+      "http": null,
+      "area": "root socket",
+      "close": null
+    },
+    {
+      "code": "MASTER_KEY_MISMATCH",
+      "http": null,
+      "area": "root socket",
+      "close": null
+    },
+    {
+      "code": "PROTOCOL_AUTH_FAILED",
+      "http": null,
+      "area": "station protocol",
+      "close": 4001
+    },
+    {
+      "code": "PROTOCOL_REPLAY",
+      "http": null,
+      "area": "station protocol",
+      "close": 4001
+    },
+    {
+      "code": "PROTOCOL_CLOCK_SKEW",
+      "http": null,
+      "area": "station protocol",
+      "close": 4001
+    },
+    {
+      "code": "STATION_REVOKED",
+      "http": null,
+      "area": "station protocol",
+      "close": 4003
+    },
+    {
+      "code": "ENROLL_TOKEN_INVALID",
+      "http": null,
+      "area": "station protocol",
+      "close": 4003
+    },
+    {
+      "code": "ENROLL_TOKEN_EXPIRED",
+      "http": null,
+      "area": "station protocol",
+      "close": 4003
+    },
+    {
+      "code": "PROTOCOL_DUPLICATE_CONNECTION",
+      "http": null,
+      "area": "station protocol",
+      "close": 4009
+    },
+    {
+      "code": "PROTOCOL_INVALID_MESSAGE",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "PROTOCOL_UNKNOWN_TYPE",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "PROTOCOL_CAPABILITY_MISSING",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "PROTOCOL_MESSAGE_TOO_LARGE",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "PROTOCOL_LIMIT",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "GENERATION_STALE",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "GENERATION_INVALID",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "NAMESPACE_SETUP_FAILED",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "SECRETS_MISMATCH",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "SECRETS_UNAVAILABLE",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "RUN_DEPLOYMENT_UNKNOWN",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "STREAM_NOT_FOUND",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    },
+    {
+      "code": "STREAM_CREDIT_EXCEEDED",
+      "http": null,
+      "area": "station protocol",
+      "close": null
+    }
+  ],
+  "warnings": [
+    "SHARES_STATEFUL_SERVICE",
+    "STALE_SECRET_VERSIONS",
+    "DOWNTIME_EXPECTED",
+    "BACKUP_STOPS_SERVICE",
+    "SEALED_VALUE_MISSING",
+    "SOURCE_POLLING",
+    "SANDBOX_RESTART_REQUIRED",
+    "SANDBOX_SNAPSHOT_CRASH_CONSISTENT"
+  ]
+}

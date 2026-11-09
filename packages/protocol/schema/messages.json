@@ -1,0 +1,602 @@
+{
+  "challenge": {
+    "from": "dispatch",
+    "body": "ChallengeBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "hello": {
+    "from": "station",
+    "body": "HelloBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "welcome": {
+    "from": "dispatch",
+    "body": "WelcomeBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "enroll": {
+    "from": "station",
+    "body": "EnrollBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "enrolled": {
+    "from": "dispatch",
+    "body": "EnrolledBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "heartbeat": {
+    "from": "station",
+    "body": "HeartbeatBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "error": {
+    "from": "both",
+    "body": "ErrorBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "generation": {
+    "from": "dispatch",
+    "body": "Generation",
+    "capability": "generation.v1",
+    "outboxed": false
+  },
+  "generation.available": {
+    "from": "dispatch",
+    "body": "GenerationAvailableBody",
+    "capability": "generation.v1",
+    "outboxed": false
+  },
+  "generation.ack": {
+    "from": "station",
+    "body": "GenerationAckBody",
+    "capability": "generation.v1",
+    "outboxed": false
+  },
+  "observed.report": {
+    "from": "station",
+    "body": "Observed",
+    "capability": null,
+    "outboxed": false
+  },
+  "observed.update": {
+    "from": "station",
+    "body": "ObservedUpdateBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "observed.request": {
+    "from": "dispatch",
+    "body": "EmptyBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "outbox.ack": {
+    "from": "dispatch",
+    "body": "OutboxAckBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "deployment.step": {
+    "from": "station",
+    "body": "DeploymentStepBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "deployment.finished": {
+    "from": "station",
+    "body": "DeploymentFinishedBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "run.created": {
+    "from": "station",
+    "body": "RunCreatedBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "run.status": {
+    "from": "station",
+    "body": "RunStatusBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "run.exited": {
+    "from": "station",
+    "body": "RunStatusBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "build.status": {
+    "from": "station",
+    "body": "BuildStatusBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "build.result": {
+    "from": "station",
+    "body": "BuildResultBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "health.result": {
+    "from": "station",
+    "body": "HealthResultBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "container.exited": {
+    "from": "station",
+    "body": "ContainerExitedBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "disk.pressure": {
+    "from": "station",
+    "body": "DiskPressureBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "registry.maintenance": {
+    "from": "station",
+    "body": "RegistryMaintenanceBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "component.status": {
+    "from": "station",
+    "body": "ComponentStatusBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "log.gap": {
+    "from": "station",
+    "body": "LogGapBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "audit.record": {
+    "from": "station",
+    "body": "AuditRecordBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "guard.ack": {
+    "from": "station",
+    "body": "GuardAckBody",
+    "capability": "guard.v1",
+    "outboxed": true
+  },
+  "flow.rollup": {
+    "from": "station",
+    "body": "FlowRollupBody",
+    "capability": "guard.v1",
+    "outboxed": true
+  },
+  "scan.result": {
+    "from": "station",
+    "body": "ScanResultBody",
+    "capability": "scan.v1",
+    "outboxed": true
+  },
+  "outbox.gap": {
+    "from": "station",
+    "body": "OutboxGapBody",
+    "capability": null,
+    "outboxed": true
+  },
+  "volume.backup.result": {
+    "from": "station",
+    "body": "VolumeBackupResultBody",
+    "capability": "volumes.v1",
+    "outboxed": true
+  },
+  "volume.restore.result": {
+    "from": "station",
+    "body": "VolumeRestoreResultBody",
+    "capability": "volumes.v1",
+    "outboxed": true
+  },
+  "sandbox.status": {
+    "from": "station",
+    "body": "SandboxStatusBody",
+    "capability": "sandbox.v1",
+    "outboxed": true
+  },
+  "sandbox.snapshot.status": {
+    "from": "station",
+    "body": "SandboxSnapshotStatusBody",
+    "capability": "sandbox.v1",
+    "outboxed": true
+  },
+  "build.start": {
+    "from": "dispatch",
+    "body": "BuildStartBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "build.accepted": {
+    "from": "station",
+    "body": "BuildRefBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "build.cancel": {
+    "from": "dispatch",
+    "body": "BuildRefBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "build.cancelled": {
+    "from": "station",
+    "body": "BuildRefBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "run.start": {
+    "from": "dispatch",
+    "body": "RunStartBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "run.accepted": {
+    "from": "station",
+    "body": "RunAcceptedBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "run.cancel": {
+    "from": "dispatch",
+    "body": "RunRefBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "run.cancelled": {
+    "from": "station",
+    "body": "RunRefBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "logs.query": {
+    "from": "dispatch",
+    "body": "LogSelector",
+    "capability": null,
+    "outboxed": false
+  },
+  "logs.page": {
+    "from": "station",
+    "body": "LogsPageBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "logs.follow": {
+    "from": "dispatch",
+    "body": "LogSelector",
+    "capability": "logs.follow",
+    "outboxed": false
+  },
+  "metrics.subscribe": {
+    "from": "dispatch",
+    "body": "MetricsSubscribeBody",
+    "capability": "metrics.v1",
+    "outboxed": false
+  },
+  "metrics.sample": {
+    "from": "dispatch",
+    "body": "MetricsSampleBody",
+    "capability": "metrics.v1",
+    "outboxed": false
+  },
+  "metrics.sample.result": {
+    "from": "station",
+    "body": "MetricsSampleResultBody",
+    "capability": "metrics.v1",
+    "outboxed": false
+  },
+  "network.subscribe": {
+    "from": "dispatch",
+    "body": "NetworkSubscribeBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "network.sample": {
+    "from": "dispatch",
+    "body": "NetworkSampleBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "network.sample.result": {
+    "from": "station",
+    "body": "NetworkSampleResultBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "network.inspect": {
+    "from": "dispatch",
+    "body": "NetworkInspectBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "network.inspect.result": {
+    "from": "station",
+    "body": "NetworkInspectResultBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "network.probe": {
+    "from": "dispatch",
+    "body": "NetworkProbeBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "network.probe.result": {
+    "from": "station",
+    "body": "NetworkProbeResultBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "dns.log": {
+    "from": "dispatch",
+    "body": "DnsLogBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "dns.log.result": {
+    "from": "station",
+    "body": "DnsLogResultBody",
+    "capability": "network.v1",
+    "outboxed": false
+  },
+  "exec.resize": {
+    "from": "dispatch",
+    "body": "ExecResizeBody",
+    "capability": "exec.tty",
+    "outboxed": false
+  },
+  "exec.resized": {
+    "from": "station",
+    "body": "StreamRefBody",
+    "capability": "exec.tty",
+    "outboxed": false
+  },
+  "forward.open": {
+    "from": "dispatch",
+    "body": "ForwardOpenBody",
+    "capability": "forward.tcp",
+    "outboxed": false
+  },
+  "secrets.deliver": {
+    "from": "dispatch",
+    "body": "SecretsDeliverBody",
+    "capability": "secrets.v1",
+    "outboxed": false
+  },
+  "secrets.ack": {
+    "from": "station",
+    "body": "SecretsAckBody",
+    "capability": "secrets.v1",
+    "outboxed": false
+  },
+  "secrets.request": {
+    "from": "station",
+    "body": "SecretsRequestBody",
+    "capability": "secrets.v1",
+    "outboxed": false
+  },
+  "master_key.prepare": {
+    "from": "station",
+    "body": "MasterKeyPrepareBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "master_key.prepared": {
+    "from": "dispatch",
+    "body": "MasterKeyPreparedBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "master_key.commit": {
+    "from": "station",
+    "body": "EmptyBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "master_key.committed": {
+    "from": "dispatch",
+    "body": "EmptyBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "master_key.abort": {
+    "from": "station",
+    "body": "EmptyBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "master_key.aborted": {
+    "from": "dispatch",
+    "body": "EmptyBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "host.admin": {
+    "from": "station",
+    "body": "HostAdminBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "host.admin.result": {
+    "from": "dispatch",
+    "body": "HostAdminResultBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "registry.delete": {
+    "from": "dispatch",
+    "body": "RegistryDeleteBody",
+    "capability": "registry.v1",
+    "outboxed": false
+  },
+  "registry.delete.result": {
+    "from": "station",
+    "body": "RegistryDeleteResultBody",
+    "capability": "registry.v1",
+    "outboxed": false
+  },
+  "registry.gc": {
+    "from": "dispatch",
+    "body": "RegistryGcBody",
+    "capability": "registry.v1",
+    "outboxed": false
+  },
+  "registry.gc.accepted": {
+    "from": "station",
+    "body": "EmptyBody",
+    "capability": "registry.v1",
+    "outboxed": false
+  },
+  "scan.start": {
+    "from": "dispatch",
+    "body": "ScanStartBody",
+    "capability": "scan.v1",
+    "outboxed": false
+  },
+  "scan.accepted": {
+    "from": "station",
+    "body": "EmptyBody",
+    "capability": "scan.v1",
+    "outboxed": false
+  },
+  "domain.probe": {
+    "from": "dispatch",
+    "body": "DomainProbeBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "domain.probe.result": {
+    "from": "station",
+    "body": "DomainProbeResultBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "platform.verify": {
+    "from": "dispatch",
+    "body": "PlatformVerifyBody",
+    "capability": "platform.v1",
+    "outboxed": false
+  },
+  "platform.verify.result": {
+    "from": "station",
+    "body": "PlatformVerifyResultBody",
+    "capability": "platform.v1",
+    "outboxed": false
+  },
+  "doctor.run": {
+    "from": "dispatch",
+    "body": "DoctorRunBody",
+    "capability": "doctor.v1",
+    "outboxed": false
+  },
+  "doctor.report": {
+    "from": "station",
+    "body": "DoctorReportBody",
+    "capability": "doctor.v1",
+    "outboxed": false
+  },
+  "volume.backup": {
+    "from": "dispatch",
+    "body": "VolumeBackupBody",
+    "capability": "volumes.v1",
+    "outboxed": false
+  },
+  "volume.backup.accepted": {
+    "from": "station",
+    "body": "VolumeBackupAcceptedBody",
+    "capability": "volumes.v1",
+    "outboxed": false
+  },
+  "volume.restore": {
+    "from": "dispatch",
+    "body": "VolumeRestoreBody",
+    "capability": "volumes.v1",
+    "outboxed": false
+  },
+  "volume.restore.accepted": {
+    "from": "station",
+    "body": "VolumeRestoreAcceptedBody",
+    "capability": "volumes.v1",
+    "outboxed": false
+  },
+  "volume.backup.delete": {
+    "from": "dispatch",
+    "body": "VolumeBackupDeleteBody",
+    "capability": "volumes.v1",
+    "outboxed": false
+  },
+  "volume.backup.delete.result": {
+    "from": "station",
+    "body": "VolumeBackupDeleteResultBody",
+    "capability": "volumes.v1",
+    "outboxed": false
+  },
+  "sandbox.storage.grow": {
+    "from": "dispatch",
+    "body": "SandboxStorageGrowBody",
+    "capability": "sandbox.v1",
+    "outboxed": false
+  },
+  "sandbox.storage.grown": {
+    "from": "station",
+    "body": "SandboxStorageGrownBody",
+    "capability": "sandbox.v1",
+    "outboxed": false
+  },
+  "blob.grant": {
+    "from": "station",
+    "body": "BlobGrantRequestBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "blob.granted": {
+    "from": "dispatch",
+    "body": "BlobGrant",
+    "capability": null,
+    "outboxed": false
+  },
+  "stream.opened": {
+    "from": "both",
+    "body": "StreamOpenedBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "stream.data": {
+    "from": "both",
+    "body": "StreamDataBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "stream.credit": {
+    "from": "both",
+    "body": "StreamCreditBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "stream.end": {
+    "from": "both",
+    "body": "StreamEndBody",
+    "capability": null,
+    "outboxed": false
+  },
+  "stream.cancel": {
+    "from": "both",
+    "body": "StreamRefBody",
+    "capability": null,
+    "outboxed": false
+  }
+}

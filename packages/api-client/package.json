@@ -1,0 +1,17 @@
+{
+  "name": "@stationly/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@elysia/eden": "1.4.10",
+    "@stationly/dispatch": "workspace:*",
+    "elysia": "1.4.30"
+  }
+}

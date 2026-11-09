@@ -1,0 +1,365 @@
+{
+  "schema": 1,
+  "instance_id": "ins_01JCAAAAAAAAAAAAAAAAAAAAAA",
+  "station_id": "stn_01JCBBBBBBBBBBBBBBBBBBBBBB",
+  "number": 1,
+  "previous": null,
+  "hash": "sha256:03d9da4a0c370464bd895b28579be31cb3a3b1857edab9f85cfb6f668319216a",
+  "issued_at": "2026-11-02T12:00:00Z",
+  "resolution": null,
+  "station": {
+    "settings": {
+      "ipam.pool": "10.200.0.0/16",
+      "ipam.virtual_prefix": "100.64.0.0/16",
+      "gateway.rate_per_source": 20,
+      "exposure.port_range": "30000-32767",
+      "disk.warning_pct": 80,
+      "disk.critical_pct": 90,
+      "workshop.idle_timeout_s": 3600,
+      "workshop.max_builds_per_project": 1,
+      "registry.gc_schedule": "0 3 * * *",
+      "acme.email": "ops@example.com",
+      "platform.allow_unsigned": false
+    },
+    "registry": {
+      "address": "10.200.3.2:5000",
+      "subnet": "10.200.3.0/24",
+      "token_issuer": "stationd",
+      "pull_scope": "station",
+      "key_ref": "registry-token.key"
+    },
+    "networks": {
+      "system": {
+        "subnet": "10.200.0.0/24",
+        "gateway": "10.200.0.1"
+      },
+      "ingress": {
+        "subnet": "10.200.1.0/24",
+        "gateway": "10.200.1.1"
+      }
+    },
+    "inbound": {
+      "mode": "direct",
+      "web_ports": "closed",
+      "setup_port_until": null
+    },
+    "concurrency_cap": 2,
+    "hosts_dispatch": false,
+    "public_address": null
+  },
+  "components": {
+    "coupler_image": {
+      "version": "3.10.2",
+      "digest": "sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"
+    }
+  },
+  "environments": {
+    "env_01JCAAAAAAAAAAAAAAAAAAAAAA": {
+      "hash": "sha256:0b8a2e598b19d5e239d94130d2f54bd115af3e077643ea68ea78d2eddfe7d0f3",
+      "project_id": "prj_01JCCCCCCCCCCCCCCCCCCCCCCC",
+      "name": "alpha",
+      "ipam_allocation_id": "ipa_01JCAAAAAAAAAAAAAAAAAAAAAA",
+      "network": {
+        "bridge_name": "or-aaaaaaaaaaaa",
+        "subnet": "10.200.10.0/24",
+        "gateway": "10.200.10.1",
+        "gateway_mode": "nat"
+      },
+      "dns": [
+        {
+          "name": "whoami",
+          "virtual_ip": "100.64.10.2",
+          "kind": "service",
+          "target_service_id": "svc_01JCWH0AM1AAAAAAAAAAAAAAAA"
+        },
+        {
+          "name": "client",
+          "virtual_ip": "100.64.10.3",
+          "kind": "service",
+          "target_service_id": "svc_01JCC11ENTAAAAAAAAAAAAAAAA"
+        }
+      ],
+      "virtual_ips": [
+        {
+          "id": "vip_01JCWH0AM1AAAAAAAAAAAAAAAA",
+          "address": "100.64.10.2",
+          "service_id": "svc_01JCWH0AM1AAAAAAAAAAAAAAAA"
+        },
+        {
+          "id": "vip_01JCC11ENTAAAAAAAAAAAAAAAA",
+          "address": "100.64.10.3",
+          "service_id": "svc_01JCC11ENTAAAAAAAAAAAAAAAA"
+        }
+      ]
+    },
+    "env_01JCBBBBBBBBBBBBBBBBBBBBBB": {
+      "hash": "sha256:c3b745844c1eef25a3502fea34daa1db1d515914bf85bb8fcf93fcdaac882d67",
+      "project_id": "prj_01JCCCCCCCCCCCCCCCCCCCCCCC",
+      "name": "beta",
+      "ipam_allocation_id": "ipa_01JCBBBBBBBBBBBBBBBBBBBBBB",
+      "network": {
+        "bridge_name": "or-bbbbbbbbbbbb",
+        "subnet": "10.200.11.0/24",
+        "gateway": "10.200.11.1",
+        "gateway_mode": "nat"
+      },
+      "dns": [
+        {
+          "name": "whoami",
+          "virtual_ip": "100.64.11.2",
+          "kind": "service",
+          "target_service_id": "svc_01JCWH0AM1BBBBBBBBBBBBBBBB"
+        }
+      ],
+      "virtual_ips": [
+        {
+          "id": "vip_01JCWH0AM1BBBBBBBBBBBBBBBB",
+          "address": "100.64.11.2",
+          "service_id": "svc_01JCWH0AM1BBBBBBBBBBBBBBBB"
+        }
+      ]
+    }
+  },
+  "services": {
+    "svc_01JCWH0AM1AAAAAAAAAAAAAAAA": {
+      "hash": "sha256:0d20a4fc62990fe43f3d40caa43ab44cadae06fd6bea4eab2a1068b124739018",
+      "environment_id": "env_01JCAAAAAAAAAAAAAAAAAAAAAA",
+      "project_id": "prj_01JCCCCCCCCCCCCCCCCCCCCCCC",
+      "name": "whoami",
+      "kind": "web",
+      "desired_state": "running",
+      "virtual_ip": "100.64.10.2",
+      "current": {
+        "deployment_id": "dep_01JCWH0AM1AAAAAAAAAAAAAAA1",
+        "number": 1,
+        "spec": {
+          "image_ref": "docker.io/traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44",
+          "command": null,
+          "limits": {
+            "cpu_millis": 250,
+            "memory_bytes": 67108864
+          },
+          "health": {
+            "type": "tcp",
+            "port": 80,
+            "interval_s": 2,
+            "timeout_s": 1,
+            "startup_timeout_s": 30,
+            "passes": 2,
+            "failures": 3
+          },
+          "ports": [
+            {
+              "id": "prt_01JCHHHHHHHHHHHHHHHHHHHHHH",
+              "port": 80,
+              "protocol": "http",
+              "grpc": false
+            }
+          ],
+          "volumes": [],
+          "readonly_rootfs": true,
+          "secrets_owner": null,
+          "drain_timeout_s": 30,
+          "strategy": "overlap",
+          "pre_deploy": null,
+          "schedule": null,
+          "env": [
+            {
+              "key": "PORT",
+              "injection": "env",
+              "refs": [],
+              "value": "80",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_SERVICE_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "svc_01JCWH0AM1AAAAAAAAAAAAAAAA",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_ENVIRONMENT_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "env_01JCAAAAAAAAAAAAAAAAAAAAAA",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_DEPLOYMENT_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "dep_01JCWH0AM1AAAAAAAAAAAAAAA1",
+              "platform": true
+            }
+          ],
+          "env_digest": "sha256:51fa8641b84c781e7b229ee46eface9c7a13f3510477fdaaa5c98295c0a06a46"
+        }
+      },
+      "reach": [
+        "vip_01JCWH0AM1AAAAAAAAAAAAAAAA",
+        "vip_01JCC11ENTAAAAAAAAAAAAAAAA"
+      ]
+    },
+    "svc_01JCC11ENTAAAAAAAAAAAAAAAA": {
+      "hash": "sha256:baa1fb59b672e9d754884116e16ed03545446d156f7768ffeefebb04fa3cfd0f",
+      "environment_id": "env_01JCAAAAAAAAAAAAAAAAAAAAAA",
+      "project_id": "prj_01JCCCCCCCCCCCCCCCCCCCCCCC",
+      "name": "client",
+      "kind": "web",
+      "desired_state": "running",
+      "virtual_ip": "100.64.10.3",
+      "current": {
+        "deployment_id": "dep_01JCC11ENTAAAAAAAAAAAAAAA1",
+        "number": 1,
+        "spec": {
+          "image_ref": "docker.io/nicolaka/netshoot@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70",
+          "command": [
+            "sleep",
+            "infinity"
+          ],
+          "limits": {
+            "cpu_millis": 250,
+            "memory_bytes": 67108864
+          },
+          "health": null,
+          "ports": [],
+          "volumes": [],
+          "readonly_rootfs": false,
+          "secrets_owner": null,
+          "drain_timeout_s": 30,
+          "strategy": "overlap",
+          "pre_deploy": null,
+          "schedule": null,
+          "env": [
+            {
+              "key": "PORT",
+              "injection": "env",
+              "refs": [],
+              "value": "80",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_SERVICE_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "svc_01JCC11ENTAAAAAAAAAAAAAAAA",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_ENVIRONMENT_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "env_01JCAAAAAAAAAAAAAAAAAAAAAA",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_DEPLOYMENT_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "dep_01JCC11ENTAAAAAAAAAAAAAAA1",
+              "platform": true
+            }
+          ],
+          "env_digest": "sha256:51fa8641b84c781e7b229ee46eface9c7a13f3510477fdaaa5c98295c0a06a46"
+        }
+      },
+      "reach": [
+        "vip_01JCWH0AM1AAAAAAAAAAAAAAAA",
+        "vip_01JCC11ENTAAAAAAAAAAAAAAAA"
+      ]
+    },
+    "svc_01JCWH0AM1BBBBBBBBBBBBBBBB": {
+      "hash": "sha256:ea461e061740c3bb7b8b9ccd1004726957c111d11e41b14c2da11b50f3a984b5",
+      "environment_id": "env_01JCBBBBBBBBBBBBBBBBBBBBBB",
+      "project_id": "prj_01JCCCCCCCCCCCCCCCCCCCCCCC",
+      "name": "whoami",
+      "kind": "web",
+      "desired_state": "running",
+      "virtual_ip": "100.64.11.2",
+      "current": {
+        "deployment_id": "dep_01JCWH0AM1BBBBBBBBBBBBBBB1",
+        "number": 1,
+        "spec": {
+          "image_ref": "docker.io/traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44",
+          "command": null,
+          "limits": {
+            "cpu_millis": 250,
+            "memory_bytes": 67108864
+          },
+          "health": {
+            "type": "tcp",
+            "port": 80,
+            "interval_s": 2,
+            "timeout_s": 1,
+            "startup_timeout_s": 30,
+            "passes": 2,
+            "failures": 3
+          },
+          "ports": [
+            {
+              "id": "prt_01JCHHHHHHHHHHHHHHHHHHHHHH",
+              "port": 80,
+              "protocol": "http",
+              "grpc": false
+            }
+          ],
+          "volumes": [],
+          "readonly_rootfs": true,
+          "secrets_owner": null,
+          "drain_timeout_s": 30,
+          "strategy": "overlap",
+          "pre_deploy": null,
+          "schedule": null,
+          "env": [
+            {
+              "key": "PORT",
+              "injection": "env",
+              "refs": [],
+              "value": "80",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_SERVICE_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "svc_01JCWH0AM1BBBBBBBBBBBBBBBB",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_ENVIRONMENT_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "env_01JCBBBBBBBBBBBBBBBBBBBBBB",
+              "platform": true
+            },
+            {
+              "key": "STATIONLY_DEPLOYMENT_ID",
+              "injection": "env",
+              "refs": [],
+              "value": "dep_01JCWH0AM1BBBBBBBBBBBBBBB1",
+              "platform": true
+            }
+          ],
+          "env_digest": "sha256:51fa8641b84c781e7b229ee46eface9c7a13f3510477fdaaa5c98295c0a06a46"
+        }
+      },
+      "reach": [
+        "vip_01JCWH0AM1BBBBBBBBBBBBBBBB"
+      ]
+    }
+  },
+  "deployments": {},
+  "volumes": {},
+  "gateway": {
+    "hash": "sha256:9671fd778753e980652258d7b86f7dfff3bab82888a1e297033708444bb54cb9",
+    "acme": {
+      "email": "ops@example.com",
+      "ca_server": null
+    },
+    "routes": {}
+  },
+  "port_allocations": {},
+  "workshops": {},
+  "system_targets": {}
+}

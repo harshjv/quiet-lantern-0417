@@ -1,0 +1,1 @@
+ALTER TABLE `deployment` ADD `image_pruned_at` integer;

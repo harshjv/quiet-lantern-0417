@@ -1,0 +1,195 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PLATFORMS: ${{ vars.STATIONLY_RELEASE_PLATFORMS || 'linux/amd64' }}
+  SLY_TARGETS: linux-amd64,linux-arm64,darwin-arm64,darwin-amd64
+  IMAGES: ghcr.io/harshjv/stationly
+  RELEASES: ghcr.io/harshjv/stationly/release
+  COSIGN_REPOSITORY: ghcr.io/harshjv/stationly/signatures
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+    steps:
+      - name: Read the release version from the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::tag $TAG is not vX.Y.Z or vX.Y.Z-alpha|beta|rc.N; test and hotfix tags are not releases"
+            exit 1
+          fi
+          version=${TAG#v}
+          channel=stable
+          case "$version" in *-*) channel=edge ;; esac
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "channel=$channel" >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e
+        with:
+          version: 2026.10.19
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1
+        if: contains(env.PLATFORMS, 'linux/arm64')
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - name: Build stationd, runsc and the images
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: installer/release/release.sh build --out out --version "$VERSION" --platforms "$PLATFORMS" --cache "$RUNNER_TEMP/release-cache"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: build
+          path: out
+          retention-days: 7
+          if-no-files-found: error
+
+  sly:
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e
+        with:
+          version: 2026.10.19
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the sly single executables
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: installer/release/release.sh sly --out out --version "$VERSION" --targets "$SLY_TARGETS" --cache "$RUNNER_TEMP/release-cache"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: sly
+          path: |
+            out/files/sly-*
+            out/build/sly.json
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build, sly]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      CHANNEL: ${{ needs.version.outputs.channel }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e
+        with:
+          version: 2026.10.19
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: build
+          path: out
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: sly
+          path: out
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
+        if: env.DOCKERHUB_USERNAME != ''
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push the images
+        run: installer/release/release.sh push-images --out out --repository "$IMAGES"
+
+      - name: Write the release manifest
+        run: installer/release/release.sh manifest --out out --releases "$RELEASES" --channel "$CHANNEL"
+
+      - name: Render the installers
+        run: installer/release/release.sh render --out out --releases "https://$RELEASES"
+
+      - name: Sign every release file
+        run: |
+          installer/release/release.sh files --out out | while IFS= read -r f; do
+            cosign sign-blob --yes --bundle "out/files/$f.sigstore.json" "out/files/$f"
+          done
+
+      - name: Sign every image digest the manifest pins
+        run: |
+          while IFS= read -r ref; do
+            cosign sign --yes "$ref"
+          done <out/build/images.txt
+
+      - name: Check the manifest signature against the release identity
+        run: |
+          cosign verify-blob \
+            --bundle out/files/release-manifest.json.sigstore.json \
+            --certificate-identity "https://github.com/harshjv/quiet-lantern-0417/.github/workflows/release.yml@refs/tags/v$VERSION" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            out/files/release-manifest.json
+
+      - name: Push the release artifact
+        run: |
+          digest=$(installer/release/release.sh push-release --out out --releases "$RELEASES")
+          {
+            echo "## Stationly $VERSION ($CHANNEL)"
+            echo
+            echo "Release artifact: \`$RELEASES:v$VERSION@$digest\`"
+            echo
+            echo "Release manifest: \`sha256:$(sha256sum out/files/release-manifest.json | cut -d' ' -f1)\`"
+            echo
+            echo "Publish the installers on stationly.netlify.app: download the \`public\` artifact of this run into \`public/\` and commit it:"
+            echo
+            echo "\`gh run download $GITHUB_RUN_ID --repo $GITHUB_REPOSITORY --name public --dir public\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: public
+          path: |
+            out/files/install.sh
+            out/files/install-sly.sh
+          retention-days: 90
+          if-no-files-found: error

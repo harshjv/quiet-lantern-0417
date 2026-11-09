@@ -1,0 +1,18 @@
+{
+  "name": "@stationly/manifest-schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema.json": "./schema/manifest.schema.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "generate": "node scripts/generate.ts"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.52",
+    "yaml": "2.9.1"
+  }
+}

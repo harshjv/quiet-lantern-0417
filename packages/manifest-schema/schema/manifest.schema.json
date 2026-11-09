@@ -1,0 +1,1100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://stationly.harshjv.com/schema/manifest/v1/manifest.schema.json",
+  "title": "Stationly Manifest",
+  "description": "stationly.yaml: one project, applied to one environment at a time",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version",
+    "project"
+  ],
+  "properties": {
+    "version": {
+      "description": "The file format version, 1",
+      "type": "integer"
+    },
+    "project": {
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "The project name; checked, never written",
+      "type": "string"
+    },
+    "variables": {
+      "description": "Project variables; absent: not managed by the Manifest",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[A-Z_][A-Z0-9_]*$": {
+          "description": "A project default, per-environment values, or a sealed declaration",
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            {
+              "description": "The object form of a project variable",
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "default": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "environments": {
+                  "description": "Literal values per environment name",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "patternProperties": {
+                    "^[a-z0-9][a-z0-9-]{0,62}$": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "sealed": {
+                  "description": "Declared; values are set per environment with set_variables",
+                  "const": true,
+                  "type": "boolean"
+                },
+                "reference": {
+                  "description": "${{secret(N)}} with sealed: each environment gets its own generated value",
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "services": {
+      "description": "Services in the target environment; absent: not managed by the Manifest",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]{0,62}$": {
+          "description": "A service; the map key is its name and DNS label",
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "description": "Immutable after creation",
+              "anyOf": [
+                {
+                  "const": "web",
+                  "type": "string"
+                },
+                {
+                  "const": "worker",
+                  "type": "string"
+                },
+                {
+                  "const": "cron",
+                  "type": "string"
+                },
+                {
+                  "const": "one_off",
+                  "type": "string"
+                }
+              ]
+            },
+            "source": {
+              "description": "How the image is produced",
+              "anyOf": [
+                {
+                  "description": "Run a prebuilt image",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "ref"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "A registry image, pinned to its digest at each deploy",
+                      "const": "image",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "minLength": 1,
+                      "description": "A registry reference with a tag or a digest",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "description": "Build a GitHub repository with a Dockerfile",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "repo"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "Build a GitHub repository with its Dockerfile",
+                      "const": "dockerfile",
+                      "type": "string"
+                    },
+                    "repo": {
+                      "pattern": "^github\\.com/[a-z0-9][a-z0-9-]*/[a-z0-9._-]+$",
+                      "description": "github.com/<owner>/<name>, lower case, without scheme or .git",
+                      "type": "string"
+                    },
+                    "branch": {
+                      "minLength": 1,
+                      "description": "The tracked branch; the repository's default branch at creation when omitted",
+                      "type": "string"
+                    },
+                    "path": {
+                      "pattern": "^/",
+                      "default": "/",
+                      "description": "The build context inside the repository",
+                      "type": "string"
+                    },
+                    "dockerfile": {
+                      "minLength": 1,
+                      "default": "Dockerfile",
+                      "description": "The Dockerfile, relative to path",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "description": "Build a GitHub repository with Railpack",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "repo"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "Build a GitHub repository with Railpack",
+                      "const": "railpack",
+                      "type": "string"
+                    },
+                    "repo": {
+                      "pattern": "^github\\.com/[a-z0-9][a-z0-9-]*/[a-z0-9._-]+$",
+                      "description": "github.com/<owner>/<name>, lower case, without scheme or .git",
+                      "type": "string"
+                    },
+                    "branch": {
+                      "minLength": 1,
+                      "description": "The tracked branch; the repository's default branch at creation when omitted",
+                      "type": "string"
+                    },
+                    "path": {
+                      "pattern": "^/",
+                      "default": "/",
+                      "description": "The build context inside the repository",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "description": "A directory uploaded by sly push",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "Whatever sly push uploads last",
+                      "const": "local",
+                      "type": "string"
+                    },
+                    "dockerfile": {
+                      "minLength": 1,
+                      "description": "The Dockerfile, relative to the uploaded directory; Railpack builds without one",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "description": "A template (phase 1b)",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "template"
+                  ],
+                  "properties": {
+                    "type": {
+                      "description": "A template (phase 1b)",
+                      "const": "template",
+                      "type": "string"
+                    },
+                    "template": {
+                      "minLength": 1,
+                      "description": "The template name",
+                      "type": "string"
+                    },
+                    "version": {
+                      "minLength": 1,
+                      "description": "A semver range, default latest",
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "station": {
+              "minLength": 1,
+              "description": "An enrolled station name; the only online station by default",
+              "type": "string"
+            },
+            "command": {
+              "default": null,
+              "description": "Overrides the image CMD",
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "build_args": {
+              "description": "Non-secret Dockerfile build arguments",
+              "additionalProperties": false,
+              "type": "object",
+              "patternProperties": {
+                "^[A-Z_][A-Z0-9_]*$": {
+                  "type": "string"
+                }
+              }
+            },
+            "ports": {
+              "default": [],
+              "description": "At least one for web, none for other kinds",
+              "type": "array",
+              "items": {
+                "description": "A port the service listens on",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "port"
+                ],
+                "properties": {
+                  "port": {
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "The container port, unique per service",
+                    "type": "integer"
+                  },
+                  "protocol": {
+                    "default": "http",
+                    "description": "http is routed by the Gateway, tcp only by exposure",
+                    "anyOf": [
+                      {
+                        "const": "http",
+                        "type": "string"
+                      },
+                      {
+                        "const": "tcp",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "grpc": {
+                    "default": false,
+                    "description": "The http port speaks gRPC",
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "health": {
+              "description": "The Signal health check",
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "type": {
+                  "description": "http on the first http port for web, tcp for a web service with only tcp ports, alive for worker",
+                  "anyOf": [
+                    {
+                      "const": "http",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tcp",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image",
+                      "type": "string"
+                    },
+                    {
+                      "const": "alive",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "path": {
+                  "pattern": "^/",
+                  "default": "/",
+                  "description": "The http check path",
+                  "type": "string"
+                },
+                "host": {
+                  "pattern": "^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$",
+                  "description": "http only: the Host header the check sends; the service's first domain, else <service>.internal",
+                  "type": "string"
+                },
+                "port": {
+                  "minimum": 1,
+                  "maximum": 65535,
+                  "description": "A declared port; the first http port for http, the first port for tcp",
+                  "type": "integer"
+                },
+                "interval_s": {
+                  "minimum": 1,
+                  "maximum": 300,
+                  "default": 5,
+                  "description": "Seconds between checks",
+                  "type": "integer"
+                },
+                "timeout_s": {
+                  "minimum": 1,
+                  "maximum": 300,
+                  "default": 3,
+                  "description": "Seconds per check, at most interval_s",
+                  "type": "integer"
+                },
+                "startup_timeout_s": {
+                  "minimum": 5,
+                  "maximum": 3600,
+                  "description": "120 for http and image, 60 for tcp",
+                  "type": "integer"
+                },
+                "passes": {
+                  "minimum": 1,
+                  "maximum": 10,
+                  "default": 2,
+                  "description": "Consecutive passes before cutover",
+                  "type": "integer"
+                },
+                "failures": {
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 3,
+                  "description": "Consecutive failures before red",
+                  "type": "integer"
+                },
+                "seconds": {
+                  "minimum": 1,
+                  "maximum": 3600,
+                  "default": 10,
+                  "description": "alive only: seconds the process must stay up",
+                  "type": "integer"
+                }
+              }
+            },
+            "limits": {
+              "description": "Resource limits",
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "cpu_millis": {
+                  "minimum": 10,
+                  "default": 1000,
+                  "description": "CPU in millicores, up to the station's resources.cpu_millis",
+                  "type": "integer"
+                },
+                "memory_bytes": {
+                  "minimum": 8388608,
+                  "default": 536870912,
+                  "description": "Memory in bytes, up to the station's resources.memory_bytes",
+                  "type": "integer"
+                }
+              }
+            },
+            "strategy": {
+              "description": "replace when volumes is non-empty, else overlap; not for cron and one_off",
+              "anyOf": [
+                {
+                  "const": "overlap",
+                  "type": "string"
+                },
+                {
+                  "const": "replace",
+                  "type": "string"
+                }
+              ]
+            },
+            "multi_writer_safe": {
+              "default": false,
+              "description": "Allows overlap with a volume",
+              "type": "boolean"
+            },
+            "drain_timeout_s": {
+              "minimum": 0,
+              "maximum": 3600,
+              "default": 30,
+              "description": "Seconds to drain the old container",
+              "type": "integer"
+            },
+            "readonly_rootfs": {
+              "default": false,
+              "description": "Mount the root filesystem read-only",
+              "type": "boolean"
+            },
+            "secrets_owner": {
+              "default": null,
+              "description": "Owner of file-injected secrets; the image user by default",
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "uid",
+                    "gid"
+                  ],
+                  "properties": {
+                    "uid": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "gid": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pre_deploy": {
+              "default": null,
+              "description": "A command run once before green starts",
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "schedule": {
+              "description": "The Timetable for a cron service",
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "cron"
+              ],
+              "properties": {
+                "cron": {
+                  "minLength": 1,
+                  "description": "A five-field cron expression",
+                  "type": "string"
+                },
+                "timezone": {
+                  "minLength": 1,
+                  "default": "UTC",
+                  "description": "An IANA time zone name",
+                  "type": "string"
+                },
+                "concurrency": {
+                  "default": "skip",
+                  "description": "What to do when the previous run is still going",
+                  "anyOf": [
+                    {
+                      "const": "skip",
+                      "type": "string"
+                    },
+                    {
+                      "const": "allow",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            "volumes": {
+              "description": "Absent: not managed by the Manifest",
+              "type": "array",
+              "items": {
+                "description": "A volume, identified by mount_path",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "mount_path"
+                ],
+                "properties": {
+                  "mount_path": {
+                    "pattern": "^/",
+                    "description": "Absolute, unique per service, not /run/secrets",
+                    "type": "string"
+                  },
+                  "station_volume": {
+                    "minLength": 1,
+                    "description": "A station-owned volume to mount (phase 2)",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "domains": {
+              "description": "Absent: not managed by the Manifest",
+              "type": "array",
+              "items": {
+                "description": "A domain routed to an http port",
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "generated": {
+                    "description": "A generated hostname; exactly one of generated and hostname",
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "hostname": {
+                    "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,62}$",
+                    "description": "A hostname under a configured zone, or any name for direct ingress",
+                    "type": "string"
+                  },
+                  "port": {
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "A declared http port; the service's first http port by default",
+                    "type": "integer"
+                  },
+                  "ingress": {
+                    "description": "direct in 1a; tunnel from 1b",
+                    "anyOf": [
+                      {
+                        "const": "direct",
+                        "type": "string"
+                      },
+                      {
+                        "const": "tunnel",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "expose_tcp": {
+              "description": "Declared tcp ports exposed on a host port",
+              "type": "array",
+              "items": {
+                "minimum": 1,
+                "maximum": 65535,
+                "type": "integer"
+              }
+            },
+            "variables": {
+              "description": "Service variables; absent: not managed by the Manifest",
+              "additionalProperties": false,
+              "type": "object",
+              "patternProperties": {
+                "^[A-Z_][A-Z0-9_]*$": {
+                  "description": "A literal, a reference, an interpolation, or an object form",
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    {
+                      "description": "The object form of a service variable",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "description": "A literal, never evaluated",
+                          "type": "string"
+                        },
+                        "reference": {
+                          "description": "A reference expression, or ${{secret(N)}} with sealed",
+                          "type": "string"
+                        },
+                        "sealed": {
+                          "description": "Declares a sealed key whose value is set out of band",
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "injection": {
+                          "default": "env",
+                          "description": "file writes /run/secrets/<KEY> and sets <KEY>_FILE",
+                          "anyOf": [
+                            {
+                              "const": "env",
+                              "type": "string"
+                            },
+                            {
+                              "const": "file",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "build": {
+                          "default": false,
+                          "description": "Also a BuildKit secret during builds",
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "desired_state": {
+              "default": "running",
+              "description": "running or stopped",
+              "anyOf": [
+                {
+                  "const": "running",
+                  "type": "string"
+                },
+                {
+                  "const": "stopped",
+                  "type": "string"
+                }
+              ]
+            },
+            "firewall": {
+              "description": "Runtime egress policy (phase 1b)",
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "default": "learn",
+                  "anyOf": [
+                    {
+                      "const": "learn",
+                      "type": "string"
+                    },
+                    {
+                      "const": "enforce",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "includes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "allow": {
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "properties": {
+                      "domain": {
+                        "type": "string"
+                      },
+                      "wildcard": {
+                        "type": "boolean"
+                      },
+                      "cidr": {
+                        "type": "string"
+                      },
+                      "service": {
+                        "type": "string"
+                      },
+                      "preset": {
+                        "type": "string"
+                      },
+                      "ports": {
+                        "type": "array",
+                        "items": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "port"
+                          ],
+                          "properties": {
+                            "port": {
+                              "minimum": 1,
+                              "maximum": 65535,
+                              "type": "integer"
+                            },
+                            "protocol": {
+                              "anyOf": [
+                                {
+                                  "const": "tcp",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "udp",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "gpu": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "count"
+              ],
+              "properties": {
+                "count": {
+                  "minimum": 1,
+                  "description": "GPUs (phase 2)",
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "environments": {
+      "description": "Overrides applied when the name equals the target environment",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]{0,62}$": {
+          "description": "Overrides for one environment",
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "services": {
+              "description": "Per-service overrides",
+              "additionalProperties": false,
+              "type": "object",
+              "patternProperties": {
+                "^[a-z0-9][a-z0-9-]{0,62}$": {
+                  "description": "Keys that may differ in one environment; null resets a key to its default",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "description": "Only branch and ref may differ",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "branch": {
+                          "minLength": 1,
+                          "description": "The tracked branch; the repository's default branch at creation when omitted",
+                          "type": "string"
+                        },
+                        "ref": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "station": {
+                      "anyOf": [
+                        {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "limits": {
+                      "anyOf": [
+                        {
+                          "description": "Resource limits",
+                          "additionalProperties": false,
+                          "type": "object",
+                          "properties": {
+                            "cpu_millis": {
+                              "minimum": 10,
+                              "default": 1000,
+                              "description": "CPU in millicores, up to the station's resources.cpu_millis",
+                              "type": "integer"
+                            },
+                            "memory_bytes": {
+                              "minimum": 8388608,
+                              "default": 536870912,
+                              "description": "Memory in bytes, up to the station's resources.memory_bytes",
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "domains": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "description": "A domain routed to an http port",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "generated": {
+                                "description": "A generated hostname; exactly one of generated and hostname",
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "hostname": {
+                                "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,62}$",
+                                "description": "A hostname under a configured zone, or any name for direct ingress",
+                                "type": "string"
+                              },
+                              "port": {
+                                "minimum": 1,
+                                "maximum": 65535,
+                                "description": "A declared http port; the service's first http port by default",
+                                "type": "integer"
+                              },
+                              "ingress": {
+                                "description": "direct in 1a; tunnel from 1b",
+                                "anyOf": [
+                                  {
+                                    "const": "direct",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "tunnel",
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "expose_tcp": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "minimum": 1,
+                            "maximum": 65535,
+                            "type": "integer"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "desired_state": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "const": "running",
+                              "type": "string"
+                            },
+                            {
+                              "const": "stopped",
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "schedule": {
+                      "anyOf": [
+                        {
+                          "description": "The Timetable for a cron service",
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "cron"
+                          ],
+                          "properties": {
+                            "cron": {
+                              "minLength": 1,
+                              "description": "A five-field cron expression",
+                              "type": "string"
+                            },
+                            "timezone": {
+                              "minLength": 1,
+                              "default": "UTC",
+                              "description": "An IANA time zone name",
+                              "type": "string"
+                            },
+                            "concurrency": {
+                              "default": "skip",
+                              "description": "What to do when the previous run is still going",
+                              "anyOf": [
+                                {
+                                  "const": "skip",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "allow",
+                                  "type": "string"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "variables": {
+                      "anyOf": [
+                        {
+                          "description": "Variables merged key by key",
+                          "additionalProperties": false,
+                          "type": "object",
+                          "patternProperties": {
+                            "^[A-Z_][A-Z0-9_]*$": {
+                              "description": "A literal, a reference, an interpolation, or an object form",
+                              "anyOf": [
+                                {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "description": "The object form of a service variable",
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "description": "A literal, never evaluated",
+                                      "type": "string"
+                                    },
+                                    "reference": {
+                                      "description": "A reference expression, or ${{secret(N)}} with sealed",
+                                      "type": "string"
+                                    },
+                                    "sealed": {
+                                      "description": "Declares a sealed key whose value is set out of band",
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "injection": {
+                                      "default": "env",
+                                      "description": "file writes /run/secrets/<KEY> and sets <KEY>_FILE",
+                                      "anyOf": [
+                                        {
+                                          "const": "env",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "const": "file",
+                                          "type": "string"
+                                        }
+                                      ]
+                                    },
+                                    "build": {
+                                      "default": false,
+                                      "description": "Also a BuildKit secret during builds",
+                                      "type": "boolean"
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "shared": {
+      "description": "Attachments to shared services (phase 1b)",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]{0,62}$": {
+          "description": "An attachment (phase 1b)",
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "service"
+          ],
+          "properties": {
+            "service": {
+              "pattern": "^shared/[a-z0-9][a-z0-9-]{0,62}$",
+              "description": "shared/<service name>",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

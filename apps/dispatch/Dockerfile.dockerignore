@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+.git
+.scratchpad
+go
+docs
+**/*.sqlite
+**/*.sqlite-*

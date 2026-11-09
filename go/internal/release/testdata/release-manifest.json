@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "release": "0.1.0-test.1",
+  "channel": "edge",
+  "published_at": "2026-11-08T00:00:00Z",
+  "changelog": "",
+  "components": {
+    "stationd": {
+      "kind": "binary",
+      "version": "0.1.0-test.1",
+      "source": "registry.test/stationly/release",
+      "digest": null,
+      "platforms": {
+        "linux/amd64": "sha256:84983bb51a667952546e58a4c775daf1cc2a48ea730f2f2fb547220880146c48"
+      }
+    }
+  }
+}

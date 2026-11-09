@@ -1,0 +1,45 @@
+title = "stationly"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "stationly-recovery-key"
+description = "stationly recovery key"
+regex = '''sly-rk-[A-Za-z0-9_-]{16,}'''
+keywords = ["sly-rk-"]
+
+[[rules]]
+id = "stationly-token"
+description = "stationly API, session or enroll token"
+regex = '''sly_(?:pat|tok|sess|enroll|ci|deploy|read|admin)_[A-Za-z0-9_-]{16,}'''
+keywords = ["sly_"]
+
+[[rules]]
+id = "stationly-login-link"
+description = "stationly one-time login link"
+regex = '''magic-link/verify\?token=[A-Za-z0-9._-]{16,}'''
+keywords = ["magic-link/verify"]
+
+[[rules]]
+id = "stationly-master-key"
+description = "stationly master key assignment"
+regex = '''STATIONLY_MASTER_KEY=[A-Za-z0-9_-]{32,}'''
+keywords = ["STATIONLY_MASTER_KEY="]
+
+[[allowlists]]
+description = "fixed test vectors and test fixtures with deliberately fake values"
+paths = [
+  '''^\.scratchpad/spikes/station-identity-ed25519/''',
+  '''_test\.go$''',
+  '''(^|/)test/.*\.test\.ts$''',
+  '''^installer/acceptance/''',
+]
+
+[[allowlists]]
+description = "pinned checksums and key fingerprints, which are public"
+regexTarget = "line"
+regexes = [
+  '''DOCKER_KEY_SHA256=[0-9a-f]{64}''',
+  '''key_fingerprint=['"]?[0-9A-F ]+['"]?$''',
+]

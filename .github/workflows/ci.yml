@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.10.19
+
+      - name: Scan new commits for secrets
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          range="HEAD~1..HEAD"
+          git rev-parse --verify --quiet HEAD~1 >/dev/null || range="HEAD"
+          if [ -n "$BASE" ]; then range="$BASE..HEAD"; elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then range="$BEFORE..HEAD"; fi
+          gitleaks git --redact --no-banner --config .gitleaks.toml --log-opts="$range" .
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck every package
+        run: pnpm typecheck
+
+      - name: Test Dispatch and sly
+        timeout-minutes: 15
+        run: pnpm test
+
+      - name: Test stationd
+        timeout-minutes: 15
+        working-directory: go
+        run: go test ./...
+
+      - name: Build the dashboard
+        run: pnpm --filter @stationly/dashboard build
+
+      - name: Regenerate protocol schemas and Go structs
+        run: pnpm generate
+
+      - name: Fail on generated drift
+        run: |
+          drift="$(git status --porcelain -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts)"
+          if [ -n "$drift" ]; then
+            echo "$drift"
+            git diff -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts
+            exit 1
+          fi
+
+      - name: Lint the release scripts and workflows
+        run: |
+          shellcheck installer/install.sh installer/install-sly.sh installer/check-public.sh installer/release/*.sh installer/test-release/*.sh go/internal/release/testdata/generate.sh public/*.sh
+          actionlint
+          installer/check-public.sh
+
+      - name: Go vet
+        working-directory: go
+        run: go vet ./...
+
+      - name: Go build
+        working-directory: go
+        run: go build ./...

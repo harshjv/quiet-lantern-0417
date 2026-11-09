@@ -1,0 +1,1 @@
+ALTER TABLE `service` ADD `stale_reasons` text DEFAULT '[]' NOT NULL;

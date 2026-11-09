@@ -1,0 +1,21 @@
+export const networkFindingValues = [
+  'SWITCH_NO_TARGET',
+  'SWITCH_PENDING',
+  'SWITCH_MISMATCH',
+  'NAME_NOT_IN_ENVIRONMENT',
+  'PATH_BLOCKED',
+  'DOMAIN_NOT_ALLOWED',
+  'TARGET_NOT_RUNNING',
+  'TARGET_UNHEALTHY',
+  'NOT_LISTENING',
+  'LISTENING_LOOPBACK_ONLY',
+  'PORT_NOT_DECLARED',
+  'DOMAIN_NOT_ACTIVE',
+  'CERTIFICATE_NOT_VALID',
+  'WEB_PORTS_CLOSED',
+  'ROUTE_NOT_APPLIED',
+  'NO_PUBLIC_ADDRESS',
+  'STATION_STALE'
+] as const
+
+export type NetworkFinding = (typeof networkFindingValues)[number]

@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+
+dockerd_pid=
+sleep_pid=
+
+say() { printf '%s\n' "sandbox-init: $*" >&2; }
+
+stop() {
+	if [ -n "$dockerd_pid" ]; then
+		kill -TERM "$dockerd_pid" 2>/dev/null || true
+		wait "$dockerd_pid" 2>/dev/null || true
+	fi
+	if [ -n "$sleep_pid" ]; then
+		kill "$sleep_pid" 2>/dev/null || true
+	fi
+	exit 0
+}
+
+eth0_mtu() { ip -o link show eth0 | awk '{for (i = 1; i < NF; i++) if ($i == "mtu") print $(i + 1)}'; }
+
+start_docker() {
+	echo 1 >/proc/sys/net/ipv4/ip_forward || return 1
+	for proto in tcp udp; do
+		iptables-legacy -t nat -A POSTROUTING -o eth0 -p "$proto" -j SNAT --to-source 169.254.1.2 || return 1
+	done
+	mtu=$(eth0_mtu)
+	[ -n "$mtu" ] || { say "cannot read the MTU of eth0"; return 1; }
+	dockerd --iptables=false --ip6tables=false --mtu="$mtu" --feature containerd-snapshotter=false >/var/log/dockerd.log 2>&1 &
+	dockerd_pid=$!
+	say "dockerd started (pid $dockerd_pid, mtu $mtu, log /var/log/dockerd.log)"
+}
+
+trap stop TERM INT
+
+if [ "${STATIONLY_SANDBOX_DOCKER:-}" = 1 ]; then
+	start_docker || say "Docker did not start"
+fi
+
+while true; do
+	sleep infinity &
+	sleep_pid=$!
+	wait "$sleep_pid" || true
+done

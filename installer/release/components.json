@@ -1,0 +1,9 @@
+{
+  "gateway": { "version": "3.7.17", "source": "docker.io/library/traefik", "digest": "sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a" },
+  "buildkit": { "version": "0.34.1", "source": "docker.io/moby/buildkit", "digest": "sha256:f68752a5a94acfcdad2d07867b7075601a421638e17fc5f28efc1c814d0c4f89", "variant": "rootless" },
+  "depot": { "version": "3.1.2", "source": "docker.io/library/registry", "digest": "sha256:38907510915c3f1604c7e83d6ab602ab3020d092f73bdaed8696773693ff768c" },
+  "coupler_image": { "version": "3.10.2", "source": "registry.k8s.io/pause", "digest": "sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4" },
+  "railpack_frontend": { "version": "0.43.0", "source": "ghcr.io/railwayapp/railpack-frontend", "digest": "sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc" },
+  "syft_scanner": { "version": "1.12.1", "source": "docker.io/docker/buildkit-syft-scanner", "digest": "sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315" },
+  "litestream": { "version": "0.5.17", "source": "docker.io/litestream/litestream", "digest": "sha256:4b02b9859a6b6b4087d8b8944e15f7e984bd7957cba322bbeee38b0e27b9656a" }
+}

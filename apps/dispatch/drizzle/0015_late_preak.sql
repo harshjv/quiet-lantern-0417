@@ -1,0 +1,1 @@
+ALTER TABLE `station` ADD `draining` integer DEFAULT false NOT NULL;

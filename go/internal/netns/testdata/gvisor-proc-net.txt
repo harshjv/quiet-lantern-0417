@@ -1,0 +1,9 @@
+@@tcp
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+  55: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0       56 2 0000000000000000 0 0 0 0 -1
+@@tcp6
+  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+@@udp
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops
+@@udp6
+  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
