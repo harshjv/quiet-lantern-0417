@@ -19,7 +19,15 @@ fi
 
 tree=$(mktemp -d)
 trap 'rm -rf "$tree"' EXIT
-git -C "$root" archive "$tag" installer release.config.json | tar -x -C "$tree"
+if ! git -C "$root" cat-file -e "$tag:installer/release/render.sh" 2>/dev/null; then
+	echo "release $release predates installer/release/render.sh, so its installers cannot be rendered again for comparison; skipping until public/ holds a later release"
+	exit 0
+fi
+paths=()
+for path in installer release.config.json; do
+	if git -C "$root" cat-file -e "$tag:$path" 2>/dev/null; then paths+=("$path"); fi
+done
+git -C "$root" archive "$tag" "${paths[@]}" | tar -x -C "$tree"
 
 for script in install.sh install-sly.sh; do
 	if ! diff -u <("$tree/installer/release/render.sh" "$tree/installer/$script" | normalize /dev/stdin) <(normalize "$root/public/$script") >&2; then
