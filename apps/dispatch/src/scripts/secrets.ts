@@ -1,18 +1,37 @@
 import { randomBytes } from 'node:crypto'
-import { text } from 'node:stream/consumers'
 import { writeFileSync } from 'node:fs'
-import { parseArgs } from 'node:util'
+import { text } from 'node:stream/consumers'
+
+import { Option, type Command } from 'commander'
 import { and, eq } from 'drizzle-orm'
+
+import { refreshStale, settleVariableWrites, staleDependents } from '../api/stale.ts'
 import { openDb, type Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
 import { environment, project, service, service_port, station } from '../db/schema.ts'
-import { activateDeployment, createDeployment, generationEnv, secretsDeliver, snapshotVersions } from '../secrets/deploy.ts'
+import {
+  activateDeployment,
+  createDeployment,
+  generationEnv,
+  secretsDeliver,
+  snapshotVersions,
+} from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { Keyring, masterKeyFromEnv, sameKey, unwrapWithPassword } from '../secrets/keyring.ts'
-import { grantGlobal, readValue, resolvedView, setVariable, type VariableInput, type VariableWrite } from '../secrets/variables.ts'
-import { refreshStale, settleVariableWrites, staleDependents } from '../api/stale.ts'
+import {
+  grantGlobal,
+  readValue,
+  resolvedView,
+  setVariable,
+  type VariableInput,
+  type VariableWrite,
+} from '../secrets/variables.ts'
 
-const actor = { type: 'user' as const, id: 'usr_smoke', client: 'dispatch/secrets-cli' }
+const actor = {
+  type: 'user' as const,
+  id: 'usr_smoke',
+  client: 'dispatch/secrets-cli',
+}
 const cliRequestId = () => `req_${randomBytes(8).toString('hex')}`
 
 type SeedVariable = {
@@ -31,47 +50,17 @@ type Seed = {
   station: string
   project: string
   environments: { name: string; protected?: boolean }[]
-  services: { name: string; environment: string; kind: 'web' | 'worker'; ports?: number[]; secrets_owner?: { uid: number; gid: number } | null }[]
+  services: {
+    name: string
+    environment: string
+    kind: 'web' | 'worker'
+    ports?: number[]
+    secrets_owner?: { uid: number; gid: number } | null
+  }[]
   variables: SeedVariable[]
 }
 
-const usage = `usage: pnpm secrets <command> --db <sqlite file> [options]
-  seed                         read a seed document on stdin; create station, project, environments, services, variables
-  set --service <name> <KEY>   read the value on stdin [--sealed] [--file] [--allow-unresolved] [--environment <name>]
-  resolved --service <name>    the resolved-variables view [--admin]
-  read --service <name> <KEY>  the plaintext of a non-sealed variable
-  deploy --service <name> --image <ref> [--out <file>] [--trigger manual|variable_change|redeploy]
-  activate --deployment <id>
-  deliver --deployment <id>    the secrets.deliver body for stationd on stdout [--purpose deploy|redaction]
-  versions --deployment <id>   the pinned versions of a deployment
-  password-wrap --user <id>    read the password on stdin, wrap the master key under it
-  password-unwrap --user <id>  read the password on stdin, report whether it unwraps the running master key`
-
-const { values: flags, positionals } = parseArgs({
-  allowPositionals: true,
-  options: {
-    db: { type: 'string' },
-    service: { type: 'string' },
-    environment: { type: 'string', default: 'production' },
-    image: { type: 'string' },
-    out: { type: 'string' },
-    trigger: { type: 'string', default: 'manual' },
-    deployment: { type: 'string' },
-    purpose: { type: 'string', default: 'deploy' },
-    user: { type: 'string' },
-    sealed: { type: 'boolean', default: false },
-    file: { type: 'boolean', default: false },
-    admin: { type: 'boolean', default: false },
-    'allow-unresolved': { type: 'boolean', default: false }
-  }
-})
-
-const [command, ...rest] = positionals
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
-const need = <T>(value: T | undefined, name: string): T => {
-  if (value === undefined) throw new SecretsError('VALIDATION_FAILED', `--${name} is required`)
-  return value
-}
 const stdinValue = async () => (await text(process.stdin)).replace(/\n$/, '')
 
 const environmentNamed = (db: Db, name: string) => {
@@ -87,30 +76,47 @@ const serviceNamed = (db: Db, name: string, environmentName: string) => {
     .from(service)
     .where(and(eq(service.environment_id, env.id), eq(service.name, name)))
     .get()
-  if (!row) throw new SecretsError('NOT_FOUND', `service ${name} does not exist in ${environmentName}`)
+  if (!row)
+    throw new SecretsError('NOT_FOUND', `service ${name} does not exist in ${environmentName}`)
   return row
 }
 
 const seed = (db: Db, keyring: Keyring, doc: Seed) => {
   const stationId = newId('station')
-  db.insert(station).values({ id: stationId, name: doc.station }).run()
+  db.insert(station)
+    .values({
+      id: stationId,
+      name: doc.station,
+    })
+    .run()
   const projectId = newId('project')
-  const envIds = Object.fromEntries(doc.environments.map(e => [e.name, newId('environment')]))
+  const envIds = Object.fromEntries(doc.environments.map((e) => [e.name, newId('environment')]))
   db.insert(project)
     .values({
       id: projectId,
       name: doc.project,
       default_environment_id: envIds[doc.environments[0]!.name]!,
       workshop_uid_base: 2_000_000,
-      pr_environments: { enabled: false, source_environment_id: null }
+      pr_environments: {
+        enabled: false,
+        source_environment_id: null,
+      },
     })
     .run()
   for (const e of doc.environments) {
     db.insert(environment)
-      .values({ id: envIds[e.name]!, project_id: projectId, name: e.name, protected: e.protected ?? false })
+      .values({
+        id: envIds[e.name]!,
+        project_id: projectId,
+        name: e.name,
+        protected: e.protected ?? false,
+      })
       .run()
   }
-  const services: Record<string, { id: string; environment_id: string; ports: { id: string; port: number }[] }> = {}
+  const services: Record<
+    string,
+    { id: string; environment_id: string; ports: { id: string; port: number }[] }
+  > = {}
   for (const s of doc.services) {
     const id = newId('service')
     db.insert(service)
@@ -120,22 +126,42 @@ const seed = (db: Db, keyring: Keyring, doc: Seed) => {
         name: s.name,
         kind: s.kind,
         station_id: stationId,
-        source: { type: 'image', ref: 'smoke' },
-        limits: { cpu_millis: 1000, memory_bytes: 268435456 },
+        source: {
+          type: 'image',
+          ref: 'smoke',
+        },
+        limits: {
+          cpu_millis: 1000,
+          memory_bytes: 268435456,
+        },
         strategy: 'overlap',
         secrets_owner: s.secrets_owner ?? null,
-        exports: s.kind === 'web' ? ['HOST', 'PORT', 'URL'] : ['HOST', 'PORT']
+        exports: s.kind === 'web' ? ['HOST', 'PORT', 'URL'] : ['HOST', 'PORT'],
       })
       .run()
-    const ports = (s.ports ?? []).map(port => {
+    const ports = (s.ports ?? []).map((port) => {
       const portId = newId('service_port')
-      db.insert(service_port).values({ id: portId, service_id: id, port, protocol: 'http' }).run()
-      return { id: portId, port }
+      db.insert(service_port)
+        .values({
+          id: portId,
+          service_id: id,
+          port,
+          protocol: 'http',
+        })
+        .run()
+      return {
+        id: portId,
+        port,
+      }
     })
-    services[s.name] = { id, environment_id: envIds[s.environment]!, ports }
+    services[s.name] = {
+      id,
+      environment_id: envIds[s.environment]!,
+      ports,
+    }
   }
   const writes: VariableWrite[] = []
-  const variables = doc.variables.map(v => {
+  const variables = doc.variables.map((v) => {
     const input: VariableInput = {
       scope: v.scope,
       project_id: projectId,
@@ -147,86 +173,244 @@ const seed = (db: Db, keyring: Keyring, doc: Seed) => {
       injection: v.injection,
       allow_unresolved: v.allow_unresolved,
       actor,
-      request_id: cliRequestId()
+      request_id: cliRequestId(),
     }
     const result = setVariable(db, keyring, input)
-    if (v.scope === 'global' && v.grant) grantGlobal(db, result.variable_id, projectId, v.grant.alias ?? null)
+    if (v.scope === 'global' && v.grant)
+      grantGlobal(db, result.variable_id, projectId, v.grant.alias ?? null)
     if (result.write) writes.push(result.write)
-    return { scope: v.scope, service: v.service, environment: v.environment, key: v.key, variable_id: result.variable_id, kind: result.kind, version: result.write?.version ?? null }
+    return {
+      scope: v.scope,
+      service: v.service,
+      environment: v.environment,
+      key: v.key,
+      variable_id: result.variable_id,
+      kind: result.kind,
+      version: result.write?.version ?? null,
+    }
   })
   settleVariableWrites(db, writes)
-  return { station_id: stationId, project_id: projectId, environments: envIds, services, variables }
+  return {
+    station_id: stationId,
+    project_id: projectId,
+    environments: envIds,
+    services,
+    variables,
+  }
 }
 
-const main = async () => {
-  if (!command) {
-    console.error(usage)
-    process.exit(2)
-  }
-  const db = openDb(need(flags.db, 'db'))
-  const masterKey = masterKeyFromEnv()
-  const keyring = new Keyring(db, masterKey)
-  switch (command) {
-    case 'seed':
-      return print(seed(db, keyring, JSON.parse(await text(process.stdin)) as Seed))
-    case 'set': {
-      const key = need(rest[0], 'KEY')
-      const svc = serviceNamed(db, need(flags.service, 'service'), flags.environment!)
-      const result = setVariable(db, keyring, {
-        scope: 'service',
-        service_id: svc.id,
-        key,
-        value: await stdinValue(),
-        sealed: flags.sealed,
-        injection: flags.file ? 'file' : undefined,
-        allow_unresolved: flags['allow-unresolved'],
-        actor,
-        request_id: cliRequestId()
-      })
-      if (result.write) settleVariableWrites(db, [result.write])
-      return print({ ...result, stale_dependents: staleDependents(db, null) })
-    }
-    case 'resolved':
-      return print(resolvedView(db, keyring, serviceNamed(db, need(flags.service, 'service'), flags.environment!).id, { admin: flags.admin! }))
-    case 'read':
-      return print({ value: readValue(db, keyring, serviceNamed(db, need(flags.service, 'service'), flags.environment!).id, need(rest[0], 'KEY')) })
-    case 'deploy': {
-      const svc = serviceNamed(db, need(flags.service, 'service'), flags.environment!)
-      const created = createDeployment(db, {
-        service_id: svc.id,
-        image_ref: need(flags.image, 'image'),
-        trigger: flags.trigger as 'manual' | 'variable_change' | 'redeploy',
-        actor
-      })
-      const fragment = generationEnv(db, created.deployment_id)
-      if (flags.out) writeFileSync(flags.out, `${JSON.stringify(fragment, null, 2)}\n`)
-      return print(fragment)
-    }
-    case 'activate': {
-      const serviceId = activateDeployment(db, need(flags.deployment, 'deployment'))
-      refreshStale(db, [serviceId])
-      return print(db.select({ id: service.id, stale: service.stale, stale_reasons: service.stale_reasons }).from(service).where(eq(service.id, serviceId)).get())
-    }
-    case 'deliver':
-      return process.stdout.write(
-        `${JSON.stringify(secretsDeliver(db, keyring, need(flags.deployment, 'deployment'), flags.purpose as 'deploy' | 'redaction', actor))}\n`
+type Context = { db: Db; keyring: Keyring; masterKey: Buffer }
+type ServiceOptions = { service: string; environment: string }
+
+const withDb =
+  <A extends unknown[]>(fn: (context: Context, ...args: A) => unknown) =>
+  async (...args: [...A, Command]) => {
+    const command = args.at(-1) as Command
+    try {
+      const db = openDb(command.optsWithGlobals<{ db: string }>().db)
+      const masterKey = masterKeyFromEnv()
+      const result = await fn(
+        {
+          db,
+          keyring: new Keyring(db, masterKey),
+          masterKey,
+        },
+        ...(args.slice(0, -1) as A),
       )
-    case 'versions':
-      return print(snapshotVersions(db, need(flags.deployment, 'deployment')))
-    case 'password-wrap':
-      return print({ master_key_wrap_id: keyring.wrapForPassword(need(flags.user, 'user'), await stdinValue()) })
-    case 'password-unwrap':
-      return print({ unwraps_running_key: sameKey(unwrapWithPassword(db, need(flags.user, 'user'), await stdinValue()), masterKey) })
-    default:
-      console.error(usage)
-      process.exit(2)
+      if (result !== undefined) print(result)
+    } catch (error) {
+      if (error instanceof SecretsError) {
+        print({
+          error: error.toJSON(),
+        })
+        process.exit(1)
+      }
+      throw error
+    }
   }
-}
 
-main().catch(error => {
-  if (error instanceof SecretsError) {
-    process.stdout.write(`${JSON.stringify({ error: error.toJSON() }, null, 2)}\n`)
-    process.exit(1)
-  }
-  throw error
-})
+const serviceCommand = (secrets: Command, name: string) =>
+  secrets
+    .command(name)
+    .requiredOption('--service <name>', 'service name')
+    .option('--environment <name>', 'environment name', 'production')
+
+export const secretsCommand = (program: Command) => {
+  const secrets = program
+    .command('secrets')
+    .description('Exercise the secrets core against a SQLite file')
+    .requiredOption('--db <file>', 'SQLite file Dispatch owns')
+
+  secrets
+    .command('seed')
+    .description(
+      'Read a seed document on stdin; create the station, project, environments, services and variables',
+    )
+    .action(
+      withDb(async ({ db, keyring }) =>
+        seed(db, keyring, JSON.parse(await text(process.stdin)) as Seed),
+      ),
+    )
+
+  serviceCommand(secrets, 'set')
+    .description('Set a service variable to the value read on stdin')
+    .argument('<KEY>', 'variable key')
+    .option('--sealed', 'store the value sealed', false)
+    .option('--file', 'inject the value as a file', false)
+    .option('--allow-unresolved', 'accept references that do not resolve yet', false)
+    .action(
+      withDb(
+        async (
+          { db, keyring },
+          key: string,
+          options: ServiceOptions & { sealed: boolean; file: boolean; allowUnresolved: boolean },
+        ) => {
+          const svc = serviceNamed(db, options.service, options.environment)
+          const result = setVariable(db, keyring, {
+            scope: 'service',
+            service_id: svc.id,
+            key,
+            value: await stdinValue(),
+            sealed: options.sealed,
+            injection: options.file ? 'file' : undefined,
+            allow_unresolved: options.allowUnresolved,
+            actor,
+            request_id: cliRequestId(),
+          })
+          if (result.write) settleVariableWrites(db, [result.write])
+          return {
+            ...result,
+            stale_dependents: staleDependents(db, null),
+          }
+        },
+      ),
+    )
+
+  serviceCommand(secrets, 'resolved')
+    .description('Print the resolved-variables view of a service')
+    .option('--admin', 'the admin view', false)
+    .action(
+      withDb(({ db, keyring }, options: ServiceOptions & { admin: boolean }) =>
+        resolvedView(db, keyring, serviceNamed(db, options.service, options.environment).id, {
+          admin: options.admin,
+        }),
+      ),
+    )
+
+  serviceCommand(secrets, 'read')
+    .description('Print the plaintext of a non-sealed variable')
+    .argument('<KEY>', 'variable key')
+    .action(
+      withDb(({ db, keyring }, key: string, options: ServiceOptions) => ({
+        value: readValue(
+          db,
+          keyring,
+          serviceNamed(db, options.service, options.environment).id,
+          key,
+        ),
+      })),
+    )
+
+  serviceCommand(secrets, 'deploy')
+    .description('Create a deployment of a service and print its generation environment')
+    .requiredOption('--image <ref>', 'image reference')
+    .option('--out <file>', 'also write the generation environment to this file')
+    .addOption(
+      new Option('--trigger <trigger>', 'deployment trigger')
+        .choices(['manual', 'variable_change', 'redeploy'] as const)
+        .default('manual'),
+    )
+    .action(
+      withDb(
+        (
+          { db },
+          options: ServiceOptions & {
+            image: string
+            out?: string
+            trigger: 'manual' | 'variable_change' | 'redeploy'
+          },
+        ) => {
+          const svc = serviceNamed(db, options.service, options.environment)
+          const created = createDeployment(db, {
+            service_id: svc.id,
+            image_ref: options.image,
+            trigger: options.trigger,
+            actor,
+          })
+          const fragment = generationEnv(db, created.deployment_id)
+          if (options.out) writeFileSync(options.out, `${JSON.stringify(fragment, null, 2)}\n`)
+          return fragment
+        },
+      ),
+    )
+
+  secrets
+    .command('activate')
+    .description('Activate a deployment and refresh the services it makes stale')
+    .requiredOption('--deployment <id>', 'deployment id')
+    .action(
+      withDb(({ db }, options: { deployment: string }) => {
+        const serviceId = activateDeployment(db, options.deployment)
+        refreshStale(db, [serviceId])
+        return db
+          .select({
+            id: service.id,
+            stale: service.stale,
+            stale_reasons: service.stale_reasons,
+          })
+          .from(service)
+          .where(eq(service.id, serviceId))
+          .get()
+      }),
+    )
+
+  secrets
+    .command('deliver')
+    .description('Print the secrets.deliver body for stationd')
+    .requiredOption('--deployment <id>', 'deployment id')
+    .addOption(
+      new Option('--purpose <purpose>', 'delivery purpose')
+        .choices(['deploy', 'redaction'] as const)
+        .default('deploy'),
+    )
+    .action(
+      withDb(
+        ({ db, keyring }, options: { deployment: string; purpose: 'deploy' | 'redaction' }) => {
+          process.stdout.write(
+            `${JSON.stringify(secretsDeliver(db, keyring, options.deployment, options.purpose, actor))}\n`,
+          )
+        },
+      ),
+    )
+
+  secrets
+    .command('versions')
+    .description('Print the pinned variable versions of a deployment')
+    .requiredOption('--deployment <id>', 'deployment id')
+    .action(
+      withDb(({ db }, options: { deployment: string }) => snapshotVersions(db, options.deployment)),
+    )
+
+  secrets
+    .command('password-wrap')
+    .description("Wrap the master key under the user's password read on stdin")
+    .requiredOption('--user <id>', 'user id')
+    .action(
+      withDb(async ({ keyring }, options: { user: string }) => ({
+        master_key_wrap_id: keyring.wrapForPassword(options.user, await stdinValue()),
+      })),
+    )
+
+  secrets
+    .command('password-unwrap')
+    .description('Report whether the password read on stdin unwraps the running master key')
+    .requiredOption('--user <id>', 'user id')
+    .action(
+      withDb(async ({ db, masterKey }, options: { user: string }) => ({
+        unwraps_running_key: sameKey(
+          unwrapWithPassword(db, options.user, await stdinValue()),
+          masterKey,
+        ),
+      })),
+    )
+}

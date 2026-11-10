@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	_ "time/tzdata"
+
+	cron "github.com/netresearch/go-cron"
 
 	"github.com/harshjv/stationly/go/internal/protocol"
-	cron "github.com/netresearch/go-cron"
 )
 
 type cronState struct {
@@ -30,7 +30,7 @@ func parseSchedule(sc protocol.ContainerSpecSchedule) (cron.Schedule, error) {
 		return nil, fmt.Errorf("cron %q: @every intervals are not cron expressions", sc.Cron)
 	}
 	if _, err := time.LoadLocation(sc.Timezone); err != nil {
-		return nil, fmt.Errorf("timezone %q: %v", sc.Timezone, err)
+		return nil, fmt.Errorf("timezone %q: %w", sc.Timezone, err)
 	}
 	return cron.ParseStandard("CRON_TZ=" + sc.Timezone + " " + sc.Cron)
 }

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +16,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
+
+	"github.com/caarlos0/env/v11"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/harshjv/stationly/go/internal/deploy"
 	"github.com/harshjv/stationly/go/internal/dispatch"
@@ -30,72 +34,88 @@ import (
 	"github.com/harshjv/stationly/go/internal/verify"
 )
 
-const usage = `usage:
-  stationd enroll <token> --dispatch-url <url> [--state-dir <dir>]
-  stationd install --release <version|dir> [--state-dir <dir>] [--trust <test trust file>] [--allow-unsigned] [--no-pull] [--no-unit] [--sly-path <path>] [--litestream-bucket <bucket> [--litestream-endpoint <url>]] [--sandbox-size <bytes|GiB> | --sandbox-device <path> [--sandbox-device-wipe]] [--run-arg <arg>]...
-  stationd run [--state-dir <dir>] [--socket <path>] [--debug] [--trust <file>] [--sigstore-fetch direct|dispatch] [--etc-dir <dir>] [--bin-dir <dir>] [--link <path>]
-  stationd verify image --component <name> --version <v> --digest <sha256:...> [--state-dir <dir>] [--trust <file>]
-  stationd verify refresh [--state-dir <dir>] [--trust <file>]
-  stationd status [--state-dir <dir>] [--json]
-  stationd connection [--socket <path>]
-  stationd dispatch-env [--state-dir <dir>] [--etc-dir <dir>]
-  stationd doctor [--socket <path>] [--json]
-  stationd registry token --scope <scope> [--scope <scope>] [--ttl <seconds>] [--socket <path>]
-  stationd registry retain --project <id> [--socket <path>]
-  stationd registry delete --repository <name> --digest <digest> [--socket <path>]
-  stationd registry gc [--socket <path>]
-  stationd secrets status [--socket <path>]
-  stationd logs --deployment <id> [--tail <n>] [--socket <path>]
-`
+type environment struct {
+	Handover            string `env:"STATIONLY_HANDOVER,unset"`
+	RecoveryKey         string `env:"STATIONLY_RECOVERY_KEY"`
+	LitestreamAccessKey string `env:"LITESTREAM_ACCESS_KEY_ID"`
+	LitestreamSecretKey string `env:"LITESTREAM_SECRET_ACCESS_KEY"`
+}
 
-type multi []string
-
-func (m *multi) String() string     { return strings.Join(*m, " ") }
-func (m *multi) Set(v string) error { *m = append(*m, v); return nil }
+type usageError struct{ error }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
-	var err error
-	switch os.Args[1] {
-	case "enroll":
-		err = enroll(os.Args[2:])
-	case "run":
-		err = run(os.Args[2:])
-	case "install":
-		err = install(os.Args[2:])
-	case "verify":
-		err = verifyCmd(os.Args[2:])
-	case "status":
-		err = status(os.Args[2:])
-	case "connection":
-		err = connection(os.Args[2:])
-	case "doctor":
-		err = doctor(os.Args[2:])
-	case "dispatch-env":
-		err = dispatchEnv(os.Args[2:])
-	case "registry":
-		err = registry(os.Args[2:])
-	case "secrets":
-		err = secretsCmd(os.Args[2:])
-	case "logs":
-		err = logs(os.Args[2:])
-	default:
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
+	vars, err := env.ParseAs[environment]()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "stationd:", err)
 		os.Exit(1)
 	}
+	cmd, err := rootCmd(vars).ExecuteC()
+	if err == nil {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "stationd:", err)
+	if errors.As(err, &usageError{}) {
+		fmt.Fprint(os.Stderr, cmd.UsageString())
+		os.Exit(2)
+	}
+	os.Exit(1)
 }
 
-func run(args []string) error {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
-	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
+func rootCmd(vars environment) *cobra.Command {
+	root := group("stationd", "The Stationly station daemon",
+		enrollCmd(),
+		runCmd(vars),
+		installCmd(vars),
+		verifyCmd(),
+		statusCmd(),
+		connectionCmd(),
+		doctorCmd(),
+		dispatchEnvCmd(),
+		registryCmd(),
+		secretsCmd(),
+		logsCmd(),
+	)
+	root.SilenceErrors = true
+	root.SilenceUsage = true
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
+	return root
+}
+
+func group(use, short string, children ...*cobra.Command) *cobra.Command {
+	c := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  usageArgs(cobra.NoArgs),
+		RunE: func(c *cobra.Command, _ []string) error {
+			return usageError{fmt.Errorf("%s needs a subcommand", c.CommandPath())}
+		},
+	}
+	c.AddCommand(children...)
+	return c
+}
+
+func usageArgs(check cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(c *cobra.Command, args []string) error {
+		if err := check(c, args); err != nil {
+			return usageError{err}
+		}
+		return nil
+	}
+}
+
+func socketFlag(fs *pflag.FlagSet) *string {
+	return fs.String("socket", protocol.RootSocketPath, "root socket path")
+}
+
+func stateDirFlag(fs *pflag.FlagSet) *string {
+	return fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
+}
+
+func runCmd(vars environment) *cobra.Command {
+	c := &cobra.Command{Use: "run", Short: "Run the station daemon"}
+	fs := c.Flags()
+	stateDir := stateDirFlag(fs)
+	socket := socketFlag(fs)
 	debug := fs.Bool("debug", false, "log every Docker event")
 	trustPath := fs.String("trust", "", "signing identity and Sigstore trust file (default: the Stationly release identity)")
 	fetch := fs.String("sigstore-fetch", deploy.FetchDirect, "where signature bundles and TUF metadata come from: direct or dispatch")
@@ -104,100 +124,101 @@ func run(args []string) error {
 	binDir := fs.String("bin-dir", deploy.DefaultBinDir, "directory holding stationd-<version> binaries")
 	binLink := fs.String("link", deploy.DefaultLink, "symlink the systemd unit starts")
 	handoverFlag := fs.Bool("handover", false, "started by the running stationd during a self-upgrade; adopt its sockets")
-	fs.Parse(args)
-	runArgs := make([]string, 0, len(args))
-	for _, a := range args {
-		if a != "--handover" && a != "-handover" {
-			runArgs = append(runArgs, a)
-		}
-	}
-	inheritedSockets, err := upgrade.LoadInherited()
-	if err != nil {
-		return err
-	}
-	if *handoverFlag != inheritedSockets {
-		return fmt.Errorf("--handover needs the sockets of a running stationd (%s) and only comes from one", upgrade.HandoverEnv)
-	}
-	if *fetch != deploy.FetchDirect && *fetch != deploy.FetchDispatch {
-		return fmt.Errorf("--sigstore-fetch is direct or dispatch")
-	}
-	level := slog.LevelInfo
-	if *debug {
-		level = slog.LevelDebug
-	}
-	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
-		return err
-	}
-	log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, deploy.SelfLog(*stateDir)), &slog.HandlerOptions{Level: level}))
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	v, err := newVerifier(log, *trustPath, *stateDir)
-	if err != nil {
-		return err
-	}
-	if !identity.Exists(*stateDir) {
-		host, _ := hostconfig.Load(*etcDir)
-		inst, _ := deploy.LoadInstallState(*stateDir)
-		cleanup, err := deploy.Bootstrap(ctx, deploy.BootstrapOptions{StateDir: *stateDir, EtcDir: *etcDir, Log: log, Verifier: v, Install: inst, Host: host})
-		if err != nil {
-			return fmt.Errorf("first boot: %w", err)
-		}
-		if sent, nerr := upgrade.Notify("READY=1"); sent || nerr != nil {
-			log.Info("systemd notified before enrollment", "state", "READY=1", "error", nerr)
-		}
-		err = bootstrapEnroll(ctx, log, *stateDir, *etcDir)
-		cleanup()
+	c.RunE = func(*cobra.Command, []string) error {
+		var runArgs []string
+		fs.Visit(func(f *pflag.Flag) {
+			if f.Name != "handover" {
+				runArgs = append(runArgs, "--"+f.Name+"="+f.Value.String())
+			}
+		})
+		inheritedSockets, err := upgrade.LoadInherited(vars.Handover)
 		if err != nil {
 			return err
 		}
+		if *handoverFlag != inheritedSockets {
+			return fmt.Errorf("--handover needs the sockets of a running stationd (%s) and only comes from one", upgrade.HandoverEnv)
+		}
+		if *fetch != deploy.FetchDirect && *fetch != deploy.FetchDispatch {
+			return fmt.Errorf("--sigstore-fetch is direct or dispatch")
+		}
+		level := slog.LevelInfo
+		if *debug {
+			level = slog.LevelDebug
+		}
+		if err := os.MkdirAll(*stateDir, 0o700); err != nil {
+			return err
+		}
+		log := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, deploy.SelfLog(*stateDir)), &slog.HandlerOptions{Level: level}))
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		v, err := newVerifier(log, *trustPath, *stateDir)
+		if err != nil {
+			return err
+		}
+		if !identity.Exists(*stateDir) {
+			host, _ := hostconfig.Load(*etcDir)
+			inst, _ := deploy.LoadInstallState(*stateDir)
+			cleanup, err := deploy.Bootstrap(ctx, deploy.BootstrapOptions{StateDir: *stateDir, EtcDir: *etcDir, Log: log, Verifier: v, Install: inst, Host: host})
+			if err != nil {
+				return fmt.Errorf("first boot: %w", err)
+			}
+			if sent, nerr := upgrade.Notify("READY=1"); sent || nerr != nil {
+				log.Info("systemd notified before enrollment", "state", "READY=1", "error", nerr)
+			}
+			err = bootstrapEnroll(ctx, log, *stateDir, *etcDir)
+			cleanup()
+			if err != nil {
+				return err
+			}
+		}
+		id, err := identity.Load(*stateDir)
+		if err != nil {
+			return err
+		}
+		ob, err := outbox.Open(filepath.Join(*stateDir, "outbox"), ids.New)
+		if err != nil {
+			return fmt.Errorf("open the outbox: %w", err)
+		}
+		link, err := dispatch.New(log, id, ob, deploy.Version())
+		if err != nil {
+			return err
+		}
+		host, err := hostconfig.Load(*etcDir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		inst, err := deploy.LoadInstallState(*stateDir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return deploy.Run(ctx, deploy.Options{StateDir: *stateDir, SocketPath: *socket, Log: log, Identity: id, Link: link, Outbox: ob, Verifier: v, SigstoreFetch: *fetch, EtcDir: *etcDir, Host: host, Install: inst, BackupRoot: *backupRoot, Handover: inheritedSockets, RunArgs: runArgs, BinDir: *binDir, BinaryLink: *binLink})
 	}
-	id, err := identity.Load(*stateDir)
-	if err != nil {
-		return err
-	}
-	ob, err := outbox.Open(filepath.Join(*stateDir, "outbox"), ids.New)
-	if err != nil {
-		return fmt.Errorf("open the outbox: %w", err)
-	}
-	link, err := dispatch.New(log, id, ob, deploy.Version())
-	if err != nil {
-		return err
-	}
-	host, err := hostconfig.Load(*etcDir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	inst, err := deploy.LoadInstallState(*stateDir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return deploy.Run(ctx, deploy.Options{StateDir: *stateDir, SocketPath: *socket, Log: log, Identity: id, Link: link, Outbox: ob, Verifier: v, SigstoreFetch: *fetch, EtcDir: *etcDir, Host: host, Install: inst, BackupRoot: *backupRoot, Handover: inheritedSockets, RunArgs: runArgs, BinDir: *binDir, BinaryLink: *binLink})
+	return c
 }
 
-func enroll(args []string) error {
-	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+func enrollCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "enroll <token>",
+		Short: "Enroll this host with Dispatch using an enrollment token",
+		Args:  usageArgs(cobra.ExactArgs(1)),
 	}
-	token := args[0]
-	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
-	url := fs.String("dispatch-url", "", "Dispatch API URL (dispatch.url)")
-	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
-	fs.Parse(args[1:])
-	if *url == "" {
-		return fmt.Errorf("--dispatch-url is required")
+	url := c.Flags().String("dispatch-url", "", "Dispatch API URL (dispatch.url)")
+	stateDir := stateDirFlag(c.Flags())
+	_ = c.MarkFlagRequired("dispatch-url")
+	c.RunE = func(_ *cobra.Command, args []string) error {
+		if identity.Exists(*stateDir) {
+			return fmt.Errorf("this station is already enrolled (%s exists)", identity.Dir(*stateDir))
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		out, err := enrollAndSave(ctx, *url, args[0], *stateDir, nil)
+		if err != nil {
+			return err
+		}
+		printJSON(out)
+		return nil
 	}
-	if identity.Exists(*stateDir) {
-		return fmt.Errorf("this station is already enrolled (%s exists)", identity.Dir(*stateDir))
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	out, err := enrollAndSave(ctx, *url, token, *stateDir, nil)
-	if err != nil {
-		return err
-	}
-	printJSON(out)
-	return nil
+	return c
 }
 
 func enrollAndSave(ctx context.Context, url, token, stateDir string, install *protocol.EnrollInstall) (map[string]any, error) {
@@ -232,7 +253,7 @@ func enrollAndSave(ctx context.Context, url, token, stateDir string, install *pr
 func bootstrapEnroll(ctx context.Context, log *slog.Logger, stateDir, etcDir string) error {
 	raw, err := os.ReadFile(deploy.BootstrapTokenPath(stateDir))
 	if err != nil {
-		return fmt.Errorf("this station is not enrolled and has no bootstrap token (%v); run the installer, or stationd enroll <token> --dispatch-url <url>", err)
+		return fmt.Errorf("this station is not enrolled and has no bootstrap token (%w); run the installer, or stationd enroll <token> --dispatch-url <url>", err)
 	}
 	token := strings.TrimSpace(string(raw))
 	host, err := hostconfig.Load(etcDir)
@@ -280,73 +301,81 @@ func bootstrapEnroll(ctx context.Context, log *slog.Logger, stateDir, etcDir str
 	}
 }
 
-func dispatchEnv(args []string) error {
-	fs := flag.NewFlagSet("dispatch-env", flag.ExitOnError)
-	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
-	etcDir := fs.String("etc-dir", hostconfig.DefaultEtcDir, "directory holding host.toml")
-	fs.Parse(args)
-	env, err := deploy.DispatchEnv(*stateDir, *etcDir)
-	if err != nil {
-		return err
-	}
-	for _, kv := range env {
-		fmt.Println(kv)
-	}
-	return nil
-}
-
-func connection(args []string) error {
-	fs := flag.NewFlagSet("connection", flag.ExitOnError)
-	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
-	fs.Parse(args)
-	return call(*socket, protocol.RootSocketOpStatus, protocol.RootSocketNoParams{})
-}
-
-func status(args []string) error {
-	fs := flag.NewFlagSet("status", flag.ExitOnError)
-	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
-	asJSON := fs.Bool("json", false, "print the observed-state document")
-	fs.Parse(args)
-	return deploy.PrintStatus(os.Stdout, *stateDir, *asJSON)
-}
-
-func doctor(args []string) error {
-	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
-	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
-	asJSON := fs.Bool("json", false, "print the report as JSON")
-	fs.Parse(args)
-	result, failure, err := rootsocket.Call(*socket, protocol.RootSocketOpDoctor, protocol.RootSocketNoParams{}, func(protocol.RootSocketProgress) {})
-	if err != nil {
-		return err
-	}
-	if failure != nil {
-		return fmt.Errorf("%s: %s", failure.Code, failure.Explanation)
-	}
-	var rep protocol.DoctorReportBody
-	if err := json.Unmarshal(result, &rep); err != nil {
-		return err
-	}
-	if *asJSON {
-		printJSON(rep)
-	}
-	failing := false
-	for _, c := range rep.Checks {
-		if !*asJSON {
-			code := ""
-			if c.Code != nil {
-				code = " [" + *c.Code + "]"
-			}
-			fmt.Printf("%-5s %-20s %s%s\n", strings.ToUpper(string(c.Status)), c.Name, c.Finding, code)
-			if c.Fix != nil {
-				fmt.Printf("      %-20s fix: %s\n", "", *c.Fix)
-			}
+func dispatchEnvCmd() *cobra.Command {
+	c := &cobra.Command{Use: "dispatch-env", Short: "Print the Dispatch container environment, one KEY=value per line"}
+	stateDir := stateDirFlag(c.Flags())
+	etcDir := c.Flags().String("etc-dir", hostconfig.DefaultEtcDir, "directory holding host.toml")
+	c.RunE = func(*cobra.Command, []string) error {
+		env, err := deploy.DispatchEnv(*stateDir, *etcDir)
+		if err != nil {
+			return err
 		}
-		failing = failing || c.Status == protocol.DoctorStatusFail
+		for _, kv := range env {
+			fmt.Println(kv)
+		}
+		return nil
 	}
-	if failing {
-		return fmt.Errorf("doctor found failing checks")
+	return c
+}
+
+func connectionCmd() *cobra.Command {
+	c := &cobra.Command{Use: "connection", Short: "Show the connection to Dispatch"}
+	socket := socketFlag(c.Flags())
+	c.RunE = func(*cobra.Command, []string) error {
+		return call(*socket, protocol.RootSocketOpStatus, protocol.RootSocketNoParams{})
 	}
-	return nil
+	return c
+}
+
+func statusCmd() *cobra.Command {
+	c := &cobra.Command{Use: "status", Short: "Show the observed state of this station"}
+	stateDir := stateDirFlag(c.Flags())
+	asJSON := c.Flags().Bool("json", false, "print the observed-state document")
+	c.RunE = func(*cobra.Command, []string) error {
+		return deploy.PrintStatus(os.Stdout, *stateDir, *asJSON)
+	}
+	return c
+}
+
+func doctorCmd() *cobra.Command {
+	c := &cobra.Command{Use: "doctor", Short: "Run the station's health checks"}
+	socket := socketFlag(c.Flags())
+	asJSON := c.Flags().Bool("json", false, "print the report as JSON")
+	c.RunE = func(*cobra.Command, []string) error {
+		result, failure, err := rootsocket.Call(*socket, protocol.RootSocketOpDoctor, protocol.RootSocketNoParams{}, func(protocol.RootSocketProgress) {})
+		if err != nil {
+			return err
+		}
+		if failure != nil {
+			return fmt.Errorf("%s: %s", failure.Code, failure.Explanation)
+		}
+		var rep protocol.DoctorReportBody
+		if err := json.Unmarshal(result, &rep); err != nil {
+			return err
+		}
+		if *asJSON {
+			printJSON(rep)
+		}
+		failing := false
+		for _, c := range rep.Checks {
+			if !*asJSON {
+				code := ""
+				if c.Code != nil {
+					code = " [" + *c.Code + "]"
+				}
+				fmt.Printf("%-5s %-20s %s%s\n", strings.ToUpper(string(c.Status)), c.Name, c.Finding, code)
+				if c.Fix != nil {
+					fmt.Printf("      %-20s fix: %s\n", "", *c.Fix)
+				}
+			}
+			failing = failing || c.Status == protocol.DoctorStatusFail
+		}
+		if failing {
+			return fmt.Errorf("doctor found failing checks")
+		}
+		return nil
+	}
+	return c
 }
 
 func call(socket, op string, params any) error {
@@ -372,81 +401,63 @@ func call(socket, op string, params any) error {
 	return nil
 }
 
-func registry(args []string) error {
-	if len(args) < 1 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+func registryCmd() *cobra.Command {
+	r := group("registry", "Depot operations through the root socket")
+	socket := socketFlag(r.PersistentFlags())
+
+	token := &cobra.Command{Use: "token", Short: "Mint a short-lived Depot token"}
+	scopes := token.Flags().StringArray("scope", nil, "repository:<name>:<actions> (repeatable)")
+	ttl := token.Flags().Int("ttl", 60, "lifetime in seconds, at most 60")
+	token.RunE = func(*cobra.Command, []string) error {
+		return call(*socket, protocol.RootSocketOpRegistryToken, protocol.RootSocketTokenParams{Scopes: *scopes, TtlS: ttl})
 	}
-	fs := flag.NewFlagSet("registry "+args[0], flag.ExitOnError)
-	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
-	switch args[0] {
-	case "token":
-		var scopes multi
-		fs.Var(&scopes, "scope", "repository:<name>:<actions>")
-		ttl := fs.Int("ttl", 60, "lifetime in seconds, at most 60")
-		fs.Parse(args[1:])
-		return call(*socket, protocol.RootSocketOpRegistryToken, protocol.RootSocketTokenParams{Scopes: scopes, TtlS: ttl})
-	case "retain":
-		project := fs.String("project", "", "project id")
-		fs.Parse(args[1:])
+
+	retain := &cobra.Command{Use: "retain", Short: "Prune a project's built images beyond its retention count"}
+	project := retain.Flags().String("project", "", "project id")
+	retain.RunE = func(*cobra.Command, []string) error {
 		return call(*socket, protocol.RootSocketOpRegistryRetain, protocol.RootSocketRetainParams{ProjectId: *project})
-	case "delete":
-		repo := fs.String("repository", "", "repository")
-		digest := fs.String("digest", "", "manifest digest")
-		fs.Parse(args[1:])
+	}
+
+	del := &cobra.Command{Use: "delete", Short: "Delete one manifest from the Depot"}
+	repo := del.Flags().String("repository", "", "repository")
+	digest := del.Flags().String("digest", "", "manifest digest")
+	del.RunE = func(*cobra.Command, []string) error {
 		return call(*socket, protocol.RootSocketOpRegistryDelete, protocol.RegistryDeleteBody{Items: []protocol.RegistryDeleteItem{{Repository: *repo, Digest: *digest, Reason: "manual"}}})
-	case "gc":
-		fs.Parse(args[1:])
+	}
+
+	gc := &cobra.Command{Use: "gc", Short: "Run Depot garbage collection", RunE: func(*cobra.Command, []string) error {
 		return call(*socket, protocol.RootSocketOpRegistryGc, protocol.RegistryGcBody{Reason: protocol.RegistryGcReasonSchedule})
-	}
-	fmt.Fprint(os.Stderr, usage)
-	os.Exit(2)
-	return nil
+	}}
+
+	r.AddCommand(token, retain, del, gc)
+	return r
 }
 
-func secretsCmd(args []string) error {
-	if len(args) < 1 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
-	fs := flag.NewFlagSet("secrets "+args[0], flag.ExitOnError)
-	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
-	fs.Parse(args[1:])
-	switch args[0] {
-	case "status":
+func secretsCmd() *cobra.Command {
+	s := group("secrets", "Secrets operations through the root socket")
+	socket := socketFlag(s.PersistentFlags())
+	s.AddCommand(&cobra.Command{Use: "status", Short: "Show the secrets stationd holds, has requested and has mounted", RunE: func(*cobra.Command, []string) error {
 		return call(*socket, protocol.RootSocketOpSecretsStatus, protocol.RootSocketNoParams{})
+	}})
+	return s
+}
+
+func logsCmd() *cobra.Command {
+	c := &cobra.Command{Use: "logs", Short: "Print a deployment's logs"}
+	socket := socketFlag(c.Flags())
+	deployment := c.Flags().String("deployment", "", "deployment id")
+	tail := c.Flags().Int("tail", 200, "lines")
+	c.RunE = func(*cobra.Command, []string) error {
+		return call(*socket, protocol.RootSocketOpLogs, protocol.RootSocketLogsParams{DeploymentId: *deployment, Tail: tail})
 	}
-	fmt.Fprint(os.Stderr, usage)
-	os.Exit(2)
-	return nil
+	return c
 }
 
-func logs(args []string) error {
-	fs := flag.NewFlagSet("logs", flag.ExitOnError)
-	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
-	deployment := fs.String("deployment", "", "deployment id")
-	tail := fs.Int("tail", 200, "lines")
-	fs.Parse(args)
-	return call(*socket, protocol.RootSocketOpLogs, protocol.RootSocketLogsParams{DeploymentId: *deployment, Tail: tail})
-}
-
-func newVerifier(log *slog.Logger, trustPath, stateDir string) (*verify.Verifier, error) {
-	trust, err := verify.LoadTrust(trustPath)
-	if err != nil {
-		return nil, err
-	}
-	return verify.New(log, trust, stateDir)
-}
-
-func printJSON(v any) {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Println(string(b))
-}
-
-func install(args []string) error {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
+func installCmd(vars environment) *cobra.Command {
+	c := &cobra.Command{Use: "install", Short: "Verify a release and install it on this host"}
+	fs := c.Flags()
 	release := fs.String("release", "", "release version (0.1.0), fetched by tag v<version> from the releases repository the signing identity names, or a directory holding release-manifest.json and its .sigstore.json bundle")
-	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
+	stateDir := stateDirFlag(fs)
 	trustPath := fs.String("trust", "", "signing identity and Sigstore trust file")
 	allow := fs.Bool("allow-unsigned", false, "continue past artifacts without a valid signature")
 	noPull := fs.Bool("no-pull", false, "verify only; do not pull images")
@@ -465,95 +476,108 @@ func install(args []string) error {
 	sandboxDevice := fs.String("sandbox-device", "", "block device formatted as the sandbox filesystem (refused when it holds a filesystem or partition table, unless --sandbox-device-wipe)")
 	sandboxWipe := fs.Bool("sandbox-device-wipe", false, "wipe --sandbox-device before formatting it")
 	sandboxSize := fs.String("sandbox-size", "", "size of the sandbox loop file, in bytes or with a G or GiB suffix (default max(10 GiB, min(free/2, free-10 GiB)))")
-	var runArgs multi
-	fs.Var(&runArgs, "run-arg", "argument appended to stationd run in the unit's ExecStart (repeatable)")
-	fs.Parse(args)
-	if *release == "" {
-		return fmt.Errorf("--release is required")
-	}
-	if *sandboxWipe && *sandboxDevice == "" {
-		return fmt.Errorf("--sandbox-device-wipe needs --sandbox-device")
-	}
-	if *sandboxDevice != "" && *sandboxSize != "" {
-		return fmt.Errorf("--sandbox-size applies to the loop file; a device is used whole")
-	}
-	sandboxBytes, err := parseSize(*sandboxSize)
-	if err != nil {
-		return fmt.Errorf("--sandbox-size: %w", err)
-	}
-	var replica *hostconfig.Litestream
-	if *bucket != "" {
-		replica = &hostconfig.Litestream{Bucket: *bucket, Endpoint: *bucketEndpoint, AccessKey: os.Getenv("LITESTREAM_ACCESS_KEY_ID"), SecretKey: os.Getenv("LITESTREAM_SECRET_ACCESS_KEY")}
-		if err := replica.Validate(); err != nil {
+	runArgs := fs.StringArray("run-arg", nil, "argument appended to stationd run in the unit's ExecStart (repeatable)")
+	_ = c.MarkFlagRequired("release")
+	c.MarkFlagsMutuallyExclusive("sandbox-device", "sandbox-size")
+	c.RunE = func(*cobra.Command, []string) error {
+		if *sandboxWipe && *sandboxDevice == "" {
+			return fmt.Errorf("--sandbox-device-wipe needs --sandbox-device")
+		}
+		sandboxBytes, err := parseSize(*sandboxSize)
+		if err != nil {
+			return fmt.Errorf("--sandbox-size: %w", err)
+		}
+		var replica *hostconfig.Litestream
+		if *bucket != "" {
+			replica = &hostconfig.Litestream{Bucket: *bucket, Endpoint: *bucketEndpoint, AccessKey: vars.LitestreamAccessKey, SecretKey: vars.LitestreamSecretKey}
+			if err := replica.Validate(); err != nil {
+				return err
+			}
+			if vars.RecoveryKey == "" {
+				return fmt.Errorf("a restore needs the lost host's recovery key in STATIONLY_RECOVERY_KEY: Dispatch refuses to start on a database whose data keys its master key does not unwrap, and restoring without the key is not built")
+			}
+		} else if *bucketEndpoint != "" {
+			return fmt.Errorf("--litestream-endpoint needs --litestream-bucket")
+		}
+		log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		if err := os.MkdirAll(*stateDir, 0o700); err != nil {
 			return err
 		}
-		if os.Getenv("STATIONLY_RECOVERY_KEY") == "" {
-			return fmt.Errorf("a restore needs the lost host's recovery key in STATIONLY_RECOVERY_KEY: Dispatch refuses to start on a database whose data keys its master key does not unwrap, and restoring without the key is not built")
+		v, err := newVerifier(log, *trustPath, *stateDir)
+		if err != nil {
+			return err
 		}
-	} else if *bucketEndpoint != "" {
-		return fmt.Errorf("--litestream-endpoint needs --litestream-bucket")
-	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+		rep, err := deploy.Install(ctx, v, deploy.InstallOptions{
+			Release: *release, StateDir: *stateDir, EtcDir: *etcDir, DaemonJSON: *daemonJSON, SysctlFile: *sysctlFile, DispatchURL: *dispatchURL,
+			AllowUnsigned: *allow, Pull: !*noPull, Host: !*noHost,
+			Unit: !*noUnit, BinDir: *binDir, BinaryLink: *binLink, UnitPath: *unitPath, SlyPath: *slyPath, RunArgs: *runArgs,
+			Litestream: replica, RecoveryKey: vars.RecoveryKey,
+			SandboxDevice: *sandboxDevice, SandboxWipe: *sandboxWipe, SandboxSize: sandboxBytes,
+		})
+		printJSON(rep)
+		if rep.Test {
+			fmt.Fprintln(os.Stderr, "TEST INSTALL: verified against "+v.Trust().Name+", not the Stationly release identity; never use it for production")
+		}
+		if err == nil {
+			fmt.Fprintln(os.Stderr, "installed release "+rep.Release+"; start stationd, then run sly setup as root on this host")
+		}
 		return err
 	}
-	v, err := newVerifier(log, *trustPath, *stateDir)
-	if err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	rep, err := deploy.Install(ctx, v, deploy.InstallOptions{
-		Release: *release, StateDir: *stateDir, EtcDir: *etcDir, DaemonJSON: *daemonJSON, SysctlFile: *sysctlFile, DispatchURL: *dispatchURL,
-		AllowUnsigned: *allow, Pull: !*noPull, Host: !*noHost,
-		Unit: !*noUnit, BinDir: *binDir, BinaryLink: *binLink, UnitPath: *unitPath, SlyPath: *slyPath, RunArgs: []string(runArgs),
-		Litestream: replica, RecoveryKey: os.Getenv("STATIONLY_RECOVERY_KEY"),
-		SandboxDevice: *sandboxDevice, SandboxWipe: *sandboxWipe, SandboxSize: sandboxBytes,
-	})
-	printJSON(rep)
-	if rep.Test {
-		fmt.Fprintln(os.Stderr, "TEST INSTALL: verified against "+v.Trust().Name+", not the Stationly release identity; never use it for production")
-	}
-	if err == nil {
-		fmt.Fprintln(os.Stderr, "installed release "+rep.Release+"; start stationd, then run sly setup as root on this host")
-	}
-	return err
+	return c
 }
 
-func verifyCmd(args []string) error {
-	if len(args) < 1 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+func verifyCmd() *cobra.Command {
+	g := group("verify", "Verify release artifacts against the signing identity")
+	stateDir := stateDirFlag(g.PersistentFlags())
+	trustPath := g.PersistentFlags().String("trust", "", "signing identity and Sigstore trust file")
+	verifier := func() (*verify.Verifier, error) {
+		return newVerifier(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})), *trustPath, *stateDir)
 	}
-	fs := flag.NewFlagSet("verify "+args[0], flag.ExitOnError)
-	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
-	trustPath := fs.String("trust", "", "signing identity and Sigstore trust file")
-	component := fs.String("component", "", "component name")
-	version := fs.String("version", "", "component version")
-	digest := fs.String("digest", "", "index digest")
-	fs.Parse(args[1:])
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	v, err := newVerifier(log, *trustPath, *stateDir)
-	if err != nil {
-		return err
-	}
-	ctx := context.Background()
-	switch args[0] {
-	case "refresh":
-		state, err := v.Refresh(ctx, verify.NewDirect(v.Trust()).TUF())
-		printJSON(state)
-		return err
-	case "image":
-		r := v.Image(ctx, verify.NewDirect(v.Trust()), *component, *version, *digest)
+
+	image := &cobra.Command{Use: "image", Short: "Verify an image's signature by component, version and index digest"}
+	component := image.Flags().String("component", "", "component name")
+	version := image.Flags().String("version", "", "component version")
+	digest := image.Flags().String("digest", "", "index digest")
+	image.RunE = func(*cobra.Command, []string) error {
+		v, err := verifier()
+		if err != nil {
+			return err
+		}
+		r := v.Image(context.Background(), verify.NewDirect(v.Trust()), *component, *version, *digest)
 		printJSON(r)
 		if r.Signature != verify.Verified {
 			return fmt.Errorf("UNSIGNED_ARTIFACT")
 		}
 		return nil
 	}
-	fmt.Fprint(os.Stderr, usage)
-	os.Exit(2)
-	return nil
+
+	refresh := &cobra.Command{Use: "refresh", Short: "Refresh the Sigstore trusted root from the TUF mirror", RunE: func(*cobra.Command, []string) error {
+		v, err := verifier()
+		if err != nil {
+			return err
+		}
+		state, err := v.Refresh(context.Background(), verify.NewDirect(v.Trust()).TUF())
+		printJSON(state)
+		return err
+	}}
+
+	g.AddCommand(image, refresh)
+	return g
+}
+
+func newVerifier(log *slog.Logger, trustPath, stateDir string) (*verify.Verifier, error) {
+	trust, err := verify.LoadTrust(trustPath)
+	if err != nil {
+		return nil, err
+	}
+	return verify.New(log, trust, stateDir)
+}
+
+func printJSON(v any) {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
 }
 
 func parseSize(v string) (uint64, error) {

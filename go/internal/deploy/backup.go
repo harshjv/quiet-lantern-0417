@@ -20,13 +20,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/s3store"
 	"github.com/harshjv/stationly/go/internal/secrets"
-	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -141,7 +142,7 @@ func (s *Station) servicesMounting(volumeID string) []*ServicePlan {
 	return out
 }
 
-func (s *Station) volumeBackup(ctx context.Context, m dispatch.Message, b protocol.VolumeBackupBody) {
+func (s *Station) volumeBackup(_ context.Context, m dispatch.Message, b protocol.VolumeBackupBody) {
 	dest, failure := s.destinationFor(b.SnapshotId, b.Target)
 	if failure != nil {
 		s.replyError(m, failure)
@@ -340,7 +341,7 @@ func (s *Station) uploadBackup(ctx context.Context, b protocol.VolumeBackupBody,
 	if err != nil {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
-		dest.store.Delete(cctx, objects.Archive)
+		_ = dest.store.Delete(cctx, objects.Archive)
 		return p.size, "", p.archived, err
 	}
 	return p.size, p.sum, p.archived, nil
@@ -409,7 +410,7 @@ func tarTree(ctx context.Context, root string, w io.Writer) (int64, error) {
 	return size, tw.Close()
 }
 
-func (s *Station) volumeRestore(ctx context.Context, m dispatch.Message, b protocol.VolumeRestoreBody) {
+func (s *Station) volumeRestore(_ context.Context, m dispatch.Message, b protocol.VolumeRestoreBody) {
 	dest, failure := s.destinationFor(b.SnapshotId, b.Target)
 	if failure != nil {
 		s.replyError(m, failure)
@@ -616,22 +617,22 @@ func untar(root string, r io.Reader) (int64, int, error) {
 	}
 	for i := len(dirs) - 1; i >= 0; i-- {
 		d := dirs[i]
-		os.Chown(d.path, d.hdr.Uid, d.hdr.Gid)
-		os.Chmod(d.path, tarMode(d.hdr.Mode))
-		os.Chtimes(d.path, d.hdr.ModTime, d.hdr.ModTime)
+		_ = os.Chown(d.path, d.hdr.Uid, d.hdr.Gid)
+		_ = os.Chmod(d.path, tarMode(d.hdr.Mode))
+		_ = os.Chtimes(d.path, d.hdr.ModTime, d.hdr.ModTime)
 	}
 	return size, files, nil
 }
 
 func tarMode(m int64) os.FileMode {
 	mode := os.FileMode(m).Perm()
-	if m&04000 != 0 {
+	if m&0o4000 != 0 {
 		mode |= os.ModeSetuid
 	}
-	if m&02000 != 0 {
+	if m&0o2000 != 0 {
 		mode |= os.ModeSetgid
 	}
-	if m&01000 != 0 {
+	if m&0o1000 != 0 {
 		mode |= os.ModeSticky
 	}
 	return mode
@@ -682,7 +683,7 @@ func TreeSHA256(root string) (string, error) {
 	sort.Strings(lines)
 	h := sha256.New()
 	for _, l := range lines {
-		io.WriteString(h, l+"\n")
+		_, _ = io.WriteString(h, l+"\n")
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

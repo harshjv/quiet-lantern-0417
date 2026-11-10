@@ -13,9 +13,9 @@ DOCKER_KEY_SHA256=1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a5
 DOCKER_KEYRING=/etc/apt/keyrings/docker.asc
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
 DOCKER_PIN=/etc/apt/preferences.d/stationly-docker
-UNIT=stationly-stationd
+UNIT=@STATIOND_UNIT@
 LOG=/var/log/stationly-install.log
-DISPATCH_HEALTH=http://127.0.0.1:7900/v1/healthz
+DISPATCH_HEALTH=http://@DISPATCH_ADDRESS@/v1/healthz
 
 test_release=
 test_trust=
@@ -26,10 +26,9 @@ litestream_endpoint=
 sandbox_device=
 sandbox_device_wipe=
 sandbox_size=
-work=
 
-say() { printf '%s\n' "stationly: $*" >&2; }
-fail() { printf '%s\n' "stationly: error: $*" >&2; exit 1; }
+INSTALLER=stationly
+. "$(dirname "$0")/lib/common.sh"
 
 usage() {
 	cat >&2 <<EOF
@@ -54,7 +53,7 @@ you pass it: sudo env LITESTREAM_ACCESS_KEY_ID=... LITESTREAM_SECRET_ACCESS_KEY=
                                 replicating to it; no sly setup is needed afterwards
   --litestream-endpoint URL     S3-compatible endpoint of the bucket (default AWS S3; R2 is
                                 https://<account>.r2.cloudflarestorage.com)
-  STATIONLY_RECOVERY_KEY      required with the restore: the recovery key (sly-rk-...) of the lost host
+  STATIONLY_RECOVERY_KEY      required with the restore: the recovery key (@RECOVERY_KEY_PREFIX@...) of the lost host
 
 Test-only options (CI and development; never for production):
   --test-release URL            install the test release at URL (http://HOST:PORT/REPOSITORY:v<version>)
@@ -64,10 +63,6 @@ Test-only options (CI and development; never for production):
                                 into this script)
 EOF
 }
-
-placeholder() { case "$1" in @*@) return 0 ;; *) return 1 ;; esac; }
-
-cleanup() { if [ -n "$work" ]; then rm -rf "$work"; fi; }
 
 parse_args() {
 	while [ $# -gt 0 ]; do
@@ -111,8 +106,6 @@ check_restore() {
 		fail "STATIONLY_RECOVERY_KEY goes with --litestream-bucket"
 	fi
 }
-
-sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
 
 check_sha256() {
 	got=$(sha256_of "$1")
@@ -198,14 +191,16 @@ choose_release() {
 	fi
 }
 
+apt_get() { DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+
 apt_install() {
-	DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" >>"$LOG" 2>&1 || fail "apt-get install $* failed; see $LOG"
+	apt_get install -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" >>"$LOG" 2>&1 || fail "apt-get install $* failed; see $LOG"
 }
 
 apparmor_enabled() { [ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = Y ]; }
 
 prerequisites() {
-	DEBIAN_FRONTEND=noninteractive apt-get update -q >>"$LOG" 2>&1 || fail "apt-get update failed; see $LOG"
+	apt_get update -q >>"$LOG" 2>&1 || fail "apt-get update failed; see $LOG"
 	if apparmor_enabled; then
 		say "installing prerequisites (ca-certificates, curl, git, apparmor: the kernel enforces AppArmor)"
 		apt_install ca-certificates curl git apparmor
@@ -292,7 +287,7 @@ Package: docker-ce docker-ce-cli
 Pin: version 5:$DOCKER_MAJOR.*
 Pin-Priority: 1001
 EOF
-	DEBIAN_FRONTEND=noninteractive apt-get update -q >>"$LOG" 2>&1 || fail "apt-get update failed after adding Docker's repository; see $LOG"
+	apt_get update -q >>"$LOG" 2>&1 || fail "apt-get update failed after adding Docker's repository; see $LOG"
 	version=$(apt-cache madison docker-ce | awk '{print $3}' | grep "^5:$DOCKER_MAJOR\." | head -n 1)
 	[ -n "$version" ] || fail "Docker's repository offers no docker-ce $DOCKER_MAJOR.x for $os_id $os_codename $arch"
 	say "installing Docker Engine $version"
@@ -311,37 +306,9 @@ image_store() {
 	esac
 }
 
-bearer_param() { printf '%s\n' "$1" | sed -n "s/.*[ ,]$2=\"\([^\"]*\)\".*/\1/p"; }
-
-registry_get() {
-	curl -sS --retry 3 --proto "=$scheme" --proto-redir "=$scheme" -L -D "$work/headers" -o "$2" -w '%{http_code}' ${token:+-H "Authorization: Bearer $token"} "$1" || echo 000
-}
-
-fetch_blob() {
-	scheme=${releases%%://*}
-	rest=${releases#*://}
-	registry=${rest%%/*}
-	repository=${rest#*/}
-	url=$scheme://$registry/v2/$repository/blobs/sha256:$1
-	token=
-	code=$(registry_get "$url" "$2")
-	if [ "$code" = 401 ]; then
-		challenge=$(tr -d '\r' <"$work/headers" | awk 'tolower($1) == "www-authenticate:" && tolower($2) == "bearer" {sub(/^[^:]*:[ \t]*[Bb]earer[ \t]+/, ""); print " " $0; exit}')
-		realm=$(bearer_param "$challenge" realm)
-		service=$(bearer_param "$challenge" service)
-		scope=$(bearer_param "$challenge" scope)
-		[ -n "$realm" ] || fail "$registry answered 401 for $url without a Bearer challenge"
-		say "requesting an anonymous pull token from $realm"
-		token=$(curl -fsS --retry 3 --proto "=$scheme" -G --data-urlencode "service=$service" --data-urlencode "scope=${scope:-repository:$repository:pull}" "$realm" | sed -n 's/.*"token"[ ]*:[ ]*"\([^"]*\)".*/\1/p') || fail "the token request to $realm failed"
-		[ -n "$token" ] || fail "$realm returned no anonymous pull token for $repository"
-		code=$(registry_get "$url" "$2")
-	fi
-	[ "$code" = 200 ] || fail "GET $url answered HTTP $code"
-}
-
 fetch_stationd() {
 	say "downloading stationd for linux/$arch from $release_ref (blob sha256:$stationd_sha256)"
-	fetch_blob "$stationd_sha256" "$work/stationd"
+	fetch_blob "$releases" "$stationd_sha256" "$work/stationd"
 	check_sha256 "$work/stationd" "$stationd_sha256" "stationd" "this installer"
 	chmod 0755 "$work/stationd"
 	if [ "$mode" = test ]; then
@@ -384,7 +351,7 @@ start_stationd() {
 		[ "$i" -le 180 ] || fail "Dispatch did not answer $DISPATCH_HEALTH within 180 s; see journalctl -u $UNIT"
 		sleep 1
 	done
-	say "Dispatch answers on 127.0.0.1:7900"
+	say "Dispatch answers on @DISPATCH_ADDRESS@"
 	wait_enrolled
 }
 

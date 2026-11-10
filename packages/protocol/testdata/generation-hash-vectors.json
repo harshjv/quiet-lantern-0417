@@ -1,0 +1,128 @@
+{
+  "cases": [
+    {
+      "name": "empty object",
+      "object": {},
+      "hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "name": "keys sort at every depth",
+      "object": {
+        "b": 1,
+        "a": 2,
+        "c": {
+          "z": true,
+          "y": null,
+          "x": []
+        }
+      },
+      "hash": "sha256:274cd71a796691b080bbd9bddc8c1b01aa12ae47c289da95be6b9cbc6d2cf887"
+    },
+    {
+      "name": "keys sort by UTF-16 code units",
+      "object": {
+        "1": 7,
+        "10": 6,
+        "€": 1,
+        "\r": 2,
+        "ö": 3,
+        "😀": 4,
+        "ﬀ": 5,
+        "A": 8,
+        "a": 9,
+        "": 10
+      },
+      "hash": "sha256:ea6b23f4151c9920b9e8c0eb7f90af8a22ca89f1b5d6d1278a969e9fd3c1803b"
+    },
+    {
+      "name": "string escapes",
+      "object": {
+        "s": "quote \" backslash \\ slash / tab \t newline \n nul \u0000 bell \u0007 del  line separator   markup <a>&amp;"
+      },
+      "hash": "sha256:4b03dbd7c4a2b677fe07da1efa080d3858effc36f1c41621449195e37348ddd9"
+    },
+    {
+      "name": "non-ASCII strings stay literal",
+      "object": {
+        "emoji": "😀",
+        "cjk": "漢字",
+        "combining": "é",
+        "precomposed": "é"
+      },
+      "hash": "sha256:bb365054c6b37064d0792f257b6caf4dfae11fbd9d39f3eae6797387ba8cd5fd"
+    },
+    {
+      "name": "integers",
+      "object": {
+        "zero": 0,
+        "negative": -1,
+        "max_safe": 9007199254740991,
+        "bytes": 5368709120,
+        "uid_base": 100000
+      },
+      "hash": "sha256:1c7090380958a24fb373a087b50140dbd9d0a148d4c29309774093c2f6e05632"
+    },
+    {
+      "name": "fractions and exponents",
+      "object": {
+        "half": 0.5,
+        "tenth": 0.1,
+        "third": 0.3333333333333333,
+        "small": 1e-7,
+        "large": 1e+21,
+        "huge": 1.5e+300,
+        "below_exponent": 123456789012345680000
+      },
+      "hash": "sha256:c506f6b4de24ff26b7337660ddb861b85e54d908c824b468e63c6c06d21987e3"
+    },
+    {
+      "name": "arrays keep order and mixed types",
+      "object": {
+        "list": [
+          3,
+          1,
+          2,
+          {
+            "b": [],
+            "a": {}
+          },
+          "x",
+          null,
+          true,
+          false
+        ]
+      },
+      "hash": "sha256:7eb9fda772bee9a8f2f3d77a48388a2a7b18d74b4d5f15c500177582a131b023"
+    },
+    {
+      "name": "nested hash fields are content",
+      "object": {
+        "hash": "sha256:outer",
+        "routes": {
+          "r1": {
+            "hash": "sha256:inner",
+            "host": "a.example"
+          }
+        }
+      },
+      "hash": "sha256:4fd932650ba91f384bccdb697dd0e70f072db96cb63019bb01607558fe99d714"
+    },
+    {
+      "name": "environment document",
+      "object": {
+        "name": "production",
+        "network": {
+          "bridge_name": "sly-mnpqrstvwx",
+          "subnet": "10.200.16.0/24",
+          "gateway": "10.200.16.1",
+          "gateway_mode": "nat"
+        },
+        "firewall": {
+          "default": "deny",
+          "rules": []
+        }
+      },
+      "hash": "sha256:fdadc3fb5dd350524e76a9a804a8619f3576ecf4a478999bd0941f08bd290525"
+    }
+  ]
+}

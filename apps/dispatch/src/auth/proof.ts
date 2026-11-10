@@ -1,11 +1,21 @@
-import { createDpopReplayStore, isDpopProofError, verifyDpopProof } from 'better-auth/oauth2'
-import type { DpopReplayReservations } from 'better-auth/oauth2'
+import {
+  createDpopReplayStore,
+  isDpopProofError,
+  verifyDpopProof,
+  type DpopReplayReservations,
+} from 'better-auth/oauth2'
 
 export const proofHeader = 'dpop'
 export const proofMaxAgeSeconds = 60
 export const proofAlgorithms = ['EdDSA'] as const
 
-export type ProofCheck = { proof: string | null; method: string; url: string; accessToken?: string; expectedJkt?: string }
+export type ProofCheck = {
+  proof: string | null
+  method: string
+  url: string
+  accessToken?: string
+  expectedJkt?: string
+}
 
 export const verifyProof = async (reservations: DpopReplayReservations, check: ProofCheck) => {
   if (!check.proof) throw new ProofError('the request carries no DPoP proof header')
@@ -19,7 +29,7 @@ export const verifyProof = async (reservations: DpopReplayReservations, check: P
       requireAth: check.accessToken !== undefined,
       proofMaxAgeSeconds,
       signingAlgorithms: proofAlgorithms,
-      replayStore: createDpopReplayStore(reservations)
+      replayStore: createDpopReplayStore(reservations),
     })
   } catch (error) {
     if (isDpopProofError(error)) throw new ProofError(error.message)

@@ -12,17 +12,18 @@
   },
   "dependencies": {
     "@balena/dockerignore": "1.0.2",
-    "@modelcontextprotocol/client": "2.4.0",
-    "@modelcontextprotocol/server": "2.4.0",
+    "@commander-js/extra-typings": "15.1.0",
+    "@modelcontextprotocol/client": "catalog:",
+    "@modelcontextprotocol/server": "catalog:",
     "@stationly/api-client": "workspace:*",
     "@stationly/manifest-schema": "workspace:*",
     "@stationly/mcp": "workspace:*",
     "@stationly/protocol": "workspace:*",
-    "@t3-oss/env-core": "^0.13.11",
-    "commander": "^15.0.0",
+    "@t3-oss/env-core": "catalog:",
+    "commander": "catalog:",
     "tar": "7.5.22",
-    "tldts": "7.4.19",
-    "zod": "^4.6.7"
+    "tldts": "catalog:",
+    "zod": "catalog:"
   },
   "bin": {
     "sly": "./src/index.ts"

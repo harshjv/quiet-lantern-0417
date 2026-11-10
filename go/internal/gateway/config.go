@@ -35,8 +35,10 @@ const (
 	AccessLogBufferingSize = 256
 )
 
-type item = yaml.MapItem
-type object = yaml.MapSlice
+type (
+	item   = yaml.MapItem
+	object = yaml.MapSlice
+)
 
 func kv(k string, v any) item {
 	return item{Key: k, Value: v}

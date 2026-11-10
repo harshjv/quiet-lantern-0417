@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
+
 import { Field, hintId } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
@@ -14,18 +15,36 @@ export function NewProject() {
   const [name, setName] = useState('')
   const [environment, setEnvironment] = useState('')
   const mutation = useApiMutation({
-    mutationFn: () => send(api.v1.projects.post({ name, default_environment_name: environment || undefined }, idempotency())),
+    mutationFn: () =>
+      send(
+        api.v1.projects.post(
+          {
+            name,
+            default_environment_name: environment || undefined,
+          },
+          idempotency(),
+        ),
+      ),
     invalidate: ['projects'],
-    success: project => ({ title: `${project.name} created`, description: 'Add a service to its first environment.' }),
-    onSuccess: result => {
+    success: (project) => ({
+      title: `${project.name} created`,
+      description: 'Add a service to its first environment.',
+    }),
+    onSuccess: (result) => {
       setOpen(false)
-      if (!result.staged) void navigate({ to: '/projects/$project', params: { project: result.body.name } })
-    }
+      if (!result.staged)
+        void navigate({
+          to: '/projects/$project',
+          params: {
+            project: result.body.name,
+          },
+        })
+    },
   })
   return (
     <FormDialog
       open={open}
-      onOpenChange={next => {
+      onOpenChange={(next) => {
         setOpen(next)
         if (!next) mutation.reset()
       }}
@@ -42,10 +61,22 @@ export function NewProject() {
       onSubmit={() => mutation.mutate()}
     >
       <Field id="project-name" label="Name">
-        <SlugInput id="project-name" required value={name} onValueChange={setName} placeholder="shop" />
+        <SlugInput
+          id="project-name"
+          required
+          value={name}
+          onValueChange={setName}
+          placeholder="shop"
+        />
       </Field>
       <Field id="project-environment" label="First environment" hint="Leave empty for production.">
-        <SlugInput id="project-environment" value={environment} onValueChange={setEnvironment} placeholder="production" aria-describedby={hintId('project-environment')} />
+        <SlugInput
+          id="project-environment"
+          value={environment}
+          onValueChange={setEnvironment}
+          placeholder="production"
+          aria-describedby={hintId('project-environment')}
+        />
       </Field>
     </FormDialog>
   )

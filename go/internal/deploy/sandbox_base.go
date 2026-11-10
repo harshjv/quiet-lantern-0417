@@ -11,11 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/sandbox/diskfs"
 	"github.com/harshjv/stationly/go/internal/sandbox/store"
-	"golang.org/x/sys/unix"
 )
 
 type unpackError struct {
@@ -91,7 +92,7 @@ func watchOOM(ctx context.Context, path string, oom *atomic.Int64, killed func()
 		for _, line := range strings.Split(string(b), "\n") {
 			if v, ok := strings.CutPrefix(line, "oom_kill "); ok {
 				var n uint64
-				fmt.Sscan(v, &n)
+				_, _ = fmt.Sscan(v, &n)
 				return n
 			}
 		}

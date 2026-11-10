@@ -1,4 +1,10 @@
-import { Type, type SchemaOptions, type TLiteral, type TSchema, type TUnion } from '@sinclair/typebox'
+import {
+  Type,
+  type SchemaOptions,
+  type TLiteral,
+  type TSchema,
+  type TUnion,
+} from '@sinclair/typebox'
 
 const crockfordUlid = '[0-9A-HJKMNP-TV-Z]{26}'
 
@@ -51,7 +57,7 @@ export const idPrefixes = {
   platform_upgrade: 'pup',
   message: 'msg',
   sandbox: 'sbx',
-  sandbox_snapshot: 'sbs'
+  sandbox_snapshot: 'sbs',
 } as const
 
 export type IdEntity = keyof typeof idPrefixes
@@ -64,52 +70,91 @@ export const nftTableName = resourceStem
 
 export const nftTablePrefix = `${resourceStem}_` as const
 
+export const tokenPrefix = `${resourceStem}_` as const
+
+export const enrollTokenPrefix = `${tokenPrefix}enroll_` as const
+
+export const bootstrapTokenPrefix = `${resourcePrefix}enroll-` as const
+
+export const recoveryKeyPrefix = `${resourcePrefix}rk-` as const
+
 export const interfaceNameMaxLength = 15
 
 export const sandboxNetworkName = `${resourcePrefix}sandbox` as const
 
-export const bridgeName = (environmentId: string) => `${resourcePrefix}${environmentId.slice(-(interfaceNameMaxLength - resourcePrefix.length)).toLowerCase()}`
+export const bridgeName = (environmentId: string) =>
+  `${resourcePrefix}${environmentId.slice(-(interfaceNameMaxLength - resourcePrefix.length)).toLowerCase()}`
 
-export const volumeDockerName = (volumeId: string) => `${resourcePrefix}vol-${volumeId.slice(idPrefixes.volume.length + 1).toLowerCase()}`
+export const volumeDockerName = (volumeId: string) =>
+  `${resourcePrefix}vol-${volumeId.slice(idPrefixes.volume.length + 1).toLowerCase()}`
 
 export const idPattern = (entity: IdEntity) => `^${idPrefixes[entity]}_${crockfordUlid}$`
 
-export const Id = (entity: IdEntity) => Type.String({ pattern: idPattern(entity) })
+export const Id = (entity: IdEntity) =>
+  Type.String({
+    pattern: idPattern(entity),
+  })
 
 export const Nullable = <T extends TSchema>(schema: T) => Type.Union([schema, Type.Null()])
 
 type Literals<T extends readonly string[]> = { -readonly [K in keyof T]: TLiteral<T[K] & string> }
 
-export const StringEnum = <const T extends readonly string[]>(values: T, options?: SchemaOptions): TUnion<Literals<T>> =>
-  Type.Union(values.map(value => Type.Literal(value)), options) as unknown as TUnion<Literals<T>>
+export const StringEnum = <const T extends readonly string[]>(
+  values: T,
+  options?: SchemaOptions,
+): TUnion<Literals<T>> =>
+  Type.Union(
+    values.map((value) => Type.Literal(value)),
+    options,
+  ) as unknown as TUnion<Literals<T>>
 
-export const Timestamp = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$' })
+export const Timestamp = Type.String({
+  pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$',
+})
 
-export const Digest = Type.String({ pattern: '^sha256:[0-9a-f]{64}$' })
+export const Digest = Type.String({
+  pattern: '^sha256:[0-9a-f]{64}$',
+})
 
-export const Sha256Hex = Type.String({ pattern: '^[0-9a-f]{64}$' })
+export const Sha256Hex = Type.String({
+  pattern: '^[0-9a-f]{64}$',
+})
 
-export const Base64Url = Type.String({ pattern: '^[A-Za-z0-9_-]+$' })
+export const Base64Url = Type.String({
+  pattern: '^[A-Za-z0-9_-]+$',
+})
 
-export const Base64UrlBytes32 = Type.String({ pattern: '^[A-Za-z0-9_-]{43}$' })
+export const Base64UrlBytes32 = Type.String({
+  pattern: '^[A-Za-z0-9_-]{43}$',
+})
 
-export const Base64UrlBytes64 = Type.String({ pattern: '^[A-Za-z0-9_-]{86}$' })
+export const Base64UrlBytes64 = Type.String({
+  pattern: '^[A-Za-z0-9_-]{86}$',
+})
 
-export const UnixMillis = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })
+export const UnixMillis = Type.Integer({
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER,
+})
 
-export const Count = Type.Integer({ minimum: 0 })
+export const Count = Type.Integer({
+  minimum: 0,
+})
 
-export const Seconds = Type.Integer({ minimum: 0 })
+export const Seconds = Type.Integer({
+  minimum: 0,
+})
 
-export const Bytes = Type.Integer({ minimum: 0 })
+export const Bytes = Type.Integer({
+  minimum: 0,
+})
 
-export const portRange = { minimum: 1, maximum: 65535 } as const
+export const portRange = {
+  minimum: 1,
+  maximum: 65535,
+} as const
 
 export const Port = Type.Integer(portRange)
-
-export const slugPattern = '^[a-z0-9][a-z0-9-]{0,62}$'
-
-export const variableKeyPattern = '^[A-Z_][A-Z0-9_]*$'
 
 export const schemaBaseUrl = 'https://stationly.harshjv.com/schema/'
 

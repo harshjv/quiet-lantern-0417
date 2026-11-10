@@ -1,11 +1,17 @@
 import { createInterface } from 'node:readline/promises'
 import { text } from 'node:stream/consumers'
+import { isatty } from 'node:tty'
+
 import { Exit, inputRequired } from './errors.ts'
 
-export const interactive = () => Boolean(process.stdin.isTTY && process.stderr.isTTY)
+export const interactive = () => isatty(0) && isatty(2)
 
 const askVisible = async (question: string) => {
-  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true })
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: true,
+  })
   try {
     return (await rl.question(question)).trim()
   } finally {
@@ -45,14 +51,17 @@ export type Need = { what: string; flag: string; secret?: boolean }
 export const need = async (value: string | undefined, spec: Need): Promise<string> => {
   if (value !== undefined && value !== '') return value
   if (!interactive()) throw inputRequired(spec.what, spec.flag)
-  const answer = spec.secret ? await askHidden(`${spec.what}: `) : await askVisible(`${spec.what}: `)
+  const answer = spec.secret
+    ? await askHidden(`${spec.what}: `)
+    : await askVisible(`${spec.what}: `)
   if (!answer) throw inputRequired(spec.what, spec.flag)
   return answer
 }
 
 export const readStdin = async () => (await text(process.stdin)).trim()
 
-export const ask = async (question: string, fallback = '') => (await askVisible(fallback ? `${question} [${fallback}]: ` : `${question}: `)) || fallback
+export const ask = async (question: string, fallback = '') =>
+  (await askVisible(fallback ? `${question} [${fallback}]: ` : `${question}: `)) || fallback
 
 export const askSecret = (question: string) => askHidden(`${question}: `)
 

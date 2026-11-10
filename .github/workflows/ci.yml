@@ -37,6 +37,27 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
 
+      - name: Shared dependencies come from the catalog
+        run: pnpm check:catalog
+
+      - name: Known constants appear only in their home
+        run: pnpm check:literals
+
+      - name: Every computation both sides run is pinned by one vector file
+        run: pnpm check:shared
+
+      - name: The wire format has no undeclared breaks since the last release
+        run: pnpm check:compat
+
+      - name: Lint TypeScript
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint and format-check Go
+        run: pnpm lint:go
+
       - name: Typecheck every package
         run: pnpm typecheck
 
@@ -52,27 +73,24 @@ jobs:
       - name: Build the dashboard
         run: pnpm --filter @stationly/dashboard build
 
-      - name: Regenerate protocol schemas and Go structs
+      - name: Regenerate protocol schemas, Go structs and station shell constants
         run: pnpm generate
 
       - name: Fail on generated drift
         run: |
-          drift="$(git status --porcelain -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts)"
+          drift="$(git status --porcelain -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts installer/lib/station.gen.sh)"
           if [ -n "$drift" ]; then
             echo "$drift"
-            git diff -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts
+            git diff -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts installer/lib/station.gen.sh
             exit 1
           fi
 
       - name: Lint the release scripts and workflows
         run: |
           shellcheck installer/install.sh installer/install-sly.sh installer/check-public.sh installer/release/*.sh installer/test-release/*.sh go/internal/release/testdata/generate.sh public/*.sh
+          shellcheck -s sh installer/lib/common.sh
           actionlint
           installer/check-public.sh
-
-      - name: Go vet
-        working-directory: go
-        run: go vet ./...
 
       - name: Go build
         working-directory: go

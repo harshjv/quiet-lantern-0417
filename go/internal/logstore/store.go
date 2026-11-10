@@ -525,7 +525,7 @@ func Read(root string, sources []Source, filter Filter, tail int, cursor *Cursor
 			if i == start {
 				from = offset
 			}
-			Scan(root, sources[i], from, func(e Entry) bool {
+			_, _ = Scan(root, sources[i], from, func(e Entry) bool {
 				if filter.Match(&e) {
 					page.Lines = append(page.Lines, e)
 				}
@@ -550,7 +550,7 @@ func Read(root string, sources []Source, filter Filter, tail int, cursor *Cursor
 		}
 		var matched []Entry
 		need := tail - len(collected)
-		Scan(root, src, 0, func(e Entry) bool {
+		_, _ = Scan(root, src, 0, func(e Entry) bool {
 			if filter.Match(&e) {
 				matched = append(matched, e)
 				if len(matched) > need {

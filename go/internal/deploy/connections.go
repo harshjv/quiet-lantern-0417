@@ -13,6 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+	"golang.org/x/sys/unix"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
@@ -20,8 +23,6 @@ import (
 	"github.com/harshjv/stationly/go/internal/logstore"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -35,8 +36,6 @@ const (
 	networkFrameMax  = 192 << 10
 	networkStatsEach = time.Minute
 )
-
-var cloudMetadata = netip.MustParseAddr("169.254.169.254")
 
 type owner struct {
 	serviceID    string
@@ -278,22 +277,22 @@ func (h *netHub) classifier(t netTarget) flows.Classifier {
 		}
 		if src == self || src.IsLoopback() {
 			k := flows.GroupKey{Out: true, Port: orig.DPort, Proto: orig.Proto}
-			real := addr4(reply.Src)
+			realAddr := addr4(reply.Src)
 			if svc, ok := env.vips[dst]; ok {
-				k.Peer = flows.Peer{Kind: "service", ServiceID: svc, DeploymentID: env.containers[real].deploymentID}
+				k.Peer = flows.Peer{Kind: "service", ServiceID: svc, DeploymentID: env.containers[realAddr].deploymentID}
 				return k, true
 			}
-			switch o, ok := env.containers[real]; {
-			case (real == env.gateway || real == t.resolver) && orig.DPort == 53:
+			switch o, ok := env.containers[realAddr]; {
+			case (realAddr == env.gateway || realAddr == t.resolver) && orig.DPort == 53:
 				k.Peer = flows.Peer{Kind: "resolver"}
 			case ok && o.sandbox:
 				k.Peer = flows.Peer{Kind: "sandbox", ServiceID: o.serviceID}
 			case ok:
 				k.Peer = flows.Peer{Kind: "service", ServiceID: o.serviceID, DeploymentID: o.deploymentID}
-			case !private(real):
-				k.Peer = flows.Peer{Kind: "public", Address: real.String()}
+			case !private(realAddr):
+				k.Peer = flows.Peer{Kind: "public", Address: realAddr.String()}
 			default:
-				k.Peer = flows.Peer{Kind: "address", Address: real.String()}
+				k.Peer = flows.Peer{Kind: "address", Address: realAddr.String()}
 			}
 			return k, true
 		}
@@ -333,7 +332,7 @@ func (h *netHub) refusedPath(t netTarget, st *netState, a netip.Addr) protocol.R
 		return protocol.RefusedPathHostAddress
 	case st.pool.IsValid() && st.pool.Contains(a):
 		return protocol.RefusedPathOtherEnvironment
-	case a == cloudMetadata:
+	case a == netns.CloudMetadata:
 		return protocol.RefusedPathCloudMetadata
 	}
 	return protocol.RefusedPathPrivateRange
@@ -761,21 +760,16 @@ func (s *Station) syncNetwork(ctx context.Context) {
 func (s *Station) sampleNetwork(_ context.Context, m dispatch.Message, b protocol.NetworkSampleBody) {
 	ref := m.ID
 	go func() {
-		s.send(protocol.MessageNetworkSampleResult, &ref, protocol.NetworkSampleResultBody{Samples: s.net.sample(append(append([]string{}, b.ServiceIds...), b.SandboxIds...))})
+		s.send(protocol.MessageNetworkSampleResult, &ref, protocol.NetworkSampleResultBody{Samples: s.net.sample(slices.Concat(b.ServiceIds, b.SandboxIds))})
 	}()
 }
 
 func (s *Station) subscribeNetwork(ctx context.Context, m dispatch.Message, b protocol.NetworkSubscribeBody) {
-	st, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, nil, nil)
-	if err != nil {
-		s.replyError(m, streamFailure(err))
+	st, ok := s.openItemStream(m)
+	if !ok {
 		return
 	}
-	if err := st.Opened(m.ID, protocol.LimitStreamWindowBytes); err != nil {
-		st.End("send failed", nil)
-		return
-	}
-	sub := s.net.subscribe(append(append([]string{}, b.ServiceIds...), b.SandboxIds...))
+	sub := s.net.subscribe(slices.Concat(b.ServiceIds, b.SandboxIds))
 	go func() {
 		defer s.net.unsubscribe(sub)
 		for {

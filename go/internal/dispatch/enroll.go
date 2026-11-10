@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
 	"github.com/harshjv/stationly/go/internal/identity"
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
@@ -43,7 +44,7 @@ func Enroll(ctx context.Context, dispatchURL, token string, keys identity.Keys, 
 	if err != nil {
 		return nil, err
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	nonce, err := challenge(hctx, conn)
@@ -94,12 +95,12 @@ func Enroll(ctx context.Context, dispatchURL, token string, keys identity.Keys, 
 		if err := json.Unmarshal(env.Body, &out); err != nil {
 			return nil, fmt.Errorf("enrolled: %w", err)
 		}
-		closeOf(conn, hctx, nil)
+		_ = closeOf(hctx, conn, nil)
 		return &out, nil
 	case protocol.MessageError:
 		var e protocol.ErrorBody
-		json.Unmarshal(env.Body, &e)
-		return nil, closeOf(conn, hctx, &e)
+		_ = json.Unmarshal(env.Body, &e)
+		return nil, closeOf(hctx, conn, &e)
 	}
 	return nil, fmt.Errorf("Dispatch answered enroll with %s", env.Type)
 }

@@ -67,8 +67,11 @@ func Open(dir string, newID func(prefix string) string) (*Outbox, error) {
 	case err != nil:
 		return nil, err
 	default:
-		if err := json.Unmarshal(b, &o.st); err != nil || o.st.Epoch == "" {
-			return nil, fmt.Errorf("outbox %s: %v", stateFile, err)
+		if err := json.Unmarshal(b, &o.st); err != nil {
+			return nil, fmt.Errorf("outbox %s: %w", stateFile, err)
+		}
+		if o.st.Epoch == "" {
+			return nil, fmt.Errorf("outbox %s: no epoch", stateFile)
 		}
 	}
 	if err := o.load(); err != nil {

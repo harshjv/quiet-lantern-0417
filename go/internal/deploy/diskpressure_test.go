@@ -40,7 +40,7 @@ func TestDiskLevelOfFollowsTheWarningAndCriticalThresholds(t *testing.T) {
 }
 
 func TestDiskRankOrdersTheLevelsSoOnlyRisingCrossingsEmit(t *testing.T) {
-	if !(diskRank(diskLevelNone) < diskRank(protocol.DiskThresholdWarning) && diskRank(protocol.DiskThresholdWarning) < diskRank(protocol.DiskThresholdCritical)) {
+	if diskRank(diskLevelNone) >= diskRank(protocol.DiskThresholdWarning) || diskRank(protocol.DiskThresholdWarning) >= diskRank(protocol.DiskThresholdCritical) {
 		t.Fatal("none < warning < critical must hold")
 	}
 }

@@ -1,5 +1,6 @@
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+
 import { ErrorState, Rows } from '@/components/page'
 
 export function QueryState<T>({
@@ -8,7 +9,7 @@ export function QueryState<T>({
   errorTitle,
   isEmpty,
   empty,
-  children
+  children,
 }: {
   query: UseQueryResult<T>
   rows?: number

@@ -18,7 +18,7 @@ export const hopNames = [
   'public_address',
   'web_ports',
   'certificate',
-  'route'
+  'route',
 ] as const
 
 export type HopName = (typeof hopNames)[number]
@@ -42,7 +42,7 @@ export const networkRemedyValues = [
   'SET_PUBLIC_ADDRESS',
   'RUN_PROBE',
   'ALLOW_DOMAIN',
-  'JOIN_ENVIRONMENT'
+  'JOIN_ENVIRONMENT',
 ] as const
 
 export type NetworkRemedy = (typeof networkRemedyValues)[number]

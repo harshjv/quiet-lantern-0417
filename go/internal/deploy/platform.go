@@ -8,17 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/moby/moby/api/types/registry"
 
 	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/rootsocket"
 	"github.com/harshjv/stationly/go/internal/workshop"
-	"github.com/moby/moby/api/types/registry"
 )
 
 func (s *Station) configurePlatform(ctx context.Context) {
@@ -118,11 +118,6 @@ func (s *Station) pullAuth(ref string) (string, bool, error) {
 	return auth, true, nil
 }
 
-var (
-	projectID = regexp.MustCompile(`^prj_[0-9A-HJKMNP-TV-Z]{26}$`)
-	serviceID = regexp.MustCompile(`^svc_[0-9A-HJKMNP-TV-Z]{26}$`)
-)
-
 func invalidParams(err error) *protocol.ErrorBody {
 	return &protocol.ErrorBody{Code: string(protocol.ErrorCodeProtocolInvalidMessage), Explanation: "params: " + err.Error(), Fix: "Send the params the op documents."}
 }
@@ -143,7 +138,7 @@ func (s *Station) handlers() map[string]rootsocket.Handler {
 	}
 }
 
-func (s *Station) opStatus(ctx context.Context, _ json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
+func (s *Station) opStatus(_ context.Context, _ json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
 	state, failure := s.depot.State()
 	front, dist := s.registryAddresses()
 	return map[string]any{
@@ -170,7 +165,7 @@ func (s *Station) registryAddresses() (string, string) {
 	return "", ""
 }
 
-func (s *Station) opToken(ctx context.Context, params json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
+func (s *Station) opToken(_ context.Context, params json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
 	var p protocol.RootSocketTokenParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidParams(err)
@@ -291,7 +286,7 @@ func (s *Station) opRetain(ctx context.Context, params json.RawMessage, progress
 	return map[string]any{"image_retention_count": ws.ImageRetentionCount, "kept": kept, "deleted": res.Items}, nil
 }
 
-func (s *Station) opGC(ctx context.Context, params json.RawMessage, progress func(string, string)) (any, *protocol.ErrorBody) {
+func (s *Station) opGC(ctx context.Context, _ json.RawMessage, progress func(string, string)) (any, *protocol.ErrorBody) {
 	res, failure := s.maintenance(ctx, "root-socket", progress)
 	if failure != nil {
 		return res, failure

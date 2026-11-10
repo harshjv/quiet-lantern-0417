@@ -234,23 +234,12 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 		Status: protocol.RunStatusQueued, LogRef: sandboxRunLogRef(id, b.RunId), CreatedAt: *stamp(now), Detail: map[string]any{"actor": b.Actor}, Requested: true,
 	}
 	s.runs[rr.ID] = rr
-	accepted := protocol.RunAcceptedBody{RunId: b.RunId}
 	tty := b.Tty
-	if b.Attach {
-		rr.Attach, rr.TTY = true, b.Tty
-		if b.Rows != nil {
-			rr.Rows = *b.Rows
-		}
-		if b.Cols != nil {
-			rr.Cols = *b.Cols
-		}
-		att, err := s.openAttachment(ctx, rr)
-		if err != nil {
-			delete(s.runs, rr.ID)
-			s.replyError(m, streamFailure(err))
-			return
-		}
-		accepted.Stream = protocol.RunAcceptedBodyStream(ptr(att.stream.Number))
+	accepted, err := s.attachRequestedRun(ctx, rr, b)
+	if err != nil {
+		delete(s.runs, rr.ID)
+		s.replyError(m, streamFailure(err))
+		return
 	}
 	var runEnv []string
 	var runKnown []secrets.Known
@@ -287,7 +276,7 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 		s.post(ctx, func() {
 			if s.sbx.execs[rr.ID] == se {
 				se.cancelled = fmt.Sprintf("timed out after %s", timeout)
-				ex.Kill()
+				_ = ex.Kill()
 			}
 		})
 	})
@@ -300,7 +289,7 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 	w := s.logs.Single(rr.LogRef, runLogCap)
 	sink := func(stream string) *lineSink {
 		return &lineSink{emit: func(_ time.Time, text string) {
-			w.Write(time.Now(), sandboxRunRole, stream, redactor.Redact(text))
+			_ = w.Write(time.Now(), sandboxRunRole, stream, redactor.Redact(text))
 		}}
 	}
 	outLine, errLine := sink(string(protocol.LogStreamStdout)), sink(string(protocol.LogStreamStderr))
@@ -316,13 +305,13 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		io.Copy(stdout, ex.Stdout)
+		_, _ = io.Copy(stdout, ex.Stdout)
 	}()
 	if ex.Stderr != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			io.Copy(stderr, ex.Stderr)
+			_, _ = io.Copy(stderr, ex.Stderr)
 		}()
 	}
 	switch {
@@ -355,7 +344,7 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 	case ex.Stdin != nil:
 		go func() {
 			if len(stdin) > 0 {
-				ex.Stdin.Write(stdin)
+				_, _ = ex.Stdin.Write(stdin)
 			}
 			ex.Stdin.Close()
 		}()
@@ -422,7 +411,7 @@ func (s *Station) failSandboxRun(rr *runRecord, code protocol.ErrorCode, summary
 func (s *Station) cancelSandboxRun(rr *runRecord, reason string) {
 	if se := s.sbx.execs[rr.ID]; se != nil {
 		se.cancelled = reason
-		se.exec.Kill()
+		_ = se.exec.Kill()
 		return
 	}
 	if !rr.terminal() {
@@ -433,7 +422,7 @@ func (s *Station) cancelSandboxRun(rr *runRecord, reason string) {
 	}
 }
 
-func (s *Station) endSandboxRuns(ctx context.Context, sandboxID, reason string) {
+func (s *Station) endSandboxRuns(_ context.Context, sandboxID, reason string) {
 	for _, rr := range s.orderedRuns() {
 		if rr.SandboxID == sandboxID && !rr.terminal() {
 			s.cancelSandboxRun(rr, reason)
@@ -484,7 +473,7 @@ func (s *Station) openForward(ctx context.Context, m dispatch.Message, b protoco
 	var fc *forwardConn
 	var mu sync.Mutex
 	pending := [][]byte{}
-	stream, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, func(ch byte, p []byte) {
+	stream, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, func(_ byte, p []byte) {
 		mu.Lock()
 		c := fc
 		if c == nil {
@@ -518,7 +507,7 @@ func (s *Station) openForward(ctx context.Context, m dispatch.Message, b protoco
 	go func() {
 		ns, err := netns.OpenChecked(pid, inode)
 		if err != nil {
-			stream.Opened(ref, protocol.LimitStreamWindowBytes)
+			_ = stream.Opened(ref, protocol.LimitStreamWindowBytes)
 			stream.End("connect_failed", nil)
 			return
 		}

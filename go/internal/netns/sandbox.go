@@ -10,12 +10,10 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
-	"github.com/google/nftables/userdata"
 	"golang.org/x/sys/unix"
 )
 
@@ -105,12 +103,6 @@ func allowSets(b SandboxBaseline) map[uint16]*nftables.Set {
 	return out
 }
 
-type sandboxRule struct {
-	iif    string
-	iifNot bool
-	egressRule
-}
-
 func iifExprs(name string, not bool) []expr.Any {
 	op := expr.CmpOpEq
 	if not {
@@ -123,79 +115,47 @@ func oifExprs(name string) []expr.Any {
 	return []expr.Any{&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: ifname(name)}}
 }
 
-func (r sandboxRule) match() []expr.Any {
-	var out []expr.Any
-	if r.iif != "" {
-		out = append(out, iifExprs(r.iif, r.iifNot)...)
-	}
-	return append(out, r.egressRule.match()...)
-}
-
-func sandboxTable(b SandboxBaseline, s egressSets, allow map[uint16]*nftables.Set) []sandboxRule {
+func sandboxTable(b SandboxBaseline, s egressSets, allow map[uint16]*nftables.Set) []egressRule {
 	tcp, udp := byte(unix.IPPROTO_TCP), byte(unix.IPPROTO_UDP)
-	rule := func(r egressRule) sandboxRule { return sandboxRule{egressRule: r} }
-	rules := []sandboxRule{
-		rule(egressRule{terms: []term{{kind: termEstablished}}, verdict: verdictAccept, text: "ct state established,related accept"}),
-		{iif: SandboxIf, iifNot: true, egressRule: egressRule{terms: []term{ipv4Term()}, verdict: verdictDrop, counter: true, record: true, path: PathSandboxInbound, text: `iifname != "sbx" drop`}},
+	rules := []egressRule{
+		{terms: []term{{kind: termEstablished}}, verdict: verdictAccept, text: "ct state established,related accept"},
+		{iif: SandboxIf, iifNot: true, terms: []term{ipv4Term()}, verdict: verdictDrop, counter: true, record: true, path: PathSandboxInbound, text: `iifname != "sbx" drop`},
 	}
 	for _, proto := range []byte{udp, tcp} {
-		rules = append(rules, rule(egressRule{terms: []term{ipv4Term(), l4Term(proto), dportTerm(53), daddrTerm(b.Resolver)}, verdict: verdictAccept, counter: true, path: PathResolver, text: fmt.Sprintf("ip daddr %s %s dport 53 accept", b.Resolver, protoName(proto))}))
+		rules = append(rules, egressRule{terms: []term{ipv4Term(), l4Term(proto), dportTerm(53), daddrTerm(b.Resolver)}, verdict: verdictAccept, counter: true, path: PathResolver, text: fmt.Sprintf("ip daddr %s %s dport 53 accept", b.Resolver, protoName(proto))})
 	}
 	if b.Joined {
 		rules = append(rules,
-			rule(egressRule{terms: []term{ipv4Term(), l4Term(tcp), setTerm(s.rejects, false)}, verdict: verdictRejectTCP, counter: true, record: true, path: PathNoSwitchTarget, text: "ip daddr @switch_reject reject with tcp reset"}),
-			rule(egressRule{terms: []term{ipv4Term(), setTerm(s.rejects, false)}, verdict: verdictRejectICMPX, counter: true, record: true, path: PathNoSwitchTarget, text: "ip daddr @switch_reject reject with icmpx port-unreachable"}),
+			egressRule{terms: []term{ipv4Term(), l4Term(tcp), setTerm(s.rejects, false)}, verdict: verdictRejectTCP, counter: true, record: true, path: PathNoSwitchTarget, text: "ip daddr @switch_reject reject with tcp reset"},
+			egressRule{terms: []term{ipv4Term(), setTerm(s.rejects, false)}, verdict: verdictRejectICMPX, counter: true, record: true, path: PathNoSwitchTarget, text: "ip daddr @switch_reject reject with icmpx port-unreachable"},
 		)
 	}
-	rules = append(rules, rule(egressRule{terms: []term{ipv4Term(), setTerm(s.hosts, false)}, verdict: verdictDrop, counter: true, record: true, path: PathHostAddress, text: "ip daddr @host_addrs drop"}))
+	rules = append(rules, egressRule{terms: []term{ipv4Term(), setTerm(s.hosts, false)}, verdict: verdictDrop, counter: true, record: true, path: PathHostAddress, text: "ip daddr @host_addrs drop"})
 	if b.Joined {
-		rules = append(rules, rule(egressRule{terms: []term{ipv4Term(), {kind: termCtOriginalSet, set: s.targets}}, verdict: verdictAccept, counter: true, path: PathSameEnvironment, text: "ct original ip daddr @vip_targets accept"}))
+		rules = append(rules, egressRule{terms: []term{ipv4Term(), {kind: termCtOriginalSet, set: s.targets}}, verdict: verdictAccept, counter: true, path: PathSameEnvironment, text: "ct original ip daddr @vip_targets accept"})
 		if b.Subnet.IsValid() {
-			rules = append(rules, rule(egressRule{terms: []term{ipv4Term(), {kind: termDaddrPrefix, prefix: b.Subnet.Masked()}}, verdict: verdictAccept, counter: true, path: PathSameEnvironment, text: "ip daddr " + b.Subnet.Masked().String() + " accept"}))
+			rules = append(rules, egressRule{terms: []term{ipv4Term(), {kind: termDaddrPrefix, prefix: b.Subnet.Masked()}}, verdict: verdictAccept, counter: true, path: PathSameEnvironment, text: "ip daddr " + b.Subnet.Masked().String() + " accept"})
 		}
 	}
-	rules = append(rules, rule(egressRule{terms: []term{ipv4Term(), setTerm(s.private, false)}, verdict: verdictDrop, counter: true, record: true, path: PathPrivateRange, text: "ip daddr @private_ranges drop"}))
+	rules = append(rules, egressRule{terms: []term{ipv4Term(), setTerm(s.private, false)}, verdict: verdictDrop, counter: true, record: true, path: PathPrivateRange, text: "ip daddr @private_ranges drop"})
 	if !b.Allowlist {
-		return append(rules, rule(egressRule{terms: []term{ipv4Term(), setTerm(s.private, true)}, verdict: verdictAccept, counter: true, path: PathPublicInternet, text: "ip daddr != @private_ranges accept"}))
+		return append(rules, egressRule{terms: []term{ipv4Term(), setTerm(s.private, true)}, verdict: verdictAccept, counter: true, path: PathPublicInternet, text: "ip daddr != @private_ranges accept"})
 	}
 	for _, p := range b.ports() {
-		rules = append(rules, rule(egressRule{terms: []term{ipv4Term(), setTerm(allow[p], false), l4Term(tcp), dportTerm(p)}, verdict: verdictAccept, counter: true, path: PathPublicInternet, text: fmt.Sprintf("ip daddr @%s tcp dport %d accept", allow[p].Name, p)}))
+		rules = append(rules, egressRule{terms: []term{ipv4Term(), setTerm(allow[p], false), l4Term(tcp), dportTerm(p)}, verdict: verdictAccept, counter: true, path: PathPublicInternet, text: fmt.Sprintf("ip daddr @%s tcp dport %d accept", allow[p].Name, p)})
 	}
 	return append(rules,
-		rule(egressRule{terms: []term{ipv4Term(), l4Term(tcp)}, verdict: verdictRejectTCP, counter: true, record: true, path: PathDomainNotAllowed, text: "meta l4proto tcp reject with tcp reset"}),
-		rule(egressRule{terms: []term{ipv4Term()}, verdict: verdictRejectICMPX, counter: true, record: true, path: PathDomainNotAllowed, text: "reject with icmpx port-unreachable"}),
+		egressRule{terms: []term{ipv4Term(), l4Term(tcp)}, verdict: verdictRejectTCP, counter: true, record: true, path: PathDomainNotAllowed, text: "meta l4proto tcp reject with tcp reset"},
+		egressRule{terms: []term{ipv4Term()}, verdict: verdictRejectICMPX, counter: true, record: true, path: PathDomainNotAllowed, text: "reject with icmpx port-unreachable"},
 	)
-}
-
-func sandboxExprs(rules []sandboxRule, refused *nftables.Set) [][]expr.Any {
-	var out [][]expr.Any
-	for _, r := range rules {
-		if r.record {
-			out = append(out, append(r.match(), recordRefused(refused)...))
-		}
-		out = append(out, append(r.match(), r.verdictExprs()...))
-	}
-	return out
 }
 
 func interceptExprs(proto byte, resolver netip.Addr) []expr.Any {
-	return append(append(iifExprs(SandboxIf, false), dport53(proto)...),
-		&expr.Counter{},
-		&expr.Immediate{Register: 1, Data: resolver.AsSlice()},
-		&expr.Immediate{Register: 2, Data: port(53)},
-		&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2, Specified: true},
-	)
+	return append(iifExprs(SandboxIf, false), dnsDNAT(proto, resolver)...)
 }
 
 func switchInExprs(targets, smap *nftables.Set) []expr.Any {
-	return append(append(iifExprs(SandboxIf, false), ipv4()...),
-		daddr(),
-		lookup(targets, false),
-		daddr(),
-		&expr.Lookup{SourceRegister: 1, DestRegister: 1, IsDestRegSet: true, SetName: smap.Name, SetID: smap.ID},
-		&expr.Counter{},
-		&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1},
-	)
+	return append(iifExprs(SandboxIf, false), switchDNAT(targets, smap)...)
 }
 
 func ctNew() []expr.Any {
@@ -231,32 +191,14 @@ func allowElements(els []AllowElement) []nftables.SetElement {
 }
 
 func writeSandbox(c *nftables.Conn, b SandboxBaseline, e SandboxElements, sw map[netip.Addr]netip.Addr, reject []netip.Addr) error {
-	c.AddTable(table)
-	c.DelTable(table)
-	c.AddTable(table)
-
-	hosts, private, targets, smap, rejects, refused := hostAddrsSet(), privateRangesSet(), vipTargetsSet(), switchMap(), switchRejectSet(), refusedSet()
-	var targetEls, switchEls, rejectEls []nftables.SetElement
-	for _, vip := range reject {
-		rejectEls = append(rejectEls, nftables.SetElement{Key: vip.AsSlice()})
-	}
-	for vip, real := range sw {
-		targetEls = append(targetEls, nftables.SetElement{Key: vip.AsSlice()})
-		switchEls = append(switchEls, nftables.SetElement{Key: vip.AsSlice(), Val: real.AsSlice()})
-	}
-	type setEls struct {
-		s   *nftables.Set
-		els []nftables.SetElement
-	}
-	sets := []setEls{{hosts, intervalElements(e.HostAddrs)}, {private, intervalElements(PrivateRanges)}, {targets, targetEls}, {smap, switchEls}, {rejects, rejectEls}, {refused, nil}}
+	sets := newSwitchSets()
+	tables := sets.elements(e.HostAddrs, sw, reject)
 	allow := allowSets(b)
 	for _, p := range b.ports() {
-		sets = append(sets, setEls{allow[p], allowElements(e.Allow[p])})
+		tables = append(tables, setEls{allow[p], allowElements(e.Allow[p])})
 	}
-	for _, set := range sets {
-		if err := c.AddSet(set.s, set.els); err != nil {
-			return err
-		}
+	if err := resetTable(c, table, tables); err != nil {
+		return err
 	}
 
 	drop := nftables.ChainPolicyDrop
@@ -266,17 +208,11 @@ func writeSandbox(c *nftables.Conn, b SandboxBaseline, e SandboxElements, sw map
 	}
 	if b.Joined {
 		switchIn := c.AddChain(&nftables.Chain{Name: "switch_in", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityRef(-100)})
-		c.AddRule(&nftables.Rule{Table: table, Chain: switchIn, Exprs: switchInExprs(targets, smap)})
+		c.AddRule(&nftables.Rule{Table: table, Chain: switchIn, Exprs: switchInExprs(sets.targets, sets.smap)})
 	}
 
 	egress := c.AddChain(&nftables.Chain{Name: "egress", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookForward, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
-	for i, exprs := range sandboxExprs(sandboxTable(b, egressSets{hosts: hosts, private: private, targets: targets, rejects: rejects}, allow), refused) {
-		r := &nftables.Rule{Table: table, Chain: egress, Exprs: exprs}
-		if i == 0 {
-			r.UserData = userdata.AppendString(nil, userdata.TypeComment, commentPrefix+b.fingerprint())
-		}
-		c.AddRule(r)
-	}
+	addFingerprinted(c, egress, egressExprs(sandboxTable(b, sets.egress(), allow), sets.refused), commentPrefix+b.fingerprint())
 
 	inbound := c.AddChain(&nftables.Chain{Name: "inbound", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookInput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
 	c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: append(established(), verdict(expr.VerdictAccept))})
@@ -296,113 +232,42 @@ func (n *Namespace) SyncSandbox(b SandboxBaseline, e SandboxElements) (Result, e
 	if err := b.validate(); err != nil {
 		return Unchanged, err
 	}
-	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
-	if err != nil {
-		return Unchanged, err
-	}
 	el := e.elements(b)
-	if state := layoutState(c, table, "egress", commentPrefix+b.fingerprint()); state != Unchanged {
-		kept := map[netip.Addr]netip.Addr{}
-		if have, err := c.GetSetElements(switchMap()); err == nil {
-			for _, s := range have {
-				kept[addrOf(s.Key)] = addrOf(s.Val)
-			}
-		}
-		return state, writeSandbox(c, b, e, resolve(el, kept), el.Reject)
-	}
-	changed, err := syncElements(c, el)
-	if err != nil || !changed {
-		return Unchanged, err
-	}
-	return Updated, nil
+	return n.syncTable(commentPrefix+b.fingerprint(), el, func(c *nftables.Conn, sw map[netip.Addr]netip.Addr) error {
+		return writeSandbox(c, b, e, sw, el.Reject)
+	})
 }
 
 func (n *Namespace) SandboxVerdict(b SandboxBaseline, pool netip.Prefix, p Packet, inbound bool) (Verdict, error) {
-	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
-	if err != nil {
-		return Verdict{}, err
-	}
-	rules, err := c.GetRules(table, &nftables.Chain{Name: "egress", Table: table})
-	if err != nil {
-		return Verdict{}, err
-	}
-	if len(rules) == 0 {
-		return Verdict{}, ErrRulesetMismatch
-	}
-	if comment, ok := userdata.GetString(rules[0].UserData, userdata.TypeComment); !ok || comment != commentPrefix+b.fingerprint() {
-		return Verdict{}, ErrRulesetMismatch
-	}
-	live, err := readLive(c)
+	c, live, err := n.liveFor(commentPrefix + b.fingerprint())
 	if err != nil {
 		return Verdict{}, err
 	}
 	allow := map[string]map[netip.Addr]bool{}
 	for _, s := range allowSets(b) {
-		els, err := c.GetSetElements(s)
-		if err != nil {
+		if allow[s.Name], err = readAddrs(c, s); err != nil {
 			return Verdict{}, err
 		}
-		m := map[netip.Addr]bool{}
-		for _, el := range els {
-			m[addrOf(el.Key)] = true
-		}
-		allow[s.Name] = m
 	}
 	return evaluateSandbox(sandboxTable(b, namedSets(), allowSets(b)), b, pool, live, allow, p, inbound), nil
 }
 
-func (r sandboxRule) matches(t term, p Packet, daddr, original netip.Addr, live liveSets, allow map[string]map[netip.Addr]bool) bool {
-	if t.kind == termDaddrSet && strings.HasPrefix(t.set.Name, allowSetPrefix) {
-		return allow[t.set.Name][daddr] != t.invert
-	}
-	return r.egressRule.matches(t, p, daddr, original, "", live)
-}
-
-func evaluateSandbox(rules []sandboxRule, b SandboxBaseline, pool netip.Prefix, live liveSets, allow map[string]map[netip.Addr]bool, p Packet, inbound bool) Verdict {
-	original := p.Addr.Unmap()
-	daddr := original
-	iif := SandboxIf
+func evaluateSandbox(rules []egressRule, b SandboxBaseline, pool netip.Prefix, live liveSets, allow map[string]map[netip.Addr]bool, p Packet, inbound bool) Verdict {
+	live.allow = allow
+	rt := route{original: p.Addr.Unmap(), iif: SandboxIf}
+	rt.daddr = rt.original
 	switch {
 	case inbound:
-		iif = couplerIf
-	case p.Port == 53 && (p.Proto == unix.IPPROTO_UDP || p.Proto == unix.IPPROTO_TCP) && b.Resolver.IsValid():
-		daddr = b.Resolver
-	case b.Joined && live.targets[original]:
-		if real, ok := live.sw[original]; ok {
-			daddr = real
+		rt.iif = couplerIf
+	case dnsQuery(p) && b.Resolver.IsValid():
+		rt.daddr = b.Resolver
+	case b.Joined && live.targets[rt.original]:
+		if realAddr, ok := live.sw[rt.original]; ok {
+			rt.daddr = realAddr
 		}
 	}
-	if daddr == CouplerLink || (b.Self.IsValid() && daddr == b.Self) {
+	if rt.daddr == CouplerLink || (b.Self.IsValid() && rt.daddr == b.Self) {
 		return Verdict{Verdict: VerdictDrop, Path: PathSandboxInbound, Rule: "inbound policy drop"}
 	}
-	for _, r := range rules {
-		if r.terms[0].kind == termEstablished {
-			continue
-		}
-		if r.iif != "" && (iif == r.iif) == r.iifNot {
-			continue
-		}
-		ok := true
-		for _, t := range r.terms {
-			if !r.matches(t, p, daddr, original, live, allow) {
-				ok = false
-				break
-			}
-		}
-		if !ok {
-			continue
-		}
-		v := Verdict{Verdict: VerdictAccept, Path: r.path, Rule: r.text}
-		switch r.verdict {
-		case verdictDrop:
-			v.Verdict = VerdictDrop
-		case verdictRejectTCP, verdictRejectICMPX:
-			v.Verdict = VerdictReject
-		}
-		if r.path == PathPrivateRange {
-			v.Path = privatePath(pool, original)
-		}
-		return v
-	}
-	return Verdict{Verdict: VerdictDrop, Path: privatePath(pool, original), Rule: "policy drop"}
+	return decide(rules, pool, live, p, rt)
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -13,7 +14,21 @@ export function Hint({ id, children }: { id?: string; children: ReactNode }) {
   )
 }
 
-export function Field({ id, label, hint, className, labelClassName, children }: { id: string; label: ReactNode; hint?: ReactNode; className?: string; labelClassName?: string; children: ReactNode }) {
+export function Field({
+  id,
+  label,
+  hint,
+  className,
+  labelClassName,
+  children,
+}: {
+  id: string
+  label: ReactNode
+  hint?: ReactNode
+  className?: string
+  labelClassName?: string
+  children: ReactNode
+}) {
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       <Label htmlFor={id} className={labelClassName}>
@@ -25,7 +40,17 @@ export function Field({ id, label, hint, className, labelClassName, children }: 
   )
 }
 
-export function FieldSet({ legend, hint, className, children }: { legend: ReactNode; hint?: ReactNode; className?: string; children: ReactNode }) {
+export function FieldSet({
+  legend,
+  hint,
+  className,
+  children,
+}: {
+  legend: ReactNode
+  hint?: ReactNode
+  className?: string
+  children: ReactNode
+}) {
   return (
     <fieldset className={cn('flex flex-col gap-2', className)}>
       <legend className="mb-2 text-sm font-medium">{legend}</legend>
@@ -42,7 +67,7 @@ export function CheckboxField({
   label,
   hint,
   className,
-  labelClassName
+  labelClassName,
 }: {
   id: string
   checked: boolean
@@ -52,7 +77,15 @@ export function CheckboxField({
   className?: string
   labelClassName?: string
 }) {
-  const box = <Checkbox id={id} checked={checked} onCheckedChange={v => onCheckedChange(v === true)} className={cn(hint && 'mt-0.5')} aria-describedby={hint ? hintId(id) : undefined} />
+  const box = (
+    <Checkbox
+      id={id}
+      checked={checked}
+      onCheckedChange={(v) => onCheckedChange(v === true)}
+      className={cn(hint && 'mt-0.5')}
+      aria-describedby={hint ? hintId(id) : undefined}
+    />
+  )
   const text = (
     <Label htmlFor={id} className={cn('font-normal', labelClassName)}>
       {label}

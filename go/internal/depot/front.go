@@ -57,7 +57,7 @@ func (f *Front) Close() {
 	upgrade.Forget("depot/front")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	f.server.Shutdown(ctx)
+	_ = f.server.Shutdown(ctx)
 }
 
 func (f *Front) getToken(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func (f *Front) answer(w http.ResponseWriter, r *http.Request, hasGrant bool, gr
 			f.log.Warn("Depot token request with an invalid grant", "remote", r.RemoteAddr, "error", err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"errors":[{"code":"UNAUTHORIZED","message":"invalid grant"}]}`))
+			_, _ = w.Write([]byte(`{"errors":[{"code":"UNAUTHORIZED","message":"invalid grant"}]}`))
 			return
 		}
 		granted = g
@@ -100,7 +100,7 @@ func (f *Front) answer(w http.ResponseWriter, r *http.Request, hasGrant bool, gr
 	}
 	f.log.Info("Depot token issued", "remote", r.RemoteAddr, "method", r.Method, "requested", scopes, "granted", len(access), "user_agent", r.UserAgent())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"token":        tok,
 		"access_token": tok,
 		"expires_in":   int(PullTokenTTL.Seconds()),

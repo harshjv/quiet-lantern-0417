@@ -64,7 +64,7 @@ func (s *Station) regrant(ctx context.Context, blobID string) (protocol.BlobGran
 	}
 	if reply.Type != protocol.MessageBlobGranted {
 		var e protocol.ErrorBody
-		json.Unmarshal(reply.Body, &e)
+		_ = json.Unmarshal(reply.Body, &e)
 		return protocol.BlobGrant{}, fmt.Errorf("blob.grant answered %s %s: %s", reply.Type, e.Code, e.Explanation)
 	}
 	var g protocol.BlobGrant

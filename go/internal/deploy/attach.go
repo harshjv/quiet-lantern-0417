@@ -4,16 +4,18 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/client"
 )
 
 type stdinQueue struct {
@@ -66,6 +68,26 @@ func (s *Station) post(ctx context.Context, f func()) {
 	}()
 }
 
+func (s *Station) attachRequestedRun(ctx context.Context, rr *runRecord, b protocol.RunStartBody) (protocol.RunAcceptedBody, error) {
+	accepted := protocol.RunAcceptedBody{RunId: b.RunId}
+	if !b.Attach {
+		return accepted, nil
+	}
+	rr.Attach, rr.TTY = true, b.Tty
+	if b.Rows != nil {
+		rr.Rows = *b.Rows
+	}
+	if b.Cols != nil {
+		rr.Cols = *b.Cols
+	}
+	att, err := s.openAttachment(ctx, rr)
+	if err != nil {
+		return accepted, err
+	}
+	accepted.Stream = protocol.RunAcceptedBodyStream(ptr(att.stream.Number))
+	return accepted, nil
+}
+
 func (s *Station) openAttachment(ctx context.Context, rr *runRecord) (*attachment, error) {
 	att := &attachment{runID: rr.ID, stdin: &stdinQueue{wake: make(chan struct{}, 1)}, outputDone: make(chan struct{})}
 	id := rr.ID
@@ -97,8 +119,8 @@ type streamWriter struct {
 }
 
 func (w *streamWriter) Write(p []byte) (int, error) {
-	w.line.Write(p)
-	if err := w.stream.SendBinary(w.ctx, w.channel, p); err != nil && err != dispatch.ErrStreamClosed {
+	_, _ = w.line.Write(p)
+	if err := w.stream.SendBinary(w.ctx, w.channel, p); err != nil && !errors.Is(err, dispatch.ErrStreamClosed) {
 		return 0, err
 	}
 	return len(p), nil
@@ -118,7 +140,7 @@ func (s *Station) attachRun(ctx context.Context, rr *runRecord, containerID stri
 	w := s.logs.Single(rr.LogRef, runLogCap)
 	logSink := func(stream string) *lineSink {
 		return &lineSink{emit: func(_ time.Time, text string) {
-			w.Write(time.Now(), docker.RoleRun, stream, s.redactorFor(rr.DeploymentID).Redact(text))
+			_ = w.Write(time.Now(), docker.RoleRun, stream, s.redactorFor(rr.DeploymentID).Redact(text))
 		}}
 	}
 	bg := context.Background()
@@ -129,9 +151,9 @@ func (s *Station) attachRun(ctx context.Context, rr *runRecord, containerID stri
 		defer close(att.outputDone)
 		defer s.logs.Release(w)
 		if tty {
-			io.Copy(stdout, hj.Reader)
+			_, _ = io.Copy(stdout, hj.Reader)
 		} else {
-			stdcopy.StdCopy(stdout, stderr, hj.Reader)
+			_, _ = stdcopy.StdCopy(stdout, stderr, hj.Reader)
 		}
 		stdout.line.Flush()
 		stderr.line.Flush()
@@ -147,7 +169,7 @@ func (s *Station) attachRun(ctx context.Context, rr *runRecord, containerID stri
 				att.stream.Grant(len(p))
 				continue
 			case eof:
-				hj.CloseWrite()
+				_ = hj.CloseWrite()
 				return
 			}
 			select {

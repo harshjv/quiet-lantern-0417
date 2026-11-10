@@ -1,5 +1,6 @@
 import { Loader2, Trash2 } from 'lucide-react'
 import { useState, type ComponentProps, type ReactNode } from 'react'
+
 import { FormError } from '@/components/form-dialog'
 import {
   AlertDialog,
@@ -10,7 +11,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger
+  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { failureText } from '@/lib/api'
@@ -22,10 +23,10 @@ export function Confirm({
   cancel = 'Keep it',
   destructive = true,
   onConfirm,
-  renderError = failure => <FormError>{failureText(failure)}</FormError>,
+  renderError = (failure) => <FormError>{failureText(failure)}</FormError>,
   trigger,
   open: controlled,
-  onOpenChange
+  onOpenChange,
 }: {
   title: ReactNode
   description: ReactNode
@@ -73,7 +74,7 @@ export function Confirm({
           <AlertDialogAction
             variant={destructive ? 'destructive' : 'default'}
             disabled={pending}
-            onClick={event => {
+            onClick={(event) => {
               event.preventDefault()
               void confirm()
             }}
@@ -87,7 +88,10 @@ export function Confirm({
   )
 }
 
-export function RemoveButton({ label, ...props }: ComponentProps<typeof Button> & { label: string }) {
+export function RemoveButton({
+  label,
+  ...props
+}: ComponentProps<typeof Button> & { label: string }) {
   return (
     <Button variant="ghost" size="icon-sm" aria-label={label} {...props}>
       <Trash2 />

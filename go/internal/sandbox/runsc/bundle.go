@@ -236,7 +236,7 @@ func mergeEnv(lists ...[]string) []string {
 	return out
 }
 
-func HostFiles(s Spec, resolver netip.Addr, name string) map[string][]byte {
+func HostFiles(_ Spec, resolver netip.Addr, name string) map[string][]byte {
 	return map[string][]byte{
 		"resolv.conf": []byte("nameserver " + resolver.String() + "\n"),
 		"hosts":       []byte("127.0.0.1 localhost\n169.254.1.2 " + name + "\n"),

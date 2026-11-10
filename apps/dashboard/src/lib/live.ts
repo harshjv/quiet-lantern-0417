@@ -1,11 +1,23 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+
 import type { Event as EventRow } from './api'
 import { invalidateGroups, stagedDecided, type Group } from './invalidate'
 
 export type LiveState = 'connecting' | 'live' | 'offline'
 
-const watched = ['deployment.*', 'build.*', 'run.*', 'health.changed', 'domain.changed', 'staged_change.*', 'environment.*', 'secret.changed', 'station.*', 'sandbox.*']
+const watched = [
+  'deployment.*',
+  'build.*',
+  'run.*',
+  'health.changed',
+  'domain.changed',
+  'staged_change.*',
+  'environment.*',
+  'secret.changed',
+  'station.*',
+  'sandbox.*',
+]
 
 const listened = [
   'deployment.started',
@@ -29,11 +41,16 @@ const listened = [
   'sandbox.started',
   'sandbox.stopped',
   'sandbox.failed',
-  'sandbox.deleted'
+  'sandbox.deleted',
 ]
 
 const groupsFor = (event: EventRow): Group[] => {
-  if (event.type.startsWith('deployment.') || event.type.startsWith('build.') || event.type.startsWith('run.')) return ['deployments']
+  if (
+    event.type.startsWith('deployment.') ||
+    event.type.startsWith('build.') ||
+    event.type.startsWith('run.')
+  )
+    return ['deployments']
   if (event.type.startsWith('sandbox.')) return ['sandboxes']
   if (event.type === 'health.changed' || event.type.startsWith('station.')) return ['health']
   if (event.type === 'domain.changed') return ['domains']
@@ -46,7 +63,10 @@ const groupsFor = (event: EventRow): Group[] => {
 const apply = (client: QueryClient, event: EventRow) => {
   const names = groupsFor(event)
   if (names.length) invalidateGroups(client, names)
-  else if (event.subject.entity) void client.invalidateQueries({ queryKey: [event.subject.entity] })
+  else if (event.subject.entity)
+    void client.invalidateQueries({
+      queryKey: [event.subject.entity],
+    })
 }
 
 export const useLiveEvents = () => {
@@ -63,7 +83,8 @@ export const useLiveEvents = () => {
     }
     for (const type of listened) source.addEventListener(type, onEvent)
     source.onopen = () => setState('live')
-    source.onerror = () => setState(source.readyState === EventSource.CLOSED ? 'offline' : 'connecting')
+    source.onerror = () =>
+      setState(source.readyState === EventSource.CLOSED ? 'offline' : 'connecting')
     return () => source.close()
   }, [client])
   return state

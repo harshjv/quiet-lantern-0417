@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Globe, Plus, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
+
 import { ChoiceCards } from '@/components/choice-cards'
 import { Confirm, RemoveButton } from '@/components/confirm'
 import { CopyButton } from '@/components/copy'
@@ -11,9 +12,14 @@ import { noItems, QueryState } from '@/components/query-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { api, idempotency, send } from '@/lib/api'
-import type { Domain } from '@/lib/api'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { api, idempotency, send, type Domain } from '@/lib/api'
 import { ago } from '@/lib/format'
 import { useApiMutation } from '@/lib/mutation'
 import { domainsQuery, portsQuery } from '@/lib/queries'
@@ -23,30 +29,65 @@ import { cn } from '@/lib/utils'
 const statusTone: Record<Domain['status'], Tone> = {
   active: 'success',
   pending: 'warning',
-  error: 'danger'
+  error: 'danger',
 }
 
 const hostnameModes = [
-  { value: 'generated', title: 'Generated', hint: 'Under domains.zone, or sslip.io' },
-  { value: 'custom', title: 'Your own', hint: 'Point its DNS at the station' }
+  {
+    value: 'generated',
+    title: 'Generated',
+    hint: 'Under domains.zone, or sslip.io',
+  },
+  {
+    value: 'custom',
+    title: 'Your own',
+    hint: 'Point its DNS at the station',
+  },
 ] as const
 
-function AddDomain({ service, open, onOpenChange }: { service: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+function AddDomain({
+  service,
+  open,
+  onOpenChange,
+}: {
+  service: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const ports = useQuery(portsQuery(service))
-  const http = (ports.data?.items ?? []).filter(p => p.protocol === 'http')
+  const http = (ports.data?.items ?? []).filter((p) => p.protocol === 'http')
   const [port, setPort] = useState<string>('')
   const [mode, setMode] = useState<'generated' | 'custom'>('generated')
   const [hostname, setHostname] = useState('')
   const chosen = port || http[0]?.id || ''
   const mutation = useApiMutation({
-    mutationFn: () => send(api.v1.ports({ id: chosen }).domains.post(mode === 'generated' ? { generated: true } : { hostname: hostname.trim() }, idempotency())),
+    mutationFn: () =>
+      send(
+        api.v1
+          .ports({
+            id: chosen,
+          })
+          .domains.post(
+            mode === 'generated'
+              ? {
+                  generated: true,
+                }
+              : {
+                  hostname: hostname.trim(),
+                },
+            idempotency(),
+          ),
+      ),
     invalidate: ['domains'],
     staged: () => 'The domain was staged for review',
-    success: body => ({
+    success: (body) => ({
       title: `${body.hostname} added`,
-      description: body.kind === 'custom' ? 'Create the DNS record shown on the domain row.' : 'The certificate is requested once the route is live.'
+      description:
+        body.kind === 'custom'
+          ? 'Create the DNS record shown on the domain row.'
+          : 'The certificate is requested once the route is live.',
     }),
-    onSuccess: () => onOpenChange(false)
+    onSuccess: () => onOpenChange(false),
   })
   return (
     <FormDialog
@@ -62,7 +103,9 @@ function AddDomain({ service, open, onOpenChange }: { service: string; open: boo
     >
       {ports.isError && <ErrorState error={ports.error} title="Ports could not be read" />}
       {ports.data && http.length === 0 ? (
-        <p className="text-sm text-muted-foreground">This service has no http port, so it cannot take a domain.</p>
+        <p className="text-sm text-muted-foreground">
+          This service has no http port, so it cannot take a domain.
+        </p>
       ) : (
         <>
           <Field id="domain-port" label="Port">
@@ -71,7 +114,7 @@ function AddDomain({ service, open, onOpenChange }: { service: string; open: boo
                 <SelectValue placeholder="Choose a port" />
               </SelectTrigger>
               <SelectContent>
-                {http.map(p => (
+                {http.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.port} ({p.protocol})
                   </SelectItem>
@@ -79,10 +122,23 @@ function AddDomain({ service, open, onOpenChange }: { service: string; open: boo
               </SelectContent>
             </Select>
           </Field>
-          <ChoiceCards name="domain-mode" legend="Hostname" value={mode} onChange={setMode} options={hostnameModes} />
+          <ChoiceCards
+            name="domain-mode"
+            legend="Hostname"
+            value={mode}
+            onChange={setMode}
+            options={hostnameModes}
+          />
           {mode === 'custom' && (
             <Field id="domain-host" label="Hostname">
-              <Input id="domain-host" required placeholder="app.example.com" value={hostname} onChange={e => setHostname(e.target.value)} className="font-mono" />
+              <Input
+                id="domain-host"
+                required
+                placeholder="app.example.com"
+                value={hostname}
+                onChange={(e) => setHostname(e.target.value)}
+                className="font-mono"
+              />
             </Field>
           )}
         </>
@@ -93,10 +149,17 @@ function AddDomain({ service, open, onOpenChange }: { service: string; open: boo
 
 function RemoveDomain({ domain }: { domain: Domain }) {
   const mutation = useApiMutation({
-    mutationFn: () => send(api.v1.domains({ id: domain.id }).delete(undefined, idempotency())),
+    mutationFn: () =>
+      send(
+        api.v1
+          .domains({
+            id: domain.id,
+          })
+          .delete(undefined, idempotency()),
+      ),
     invalidate: ['domains'],
     staged: () => `Removing ${domain.hostname} was staged for review`,
-    success: () => `${domain.hostname} removed`
+    success: () => `${domain.hostname} removed`,
   })
   return (
     <Confirm
@@ -112,8 +175,8 @@ export function DomainsPanel({ service }: { service: string }) {
   const domains = useQuery(domainsQuery(service))
   const ports = useQuery(portsQuery(service))
   const [adding, setAdding] = useState(false)
-  const portOf = new Map((ports.data?.items ?? []).map(p => [p.id, p.port]))
-  const noHttp = ports.data !== undefined && !ports.data.items.some(p => p.protocol === 'http')
+  const portOf = new Map((ports.data?.items ?? []).map((p) => [p.id, p.port]))
+  const noHttp = ports.data !== undefined && !ports.data.items.some((p) => p.protocol === 'http')
   return (
     <Subsection
       title="Domains"
@@ -136,24 +199,36 @@ export function DomainsPanel({ service }: { service: string }) {
           </Empty>
         }
       >
-        {data => (
+        {(data) => (
           <ul className="divide-y overflow-hidden rounded-lg border">
-            {data.items.map(domain => (
+            {data.items.map((domain) => (
               <li key={domain.id} className="space-y-2 bg-card px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <Globe className="size-4 text-muted-foreground" aria-hidden />
-                  <a href={`https://${domain.hostname}`} target="_blank" rel="noreferrer noopener" className="font-mono text-sm font-medium underline-offset-4 hover:underline">
+                  <a
+                    href={`https://${domain.hostname}`}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="font-mono text-sm font-medium underline-offset-4 hover:underline"
+                  >
                     {domain.hostname}
                   </a>
                   <CopyButton value={domain.hostname} label="hostname" />
-                  <span className={cn('text-sm font-medium', toneText[statusTone[domain.status]])}>{domain.status}</span>
+                  <span className={cn('text-sm font-medium', toneText[statusTone[domain.status]])}>
+                    {domain.status}
+                  </span>
                   <Badge variant="outline">{domain.kind}</Badge>
                   <Badge variant="outline">{domain.ingress}</Badge>
-                  {portOf.get(domain.service_port_id) && <span className="text-xs text-muted-foreground">port {portOf.get(domain.service_port_id)}</span>}
+                  {portOf.get(domain.service_port_id) && (
+                    <span className="text-xs text-muted-foreground">
+                      port {portOf.get(domain.service_port_id)}
+                    </span>
+                  )}
                   <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
                     <ShieldCheck className="size-3.5" aria-hidden />
                     certificate {domain.certificate.status}
-                    {domain.certificate.expires_at && `, expires ${ago(domain.certificate.expires_at)}`}
+                    {domain.certificate.expires_at &&
+                      `, expires ${ago(domain.certificate.expires_at)}`}
                     <RemoveDomain domain={domain} />
                   </span>
                 </div>
@@ -163,7 +238,7 @@ export function DomainsPanel({ service }: { service: string }) {
                       {domain.error.code ? `${domain.error.code}: ` : ''}
                       {domain.error.summary}
                     </p>
-                    {(domain.error.fixes ?? []).map(fix => (
+                    {(domain.error.fixes ?? []).map((fix) => (
                       <p key={fix.code} className="text-muted-foreground">
                         <Mono className="mr-2 text-xs">{fix.code}</Mono>
                         {fix.text}

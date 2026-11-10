@@ -4,11 +4,12 @@ import (
 	"net/netip"
 	"strconv"
 
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -21,7 +22,6 @@ const (
 	IngressNetworkName = protocol.ResourcePrefix + "ingress"
 	IngressBridgeName  = IngressNetworkName
 	GatewayVolume      = protocol.ResourcePrefix + "gateway-data"
-	GatewaySource      = "docker.io/library/traefik"
 
 	gatewayMemoryBytes = 512 << 20
 	gatewayGoMemLimit  = gatewayMemoryBytes / 4 * 3
@@ -29,27 +29,7 @@ const (
 )
 
 func IngressNetwork(stationID string, subnet, ipRange netip.Prefix, gateway netip.Addr) NetworkSpec {
-	ipv4, ipv6 := true, false
-	spec := NetworkSpec{
-		Name: IngressNetworkName,
-		Options: client.NetworkCreateOptions{
-			Driver:     "bridge",
-			EnableIPv4: &ipv4,
-			EnableIPv6: &ipv6,
-			IPAM: &network.IPAM{
-				Driver: "default",
-				Config: []network.IPAMConfig{{Subnet: subnet, IPRange: ipRange, Gateway: gateway}},
-			},
-			Options: map[string]string{
-				"com.docker.network.bridge.name":       IngressBridgeName,
-				"com.docker.network.bridge.enable_icc": "true",
-			},
-			Labels: platformLabels(stationID, RoleIngressNetwork, ""),
-		},
-	}
-	spec.Hash = hashOf(spec.Options)
-	spec.Options.Labels[LabelHash] = spec.Hash
-	return spec
+	return bridgeNetwork(IngressNetworkName, IngressBridgeName, true, network.IPAMConfig{Subnet: subnet, IPRange: ipRange, Gateway: gateway}, platformLabels(stationID, RoleIngressNetwork, ""), nil)
 }
 
 func GatewayCouplerName(slot string) string {
@@ -67,9 +47,7 @@ func gatewayLabels(stationID, role string) map[string]string {
 }
 
 func GatewayCoupler(stationID, slot, image string, addr netip.Addr) ContainerSpec {
-	hc := baseHost(container.NetworkMode(IngressNetworkName), couplerMemoryBytes, couplerNanoCPUs)
-	hc.ReadonlyRootfs = true
-	hc.Sysctls = map[string]string{"net.ipv4.conf.all.route_localnet": "1"}
+	hc := couplerHost(container.NetworkMode(IngressNetworkName), routeLocalnet())
 	name := GatewayCouplerName(slot)
 	spec := ContainerSpec{
 		Name: name,
@@ -127,25 +105,5 @@ const (
 )
 
 func SystemNetwork(stationID string, subnet, ipRange netip.Prefix, gateway netip.Addr) NetworkSpec {
-	ipv4, ipv6 := true, false
-	spec := NetworkSpec{
-		Name: SystemNetworkName,
-		Options: client.NetworkCreateOptions{
-			Driver:     "bridge",
-			EnableIPv4: &ipv4,
-			EnableIPv6: &ipv6,
-			IPAM: &network.IPAM{
-				Driver: "default",
-				Config: []network.IPAMConfig{{Subnet: subnet, IPRange: ipRange, Gateway: gateway}},
-			},
-			Options: map[string]string{
-				"com.docker.network.bridge.name":       SystemBridgeName,
-				"com.docker.network.bridge.enable_icc": "false",
-			},
-			Labels: platformLabels(stationID, RoleSystemNetwork, ""),
-		},
-	}
-	spec.Hash = hashOf(spec.Options)
-	spec.Options.Labels[LabelHash] = spec.Hash
-	return spec
+	return bridgeNetwork(SystemNetworkName, SystemBridgeName, false, network.IPAMConfig{Subnet: subnet, IPRange: ipRange, Gateway: gateway}, platformLabels(stationID, RoleSystemNetwork, ""), nil)
 }

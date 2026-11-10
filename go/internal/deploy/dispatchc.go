@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -20,10 +19,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
@@ -140,7 +141,7 @@ func startDispatch(ctx context.Context, dc *docker.Client, l dispatchLaunch, sid
 		return "", fmt.Errorf("Litestream before Dispatch: %w", err)
 	}
 	if c, ok, _ := dc.ContainerByName(ctx, spec.Name); ok {
-		dc.Remove(ctx, c.ID)
+		_ = dc.Remove(ctx, c.ID)
 	}
 	id, err := dc.CreateContainer(ctx, spec.Create)
 	if err != nil {
@@ -161,7 +162,7 @@ func dispatchHealthy(ctx context.Context, wait time.Duration) (time.Duration, er
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		resp, err := hc.Do(req)
 		if err == nil {
-			io.Copy(io.Discard, resp.Body)
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return time.Since(start), nil
@@ -239,7 +240,7 @@ func (s *Station) startDispatchUpgrade(ctx context.Context, p *procState) {
 	to := &dispatchSide{componentPin: p.To, Image: s.sourceOf("dispatch") + "@" + p.To.Digest}
 	l := s.dispatchLaunch()
 	prev := *from
-	s.runProcedure(ctx, "dispatch", p, func(ctx context.Context, _ string, p *procState, step func(string, map[string]any)) error {
+	s.runProcedure(ctx, "dispatch", p, func(ctx context.Context, _ string, _ *procState, step func(string, map[string]any)) error {
 		return s.dispatchProcedure(ctx, l, &prev, to, step)
 	})
 }
@@ -285,8 +286,8 @@ func (s *Station) dispatchProcedure(ctx context.Context, l dispatchLaunch, from,
 	step("stop", map[string]any{"restore": restore})
 	stopAt := time.Now()
 	if c, ok, _ := s.docker.ContainerByName(ctx, docker.DispatchName); ok {
-		s.docker.Stop(ctx, c.ID, 10)
-		s.docker.Remove(ctx, c.ID)
+		_ = s.docker.Stop(ctx, c.ID, 10)
+		_ = s.docker.Remove(ctx, c.ID)
 	}
 	stopped := time.Since(stopAt)
 	if restore != "" {
@@ -303,7 +304,7 @@ func (s *Station) dispatchProcedure(ctx context.Context, l dispatchLaunch, from,
 	if err != nil {
 		logs, _ := s.docker.LogTail(ctx, docker.DispatchName, 20)
 		s.restartDispatch(ctx, l, from)
-		return done(fmt.Errorf("the new Dispatch failed readiness, rolled back to %s: %v; last log lines: %s", from.Version, err, strings.Join(logs, " | ")))
+		return done(fmt.Errorf("the new Dispatch failed readiness, rolled back to %s: %w; last log lines: %s", from.Version, err, strings.Join(logs, " | ")))
 	}
 	step("healthy", map[string]any{"stop_ms": stopped.Milliseconds(), "ready_ms": waited.Milliseconds(), "outage_ms": time.Since(stopAt).Milliseconds()})
 	return done(nil)
@@ -311,7 +312,7 @@ func (s *Station) dispatchProcedure(ctx context.Context, l dispatchLaunch, from,
 
 func (s *Station) restartDispatch(ctx context.Context, l dispatchLaunch, side *dispatchSide) {
 	if c, ok, _ := s.docker.ContainerByName(ctx, docker.DispatchName); ok {
-		s.docker.Remove(ctx, c.ID)
+		_ = s.docker.Remove(ctx, c.ID)
 	}
 	if _, err := startDispatch(ctx, s.docker, l, side); err != nil {
 		s.log.Error("restart the previous Dispatch", "image", side.Image, "error", err)
@@ -331,13 +332,13 @@ func (s *Station) migrateCheck(ctx context.Context, stationID, image string) (Mi
 		return out, err
 	}
 	if c, ok, _ := s.docker.ContainerByName(ctx, spec.Name); ok {
-		s.docker.Remove(ctx, c.ID)
+		_ = s.docker.Remove(ctx, c.ID)
 	}
 	id, err := s.docker.CreateContainer(ctx, spec.Create)
 	if err != nil {
 		return out, err
 	}
-	defer s.docker.Remove(context.WithoutCancel(ctx), id)
+	defer func() { _ = s.docker.Remove(context.WithoutCancel(ctx), id) }()
 	if err := s.docker.Start(ctx, id); err != nil {
 		return out, err
 	}

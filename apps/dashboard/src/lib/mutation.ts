@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
+
 import { failureText } from './api'
 import { useInvalidate, type Group } from './invalidate'
 import { toastStaged } from './staged'
@@ -13,14 +14,28 @@ type Body<R> = R extends { staged: false; body: infer B } ? B : never
 
 type Warning = { code: string; explanation: string }
 
-export const done = <B>(body: B) => ({ staged: false as const, body })
+export const done = <B>(body: B) => ({
+  staged: false as const,
+  body,
+})
 
 const toastWarnings = (body: unknown) => {
-  const warnings = body && typeof body === 'object' && 'warnings' in body && Array.isArray(body.warnings) ? (body.warnings as Warning[]) : []
-  for (const warning of warnings) toast.warning(warning.code, { description: warning.explanation })
+  const warnings =
+    body && typeof body === 'object' && 'warnings' in body && Array.isArray(body.warnings)
+      ? (body.warnings as Warning[])
+      : []
+  for (const warning of warnings)
+    toast.warning(warning.code, {
+      description: warning.explanation,
+    })
 }
 
-const split = (message: Message) => (typeof message === 'string' ? { title: message } : message)
+const split = (message: Message) =>
+  typeof message === 'string'
+    ? {
+        title: message,
+      }
+    : message
 
 export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
   mutationFn: (vars: V) => Promise<R>
@@ -44,7 +59,9 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
         const message = options.success?.(result.body as Body<R>, vars)
         if (message) {
           const { title, description } = split(message)
-          toast.success(title, { description })
+          toast.success(title, {
+            description,
+          })
         }
         toastWarnings(result.body)
       }
@@ -52,8 +69,14 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
     },
     onError: (failure, vars) => {
       if (options.intercept?.(failure, vars)) return
-      if (options.failure) toast.error(options.failure(vars), { description: failureText(failure) })
-    }
+      if (options.failure)
+        toast.error(options.failure(vars), {
+          description: failureText(failure),
+        })
+    },
   })
-  return { ...mutation, errorText: mutation.error && !options.failure ? failureText(mutation.error) : null }
+  return {
+    ...mutation,
+    errorText: mutation.error && !options.failure ? failureText(mutation.error) : null,
+  }
 }

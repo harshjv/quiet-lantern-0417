@@ -18,16 +18,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/depot"
-	"github.com/harshjv/stationly/go/internal/docker"
-	"github.com/harshjv/stationly/go/internal/ids"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/harshjv/stationly/go/internal/depot"
+	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/ids"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -215,7 +216,7 @@ func (m *Manager) Build(ctx context.Context, req Request, progress Progress) (Re
 
 	progress("running", "attestations")
 	t = time.Now()
-	ex, err := extract(ctx, m.depot.Client(), m.stateDir, req.BuildID, repo, digest, m.arch, []string{"docker/buildkit-syft-scanner", "railwayapp/railpack-frontend"})
+	ex, err := extract(ctx, m.depot.Client(), m.stateDir, req.BuildID, repo, digest, m.arch, []string{repositoryPath(protocol.SyftScannerSource), repositoryPath(protocol.RailpackFrontendSource)})
 	rec.Timings.AttestS = seconds(time.Since(t))
 	if err != nil {
 		return fail(protocol.ErrorCodeBuildFailed, "read attestations: %v", err)
@@ -385,16 +386,12 @@ func (m *Manager) solve(ctx context.Context, socket string, rec Record, registry
 }
 
 func (m *Manager) prepare(ctx context.Context, req Request, pins Pins, couplerID, stationID string) (string, error) {
-	vols := docker.PrepareVolumes{
-		Context: docker.PrepareName(req.BuildID) + "-ctx",
-		Plan:    docker.PrepareName(req.BuildID) + "-plan",
-		Cache:   railpackCacheVolume(req.ProjectID),
-	}
+	vols := docker.PrepareVolumeNames(req.BuildID, req.ProjectID)
 	labels := map[string]string{docker.LabelStation: stationID, docker.LabelRole: docker.RolePrepare, docker.LabelProject: req.ProjectID}
 	defer func() {
 		bg := context.WithoutCancel(ctx)
-		m.docker.RemoveVolume(bg, vols.Context)
-		m.docker.RemoveVolume(bg, vols.Plan)
+		_ = m.docker.RemoveVolume(bg, vols.Context)
+		_ = m.docker.RemoveVolume(bg, vols.Plan)
 	}()
 	ctxVol, _, err := m.docker.EnsureVolume(ctx, vols.Context, labels)
 	if err != nil {
@@ -458,13 +455,13 @@ func (m *Manager) prepare(ctx context.Context, req Request, pins Pins, couplerID
 
 func (m *Manager) runOnce(ctx context.Context, spec docker.ContainerSpec, couplerID string) (int64, string, error) {
 	if c, ok, _ := m.docker.ContainerByName(ctx, spec.Name); ok {
-		m.docker.Remove(ctx, c.ID)
+		_ = m.docker.Remove(ctx, c.ID)
 	}
 	id, err := m.docker.CreateContainer(ctx, spec.JoinedTo(couplerID))
 	if err != nil {
 		return 0, "", err
 	}
-	defer m.docker.Remove(context.WithoutCancel(ctx), id)
+	defer func() { _ = m.docker.Remove(context.WithoutCancel(ctx), id) }()
 	if err := m.docker.Start(ctx, id); err != nil {
 		return 0, "", err
 	}

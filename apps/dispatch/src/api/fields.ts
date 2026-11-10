@@ -41,9 +41,17 @@ const setPath = (out: Row, path: string[], value: unknown) => {
   node[path.at(-1)!] = value
 }
 
-const getPath = (row: Row, path: string[]) => path.reduce<unknown>((node, part) => (node && typeof node === 'object' ? (node as Row)[part] : undefined), row)
+const getPath = (row: Row, path: string[]) =>
+  path.reduce<unknown>(
+    (node, part) => (node && typeof node === 'object' ? (node as Row)[part] : undefined),
+    row,
+  )
 
-export const project = <R, S extends TSchema>(view: View<R, S>, row: R, fields: FieldTree | undefined): Static<S> => {
+export const project = <R, S extends TSchema>(
+  view: View<R, S>,
+  row: R,
+  fields: FieldTree | undefined,
+): Static<S> => {
   const full = view.full(row)
   const out: Row = {}
   for (const field of view.summary) {
@@ -51,19 +59,24 @@ export const project = <R, S extends TSchema>(view: View<R, S>, row: R, fields: 
     const value = getPath(full, path)
     if (value !== undefined) setPath(out, path, value)
   }
-  if (!fields) return out as Static<S>
+  if (!fields) return out
   const everything = fields.has('*')
   if (everything) Object.assign(out, full)
   const expansions = view.expand ?? {}
   for (const [name, loader] of Object.entries(expansions)) {
-    if (everything || fields.has(name)) out[name] = loader(row, everything ? fields.get(name) ?? all : fields.get(name))
+    if (everything || fields.has(name))
+      out[name] = loader(row, everything ? (fields.get(name) ?? all) : fields.get(name))
   }
   for (const key of fields.keys()) {
     if (key === '*' || key in expansions) continue
     const value = full[key]
     if (value !== undefined) out[key] = value
   }
-  return out as Static<S>
+  return out
 }
 
-export const projectAll = <R, S extends TSchema>(view: View<R, S>, rows: R[], fields: FieldTree | undefined) => rows.map(row => project(view, row, fields))
+export const projectAll = <R, S extends TSchema>(
+  view: View<R, S>,
+  rows: R[],
+  fields: FieldTree | undefined,
+) => rows.map((row) => project(view, row, fields))

@@ -13,7 +13,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
@@ -88,7 +87,7 @@ func pinOfGeneration(p protocol.ComponentPin) (componentPin, bool) {
 	if p.Digest == nil {
 		return componentPin{}, false
 	}
-	return componentPin{Version: p.Version, Digest: string(*p.Digest)}, true
+	return componentPin{Version: p.Version, Digest: *p.Digest}, true
 }
 
 func (s *Station) setRunning(name string, to componentPin) {
@@ -148,7 +147,7 @@ func (s *Station) advanceComponents(ctx context.Context) {
 			delete(s.procs, name)
 			changed = true
 		}
-		if !known && kind != "dispatch" && kind != "self" && !(kind == "runsc" && s.needsRunsc(want)) {
+		if !known && kind != "dispatch" && kind != "self" && (kind != "runsc" || !s.needsRunsc(want)) {
 			s.setRunning(name, want)
 			s.log.Info("component recorded at its pin", "component", name, "version", want.Version, "digest", want.Digest)
 			changed = true
@@ -335,14 +334,4 @@ func (s *Station) hostsDispatch() bool {
 		return s.plan.Generation.Station.HostsDispatch
 	}
 	return s.disp.state.Current != nil
-}
-
-func componentContainer(name string) string {
-	switch name {
-	case "depot":
-		return docker.DepotName
-	case "dispatch":
-		return docker.DispatchName
-	}
-	return ""
 }

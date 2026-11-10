@@ -43,7 +43,7 @@ func (c *Client) ContainersWithRole(ctx context.Context, role string) ([]contain
 	return res.Items, err
 }
 
-func (c *Client) NetworkByName(ctx context.Context, name string) (string, map[string]string, bool, error) {
+func (c *Client) networkByName(ctx context.Context, name string) (string, map[string]string, bool, error) {
 	res, err := c.api.NetworkList(ctx, client.NetworkListOptions{Filters: client.Filters{}.Add("name", name)})
 	if err != nil {
 		return "", nil, false, err
@@ -124,7 +124,7 @@ func (c *Client) ImageFile(ctx context.Context, image, path string) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	defer c.Remove(context.WithoutCancel(ctx), res.ID)
+	defer func() { _ = c.Remove(context.WithoutCancel(ctx), res.ID) }()
 	cp, err := c.api.CopyFromContainer(ctx, res.ID, client.CopyFromContainerOptions{SourcePath: path})
 	if err != nil {
 		return nil, err

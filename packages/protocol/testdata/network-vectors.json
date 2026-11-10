@@ -1,0 +1,116 @@
+{
+  "cases": [
+    {
+      "name": "default pool",
+      "pool": "10.200.0.0/16",
+      "system": {
+        "subnet": "10.200.0.0/24",
+        "gateway": "10.200.0.1"
+      },
+      "ingress": {
+        "subnet": "10.200.1.0/24",
+        "gateway": "10.200.1.1"
+      },
+      "registry": {
+        "subnet": "10.200.3.0/24",
+        "address": "10.200.3.2:5000"
+      }
+    },
+    {
+      "name": "last 10.x pool the installer tries",
+      "pool": "10.255.0.0/16",
+      "system": {
+        "subnet": "10.255.0.0/24",
+        "gateway": "10.255.0.1"
+      },
+      "ingress": {
+        "subnet": "10.255.1.0/24",
+        "gateway": "10.255.1.1"
+      },
+      "registry": {
+        "subnet": "10.255.3.0/24",
+        "address": "10.255.3.2:5000"
+      }
+    },
+    {
+      "name": "a /8",
+      "pool": "10.0.0.0/8",
+      "system": {
+        "subnet": "10.0.0.0/24",
+        "gateway": "10.0.0.1"
+      },
+      "ingress": {
+        "subnet": "10.0.1.0/24",
+        "gateway": "10.0.1.1"
+      },
+      "registry": {
+        "subnet": "10.0.3.0/24",
+        "address": "10.0.3.2:5000"
+      }
+    },
+    {
+      "name": "a /12",
+      "pool": "172.16.0.0/12",
+      "system": {
+        "subnet": "172.16.0.0/24",
+        "gateway": "172.16.0.1"
+      },
+      "ingress": {
+        "subnet": "172.16.1.0/24",
+        "gateway": "172.16.1.1"
+      },
+      "registry": {
+        "subnet": "172.16.3.0/24",
+        "address": "172.16.3.2:5000"
+      }
+    },
+    {
+      "name": "narrowest pool an install accepts",
+      "pool": "192.168.4.0/22",
+      "system": {
+        "subnet": "192.168.4.0/24",
+        "gateway": "192.168.4.1"
+      },
+      "ingress": {
+        "subnet": "192.168.5.0/24",
+        "gateway": "192.168.5.1"
+      },
+      "registry": {
+        "subnet": "192.168.7.0/24",
+        "address": "192.168.7.2:5000"
+      }
+    },
+    {
+      "name": "registry lands on the last third octet",
+      "pool": "10.200.252.0/22",
+      "system": {
+        "subnet": "10.200.252.0/24",
+        "gateway": "10.200.252.1"
+      },
+      "ingress": {
+        "subnet": "10.200.253.0/24",
+        "gateway": "10.200.253.1"
+      },
+      "registry": {
+        "subnet": "10.200.255.0/24",
+        "address": "10.200.255.2:5000"
+      }
+    },
+    {
+      "name": "a /20 that starts mid /16",
+      "pool": "10.200.240.0/20",
+      "system": {
+        "subnet": "10.200.240.0/24",
+        "gateway": "10.200.240.1"
+      },
+      "ingress": {
+        "subnet": "10.200.241.0/24",
+        "gateway": "10.200.241.1"
+      },
+      "registry": {
+        "subnet": "10.200.243.0/24",
+        "address": "10.200.243.2:5000"
+      }
+    }
+  ]
+}

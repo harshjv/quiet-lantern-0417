@@ -1,0 +1,16 @@
+.scratchpad/
+docs/
+guide/
+public/
+go/
+installer/acceptance/
+pnpm-lock.yaml
+*.md
+*.yaml
+*.yml
+*.gen.ts
+packages/protocol/schema/
+packages/manifest-schema/schema/
+packages/protocol/testdata/
+apps/dispatch/drizzle/
+.claude

@@ -31,8 +31,10 @@ func TestCommandFlags(t *testing.T) {
 		t.Errorf("err %v", cmd.Err)
 	}
 	logged := rt.Command(context.Background(), "/var/log/sbx", "start", "sbx_1")
-	wantLogged := []string{logged.Path, "--root", "/run/stationly/runsc/20261102.0", "--platform=systrap", "--overlay2=none", "--net-raw", "--network=sandbox",
-		"--log", "/var/log/sbx/runsc.log", "--panic-log", "/var/log/sbx/panic.log", "--debug-log", "/var/log/sbx/", "start", "sbx_1"}
+	wantLogged := []string{
+		logged.Path, "--root", "/run/stationly/runsc/20261102.0", "--platform=systrap", "--overlay2=none", "--net-raw", "--network=sandbox",
+		"--log", "/var/log/sbx/runsc.log", "--panic-log", "/var/log/sbx/panic.log", "--debug-log", "/var/log/sbx/", "start", "sbx_1",
+	}
 	if !reflect.DeepEqual(logged.Args, wantLogged) {
 		t.Errorf("args %q", logged.Args)
 	}

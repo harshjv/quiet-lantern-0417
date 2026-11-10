@@ -1,5 +1,6 @@
-import { idPrefixes, type IdEntity } from '@stationly/protocol'
 import { decodeTime, monotonicFactory } from 'ulid'
+
+import { idPrefixes, type IdEntity } from '@stationly/protocol'
 
 const ulid = monotonicFactory()
 

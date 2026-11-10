@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"net"
 	"net/netip"
 	"os"
@@ -20,20 +18,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/identity"
 	"github.com/harshjv/stationly/go/internal/ids"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
-	DefaultDaemonJSON   = "/etc/docker/daemon.json"
-	DefaultSysctlFile   = "/etc/sysctl.d/90-stationly.conf"
-	installStateFile    = "install.json"
-	bootstrapTokenFile  = "bootstrap.token"
-	resolverPort        = 53
-	bootstrapTokenLabel = "sly-enroll-"
+	DefaultDaemonJSON  = "/etc/docker/daemon.json"
+	DefaultSysctlFile  = "/etc/sysctl.d/90-stationly.conf"
+	installStateFile   = "install.json"
+	bootstrapTokenFile = "bootstrap.token"
+	resolverPort       = 53
 )
 
 type InstallState struct {
@@ -126,7 +125,7 @@ func newBootstrapToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return bootstrapTokenLabel + base64.RawURLEncoding.EncodeToString(b), nil
+	return protocol.BootstrapTokenPrefix + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 type hostSetup struct {
@@ -176,7 +175,8 @@ func prepareHost(ctx context.Context, opts InstallOptions, insecure []string, st
 	case err == nil:
 		step("host_config", "kept "+hostconfig.Path(opts.EtcDir), "ok", t)
 	case errors.Is(err, os.ErrNotExist):
-		key, keyOrigin := "", "a generated master key"
+		var key string
+		keyOrigin := "a generated master key"
 		if opts.RecoveryKey != "" {
 			if key, err = hostconfig.MasterKeyFromRecovery(opts.RecoveryKey); err != nil {
 				return nil, err
@@ -308,7 +308,7 @@ func writeDaemonJSON(path string, st InstallState, insecure []string) (bool, err
 func restartDocker(ctx context.Context) error {
 	out, err := exec.CommandContext(ctx, "systemctl", "restart", "docker").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl restart docker: %v: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("systemctl restart docker: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {

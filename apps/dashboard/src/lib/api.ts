@@ -4,9 +4,13 @@ export const api = createApiClient(window.location.origin)
 
 type V1 = typeof api.v1
 
-type Data<F> = F extends (...args: never[]) => Promise<infer R> ? NonNullable<R extends { data: infer D } ? D : never> : never
+type Data<F> = F extends (...args: never[]) => Promise<infer R>
+  ? NonNullable<R extends { data: infer D } ? D : never>
+  : never
 
-type Failure<F> = F extends (...args: never[]) => Promise<infer R> ? NonNullable<R extends { error: infer E } ? E : never> : never
+type Failure<F> = F extends (...args: never[]) => Promise<infer R>
+  ? NonNullable<R extends { error: infer E } ? E : never>
+  : never
 
 type Item<P> = P extends { items: (infer I)[] } ? I : never
 
@@ -60,11 +64,17 @@ type EdenResult = { data: unknown; error: unknown; status: number }
 
 type Body<R extends EdenResult> = NonNullable<R['data']>
 
-type StagedShape = { status: 'staged' | 'accepted' | 'rejected' | 'superseded'; refs: Record<string, string> }
+type StagedShape = {
+  status: 'staged' | 'accepted' | 'rejected' | 'superseded'
+  refs: Record<string, string>
+}
 
 const failureOf = (result: EdenResult) => {
   const value = (result.error as { value?: unknown } | null)?.value
-  const body = value && typeof value === 'object' && 'error' in value ? (value as { error: Partial<ErrorBody> }).error : null
+  const body =
+    value && typeof value === 'object' && 'error' in value
+      ? (value as { error: Partial<ErrorBody> }).error
+      : null
   return new ApiFailure(result.status, body)
 }
 
@@ -74,17 +84,37 @@ export const unwrap = async <R extends EdenResult>(call: Promise<R>): Promise<Bo
   return result.data as Body<R>
 }
 
-export type Sent<R extends EdenResult> = { body: Exclude<Body<R>, StagedShape>; staged: false } | { body: Extract<Body<R>, StagedShape>; staged: true }
+export type Sent<R extends EdenResult> =
+  | { body: Exclude<Body<R>, StagedShape>; staged: false }
+  | { body: Extract<Body<R>, StagedShape>; staged: true }
 
 export const send = async <R extends EdenResult>(call: Promise<R>): Promise<Sent<R>> => {
   const result = await call
   if (result.error) throw failureOf(result)
-  if (result.status === 202) return { body: result.data as Extract<Body<R>, StagedShape>, staged: true }
-  return { body: result.data as Exclude<Body<R>, StagedShape>, staged: false }
+  if (result.status === 202)
+    return {
+      body: result.data as Extract<Body<R>, StagedShape>,
+      staged: true,
+    }
+  return {
+    body: result.data as Exclude<Body<R>, StagedShape>,
+    staged: false,
+  }
 }
 
-export type SentOf<F> = F extends (...args: never[]) => Promise<infer R extends EdenResult> ? Sent<R> : never
+export type SentOf<F> = F extends (...args: never[]) => Promise<infer R extends EdenResult>
+  ? Sent<R>
+  : never
 
-export const failureText = (error: unknown) => (error instanceof ApiFailure ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error))
+export const failureText = (error: unknown) =>
+  error instanceof ApiFailure
+    ? `${error.code}: ${error.message}`
+    : error instanceof Error
+      ? error.message
+      : String(error)
 
-export const idempotency = () => ({ headers: { 'idempotency-key': crypto.randomUUID() } })
+export const idempotency = () => ({
+  headers: {
+    'idempotency-key': crypto.randomUUID(),
+  },
+})

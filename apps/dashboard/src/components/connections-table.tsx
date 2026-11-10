@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+
 import { Mono } from '@/components/page'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -8,9 +9,24 @@ import { cn } from '@/lib/utils'
 
 type Connection = Connections['connections'][number]
 
-export type ConnectionRow = { key: string; service?: string; names: Record<string, string>; connection: Connection }
+export type ConnectionRow = {
+  key: string
+  service?: string
+  names: Record<string, string>
+  connection: Connection
+}
 
-export function ConnectionsTable({ rows, live, caption, empty }: { rows: ConnectionRow[]; live?: boolean; caption?: ReactNode; empty: ReactNode }) {
+export function ConnectionsTable({
+  rows,
+  live,
+  caption,
+  empty,
+}: {
+  rows: ConnectionRow[]
+  live?: boolean
+  caption?: ReactNode
+  empty: ReactNode
+}) {
   const port = cn('tabular-nums', live && 'hidden sm:table-cell')
   return (
     <TableFrame caption={caption}>
@@ -34,7 +50,11 @@ export function ConnectionsTable({ rows, live, caption, empty }: { rows: Connect
             <TableCell>{c.direction}</TableCell>
             <TableCell className="whitespace-normal">
               <Mono>{peerText(c.peer)}</Mono>
-              {c.peer.address && names[c.peer.address] && <span className="ml-2 text-xs text-muted-foreground">resolved as {names[c.peer.address]}</span>}
+              {c.peer.address && names[c.peer.address] && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  resolved as {names[c.peer.address]}
+                </span>
+              )}
             </TableCell>
             <TableCell className={port}>
               {c.port}/{c.protocol}
@@ -43,9 +63,17 @@ export function ConnectionsTable({ rows, live, caption, empty }: { rows: Connect
               {c.flows}
               {live && c.protocol === 'tcp' ? ` (${c.established} established)` : ''}
             </TableCell>
-            <TableCell className="hidden tabular-nums md:table-cell">{rateText(c.bps_out)}</TableCell>
-            <TableCell className="hidden tabular-nums md:table-cell">{rateText(c.bps_in)}</TableCell>
-            {live && <TableCell className="hidden tabular-nums lg:table-cell">{ageText(c.oldest_s)}</TableCell>}
+            <TableCell className="hidden tabular-nums md:table-cell">
+              {rateText(c.bps_out)}
+            </TableCell>
+            <TableCell className="hidden tabular-nums md:table-cell">
+              {rateText(c.bps_in)}
+            </TableCell>
+            {live && (
+              <TableCell className="hidden tabular-nums lg:table-cell">
+                {ageText(c.oldest_s)}
+              </TableCell>
+            )}
           </TableRow>
         ))}
       </TableBody>

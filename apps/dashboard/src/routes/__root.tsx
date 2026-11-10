@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { Link, Outlet, createRootRouteWithContext } from '@tanstack/react-router'
+import { createRootRouteWithContext, Link, Outlet } from '@tanstack/react-router'
+
 import { Empty } from '@/components/page'
 import { Toaster } from '@/components/ui/sonner'
 
@@ -7,7 +8,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   component: () => (
     <>
       <Outlet />
-      <Toaster position="bottom-right" closeButton toastOptions={{ classNames: { toast: 'cn-toast', description: '!text-foreground/80' } }} />
+      <Toaster
+        position="bottom-right"
+        closeButton
+        toastOptions={{
+          classNames: {
+            toast: 'cn-toast',
+            description: '!text-foreground/80',
+          },
+        }}
+      />
     </>
   ),
   notFoundComponent: () => (
@@ -19,5 +29,5 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         </Link>
       </Empty>
     </main>
-  )
+  ),
 })

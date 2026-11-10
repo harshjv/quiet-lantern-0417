@@ -8,6 +8,8 @@ import (
 	"time"
 
 	mdns "github.com/miekg/dns"
+
+	"github.com/harshjv/stationly/go/internal/millis"
 )
 
 const (
@@ -56,7 +58,7 @@ func (rs *rings) get(src netip.Addr, create bool) *ring {
 }
 
 func (rs *rings) record(src netip.Addr, start time.Time, name string, qtype uint16, resp *mdns.Msg, upstream, probe bool, refused string) {
-	q := Query{At: start, Name: strings.TrimSuffix(name, "."), Type: mdns.TypeToString[qtype], Rcode: mdns.RcodeToString[resp.Rcode], Upstream: upstream, Probe: probe, Refused: refused, MS: float64(time.Since(start).Microseconds()) / 1000}
+	q := Query{At: start, Name: strings.TrimSuffix(name, "."), Type: mdns.TypeToString[qtype], Rcode: mdns.RcodeToString[resp.Rcode], Upstream: upstream, Probe: probe, Refused: refused, MS: millis.Of(time.Since(start))}
 	for _, rr := range resp.Answer {
 		if len(q.Answers) == ringAnswerMax {
 			break

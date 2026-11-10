@@ -1,16 +1,31 @@
 import { CircleAlert, Inbox } from 'lucide-react'
 import type { ReactNode } from 'react'
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ApiFailure } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-export function PageHeader({ title, meta, actions, children }: { title: ReactNode; meta?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
+export function PageHeader({
+  title,
+  meta,
+  actions,
+  children,
+}: {
+  title: ReactNode
+  meta?: ReactNode
+  actions?: ReactNode
+  children?: ReactNode
+}) {
   return (
     <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 space-y-1">
         <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
-        {meta && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">{meta}</div>}
+        {meta && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            {meta}
+          </div>
+        )}
         {children}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -18,7 +33,19 @@ export function PageHeader({ title, meta, actions, children }: { title: ReactNod
   )
 }
 
-export function Section({ title, description, actions, children, className }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+export function Section({
+  title,
+  description,
+  actions,
+  children,
+  className,
+}: {
+  title: ReactNode
+  description?: ReactNode
+  actions?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
   return (
     <section className={cn('space-y-3', className)}>
       <div className="flex items-end justify-between gap-3">
@@ -33,7 +60,17 @@ export function Section({ title, description, actions, children, className }: { 
   )
 }
 
-export function Subsection({ title, description, actions, children }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function Subsection({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: ReactNode
+  description?: ReactNode
+  actions?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -48,7 +85,13 @@ export function Subsection({ title, description, actions, children }: { title: R
   )
 }
 
-export function ErrorState({ error, title = 'This could not be loaded' }: { error: unknown; title?: string }) {
+export function ErrorState({
+  error,
+  title = 'This could not be loaded',
+}: {
+  error: unknown
+  title?: string
+}) {
   const failure = error instanceof ApiFailure ? error : null
   return (
     <Alert variant="destructive">
@@ -57,7 +100,9 @@ export function ErrorState({ error, title = 'This could not be loaded' }: { erro
       <AlertDescription className="text-foreground">
         <p>{error instanceof Error ? error.message : String(error)}</p>
         {failure && <p className="text-muted-foreground">{failure.fix}</p>}
-        {failure?.requestId && <p className="font-mono text-xs text-muted-foreground">request {failure.requestId}</p>}
+        {failure?.requestId && (
+          <p className="font-mono text-xs text-muted-foreground">request {failure.requestId}</p>
+        )}
       </AlertDescription>
     </Alert>
   )
@@ -76,9 +121,14 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 export function Rows({ count = 3 }: { count?: number }) {
   return (
     <div className="space-y-2" aria-busy="true" aria-label="Loading">
-      {Array.from({ length: count }, (_, i) => (
-        <Skeleton key={i} className="h-9 w-full" />
-      ))}
+      {Array.from(
+        {
+          length: count,
+        },
+        (_, i) => (
+          <Skeleton key={i} className="h-9 w-full" />
+        ),
+      )}
     </div>
   )
 }
@@ -87,7 +137,15 @@ export function Mono({ children, className }: { children: ReactNode; className?:
   return <span className={cn('font-mono text-[0.8125rem]', className)}>{children}</span>
 }
 
-export function KeyValue({ items, framed, children }: { items: [string, ReactNode][]; framed?: boolean; children?: ReactNode }) {
+export function KeyValue({
+  items,
+  framed,
+  children,
+}: {
+  items: [string, ReactNode][]
+  framed?: boolean
+  children?: ReactNode
+}) {
   const list = (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
       {items.map(([label, value]) => (

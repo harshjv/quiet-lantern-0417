@@ -1,4 +1,5 @@
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
+
 import { EnvRef, Generation } from './desired-state.ts'
 import {
   Actor,
@@ -10,12 +11,12 @@ import {
   Builder,
   BuildStatus,
   CancelReason,
-  doctorStatusValues,
   ComponentStatus,
   DeploymentOutcome,
   DeploymentStepName,
   DeploymentStepStatus,
   Diagnosis,
+  doctorStatusValues,
   EntityRef,
   ErrorBody,
   FlowRollupRow,
@@ -34,10 +35,9 @@ import {
   StationRoutes,
   StatusHint,
   VersionSkew,
-  volumeOwnerValues
+  volumeOwnerValues,
 } from './model.ts'
 import { Observed, ObservedUpdate } from './observed-state.ts'
-import { PlatformVerifyBody, PlatformVerifyResultBody, SignatureState } from './release.ts'
 import {
   Base64UrlBytes32,
   Base64UrlBytes64,
@@ -52,8 +52,9 @@ import {
   Seconds,
   StringEnum,
   Timestamp,
-  UnixMillis
+  UnixMillis,
 } from './primitives.ts'
+import { PlatformVerifyBody, PlatformVerifyResultBody, SignatureState } from './release.ts'
 
 export const subprotocol = 'stationly.station.v1'
 
@@ -77,7 +78,7 @@ export const capabilities = [
   'network.v1',
   'tracks.v1',
   'gpu.v1',
-  'sandbox.v1'
+  'sandbox.v1',
 ] as const
 
 export type Capability = (typeof capabilities)[number]
@@ -88,7 +89,7 @@ export const closeCodes = {
   messageTooBig: 1009,
   authFailed: 4001,
   revoked: 4003,
-  duplicateConnection: 4009
+  duplicateConnection: 4009,
 } as const
 
 export const limits = {
@@ -102,7 +103,7 @@ export const limits = {
   outboxInFlight: 1000,
   streamWindowBytes: 256 * 1024,
   streamDataItemsBytes: 256 * 1024,
-  registryDeleteItems: 500
+  registryDeleteItems: 500,
 } as const
 
 export const Envelope = Type.Object(
@@ -112,16 +113,33 @@ export const Envelope = Type.Object(
     ref: Nullable(Id('message')),
     generation: Count,
     sent_at: Timestamp,
-    body: Type.Unknown({ goJSONSchema: { type: 'json.RawMessage', imports: ['encoding/json'] } })
+    body: Type.Unknown({
+      goJSONSchema: {
+        type: 'json.RawMessage',
+        imports: ['encoding/json'],
+      },
+    }),
   },
-  { title: 'Envelope' }
+  {
+    title: 'Envelope',
+  },
 )
 
-const CapabilityName = Type.String({ pattern: '^[a-z][a-z0-9_.]*$' })
+const CapabilityName = Type.String({
+  pattern: '^[a-z][a-z0-9_.]*$',
+})
 
 const seq = Count
 
-const ChallengeBody = Type.Object({ nonce: Base64UrlBytes32, dispatch_time: Timestamp }, { title: 'ChallengeBody' })
+const ChallengeBody = Type.Object(
+  {
+    nonce: Base64UrlBytes32,
+    dispatch_time: Timestamp,
+  },
+  {
+    title: 'ChallengeBody',
+  },
+)
 
 const HelloBody = Type.Object(
   {
@@ -132,11 +150,22 @@ const HelloBody = Type.Object(
     protocol: Count,
     capabilities: Type.Array(CapabilityName),
     applied: AppliedGeneration,
-    outbox: Type.Object({ epoch: Id('station_outbox'), first_seq: Count, last_seq: Count }, { title: 'OutboxRange' }),
+    outbox: Type.Object(
+      {
+        epoch: Id('station_outbox'),
+        first_seq: Count,
+        last_seq: Count,
+      },
+      {
+        title: 'OutboxRange',
+      },
+    ),
     boot_id: Type.String(),
-    started_at: Timestamp
+    started_at: Timestamp,
   },
-  { title: 'HelloBody' }
+  {
+    title: 'HelloBody',
+  },
 )
 
 const WelcomeBody = Type.Object(
@@ -147,9 +176,19 @@ const WelcomeBody = Type.Object(
     version_skew: VersionSkew,
     resume_from_seq: Nullable(Count),
     instance_id: Id('instance'),
-    desired: Type.Object({ number: Count, hash: Nullable(Digest) }, { title: 'DesiredGenerationRef' })
+    desired: Type.Object(
+      {
+        number: Count,
+        hash: Nullable(Digest),
+      },
+      {
+        title: 'DesiredGenerationRef',
+      },
+    ),
   },
-  { title: 'WelcomeBody' }
+  {
+    title: 'WelcomeBody',
+  },
 )
 
 const EnrollBody = Type.Object(
@@ -165,9 +204,22 @@ const EnrollBody = Type.Object(
     routes: StationRoutes,
     resources: Resources,
     stationd_version: Type.String(),
-    install: Type.Optional(Type.Object({ ipam_pool: Type.String(), registry_subnet: Type.String(), station_id: Type.Optional(Id('station')) }, { title: 'EnrollInstall' }))
+    install: Type.Optional(
+      Type.Object(
+        {
+          ipam_pool: Type.String(),
+          registry_subnet: Type.String(),
+          station_id: Type.Optional(Id('station')),
+        },
+        {
+          title: 'EnrollInstall',
+        },
+      ),
+    ),
   },
-  { title: 'EnrollBody' }
+  {
+    title: 'EnrollBody',
+  },
 )
 
 const EnrolledBody = Type.Object(
@@ -176,22 +228,61 @@ const EnrolledBody = Type.Object(
     instance_id: Id('instance'),
     registry_subnet: Type.String(),
     registry_address: Type.String(),
-    settings: Type.Object({ 'ipam.pool': Type.String(), 'ipam.virtual_prefix': Type.String() }, { title: 'EnrolledSettings' })
+    settings: Type.Object(
+      {
+        'ipam.pool': Type.String(),
+        'ipam.virtual_prefix': Type.String(),
+      },
+      {
+        title: 'EnrolledSettings',
+      },
+    ),
   },
-  { title: 'EnrolledBody' }
+  {
+    title: 'EnrolledBody',
+  },
 )
 
 const HeartbeatBody = Type.Object(
   {
     applied: AppliedGeneration,
     resources: Resources,
-    outbox: Type.Object({ last_seq: Count }, { title: 'HeartbeatOutbox' }),
-    services: Type.Record(Type.String(), Type.Object({ status_hint: StatusHint, health: ServiceHealth }, { title: 'ServiceHeartbeat' }))
+    outbox: Type.Object(
+      {
+        last_seq: Count,
+      },
+      {
+        title: 'HeartbeatOutbox',
+      },
+    ),
+    services: Type.Record(
+      Type.String(),
+      Type.Object(
+        {
+          status_hint: StatusHint,
+          health: ServiceHealth,
+        },
+        {
+          title: 'ServiceHeartbeat',
+        },
+      ),
+    ),
   },
-  { title: 'HeartbeatBody' }
+  {
+    title: 'HeartbeatBody',
+  },
 )
 
-const GenerationAvailableBody = Type.Object({ number: Count, hash: Digest, blob: BlobGrant }, { title: 'GenerationAvailableBody' })
+const GenerationAvailableBody = Type.Object(
+  {
+    number: Count,
+    hash: Digest,
+    blob: BlobGrant,
+  },
+  {
+    title: 'GenerationAvailableBody',
+  },
+)
 
 const GenerationAckBody = Type.Object(
   {
@@ -202,22 +293,41 @@ const GenerationAckBody = Type.Object(
       Type.Object(
         {
           key: Type.String(),
-          status: StringEnum(['failed', 'blocked'], { title: 'GenerationResultStatus' }),
+          status: StringEnum(['failed', 'blocked'], {
+            title: 'GenerationResultStatus',
+          }),
           failure: Type.Optional(ErrorBody),
-          blocked_by: Type.Optional(Type.String())
+          blocked_by: Type.Optional(Type.String()),
         },
-        { title: 'GenerationResult' }
-      )
+        {
+          title: 'GenerationResult',
+        },
+      ),
     ),
     failure: Type.Optional(ErrorBody),
-    duration_ms: Count
+    duration_ms: Count,
   },
-  { title: 'GenerationAckBody' }
+  {
+    title: 'GenerationAckBody',
+  },
 )
 
-const EmptyBody = Type.Object({}, { title: 'EmptyBody' })
+const EmptyBody = Type.Object(
+  {},
+  {
+    title: 'EmptyBody',
+  },
+)
 
-const OutboxAckBody = Type.Object({ epoch: Id('station_outbox'), up_to_seq: Count }, { title: 'OutboxAckBody' })
+const OutboxAckBody = Type.Object(
+  {
+    epoch: Id('station_outbox'),
+    up_to_seq: Count,
+  },
+  {
+    title: 'OutboxAckBody',
+  },
+)
 
 const DeploymentStepBody = Type.Object(
   {
@@ -228,9 +338,11 @@ const DeploymentStepBody = Type.Object(
     attempt: Count,
     detail: JsonObject,
     started_at: Nullable(Timestamp),
-    finished_at: Nullable(Timestamp)
+    finished_at: Nullable(Timestamp),
   },
-  { title: 'DeploymentStepBody' }
+  {
+    title: 'DeploymentStepBody',
+  },
 )
 
 const DeploymentFinishedBody = Type.Object(
@@ -239,12 +351,22 @@ const DeploymentFinishedBody = Type.Object(
     deployment_id: Id('deployment'),
     status: DeploymentOutcome,
     failure: Nullable(Diagnosis),
-    cancel_reason: Nullable(CancelReason)
+    cancel_reason: Nullable(CancelReason),
   },
-  { title: 'DeploymentFinishedBody' }
+  {
+    title: 'DeploymentFinishedBody',
+  },
 )
 
-const RunCreatedBody = Type.Object({ seq, run: RunRow }, { title: 'RunCreatedBody' })
+const RunCreatedBody = Type.Object(
+  {
+    seq,
+    run: RunRow,
+  },
+  {
+    title: 'RunCreatedBody',
+  },
+)
 
 const RunStatusBody = Type.Object(
   {
@@ -254,9 +376,11 @@ const RunStatusBody = Type.Object(
     exit_code: Nullable(Type.Integer()),
     started_at: Nullable(Timestamp),
     finished_at: Nullable(Timestamp),
-    failure: Nullable(Diagnosis)
+    failure: Nullable(Diagnosis),
   },
-  { title: 'RunStatusBody' }
+  {
+    title: 'RunStatusBody',
+  },
 )
 
 const BuildStatusBody = Type.Object(
@@ -264,9 +388,11 @@ const BuildStatusBody = Type.Object(
     seq,
     build_id: Id('build'),
     status: BuildStatus,
-    detail: JsonObject
+    detail: JsonObject,
   },
-  { title: 'BuildStatusBody' }
+  {
+    title: 'BuildStatusBody',
+  },
 )
 
 const BuildResultBody = Type.Object(
@@ -286,14 +412,18 @@ const BuildResultBody = Type.Object(
           platform: Type.String(),
           digest: Nullable(Digest),
           predicate_ref: Type.String(),
-          base_images: Type.Array(BaseImage)
+          base_images: Type.Array(BaseImage),
         },
-        { title: 'BuildAttestation' }
-      )
+        {
+          title: 'BuildAttestation',
+        },
+      ),
     ),
-    failure: Nullable(Diagnosis)
+    failure: Nullable(Diagnosis),
   },
-  { title: 'BuildResultBody' }
+  {
+    title: 'BuildResultBody',
+  },
 )
 
 const HealthResultBody = Type.Object(
@@ -301,11 +431,15 @@ const HealthResultBody = Type.Object(
     seq,
     service_id: Id('service'),
     deployment_id: Id('deployment'),
-    state: StringEnum(['passing', 'failing', 'failed'], { title: 'HealthResultState' }),
+    state: StringEnum(['passing', 'failing', 'failed'], {
+      title: 'HealthResultState',
+    }),
     consecutive: Count,
-    last_check: Nullable(Timestamp)
+    last_check: Nullable(Timestamp),
   },
-  { title: 'HealthResultBody' }
+  {
+    title: 'HealthResultBody',
+  },
 )
 
 const ContainerExitedBody = Type.Object(
@@ -317,30 +451,40 @@ const ContainerExitedBody = Type.Object(
     deployment_id: Nullable(Id('deployment')),
     exit_code: Type.Integer(),
     oom_killed: Type.Boolean(),
-    restarts: Count
+    restarts: Count,
   },
-  { title: 'ContainerExitedBody' }
+  {
+    title: 'ContainerExitedBody',
+  },
 )
 
 const DiskPressureBody = Type.Object(
   {
     seq,
     free_bytes: Bytes,
-    threshold: StringEnum(['warning', 'critical'], { title: 'DiskThreshold' }),
-    largest_consumers: Type.Array(Json)
+    threshold: StringEnum(['warning', 'critical'], {
+      title: 'DiskThreshold',
+    }),
+    largest_consumers: Type.Array(Json),
   },
-  { title: 'DiskPressureBody' }
+  {
+    title: 'DiskPressureBody',
+  },
 )
 
 const RegistryMaintenanceBody = Type.Object(
   {
     seq,
-    state: StringEnum(['started', 'finished'], { title: 'RegistryMaintenanceState' }),
+    state: StringEnum(['started', 'finished'], {
+      title: 'RegistryMaintenanceState',
+    }),
     deleted_blobs: Count,
     freed_bytes: Bytes,
-    duration_s: Seconds
+    duration_s: Seconds,
   },
-  { title: 'RegistryMaintenanceBody' }
+  {
+    title: 'RegistryMaintenanceBody',
+  },
 )
 
 const ComponentStatusBody = Type.Object(
@@ -355,12 +499,24 @@ const ComponentStatusBody = Type.Object(
     lockfile_version: Type.String(),
     status: ComponentStatus,
     signature: SignatureState,
-    failure: Nullable(ErrorBody)
+    failure: Nullable(ErrorBody),
   },
-  { title: 'ComponentStatusBody' }
+  {
+    title: 'ComponentStatusBody',
+  },
 )
 
-const LogGapBody = Type.Object({ seq, selector: JsonObject, from: Timestamp, to: Timestamp }, { title: 'LogGapBody' })
+const LogGapBody = Type.Object(
+  {
+    seq,
+    selector: JsonObject,
+    from: Timestamp,
+    to: Timestamp,
+  },
+  {
+    title: 'LogGapBody',
+  },
+)
 
 const AuditRecordBody = Type.Object(
   {
@@ -368,21 +524,56 @@ const AuditRecordBody = Type.Object(
     action: Type.String(),
     target: EntityRef,
     actor: Actor,
-    purpose: Nullable(Type.String())
+    purpose: Nullable(Type.String()),
   },
-  { title: 'AuditRecordBody' }
+  {
+    title: 'AuditRecordBody',
+  },
 )
 
 const GuardAckBody = Type.Object(
-  { seq, service_id: Id('service'), policy_id: Id('firewall_policy'), generation: Count },
-  { title: 'GuardAckBody' }
+  {
+    seq,
+    service_id: Id('service'),
+    policy_id: Id('firewall_policy'),
+    generation: Count,
+  },
+  {
+    title: 'GuardAckBody',
+  },
 )
 
-const FlowRollupBody = Type.Object({ seq, rows: Type.Array(FlowRollupRow) }, { title: 'FlowRollupBody' })
+const FlowRollupBody = Type.Object(
+  {
+    seq,
+    rows: Type.Array(FlowRollupRow),
+  },
+  {
+    title: 'FlowRollupBody',
+  },
+)
 
-const OutboxGapBody = Type.Object({ seq, from_seq: Count, to_seq: Count, types: Type.Array(Type.String()) }, { title: 'OutboxGapBody' })
+const OutboxGapBody = Type.Object(
+  {
+    seq,
+    from_seq: Count,
+    to_seq: Count,
+    types: Type.Array(Type.String()),
+  },
+  {
+    title: 'OutboxGapBody',
+  },
+)
 
-const ScanResultBody = Type.Object({ seq, result: JsonObject }, { title: 'ScanResultBody' })
+const ScanResultBody = Type.Object(
+  {
+    seq,
+    result: JsonObject,
+  },
+  {
+    title: 'ScanResultBody',
+  },
+)
 
 const SandboxStatusBody = Type.Object(
   {
@@ -394,35 +585,56 @@ const SandboxStatusBody = Type.Object(
     oom_killed: Type.Boolean(),
     started_at: Nullable(Timestamp),
     stopped_at: Nullable(Timestamp),
-    failure: Nullable(Diagnosis)
+    failure: Nullable(Diagnosis),
   },
-  { title: 'SandboxStatusBody' }
+  {
+    title: 'SandboxStatusBody',
+  },
 )
 
 const SandboxSnapshotStatusBody = Type.Object(
   {
     seq,
     snapshot_id: Id('sandbox_snapshot'),
-    status: StringEnum(['ready', 'failed', 'deleted'], { title: 'SandboxSnapshotReportStatus' }),
+    status: StringEnum(['ready', 'failed', 'deleted'], {
+      title: 'SandboxSnapshotReportStatus',
+    }),
     taken_at: Nullable(Timestamp),
     exclusive_bytes: Bytes,
     referenced_bytes: Bytes,
-    failure: Nullable(Diagnosis)
+    failure: Nullable(Diagnosis),
   },
-  { title: 'SandboxSnapshotStatusBody' }
+  {
+    title: 'SandboxSnapshotStatusBody',
+  },
 )
 
-const SandboxStorageGrowBody = Type.Object({ size_bytes: Bytes }, { title: 'SandboxStorageGrowBody' })
+const SandboxStorageGrowBody = Type.Object(
+  {
+    size_bytes: Bytes,
+  },
+  {
+    title: 'SandboxStorageGrowBody',
+  },
+)
 
 const SandboxStorageGrownBody = Type.Object(
   {
-    status: StringEnum(['grown', 'failed'], { title: 'SandboxStorageGrowStatus' }),
-    step: Nullable(StringEnum(['fallocate', 'loop', 'resize'], { title: 'SandboxStorageGrowStep' })),
+    status: StringEnum(['grown', 'failed'], {
+      title: 'SandboxStorageGrowStatus',
+    }),
+    step: Nullable(
+      StringEnum(['fallocate', 'loop', 'resize'], {
+        title: 'SandboxStorageGrowStep',
+      }),
+    ),
     error: Nullable(Type.String()),
     filesystem_bytes: Bytes,
-    filesystem_free_bytes: Bytes
+    filesystem_free_bytes: Bytes,
   },
-  { title: 'SandboxStorageGrownBody' }
+  {
+    title: 'SandboxStorageGrownBody',
+  },
 )
 
 const BuildSource = Type.Union(
@@ -434,16 +646,18 @@ const BuildSource = Type.Union(
       sha: Type.String(),
       ref: Nullable(Type.String()),
       path: Type.String(),
-      dockerfile: Nullable(Type.String())
+      dockerfile: Nullable(Type.String()),
     }),
     Type.Object({
       type: Type.Literal('blob'),
       blob: BlobGrant,
       path: Type.String(),
-      dockerfile: Nullable(Type.String())
-    })
+      dockerfile: Nullable(Type.String()),
+    }),
   ],
-  { title: 'BuildSource' }
+  {
+    title: 'BuildSource',
+  },
 )
 
 const BuildStartBody = Type.Object(
@@ -459,21 +673,40 @@ const BuildStartBody = Type.Object(
         {
           install_cmd: Nullable(Type.String()),
           build_cmd: Nullable(Type.String()),
-          start_cmd: Nullable(Type.String())
+          start_cmd: Nullable(Type.String()),
         },
-        { title: 'RailpackOverrides' }
-      )
+        {
+          title: 'RailpackOverrides',
+        },
+      ),
     ),
     build_args: Nullable(Type.Record(Type.String(), Type.String())),
     build_secret_keys: Type.Array(Type.String()),
     cache_key: Type.String(),
     export_name: Type.String(),
-    attest: Type.Object({ sbom: Type.Boolean(), provenance: Type.String() }, { title: 'BuildAttest' })
+    attest: Type.Object(
+      {
+        sbom: Type.Boolean(),
+        provenance: Type.String(),
+      },
+      {
+        title: 'BuildAttest',
+      },
+    ),
   },
-  { title: 'BuildStartBody' }
+  {
+    title: 'BuildStartBody',
+  },
 )
 
-const BuildRefBody = Type.Object({ build_id: Id('build') }, { title: 'BuildRefBody' })
+const BuildRefBody = Type.Object(
+  {
+    build_id: Id('build'),
+  },
+  {
+    title: 'BuildRefBody',
+  },
+)
 
 export const sandboxStdinMaxBytes = 256 * 1024
 
@@ -493,60 +726,110 @@ const RunStartBody = Type.Object(
     user: Type.Optional(Type.String()),
     cwd: Type.Optional(Type.String()),
     timeout_s: Type.Optional(Seconds),
-    stdin: Type.Optional(Type.String({ pattern: '^[A-Za-z0-9_-]*$', maxLength: Math.ceil((sandboxStdinMaxBytes * 4) / 3) }))
+    stdin: Type.Optional(
+      Type.String({
+        pattern: '^[A-Za-z0-9_-]*$',
+        maxLength: Math.ceil((sandboxStdinMaxBytes * 4) / 3),
+      }),
+    ),
   },
-  { title: 'RunStartBody' }
+  {
+    title: 'RunStartBody',
+  },
 )
 
-const RunAcceptedBody = Type.Object({ run_id: Id('run'), stream: Nullable(Count) }, { title: 'RunAcceptedBody' })
+const RunAcceptedBody = Type.Object(
+  {
+    run_id: Id('run'),
+    stream: Nullable(Count),
+  },
+  {
+    title: 'RunAcceptedBody',
+  },
+)
 
-const RunRefBody = Type.Object({ run_id: Id('run') }, { title: 'RunRefBody' })
+const RunRefBody = Type.Object(
+  {
+    run_id: Id('run'),
+  },
+  {
+    title: 'RunRefBody',
+  },
+)
 
 const LogSelector = Type.Object(
   {
-    source: StringEnum(['runtime', 'build', 'run', 'system', 'sandbox'], { title: 'LogSource' }),
+    source: StringEnum(['runtime', 'build', 'run', 'system', 'sandbox'], {
+      title: 'LogSource',
+    }),
     service_id: Type.Optional(Id('service')),
     sandbox_id: Type.Optional(Id('sandbox')),
     deployment_id: Type.Optional(Id('deployment')),
     build_id: Type.Optional(Id('build')),
     run_id: Type.Optional(Id('run')),
     component: Type.Optional(Type.String()),
-    role: Type.Optional(StringEnum(['service', 'guard', 'coupler', 'init', 'runtime'], { title: 'LogRole' })),
+    role: Type.Optional(
+      StringEnum(['service', 'guard', 'coupler', 'init', 'runtime'], {
+        title: 'LogRole',
+      }),
+    ),
     since: Type.Optional(Timestamp),
     until: Type.Optional(Timestamp),
     grep: Type.Optional(Type.String()),
     level: Type.Optional(Type.String()),
     tail: Type.Optional(Count),
-    cursor: Type.Optional(Type.String())
+    cursor: Type.Optional(Type.String()),
   },
-  { title: 'LogSelector' }
+  {
+    title: 'LogSelector',
+  },
 )
 
 const LogLine = Type.Object(
   {
     at: Timestamp,
     role: Nullable(Type.String()),
-    stream: StringEnum(['stdout', 'stderr'], { title: 'LogStream' }),
+    stream: StringEnum(['stdout', 'stderr'], {
+      title: 'LogStream',
+    }),
     text: Type.String(),
     level: Nullable(Type.String()),
-    cursor: Type.String()
+    cursor: Type.String(),
   },
-  { title: 'LogLine' }
+  {
+    title: 'LogLine',
+  },
 )
 
 const LogsPageBody = Type.Object(
-  { lines: Type.Array(LogLine), next_cursor: Nullable(Type.String()), truncated: Type.Boolean() },
-  { title: 'LogsPageBody' }
+  {
+    lines: Type.Array(LogLine),
+    next_cursor: Nullable(Type.String()),
+    truncated: Type.Boolean(),
+  },
+  {
+    title: 'LogsPageBody',
+  },
 )
 
 const MetricsSubscribeBody = Type.Object(
-  { service_ids: Type.Optional(Type.Array(Id('service'))), sandbox_ids: Type.Optional(Type.Array(Id('sandbox'))) },
-  { title: 'MetricsSubscribeBody' }
+  {
+    service_ids: Type.Optional(Type.Array(Id('service'))),
+    sandbox_ids: Type.Optional(Type.Array(Id('sandbox'))),
+  },
+  {
+    title: 'MetricsSubscribeBody',
+  },
 )
 
 const MetricsSampleBody = Type.Object(
-  { service_ids: Type.Optional(Type.Array(Id('service'))), sandbox_ids: Type.Optional(Type.Array(Id('sandbox'))) },
-  { title: 'MetricsSampleBody' }
+  {
+    service_ids: Type.Optional(Type.Array(Id('service'))),
+    sandbox_ids: Type.Optional(Type.Array(Id('sandbox'))),
+  },
+  {
+    title: 'MetricsSampleBody',
+  },
 )
 
 const MetricSample = Type.Object(
@@ -556,7 +839,9 @@ const MetricSample = Type.Object(
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
     container_id: Type.String(),
     at: Timestamp,
-    cpu_pct: Type.Number({ minimum: 0 }),
+    cpu_pct: Type.Number({
+      minimum: 0,
+    }),
     memory_bytes: Bytes,
     memory_limit_bytes: Bytes,
     net_rx_bps: Bytes,
@@ -565,49 +850,93 @@ const MetricSample = Type.Object(
     blk_write_bps: Bytes,
     restarts: Nullable(Count),
     disk_used_bytes: Type.Optional(Bytes),
-    disk_limit_bytes: Type.Optional(Bytes)
+    disk_limit_bytes: Type.Optional(Bytes),
   },
-  { title: 'MetricSample' }
+  {
+    title: 'MetricSample',
+  },
 )
 
-const MetricsSampleResultBody = Type.Object({ samples: Type.Array(MetricSample) }, { title: 'MetricsSampleResultBody' })
+const MetricsSampleResultBody = Type.Object(
+  {
+    samples: Type.Array(MetricSample),
+  },
+  {
+    title: 'MetricsSampleResultBody',
+  },
+)
 
 export const networkServiceIdsMax = 300
 
-const NetworkServiceIds = Type.Array(Id('service'), { maxItems: networkServiceIdsMax })
+const NetworkServiceIds = Type.Array(Id('service'), {
+  maxItems: networkServiceIdsMax,
+})
 
-const NetworkSandboxIds = Type.Array(Id('sandbox'), { maxItems: networkServiceIdsMax })
+const NetworkSandboxIds = Type.Array(Id('sandbox'), {
+  maxItems: networkServiceIdsMax,
+})
 
 const NetworkSubscribeBody = Type.Object(
-  { service_ids: Type.Optional(NetworkServiceIds), sandbox_ids: Type.Optional(NetworkSandboxIds) },
-  { title: 'NetworkSubscribeBody' }
+  {
+    service_ids: Type.Optional(NetworkServiceIds),
+    sandbox_ids: Type.Optional(NetworkSandboxIds),
+  },
+  {
+    title: 'NetworkSubscribeBody',
+  },
 )
 
 const NetworkSampleBody = Type.Object(
-  { service_ids: Type.Optional(NetworkServiceIds), sandbox_ids: Type.Optional(NetworkSandboxIds) },
-  { title: 'NetworkSampleBody' }
+  {
+    service_ids: Type.Optional(NetworkServiceIds),
+    sandbox_ids: Type.Optional(NetworkSandboxIds),
+  },
+  {
+    title: 'NetworkSampleBody',
+  },
 )
 
-const PortNumber = Type.Integer({ minimum: 0, maximum: 65535 })
+const PortNumber = Type.Integer({
+  minimum: 0,
+  maximum: 65535,
+})
 
-const NetworkProtocolEnum = StringEnum(['tcp', 'udp'], { title: 'NetworkProtocol' })
+const NetworkProtocolEnum = StringEnum(['tcp', 'udp'], {
+  title: 'NetworkProtocol',
+})
 
-export const networkPeerKinds = ['service', 'sandbox', 'resolver', 'gateway', 'station', 'internet', 'public', 'address', 'other'] as const
+export const networkPeerKinds = [
+  'service',
+  'sandbox',
+  'resolver',
+  'gateway',
+  'station',
+  'internet',
+  'public',
+  'address',
+  'other',
+] as const
 
 const NetworkPeer = Type.Object(
   {
-    kind: StringEnum(networkPeerKinds, { title: 'NetworkPeerKind' }),
+    kind: StringEnum(networkPeerKinds, {
+      title: 'NetworkPeerKind',
+    }),
     service_id: Type.Optional(Id('service')),
     sandbox_id: Type.Optional(Id('sandbox')),
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
-    address: Type.Optional(Type.String())
+    address: Type.Optional(Type.String()),
   },
-  { title: 'NetworkPeer' }
+  {
+    title: 'NetworkPeer',
+  },
 )
 
 const NetworkConnection = Type.Object(
   {
-    direction: StringEnum(['in', 'out'], { title: 'NetworkDirection' }),
+    direction: StringEnum(['in', 'out'], {
+      title: 'NetworkDirection',
+    }),
     peer: NetworkPeer,
     port: PortNumber,
     protocol: NetworkProtocolEnum,
@@ -618,23 +947,39 @@ const NetworkConnection = Type.Object(
     bps_out: Nullable(Bytes),
     bps_in: Nullable(Bytes),
     counters_age_s: Nullable(Seconds),
-    oldest_s: Nullable(Seconds)
+    oldest_s: Nullable(Seconds),
   },
-  { title: 'NetworkConnection' }
+  {
+    title: 'NetworkConnection',
+  },
 )
 
-export const refusedPaths = ['host_address', 'other_environment', 'cloud_metadata', 'private_range', 'no_switch_target', 'sandbox_inbound', 'domain_not_allowed'] as const
+export const refusedPaths = [
+  'host_address',
+  'other_environment',
+  'cloud_metadata',
+  'private_range',
+  'no_switch_target',
+  'sandbox_inbound',
+  'domain_not_allowed',
+] as const
 
 const NetworkRefused = Type.Object(
   {
-    path: StringEnum(refusedPaths, { title: 'RefusedPath' }),
+    path: StringEnum(refusedPaths, {
+      title: 'RefusedPath',
+    }),
     address: Type.String(),
     port: PortNumber,
-    protocol: StringEnum(['tcp', 'udp', 'icmp', 'other'], { title: 'RefusedProtocol' }),
+    protocol: StringEnum(['tcp', 'udp', 'icmp', 'other'], {
+      title: 'RefusedProtocol',
+    }),
     count: Count,
-    expires_in_s: Seconds
+    expires_in_s: Seconds,
   },
-  { title: 'NetworkRefused' }
+  {
+    title: 'NetworkRefused',
+  },
 )
 
 const NetworkConntrack = Type.Object(
@@ -644,9 +989,11 @@ const NetworkConntrack = Type.Object(
     stale: Type.Boolean(),
     lossy: Type.Boolean(),
     accounting: Type.Boolean(),
-    timestamps: Type.Boolean()
+    timestamps: Type.Boolean(),
   },
-  { title: 'NetworkConntrack' }
+  {
+    title: 'NetworkConntrack',
+  },
 )
 
 const NetworkSample = Type.Object(
@@ -659,18 +1006,35 @@ const NetworkSample = Type.Object(
     connections: Type.Array(NetworkConnection),
     refused: Type.Array(NetworkRefused),
     refused_truncated: Type.Boolean(),
-    names: Type.Record(Type.String(), Type.String())
+    names: Type.Record(Type.String(), Type.String()),
   },
-  { title: 'NetworkSample' }
+  {
+    title: 'NetworkSample',
+  },
 )
 
-const NetworkSampleResultBody = Type.Object({ samples: Type.Array(NetworkSample) }, { title: 'NetworkSampleResultBody' })
+const NetworkSampleResultBody = Type.Object(
+  {
+    samples: Type.Array(NetworkSample),
+  },
+  {
+    title: 'NetworkSampleResultBody',
+  },
+)
 
 export const networkInspectChecksMax = 16
 
-export const networkCheckKinds = ['verdict', 'switch', 'host_switch', 'listening', 'container'] as const
+export const networkCheckKinds = [
+  'verdict',
+  'switch',
+  'host_switch',
+  'listening',
+  'container',
+] as const
 
-const NetworkCheckKind = StringEnum(networkCheckKinds, { title: 'NetworkCheckKind' })
+const NetworkCheckKind = StringEnum(networkCheckKinds, {
+  title: 'NetworkCheckKind',
+})
 
 const NetworkCheck = Type.Object(
   {
@@ -681,22 +1045,59 @@ const NetworkCheck = Type.Object(
     port: Type.Optional(PortNumber),
     protocol: Type.Optional(NetworkProtocolEnum),
     virtual_ip: Type.Optional(Type.String()),
-    host_port: Type.Optional(PortNumber)
+    host_port: Type.Optional(PortNumber),
   },
-  { title: 'NetworkCheck' }
+  {
+    title: 'NetworkCheck',
+  },
 )
 
-const NetworkInspectBody = Type.Object({ checks: Type.Array(NetworkCheck, { minItems: 1, maxItems: networkInspectChecksMax }) }, { title: 'NetworkInspectBody' })
+const NetworkInspectBody = Type.Object(
+  {
+    checks: Type.Array(NetworkCheck, {
+      minItems: 1,
+      maxItems: networkInspectChecksMax,
+    }),
+  },
+  {
+    title: 'NetworkInspectBody',
+  },
+)
 
-export const networkPathIds = ['same_environment', 'resolver', 'loopback', 'host_address', 'other_environment', 'cloud_metadata', 'private_range', 'public_internet', 'no_switch_target', 'sandbox_inbound', 'domain_not_allowed'] as const
+export const networkPathIds = [
+  'same_environment',
+  'resolver',
+  'loopback',
+  'host_address',
+  'other_environment',
+  'cloud_metadata',
+  'private_range',
+  'public_internet',
+  'no_switch_target',
+  'sandbox_inbound',
+  'domain_not_allowed',
+] as const
 
 export const networkVerdicts = ['accept', 'drop', 'reject'] as const
 
-const NetworkVerdictValue = StringEnum(networkVerdicts, { title: 'NetworkVerdictValue' })
+const NetworkVerdictValue = StringEnum(networkVerdicts, {
+  title: 'NetworkVerdictValue',
+})
 
-const NetworkPathId = StringEnum(networkPathIds, { title: 'NetworkPathId' })
+const NetworkPathId = StringEnum(networkPathIds, {
+  title: 'NetworkPathId',
+})
 
-const NetworkVerdict = Type.Object({ verdict: NetworkVerdictValue, path: NetworkPathId, rule: Type.String() }, { title: 'NetworkVerdict' })
+const NetworkVerdict = Type.Object(
+  {
+    verdict: NetworkVerdictValue,
+    path: NetworkPathId,
+    rule: Type.String(),
+  },
+  {
+    title: 'NetworkVerdict',
+  },
+)
 
 export const networkSocketsMax = 32
 
@@ -711,41 +1112,96 @@ const NetworkCheckResult = Type.Object(
     rejected: Type.Optional(Type.Boolean()),
     port: Type.Optional(Nullable(PortNumber)),
     gateway_target: Type.Optional(Type.Boolean()),
-    sockets: Type.Optional(Type.Array(ListeningSocket, { maxItems: networkSocketsMax })),
+    sockets: Type.Optional(
+      Type.Array(ListeningSocket, {
+        maxItems: networkSocketsMax,
+      }),
+    ),
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
     state: Type.Optional(Type.String()),
-    health: Type.Optional(Type.String())
+    health: Type.Optional(Type.String()),
   },
-  { title: 'NetworkCheckResult' }
+  {
+    title: 'NetworkCheckResult',
+  },
 )
 
-const NetworkInspectResultBody = Type.Object({ results: Type.Array(NetworkCheckResult) }, { title: 'NetworkInspectResultBody' })
+const NetworkInspectResultBody = Type.Object(
+  {
+    results: Type.Array(NetworkCheckResult),
+  },
+  {
+    title: 'NetworkInspectResultBody',
+  },
+)
 
 export const probeKinds = ['tcp', 'dns'] as const
 
-export const probeTimeout = { defaultS: 3, minS: 1, maxS: 10 } as const
+export const probeTimeout = {
+  defaultS: 3,
+  minS: 1,
+  maxS: 10,
+} as const
 
-const ProbeKind = StringEnum(probeKinds, { title: 'ProbeKind' })
+const ProbeKind = StringEnum(probeKinds, {
+  title: 'ProbeKind',
+})
 
 const NetworkProbeBody = Type.Object(
   {
     service_id: Type.Optional(Id('service')),
     sandbox_id: Type.Optional(Id('sandbox')),
     kind: ProbeKind,
-    to: Type.String({ minLength: 1, maxLength: 253 }),
+    to: Type.String({
+      minLength: 1,
+      maxLength: 253,
+    }),
     port: Type.Optional(PortNumber),
-    timeout_s: Type.Integer({ minimum: probeTimeout.minS, maximum: probeTimeout.maxS })
+    timeout_s: Type.Integer({
+      minimum: probeTimeout.minS,
+      maximum: probeTimeout.maxS,
+    }),
   },
-  { title: 'NetworkProbeBody' }
+  {
+    title: 'NetworkProbeBody',
+  },
 )
 
-export const probeTcpResults = ['connected', 'refused', 'rejected', 'timeout', 'no_route', 'no_answer'] as const
+export const probeTcpResults = [
+  'connected',
+  'refused',
+  'rejected',
+  'timeout',
+  'no_route',
+  'no_answer',
+] as const
 
-const ProbeDns = Type.Object({ rcode: Type.String(), answers: Type.Array(Type.String()), ms: Type.Number({ minimum: 0 }) }, { title: 'ProbeDns' })
+const ProbeDns = Type.Object(
+  {
+    rcode: Type.String(),
+    answers: Type.Array(Type.String()),
+    ms: Type.Number({
+      minimum: 0,
+    }),
+  },
+  {
+    title: 'ProbeDns',
+  },
+)
 
 const ProbeTcp = Type.Object(
-  { address: Nullable(Type.String()), result: StringEnum(probeTcpResults, { title: 'ProbeTcpResult' }), ms: Type.Number({ minimum: 0 }) },
-  { title: 'ProbeTcp' }
+  {
+    address: Nullable(Type.String()),
+    result: StringEnum(probeTcpResults, {
+      title: 'ProbeTcpResult',
+    }),
+    ms: Type.Number({
+      minimum: 0,
+    }),
+  },
+  {
+    title: 'ProbeTcp',
+  },
 )
 
 const NetworkProbeResultBody = Type.Object(
@@ -759,22 +1215,44 @@ const NetworkProbeResultBody = Type.Object(
     dns: Type.Optional(ProbeDns),
     tcp: Type.Optional(ProbeTcp),
     verdict: Type.Optional(NetworkVerdict),
-    at: Timestamp
+    at: Timestamp,
   },
-  { title: 'NetworkProbeResultBody' }
+  {
+    title: 'NetworkProbeResultBody',
+  },
 )
 
-export const dnsLogTail = { default: 50, max: 200 } as const
+export const dnsLogTail = {
+  default: 50,
+  max: 200,
+} as const
 
 const DnsLogBody = Type.Object(
   {
     service_id: Type.Optional(Id('service')),
     sandbox_id: Type.Optional(Id('sandbox')),
-    tail: Type.Optional(Type.Integer({ minimum: 1, maximum: dnsLogTail.max })),
-    name: Type.Optional(Type.String({ minLength: 1, maxLength: 253 })),
-    rcode: Type.Optional(Type.String({ minLength: 1, maxLength: 16 }))
+    tail: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: dnsLogTail.max,
+      }),
+    ),
+    name: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 253,
+      }),
+    ),
+    rcode: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 16,
+      }),
+    ),
   },
-  { title: 'DnsLogBody' }
+  {
+    title: 'DnsLogBody',
+  },
 )
 
 const DnsLogEntry = Type.Object(
@@ -786,49 +1264,146 @@ const DnsLogEntry = Type.Object(
     rcode: Type.String(),
     answers: Type.Array(Type.String()),
     upstream: Type.Boolean(),
-    ms: Type.Number({ minimum: 0 }),
+    ms: Type.Number({
+      minimum: 0,
+    }),
     probe: Type.Boolean(),
-    refused: Type.Optional(Nullable(StringEnum(['domain_not_allowed', 'rebind'], { title: 'DnsRefusal' })))
+    refused: Type.Optional(
+      Nullable(
+        StringEnum(['domain_not_allowed', 'rebind'], {
+          title: 'DnsRefusal',
+        }),
+      ),
+    ),
   },
-  { title: 'DnsLogEntry' }
+  {
+    title: 'DnsLogEntry',
+  },
 )
 
-const DnsLogResultBody = Type.Object({ entries: Type.Array(DnsLogEntry) }, { title: 'DnsLogResultBody' })
+const DnsLogResultBody = Type.Object(
+  {
+    entries: Type.Array(DnsLogEntry),
+  },
+  {
+    title: 'DnsLogResultBody',
+  },
+)
 
-const StreamNumber = Type.Integer({ minimum: 1, maximum: 4294967295 })
+const StreamNumber = Type.Integer({
+  minimum: 1,
+  maximum: 4294967295,
+})
 
-const ExecResizeBody = Type.Object({ stream: StreamNumber, rows: Count, cols: Count }, { title: 'ExecResizeBody' })
+const ExecResizeBody = Type.Object(
+  {
+    stream: StreamNumber,
+    rows: Count,
+    cols: Count,
+  },
+  {
+    title: 'ExecResizeBody',
+  },
+)
 
-const StreamRefBody = Type.Object({ stream: StreamNumber }, { title: 'StreamRefBody' })
+const StreamRefBody = Type.Object(
+  {
+    stream: StreamNumber,
+  },
+  {
+    title: 'StreamRefBody',
+  },
+)
 
 const ForwardOpenBody = Type.Object(
-  { environment_id: Type.Optional(Id('environment')), service_id: Type.Optional(Id('service')), sandbox_id: Type.Optional(Id('sandbox')), port: Port },
-  { title: 'ForwardOpenBody' }
+  {
+    environment_id: Type.Optional(Id('environment')),
+    service_id: Type.Optional(Id('service')),
+    sandbox_id: Type.Optional(Id('sandbox')),
+    port: Port,
+  },
+  {
+    title: 'ForwardOpenBody',
+  },
 )
 
-const StreamOpenedBody = Type.Object({ stream: StreamNumber, window: Bytes }, { title: 'StreamOpenedBody' })
+const StreamOpenedBody = Type.Object(
+  {
+    stream: StreamNumber,
+    window: Bytes,
+  },
+  {
+    title: 'StreamOpenedBody',
+  },
+)
 
-const StreamDataBody = Type.Object({ stream: StreamNumber, items: Type.Array(Json) }, { title: 'StreamDataBody' })
+const StreamDataBody = Type.Object(
+  {
+    stream: StreamNumber,
+    items: Type.Array(Json),
+  },
+  {
+    title: 'StreamDataBody',
+  },
+)
 
-const StreamCreditBody = Type.Object({ stream: StreamNumber, bytes: Bytes }, { title: 'StreamCreditBody' })
+const StreamCreditBody = Type.Object(
+  {
+    stream: StreamNumber,
+    bytes: Bytes,
+  },
+  {
+    title: 'StreamCreditBody',
+  },
+)
 
-const StreamEndBody = Type.Object({ stream: StreamNumber, reason: Type.String(), exit_code: Nullable(Type.Integer()) }, { title: 'StreamEndBody' })
+const StreamEndBody = Type.Object(
+  {
+    stream: StreamNumber,
+    reason: Type.String(),
+    exit_code: Nullable(Type.Integer()),
+  },
+  {
+    title: 'StreamEndBody',
+  },
+)
 
 const SecretTarget = Type.Union(
   [
-    Type.Object({ deployment_id: Id('deployment') }),
-    Type.Object({ run_id: Id('run') }),
-    Type.Object({ build_id: Id('build') }),
-    Type.Object({ component: Type.String() }),
-    Type.Object({ snapshot_id: Id('volume_snapshot') }),
-    Type.Object({ sandbox_id: Id('sandbox') })
+    Type.Object({
+      deployment_id: Id('deployment'),
+    }),
+    Type.Object({
+      run_id: Id('run'),
+    }),
+    Type.Object({
+      build_id: Id('build'),
+    }),
+    Type.Object({
+      component: Type.String(),
+    }),
+    Type.Object({
+      snapshot_id: Id('volume_snapshot'),
+    }),
+    Type.Object({
+      sandbox_id: Id('sandbox'),
+    }),
   ],
-  { title: 'SecretTarget' }
+  {
+    title: 'SecretTarget',
+  },
 )
 
-const Base64UrlOrEmpty = Type.String({ pattern: '^[A-Za-z0-9_-]*$' })
+const Base64UrlOrEmpty = Type.String({
+  pattern: '^[A-Za-z0-9_-]*$',
+})
 
-const SecretPurpose = StringEnum(['deploy', 'redaction', 'run', 'build', 'component', 'backup', 'sandbox'], { title: 'SecretPurpose' })
+const SecretPurpose = StringEnum(
+  ['deploy', 'redaction', 'run', 'build', 'component', 'backup', 'sandbox'],
+  {
+    title: 'SecretPurpose',
+  },
+)
 
 const SecretsDeliverBody = Type.Object(
   {
@@ -841,36 +1416,110 @@ const SecretsDeliverBody = Type.Object(
           key: Type.String(),
           injection: Injection,
           refs: Type.Array(EnvRef),
-          value: Base64UrlOrEmpty
+          value: Base64UrlOrEmpty,
         },
-        { title: 'SecretValue' }
-      )
+        {
+          title: 'SecretValue',
+        },
+      ),
     ),
-    redaction: Type.Array(Type.Object({ key: Type.String(), value: Base64UrlOrEmpty }, { title: 'SecretRedaction' }))
+    redaction: Type.Array(
+      Type.Object(
+        {
+          key: Type.String(),
+          value: Base64UrlOrEmpty,
+        },
+        {
+          title: 'SecretRedaction',
+        },
+      ),
+    ),
   },
-  { title: 'SecretsDeliverBody' }
+  {
+    title: 'SecretsDeliverBody',
+  },
 )
 
-const SecretsAckBody = Type.Object({ target: SecretTarget, env_digest: Digest }, { title: 'SecretsAckBody' })
+const SecretsAckBody = Type.Object(
+  {
+    target: SecretTarget,
+    env_digest: Digest,
+  },
+  {
+    title: 'SecretsAckBody',
+  },
+)
 
-const SecretsRequestBody = Type.Object({ target: SecretTarget, env_digest: Digest, purpose: SecretPurpose }, { title: 'SecretsRequestBody' })
+const SecretsRequestBody = Type.Object(
+  {
+    target: SecretTarget,
+    env_digest: Digest,
+    purpose: SecretPurpose,
+  },
+  {
+    title: 'SecretsRequestBody',
+  },
+)
 
-const MasterKeyPrepareBody = Type.Object({ current_key: Type.String(), new_key: Type.String() }, { title: 'MasterKeyPrepareBody' })
+const MasterKeyPrepareBody = Type.Object(
+  {
+    current_key: Type.String(),
+    new_key: Type.String(),
+  },
+  {
+    title: 'MasterKeyPrepareBody',
+  },
+)
 
-const MasterKeyPreparedBody = Type.Object({ data_keys: Count }, { title: 'MasterKeyPreparedBody' })
+const MasterKeyPreparedBody = Type.Object(
+  {
+    data_keys: Count,
+  },
+  {
+    title: 'MasterKeyPreparedBody',
+  },
+)
 
-const HostAdminBody = Type.Object({ op: Type.String(), params: JsonObject }, { title: 'HostAdminBody' })
+const HostAdminBody = Type.Object(
+  {
+    op: Type.String(),
+    params: JsonObject,
+  },
+  {
+    title: 'HostAdminBody',
+  },
+)
 
-const HostAdminResultBody = Type.Object({ result: JsonObject }, { title: 'HostAdminResultBody' })
+const HostAdminResultBody = Type.Object(
+  {
+    result: JsonObject,
+  },
+  {
+    title: 'HostAdminResultBody',
+  },
+)
 
 const RegistryDeleteBody = Type.Object(
   {
     items: Type.Array(
-      Type.Object({ repository: Type.String(), digest: Digest, reason: Type.String() }, { title: 'RegistryDeleteItem' }),
-      { maxItems: limits.registryDeleteItems }
-    )
+      Type.Object(
+        {
+          repository: Type.String(),
+          digest: Digest,
+          reason: Type.String(),
+        },
+        {
+          title: 'RegistryDeleteItem',
+        },
+      ),
+      {
+        maxItems: limits.registryDeleteItems,
+      },
+    ),
   },
-  { title: 'RegistryDeleteBody' }
+  {
+    title: 'RegistryDeleteBody',
+  },
 )
 
 const RegistryDeleteResultBody = Type.Object(
@@ -880,30 +1529,62 @@ const RegistryDeleteResultBody = Type.Object(
         {
           repository: Type.String(),
           digest: Digest,
-          status: StringEnum(['deleted', 'absent', 'failed'], { title: 'RegistryDeleteStatus' }),
-          error: Nullable(ErrorBody)
+          status: StringEnum(['deleted', 'absent', 'failed'], {
+            title: 'RegistryDeleteStatus',
+          }),
+          error: Nullable(ErrorBody),
         },
-        { title: 'RegistryDeleteResult' }
-      )
-    )
+        {
+          title: 'RegistryDeleteResult',
+        },
+      ),
+    ),
   },
-  { title: 'RegistryDeleteResultBody' }
+  {
+    title: 'RegistryDeleteResultBody',
+  },
 )
 
-const RegistryGcBody = Type.Object({ reason: StringEnum(['schedule', 'disk_pressure'], { title: 'RegistryGcReason' }) }, { title: 'RegistryGcBody' })
+const RegistryGcBody = Type.Object(
+  {
+    reason: StringEnum(['schedule', 'disk_pressure'], {
+      title: 'RegistryGcReason',
+    }),
+  },
+  {
+    title: 'RegistryGcBody',
+  },
+)
 
-const ScanStartBody = Type.Object({ request: JsonObject }, { title: 'ScanStartBody' })
+const ScanStartBody = Type.Object(
+  {
+    request: JsonObject,
+  },
+  {
+    title: 'ScanStartBody',
+  },
+)
 
-const DomainProbeBody = Type.Object({ domain_id: Id('domain'), hostname: Type.String() }, { title: 'DomainProbeBody' })
+const DomainProbeBody = Type.Object(
+  {
+    domain_id: Id('domain'),
+    hostname: Type.String(),
+  },
+  {
+    title: 'DomainProbeBody',
+  },
+)
 
 const DomainProbeResultBody = Type.Object(
   {
     domain_id: Id('domain'),
     ok: Type.Boolean(),
     status_code: Nullable(Type.Integer()),
-    failure: Nullable(ErrorBody)
+    failure: Nullable(ErrorBody),
   },
-  { title: 'DomainProbeResultBody' }
+  {
+    title: 'DomainProbeResultBody',
+  },
 )
 
 const BlobGrantRequestBody = Type.Object(
@@ -911,42 +1592,84 @@ const BlobGrantRequestBody = Type.Object(
     blob_id: Type.Optional(Id('blob')),
     upstream: Type.Optional(
       Type.Union(
-        [Type.Object({ tuf_path: Type.String() }), Type.Object({ signature_digest: Digest })],
-        { title: 'BlobUpstream' }
-      )
-    )
+        [
+          Type.Object({
+            tuf_path: Type.String(),
+          }),
+          Type.Object({
+            signature_digest: Digest,
+          }),
+        ],
+        {
+          title: 'BlobUpstream',
+        },
+      ),
+    ),
   },
-  { title: 'BlobGrantRequestBody' }
+  {
+    title: 'BlobGrantRequestBody',
+  },
 )
 
 const DoctorCheck = Type.Object(
   {
     name: Type.String(),
-    status: StringEnum(doctorStatusValues, { title: 'DoctorStatus' }),
+    status: StringEnum(doctorStatusValues, {
+      title: 'DoctorStatus',
+    }),
     code: Nullable(Type.String()),
     finding: Type.String(),
     fix: Nullable(Type.String()),
-    detail: Type.Optional(JsonObject)
+    detail: Type.Optional(JsonObject),
   },
-  { title: 'DoctorCheck' }
+  {
+    title: 'DoctorCheck',
+  },
 )
 
-const DoctorRunBody = Type.Object({ checks: Type.Optional(Type.Array(Type.String())) }, { title: 'DoctorRunBody' })
+const DoctorRunBody = Type.Object(
+  {
+    checks: Type.Optional(Type.Array(Type.String())),
+  },
+  {
+    title: 'DoctorRunBody',
+  },
+)
 
-const DoctorReportBody = Type.Object({ checked_at: Timestamp, checks: Type.Array(DoctorCheck) }, { title: 'DoctorReportBody' })
+const DoctorReportBody = Type.Object(
+  {
+    checked_at: Timestamp,
+    checks: Type.Array(DoctorCheck),
+  },
+  {
+    title: 'DoctorReportBody',
+  },
+)
 
 const BackupTarget = Type.Object(
   {
-    type: StringEnum(['path', 's3'], { title: 'BackupTargetType' }),
+    type: StringEnum(['path', 's3'], {
+      title: 'BackupTargetType',
+    }),
     path: Nullable(Type.String()),
     endpoint: Nullable(Type.String()),
     bucket: Nullable(Type.String()),
-    prefix: Nullable(Type.String())
+    prefix: Nullable(Type.String()),
   },
-  { title: 'BackupTarget' }
+  {
+    title: 'BackupTarget',
+  },
 )
 
-const BackupObjects = Type.Object({ archive: Type.String(), metadata: Type.String() }, { title: 'BackupObjects' })
+const BackupObjects = Type.Object(
+  {
+    archive: Type.String(),
+    metadata: Type.String(),
+  },
+  {
+    title: 'BackupObjects',
+  },
+)
 
 const VolumeBackupBody = Type.Object(
   {
@@ -959,19 +1682,33 @@ const VolumeBackupBody = Type.Object(
     image_ref: Nullable(Type.String()),
     mount_path: Type.String(),
     target: BackupTarget,
-    name: Type.String({ pattern: '^[A-Za-z0-9_.-]+$' }),
-    quiesce: Type.Boolean()
+    name: Type.String({
+      pattern: '^[A-Za-z0-9_.-]+$',
+    }),
+    quiesce: Type.Boolean(),
   },
-  { title: 'VolumeBackupBody' }
+  {
+    title: 'VolumeBackupBody',
+  },
 )
 
-const VolumeBackupAcceptedBody = Type.Object({ snapshot_id: Id('volume_snapshot'), objects: BackupObjects }, { title: 'VolumeBackupAcceptedBody' })
+const VolumeBackupAcceptedBody = Type.Object(
+  {
+    snapshot_id: Id('volume_snapshot'),
+    objects: BackupObjects,
+  },
+  {
+    title: 'VolumeBackupAcceptedBody',
+  },
+)
 
 const VolumeBackupResultBody = Type.Object(
   {
     snapshot_id: Id('volume_snapshot'),
     volume_id: Id('volume'),
-    status: StringEnum(['complete', 'failed'], { title: 'VolumeBackupStatus' }),
+    status: StringEnum(['complete', 'failed'], {
+      title: 'VolumeBackupStatus',
+    }),
     objects: BackupObjects,
     size_bytes: Bytes,
     archive_bytes: Bytes,
@@ -979,9 +1716,11 @@ const VolumeBackupResultBody = Type.Object(
     consistent: Type.Boolean(),
     started_at: Timestamp,
     finished_at: Timestamp,
-    failure: Nullable(ErrorBody)
+    failure: Nullable(ErrorBody),
   },
-  { title: 'VolumeBackupResultBody' }
+  {
+    title: 'VolumeBackupResultBody',
+  },
 )
 
 const VolumeRestoreBody = Type.Object(
@@ -989,52 +1728,92 @@ const VolumeRestoreBody = Type.Object(
     snapshot_id: Id('volume_snapshot'),
     volume_id: Id('volume'),
     docker_name: Type.String(),
-    owner: StringEnum(volumeOwnerValues, { title: 'VolumeOwner' }),
+    owner: StringEnum(volumeOwnerValues, {
+      title: 'VolumeOwner',
+    }),
     target: BackupTarget,
     objects: BackupObjects,
-    sha256: Type.String({ pattern: '^[0-9a-f]{64}$' })
+    sha256: Type.String({
+      pattern: '^[0-9a-f]{64}$',
+    }),
   },
-  { title: 'VolumeRestoreBody' }
+  {
+    title: 'VolumeRestoreBody',
+  },
 )
 
-const VolumeRestoreAcceptedBody = Type.Object({ volume_id: Id('volume') }, { title: 'VolumeRestoreAcceptedBody' })
+const VolumeRestoreAcceptedBody = Type.Object(
+  {
+    volume_id: Id('volume'),
+  },
+  {
+    title: 'VolumeRestoreAcceptedBody',
+  },
+)
 
 const VolumeRestoreResultBody = Type.Object(
   {
     snapshot_id: Id('volume_snapshot'),
     volume_id: Id('volume'),
-    status: StringEnum(['complete', 'failed'], { title: 'VolumeRestoreStatus' }),
+    status: StringEnum(['complete', 'failed'], {
+      title: 'VolumeRestoreStatus',
+    }),
     sha256: Nullable(Type.String()),
     size_bytes: Bytes,
     files: Count,
     tree_sha256: Nullable(Type.String()),
     started_at: Timestamp,
     finished_at: Timestamp,
-    failure: Nullable(ErrorBody)
+    failure: Nullable(ErrorBody),
   },
-  { title: 'VolumeRestoreResultBody' }
+  {
+    title: 'VolumeRestoreResultBody',
+  },
 )
 
 const VolumeBackupDeleteBody = Type.Object(
   {
     items: Type.Array(
-      Type.Object({ snapshot_id: Id('volume_snapshot'), target: BackupTarget, objects: BackupObjects }, { title: 'VolumeBackupDeleteItem' }),
-      { maxItems: 1000 }
-    )
+      Type.Object(
+        {
+          snapshot_id: Id('volume_snapshot'),
+          target: BackupTarget,
+          objects: BackupObjects,
+        },
+        {
+          title: 'VolumeBackupDeleteItem',
+        },
+      ),
+      {
+        maxItems: 1000,
+      },
+    ),
   },
-  { title: 'VolumeBackupDeleteBody' }
+  {
+    title: 'VolumeBackupDeleteBody',
+  },
 )
 
 const VolumeBackupDeleteResultBody = Type.Object(
   {
     items: Type.Array(
       Type.Object(
-        { snapshot_id: Id('volume_snapshot'), status: StringEnum(['deleted', 'absent', 'failed'], { title: 'VolumeBackupDeleteStatus' }), error: Nullable(ErrorBody) },
-        { title: 'VolumeBackupDeleteResult' }
-      )
-    )
+        {
+          snapshot_id: Id('volume_snapshot'),
+          status: StringEnum(['deleted', 'absent', 'failed'], {
+            title: 'VolumeBackupDeleteStatus',
+          }),
+          error: Nullable(ErrorBody),
+        },
+        {
+          title: 'VolumeBackupDeleteResult',
+        },
+      ),
+    ),
   },
-  { title: 'VolumeBackupDeleteResultBody' }
+  {
+    title: 'VolumeBackupDeleteResultBody',
+  },
 )
 
 type Sender = 'dispatch' | 'station' | 'both'
@@ -1046,10 +1825,21 @@ type MessageDefinition = {
   outboxed: boolean
 }
 
-const message = <Body extends TSchema>(from: Sender, body: Body, capability: Capability | null = null, outboxed = false) =>
-  ({ from, body, capability, outboxed }) satisfies MessageDefinition
+const message = <Body extends TSchema>(
+  from: Sender,
+  body: Body,
+  capability: Capability | null = null,
+  outboxed = false,
+) =>
+  ({
+    from,
+    body,
+    capability,
+    outboxed,
+  }) satisfies MessageDefinition
 
-const outboxed = <Body extends TSchema>(body: Body, capability: Capability | null = null) => message('station', body, capability, true)
+const outboxed = <Body extends TSchema>(body: Body, capability: Capability | null = null) =>
+  message('station', body, capability, true)
 
 export const messages = {
   challenge: message('dispatch', ChallengeBody),
@@ -1156,14 +1946,17 @@ export const messages = {
   'stream.data': message('both', StreamDataBody),
   'stream.credit': message('both', StreamCreditBody),
   'stream.end': message('both', StreamEndBody),
-  'stream.cancel': message('both', StreamRefBody)
+  'stream.cancel': message('both', StreamRefBody),
 } as const
 
 export type MessageType = keyof typeof messages
 
 export type MessageBody<T extends MessageType> = Static<(typeof messages)[T]['body']>
 
-export type Message<T extends MessageType> = Omit<Static<typeof Envelope>, 'type' | 'body'> & { type: T; body: MessageBody<T> }
+export type Message<T extends MessageType> = Omit<Static<typeof Envelope>, 'type' | 'body'> & {
+  type: T
+  body: MessageBody<T>
+}
 
 export const coreMessageTypes = [
   'challenge',
@@ -1175,5 +1968,5 @@ export const coreMessageTypes = [
   'error',
   'outbox.ack',
   'observed.report',
-  'blob.grant'
+  'blob.grant',
 ] as const satisfies readonly MessageType[]

@@ -9,14 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/dispatch"
-	"github.com/harshjv/stationly/go/internal/docker"
-	"github.com/harshjv/stationly/go/internal/logstore"
-	"github.com/harshjv/stationly/go/internal/netns"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	mdns "github.com/miekg/dns"
 	"github.com/moby/moby/api/types/container"
 	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/dispatch"
+	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/logstore"
+	"github.com/harshjv/stationly/go/internal/millis"
+	"github.com/harshjv/stationly/go/internal/netns"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -135,14 +137,14 @@ func (s *Station) runCheck(ctx context.Context, st *netState, c protocol.Network
 			return checkError(c.Kind, checkFailed)
 		}
 		defer ns.Close()
-		real, rejected, err := ns.SwitchEntry(vip)
+		realAddr, rejected, err := ns.SwitchEntry(vip)
 		if err != nil {
 			s.log.Warn("network.inspect switch", "service", t.serviceID, "error", err)
 			return checkError(c.Kind, checkFailed)
 		}
 		r := protocol.NetworkCheckResult{Kind: c.Kind, Address: protocol.NetworkCheckResultAddress(nil)}
-		if real.IsValid() {
-			r.Address = protocol.NetworkCheckResultAddress(ptr(real.String()))
+		if realAddr.IsValid() {
+			r.Address = protocol.NetworkCheckResultAddress(ptr(realAddr.String()))
 			return r
 		}
 		r.Rejected = ptr(rejected)
@@ -201,12 +203,12 @@ func (s *Station) hostSwitchCheck(ctx context.Context, st *netState, c protocol.
 		if err != nil {
 			return checkError(c.Kind, checkInvalid)
 		}
-		real, err := netns.HostSwitch(vip)
+		realAddr, err := netns.HostSwitch(vip)
 		if err != nil {
 			return checkError(c.Kind, checkFailed)
 		}
-		if real.IsValid() {
-			r.Address = protocol.NetworkCheckResultAddress(ptr(real.String()))
+		if realAddr.IsValid() {
+			r.Address = protocol.NetworkCheckResultAddress(ptr(realAddr.String()))
 		}
 		if c.Port != nil {
 			r.Port = protocol.NetworkCheckResultPort(ptr(*c.Port))
@@ -252,10 +254,6 @@ func (h *netHub) releaseProbe(id string) {
 	h.mu.Lock()
 	delete(h.probing, id)
 	h.mu.Unlock()
-}
-
-func millisSince(t time.Time) float64 {
-	return float64(time.Since(t).Microseconds()) / 1000
 }
 
 func (s *Station) probeNetwork(ctx context.Context, m dispatch.Message, b protocol.NetworkProbeBody) {
@@ -357,7 +355,7 @@ func (s *Station) runProbe(ctx context.Context, st *netState, t netTarget, b pro
 	}
 	start := time.Now()
 	cerr := conn.Connect(ctx, dst)
-	ms := millisSince(start)
+	ms := millis.Of(time.Since(start))
 	conn.Close()
 	result, err := probeTCPResult(ctx, cerr, res.Verdict)
 	if err != nil {
@@ -409,7 +407,7 @@ func (s *Station) probeDNS(ctx context.Context, ns *netns.Namespace, resolver ne
 	}
 	buf := make([]byte, 4096)
 	n, err := conn.Read(ctx, buf)
-	out.Ms = millisSince(start)
+	out.Ms = millis.Of(time.Since(start))
 	if err != nil {
 		if ctx.Err() != nil {
 			out.Rcode = "TIMEOUT"

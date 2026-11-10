@@ -1,6 +1,14 @@
 import { Link } from '@tanstack/react-router'
 import { Fragment, type ReactNode } from 'react'
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
+
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 
 export type Crumb = { label: ReactNode; to?: string; params?: Record<string, string> }
 

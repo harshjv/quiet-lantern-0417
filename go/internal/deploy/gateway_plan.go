@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -15,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/gateway"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
@@ -246,7 +245,7 @@ func ACMEDirectory(requested *string, trust verify.Trust) string {
 	return *requested
 }
 
-func planGateway(g *protocol.Generation, couplerImage string, now time.Time, trust verify.Trust) (*GatewayPlan, error) {
+func planGateway(g *protocol.Generation, _ string, now time.Time, trust verify.Trust) (*GatewayPlan, error) {
 	ingress := netip.MustParsePrefix(g.Station.Networks.Ingress.Subnet).Masked()
 	vp, err := netip.ParsePrefix(g.Station.Settings.IpamVirtualPrefix)
 	if err != nil {
@@ -280,7 +279,7 @@ func planGateway(g *protocol.Generation, couplerImage string, now time.Time, tru
 		gp.Run = true
 		gp.Version = pin.Version
 		gp.Digest = *pin.Digest
-		gp.Image = docker.GatewaySource + "@" + gp.Digest
+		gp.Image = protocol.GatewaySource + "@" + gp.Digest
 	}
 	body, err := gateway.StaticConfig(gp.Static, gp.ClassicHours)
 	if err != nil {

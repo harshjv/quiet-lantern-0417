@@ -1,22 +1,37 @@
 import { runTerminalStatuses } from '@stationly/protocol'
-import type { Options } from './command.ts'
-import { exitCodes } from './errors.ts'
-import { acrossOutage } from './outage.ts'
-import { progress } from './output.ts'
 
-export type RunRow = { id: string; status: string; exit_code: number | null; failure?: { code?: string; summary?: string } | null }
+import { exitCodes } from './errors.ts'
+import { send, type Api, type Data, type Globals, type Run } from './kit.ts'
+import { pollUntil } from './outage.ts'
+import { json, progress } from './output.ts'
+
+export type RunRow = Data<ReturnType<Api['runs']>['get']>
 
 const terminalRun = new Set<string>(runTerminalStatuses)
 
-export const waitRun = async (row: RunRow, read: () => Promise<RunRow>) => {
-  let current = row
-  while (!terminalRun.has(current.status)) current = await acrossOutage(read)
-  return current
-}
+export const waitRun = (run: Run, id: string) =>
+  pollUntil(
+    async () =>
+      (
+        await send(
+          run.api.v1
+            .runs({
+              id,
+            })
+            .get({
+              query: {
+                wait_s: 10,
+                fields: 'failure',
+              },
+            }),
+        )
+      ).data,
+    (row) => terminalRun.has(row.status),
+  )
 
-export const reportRun = (options: Options, row: RunRow) => {
+export const reportRun = (globals: Globals, row: RunRow) => {
   progress(`${row.id}: ${row.status}, exit code ${row.exit_code ?? '-'}`)
-  if (options.json) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`)
+  if (globals.json) json(row)
   if (row.status === 'succeeded') return exitCodes.ok
   process.stderr.write(`${row.failure?.code ?? 'EXIT_NONZERO'}\n`)
   return exitCodes.api

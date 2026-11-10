@@ -13,14 +13,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/harshjv/stationly/go/internal/fsx"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
 	DefaultEtcDir = "/etc/stationly"
 	fileName      = "host.toml"
-	recoveryLabel = "sly-rk-"
 )
 
 type Dispatch struct {
@@ -105,13 +106,13 @@ func (c *Config) RecoveryKey() (string, error) {
 	if err != nil || len(raw) != 32 {
 		return "", errors.New("dispatch.master_key in host.toml is not 32 base64url bytes")
 	}
-	return recoveryLabel + strings.TrimRight(base32.StdEncoding.EncodeToString(raw), "="), nil
+	return protocol.RecoveryKeyPrefix + strings.TrimRight(base32.StdEncoding.EncodeToString(raw), "="), nil
 }
 
 func MasterKeyFromRecovery(recovery string) (string, error) {
-	text, ok := strings.CutPrefix(strings.TrimSpace(recovery), recoveryLabel)
+	text, ok := strings.CutPrefix(strings.TrimSpace(recovery), protocol.RecoveryKeyPrefix)
 	if !ok {
-		return "", fmt.Errorf("a recovery key starts with %s", recoveryLabel)
+		return "", fmt.Errorf("a recovery key starts with %s", protocol.RecoveryKeyPrefix)
 	}
 	raw, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(text))
 	if err != nil || len(raw) != 32 {

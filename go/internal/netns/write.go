@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
-	"github.com/google/nftables/userdata"
 	"golang.org/x/sys/unix"
 )
 
@@ -72,81 +71,85 @@ func ifname(name string) []byte {
 	return b
 }
 
-func write(c *nftables.Conn, b Baseline, hostAddrs []netip.Prefix, sw map[netip.Addr]netip.Addr, reject []netip.Addr) error {
-	c.AddTable(table)
-	c.DelTable(table)
-	c.AddTable(table)
+func dnsDNAT(proto byte, resolver netip.Addr) []expr.Any {
+	return append(dport53(proto),
+		&expr.Counter{},
+		&expr.Immediate{Register: 1, Data: resolver.AsSlice()},
+		&expr.Immediate{Register: 2, Data: port(53)},
+		&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2, Specified: true},
+	)
+}
 
-	hosts, private, targets, smap, rejects, refused := hostAddrsSet(), privateRangesSet(), vipTargetsSet(), switchMap(), switchRejectSet(), refusedSet()
-	var targetEls, switchEls, rejectEls []nftables.SetElement
-	for _, vip := range reject {
-		rejectEls = append(rejectEls, nftables.SetElement{Key: vip.AsSlice()})
-	}
-	for vip, real := range sw {
-		targetEls = append(targetEls, nftables.SetElement{Key: vip.AsSlice()})
-		switchEls = append(switchEls, nftables.SetElement{Key: vip.AsSlice(), Val: real.AsSlice()})
-	}
-	for _, set := range []struct {
-		s   *nftables.Set
-		els []nftables.SetElement
-	}{
-		{hosts, intervalElements(hostAddrs)},
-		{private, intervalElements(PrivateRanges)},
-		{targets, targetEls},
-		{smap, switchEls},
-		{rejects, rejectEls},
-		{refused, nil},
-	} {
-		if err := c.AddSet(set.s, set.els); err != nil {
-			return err
-		}
-	}
+func dnsSNAT(proto byte, resolver, self netip.Addr) []expr.Any {
+	return append(dport53(proto),
+		saddr(),
+		&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{255, 0, 0, 0}, Xor: []byte{0, 0, 0, 0}},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{127, 0, 0, 0}},
+		daddr(),
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: resolver.AsSlice()},
+		&expr.Counter{},
+		&expr.Immediate{Register: 1, Data: self.AsSlice()},
+		&expr.NAT{Type: expr.NATTypeSourceNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1},
+	)
+}
 
-	resolver := b.Resolver.AsSlice()
-	self := b.Self.AsSlice()
-	drop := nftables.ChainPolicyDrop
-
-	intercept := c.AddChain(&nftables.Chain{Name: "dns_intercept", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(-110)})
-	source := c.AddChain(&nftables.Chain{Name: "dns_source", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPostrouting, Priority: nftables.ChainPriorityRef(100)})
-	switchOut := c.AddChain(&nftables.Chain{Name: "switch_out", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(-100)})
-	egress := c.AddChain(&nftables.Chain{Name: "egress", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
-
+func addDNSRedirect(c *nftables.Conn, intercept, source *nftables.Chain, resolver, self netip.Addr) {
 	for _, proto := range []byte{unix.IPPROTO_UDP, unix.IPPROTO_TCP} {
-		c.AddRule(&nftables.Rule{Table: table, Chain: intercept, Exprs: append(dport53(proto),
-			&expr.Counter{},
-			&expr.Immediate{Register: 1, Data: resolver},
-			&expr.Immediate{Register: 2, Data: port(53)},
-			&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2, Specified: true},
-		)})
-		c.AddRule(&nftables.Rule{Table: table, Chain: source, Exprs: append(dport53(proto),
-			saddr(),
-			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: []byte{255, 0, 0, 0}, Xor: []byte{0, 0, 0, 0}},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{127, 0, 0, 0}},
-			daddr(),
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: resolver},
-			&expr.Counter{},
-			&expr.Immediate{Register: 1, Data: self},
-			&expr.NAT{Type: expr.NATTypeSourceNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1},
-		)})
+		c.AddRule(&nftables.Rule{Table: intercept.Table, Chain: intercept, Exprs: dnsDNAT(proto, resolver)})
+		c.AddRule(&nftables.Rule{Table: source.Table, Chain: source, Exprs: dnsSNAT(proto, resolver, self)})
 	}
+}
 
-	c.AddRule(&nftables.Rule{Table: table, Chain: switchOut, Exprs: append(ipv4(),
+func switchDNAT(targets, smap *nftables.Set) []expr.Any {
+	return append(ipv4(),
 		daddr(),
 		lookup(targets, false),
 		daddr(),
 		&expr.Lookup{SourceRegister: 1, DestRegister: 1, IsDestRegSet: true, SetName: smap.Name, SetID: smap.ID},
 		&expr.Counter{},
 		&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1},
-	)})
+	)
+}
 
-	egressRules := egressExprs(egressTable(b, egressSets{hosts: hosts, private: private, targets: targets, rejects: rejects}), refused)
-	for i, exprs := range egressRules {
-		r := &nftables.Rule{Table: table, Chain: egress, Exprs: exprs}
-		if i == 0 {
-			r.UserData = userdata.AppendString(nil, userdata.TypeComment, commentPrefix+b.fingerprint())
-		}
-		c.AddRule(r)
+type switchSets struct {
+	hosts, private, targets, smap, rejects, refused *nftables.Set
+}
+
+func newSwitchSets() switchSets {
+	return switchSets{hostAddrsSet(), privateRangesSet(), vipTargetsSet(), switchMap(), switchRejectSet(), refusedSet()}
+}
+
+func (s switchSets) egress() egressSets {
+	return egressSets{hosts: s.hosts, private: s.private, targets: s.targets, rejects: s.rejects}
+}
+
+func (s switchSets) elements(hostAddrs []netip.Prefix, sw map[netip.Addr]netip.Addr, reject []netip.Addr) []setEls {
+	targetEls, switchEls := switchElements(sw)
+	return []setEls{
+		{s.hosts, intervalElements(hostAddrs)},
+		{s.private, intervalElements(PrivateRanges)},
+		{s.targets, targetEls},
+		{s.smap, switchEls},
+		{s.rejects, addrSetElements(reject)},
+		{s.refused, nil},
 	}
+}
+
+func write(c *nftables.Conn, b Baseline, hostAddrs []netip.Prefix, sw map[netip.Addr]netip.Addr, reject []netip.Addr) error {
+	sets := newSwitchSets()
+	if err := resetTable(c, table, sets.elements(hostAddrs, sw, reject)); err != nil {
+		return err
+	}
+
+	drop := nftables.ChainPolicyDrop
+	intercept := c.AddChain(&nftables.Chain{Name: "dns_intercept", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(-110)})
+	source := c.AddChain(&nftables.Chain{Name: "dns_source", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPostrouting, Priority: nftables.ChainPriorityRef(100)})
+	switchOut := c.AddChain(&nftables.Chain{Name: "switch_out", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(-100)})
+	egress := c.AddChain(&nftables.Chain{Name: "egress", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
+
+	addDNSRedirect(c, intercept, source, b.Resolver, b.Self)
+	c.AddRule(&nftables.Rule{Table: table, Chain: switchOut, Exprs: switchDNAT(sets.targets, sets.smap)})
+	addFingerprinted(c, egress, egressExprs(egressTable(b, sets.egress()), sets.refused), commentPrefix+b.fingerprint())
 	return c.Flush()
 }
 

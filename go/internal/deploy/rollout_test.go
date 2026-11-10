@@ -58,11 +58,11 @@ func TestRolloutNamespaceOfAServiceThatLeftTheGenerationIsAbsentNotAPanic(t *tes
 	}
 }
 
-func capStation(t *testing.T, cap int) (*Station, *rollout, *rollout) {
+func capStation(t *testing.T, limit int) (*Station, *rollout, *rollout) {
 	t.Helper()
 	first, second := "dep_01JCROLLOUT0000000000000A", "dep_01JCROLLOUT0000000000000B"
 	g := &protocol.Generation{
-		Station: protocol.DesiredStation{ConcurrencyCap: cap},
+		Station: protocol.DesiredStation{ConcurrencyCap: limit},
 		Services: map[string]protocol.DesiredService{
 			alphaWhoami: {EnvironmentId: alphaEnv},
 			alphaClient: {EnvironmentId: alphaEnv},

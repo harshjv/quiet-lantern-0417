@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/ids"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
@@ -424,7 +425,7 @@ func (s *Station) stopRun(ctx context.Context, rr *runRecord, reason string) {
 		return
 	}
 	if rr.Status == protocol.RunStatusRunning {
-		s.docker.Signal(ctx, docker.RunName(rr.ID), "SIGKILL")
+		_ = s.docker.Signal(ctx, docker.RunName(rr.ID), "SIGKILL")
 		for wait := time.Now(); time.Since(wait) < runStopWait; time.Sleep(100 * time.Millisecond) {
 			if full, err := s.docker.Inspect(ctx, docker.RunName(rr.ID)); err != nil || full.State == nil || !full.State.Running {
 				break

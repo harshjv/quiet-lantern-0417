@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/harshjv/stationly/go/internal/flows"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"golang.org/x/sys/unix"
 )
 
 var (

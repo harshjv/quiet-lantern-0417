@@ -7,14 +7,27 @@
     "node": ">=26"
   },
   "scripts": {
-    "typecheck": "pnpm -r --parallel typecheck",
+    "typecheck": "tsc -p tsconfig.json && pnpm -r --parallel typecheck",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
-    "generate": "pnpm --filter @stationly/protocol --filter @stationly/manifest-schema generate",
-    "db:generate": "pnpm --filter @stationly/dispatch db:generate"
+    "generate": "pnpm --filter @stationly/protocol --filter @stationly/manifest-schema generate && node installer/lib/station.ts",
+    "db:generate": "pnpm --filter @stationly/dispatch db:generate",
+    "check:catalog": "node scripts/check-catalog.ts",
+    "check:literals": "node scripts/check-literals.ts",
+    "check:shared": "node scripts/check-shared.ts",
+    "check:compat": "node scripts/check-protocol-compat.ts",
+    "lint": "oxlint apps packages scripts installer/lib",
+    "lint:go": "cd go && golangci-lint run ./... && golangci-lint fmt --diff ./...",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@types/node": "^26.6.6",
+    "@ianvs/prettier-plugin-sort-imports": "4.7.1",
+    "@types/node": "catalog:",
+    "commander": "catalog:",
+    "oxlint": "1.93.0",
+    "oxlint-tsgolint": "7.0.2006",
+    "prettier": "3.9.10",
     "typescript": "7.0.2"
   }
 }

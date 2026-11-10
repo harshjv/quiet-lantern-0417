@@ -5,18 +5,19 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
 	"net"
 	"net/netip"
 	"slices"
 
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	vipswitch "github.com/harshjv/stationly/go/internal/switch"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
 )
 
 func namespaceFailure(format string, args ...any) *protocol.ErrorBody {

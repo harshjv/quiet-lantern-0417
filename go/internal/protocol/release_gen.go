@@ -23,4 +23,14 @@ const (
 	MediaTypeSigstoreBundle  = "application/vnd.dev.sigstore.bundle.v0.3+json"
 )
 
+const (
+	GatewaySource          = "docker.io/library/traefik"
+	BuildkitSource         = "docker.io/moby/buildkit"
+	DepotSource            = "docker.io/library/registry"
+	CouplerImageSource     = "registry.k8s.io/pause"
+	RailpackFrontendSource = "ghcr.io/railwayapp/railpack-frontend"
+	SyftScannerSource      = "docker.io/docker/buildkit-syft-scanner"
+	LitestreamSource       = "docker.io/litestream/litestream"
+)
+
 const TUFMirror = "https://tuf-repo-cdn.sigstore.dev"

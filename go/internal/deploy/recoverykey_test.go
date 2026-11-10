@@ -3,6 +3,7 @@
 package deploy
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -42,7 +43,7 @@ func TestRecoveryKeyReturnsTheKeyAndRecordsAnAuditEvent(t *testing.T) {
 	host := &hostconfig.Config{Dispatch: hostconfig.Dispatch{MasterKey: key}}
 	want, _ := host.RecoveryKey()
 	s, ob := recoveryStation(t, host)
-	got, perr := s.opRecoveryKey(nil, nil, nil)
+	got, perr := s.opRecoveryKey(context.Background(), nil, nil)
 	if perr != nil {
 		t.Fatal(perr.Explanation)
 	}
@@ -67,7 +68,7 @@ func TestRecoveryKeyReturnsTheKeyAndRecordsAnAuditEvent(t *testing.T) {
 
 func TestRecoveryKeyRefusesAStationWithoutHostConfig(t *testing.T) {
 	s, ob := recoveryStation(t, nil)
-	_, perr := s.opRecoveryKey(nil, nil, nil)
+	_, perr := s.opRecoveryKey(context.Background(), nil, nil)
 	if perr == nil || perr.Code != string(protocol.ErrorCodeHostAdminForbidden) {
 		t.Fatalf("want HOST_ADMIN_FORBIDDEN, got %+v", perr)
 	}

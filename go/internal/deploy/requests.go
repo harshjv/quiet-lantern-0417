@@ -93,7 +93,7 @@ func (s *Station) startBuild(ctx context.Context, m dispatch.Message, b protocol
 	}
 	marker, _ := json.Marshal(inflightBuild{BuildID: b.BuildId, DeploymentID: b.DeploymentId, StartedAt: *stamp(time.Now())})
 	if err := os.MkdirAll(filepath.Dir(s.buildMarker(b.BuildId)), 0o700); err == nil {
-		writeAtomic(s.buildMarker(b.BuildId), marker)
+		_ = writeAtomic(s.buildMarker(b.BuildId), marker)
 	}
 	bctx, cancel := context.WithCancel(ctx)
 	s.builds[b.BuildId] = cancel
@@ -134,7 +134,7 @@ func (s *Station) runBuild(ctx context.Context, b protocol.BuildStartBody, deliv
 	result := func(res protocol.BuildResultBody) {
 		body, _ := json.Marshal(res)
 		var fields map[string]any
-		json.Unmarshal(body, &fields)
+		_ = json.Unmarshal(body, &fields)
 		delete(fields, "seq")
 		s.emit(protocol.MessageBuildResult, fields)
 	}
@@ -321,7 +321,7 @@ func (s *Station) startRequestedRun(ctx context.Context, m dispatch.Message, b p
 		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Name a service and a deployment, or a sandbox.", "run.start names neither a sandbox nor both a service and a deployment"))
 		return
 	}
-	serviceID, deploymentID := string(*b.ServiceId), string(*b.DeploymentId)
+	serviceID, deploymentID := *b.ServiceId, *b.DeploymentId
 	spec, ok := s.specFor(deploymentID)
 	sp := s.plan.Services[serviceID]
 	if !ok || sp == nil {
@@ -338,22 +338,11 @@ func (s *Station) startRequestedRun(ctx context.Context, m dispatch.Message, b p
 	}
 	rr := s.newRunWithID(b.RunId, b.Kind, sp.EnvID, serviceID, deploymentID, spec, cmd, time.Time{}, protocol.RunStatusQueued, true)
 	rr.Detail["actor"] = b.Actor
-	accepted := protocol.RunAcceptedBody{RunId: b.RunId}
-	if b.Attach {
-		rr.Attach, rr.TTY = true, b.Tty
-		if b.Rows != nil {
-			rr.Rows = *b.Rows
-		}
-		if b.Cols != nil {
-			rr.Cols = *b.Cols
-		}
-		att, err := s.openAttachment(ctx, rr)
-		if err != nil {
-			s.failRun(ctx, rr, protocol.ErrorCodeProtocolLimit, "open the attach stream: "+err.Error())
-			s.replyError(m, streamFailure(err))
-			return
-		}
-		accepted.Stream = protocol.RunAcceptedBodyStream(ptr(att.stream.Number))
+	accepted, err := s.attachRequestedRun(ctx, rr, b)
+	if err != nil {
+		s.failRun(ctx, rr, protocol.ErrorCodeProtocolLimit, "open the attach stream: "+err.Error())
+		s.replyError(m, streamFailure(err))
+		return
 	}
 	s.saveRun(rr)
 	if pending, ok := s.pendingRunSecrets[b.RunId]; ok {

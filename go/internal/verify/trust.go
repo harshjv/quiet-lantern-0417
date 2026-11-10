@@ -13,9 +13,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
 	"github.com/sigstore/sigstore-go/pkg/verify"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 //go:embed embedded/trusted_root.json

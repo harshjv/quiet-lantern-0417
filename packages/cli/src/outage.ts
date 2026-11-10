@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
+
 import { isConnectionFailure } from './errors.ts'
 import { progress } from './output.ts'
 
@@ -7,13 +8,17 @@ export const outageBudgetMs = 60_000
 const firstDelayMs = 250
 const maxDelayMs = 2_000
 
-export const acrossOutage = async <T>(attempt: () => Promise<T>, deadline = Date.now() + outageBudgetMs): Promise<T> => {
+export const acrossOutage = async <T>(
+  attempt: () => Promise<T>,
+  deadline = Date.now() + outageBudgetMs,
+): Promise<T> => {
   let delay = firstDelayMs
   let lost: number | null = null
   for (;;) {
     try {
       const result = await attempt()
-      if (lost !== null) progress(`Dispatch is reachable again after ${((Date.now() - lost) / 1000).toFixed(1)} s`)
+      if (lost !== null)
+        progress(`Dispatch is reachable again after ${((Date.now() - lost) / 1000).toFixed(1)} s`)
       return result
     } catch (error) {
       if (!isConnectionFailure(error) || Date.now() + delay >= deadline) throw error
@@ -27,7 +32,23 @@ export const acrossOutage = async <T>(attempt: () => Promise<T>, deadline = Date
   }
 }
 
-export const acrossOutageOnce = <T>(attempt: (idempotencyKey: string) => Promise<T>, deadline?: number): Promise<T> => {
+export const pollUntil = async <T>(
+  read: () => Promise<T>,
+  done: (value: T) => boolean,
+  deadline?: number,
+  pauseMs = 0,
+): Promise<T> => {
+  for (;;) {
+    const value = await acrossOutage(read, deadline)
+    if (done(value) || (deadline !== undefined && Date.now() >= deadline)) return value
+    if (pauseMs) await sleep(pauseMs)
+  }
+}
+
+export const acrossOutageOnce = <T>(
+  attempt: (idempotencyKey: string) => Promise<T>,
+  deadline?: number,
+): Promise<T> => {
   const idempotencyKey = randomUUID()
   return acrossOutage(() => attempt(idempotencyKey), deadline)
 }

@@ -14,12 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/litestream"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
@@ -41,7 +42,7 @@ type litestreamPlan struct {
 }
 
 func (l dispatchLaunch) litestreamImage() (string, error) {
-	source := l.trust.Source("litestream", docker.LitestreamSource)
+	source := l.trust.Source("litestream", protocol.LitestreamSource)
 	if l.litestreamPin != nil {
 		return source + "@" + l.litestreamPin.Digest, nil
 	}
@@ -111,7 +112,7 @@ func runLitestreamTask(ctx context.Context, dc *docker.Client, spec docker.Conta
 		return "", err
 	}
 	if c, ok, _ := dc.ContainerByName(ctx, spec.Name); ok {
-		dc.Remove(ctx, c.ID)
+		_ = dc.Remove(ctx, c.ID)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -119,7 +120,7 @@ func runLitestreamTask(ctx context.Context, dc *docker.Client, spec docker.Conta
 	if err != nil {
 		return "", err
 	}
-	defer dc.Remove(context.WithoutCancel(ctx), id)
+	defer func() { _ = dc.Remove(context.WithoutCancel(ctx), id) }()
 	if err := dc.Start(ctx, id); err != nil {
 		return "", err
 	}
@@ -154,8 +155,8 @@ func ensureLitestream(ctx context.Context, dc *docker.Client, l dispatchLaunch) 
 	}
 	if plan == nil {
 		if exists {
-			dc.Stop(ctx, current.ID, litestreamStopS)
-			dc.Remove(ctx, current.ID)
+			_ = dc.Stop(ctx, current.ID, litestreamStopS)
+			_ = dc.Remove(ctx, current.ID)
 			l.log.Info("Litestream sidecar removed: host.toml has no litestream.bucket")
 		}
 		return nil
@@ -171,8 +172,8 @@ func ensureLitestream(ctx context.Context, dc *docker.Client, l dispatchLaunch) 
 		return nil
 	}
 	if exists {
-		dc.Stop(ctx, current.ID, litestreamStopS)
-		dc.Remove(ctx, current.ID)
+		_ = dc.Stop(ctx, current.ID, litestreamStopS)
+		_ = dc.Remove(ctx, current.ID)
 	}
 	if err := dc.EnsureImage(ctx, plan.image); err != nil {
 		return fmt.Errorf("pull %s: %w", plan.image, err)
@@ -186,7 +187,7 @@ func ensureLitestream(ctx context.Context, dc *docker.Client, l dispatchLaunch) 
 	if err != nil {
 		return fmt.Errorf("litestream restore: %w", err)
 	}
-	l.log.Info("Litestream restore finished", "took_ms", time.Since(started).Milliseconds(), "bucket", plan.host.Bucket, "output", lastLines(out, 3))
+	l.log.Info("Litestream restore finished", "took_ms", time.Since(started).Milliseconds(), "bucket", plan.host.Bucket, "output", lastLines(out, 3, " | "))
 	id, err := dc.CreateContainer(ctx, spec.Create)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", spec.Name, err)
@@ -198,12 +199,9 @@ func ensureLitestream(ctx context.Context, dc *docker.Client, l dispatchLaunch) 
 	return nil
 }
 
-func lastLines(s string, n int) string {
+func lastLines(s string, n int, sep string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, " | ")
+	return strings.Join(lines[max(0, len(lines)-n):], sep)
 }
 
 func (s *Station) ensureLitestream(ctx context.Context) {

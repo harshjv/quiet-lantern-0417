@@ -1,0 +1,146 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise"],
+  "jsPlugins": ["./scripts/oxlint-plugin.ts"],
+  "options": {
+    "typeAware": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "env": {
+    "builtin": true,
+    "node": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["**/*.gen.ts", "**/dist/**", ".claude/**"],
+  "rules": {
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "name": [
+              "test",
+              "describe",
+              "it",
+              "before",
+              "after",
+              "beforeEach",
+              "afterEach",
+              "suite"
+            ],
+            "package": "node:test"
+          }
+        ]
+      }
+    ],
+    "typescript/await-thenable": "error",
+    "typescript/no-array-delete": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-duplicate-type-constituents": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-implied-eval": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-unary-minus": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/require-await": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      { "considerDefaultExhaustiveForUnions": true }
+    ],
+    "typescript/unbound-method": "error",
+    "stationly/multiline-object-literal": "error",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/no-useless-spread": "off",
+    "eslint/no-shadow": "off",
+    "eslint/no-underscore-dangle": "off",
+    "eslint/no-useless-constructor": "off",
+    "eslint/no-unmodified-loop-condition": "off",
+    "eslint/no-new": "off",
+    "import/no-unassigned-import": "off",
+    "import/no-named-as-default": "off",
+    "promise/always-return": "off",
+    "promise/no-promise-in-callback": "off",
+    "no-unexpected-multiline": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/consistent-return": "off"
+  },
+  "overrides": [
+    {
+      "files": ["apps/dashboard/**"],
+      "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "react", "jsx-a11y"],
+      "env": {
+        "browser": true
+      },
+      "rules": {
+        "react/react-in-jsx-scope": "off",
+        "react/exhaustive-effect-dependencies": "off",
+        "react/set-state-in-effect": "off",
+        "react/no-unstable-nested-components": "off",
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "jsx-a11y/no-autofocus": "off",
+        "jsx-a11y/no-noninteractive-tabindex": "off",
+        "jsx-a11y/label-has-associated-control": "off",
+        "typescript/only-throw-error": [
+          "error",
+          {
+            "allow": [{ "from": "package", "package": "@tanstack/router-core", "name": "Redirect" }]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/cli/src/**", "apps/dashboard/src/**"],
+      "rules": {
+        "stationly/no-literal-api-path": [
+          "error",
+          {
+            "allowed": [
+              "/v1/sandboxes/{}/forward",
+              "/v1/events?types={}",
+              "/v1/logs?{}",
+              "/v1/environments/{}/network/live"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/*/test/**", "packages/*/test/**"],
+      "rules": {
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off"
+      }
+    },
+    {
+      "files": ["apps/dispatch/src/auth/login.js"],
+      "rules": {
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off"
+      }
+    }
+  ]
+}

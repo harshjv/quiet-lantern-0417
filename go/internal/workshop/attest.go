@@ -1,3 +1,5 @@
+//go:build linux
+
 package workshop
 
 import (
@@ -181,6 +183,11 @@ func baseImages(predicate []byte, drop []string) []protocol.BaseImage {
 		out = append(out, protocol.BaseImage{Ref: ref, Digest: "sha256:" + d.Digest["sha256"]})
 	}
 	return out
+}
+
+func repositoryPath(source string) string {
+	_, path, _ := strings.Cut(source, "/")
+	return path
 }
 
 func dropped(name string, drop []string) bool {

@@ -5,11 +5,12 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
-	"github.com/harshjv/stationly/go/internal/protocol"
+	"log/slog"
 	"net/netip"
 
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 type systemNet struct {
@@ -29,7 +30,7 @@ func (s *Station) systemLayout() (netip.Prefix, netip.AddrPort, error) {
 	}
 	subnet, err := netip.ParsePrefix(subnetText)
 	if err != nil {
-		return netip.Prefix{}, netip.AddrPort{}, fmt.Errorf("no system subnet known yet (install.json or a generation): %v", err)
+		return netip.Prefix{}, netip.AddrPort{}, fmt.Errorf("no system subnet known yet (install.json or a generation): %w", err)
 	}
 	host := netip.AddrPortFrom(cidr.Offset(subnet, protocol.NetworkGatewayHost), resolverPort)
 	if s.opts.Host != nil && s.opts.Host.Stationd.ResolverHostAddress != "" {
@@ -48,23 +49,11 @@ func (s *Station) ensureSystemNetwork(ctx context.Context) {
 		s.system.failure = err.Error()
 		return
 	}
-	gateway := cidr.Offset(subnet, protocol.NetworkGatewayHost)
-	spec := docker.SystemNetwork(s.opts.Identity.StationID, subnet, cidr.UpperHalf(subnet), gateway)
-	id, labels, ok, err := s.docker.NetworkByName(ctx, spec.Name)
-	switch {
-	case err != nil:
-		s.system.failure = "inspect " + spec.Name + ": " + err.Error()
+	id, gateway, err := ensureSystemNetwork(ctx, s.docker, s.log, s.opts.Identity.StationID, subnet)
+	if err != nil {
+		s.system.failure = err.Error()
+		s.log.Error("system network", "error", err)
 		return
-	case ok && labels[docker.LabelHash] != spec.Hash:
-		s.system.failure = fmt.Sprintf("network %s exists with other settings; the system subnet is fixed at install", spec.Name)
-		return
-	case !ok:
-		if id, err = s.docker.CreateNetwork(ctx, spec); err != nil {
-			s.system.failure = "create " + spec.Name + ": " + err.Error()
-			s.log.Error("create the system network", "error", err)
-			return
-		}
-		s.log.Info("created system network", "name", spec.Name, "bridge", docker.SystemBridgeName, "id", shortID(id), "subnet", subnet, "gateway", gateway)
 	}
 	s.system = systemNet{id: id, subnet: subnet, gateway: gateway, hostAddr: hostAddr}
 	if hostAddr.Port() != resolverPort {
@@ -73,6 +62,19 @@ func (s *Station) ensureSystemNetwork(ctx context.Context) {
 	}
 	s.allowHostSources()
 	s.log.Info("resolver host listener", "address", hostAddr, "zone", "public names only; .internal refused", "sources", subnet.String()+" and the host's own addresses")
+}
+
+func ensureSystemNetwork(ctx context.Context, dc *docker.Client, log *slog.Logger, stationID string, subnet netip.Prefix) (string, netip.Addr, error) {
+	gateway := cidr.Offset(subnet, protocol.NetworkGatewayHost)
+	spec := docker.SystemNetwork(stationID, subnet, cidr.UpperHalf(subnet), gateway)
+	id, created, err := dc.EnsureFixedNetwork(ctx, spec)
+	if err != nil {
+		return "", gateway, err
+	}
+	if created {
+		log.Info("created system network", "name", spec.Name, "bridge", docker.SystemBridgeName, "id", shortID(id), "subnet", subnet, "gateway", gateway, "station", stationID)
+	}
+	return id, gateway, nil
 }
 
 func (s *Station) allowHostSources() {

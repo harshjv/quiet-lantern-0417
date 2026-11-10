@@ -15,7 +15,7 @@ export const networkFindingValues = [
   'WEB_PORTS_CLOSED',
   'ROUTE_NOT_APPLIED',
   'NO_PUBLIC_ADDRESS',
-  'STATION_STALE'
+  'STATION_STALE',
 ] as const
 
 export type NetworkFinding = (typeof networkFindingValues)[number]

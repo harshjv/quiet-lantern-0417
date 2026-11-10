@@ -4,11 +4,12 @@ import (
 	"net/netip"
 	"strconv"
 
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -85,7 +86,6 @@ const (
 	RoleLitestream     = "litestream"
 	RoleLitestreamTask = "litestream-task"
 
-	LitestreamSource      = "docker.io/litestream/litestream"
 	LitestreamName        = protocol.ResourcePrefix + "litestream"
 	LitestreamTaskName    = protocol.ResourcePrefix + "litestream-task"
 	LitestreamConfigHash  = "STATIONLY_LITESTREAM_CONFIG_SHA256"

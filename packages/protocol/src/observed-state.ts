@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox'
+
 import {
   AppliedGeneration,
   CancelReason,
@@ -10,24 +11,35 @@ import {
   ErrorBody,
   Resources,
   RunKind,
+  RunStatus,
   SandboxReportStatus,
   SandboxStatusReason,
-  RunStatus,
   ServiceHealth,
   StationCapabilities,
   StationRoutes,
-  StatusHint
+  StatusHint,
 } from './model.ts'
-import { Bytes, Count, Id, IdMap, JsonObject, Nullable, StringEnum, Timestamp } from './primitives.ts'
+import {
+  Bytes,
+  Count,
+  Id,
+  IdMap,
+  JsonObject,
+  Nullable,
+  StringEnum,
+  Timestamp,
+} from './primitives.ts'
 
-export const ObjectResult = StringEnum(['ok', 'pending', 'failed', 'blocked'], { title: 'ObjectResult' })
+export const ObjectResult = StringEnum(['ok', 'pending', 'failed', 'blocked'], {
+  title: 'ObjectResult',
+})
 
 const appliedHash = Nullable(Type.String())
 
 const outcome = {
   result: ObjectResult,
   failure: Type.Optional(ErrorBody),
-  blocked_by: Type.Optional(Type.String())
+  blocked_by: Type.Optional(Type.String()),
 }
 
 export const ObservedContainer = Type.Object(
@@ -40,9 +52,11 @@ export const ObservedContainer = Type.Object(
     state: Type.String(),
     exit_code: Nullable(Type.Integer()),
     restarts: Count,
-    started_at: Nullable(Timestamp)
+    started_at: Nullable(Timestamp),
   },
-  { title: 'ObservedContainer' }
+  {
+    title: 'ObservedContainer',
+  },
 )
 
 export const ObservedStation = Type.Object(
@@ -52,9 +66,20 @@ export const ObservedStation = Type.Object(
     capabilities: StationCapabilities,
     clock_skew_ms: Type.Integer(),
     docker_version: Type.String(),
-    registry: Type.Object({ state: StringEnum(['serving', 'readonly', 'down'], { title: 'RegistryState' }) }, { title: 'ObservedRegistry' })
+    registry: Type.Object(
+      {
+        state: StringEnum(['serving', 'readonly', 'down'], {
+          title: 'RegistryState',
+        }),
+      },
+      {
+        title: 'ObservedRegistry',
+      },
+    ),
   },
-  { title: 'ObservedStation' }
+  {
+    title: 'ObservedStation',
+  },
 )
 
 export const ObservedComponent = Type.Object(
@@ -62,9 +87,11 @@ export const ObservedComponent = Type.Object(
     version: Type.String(),
     digest: Nullable(Type.String()),
     container_id: Nullable(Type.String()),
-    status: ComponentStatus
+    status: ComponentStatus,
   },
-  { title: 'ObservedComponent' }
+  {
+    title: 'ObservedComponent',
+  },
 )
 
 export const ObservedEnvironment = Type.Object(
@@ -72,9 +99,11 @@ export const ObservedEnvironment = Type.Object(
     applied_hash: appliedHash,
     ...outcome,
     docker_network_id: Nullable(Type.String()),
-    bridge_up: Type.Boolean()
+    bridge_up: Type.Boolean(),
   },
-  { title: 'ObservedEnvironment' }
+  {
+    title: 'ObservedEnvironment',
+  },
 )
 
 export const ObservedService = Type.Object(
@@ -84,9 +113,11 @@ export const ObservedService = Type.Object(
     status_hint: StatusHint,
     health: ServiceHealth,
     containers: Type.Array(ObservedContainer),
-    switch_address: Nullable(Type.String())
+    switch_address: Nullable(Type.String()),
   },
-  { title: 'ObservedService' }
+  {
+    title: 'ObservedService',
+  },
 )
 
 export const ObservedDeploymentStep = Type.Object(
@@ -96,9 +127,11 @@ export const ObservedDeploymentStep = Type.Object(
     attempt: Count,
     detail: JsonObject,
     started_at: Nullable(Timestamp),
-    finished_at: Nullable(Timestamp)
+    finished_at: Nullable(Timestamp),
   },
-  { title: 'ObservedDeploymentStep' }
+  {
+    title: 'ObservedDeploymentStep',
+  },
 )
 
 export const ObservedDeployment = Type.Object(
@@ -112,9 +145,11 @@ export const ObservedDeployment = Type.Object(
     outcome: Nullable(DeploymentOutcome),
     failure: Nullable(Diagnosis),
     cancel_reason: Nullable(CancelReason),
-    finished_at: Nullable(Timestamp)
+    finished_at: Nullable(Timestamp),
   },
-  { title: 'ObservedDeployment' }
+  {
+    title: 'ObservedDeployment',
+  },
 )
 
 export const ObservedVolume = Type.Object(
@@ -122,9 +157,11 @@ export const ObservedVolume = Type.Object(
     applied_hash: appliedHash,
     ...outcome,
     size_bytes: Bytes,
-    mounted_by: Type.Array(Type.String())
+    mounted_by: Type.Array(Type.String()),
   },
-  { title: 'ObservedVolume' }
+  {
+    title: 'ObservedVolume',
+  },
 )
 
 export const ObservedRun = Type.Object(
@@ -139,9 +176,11 @@ export const ObservedRun = Type.Object(
     log_ref: Type.String(),
     scheduled_at: Nullable(Timestamp),
     started_at: Nullable(Timestamp),
-    finished_at: Nullable(Timestamp)
+    finished_at: Nullable(Timestamp),
   },
-  { title: 'ObservedRun' }
+  {
+    title: 'ObservedRun',
+  },
 )
 
 export const ObservedRoute = Type.Object(
@@ -151,41 +190,53 @@ export const ObservedRoute = Type.Object(
     certificate: Nullable(
       Type.Object(
         {
-          status: StringEnum(['pending', 'valid', 'expired', 'failed'], { title: 'CertificateStatus' }),
+          status: StringEnum(['pending', 'valid', 'expired', 'failed'], {
+            title: 'CertificateStatus',
+          }),
           not_before: Nullable(Timestamp),
           expires_at: Nullable(Timestamp),
-          failure: Nullable(ErrorBody)
+          failure: Nullable(ErrorBody),
         },
-        { title: 'ObservedCertificate' }
-      )
+        {
+          title: 'ObservedCertificate',
+        },
+      ),
     ),
     probe: Nullable(
       Type.Object(
         {
           ok: Type.Boolean(),
-          status_code: Nullable(Type.Integer())
+          status_code: Nullable(Type.Integer()),
         },
-        { title: 'ObservedRouteProbe' }
-      )
-    )
+        {
+          title: 'ObservedRouteProbe',
+        },
+      ),
+    ),
   },
-  { title: 'ObservedRoute' }
+  {
+    title: 'ObservedRoute',
+  },
 )
 
 export const ObservedGateway = Type.Object(
   {
     applied_hash: appliedHash,
-    routes: IdMap(ObservedRoute)
+    routes: IdMap(ObservedRoute),
   },
-  { title: 'ObservedGateway' }
+  {
+    title: 'ObservedGateway',
+  },
 )
 
 export const ObservedPortAllocation = Type.Object(
   {
     applied_hash: appliedHash,
-    ...outcome
+    ...outcome,
   },
-  { title: 'ObservedPortAllocation' }
+  {
+    title: 'ObservedPortAllocation',
+  },
 )
 
 export const ObservedWorkshop = Type.Object(
@@ -193,18 +244,22 @@ export const ObservedWorkshop = Type.Object(
     applied_hash: appliedHash,
     running: Type.Boolean(),
     cache_bytes: Bytes,
-    builds_running: Count
+    builds_running: Count,
   },
-  { title: 'ObservedWorkshop' }
+  {
+    title: 'ObservedWorkshop',
+  },
 )
 
 export const ObservedSystemTarget = Type.Object(
   {
     applied_hash: appliedHash,
     ...outcome,
-    address: Nullable(Type.String())
+    address: Nullable(Type.String()),
   },
-  { title: 'ObservedSystemTarget' }
+  {
+    title: 'ObservedSystemTarget',
+  },
 )
 
 export const ObservedSandbox = Type.Object(
@@ -216,10 +271,21 @@ export const ObservedSandbox = Type.Object(
     started_at: Nullable(Timestamp),
     stop_at: Nullable(Timestamp),
     address: Nullable(Type.String()),
-    disk: Type.Object({ referenced_bytes: Bytes, exclusive_bytes: Bytes, limit_bytes: Bytes }, { title: 'ObservedSandboxDisk' }),
-    runsc_version: Nullable(Type.String())
+    disk: Type.Object(
+      {
+        referenced_bytes: Bytes,
+        exclusive_bytes: Bytes,
+        limit_bytes: Bytes,
+      },
+      {
+        title: 'ObservedSandboxDisk',
+      },
+    ),
+    runsc_version: Nullable(Type.String()),
   },
-  { title: 'ObservedSandbox' }
+  {
+    title: 'ObservedSandbox',
+  },
 )
 
 export const ObservedSandboxSnapshot = Type.Object(
@@ -228,27 +294,37 @@ export const ObservedSandboxSnapshot = Type.Object(
     ...outcome,
     taken_at: Nullable(Timestamp),
     referenced_bytes: Bytes,
-    exclusive_bytes: Bytes
+    exclusive_bytes: Bytes,
   },
-  { title: 'ObservedSandboxSnapshot' }
+  {
+    title: 'ObservedSandboxSnapshot',
+  },
 )
 
 export const ObservedSandboxBase = Type.Object(
   {
-    state: StringEnum(['unpacking', 'ready', 'failed'], { title: 'SandboxBaseState' }),
-    referenced_bytes: Bytes
+    state: StringEnum(['unpacking', 'ready', 'failed'], {
+      title: 'SandboxBaseState',
+    }),
+    referenced_bytes: Bytes,
   },
-  { title: 'ObservedSandboxBase' }
+  {
+    title: 'ObservedSandboxBase',
+  },
 )
 
 export const UnknownObject = Type.Object(
   {
-    kind: StringEnum(['container', 'network', 'volume', 'sandbox_disk', 'sandbox_snapshot'], { title: 'UnknownObjectKind' }),
+    kind: StringEnum(['container', 'network', 'volume', 'sandbox_disk', 'sandbox_snapshot'], {
+      title: 'UnknownObjectKind',
+    }),
     id: Type.Optional(Type.String()),
     docker_id: Type.Optional(Type.String()),
-    labels: Type.Optional(Type.Record(Type.String(), Type.String()))
+    labels: Type.Optional(Type.Record(Type.String(), Type.String())),
   },
-  { title: 'UnknownObject' }
+  {
+    title: 'UnknownObject',
+  },
 )
 
 const observedMaps = {
@@ -264,7 +340,7 @@ const observedMaps = {
   system_targets: IdMap(ObservedSystemTarget),
   sandboxes: Type.Optional(IdMap(ObservedSandbox)),
   sandbox_snapshots: Type.Optional(IdMap(ObservedSandboxSnapshot)),
-  sandbox_bases: Type.Optional(IdMap(ObservedSandboxBase))
+  sandbox_bases: Type.Optional(IdMap(ObservedSandboxBase)),
 }
 
 export const Observed = Type.Object(
@@ -274,9 +350,11 @@ export const Observed = Type.Object(
     applied: AppliedGeneration,
     station: ObservedStation,
     ...observedMaps,
-    unknown: Type.Array(UnknownObject)
+    unknown: Type.Array(UnknownObject),
   },
-  { title: 'Observed' }
+  {
+    title: 'Observed',
+  },
 )
 
 export const ObservedUpdate = Type.Object(
@@ -295,9 +373,11 @@ export const ObservedUpdate = Type.Object(
     system_targets: Type.Optional(observedMaps.system_targets),
     sandboxes: observedMaps.sandboxes,
     sandbox_snapshots: observedMaps.sandbox_snapshots,
-    sandbox_bases: observedMaps.sandbox_bases
+    sandbox_bases: observedMaps.sandbox_bases,
   },
-  { title: 'ObservedUpdateBody' }
+  {
+    title: 'ObservedUpdateBody',
+  },
 )
 
 export type Observed = Static<typeof Observed>

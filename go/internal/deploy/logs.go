@@ -14,13 +14,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/logstore"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/workshop"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
@@ -171,11 +172,11 @@ func (s *Station) startCaptures(ctx context.Context) {
 	s.capCtx, s.capCancel = context.WithCancel(ctx)
 }
 
-func (s *Station) syncCaptures(ctx context.Context) {
+func (s *Station) syncCaptures(_ context.Context) {
 	if s.handingOver {
 		return
 	}
-	ctx = s.capCtx
+	ctx := s.capCtx
 	list, err := s.docker.Containers(ctx)
 	if err != nil {
 		return
@@ -275,7 +276,7 @@ type selfLog struct {
 
 func SelfLog(stateDir string) io.Writer {
 	l := &selfLog{w: logstore.New(stateDir).Segmented(systemLogDir(selfName), systemFile)}
-	l.sink = &lineSink{emit: func(at time.Time, text string) { l.w.Write(at, selfName, string(protocol.LogStreamStderr), text) }}
+	l.sink = &lineSink{emit: func(at time.Time, text string) { _ = l.w.Write(at, selfName, string(protocol.LogStreamStderr), text) }}
 	return l
 }
 
@@ -510,6 +511,19 @@ func streamFailure(err error) *protocol.ErrorBody {
 	return protocolError(protocol.ErrorCodeProtocolLimit, "Retry.", "%v", err)
 }
 
+func (s *Station) openItemStream(m dispatch.Message) (*dispatch.Stream, bool) {
+	st, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, nil, nil)
+	if err != nil {
+		s.replyError(m, streamFailure(err))
+		return nil, false
+	}
+	if err := st.Opened(m.ID, protocol.LimitStreamWindowBytes); err != nil {
+		st.End("send failed", nil)
+		return nil, false
+	}
+	return st, true
+}
+
 func (s *Station) followLogs(ctx context.Context, m dispatch.Message, sel protocol.LogSelector) {
 	target, failure := s.logTarget(sel)
 	if failure != nil {
@@ -521,13 +535,8 @@ func (s *Station) followLogs(ctx context.Context, m dispatch.Message, sel protoc
 		s.replyError(m, failure)
 		return
 	}
-	st, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, nil, nil)
-	if err != nil {
-		s.replyError(m, streamFailure(err))
-		return
-	}
-	if err := st.Opened(m.ID, protocol.LimitStreamWindowBytes); err != nil {
-		st.End("send failed", nil)
+	st, ok := s.openItemStream(m)
+	if !ok {
 		return
 	}
 	go func() {
@@ -587,7 +596,7 @@ func (s *Station) runLogText(rr *runRecord) []string {
 		return strings.Split(text, "\n")
 	}
 	var lines []string
-	logstore.Scan(s.opts.StateDir, logstore.Source{Path: rr.LogRef, Role: docker.RoleRun}, 0, func(e logstore.Entry) bool {
+	_, _ = logstore.Scan(s.opts.StateDir, logstore.Source{Path: rr.LogRef, Role: docker.RoleRun}, 0, func(e logstore.Entry) bool {
 		lines = append(lines, e.Text)
 		if len(lines) > 4*logTail {
 			lines = lines[len(lines)-logTail:]

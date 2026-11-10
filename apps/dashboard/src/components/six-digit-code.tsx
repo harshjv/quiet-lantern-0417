@@ -1,6 +1,18 @@
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
-export function SixDigitCode({ id, value, onChange, onComplete, autoFocus }: { id?: string; value: string; onChange: (value: string) => void; onComplete?: () => void; autoFocus?: boolean }) {
+export function SixDigitCode({
+  id,
+  value,
+  onChange,
+  onComplete,
+  autoFocus,
+}: {
+  id?: string
+  value: string
+  onChange: (value: string) => void
+  onComplete?: () => void
+  autoFocus?: boolean
+}) {
   return (
     <InputOTP
       id={id}
@@ -15,9 +27,14 @@ export function SixDigitCode({ id, value, onChange, onComplete, autoFocus }: { i
       autoComplete="one-time-code"
     >
       <InputOTPGroup>
-        {Array.from({ length: 6 }, (_, i) => (
-          <InputOTPSlot key={i} index={i} />
-        ))}
+        {Array.from(
+          {
+            length: 6,
+          },
+          (_, i) => (
+            <InputOTPSlot key={i} index={i} />
+          ),
+        )}
       </InputOTPGroup>
     </InputOTP>
   )

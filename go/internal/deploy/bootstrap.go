@@ -5,19 +5,19 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
 	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
-	"github.com/moby/moby/api/types/container"
 )
 
 type BootstrapOptions struct {
@@ -59,23 +59,9 @@ func Bootstrap(ctx context.Context, o BootstrapOptions) (func(), error) {
 	if err != nil {
 		return noop, err
 	}
-	gateway := cidr.Offset(subnet, protocol.NetworkGatewayHost)
-	spec := docker.SystemNetwork(o.Install.StationID, subnet, cidr.UpperHalf(subnet), gateway)
-	_, labels, exists, err := dc.NetworkByName(ctx, spec.Name)
-	switch {
-	case err != nil:
+	if _, _, err := ensureSystemNetwork(ctx, dc, o.Log, o.Install.StationID, subnet); err != nil {
 		dc.Close()
 		return noop, err
-	case exists && labels[docker.LabelHash] != spec.Hash:
-		dc.Close()
-		return noop, fmt.Errorf("network %s exists with other settings", spec.Name)
-	case !exists:
-		id, err := dc.CreateNetwork(ctx, spec)
-		if err != nil {
-			dc.Close()
-			return noop, err
-		}
-		o.Log.Info("created system network before enrollment", "name", spec.Name, "id", shortID(id), "subnet", subnet, "gateway", gateway, "station", o.Install.StationID)
 	}
 	upstream, err := dns.UpstreamFrom(resolvConf)
 	if o.Host != nil && o.Host.Resolver.Upstream != "" {

@@ -18,8 +18,6 @@ const (
 
 var subvolumeKinds = []string{dirBases, dirDisks, dirSnapshots, dirPartial}
 
-var layoutDirs = []string{dirBases, dirDisks, dirSnapshots, dirPartial, dirLogs}
-
 func validName(name string) bool {
 	if name == "" || len(name) > maxNameLen || name[0] == '.' || name[0] == '-' {
 		return false

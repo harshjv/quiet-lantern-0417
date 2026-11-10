@@ -7,10 +7,11 @@ import (
 	"runtime"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"golang.org/x/sys/unix"
 )
 
 func Version() string {
@@ -19,11 +20,11 @@ func Version() string {
 
 func EnrollInfo(ctx context.Context) (dispatch.EnrollInfo, error) {
 	var uts unix.Utsname
-	unix.Uname(&uts)
+	_ = unix.Uname(&uts)
 	var si unix.Sysinfo_t
-	unix.Sysinfo(&si)
+	_ = unix.Sysinfo(&si)
 	var fs unix.Statfs_t
-	unix.Statfs("/", &fs)
+	_ = unix.Statfs("/", &fs)
 	dockerVersion := ""
 	dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

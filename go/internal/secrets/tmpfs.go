@@ -3,14 +3,13 @@
 package secrets
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/moby/sys/mountinfo"
 	"golang.org/x/sys/unix"
 )
 
@@ -20,26 +19,16 @@ func Dir(deploymentID string) string {
 	return filepath.Join(Root, deploymentID)
 }
 
-func unescapeMount(s string) string {
-	r := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
-	return r.Replace(s)
-}
-
 func mountPoints() (map[string]bool, error) {
-	f, err := os.Open("/proc/self/mountinfo")
+	mounts, err := mountinfo.GetMounts(mountinfo.PrefixFilter(Root))
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 	out := map[string]bool{}
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		fields := strings.Fields(sc.Text())
-		if len(fields) > 4 {
-			out[unescapeMount(fields[4])] = true
-		}
+	for _, m := range mounts {
+		out[m.Mountpoint] = true
 	}
-	return out, sc.Err()
+	return out, nil
 }
 
 func Mounted(deploymentID string) bool {
@@ -91,7 +80,7 @@ func Mount(deploymentID string, owner Owner, files []Entry) (bool, error) {
 	}
 	for _, f := range files {
 		if err := writeFile(filepath.Join(dir, f.Key), f.Value, owner); err != nil {
-			Unmount(deploymentID)
+			_ = Unmount(deploymentID)
 			return false, err
 		}
 	}

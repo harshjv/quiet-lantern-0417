@@ -1,22 +1,29 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+
 import { buildRedactor, encodedForms } from '../src/api/redaction.ts'
 import { envDigest } from '../src/secrets/deploy.ts'
 
-const load = <T>(name: string) => JSON.parse(readFileSync(new URL(`../../../packages/protocol/testdata/${name}`, import.meta.url), 'utf8')) as T
+const load = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(new URL(`../../../packages/protocol/testdata/${name}`, import.meta.url), 'utf8'),
+  )
 
 type RedactionVectors = {
   encodings: { value: string; forms: string[] }[]
   cases: { name: string; known: { key: string; value: string }[]; input: string; output: string }[]
 }
 
-type DigestVectors = { cases: { name: string; env: Parameters<typeof envDigest>[0]; digest: string }[] }
+type DigestVectors = {
+  cases: { name: string; env: Parameters<typeof envDigest>[0]; digest: string }[]
+}
 
-const redaction = load<RedactionVectors>('redaction-vectors.json')
+const redaction = load('redaction-vectors.json') as RedactionVectors
 
 test('each value has the encoded forms the shared vectors pin', () => {
-  for (const { value, forms } of redaction.encodings) assert.deepEqual(encodedForms(value), forms, value)
+  for (const { value, forms } of redaction.encodings)
+    assert.deepEqual(encodedForms(value), forms, value)
 })
 
 for (const vector of redaction.cases) {
@@ -25,7 +32,7 @@ for (const vector of redaction.cases) {
   })
 }
 
-for (const vector of load<DigestVectors>('env-digest-vectors.json').cases) {
+for (const vector of (load('env-digest-vectors.json') as DigestVectors).cases) {
   test(`env_digest vector: ${vector.name}`, () => {
     assert.equal(envDigest(vector.env), vector.digest)
   })

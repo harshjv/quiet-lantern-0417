@@ -24,15 +24,18 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
   }
   const stream = new ReadableStream<Uint8Array>(
     {
-      start: c => {
+      start: (c) => {
         controller = c
       },
       pull: () => {
         for (const w of waiters.splice(0)) w()
       },
-      cancel: () => finish()
+      cancel: () => finish(),
     },
-    { highWaterMark, size: chunk => chunk.byteLength }
+    {
+      highWaterMark,
+      size: (chunk) => chunk.byteLength,
+    },
   )
   const write = (text: string) => {
     if (done) return
@@ -42,16 +45,27 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
       finish()
     }
   }
-  const heartbeat = setInterval(() => write(`: keepalive ${new Date().toISOString()}\n\n`), heartbeatMs)
-  signal.addEventListener('abort', finish, { once: true })
+  const heartbeat = setInterval(
+    () => write(`: keepalive ${new Date().toISOString()}\n\n`),
+    heartbeatMs,
+  )
+  signal.addEventListener('abort', finish, {
+    once: true,
+  })
   write(': connected\n\n')
   return {
     response: new Response(stream, {
-      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', 'x-accel-buffering': 'no', ...headers }
+      headers: {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache',
+        'x-accel-buffering': 'no',
+        ...headers,
+      },
     }),
     send: async (event, data, id) => {
       write(`${id ? `id: ${id}\n` : ''}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-      while (!done && (controller.desiredSize ?? 1) <= 0) await new Promise<void>(resolve => waiters.push(resolve))
+      while (!done && (controller.desiredSize ?? 1) <= 0)
+        await new Promise<void>((resolve) => waiters.push(resolve))
     },
     close: () => {
       if (done) return
@@ -61,9 +75,9 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
       finish()
     },
     closed: () => done,
-    onClose: f => {
+    onClose: (f) => {
       if (done) f()
       else closers.push(f)
-    }
+    },
   }
 }

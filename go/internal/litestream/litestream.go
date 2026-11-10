@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 )
 
@@ -112,11 +113,11 @@ func LocalFiles(volumeDir, database string) ([]LocalFile, error) {
 	}
 	var out []LocalFile
 	for _, e := range entries {
-		_, max, ok := strings.Cut(strings.TrimSuffix(e.Name(), ".ltx"), "-")
+		_, maxTXID, ok := strings.Cut(strings.TrimSuffix(e.Name(), ".ltx"), "-")
 		if !ok || !strings.HasSuffix(e.Name(), ".ltx") {
 			continue
 		}
-		id, err := strconv.ParseUint(max, 16, 64)
+		id, err := strconv.ParseUint(maxTXID, 16, 64)
 		if err != nil {
 			continue
 		}

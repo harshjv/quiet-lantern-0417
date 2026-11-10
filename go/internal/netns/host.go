@@ -13,10 +13,10 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
-	"github.com/google/nftables/userdata"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -109,17 +109,6 @@ func webSourceSets(l HostLayout) map[uint16]*nftables.Set {
 	return sets
 }
 
-func portKey(p uint16) []byte {
-	return port(p)
-}
-
-func addrPortData(a netip.AddrPort) []byte {
-	b := make([]byte, 8)
-	copy(b, a.Addr().AsSlice())
-	binary.BigEndian.PutUint16(b[4:], a.Port())
-	return b
-}
-
 func SyncHost(l HostLayout, e HostElements) (Result, error) {
 	c, err := nftables.New()
 	if err != nil {
@@ -128,11 +117,7 @@ func SyncHost(l HostLayout, e HostElements) (Result, error) {
 	if state := layoutState(c, hostTable, "forward", hostCommentPrefix+l.fingerprint()); state != Unchanged {
 		return state, writeHost(c, l, e)
 	}
-	changed, err := syncHostElements(c, e)
-	if err != nil || !changed {
-		return Unchanged, err
-	}
-	return Updated, nil
+	return elementsResult(syncHostElements(c, e))
 }
 
 func RemoveHost() error {
@@ -161,38 +146,26 @@ func portElements(ports map[uint16]netip.AddrPort) []nftables.SetElement {
 	slices.Sort(keys)
 	var out []nftables.SetElement
 	for _, k := range keys {
-		out = append(out, nftables.SetElement{Key: portKey(k), Val: addrPortData(ports[k])})
+		out = append(out, nftables.SetElement{Key: port(k), Val: addrPortKey(ports[k])})
 	}
 	return out
 }
 
 func writeHost(c *nftables.Conn, l HostLayout, e HostElements) error {
-	c.AddTable(hostTable)
-	c.DelTable(hostTable)
-	c.AddTable(hostTable)
-
 	ports, targets, sw, translated, bridges := portSwitchMap(), hostVipTargets(), hostSwitchMap(), translatedSet(), envBridgesSet()
-	var targetEls, switchEls, bridgeEls []nftables.SetElement
-	for vip, real := range e.Switch {
-		targetEls = append(targetEls, nftables.SetElement{Key: vip.AsSlice()})
-		switchEls = append(switchEls, nftables.SetElement{Key: vip.AsSlice(), Val: real.AsSlice()})
-	}
+	targetEls, switchEls := switchElements(e.Switch)
+	var bridgeEls []nftables.SetElement
 	for _, b := range l.EnvBridges {
 		bridgeEls = append(bridgeEls, nftables.SetElement{Key: ifname(b)})
 	}
-	for _, set := range []struct {
-		s   *nftables.Set
-		els []nftables.SetElement
-	}{
+	if err := resetTable(c, hostTable, []setEls{
 		{ports, portElements(e.Ports)},
 		{targets, targetEls},
 		{sw, switchEls},
 		{translated, intervalElements(l.Translated)},
 		{bridges, bridgeEls},
-	} {
-		if err := c.AddSet(set.s, set.els); err != nil {
-			return err
-		}
+	}); err != nil {
+		return err
 	}
 
 	natPre := c.AddChain(&nftables.Chain{Name: "nat_pre", Table: hostTable, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityRef(-100)})
@@ -216,17 +189,7 @@ func writeHost(c *nftables.Conn, l HostLayout, e HostElements) error {
 		c.AddRule(&nftables.Rule{Table: hostTable, Chain: natOut, Exprs: portDNAT()})
 	}
 	if l.IngressBridge != "" {
-		c.AddRule(&nftables.Rule{Table: hostTable, Chain: natPre, Exprs: append([]expr.Any{
-			&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: ifname(l.IngressBridge)},
-		}, append(ipv4(),
-			daddr(),
-			lookup(targets, false),
-			daddr(),
-			&expr.Lookup{SourceRegister: 1, DestRegister: 1, IsDestRegSet: true, SetName: sw.Name, SetID: sw.ID},
-			&expr.Counter{},
-			&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1},
-		)...)})
+		c.AddRule(&nftables.Rule{Table: hostTable, Chain: natPre, Exprs: append(iifExprs(l.IngressBridge, false), switchDNAT(targets, sw)...)})
 	}
 
 	c.AddRule(&nftables.Rule{Table: hostTable, Chain: markPre, Exprs: append([]expr.Any{
@@ -251,14 +214,7 @@ func writeHost(c *nftables.Conn, l HostLayout, e HostElements) error {
 		}
 	}
 
-	forwardRules := hostForwardRules(l, bridges, sources)
-	for i, exprs := range forwardRules {
-		r := &nftables.Rule{Table: hostTable, Chain: forward, Exprs: exprs}
-		if i == 0 {
-			r.UserData = userdata.AppendString(nil, userdata.TypeComment, hostCommentPrefix+l.fingerprint())
-		}
-		c.AddRule(r)
-	}
+	addFingerprinted(c, forward, hostForwardRules(l, bridges, sources), hostCommentPrefix+l.fingerprint())
 	return c.Flush()
 }
 
@@ -344,7 +300,7 @@ func hostForwardRules(l HostLayout, bridges *nftables.Set, sources map[uint16]*n
 }
 
 func syncHostElements(c *nftables.Conn, e HostElements) (bool, error) {
-	ports := portSwitchMap()
+	ports, sw, targets := portSwitchMap(), hostSwitchMap(), hostVipTargets()
 	havePorts, err := c.GetSetElements(ports)
 	if err != nil {
 		return false, err
@@ -357,78 +313,20 @@ func syncHostElements(c *nftables.Conn, e HostElements) (bool, error) {
 		a, _ := netip.AddrFromSlice(el.Val[:4])
 		current[binary.BigEndian.Uint16(el.Key[:2])] = netip.AddrPortFrom(a, binary.BigEndian.Uint16(el.Val[4:6]))
 	}
-	var delPorts, addPorts []nftables.SetElement
-	for p, have := range current {
-		if want, ok := e.Ports[p]; !ok || want != have {
-			delPorts = append(delPorts, nftables.SetElement{Key: portKey(p)})
-		}
-	}
-	for p, want := range e.Ports {
-		if have, ok := current[p]; !ok || have != want {
-			addPorts = append(addPorts, nftables.SetElement{Key: portKey(p), Val: addrPortData(want)})
-		}
-	}
-
-	sw, targets := hostSwitchMap(), hostVipTargets()
-	haveSwitch, err := c.GetSetElements(sw)
+	haveSw, err := readAddrMap(c, sw)
 	if err != nil {
 		return false, err
 	}
-	haveSw := map[netip.Addr]netip.Addr{}
-	for _, el := range haveSwitch {
-		haveSw[addrOf(el.Key)] = addrOf(el.Val)
-	}
-	haveTargets, err := c.GetSetElements(targets)
+	haveTargets, err := readAddrs(c, targets)
 	if err != nil {
 		return false, err
 	}
-	targetSet := map[netip.Addr]bool{}
-	for _, el := range haveTargets {
-		targetSet[addrOf(el.Key)] = true
-	}
-	var delSwitch, addSwitch, delTargets, addTargets []nftables.SetElement
-	for vip, real := range haveSw {
-		if want, ok := e.Switch[vip]; !ok || want != real {
-			delSwitch = append(delSwitch, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	for vip, want := range e.Switch {
-		if have, ok := haveSw[vip]; !ok || have != want {
-			addSwitch = append(addSwitch, nftables.SetElement{Key: vip.AsSlice(), Val: want.AsSlice()})
-		}
-		if !targetSet[vip] {
-			addTargets = append(addTargets, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	for vip := range targetSet {
-		if _, ok := e.Switch[vip]; !ok {
-			delTargets = append(delTargets, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	changed := false
-	for _, op := range []struct {
-		set *nftables.Set
-		els []nftables.SetElement
-		del bool
-	}{{ports, delPorts, true}, {sw, delSwitch, true}, {targets, delTargets, true}, {targets, addTargets, false}, {sw, addSwitch, false}, {ports, addPorts, false}} {
-		if len(op.els) == 0 {
-			continue
-		}
-		changed = true
-		var err error
-		if op.del {
-			err = c.SetDeleteElements(op.set, op.els)
-		} else {
-			err = c.SetAddElements(op.set, op.els)
-		}
-		if err != nil {
-			return false, err
-		}
-	}
-	if !changed {
-		return false, nil
-	}
-	return true, c.Flush()
+	delPorts, addPorts := diffElements(current, e.Ports, port, addrPortKey)
+	delSwitch, addSwitch := diffElements(haveSw, e.Switch, addrKey, addrKey)
+	delTargets, addTargets := diffElements(haveTargets, keysOf(e.Switch), addrKey, nil)
+	return applySetOps(c, false,
+		setOp{ports, delPorts, true}, setOp{sw, delSwitch, true}, setOp{targets, delTargets, true},
+		setOp{targets, addTargets, false}, setOp{sw, addSwitch, false}, setOp{ports, addPorts, false})
 }
 
 func HostFlows(ms []FlowMatch, evict bool) (FlowReport, error) {

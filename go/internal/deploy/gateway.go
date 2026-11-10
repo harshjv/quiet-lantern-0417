@@ -16,12 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/gateway"
+	"github.com/harshjv/stationly/go/internal/millis"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
@@ -170,28 +172,19 @@ func (s *Station) reconcileGateway(ctx context.Context) {
 			s.maybeStartTransition(ctx)
 		}
 	}
-	s.syncHost("reconcile")
+	_, _ = s.syncHost("reconcile")
 }
 
 func (s *Station) ensureIngress(ctx context.Context) error {
 	gp := s.plan.Gateway
 	spec := docker.IngressNetwork(s.plan.Generation.StationId, gp.Ingress, gp.IPRange, gp.Bridge)
-	id, labels, ok, err := s.docker.NetworkByName(ctx, spec.Name)
+	id, created, err := s.docker.EnsureFixedNetwork(ctx, spec)
 	if err != nil {
 		return err
 	}
-	if ok {
-		if labels[docker.LabelHash] != spec.Hash {
-			return fmt.Errorf("network %s exists with other settings; the ingress subnet is fixed at install", spec.Name)
-		}
-		s.gw.ingressID = id
-		return nil
+	if created {
+		s.log.Info("created ingress network", "name", spec.Name, "bridge", docker.IngressBridgeName, "id", shortID(id), "subnet", gp.Ingress, "dynamic_range", gp.IPRange)
 	}
-	id, err = s.docker.CreateNetwork(ctx, spec)
-	if err != nil {
-		return fmt.Errorf("create network %s: %w", spec.Name, err)
-	}
-	s.log.Info("created ingress network", "name", spec.Name, "bridge", docker.IngressBridgeName, "id", shortID(id), "subnet", gp.Ingress, "dynamic_range", gp.IPRange)
 	s.gw.ingressID = id
 	return nil
 }
@@ -570,7 +563,7 @@ func (s *Station) gatewayProbe(ctx context.Context, t *gatewayTransition) {
 			return
 		}
 		t.ReadyAt = stamp(time.Now())
-		t.Detail["ready_ms"] = float64(time.Since(parseStamp(t.RunningAt)).Microseconds()) / 1000
+		t.Detail["ready_ms"] = millis.Of(time.Since(parseStamp(t.RunningAt)))
 		s.gatewayCutover(ctx, t)
 		return
 	}
@@ -599,7 +592,7 @@ func (s *Station) gatewayCutover(ctx context.Context, t *gatewayTransition) {
 	t.CutoverAt = stamp(time.Now())
 	s.gw.certs = nil
 	s.gw.certAt = time.Time{}
-	t.Detail["port_switch_ms"] = float64(time.Since(start).Microseconds()) / 1000
+	t.Detail["port_switch_ms"] = millis.Of(time.Since(start))
 	t.Detail["port_switch_result"] = string(result)
 	t.Detail["port_switch_to"] = gp.Slots[to.Slot].String()
 	if prev != nil {

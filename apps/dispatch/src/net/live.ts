@@ -1,4 +1,6 @@
+import { logError } from '../log.ts'
 import type { StationServer, StreamHandle } from '../station/server.ts'
+
 import type { StationSample } from './connections.ts'
 
 export type LiveTick = { at: string; samples: StationSample[] }
@@ -27,7 +29,10 @@ export type LiveOptions = { lingerMs?: number; flushMs?: number; retryMs?: numbe
 
 const errorCode = (error: unknown) => (error as { code?: string }).code ?? 'STATION_OFFLINE'
 
-export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, options: LiveOptions = {}) => {
+export const createLiveHub = (
+  stations: Pick<StationServer, 'openStream'>,
+  options: LiveOptions = {},
+) => {
   const lingerMs = options.lingerMs ?? 15_000
   const flushMs = options.flushMs ?? 300
   const retryMs = options.retryMs ?? 5_000
@@ -41,15 +46,25 @@ export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, optio
     g.buffer = null
     if (!tick) return
     for (const sub of g.subscribers) {
-      const samples = tick.samples.filter(s => s.service_id !== undefined && sub.ids.has(s.service_id))
-      if (samples.length) sub.deliver({ at: tick.at, samples })
+      const samples = tick.samples.filter(
+        (s) => s.service_id !== undefined && sub.ids.has(s.service_id),
+      )
+      if (samples.length)
+        sub.deliver({
+          at: tick.at,
+          samples,
+        })
     }
   }
 
   const take = (g: Group, items: StationSample[]) => {
     for (const item of items) {
       if (g.buffer && g.buffer.at !== item.at) flush(g)
-      if (!g.buffer) g.buffer = { at: item.at, samples: [] }
+      if (!g.buffer)
+        g.buffer = {
+          at: item.at,
+          samples: [],
+        }
       g.buffer.samples.push(item)
     }
     if (g.flushTimer) clearTimeout(g.flushTimer)
@@ -62,13 +77,13 @@ export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, optio
     return ids
   }
 
-  const covers = (have: Set<string>, want: Set<string>) => [...want].every(id => have.has(id))
+  const covers = (have: Set<string>, want: Set<string>) => [...want].every((id) => have.has(id))
 
   const scheduleRetry = (g: Group) => {
     if (g.retryTimer || !g.subscribers.size) return
     g.retryTimer = setTimeout(() => {
       g.retryTimer = null
-      reconfigure(g)
+      void reconfigure(g)
     }, retryMs)
   }
 
@@ -80,23 +95,39 @@ export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, optio
     let handle: StreamHandle | null = null
     let owed = 0
     try {
-      handle = await stations.openStream(g.stationId, 'network.subscribe', { service_ids: [...ids].sort() }, {
-        onData: (items, bytes) => {
-          if (handle && g.current === handle) take(g, items as StationSample[])
-          if (handle) handle.credit(bytes)
-          else owed += bytes
+      handle = await stations.openStream(
+        g.stationId,
+        'network.subscribe',
+        {
+          service_ids: [...ids].sort(),
         },
-        onEnd: reason => {
-          if (!handle || g.current !== handle) return
-          g.current = null
-          g.ids = new Set()
-          flush(g)
-          for (const sub of g.subscribers) sub.notify('end', { station_id: g.stationId, reason })
-          scheduleRetry(g)
-        }
-      })
+        {
+          onData: (items, bytes) => {
+            if (handle && g.current === handle) take(g, items as StationSample[])
+            if (handle) handle.credit(bytes)
+            else owed += bytes
+          },
+          onEnd: (reason) => {
+            if (!handle || g.current !== handle) return
+            g.current = null
+            g.ids = new Set()
+            flush(g)
+            for (const sub of g.subscribers)
+              sub.notify('end', {
+                station_id: g.stationId,
+                reason,
+              })
+            scheduleRetry(g)
+          },
+        },
+      )
     } catch (error) {
-      for (const sub of g.subscribers) sub.notify('error', { station_id: g.stationId, code: errorCode(error), explanation: (error as Error).message })
+      for (const sub of g.subscribers)
+        sub.notify('error', {
+          station_id: g.stationId,
+          code: errorCode(error),
+          explanation: (error as Error).message,
+        })
       scheduleRetry(g)
       if (!g.subscribers.size) startLinger(g)
       return
@@ -111,7 +142,14 @@ export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, optio
 
   const reconfigure = (g: Group) => {
     g.dirty = true
-    g.reconfiguring = g.reconfiguring.then(() => (g.dirty ? open(g) : undefined))
+    g.reconfiguring = g.reconfiguring
+      .then(() => (g.dirty ? open(g) : undefined))
+      .catch((error: unknown) =>
+        logError('network.live_reconfigure_failed', {
+          station_id: g.stationId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
     return g.reconfiguring
   }
 
@@ -135,7 +173,19 @@ export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, optio
     const key = `${stationId}|${environmentId}`
     let g = groups.get(key)
     if (!g) {
-      g = { key, stationId, subscribers: new Set(), current: null, ids: new Set(), reconfiguring: Promise.resolve(), dirty: false, closeTimer: null, retryTimer: null, buffer: null, flushTimer: null }
+      g = {
+        key,
+        stationId,
+        subscribers: new Set(),
+        current: null,
+        ids: new Set(),
+        reconfiguring: Promise.resolve(),
+        dirty: false,
+        closeTimer: null,
+        retryTimer: null,
+        buffer: null,
+        flushTimer: null,
+      }
       groups.set(key, g)
     }
     const group = g
@@ -163,7 +213,11 @@ export const createLiveHub = (stations: Pick<StationServer, 'openStream'>, optio
     for (const g of [...groups.values()]) close(g)
   }
 
-  return { subscribe, claim, shutdown }
+  return {
+    subscribe,
+    claim,
+    shutdown,
+  }
 }
 
 export type LiveHub = ReturnType<typeof createLiveHub>

@@ -13,6 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/system"
+
 	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/dns"
@@ -28,9 +32,6 @@ import (
 	"github.com/harshjv/stationly/go/internal/upgrade"
 	"github.com/harshjv/stationly/go/internal/verify"
 	"github.com/harshjv/stationly/go/internal/workshop"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/system"
 )
 
 const (
@@ -577,7 +578,7 @@ func (s *Station) reconcile(ctx context.Context) {
 	desiredNets := map[string]bool{}
 	for envID, spec := range s.plan.Networks {
 		desiredNets[spec.Name] = true
-		s.ensureNetwork(ctx, envID, spec, netByName, byName)
+		s.ensureNetwork(ctx, envID, spec, byName)
 	}
 	for envID := range s.envs {
 		if _, ok := s.plan.Networks[envID]; !ok {
@@ -669,17 +670,13 @@ func (s *Station) reconcile(ctx context.Context) {
 	}
 }
 
-func (s *Station) ensureNetwork(ctx context.Context, envID string, spec docker.NetworkSpec, netByName map[string]network.Summary, byName map[string]container.Summary) {
+func (s *Station) ensureNetwork(ctx context.Context, envID string, spec docker.NetworkSpec, byName map[string]container.Summary) {
 	st := s.envs[envID]
 	if st == nil {
 		st = &envState{}
 		s.envs[envID] = st
 	}
-	if n, ok := netByName[spec.Name]; ok {
-		if n.Labels[docker.LabelHash] == spec.Hash && n.Labels[docker.LabelEnvironment] == envID {
-			st.networkID, st.failure = n.ID, nil
-			return
-		}
+	id, created, err := s.docker.EnsureNetwork(ctx, spec, func() {
 		s.log.Info("network differs from the generation, recreating", "name", spec.Name)
 		for name, c := range byName {
 			if c.Labels[docker.LabelEnvironment] == envID {
@@ -687,19 +684,16 @@ func (s *Station) ensureNetwork(ctx context.Context, envID string, spec docker.N
 				delete(byName, name)
 			}
 		}
-		if err := s.docker.RemoveNetwork(ctx, n.ID); err != nil {
-			st.failure = dockerFailure(protocol.ErrorCodeGenerationInvalid, "remove network "+spec.Name, err)
-			return
-		}
-	}
-	id, err := s.docker.CreateNetwork(ctx, spec)
+	})
 	if err != nil {
 		st.networkID = ""
-		st.failure = dockerFailure(protocol.ErrorCodeGenerationInvalid, "create network "+spec.Name, err)
-		s.log.Error("create network", "name", spec.Name, "error", err)
+		st.failure = dockerError(protocol.ErrorCodeGenerationInvalid, err)
+		s.log.Error("network", "name", spec.Name, "error", err)
 		return
 	}
-	s.log.Info("created network", "name", spec.Name, "id", shortID(id))
+	if created {
+		s.log.Info("created network", "name", spec.Name, "id", shortID(id))
+	}
 	st.networkID, st.failure = id, nil
 }
 
@@ -1106,9 +1100,13 @@ func containerName(c container.Summary) string {
 }
 
 func dockerFailure(code protocol.ErrorCode, action string, err error) *protocol.ErrorBody {
+	return dockerError(code, fmt.Errorf("%s: %w", action, err))
+}
+
+func dockerError(code protocol.ErrorCode, err error) *protocol.ErrorBody {
 	return &protocol.ErrorBody{
 		Code:        string(code),
-		Explanation: action + ": " + err.Error(),
+		Explanation: err.Error(),
 		Fix:         "Check the Docker daemon log and the generation, then apply again.",
 	}
 }

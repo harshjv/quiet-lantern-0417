@@ -14,9 +14,10 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/upgrade"
-	"golang.org/x/sys/unix"
 )
 
 const maxRequest = 1 << 20
@@ -108,7 +109,7 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 		mu.Lock()
 		defer mu.Unlock()
 		l.V = protocol.RootSocketVersion
-		enc.Encode(l)
+		_ = enc.Encode(l)
 	}
 	fail := func(id string, code protocol.ErrorCode, explanation, fix string) {
 		f := false

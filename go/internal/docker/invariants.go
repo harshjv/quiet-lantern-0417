@@ -2,7 +2,6 @@ package docker
 
 import (
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -11,6 +10,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (

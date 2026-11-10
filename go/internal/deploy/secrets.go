@@ -210,7 +210,7 @@ func (s *Station) liveDeployments() map[string]bool {
 	return live
 }
 
-func (s *Station) sweepSecrets(ctx context.Context, containers map[string]bool) {
+func (s *Station) sweepSecrets(_ context.Context, containers map[string]bool) {
 	live := s.liveDeployments()
 	mounted, err := secrets.MountedDeployments()
 	if err != nil {

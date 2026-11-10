@@ -1,8 +1,14 @@
 import type { ComponentProps, ReactNode } from 'react'
+
 import { Table, TableCell, TableHead, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
-export function TableFrame({ caption, className, children, ...props }: ComponentProps<'div'> & { caption?: ReactNode }) {
+export function TableFrame({
+  caption,
+  className,
+  children,
+  ...props
+}: ComponentProps<'div'> & { caption?: ReactNode }) {
   return (
     <div className={cn('overflow-hidden rounded-lg border', className)} {...props}>
       <Table>

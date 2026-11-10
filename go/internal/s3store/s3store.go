@@ -209,7 +209,7 @@ func (c *Client) Put(ctx context.Context, name string, r io.Reader) (int64, erro
 		if uploadID != nil {
 			actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer acancel()
-			c.api.AbortMultipartUpload(actx, &s3.AbortMultipartUploadInput{Bucket: &c.bucket, Key: &key, UploadId: uploadID})
+			_, _ = c.api.AbortMultipartUpload(actx, &s3.AbortMultipartUploadInput{Bucket: &c.bucket, Key: &key, UploadId: uploadID})
 		}
 		return total, cause
 	}

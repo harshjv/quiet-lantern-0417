@@ -85,7 +85,7 @@ func EnsureProfile() (bool, string, error) {
 	cmd := exec.Command("apparmor_parser", "-r", profilePath)
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
-		return true, abi, fmt.Errorf("apparmor_parser -r %s: %v: %s", profilePath, err, strings.TrimSpace(out.String()))
+		return true, abi, fmt.Errorf("apparmor_parser -r %s: %w: %s", profilePath, err, strings.TrimSpace(out.String()))
 	}
 	if !ProfileLoaded() {
 		return true, abi, fmt.Errorf("apparmor_parser loaded %s but %s does not list it", profilePath, profilesPath)

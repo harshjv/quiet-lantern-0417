@@ -71,7 +71,7 @@ func (g *getter) roundTrip(n int, fill func(b []byte, seq uint32, i int) []byte,
 	if err := g.c.SetDeadline(time.Now().Add(getTimeout)); err != nil {
 		return err
 	}
-	defer g.c.SetDeadline(time.Time{})
+	defer func() { _ = g.c.SetDeadline(time.Time{}) }()
 	if err := g.c.Sendto(ctx, g.req, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (g *getter) entries() (int, error) {
 	if err := g.c.SetDeadline(time.Now().Add(getTimeout)); err != nil {
 		return 0, err
 	}
-	defer g.c.SetDeadline(time.Time{})
+	defer func() { _ = g.c.SetDeadline(time.Time{}) }()
 	if err := g.c.Sendto(ctx, g.req, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
 		return 0, err
 	}

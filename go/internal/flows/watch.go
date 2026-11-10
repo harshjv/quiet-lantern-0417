@@ -229,7 +229,7 @@ func (w *Watch) read() {
 	for {
 		select {
 		case <-w.grant:
-			w.ev.SetReadDeadline(time.Time{})
+			_ = w.ev.SetReadDeadline(time.Time{})
 			w.sync(false)
 			w.synced <- struct{}{}
 		default:
@@ -240,7 +240,7 @@ func (w *Watch) read() {
 			case w.closing.Load():
 				return
 			case errors.Is(err, os.ErrDeadlineExceeded):
-				w.ev.SetReadDeadline(time.Time{})
+				_ = w.ev.SetReadDeadline(time.Time{})
 				continue
 			case errors.Is(err, unix.ENOBUFS):
 				w.overflow()
@@ -304,13 +304,13 @@ func (w *Watch) drain() int {
 	}
 	buf := make([]byte, 64<<10)
 	drained := 0
-	rc.Read(func(fd uintptr) bool {
+	_ = rc.Read(func(fd uintptr) bool {
 		for {
 			_, _, err := unix.Recvfrom(int(fd), buf, unix.MSG_DONTWAIT)
-			switch {
-			case err == nil:
+			switch err {
+			case nil:
 				drained++
-			case err == unix.ENOBUFS || err == unix.EINTR:
+			case unix.ENOBUFS, unix.EINTR:
 			default:
 				return true
 			}
@@ -349,8 +349,10 @@ func (w *Watch) dump() ([]seeded, error) {
 		}}}
 		var reply Tuple
 		if f.TupleReply.IP.SourceAddress.Is4() {
-			reply = Tuple{Src: f.TupleReply.IP.SourceAddress.As4(), Dst: f.TupleReply.IP.DestinationAddress.As4(),
-				SPort: f.TupleReply.Proto.SourcePort, DPort: f.TupleReply.Proto.DestinationPort, Proto: f.TupleReply.Proto.Protocol}
+			reply = Tuple{
+				Src: f.TupleReply.IP.SourceAddress.As4(), Dst: f.TupleReply.IP.DestinationAddress.As4(),
+				SPort: f.TupleReply.Proto.SourcePort, DPort: f.TupleReply.Proto.DestinationPort, Proto: f.TupleReply.Proto.Protocol,
+			}
 		}
 		s.f = flow{reply: reply.Src, read: now, orig: f.CountersOrig.Bytes, repl: f.CountersReply.Bytes}
 		s.f.baseOrig, s.f.baseRepl = s.f.orig, s.f.repl

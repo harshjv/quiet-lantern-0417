@@ -11,9 +11,15 @@ keywords = ["sly-rk-"]
 
 [[rules]]
 id = "stationly-token"
-description = "stationly API, session or enroll token"
-regex = '''sly_(?:pat|tok|sess|enroll|ci|deploy|read|admin)_[A-Za-z0-9_-]{16,}'''
+description = "stationly API key or station enrollment token"
+regex = '''sly_[A-Za-z0-9_-]{24,}'''
 keywords = ["sly_"]
+
+[[rules]]
+id = "stationly-bootstrap-token"
+description = "stationly installer bootstrap token"
+regex = '''sly-enroll-[A-Za-z0-9_-]{24,}'''
+keywords = ["sly-enroll-"]
 
 [[rules]]
 id = "stationly-login-link"

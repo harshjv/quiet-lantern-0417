@@ -12,8 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/upgrade"
 	mdns "github.com/miekg/dns"
+
+	"github.com/harshjv/stationly/go/internal/upgrade"
 )
 
 const (
@@ -137,7 +138,7 @@ func (r *Resolver) serveHost(w mdns.ResponseWriter, req *mdns.Msg, src netip.Add
 		}
 	}
 	r.log.Info("resolver host query", "source", src, "name", q.Name, "type", mdns.TypeToString[q.Qtype], "rcode", mdns.RcodeToString[resp.Rcode], "answers", len(resp.Answer))
-	w.WriteMsg(resp)
+	_ = w.WriteMsg(resp)
 }
 
 func UpstreamFrom(resolvConf string) (string, error) {
@@ -215,9 +216,10 @@ func (r *Resolver) bind(a netip.Addr) (*listener, error) {
 		upgrade.Forget("dns/udp/" + addr)
 		return nil, err
 	}
-	l := &listener{addr: addr,
-		udp: &mdns.Server{PacketConn: pc, Handler: r},
-		tcp: &mdns.Server{Listener: ln, Handler: r},
+	l := &listener{
+		addr: addr,
+		udp:  &mdns.Server{PacketConn: pc, Handler: r},
+		tcp:  &mdns.Server{Listener: ln, Handler: r},
 	}
 	for _, s := range []*mdns.Server{l.udp, l.tcp} {
 		go func() {
@@ -234,8 +236,8 @@ func (l *listener) shutdown() {
 	upgrade.Forget("dns/tcp/" + l.addr)
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
-	l.udp.ShutdownContext(ctx)
-	l.tcp.ShutdownContext(ctx)
+	_ = l.udp.ShutdownContext(ctx)
+	_ = l.tcp.ShutdownContext(ctx)
 }
 
 func (r *Resolver) zoneFor(src netip.Addr) *zone {
@@ -260,12 +262,12 @@ func source(w mdns.ResponseWriter) netip.Addr {
 func (r *Resolver) ServeDNS(w mdns.ResponseWriter, req *mdns.Msg) {
 	m := new(mdns.Msg)
 	if len(req.Question) != 1 {
-		w.WriteMsg(m.SetRcodeFormatError(req))
+		_ = w.WriteMsg(m.SetRcodeFormatError(req))
 		return
 	}
 	src := source(w)
 	if !r.budgets.allow(src) {
-		w.WriteMsg(m.SetRcode(req, mdns.RcodeRefused))
+		_ = w.WriteMsg(m.SetRcode(req, mdns.RcodeRefused))
 		return
 	}
 	probe := r.probes.has(w.RemoteAddr())
@@ -279,7 +281,7 @@ func (r *Resolver) ServeDNS(w mdns.ResponseWriter, req *mdns.Msg) {
 	}
 	z := r.zoneFor(src)
 	if z == nil {
-		w.WriteMsg(m.SetRcode(req, mdns.RcodeRefused))
+		_ = w.WriteMsg(m.SetRcode(req, mdns.RcodeRefused))
 		return
 	}
 	q := req.Question[0]
@@ -299,7 +301,7 @@ func (r *Resolver) ServeDNS(w mdns.ResponseWriter, req *mdns.Msg) {
 		resp = r.forward(req, w.LocalAddr().Network())
 		upstream = true
 	}
-	w.WriteMsg(resp)
+	_ = w.WriteMsg(resp)
 	if z.log {
 		r.rings.record(src, start, name, q.Qtype, resp, upstream, probe, "")
 	}

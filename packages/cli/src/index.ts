@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { Command, CommanderError } from 'commander'
+import { CommanderError, type CommandUnknownOpts } from '@commander-js/extra-typings'
+
+import { createProgram } from './command.ts'
 import { adminCommands } from './commands/admin.ts'
 import { authCommands } from './commands/auth.ts'
 import { adminHostCommands, hostCommands } from './commands/host.ts'
@@ -11,24 +13,15 @@ import { operationCommands } from './commands/operations.ts'
 import { resourceCommands } from './commands/resources.ts'
 import { sandboxCommands } from './commands/sandbox.ts'
 import { variableCommands } from './commands/variables.ts'
-import { exitCodes } from './errors.ts'
 import { version } from './env.ts'
+import { exitCodes } from './errors.ts'
 
-process.stdout.on('error', error => {
+process.stdout.on('error', (error) => {
   if ((error as NodeJS.ErrnoException).code === 'EPIPE') process.exit(exitCodes.brokenPipe)
   throw error
 })
 
-const program = new Command('sly')
-  .description('Stationly CLI: a thin client over the Dispatch API')
-  .option('--json', 'print the API response unmodified as one JSON document')
-  .option('--dry-run', 'print the request a mutating command would send, and send nothing')
-  .option('--instance <url>', 'instance to use instead of the current one')
-  .option('--project <project>', 'project id or name (default from .stationly/context.json)')
-  .option('--environment <environment>', 'environment id or name (default: the project default)')
-  .option('--service <service>', 'service id or name')
-  .exitOverride()
-  .configureOutput({ writeErr: text => process.stderr.write(text) })
+const program = createProgram()
 
 authCommands(program)
 linkCommands(program)
@@ -47,19 +40,29 @@ program
   .command('version')
   .description('Print the sly version')
   .action(() => {
-    process.stdout.write(program.opts().json ? `${JSON.stringify({ version })}\n` : `sly ${version}\n`)
+    process.stdout.write(
+      program.opts().json
+        ? `${JSON.stringify({
+            version,
+          })}\n`
+        : `sly ${version}\n`,
+    )
   })
 
-for (const command of program.commands) {
+const lockExits = (command: CommandUnknownOpts) => {
   command.exitOverride()
-  for (const sub of command.commands) sub.exitOverride()
+  command.commands.forEach(lockExits)
 }
+lockExits(program)
 
 try {
   await program.parseAsync()
 } catch (error) {
   if (error instanceof CommanderError) {
-    const shown = error.code === 'commander.helpDisplayed' || error.code === 'commander.help' || error.code === 'commander.version'
+    const shown =
+      error.code === 'commander.helpDisplayed' ||
+      error.code === 'commander.help' ||
+      error.code === 'commander.version'
     if (!shown) process.stderr.write('USAGE\n')
     process.exitCode = shown ? exitCodes.ok : exitCodes.usage
   } else throw error

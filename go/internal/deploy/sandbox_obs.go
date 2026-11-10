@@ -52,7 +52,7 @@ func recordStorageSize(etcDir string, size uint64) {
 		return
 	}
 	c.Sandboxes.Image.SizeBytes = size
-	hostconfig.Save(etcDir, c)
+	_ = hostconfig.Save(etcDir, c)
 }
 
 func (s *Station) sandboxResources(r *protocol.Resources) {
@@ -148,7 +148,7 @@ func (s *Station) copySandboxLogs(j sbxLogJob) map[string]int64 {
 					break
 				}
 				off += int64(len(line))
-				w.Write(time.Now(), f.role, string(protocol.LogStreamStdout), j.redactor.Redact(string(bytes.TrimRight(line, "\r\n"))))
+				_ = w.Write(time.Now(), f.role, string(protocol.LogStreamStdout), j.redactor.Redact(string(bytes.TrimRight(line, "\r\n"))))
 			}
 		}
 		file.Close()
@@ -249,7 +249,7 @@ func sampleSandbox(cgroup string, pid int, now time.Time) sbxSample {
 	return smp
 }
 
-func (s *Station) syncSandboxMetrics(ctx context.Context, now time.Time) {
+func (s *Station) syncSandboxMetrics(ctx context.Context, _ time.Time) {
 	want := map[string]bool{}
 	for id, st := range s.sbx.states {
 		if st.rec.Status != protocol.SandboxReportStatusRunning || st.rec.Cgroup == "" || st.pid <= 0 {

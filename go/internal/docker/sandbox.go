@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net/netip"
+
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
 )
 
 const (
@@ -27,38 +26,11 @@ func SandboxCouplerName(sandboxID string) string {
 }
 
 func SandboxNetwork(stationID string, n protocol.DesiredStationSandboxNetwork) (NetworkSpec, error) {
-	subnet, err := netip.ParsePrefix(n.Subnet)
+	ipam, err := parseIPAM(n.Subnet, n.Gateway)
 	if err != nil {
-		return NetworkSpec{}, fmt.Errorf("sandbox network subnet: %w", err)
+		return NetworkSpec{}, fmt.Errorf("sandbox network %w", err)
 	}
-	gateway, err := netip.ParseAddr(n.Gateway)
-	if err != nil {
-		return NetworkSpec{}, fmt.Errorf("sandbox network gateway: %w", err)
-	}
-	ipv4, ipv6 := true, false
-	spec := NetworkSpec{
-		Name: n.BridgeName,
-		Options: client.NetworkCreateOptions{
-			Driver:     "bridge",
-			EnableIPv4: &ipv4,
-			EnableIPv6: &ipv6,
-			IPAM: &network.IPAM{
-				Driver: "default",
-				Config: []network.IPAMConfig{{Subnet: subnet, Gateway: gateway}},
-			},
-			Options: map[string]string{
-				"com.docker.network.bridge.name":       SandboxIface,
-				"com.docker.network.bridge.enable_icc": "false",
-			},
-			Labels: map[string]string{
-				LabelStation: stationID,
-				LabelRole:    RoleSandboxNetwork,
-			},
-		},
-	}
-	spec.Hash = hashOf(spec.Options)
-	spec.Options.Labels[LabelHash] = spec.Hash
-	return spec, nil
+	return bridgeNetwork(n.BridgeName, SandboxIface, false, ipam, platformLabels(stationID, RoleSandboxNetwork, ""), nil), nil
 }
 
 func SandboxCoupler(stationID, envID, sandboxID, image, networkName string) ContainerSpec {
@@ -70,34 +42,7 @@ func SandboxCoupler(stationID, envID, sandboxID, image, networkName string) Cont
 	}
 	sysctls := map[string]string{"net.ipv4.ip_forward": "1"}
 	maps.Copy(sysctls, ConntrackSysctls)
-	spec := ContainerSpec{
-		Name: SandboxCouplerName(sandboxID),
-		Role: RoleSandboxCoupler,
-		Create: client.ContainerCreateOptions{
-			Name:   SandboxCouplerName(sandboxID),
-			Config: &container.Config{Image: image, Labels: labels},
-			HostConfig: &container.HostConfig{
-				NetworkMode:    container.NetworkMode(networkName),
-				CapDrop:        []string{"ALL"},
-				SecurityOpt:    []string{"no-new-privileges"},
-				ReadonlyRootfs: true,
-				Sysctls:        sysctls,
-				RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyDisabled},
-				LogConfig:      logConfig,
-				Resources: container.Resources{
-					Memory:     couplerMemoryBytes,
-					MemorySwap: couplerMemoryBytes,
-					NanoCPUs:   HostNanoCPUs(couplerNanoCPUs),
-				},
-			},
-			NetworkingConfig: &network.NetworkingConfig{
-				EndpointsConfig: map[string]*network.EndpointSettings{
-					networkName: {GwPriority: CouplerGwPriority},
-				},
-			},
-		},
-	}
-	return sealed(spec)
+	return sealed(couplerSpec(SandboxCouplerName(sandboxID), RoleSandboxCoupler, image, networkName, labels, sysctls))
 }
 
 type ImageConfig struct {
@@ -134,7 +79,7 @@ func (c *Client) ExportImage(ctx context.Context, stationID, sandboxKey, ref str
 		return nil, nil, fmt.Errorf("create a stopped container from %s: %w", ref, err)
 	}
 	cleanup := func() {
-		c.api.ContainerRemove(context.Background(), res.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+		_, _ = c.api.ContainerRemove(context.Background(), res.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}
 	rc, err := c.api.ContainerExport(ctx, res.ID, client.ContainerExportOptions{})
 	if err != nil {

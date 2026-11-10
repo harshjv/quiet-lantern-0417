@@ -215,7 +215,7 @@ func (s *Stream) Grant(n int) {
 	}
 	s.recvLeft += n
 	s.mu.Unlock()
-	s.c.Send(protocol.MessageStreamCredit, nil, protocol.StreamCreditBody{Stream: s.Number, Bytes: n})
+	_ = s.c.Send(protocol.MessageStreamCredit, nil, protocol.StreamCreditBody{Stream: s.Number, Bytes: n})
 }
 
 func (s *Stream) End(reason string, exitCode *int) {
@@ -230,12 +230,12 @@ func (s *Stream) End(reason string, exitCode *int) {
 	select {
 	case s.c.data <- frame{b: b}:
 	case <-time.After(writeTimeout):
-		s.c.Send(protocol.MessageStreamEnd, nil, body)
+		_ = s.c.Send(protocol.MessageStreamEnd, nil, body)
 	}
 }
 
 func (c *Client) streamError(code protocol.ErrorCode, n int, format string, args ...any) {
-	c.Send(protocol.MessageError, nil, protocol.ErrorBody{Code: string(code), Explanation: fmt.Sprintf(format, args...), Fix: "Open the stream again.", Details: protocol.ErrorBodyDetails{"stream": n}})
+	_ = c.Send(protocol.MessageError, nil, protocol.ErrorBody{Code: string(code), Explanation: fmt.Sprintf(format, args...), Fix: "Open the stream again.", Details: protocol.ErrorBodyDetails{"stream": n}})
 }
 
 func (c *Client) onBinary(b []byte) {
@@ -270,7 +270,7 @@ func (c *Client) onBinary(b []byte) {
 
 func (c *Client) cancelStream(s *Stream, reason string) {
 	if s.close() {
-		c.Send(protocol.MessageStreamEnd, nil, protocol.StreamEndBody{Stream: s.Number, Reason: reason})
+		_ = c.Send(protocol.MessageStreamEnd, nil, protocol.StreamEndBody{Stream: s.Number, Reason: reason})
 		if s.onCancel != nil {
 			go s.onCancel()
 		}

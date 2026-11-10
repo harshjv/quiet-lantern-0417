@@ -159,7 +159,7 @@ func (s *Signer) VerifyGrant(raw string) ([]Access, error) {
 	if err := tok.Claims(s.key.Public(), &c); err != nil {
 		return nil, err
 	}
-	if err := c.Claims.ValidateWithLeeway(jwt.Expected{Issuer: Issuer, AnyAudience: jwt.Audience{grantAudience}, Time: time.Now()}, 0); err != nil {
+	if err := c.ValidateWithLeeway(jwt.Expected{Issuer: Issuer, AnyAudience: jwt.Audience{grantAudience}, Time: time.Now()}, 0); err != nil {
 		return nil, err
 	}
 	return c.Access, nil

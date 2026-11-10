@@ -6,13 +6,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./domain": "./src/domain.ts",
+    "./format": "./src/format.ts",
     "./release-config": "./src/release-config.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "generate": "node scripts/generate.ts"
+    "generate": "node scripts/generate.ts",
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.52"
+    "@sinclair/typebox": "catalog:"
   }
 }

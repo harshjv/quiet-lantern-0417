@@ -17,25 +17,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/release"
 	"github.com/harshjv/stationly/go/internal/verify"
-	"github.com/harshjv/stationly/go/internal/workshop"
 )
 
 var ComponentSources = map[string]string{
 	"dispatch":          protocol.DispatchRepository,
-	"gateway":           docker.GatewaySource,
-	"buildkit":          workshop.BuildkitSource,
-	"depot":             depot.ImageSource,
-	"coupler_image":     docker.CouplerSource,
-	"railpack_frontend": workshop.RailpackSource,
-	"syft_scanner":      workshop.SyftScannerSource,
-	"litestream":        docker.LitestreamSource,
+	"gateway":           protocol.GatewaySource,
+	"buildkit":          protocol.BuildkitSource,
+	"depot":             protocol.DepotSource,
+	"coupler_image":     protocol.CouplerImageSource,
+	"railpack_frontend": protocol.RailpackFrontendSource,
+	"syft_scanner":      protocol.SyftScannerSource,
+	"litestream":        protocol.LitestreamSource,
 	"sandbox_toolchain": protocol.SandboxToolchainRepository,
 }
 
@@ -409,7 +407,7 @@ func hasPlatform(c protocol.ReleaseComponent) bool {
 
 func hasFlag(args []string, flag string) bool {
 	for _, a := range args {
-		if a == flag || a == "-"+strings.TrimPrefix(flag, "--") || strings.HasPrefix(a, flag+"=") {
+		if a == flag || strings.HasPrefix(a, flag+"=") {
 			return true
 		}
 	}
@@ -418,7 +416,7 @@ func hasFlag(args []string, flag string) bool {
 
 func socketArg(args []string) string {
 	for i, a := range args {
-		if (a == "--socket" || a == "-socket") && i+1 < len(args) {
+		if a == "--socket" && i+1 < len(args) {
 			return args[i+1]
 		}
 		if v, ok := strings.CutPrefix(a, "--socket="); ok {
@@ -476,7 +474,7 @@ func installUnit(opts InstallOptions, binary string, runArgs []string) (string, 
 	}
 	out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("systemctl daemon-reload: %v: %s", err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return fmt.Sprintf("%s -> %s; %s (Type=notify, NotifyAccess=main)", opts.BinaryLink, binary, opts.UnitPath), nil
 }

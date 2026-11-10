@@ -33,12 +33,10 @@ var (
 	ready     *os.File
 )
 
-func LoadInherited() (bool, error) {
-	raw := os.Getenv(HandoverEnv)
+func LoadInherited(raw string) (bool, error) {
 	if raw == "" {
 		return false, nil
 	}
-	os.Unsetenv(HandoverEnv)
 	var h handover
 	if err := json.Unmarshal([]byte(raw), &h); err != nil {
 		return false, fmt.Errorf("%s: %w", HandoverEnv, err)

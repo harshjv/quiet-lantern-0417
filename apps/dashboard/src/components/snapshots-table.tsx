@@ -1,5 +1,6 @@
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+
 import { Mono } from '@/components/page'
 import { noItems, QueryState } from '@/components/query-state'
 import { DeleteSnapshot, ForkButton } from '@/components/sandbox-actions'
@@ -15,7 +16,7 @@ export function SnapshotsTable({
   environment,
   originLabel,
   origin,
-  empty
+  empty,
 }: {
   query: UseQueryResult<{ items: SandboxSnapshot[] }>
   project: string
@@ -26,7 +27,7 @@ export function SnapshotsTable({
 }) {
   return (
     <QueryState query={query} rows={2} isEmpty={noItems} empty={empty}>
-      {data => (
+      {(data) => (
         <TableFrame>
           <TableHeader>
             <TableRow>
@@ -39,7 +40,7 @@ export function SnapshotsTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.items.map(snapshot => (
+            {data.items.map((snapshot) => (
               <TableRow key={snapshot.id}>
                 <TableCell>
                   <Mono className="font-medium">{snapshot.name ?? snapshot.id}</Mono>
@@ -48,11 +49,23 @@ export function SnapshotsTable({
                   <Badge variant="outline">{snapshot.status}</Badge>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">{origin(snapshot)}</TableCell>
-                <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">{bytes(snapshot.referenced_bytes)}</TableCell>
+                <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
+                  {bytes(snapshot.referenced_bytes)}
+                </TableCell>
                 <TableCell className="text-muted-foreground">{ago(snapshot.taken_at)}</TableCell>
                 <TableCell className="text-right">
                   <span className="inline-flex items-center gap-1">
-                    {snapshot.status === 'ready' && <ForkButton source={{ kind: 'snapshot', snapshot }} project={project} environment={environment} size="icon-sm" />}
+                    {snapshot.status === 'ready' && (
+                      <ForkButton
+                        source={{
+                          kind: 'snapshot',
+                          snapshot,
+                        }}
+                        project={project}
+                        environment={environment}
+                        size="icon-sm"
+                      />
+                    )}
                     <DeleteSnapshot snapshot={snapshot} />
                   </span>
                 </TableCell>

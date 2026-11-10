@@ -115,13 +115,13 @@ func (f *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			if r.Method == http.MethodGet {
-				io.WriteString(w, `<Error><Code>NoSuchKey</Code></Error>`)
+				_, _ = io.WriteString(w, `<Error><Code>NoSuchKey</Code></Error>`)
 			}
 			return
 		}
 		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 		if r.Method == http.MethodGet {
-			w.Write(data)
+			_, _ = w.Write(data)
 		}
 	case r.Method == http.MethodDelete:
 		delete(f.objects, key)

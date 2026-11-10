@@ -13,11 +13,13 @@ import (
 	"path/filepath"
 	"time"
 
+	mdns "github.com/miekg/dns"
+	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/millis"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
-	mdns "github.com/miekg/dns"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -36,10 +38,10 @@ func (s *Station) sandboxListening(ctx context.Context, t netTarget, port uint16
 		return nil, err
 	}
 	ex.Stdin.Close()
-	go io.Copy(io.Discard, ex.Stderr)
+	go func() { _, _ = io.Copy(io.Discard, ex.Stderr) }()
 	out, readErr := io.ReadAll(io.LimitReader(ex.Stdout, sandboxListenMax))
 	if ctx.Err() != nil || readErr != nil {
-		ex.Kill()
+		_ = ex.Kill()
 	}
 	code, waitErr := ex.Wait()
 	if err := errors.Join(readErr, ctx.Err()); err != nil {
@@ -72,8 +74,8 @@ func sandboxRoute(ns *netns.Namespace, t netTarget, dst netip.AddrPort) netip.Ad
 	if !t.baseline.Joined {
 		return dst
 	}
-	if real, _, err := ns.SwitchEntry(dst.Addr()); err == nil && real.IsValid() {
-		return netip.AddrPortFrom(real, dst.Port())
+	if realAddr, _, err := ns.SwitchEntry(dst.Addr()); err == nil && realAddr.IsValid() {
+		return netip.AddrPortFrom(realAddr, dst.Port())
 	}
 	return dst
 }
@@ -84,7 +86,7 @@ func (s *Station) sandboxDNS(t netTarget, name string) (*protocol.ProbeDns, []ne
 	if err != nil {
 		return nil, nil, err
 	}
-	out := &protocol.ProbeDns{Rcode: mdns.RcodeToString[msg.Rcode], Answers: []string{}, Ms: millisSince(start)}
+	out := &protocol.ProbeDns{Rcode: mdns.RcodeToString[msg.Rcode], Answers: []string{}, Ms: millis.Of(time.Since(start))}
 	var answers []netip.Addr
 	for _, rr := range msg.Answer {
 		if a, ok := rr.(*mdns.A); ok {
@@ -127,7 +129,7 @@ func (s *Station) probeSandbox(ctx context.Context, ns *netns.Namespace, t netTa
 	dst = sandboxRoute(ns, t, dst)
 	start := time.Now()
 	conn, cerr := (&net.Dialer{}).DialContext(ctx, "tcp4", dst.String())
-	ms := millisSince(start)
+	ms := millis.Of(time.Since(start))
 	if conn != nil {
 		conn.Close()
 	}

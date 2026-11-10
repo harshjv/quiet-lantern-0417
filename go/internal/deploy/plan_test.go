@@ -134,7 +134,7 @@ func TestPlanNamesContainersAfterTheirDeploymentAndPinsTheCouplerByDigest(t *tes
 	if sp.Coupler.Name != docker.CouplerName(sp.DeploymentID) || sp.Service.Name != docker.ServiceName(sp.DeploymentID) {
 		t.Fatalf("names %s %s for %s", sp.Coupler.Name, sp.Service.Name, sp.DeploymentID)
 	}
-	want := docker.CouplerSource + "@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"
+	want := protocol.CouplerImageSource + "@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"
 	if got := sp.Coupler.Create.Config.Image; got != want {
 		t.Fatalf("coupler image %s", got)
 	}

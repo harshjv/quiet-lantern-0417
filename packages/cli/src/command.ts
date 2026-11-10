@@ -1,28 +1,80 @@
-import type { Command } from 'commander'
-import { usage } from './errors.ts'
-import type { Globals } from './kit.ts'
-import { fail } from './output.ts'
+import { Command, type OptionValues } from '@commander-js/extra-typings'
 
-export type Options = Globals & Record<string, unknown>
+import { usage } from './errors.ts'
+import { connect, send, type Globals, type Reply, type Run } from './kit.ts'
+import { fail, human, print } from './output.ts'
+
+export const createProgram = () =>
+  new Command('sly')
+    .description('Stationly CLI: a thin client over the Dispatch API')
+    .option('--json', 'print the API response unmodified as one JSON document')
+    .option('--dry-run', 'print the request a mutating command would send, and send nothing')
+    .option('--instance <url>', 'instance to use instead of the current one')
+    .option('--project <project>', 'project id or name (default from .stationly/context.json)')
+    .option('--environment <environment>', 'environment id or name (default: the project default)')
+    .option('--service <service>', 'service id or name')
+    .exitOverride()
+    .configureOutput({
+      writeErr: (text) => process.stderr.write(text),
+    })
+
+export type Program = ReturnType<typeof createProgram>
+
+export type ProgramOptions = ReturnType<Program['opts']>
+
+export const group = (program: Program, name: string) =>
+  program.commands.find((c) => c.name() === name) as Command<[], {}, ProgramOptions>
 
 export const action =
-  (fn: (options: Options, ...args: string[]) => Promise<number>) =>
-  async (...args: unknown[]) => {
-    const command = args.at(-1) as Command
-    const options = command.optsWithGlobals() as Options
-    const positionals = args.slice(0, -2).flat() as string[]
+  <A extends unknown[], O extends OptionValues, G extends Globals>(
+    fn: (options: O & G, ...args: A) => Promise<number>,
+  ) =>
+  async (...args: [...A, O, Command<A, O, G>]) => {
+    const options = (args.at(-1) as Command<A, O, G>).optsWithGlobals() as O & G
     try {
-      process.exitCode = await fn(options, ...positionals)
+      process.exitCode = await fn(options, ...(args.slice(0, -2) as A))
     } catch (error) {
       process.exitCode = fail(options, error)
     }
   }
 
-const units: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 }
+type Leaf<A extends unknown[], O, G, R> = (run: Run, options: O & G, ...args: A) => Promise<R>
+
+type Replying<D> = (Extract<Reply, { error: null }> & { data: D }) | Extract<Reply, { data: null }>
+
+export function call<
+  A extends unknown[],
+  O extends OptionValues,
+  G extends Globals,
+  R extends Reply,
+>(fn: Leaf<A, O, G, R>): ReturnType<typeof action<A, O, G>>
+export function call<A extends unknown[], O extends OptionValues, G extends Globals, D>(
+  fn: Leaf<A, O, G, Replying<D>>,
+  render: (data: D) => string,
+): ReturnType<typeof action<A, O, G>>
+export function call<A extends unknown[], O extends OptionValues, G extends Globals>(
+  fn: Leaf<A, O, G, Reply>,
+  render: (data: unknown) => string = human,
+) {
+  return action<A, O, G>(async (options, ...args) =>
+    print(options, await send(fn(await connect(options), options, ...args)), render),
+  )
+}
+
+const units: Record<string, number> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+}
 
 export const seconds = (value: string) => {
   const match = /^(\d+)([smhd]?)$/.exec(value.trim())
-  if (!match) throw usage(`${value} is not a duration.`, 'Use seconds or a number with s, m, h or d, such as 30d.')
+  if (!match)
+    throw usage(
+      `${value} is not a duration.`,
+      'Use seconds or a number with s, m, h or d, such as 30d.',
+    )
   return Number(match[1]) * units[match[2] || 's']!
 }
 
@@ -37,10 +89,10 @@ export const collect = (value: string, previous: string[] = []) => [...previous,
 export const parseJson = (text: string, what: string): Record<string, unknown> => {
   try {
     const value = JSON.parse(text) as unknown
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('not an object')
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('not an object')
     return value as Record<string, unknown>
   } catch {
     throw usage(`${what} is not a JSON object.`, `Pass ${what} as a JSON object.`)
   }
 }
-

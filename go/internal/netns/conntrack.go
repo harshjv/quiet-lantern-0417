@@ -10,6 +10,8 @@ import (
 	"github.com/mdlayher/netlink"
 	"github.com/ti-mo/conntrack"
 	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/millis"
 )
 
 const (
@@ -83,7 +85,7 @@ func flows(cfg *netlink.Config, match func(conntrack.Flow) bool, evict bool) (Fl
 	if err != nil {
 		return r, err
 	}
-	r.DumpMS = millis(time.Since(start))
+	r.DumpMS = millis.Of(time.Since(start))
 	r.Total = len(all)
 	var matched []conntrack.Flow
 	for _, f := range all {
@@ -116,10 +118,18 @@ func flows(cfg *netlink.Config, match func(conntrack.Flow) bool, evict bool) (Fl
 		}
 		r.Deleted++
 	}
-	r.DeleteMS = millis(time.Since(start))
+	r.DeleteMS = millis.Of(time.Since(start))
 	return r, nil
 }
 
-func millis(d time.Duration) float64 {
-	return float64(d.Microseconds()) / 1000
+func (r *FlowReport) Add(o FlowReport) {
+	r.Total += o.Total
+	r.Matched += o.Matched
+	r.Established += o.Established
+	r.UDP += o.UDP
+	r.Deleted += o.Deleted
+	r.Gone += o.Gone
+	r.Failed += o.Failed
+	r.DumpMS += o.DumpMS
+	r.DeleteMS += o.DeleteMS
 }

@@ -85,7 +85,7 @@ func (r *Resolver) serveSandbox(w mdns.ResponseWriter, req *mdns.Msg, src netip.
 		upstream = true
 		resp, refused = r.allowlisted(req, w.LocalAddr().Network(), src, name, entry, p.Blocked)
 	}
-	w.WriteMsg(resp)
+	_ = w.WriteMsg(resp)
 	r.rings.record(src, start, name, q.Qtype, resp, upstream, probe, refused)
 }
 

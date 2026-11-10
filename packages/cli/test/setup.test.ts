@@ -4,13 +4,18 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, before, beforeEach, describe, test } from 'node:test'
 import { createInterface } from 'node:readline'
+import { after, before, beforeEach, describe, test } from 'node:test'
 
 const entry = new URL('../src/index.ts', import.meta.url).pathname
 const driver = new URL('./pty.py', import.meta.url).pathname
 
-type Detected = { address: string | null; interface: string | null; public: boolean; reason?: string }
+type Detected = {
+  address: string | null
+  interface: string | null
+  public: boolean
+  reason?: string
+}
 
 let dir: string
 let socketPath: string
@@ -29,32 +34,67 @@ const setupResult = (params: Record<string, unknown>) => ({
   lockfile: null,
   hostnames: null,
   public_address: params.public_address ?? null,
-  litestream: params.litestream ? { bucket: (params.litestream as { bucket: string }).bucket, endpoint: null, active: true, note: 'replicating Dispatch to the bucket' } : null,
-  reach: ['ssh -L 7900:127.0.0.1:7900 <station>']
+  litestream: params.litestream
+    ? {
+        bucket: (params.litestream as { bucket: string }).bucket,
+        endpoint: null,
+        active: true,
+        note: 'replicating Dispatch to the bucket',
+      }
+    : null,
+  reach: ['ssh -L 7900:127.0.0.1:7900 <station>'],
 })
 
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'sly-setup-'))
   socketPath = join(dir, 'stationd.sock')
-  server = createServer(socket => {
-    createInterface({ input: socket }).on('line', text => {
-      const request = JSON.parse(text) as { id: string; op: string; params: Record<string, unknown> }
-      const result = request.op === 'public_address.detect' ? detected : request.op === 'admin.recovery_key' ? (recoveryOps.push(request.params), { recovery_key: 'sly-rk-TEST' }) : (setups.push(request.params), setupResult(request.params))
-      socket.write(`${JSON.stringify({ v: 1, id: request.id, ok: true, result })}\n`)
+  server = createServer((socket) => {
+    createInterface({
+      input: socket,
+    }).on('line', (text) => {
+      const request = JSON.parse(text) as {
+        id: string
+        op: string
+        params: Record<string, unknown>
+      }
+      const result =
+        request.op === 'public_address.detect'
+          ? detected
+          : request.op === 'admin.recovery_key'
+            ? (recoveryOps.push(request.params),
+              {
+                recovery_key: 'sly-rk-TEST',
+              })
+            : (setups.push(request.params), setupResult(request.params))
+      socket.write(
+        `${JSON.stringify({
+          v: 1,
+          id: request.id,
+          ok: true,
+          result,
+        })}\n`,
+      )
     })
   })
-  await new Promise<void>(resolve => server.listen(socketPath, resolve))
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve))
 })
 
 beforeEach(() => {
   setups = []
   recoveryOps = []
-  detected = { address: '203.0.113.7', interface: 'eth0', public: true }
+  detected = {
+    address: '203.0.113.7',
+    interface: 'eth0',
+    public: true,
+  }
 })
 
 after(async () => {
-  await new Promise(resolve => server.close(resolve))
-  rmSync(dir, { recursive: true, force: true })
+  await new Promise((resolve) => server.close(resolve))
+  rmSync(dir, {
+    recursive: true,
+    force: true,
+  })
 })
 
 type Run = { code: number; stdout: string; stderr: string }
@@ -62,9 +102,23 @@ type Run = { code: number; stdout: string; stderr: string }
 const flags = ['--socket', '', '--email', 'admin@example.com', '--password-stdin', '--no-domain']
 
 const sly = (args: string[], env: Record<string, string> = {}) =>
-  new Promise<Run>(resolve => {
-    const child = execFile(process.execPath, [entry, 'setup', ...args.map(a => (a === '' ? socketPath : a))], { env: { PATH: process.env.PATH, HOME: dir, ...env } as NodeJS.ProcessEnv }, (error, stdout, stderr) =>
-      resolve({ code: error ? ((error as { code?: number }).code ?? 1) : 0, stdout, stderr })
+  new Promise<Run>((resolve) => {
+    const child = execFile(
+      process.execPath,
+      [entry, 'setup', ...args.map((a) => (a === '' ? socketPath : a))],
+      {
+        env: {
+          PATH: process.env.PATH,
+          HOME: dir,
+          ...env,
+        },
+      },
+      (error, stdout, stderr) =>
+        resolve({
+          code: error ? ((error as { code?: number }).code ?? 1) : 0,
+          stdout,
+          stderr,
+        }),
     )
     child.stdin!.end('correct-horse-battery')
   })
@@ -73,16 +127,53 @@ type Step = { expect: string; send: string }
 
 const terminal = (args: string[], steps: Step[]) =>
   new Promise<{ code: number; output: string; failure: string | null }>((resolve, reject) => {
-    const child = execFile('python3', ['-I', driver], { env: { PATH: process.env.PATH } }, (error, stdout) => (error ? reject(error) : resolve(JSON.parse(stdout))))
-    child.stdin!.end(JSON.stringify({ argv: [process.execPath, entry, 'setup', '--socket', socketPath, ...args], env: { PATH: process.env.PATH, HOME: dir, TERM: 'xterm' }, cwd: dir, steps, timeout: 30 }))
+    const child = execFile(
+      'python3',
+      ['-I', driver],
+      {
+        env: {
+          PATH: process.env.PATH,
+        },
+      },
+      (error: Error | null, stdout: string) =>
+        error ? reject(error) : resolve(JSON.parse(stdout)),
+    )
+    child.stdin!.end(
+      JSON.stringify({
+        argv: [process.execPath, entry, 'setup', '--socket', socketPath, ...args],
+        env: {
+          PATH: process.env.PATH,
+          HOME: dir,
+          TERM: 'xterm',
+        },
+        cwd: dir,
+        steps,
+        timeout: 30,
+      }),
+    )
   })
 
 const domainless: Step[] = [
-  { expect: 'admin email: ', send: 'admin@example.com\r' },
-  { expect: 'admin password \\([^)]*\\): ', send: 'correct-horse-battery\r' },
-  { expect: 'repeat the password: ', send: 'correct-horse-battery\r' },
-  { expect: 'Serve the dashboard and API on hostnames of your own domain\\? [^:]*: ', send: 'n\r' },
-  { expect: 'ACME email[^:]*: ', send: '\r' }
+  {
+    expect: 'admin email: ',
+    send: 'admin@example.com\r',
+  },
+  {
+    expect: 'admin password \\([^)]*\\): ',
+    send: 'correct-horse-battery\r',
+  },
+  {
+    expect: 'repeat the password: ',
+    send: 'correct-horse-battery\r',
+  },
+  {
+    expect: 'Serve the dashboard and API on hostnames of your own domain\\? [^:]*: ',
+    send: 'n\r',
+  },
+  {
+    expect: 'ACME email[^:]*: ',
+    send: '\r',
+  },
 ]
 
 describe('sly setup public address, flag form', () => {
@@ -106,7 +197,11 @@ describe('sly setup public address, flag form', () => {
   })
 
   test('--detect-public-address refuses a private default-route address', async () => {
-    detected = { address: '10.0.0.5', interface: 'eth0', public: false }
+    detected = {
+      address: '10.0.0.5',
+      interface: 'eth0',
+      public: false,
+    }
     const run = await sly([...flags, '--detect-public-address'])
     assert.equal(run.code, 2)
     assert.match(run.stderr, /eth0 has 10\.0\.0\.5, which is not a public address/)
@@ -114,7 +209,12 @@ describe('sly setup public address, flag form', () => {
   })
 
   test('--detect-public-address refuses a host without a default route', async () => {
-    detected = { address: null, interface: null, public: false, reason: 'the host has no IPv4 default route' }
+    detected = {
+      address: null,
+      interface: null,
+      public: false,
+      reason: 'the host has no IPv4 default route',
+    }
     const run = await sly([...flags, '--detect-public-address'])
     assert.equal(run.code, 2)
     assert.match(run.stderr, /no IPv4 default route/)
@@ -136,31 +236,78 @@ describe('sly setup public address, flag form', () => {
 
 describe('sly setup Litestream bucket, flag form', () => {
   const bucket = ['--litestream-bucket', 'sly-dispatch']
-  const keys = { LITESTREAM_ACCESS_KEY_ID: 'AKID', LITESTREAM_SECRET_ACCESS_KEY: 'SECRET' }
+  const keys = {
+    LITESTREAM_ACCESS_KEY_ID: 'AKID',
+    LITESTREAM_SECRET_ACCESS_KEY: 'SECRET',
+  }
 
   test('an http endpoint on a private address is accepted', async () => {
-    const run = await sly([...flags, ...bucket, '--litestream-endpoint', 'http://10.0.0.5:9000'], keys)
+    const run = await sly(
+      [...flags, ...bucket, '--litestream-endpoint', 'http://10.0.0.5:9000'],
+      keys,
+    )
     assert.equal(run.code, 0, run.stderr)
-    assert.deepEqual(setups[0]!.litestream, { bucket: 'sly-dispatch', endpoint: 'http://10.0.0.5:9000', access_key: 'AKID', secret_key: 'SECRET' })
+    assert.deepEqual(setups[0]!.litestream, {
+      bucket: 'sly-dispatch',
+      endpoint: 'http://10.0.0.5:9000',
+      access_key: 'AKID',
+      secret_key: 'SECRET',
+    })
     assert.match(run.stdout, /Litestream bucket sly-dispatch: replicating Dispatch to the bucket/)
   })
 
   test('an http endpoint on a public address is refused', async () => {
-    const run = await sly([...flags, ...bucket, '--litestream-endpoint', 'http://8.8.8.8:9000'], keys)
+    const run = await sly(
+      [...flags, ...bucket, '--litestream-endpoint', 'http://8.8.8.8:9000'],
+      keys,
+    )
     assert.equal(run.code, 2)
     assert.match(run.stderr, /private or loopback/)
     assert.equal(setups.length, 0)
   })
 
   test('an https endpoint such as R2 is accepted', async () => {
-    const run = await sly([...flags, ...bucket, '--litestream-endpoint', 'https://abc.r2.cloudflarestorage.com'], keys)
+    const run = await sly(
+      [...flags, ...bucket, '--litestream-endpoint', 'https://abc.r2.cloudflarestorage.com'],
+      keys,
+    )
     assert.equal(run.code, 0, run.stderr)
   })
 })
 
 describe('sly setup on a terminal', () => {
   test('shows the detected public address and accepts it with Enter', async () => {
-    const run = await terminal([], [...domainless, { expect: 'default-route interface eth0 has the public address 203\\.0\\.113\\.7', send: '' }, { expect: 'station public IPv4 address \\(Enter to accept, or type another\\) \\[203\\.0\\.113\\.7\\]: ', send: '\r' }, { expect: 'Litestream bucket[^:]*: ', send: '\r' }, { expect: 'public address 203\\.0\\.113\\.7', send: '' }, { expect: 'Create the admin and apply these settings\\? [^:]*: ', send: 'y\r' }, { expect: 'type "stored"[^:]*: ', send: 'stored\r' }])
+    const run = await terminal(
+      [],
+      [
+        ...domainless,
+        {
+          expect: 'default-route interface eth0 has the public address 203\\.0\\.113\\.7',
+          send: '',
+        },
+        {
+          expect:
+            'station public IPv4 address \\(Enter to accept, or type another\\) \\[203\\.0\\.113\\.7\\]: ',
+          send: '\r',
+        },
+        {
+          expect: 'Litestream bucket[^:]*: ',
+          send: '\r',
+        },
+        {
+          expect: 'public address 203\\.0\\.113\\.7',
+          send: '',
+        },
+        {
+          expect: 'Create the admin and apply these settings\\? [^:]*: ',
+          send: 'y\r',
+        },
+        {
+          expect: 'type "stored"[^:]*: ',
+          send: 'stored\r',
+        },
+      ],
+    )
     assert.equal(run.failure, null, run.output)
     assert.equal(run.code, 0, run.output)
     assert.equal(setups[0]!.public_address, '203.0.113.7')
@@ -168,43 +315,156 @@ describe('sly setup on a terminal', () => {
   })
 
   test('lets the admin edit the address, re-asking until it is IPv4', async () => {
-    const run = await terminal([], [...domainless, { expect: 'station public IPv4 address[^:]*: ', send: 'not-an-ip\r' }, { expect: 'that is not an IPv4 address in dotted-quad form', send: '' }, { expect: 'station public IPv4 address[^:]*: ', send: '198.51.100.20\r' }, { expect: 'Litestream bucket[^:]*: ', send: '\r' }, { expect: 'Create the admin[^:]*: ', send: 'y\r' }, { expect: 'type "stored"[^:]*: ', send: 'stored\r' }])
+    const run = await terminal(
+      [],
+      [
+        ...domainless,
+        {
+          expect: 'station public IPv4 address[^:]*: ',
+          send: 'not-an-ip\r',
+        },
+        {
+          expect: 'that is not an IPv4 address in dotted-quad form',
+          send: '',
+        },
+        {
+          expect: 'station public IPv4 address[^:]*: ',
+          send: '198.51.100.20\r',
+        },
+        {
+          expect: 'Litestream bucket[^:]*: ',
+          send: '\r',
+        },
+        {
+          expect: 'Create the admin[^:]*: ',
+          send: 'y\r',
+        },
+        {
+          expect: 'type "stored"[^:]*: ',
+          send: 'stored\r',
+        },
+      ],
+    )
     assert.equal(run.failure, null, run.output)
     assert.equal(run.code, 0, run.output)
     assert.equal(setups[0]!.public_address, '198.51.100.20')
   })
 
   test('warns about a private default-route address and lets Enter skip it', async () => {
-    detected = { address: '172.17.0.4', interface: 'eth0', public: false }
-    const run = await terminal([], [...domainless, { expect: 'eth0 has 172\\.17\\.0\\.4, which is not a public address', send: '' }, { expect: 'station public IPv4 address \\(Enter to skip\\): ', send: '\r' }, { expect: 'Litestream bucket[^:]*: ', send: '\r' }, { expect: 'none \\(set it later with sly stations update\\)', send: '' }, { expect: 'Create the admin[^:]*: ', send: 'y\r' }, { expect: 'type "stored"[^:]*: ', send: 'stored\r' }])
+    detected = {
+      address: '172.17.0.4',
+      interface: 'eth0',
+      public: false,
+    }
+    const run = await terminal(
+      [],
+      [
+        ...domainless,
+        {
+          expect: 'eth0 has 172\\.17\\.0\\.4, which is not a public address',
+          send: '',
+        },
+        {
+          expect: 'station public IPv4 address \\(Enter to skip\\): ',
+          send: '\r',
+        },
+        {
+          expect: 'Litestream bucket[^:]*: ',
+          send: '\r',
+        },
+        {
+          expect: 'none \\(set it later with sly stations update\\)',
+          send: '',
+        },
+        {
+          expect: 'Create the admin[^:]*: ',
+          send: 'y\r',
+        },
+        {
+          expect: 'type "stored"[^:]*: ',
+          send: 'stored\r',
+        },
+      ],
+    )
     assert.equal(run.failure, null, run.output)
     assert.equal('public_address' in setups[0]!, false)
   })
 
   test('asks for a bucket, refuses a public http endpoint and takes the keys with the secret hidden', async () => {
-    const run = await terminal([], [
-      ...domainless,
-      { expect: 'station public IPv4 address[^:]*: ', send: '\r' },
-      { expect: 'Litestream bucket[^:]*: ', send: 'sly-dispatch\r' },
-      { expect: 'S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\): ', send: 'http://8.8.8.8:9000\r' },
-      { expect: 'private or loopback address', send: '' },
-      { expect: 'S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\): ', send: 'http://10.0.0.5:9000\r' },
-      { expect: 'bucket access key id: ', send: 'AKID\r' },
-      { expect: 'bucket secret access key: ', send: 'SECRETVALUE\r' },
-      { expect: 'Litestream     sly-dispatch at http://10\\.0\\.0\\.5:9000', send: '' },
-      { expect: 'Create the admin[^:]*: ', send: 'y\r' },
-      { expect: 'type "stored"[^:]*: ', send: 'stored\r' }
-    ])
+    const run = await terminal(
+      [],
+      [
+        ...domainless,
+        {
+          expect: 'station public IPv4 address[^:]*: ',
+          send: '\r',
+        },
+        {
+          expect: 'Litestream bucket[^:]*: ',
+          send: 'sly-dispatch\r',
+        },
+        {
+          expect: 'S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\): ',
+          send: 'http://8.8.8.8:9000\r',
+        },
+        {
+          expect: 'private or loopback address',
+          send: '',
+        },
+        {
+          expect: 'S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\): ',
+          send: 'http://10.0.0.5:9000\r',
+        },
+        {
+          expect: 'bucket access key id: ',
+          send: 'AKID\r',
+        },
+        {
+          expect: 'bucket secret access key: ',
+          send: 'SECRETVALUE\r',
+        },
+        {
+          expect: 'Litestream     sly-dispatch at http://10\\.0\\.0\\.5:9000',
+          send: '',
+        },
+        {
+          expect: 'Create the admin[^:]*: ',
+          send: 'y\r',
+        },
+        {
+          expect: 'type "stored"[^:]*: ',
+          send: 'stored\r',
+        },
+      ],
+    )
     assert.equal(run.failure, null, run.output)
-    assert.deepEqual(setups[0]!.litestream, { bucket: 'sly-dispatch', endpoint: 'http://10.0.0.5:9000', access_key: 'AKID', secret_key: 'SECRETVALUE' })
+    assert.deepEqual(setups[0]!.litestream, {
+      bucket: 'sly-dispatch',
+      endpoint: 'http://10.0.0.5:9000',
+      access_key: 'AKID',
+      secret_key: 'SECRETVALUE',
+    })
     assert.equal(run.output.includes('SECRETVALUE'), false, 'the secret was echoed')
   })
 })
 
 const recoveryKey = (args: string[]) =>
-  new Promise<Run>(resolve => {
-    execFile(process.execPath, [entry, ...args.map(a => (a === '' ? socketPath : a))], { env: { PATH: process.env.PATH, HOME: dir } as NodeJS.ProcessEnv }, (error, stdout, stderr) =>
-      resolve({ code: error ? ((error as { code?: number }).code ?? 1) : 0, stdout, stderr })
+  new Promise<Run>((resolve) => {
+    execFile(
+      process.execPath,
+      [entry, ...args.map((a) => (a === '' ? socketPath : a))],
+      {
+        env: {
+          PATH: process.env.PATH,
+          HOME: dir,
+        },
+      },
+      (error, stdout, stderr) =>
+        resolve({
+          code: error ? ((error as { code?: number }).code ?? 1) : 0,
+          stdout,
+          stderr,
+        }),
     )
   })
 
@@ -220,7 +480,9 @@ describe('sly admin recovery-key', () => {
   test('prints a JSON document with --json', async () => {
     const run = await recoveryKey(['--json', 'admin', 'recovery-key', '--socket', ''])
     assert.equal(run.code, 0, run.stderr)
-    assert.deepEqual(JSON.parse(run.stdout), { recovery_key: 'sly-rk-TEST' })
+    assert.deepEqual(JSON.parse(run.stdout), {
+      recovery_key: 'sly-rk-TEST',
+    })
     assert.equal(run.stderr, '')
   })
 

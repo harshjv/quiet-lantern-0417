@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -17,14 +16,16 @@ import (
 	"time"
 
 	"github.com/google/nftables"
+	mdns "github.com/miekg/dns"
+	"golang.org/x/sys/unix"
+
 	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/workshop"
-	mdns "github.com/miekg/dns"
-	"golang.org/x/sys/unix"
 )
 
 const daemonJSON = DefaultDaemonJSON
@@ -203,19 +204,6 @@ func usedPct(path string) (float64, uint64, uint64, error) {
 	return 100 * float64(total-free) / float64(total), total, free, nil
 }
 
-func dirSize(root string) int64 {
-	var n int64
-	filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			if info, err := d.Info(); err == nil {
-				n += info.Size()
-			}
-		}
-		return nil
-	})
-	return n
-}
-
 type diskFS struct {
 	path  string
 	pct   float64
@@ -237,12 +225,12 @@ func (s *Station) diskThresholds() (warn, crit int) {
 }
 
 func (s *Station) diskBreakdown() map[string]int64 {
-	breakdown := map[string]int64{"logs": dirSize(filepath.Join(s.opts.StateDir, "logs")), "backups": dirSize(s.backupRoot())}
+	breakdown := map[string]int64{"logs": fsx.DirSize(filepath.Join(s.opts.StateDir, "logs"), nil), "backups": fsx.DirSize(s.backupRoot(), nil)}
 	for name, size := range s.volumeSizes {
 		switch {
 		case name == docker.DepotVolume:
 			breakdown["depot"] += size
-		case strings.HasPrefix(name, protocol.ResourcePrefix+"workshop-") || strings.HasPrefix(name, protocol.ResourcePrefix+"railpack-"):
+		case strings.HasPrefix(name, docker.WorkshopName("")):
 			breakdown["build_cache"] += size
 		case strings.HasPrefix(name, protocol.ResourcePrefix):
 			breakdown["platform"] += size
@@ -261,13 +249,10 @@ func (s *Station) diskFilesystems() (found []diskFS, unreadable []error) {
 		}
 		var st unix.Stat_t
 		probe := path
-		for {
-			if unix.Stat(probe, &st) == nil {
-				break
-			}
+		for unix.Stat(probe, &st) != nil {
 			probe = filepath.Dir(probe)
 		}
-		key := strconv.FormatUint(uint64(st.Dev), 10)
+		key := strconv.FormatUint(st.Dev, 10)
 		if seen[key] {
 			continue
 		}
@@ -282,7 +267,7 @@ func (s *Station) diskFilesystems() (found []diskFS, unreadable []error) {
 	return found, unreadable
 }
 
-func (s *Station) checkDisk(ctx context.Context) protocol.DoctorCheck {
+func (s *Station) checkDisk(_ context.Context) protocol.DoctorCheck {
 	c := newCheck("disk")
 	warn, crit := s.diskThresholds()
 	c.detail["warning_pct"], c.detail["critical_pct"] = warn, crit
@@ -363,16 +348,8 @@ func (s *Station) checkLogStore() protocol.DoctorCheck {
 		if !svc.IsDir() {
 			continue
 		}
-		var runtime int64
-		filepath.WalkDir(filepath.Join(root, svc.Name()), func(path string, d fs.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && isRuntimeSegment(d.Name()) {
-				if info, err := d.Info(); err == nil {
-					runtime += info.Size()
-				}
-			}
-			return nil
-		})
-		total += dirSize(filepath.Join(root, svc.Name()))
+		runtime := fsx.DirSize(filepath.Join(root, svc.Name()), isRuntimeSegment)
+		total += fsx.DirSize(filepath.Join(root, svc.Name()), nil)
 		if runtime > r.RuntimeBytesService+r.RuntimeBytesService/10 {
 			c.raise(protocol.DoctorStatusWarn, "log_store_over_budget", fmt.Sprintf("%s holds %s of runtime logs, over logs.retention.runtime_bytes_per_service %s", svc.Name(), human(uint64(runtime)), human(uint64(r.RuntimeBytesService))), "stationd's retention sweep runs every few minutes; check its log lines if this stays.")
 		}

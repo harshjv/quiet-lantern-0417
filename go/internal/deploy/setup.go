@@ -102,7 +102,7 @@ func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress 
 	}
 	if reply.Type != protocol.MessageHostAdminResult {
 		var e protocol.ErrorBody
-		json.Unmarshal(reply.Body, &e)
+		_ = json.Unmarshal(reply.Body, &e)
 		return nil, &e
 	}
 	var res protocol.HostAdminResultBody

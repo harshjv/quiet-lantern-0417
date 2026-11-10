@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "name": "ULID ids lowercase",
+      "project_id": "prj_01JC7ZABCDEFGHJKMNPQRSTVWX",
+      "repository_name": "svc_01JC7ZZYXWVTSRQPNMKJHGFEDC",
+      "prefix": "prj_01jc7zabcdefghjkmnpqrstvwx/",
+      "repository": "prj_01jc7zabcdefghjkmnpqrstvwx/svc_01jc7zzyxwvtsrqpnmkjhgfedc"
+    },
+    {
+      "name": "already lowercase",
+      "project_id": "prj_01jc7zabcdefghjkmnpqrstvwx",
+      "repository_name": "svc_01jc7zzyxwvtsrqpnmkjhgfedc",
+      "prefix": "prj_01jc7zabcdefghjkmnpqrstvwx/",
+      "repository": "prj_01jc7zabcdefghjkmnpqrstvwx/svc_01jc7zzyxwvtsrqpnmkjhgfedc"
+    },
+    {
+      "name": "fixed repository name",
+      "project_id": "prj_01JC7ZABCDEFGHJKMNPQRSTVWX",
+      "repository_name": "cache",
+      "prefix": "prj_01jc7zabcdefghjkmnpqrstvwx/",
+      "repository": "prj_01jc7zabcdefghjkmnpqrstvwx/cache"
+    },
+    {
+      "name": "mixed case name",
+      "project_id": "prj_01JC7ZABCDEFGHJKMNPQRSTVWX",
+      "repository_name": "Svc_01Jc7Z",
+      "prefix": "prj_01jc7zabcdefghjkmnpqrstvwx/",
+      "repository": "prj_01jc7zabcdefghjkmnpqrstvwx/svc_01jc7z"
+    }
+  ]
+}

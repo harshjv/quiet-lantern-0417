@@ -25,7 +25,7 @@ const (
 
 var (
 	errorPattern = regexp.MustCompile(`(?i)error|panic|fatal|exception|EADDRINUSE|ECONNREFUSED|permission denied|out of memory|" 5\d\d |\s5\d\d\s`)
-	tokenPattern = regexp.MustCompile(`sly_[A-Za-z0-9_-]{8,}`)
+	tokenPattern = regexp.MustCompile(protocol.RedactTokenPattern)
 )
 
 type failureFacts struct {
@@ -140,7 +140,7 @@ func configDiff(from *protocol.ContainerSpec, to protocol.ContainerSpec) []proto
 		spec.Env, spec.EnvDigest = nil, ""
 		b, _ := json.Marshal(spec)
 		var m any
-		json.Unmarshal(b, &m)
+		_ = json.Unmarshal(b, &m)
 		out := map[string]any{}
 		var walk func(prefix string, v any)
 		walk = func(prefix string, v any) {
@@ -198,7 +198,7 @@ func excerpt(lines []string) (string, bool) {
 	}
 	out = append(out, last...)
 	for i, l := range out {
-		l = tokenPattern.ReplaceAllString(l, "[redacted]")
+		l = tokenPattern.ReplaceAllLiteralString(l, protocol.RedactTokenReplacement)
 		if len(l) > logLineCap {
 			l = l[:logLineCap]
 		}

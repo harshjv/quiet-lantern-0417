@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
 	"maps"
 	"net/netip"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
@@ -29,7 +29,6 @@ import (
 	"github.com/harshjv/stationly/go/internal/sandbox/store"
 	"github.com/harshjv/stationly/go/internal/secrets"
 	vipswitch "github.com/harshjv/stationly/go/internal/switch"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
@@ -371,7 +370,7 @@ func (s *Station) reportSandbox(st *sbxState, status protocol.SandboxReportStatu
 
 func sandboxFailure(phase protocol.DiagnosisPhase, code protocol.ErrorCode, step, format string, args ...any) *protocol.SandboxStatusBodyFailure {
 	summary := fmt.Sprintf(format, args...)
-	details := protocol.DiagnosisDetails{"step": step, "error": tailLines(summary, 20)}
+	details := protocol.DiagnosisDetails{"step": step, "error": lastLines(summary, 20, "\n")}
 	return &protocol.SandboxStatusBodyFailure{Code: string(code), Phase: phase, Summary: firstLine(summary), Details: details}
 }
 
@@ -381,11 +380,6 @@ func firstLine(s string) string {
 		line = line[:500]
 	}
 	return line
-}
-
-func tailLines(s string, n int) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	return strings.Join(lines[max(0, len(lines)-n):], "\n")
 }
 
 func (s *Station) failSandbox(st *sbxState, f *protocol.SandboxStatusBodyFailure) {
@@ -622,11 +616,11 @@ func (s *Station) prefetchToolchain(ctx context.Context) {
 	if _, ok := s.pinnedRunsc(); !ok {
 		return
 	}
-	key := baseKey(string(*pin.Digest))
+	key := baseKey(*pin.Digest)
 	if s.sbx.fs.BaseExists(key) {
 		return
 	}
-	s.ensureBase(ctx, key, s.sourceOf("sandbox_toolchain")+"@"+string(*pin.Digest))
+	s.ensureBase(ctx, key, s.sourceOf("sandbox_toolchain")+"@"+*pin.Digest)
 }
 
 func (s *Station) ensureSandboxNetwork(ctx context.Context) {
@@ -643,31 +637,15 @@ func (s *Station) ensureSandboxNetwork(ctx context.Context) {
 		s.sbx.netFail = namespaceFailure("sandbox network: %v", err)
 		return
 	}
-	nets, err := s.docker.Networks(ctx)
+	id, created, err := s.docker.EnsureNetwork(ctx, spec, nil)
 	if err != nil {
+		s.sbx.netFail = dockerError(protocol.ErrorCodeGenerationInvalid, err)
+		s.log.Error("sandbox network", "error", err)
 		return
 	}
-	for _, have := range nets {
-		if have.Name != spec.Name {
-			continue
-		}
-		if have.Labels[docker.LabelHash] == spec.Hash {
-			s.sbx.netID, s.sbx.netFail = have.ID, nil
-			s.ensureResolver()
-			return
-		}
-		if err := s.docker.RemoveNetwork(ctx, have.ID); err != nil {
-			s.sbx.netFail = dockerFailure(protocol.ErrorCodeGenerationInvalid, "remove network "+spec.Name, err)
-			return
-		}
+	if created {
+		s.log.Info("created sandbox network", "name", spec.Name, "id", shortID(id), "subnet", n.Subnet)
 	}
-	id, err := s.docker.CreateNetwork(ctx, spec)
-	if err != nil {
-		s.sbx.netFail = dockerFailure(protocol.ErrorCodeGenerationInvalid, "create network "+spec.Name, err)
-		s.log.Error("create sandbox network", "error", err)
-		return
-	}
-	s.log.Info("created sandbox network", "name", spec.Name, "id", shortID(id), "subnet", n.Subnet)
 	s.sbx.netID, s.sbx.netFail = id, nil
 	s.ensureResolver()
 }
@@ -959,12 +937,12 @@ func (j startJob) run(ctx context.Context) startResult {
 		return fail("create", "open init.log: %v", err)
 	}
 	defer initLog.Close()
-	j.rt.Delete(ctx, j.id, true)
+	_ = j.rt.Delete(ctx, j.id, true)
 	if err := j.rt.Create(ctx, logDir, bundle, j.id, initLog); err != nil {
 		return fail("create", "runsc create: %v%s", err, panicLine(logDir))
 	}
 	if err := j.rt.Start(ctx, logDir, j.id); err != nil {
-		j.rt.Delete(ctx, j.id, true)
+		_ = j.rt.Delete(ctx, j.id, true)
 		return fail("start", "runsc start: %v%s", err, panicLine(logDir))
 	}
 	cg, err := runsc.ScopeCgroup(ctx, j.id)
@@ -975,8 +953,8 @@ func (j startJob) run(ctx context.Context) startResult {
 		err = runsc.GroupOOM(cg)
 	}
 	if err != nil {
-		j.rt.Stop(ctx, j.id, 0)
-		runsc.KillScope(ctx, j.id)
+		_ = j.rt.Stop(ctx, j.id, 0)
+		_ = runsc.KillScope(ctx, j.id)
 		return fail("start", "set memory.oom.group on %s: %v", runsc.ScopeUnit(j.id), err)
 	}
 	return startResult{cgroup: cg, env: append(slices.Clone(cfg.Env), "HOSTNAME="+j.name, "STATIONLY_SANDBOX_ID="+j.id), started: time.Now(), took: time.Since(start)}
@@ -1196,7 +1174,7 @@ func (s *Station) destroySandbox(ctx context.Context, st *sbxState) {
 	s.log.Info("sandbox deleted", "sandbox", rec.ID)
 }
 
-func (s *Station) syncRunningSandbox(ctx context.Context, st *sbxState, d protocol.DesiredSandbox) {
+func (s *Station) syncRunningSandbox(_ context.Context, st *sbxState, d protocol.DesiredSandbox) {
 	baseline, elements, domains := s.sandboxElements(d)
 	addr, _ := netip.ParseAddr(st.rec.Address)
 	baseline.Self = addr
@@ -1301,7 +1279,7 @@ func (x *sbxNetIndex) get(a netip.Addr) *sbxNetEntry {
 	return x.byAddr[a]
 }
 
-func (s *Station) indexSandbox(id string, addr netip.Addr, pid int, ports []uint16, domains []dns.AllowDomain) {
+func (s *Station) indexSandbox(id string, addr netip.Addr, pid int, ports []uint16, _ []dns.AllowDomain) {
 	x := s.sbx.index
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -1398,7 +1376,7 @@ func (s *Station) adoptSandboxes(ctx context.Context) {
 				continue
 			}
 			dctx, dcancel := context.WithTimeout(ctx, 20*time.Second)
-			rt.Delete(dctx, state.ID, true)
+			_ = rt.Delete(dctx, state.ID, true)
 			dcancel()
 		}
 	}
@@ -1448,7 +1426,7 @@ func (s *Station) adoptSandboxes(ctx context.Context) {
 		rt := runsc.At(runsc.LibDir, runsc.StateBase, v)
 		kctx, cancel := context.WithTimeout(ctx, runsc.ScopeKillLimit)
 		s.killScope(kctx, id)
-		rt.Delete(kctx, id, true)
+		_ = rt.Delete(kctx, id, true)
 		cancel()
 	}
 	s.applySandboxPolicies()
@@ -1539,14 +1517,14 @@ func (s *Station) sandboxHousekeeping(ctx context.Context, now time.Time) {
 	fs := s.sbx.fs
 	if !s.sbx.usageBusy && now.Sub(s.sbx.usageAt) >= sandboxUsageEvery {
 		s.sbx.usageBusy = true
-		clear := now.Sub(s.sbx.staleAt) >= sandboxStaleEvery
-		if clear {
+		clearStale := now.Sub(s.sbx.staleAt) >= sandboxStaleEvery
+		if clearStale {
 			s.sbx.staleAt = now
 		}
 		go func() {
 			uctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
-			if clear {
+			if clearStale {
 				if err := fs.ClearStale(uctx); err != nil {
 					s.log.Debug("clear stale qgroups", "error", err)
 				}
@@ -1595,7 +1573,7 @@ func (s *Station) unknownSubvolumes(subvols map[string]bool) []protocol.UnknownO
 	return out
 }
 
-func (s *Station) cleanRuntimes(ctx context.Context) {
+func (s *Station) cleanRuntimes(_ context.Context) {
 	pinned, _ := s.pinnedRunsc()
 	used := map[string]bool{pinned: true}
 	for _, st := range s.sbx.states {
@@ -1619,7 +1597,7 @@ func (s *Station) cleanRuntimes(ctx context.Context) {
 func (s *Station) cleanBases(ctx context.Context) {
 	keep := map[string]bool{}
 	if pin, ok := s.plan.Generation.Components["sandbox_toolchain"]; ok && pin.Digest != nil {
-		keep[baseKey(string(*pin.Digest))] = true
+		keep[baseKey(*pin.Digest)] = true
 	}
 	for _, d := range s.plan.Generation.Sandboxes {
 		keep[baseKey(d.Image.Digest)] = true
@@ -1742,16 +1720,4 @@ func (s *Station) sandboxAckResults(failed func(string, *protocol.ErrorBody)) {
 			}
 		}
 	}
-}
-
-func (s *Station) sandboxByAddress(a netip.Addr) (string, bool) {
-	e := s.sbx.index.get(a)
-	if e == nil {
-		return "", false
-	}
-	return e.id, true
-}
-
-func (s *Station) sandboxCoupler(ctx context.Context, id string) (container.InspectResponse, error) {
-	return s.docker.Inspect(ctx, docker.SandboxCouplerName(id))
 }

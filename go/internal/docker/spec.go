@@ -9,15 +9,15 @@ import (
 	"net/netip"
 	"slices"
 
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
-	CouplerSource      = "registry.k8s.io/pause"
 	couplerMemoryBytes = 32 << 20
 	couplerNanoCPUs    = 100_000_000
 	CouplerGwPriority  = 100
@@ -56,64 +56,42 @@ func ServiceName(deploymentID string) string {
 }
 
 func EnvironmentNetwork(stationID, envID string, n protocol.EnvironmentNetwork) (NetworkSpec, error) {
-	subnet, err := netip.ParsePrefix(n.Subnet)
+	ipam, err := parseIPAM(n.Subnet, n.Gateway)
 	if err != nil {
-		return NetworkSpec{}, fmt.Errorf("environment %s subnet: %w", envID, err)
+		return NetworkSpec{}, fmt.Errorf("environment %s %w", envID, err)
 	}
-	gateway, err := netip.ParseAddr(n.Gateway)
-	if err != nil {
-		return NetworkSpec{}, fmt.Errorf("environment %s gateway: %w", envID, err)
-	}
-	ipv4, ipv6 := true, false
-	spec := NetworkSpec{
-		Name: n.BridgeName,
-		Options: client.NetworkCreateOptions{
-			Driver:     "bridge",
-			EnableIPv4: &ipv4,
-			EnableIPv6: &ipv6,
-			IPAM: &network.IPAM{
-				Driver: "default",
-				Config: []network.IPAMConfig{{Subnet: subnet, Gateway: gateway}},
-			},
-			Options: map[string]string{
-				"com.docker.network.bridge.name":              n.BridgeName,
-				"com.docker.network.bridge.enable_icc":        "true",
-				"com.docker.network.bridge.gateway_mode_ipv4": string(n.GatewayMode),
-			},
-			Labels: map[string]string{
-				LabelStation:     stationID,
-				LabelRole:        RoleNetwork,
-				LabelEnvironment: envID,
-			},
-		},
-	}
-	spec.Hash = hashOf(spec.Options)
-	spec.Options.Labels[LabelHash] = spec.Hash
-	return spec, nil
+	labels := map[string]string{LabelStation: stationID, LabelRole: RoleNetwork, LabelEnvironment: envID}
+	return bridgeNetwork(n.BridgeName, n.BridgeName, true, ipam, labels, map[string]string{
+		"com.docker.network.bridge.gateway_mode_ipv4": string(n.GatewayMode),
+	}), nil
 }
 
 func Coupler(stationID, envID, serviceID, deploymentID, image, networkName string) ContainerSpec {
 	labels := ownership(stationID, RoleCoupler, envID, serviceID, deploymentID)
-	spec := ContainerSpec{
-		Name: CouplerName(deploymentID),
-		Role: RoleCoupler,
+	sysctls := routeLocalnet()
+	maps.Copy(sysctls, ConntrackSysctls)
+	return sealedWithoutImage(couplerSpec(CouplerName(deploymentID), RoleCoupler, image, networkName, labels, sysctls))
+}
+
+func couplerHost(networkMode container.NetworkMode, sysctls map[string]string) *container.HostConfig {
+	hc := baseHost(networkMode, couplerMemoryBytes, couplerNanoCPUs)
+	hc.ReadonlyRootfs = true
+	hc.Sysctls = sysctls
+	return hc
+}
+
+func routeLocalnet() map[string]string {
+	return map[string]string{"net.ipv4.conf.all.route_localnet": "1"}
+}
+
+func couplerSpec(name, role, image, networkName string, labels, sysctls map[string]string) ContainerSpec {
+	return ContainerSpec{
+		Name: name,
+		Role: role,
 		Create: client.ContainerCreateOptions{
-			Name:   CouplerName(deploymentID),
-			Config: &container.Config{Image: image, Labels: labels},
-			HostConfig: &container.HostConfig{
-				NetworkMode:    container.NetworkMode(networkName),
-				CapDrop:        []string{"ALL"},
-				SecurityOpt:    []string{"no-new-privileges"},
-				ReadonlyRootfs: true,
-				Sysctls:        couplerSysctls(),
-				RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyDisabled},
-				LogConfig:      logConfig,
-				Resources: container.Resources{
-					Memory:     couplerMemoryBytes,
-					MemorySwap: couplerMemoryBytes,
-					NanoCPUs:   HostNanoCPUs(couplerNanoCPUs),
-				},
-			},
+			Name:       name,
+			Config:     &container.Config{Image: image, Labels: labels},
+			HostConfig: couplerHost(container.NetworkMode(networkName), sysctls),
 			NetworkingConfig: &network.NetworkingConfig{
 				EndpointsConfig: map[string]*network.EndpointSettings{
 					networkName: {GwPriority: CouplerGwPriority},
@@ -121,7 +99,6 @@ func Coupler(stationID, envID, serviceID, deploymentID, image, networkName strin
 			},
 		},
 	}
-	return sealedWithoutImage(spec)
 }
 
 func RunName(runID string) string {
@@ -170,29 +147,18 @@ func appContainer(name, role, coupler, deploymentID string, labels map[string]st
 	if s.EnvDigest != "" {
 		labels[LabelEnvDigest] = s.EnvDigest
 	}
-	memory := int64(s.Limits.MemoryBytes)
+	hc := baseHost(container.NetworkMode("container:"+coupler), int64(s.Limits.MemoryBytes), int64(s.Limits.CpuMillis)*1_000_000)
+	hc.CapAdd = AppCapabilities
+	hc.ReadonlyRootfs = s.ReadonlyRootfs
+	hc.Mounts = mounts
 	return ContainerSpec{
 		Name:    name,
 		Role:    role,
 		Coupler: coupler,
 		Create: client.ContainerCreateOptions{
-			Name:   name,
-			Config: &container.Config{Image: s.ImageRef, Cmd: cmd, Env: env, Labels: labels},
-			HostConfig: &container.HostConfig{
-				NetworkMode:    container.NetworkMode("container:" + coupler),
-				CapDrop:        []string{"ALL"},
-				CapAdd:         AppCapabilities,
-				SecurityOpt:    []string{"no-new-privileges"},
-				ReadonlyRootfs: s.ReadonlyRootfs,
-				RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyDisabled},
-				LogConfig:      logConfig,
-				Mounts:         mounts,
-				Resources: container.Resources{
-					Memory:     memory,
-					MemorySwap: memory,
-					NanoCPUs:   HostNanoCPUs(int64(s.Limits.CpuMillis) * 1_000_000),
-				},
-			},
+			Name:       name,
+			Config:     &container.Config{Image: s.ImageRef, Cmd: cmd, Env: env, Labels: labels},
+			HostConfig: hc,
 		},
 	}
 }
@@ -250,12 +216,6 @@ var ConntrackSysctls = map[string]string{
 	"net.netfilter.nf_conntrack_acct":      "1",
 	"net.netfilter.nf_conntrack_timestamp": "1",
 	"net.netfilter.nf_conntrack_events":    "1",
-}
-
-func couplerSysctls() map[string]string {
-	out := map[string]string{"net.ipv4.conf.all.route_localnet": "1"}
-	maps.Copy(out, ConntrackSysctls)
-	return out
 }
 
 func sealedWithoutImage(spec ContainerSpec) ContainerSpec {

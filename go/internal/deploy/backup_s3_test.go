@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -169,7 +170,7 @@ func TestErrorsNeverCarryTheDeliveredCredentials(t *testing.T) {
 		t.Fatal(failure)
 	}
 	scrubbed := dest.scrub(io.ErrUnexpectedEOF)
-	if scrubbed != io.ErrUnexpectedEOF && scrubbed.Error() != io.ErrUnexpectedEOF.Error() {
+	if !errors.Is(scrubbed, io.ErrUnexpectedEOF) && scrubbed.Error() != io.ErrUnexpectedEOF.Error() {
 		t.Fatal("an error without secrets was changed")
 	}
 	leaky := dest.scrub(&leak{"InvalidAccessKeyId AKIAEXAMPLEKEY signature wJalrXUtnFEMI/K7MDENG and wJalrXUtnFEMI%2FK7MDENG"})

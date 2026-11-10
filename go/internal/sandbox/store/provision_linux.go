@@ -175,3 +175,11 @@ func removeIfExists(path string) error {
 func writeUnit(unitDir, text string) error {
 	return fsx.WriteFile(filepath.Join(unitDir, MountUnit), []byte(text), 0o644)
 }
+
+func exitCode(err error) int {
+	var ce *CommandError
+	if errors.As(err, &ce) {
+		return ce.ExitCode
+	}
+	return -1
+}

@@ -16,7 +16,7 @@ func WriteFile(path string, data []byte, perm fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer f.Cleanup()
+	defer func() { _ = f.Cleanup() }()
 	if _, err := f.Write(data); err != nil {
 		return err
 	}
@@ -47,4 +47,17 @@ func syncDir(dir string) error {
 	}
 	defer d.Close()
 	return d.Sync()
+}
+
+func DirSize(root string, match func(name string) bool) int64 {
+	var total int64
+	_ = filepath.WalkDir(root, func(_ string, e fs.DirEntry, err error) error {
+		if err == nil && e.Type().IsRegular() && (match == nil || match(e.Name())) {
+			if info, err := e.Info(); err == nil {
+				total += info.Size()
+			}
+		}
+		return nil
+	})
+	return total
 }

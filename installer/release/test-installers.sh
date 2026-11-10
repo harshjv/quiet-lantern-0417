@@ -78,7 +78,7 @@ render_sly() {
 in_proxy_net="http://$proxy:5051/stationly/release"
 render_sly "$in_proxy_net" "$(sha256 "$files/sly-linux-amd64")" >"$work/install-sly.sh"
 render_sly "$in_proxy_net" "$(printf '%064d' 0)" >"$work/install-sly-wrong.sh"
-sed '$d' "$root/installer/install.sh" >"$work/install-lib.sh"
+"$here/render.sh" "$root/installer/install.sh" | sed '$d' >"$work/install-lib.sh"
 
 cat >"$work/linux.sh" <<EOF
 set -eu

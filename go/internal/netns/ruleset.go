@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/userdata"
+
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
@@ -18,18 +19,6 @@ const (
 	layoutVersion = "1a.3"
 	commentPrefix = "stationly baseline "
 )
-
-var PrivateRanges = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("224.0.0.0/4"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-}
 
 type Baseline struct {
 	Resolver netip.Addr
@@ -108,20 +97,24 @@ func switchMap() *nftables.Set {
 }
 
 func (n *Namespace) Sync(b Baseline, e Elements) (Result, error) {
+	return n.syncTable(commentPrefix+b.fingerprint(), e, func(c *nftables.Conn, sw map[netip.Addr]netip.Addr) error {
+		return write(c, b, e.HostAddrs, sw, e.Reject)
+	})
+}
+
+func (n *Namespace) syncTable(comment string, e Elements, rewrite func(*nftables.Conn, map[netip.Addr]netip.Addr) error) (Result, error) {
 	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
 	if err != nil {
 		return Unchanged, err
 	}
-	if state := layoutState(c, table, "egress", commentPrefix+b.fingerprint()); state != Unchanged {
-		kept := map[netip.Addr]netip.Addr{}
-		if have, err := c.GetSetElements(switchMap()); err == nil {
-			for _, el := range have {
-				kept[addrOf(el.Key)] = addrOf(el.Val)
-			}
-		}
-		return state, write(c, b, e.HostAddrs, resolve(e, kept), e.Reject)
+	if state := layoutState(c, table, "egress", comment); state != Unchanged {
+		kept, _ := readAddrMap(c, switchMap())
+		return state, rewrite(c, resolve(e, kept))
 	}
-	changed, err := syncElements(c, e)
+	return elementsResult(syncElements(c, e))
+}
+
+func elementsResult(changed bool, err error) (Result, error) {
 	if err != nil || !changed {
 		return Unchanged, err
 	}
@@ -134,8 +127,8 @@ func resolve(e Elements, have map[netip.Addr]netip.Addr) map[netip.Addr]netip.Ad
 		out[vip] = real
 	}
 	for _, vip := range e.Pending {
-		if real, ok := have[vip]; ok {
-			out[vip] = real
+		if realAddr, ok := have[vip]; ok {
+			out[vip] = realAddr
 		}
 	}
 	for _, vip := range e.Reject {
@@ -145,109 +138,28 @@ func resolve(e Elements, have map[netip.Addr]netip.Addr) map[netip.Addr]netip.Ad
 }
 
 func syncElements(c *nftables.Conn, e Elements) (bool, error) {
-	changed := false
-	hosts := hostAddrsSet()
-	haveHosts, err := c.GetSetElements(hosts)
+	changed, err := syncIntervals(c, hostAddrsSet(), e.HostAddrs)
 	if err != nil {
 		return false, err
 	}
-	wantHosts := intervalElements(e.HostAddrs)
-	if !sameIntervals(haveHosts, wantHosts) {
-		c.FlushSet(hosts)
-		if len(wantHosts) > 0 {
-			if err := c.SetAddElements(hosts, wantHosts); err != nil {
-				return false, err
-			}
-		}
-		changed = true
-	}
-
-	sw, targets := switchMap(), vipTargetsSet()
-	haveSwitch, err := c.GetSetElements(sw)
+	sw, targets, rejects := switchMap(), vipTargetsSet(), switchRejectSet()
+	current, err := readAddrMap(c, sw)
 	if err != nil {
 		return false, err
 	}
-	haveTargets, err := c.GetSetElements(targets)
+	haveTargets, err := readAddrs(c, targets)
 	if err != nil {
 		return false, err
 	}
-	current := map[netip.Addr]netip.Addr{}
-	for _, el := range haveSwitch {
-		current[addrOf(el.Key)] = addrOf(el.Val)
-	}
-	targetSet := map[netip.Addr]bool{}
-	for _, el := range haveTargets {
-		targetSet[addrOf(el.Key)] = true
+	haveRejects, err := readAddrs(c, rejects)
+	if err != nil {
+		return false, err
 	}
 	want := resolve(e, current)
-
-	var delSwitch, addSwitch, delTargets, addTargets []nftables.SetElement
-	for vip, real := range current {
-		if w, ok := want[vip]; !ok || w != real {
-			delSwitch = append(delSwitch, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	for vip, real := range want {
-		if have, ok := current[vip]; !ok || have != real {
-			addSwitch = append(addSwitch, nftables.SetElement{Key: vip.AsSlice(), Val: real.AsSlice()})
-		}
-		if !targetSet[vip] {
-			addTargets = append(addTargets, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	for vip := range targetSet {
-		if _, ok := want[vip]; !ok {
-			delTargets = append(delTargets, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	rejects := switchRejectSet()
-	haveReject, err := c.GetSetElements(rejects)
-	if err != nil {
-		return false, err
-	}
-	rejectSet := map[netip.Addr]bool{}
-	for _, el := range haveReject {
-		rejectSet[addrOf(el.Key)] = true
-	}
-	wantReject := map[netip.Addr]bool{}
-	var delReject, addReject []nftables.SetElement
-	for _, vip := range e.Reject {
-		wantReject[vip] = true
-		if !rejectSet[vip] {
-			addReject = append(addReject, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	for vip := range rejectSet {
-		if !wantReject[vip] {
-			delReject = append(delReject, nftables.SetElement{Key: vip.AsSlice()})
-		}
-	}
-	for _, op := range []struct {
-		set *nftables.Set
-		els []nftables.SetElement
-		del bool
-	}{{sw, delSwitch, true}, {targets, delTargets, true}, {rejects, delReject, true}, {rejects, addReject, false}, {targets, addTargets, false}, {sw, addSwitch, false}} {
-		if len(op.els) == 0 {
-			continue
-		}
-		changed = true
-		var err error
-		if op.del {
-			err = c.SetDeleteElements(op.set, op.els)
-		} else {
-			err = c.SetAddElements(op.set, op.els)
-		}
-		if err != nil {
-			return false, err
-		}
-	}
-	if !changed {
-		return false, nil
-	}
-	return true, c.Flush()
-}
-
-func addrOf(b []byte) netip.Addr {
-	a, _ := netip.AddrFromSlice(b)
-	return a.Unmap()
+	delSwitch, addSwitch := diffElements(current, want, addrKey, addrKey)
+	delTargets, addTargets := diffElements(haveTargets, keysOf(want), addrKey, nil)
+	delReject, addReject := diffElements(haveRejects, addrsOf(e.Reject), addrKey, nil)
+	return applySetOps(c, changed,
+		setOp{sw, delSwitch, true}, setOp{targets, delTargets, true}, setOp{rejects, delReject, true},
+		setOp{rejects, addReject, false}, setOp{targets, addTargets, false}, setOp{sw, addSwitch, false})
 }

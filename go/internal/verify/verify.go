@@ -20,13 +20,14 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/harshjv/stationly/go/internal/fsx"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/tuf"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
+
+	"github.com/harshjv/stationly/go/internal/fsx"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 type Signature string
@@ -112,7 +113,7 @@ func New(log *slog.Logger, trust Trust, stateDir string) (*Verifier, error) {
 		}
 	}
 	if b, err := os.ReadFile(v.statePath()); err == nil {
-		json.Unmarshal(b, &v.state)
+		_ = json.Unmarshal(b, &v.state)
 	}
 	raw, origin := trust.TrustedRoot, "embedded"
 	if b, err := os.ReadFile(v.rootPath()); err == nil {
@@ -140,7 +141,7 @@ func (v *Verifier) RootState() RootState {
 
 func (v *Verifier) saveState() {
 	b, _ := json.MarshalIndent(v.state, "", "  ")
-	fsx.WriteFile(v.statePath(), b, 0o600)
+	_ = fsx.WriteFile(v.statePath(), b, 0o600)
 }
 
 func (v *Verifier) Refresh(ctx context.Context, f fetcher.Fetcher) (RootState, error) {
@@ -163,7 +164,7 @@ func (v *Verifier) Refresh(ctx context.Context, f fetcher.Fetcher) (RootState, e
 		var tr *root.TrustedRoot
 		if tr, err = root.NewTrustedRootFromJSON(raw); err == nil {
 			if err = fsx.WriteFile(v.rootPath(), raw, 0o600); err == nil {
-				fsx.WriteFile(filepath.Join(v.cacheDir, "trusted_root."+strings.TrimPrefix(digestOf(raw), "sha256:")+".json"), raw, 0o600)
+				_ = fsx.WriteFile(filepath.Join(v.cacheDir, "trusted_root."+strings.TrimPrefix(digestOf(raw), "sha256:")+".json"), raw, 0o600)
 				v.root = tr
 				v.state = RootState{Digest: digestOf(raw), Origin: "tuf", RefreshedAt: v.state.AttemptedAt, AttemptedAt: v.state.AttemptedAt}
 			}

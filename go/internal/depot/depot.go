@@ -5,8 +5,6 @@ package depot
 import (
 	"context"
 	"fmt"
-	"github.com/harshjv/stationly/go/internal/cidr"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -16,14 +14,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
-	ImageSource  = "docker.io/library/registry"
 	readyTimeout = 30 * time.Second
 
 	AwaitingGeneration = "waiting for a generation to start Depot"
@@ -64,7 +63,7 @@ func SettingsFrom(g *protocol.Generation) (Settings, error) {
 	if !ok || pin.Digest == nil {
 		return Settings{}, fmt.Errorf("components.depot with a digest is required")
 	}
-	return Settings{StationID: g.StationId, Front: front, Dist: dist, Subnet: subnet, IPRange: ipRange, KeyRef: r.KeyRef, Image: ImageSource + "@" + *pin.Digest}, nil
+	return Settings{StationID: g.StationId, Front: front, Dist: dist, Subnet: subnet, IPRange: ipRange, KeyRef: r.KeyRef, Image: protocol.DepotSource + "@" + *pin.Digest}, nil
 }
 
 func DistAddress(front netip.AddrPort) netip.AddrPort {
@@ -288,19 +287,9 @@ func (d *Depot) writeFiles() error {
 func (d *Depot) ensureNetwork(ctx context.Context) error {
 	s := d.settings
 	spec := docker.DepotNetwork(s.StationID, s.Subnet, s.IPRange, s.Front.Addr())
-	_, labels, ok, err := d.docker.NetworkByName(ctx, spec.Name)
-	if err != nil {
+	id, created, err := d.docker.EnsureFixedNetwork(ctx, spec)
+	if err != nil || !created {
 		return err
-	}
-	if ok {
-		if labels[docker.LabelHash] != spec.Hash {
-			return fmt.Errorf("network %s exists with other settings; the Depot subnet is fixed at install, remove the network to recreate it", spec.Name)
-		}
-		return nil
-	}
-	id, err := d.docker.CreateNetwork(ctx, spec)
-	if err != nil {
-		return fmt.Errorf("create network %s: %w", spec.Name, err)
 	}
 	d.log.Info("created Depot network", "name", spec.Name, "bridge", docker.DepotBridgeName, "id", id[:12], "subnet", s.Subnet, "front", s.Front.Addr(), "dynamic_range", s.IPRange)
 	return nil
@@ -422,7 +411,7 @@ func (d *Depot) GC(ctx context.Context, progress func(step, detail string)) (GCR
 	if err != nil {
 		return res, err
 	}
-	res.BytesBefore = dirSize(vol.Mountpoint)
+	res.BytesBefore = fsx.DirSize(vol.Mountpoint, nil)
 	progress("readonly", "restarting Depot with maintenance.readonly.enabled: true")
 	d.readonly = true
 	defer func() {
@@ -444,13 +433,13 @@ func (d *Depot) GC(ctx context.Context, progress func(step, detail string)) (GCR
 		return res, err
 	}
 	if c, ok, _ := d.docker.ContainerByName(ctx, gc.Name); ok {
-		d.docker.Remove(ctx, c.ID)
+		_ = d.docker.Remove(ctx, c.ID)
 	}
 	id, err := d.docker.CreateContainer(ctx, gc.Create)
 	if err != nil {
 		return res, err
 	}
-	defer d.docker.Remove(context.WithoutCancel(ctx), id)
+	defer func() { _ = d.docker.Remove(context.WithoutCancel(ctx), id) }()
 	if err := d.docker.Start(ctx, id); err != nil {
 		return res, err
 	}
@@ -472,23 +461,10 @@ func (d *Depot) GC(ctx context.Context, progress func(step, detail string)) (GCR
 	}
 	d.setState(protocol.RegistryStateServing, "")
 	res.ReadonlyS = fmt.Sprintf("%.2f", time.Since(roStart).Seconds())
-	res.BytesAfter = dirSize(vol.Mountpoint)
+	res.BytesAfter = fsx.DirSize(vol.Mountpoint, nil)
 	res.FreedBytes = max(res.BytesBefore-res.BytesAfter, 0)
 	res.DurationS = int(time.Since(start).Round(time.Second).Seconds())
 	return res, nil
-}
-
-func dirSize(root string) int64 {
-	var total int64
-	filepath.WalkDir(root, func(_ string, e fs.DirEntry, err error) error {
-		if err == nil && e.Type().IsRegular() {
-			if info, err := e.Info(); err == nil {
-				total += info.Size()
-			}
-		}
-		return nil
-	})
-	return total
 }
 
 func (d *Depot) Close() {

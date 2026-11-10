@@ -13,10 +13,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/moby/moby/api/types/mount"
+
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
-	"github.com/moby/moby/api/types/mount"
 )
 
 var dockerNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
@@ -77,7 +78,7 @@ func BuildPlan(g *protocol.Generation, applied *protocol.Generation, stateDir st
 		return nil, err
 	}
 	coupler := g.Components["coupler_image"]
-	couplerImage := docker.CouplerSource + "@" + *coupler.Digest
+	couplerImage := protocol.CouplerImageSource + "@" + *coupler.Digest
 
 	plan := &Plan{Generation: g, Networks: map[string]docker.NetworkSpec{}, Services: map[string]*ServicePlan{}, couplerImage: couplerImage}
 	gp, err := planGateway(g, couplerImage, time.Now(), trust)

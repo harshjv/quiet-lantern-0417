@@ -5,11 +5,12 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -67,27 +68,7 @@ func baseHost(network container.NetworkMode, memory, nanoCPUs int64) *container.
 }
 
 func DepotNetwork(stationID string, subnet, ipRange netip.Prefix, gateway netip.Addr) NetworkSpec {
-	ipv4, ipv6 := true, false
-	spec := NetworkSpec{
-		Name: DepotNetworkName,
-		Options: client.NetworkCreateOptions{
-			Driver:     "bridge",
-			EnableIPv4: &ipv4,
-			EnableIPv6: &ipv6,
-			IPAM: &network.IPAM{
-				Driver: "default",
-				Config: []network.IPAMConfig{{Subnet: subnet, IPRange: ipRange, Gateway: gateway}},
-			},
-			Options: map[string]string{
-				"com.docker.network.bridge.name":       DepotBridgeName,
-				"com.docker.network.bridge.enable_icc": "true",
-			},
-			Labels: platformLabels(stationID, RoleDepotNetwork, ""),
-		},
-	}
-	spec.Hash = hashOf(spec.Options)
-	spec.Options.Labels[LabelHash] = spec.Hash
-	return spec
+	return bridgeNetwork(DepotNetworkName, DepotBridgeName, true, network.IPAMConfig{Subnet: subnet, IPRange: ipRange, Gateway: gateway}, platformLabels(stationID, RoleDepotNetwork, ""), nil)
 }
 
 func bindRO(src, dst string) mount.Mount {
@@ -164,9 +145,7 @@ func WorkshopName(projectID string) string {
 }
 
 func WorkshopCoupler(stationID, projectID, image string) ContainerSpec {
-	hc := baseHost(container.NetworkMode(DepotNetworkName), couplerMemoryBytes, couplerNanoCPUs)
-	hc.ReadonlyRootfs = true
-	hc.Sysctls = map[string]string{"net.ipv4.conf.all.route_localnet": "1"}
+	hc := couplerHost(container.NetworkMode(DepotNetworkName), routeLocalnet())
 	name := WorkshopCouplerName(projectID)
 	spec := ContainerSpec{
 		Name: name,
@@ -187,6 +166,18 @@ type WorkshopFiles struct {
 
 type WorkshopVolumes struct {
 	Home, Cache, Socket string
+}
+
+func WorkshopVolumeNames(projectID string) WorkshopVolumes {
+	return WorkshopVolumes{
+		Home:   WorkshopName(projectID) + "-home",
+		Cache:  WorkshopName(projectID) + "-cache",
+		Socket: WorkshopName(projectID) + "-sock",
+	}
+}
+
+func RailpackCacheVolume(projectID string) string {
+	return WorkshopName(projectID) + "-railpack"
 }
 
 func Workshop(stationID, projectID, image string, uidBase int, files WorkshopFiles, vols WorkshopVolumes, apparmor bool, memory, nanoCPUs int64) ContainerSpec {
@@ -232,6 +223,14 @@ func Workshop(stationID, projectID, image string, uidBase int, files WorkshopFil
 
 type PrepareVolumes struct {
 	Context, Plan, Cache string
+}
+
+func PrepareVolumeNames(buildID, projectID string) PrepareVolumes {
+	return PrepareVolumes{
+		Context: PrepareName(buildID) + "-ctx",
+		Plan:    PrepareName(buildID) + "-plan",
+		Cache:   RailpackCacheVolume(projectID),
+	}
 }
 
 func Prepare(stationID, projectID, buildID, image string, args []string, vols PrepareVolumes) ContainerSpec {

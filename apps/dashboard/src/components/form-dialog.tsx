@@ -1,7 +1,16 @@
 import { Loader2 } from 'lucide-react'
 import type { ComponentProps, FormEvent, ReactNode } from 'react'
+
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 export function FormError({ id, children }: { id?: string; children: ReactNode }) {
@@ -27,7 +36,19 @@ type FormProps = {
   children?: ReactNode
 }
 
-export function DialogForm({ title, description, notice, error, submitLabel, pending, submitDisabled, submitVariant, onSubmit, onCancel, children }: FormProps) {
+export function DialogForm({
+  title,
+  description,
+  notice,
+  error,
+  submitLabel,
+  pending,
+  submitDisabled,
+  submitVariant,
+  onSubmit,
+  onCancel,
+  children,
+}: FormProps) {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     onSubmit()
@@ -54,7 +75,10 @@ export function DialogForm({ title, description, notice, error, submitLabel, pen
   )
 }
 
-const sizes = { md: 'sm:max-w-md', lg: 'sm:max-w-xl' } as const
+const sizes = {
+  md: 'sm:max-w-md',
+  lg: 'sm:max-w-xl',
+} as const
 
 export const dialogScroll = 'max-h-[calc(100dvh-2rem)] overflow-y-auto'
 
@@ -64,7 +88,12 @@ export function FormDialog({
   trigger,
   size,
   ...form
-}: Omit<FormProps, 'onCancel'> & { open: boolean; onOpenChange: (open: boolean) => void; trigger?: ReactNode; size?: keyof typeof sizes }) {
+}: Omit<FormProps, 'onCancel'> & {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  trigger?: ReactNode
+  size?: keyof typeof sizes
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}

@@ -1,3 +1,5 @@
+//go:build linux
+
 package workshop
 
 import (
@@ -12,21 +14,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/moby/buildkit/session/auth"
 	"golang.org/x/crypto/nacl/sign"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/harshjv/stationly/go/internal/depot"
 )
 
 const workshopTokenTTL = 300 * time.Second
-
-type TokenEvent struct {
-	Requested []string `json:"requested"`
-	Granted   []string `json:"granted"`
-	Dropped   []string `json:"dropped,omitempty"`
-}
 
 type depotAuth struct {
 	auth.UnimplementedAuthServer
@@ -56,18 +53,18 @@ func (a *depotAuth) authority(salt []byte) ed25519.PrivateKey {
 	return ed25519.NewKeyFromSeed(mac.Sum(nil)[:ed25519.SeedSize])
 }
 
-func (a *depotAuth) Credentials(ctx context.Context, req *auth.CredentialsRequest) (*auth.CredentialsResponse, error) {
+func (a *depotAuth) Credentials(_ context.Context, _ *auth.CredentialsRequest) (*auth.CredentialsResponse, error) {
 	return &auth.CredentialsResponse{}, nil
 }
 
-func (a *depotAuth) GetTokenAuthority(ctx context.Context, req *auth.GetTokenAuthorityRequest) (*auth.GetTokenAuthorityResponse, error) {
+func (a *depotAuth) GetTokenAuthority(_ context.Context, req *auth.GetTokenAuthorityRequest) (*auth.GetTokenAuthorityResponse, error) {
 	if req.Host != a.registry {
 		return nil, status.Error(codes.Unimplemented, "no token authority for "+req.Host)
 	}
 	return &auth.GetTokenAuthorityResponse{PublicKey: a.authority(req.Salt).Public().(ed25519.PublicKey)}, nil
 }
 
-func (a *depotAuth) VerifyTokenAuthority(ctx context.Context, req *auth.VerifyTokenAuthorityRequest) (*auth.VerifyTokenAuthorityResponse, error) {
+func (a *depotAuth) VerifyTokenAuthority(_ context.Context, req *auth.VerifyTokenAuthorityRequest) (*auth.VerifyTokenAuthorityResponse, error) {
 	if req.Host != a.registry {
 		return nil, status.Error(codes.Unimplemented, "no token authority for "+req.Host)
 	}
@@ -76,7 +73,7 @@ func (a *depotAuth) VerifyTokenAuthority(ctx context.Context, req *auth.VerifyTo
 	return &auth.VerifyTokenAuthorityResponse{Signed: sign.Sign(nil, req.Payload, priv)}, nil
 }
 
-func (a *depotAuth) FetchToken(ctx context.Context, req *auth.FetchTokenRequest) (*auth.FetchTokenResponse, error) {
+func (a *depotAuth) FetchToken(_ context.Context, req *auth.FetchTokenRequest) (*auth.FetchTokenResponse, error) {
 	if req.Host != a.registry {
 		return nil, status.Error(codes.Unimplemented, "no tokens for "+req.Host)
 	}

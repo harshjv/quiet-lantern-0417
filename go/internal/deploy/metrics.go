@@ -8,16 +8,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/logstore"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
 )
 
 const metricsEvery = 5 * time.Second
@@ -208,20 +210,15 @@ func (s *Station) collect(ctx context.Context, svcID string, c *collector) {
 
 func (s *Station) sampleMetrics(_ context.Context, m dispatch.Message, b protocol.MetricsSampleBody) {
 	ref := m.ID
-	s.send(protocol.MessageMetricsSampleResult, &ref, protocol.MetricsSampleResultBody{Samples: s.metrics.samples(append(append([]string{}, b.ServiceIds...), b.SandboxIds...))})
+	s.send(protocol.MessageMetricsSampleResult, &ref, protocol.MetricsSampleResultBody{Samples: s.metrics.samples(slices.Concat(b.ServiceIds, b.SandboxIds))})
 }
 
 func (s *Station) subscribeMetrics(ctx context.Context, m dispatch.Message, b protocol.MetricsSubscribeBody) {
-	st, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, nil, nil)
-	if err != nil {
-		s.replyError(m, streamFailure(err))
+	st, ok := s.openItemStream(m)
+	if !ok {
 		return
 	}
-	if err := st.Opened(m.ID, protocol.LimitStreamWindowBytes); err != nil {
-		st.End("send failed", nil)
-		return
-	}
-	ids := append(append([]string{}, b.ServiceIds...), b.SandboxIds...)
+	ids := slices.Concat(b.ServiceIds, b.SandboxIds)
 	go func() {
 		t := time.NewTicker(metricsEvery)
 		defer t.Stop()

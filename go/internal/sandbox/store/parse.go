@@ -143,53 +143,6 @@ func parseDeviceStats(out string) (map[string]uint64, error) {
 	return stats, nil
 }
 
-type mountEntry struct {
-	MountPoint string
-	FSType     string
-	Source     string
-	Options    string
-}
-
-func parseMountInfo(data, mountPoint string) (mountEntry, bool, error) {
-	var found mountEntry
-	ok := false
-	for _, line := range strings.Split(data, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		left, right, cut := strings.Cut(line, " - ")
-		lf, rf := strings.Fields(left), strings.Fields(right)
-		if !cut || len(lf) < 6 || len(rf) < 2 {
-			return mountEntry{}, false, fmt.Errorf("mountinfo: unexpected line %q", line)
-		}
-		mp := unescapeMount(lf[4])
-		if mp != mountPoint {
-			continue
-		}
-		found = mountEntry{MountPoint: mp, FSType: rf[0], Source: unescapeMount(rf[1]), Options: lf[5]}
-		ok = true
-	}
-	return found, ok, nil
-}
-
-func unescapeMount(s string) string {
-	if !strings.Contains(s, `\`) {
-		return s
-	}
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+3 < len(s) {
-			if n, err := strconv.ParseUint(s[i+1:i+4], 8, 8); err == nil {
-				b.WriteByte(byte(n))
-				i += 3
-				continue
-			}
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}
-
 func parseIncompatFlags(out string) (uint64, error) {
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)

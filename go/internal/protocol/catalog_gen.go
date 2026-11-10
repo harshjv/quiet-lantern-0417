@@ -16,6 +16,8 @@ const (
 	NftTablePrefix         = "sly_"
 	InterfaceNameMaxLength = 15
 	SandboxNetworkName     = "sly-sandbox"
+	BootstrapTokenPrefix   = "sly-enroll-"
+	RecoveryKeyPrefix      = "sly-rk-"
 )
 
 const (

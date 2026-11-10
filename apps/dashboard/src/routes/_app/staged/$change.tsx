@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { Check, Loader2, ShieldAlert, X } from 'lucide-react'
 import { useState } from 'react'
+
 import { Crumbs } from '@/components/crumbs'
 import { ChangeDiff } from '@/components/diff'
 import { Field } from '@/components/field'
@@ -12,16 +13,15 @@ import { StagedStatusBadge } from '@/components/status'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { api, idempotency, unwrap } from '@/lib/api'
+import { api, idempotency, unwrap, type Deployment, type StagedChange } from '@/lib/api'
 import { actorText, ago, plural, stamp } from '@/lib/format'
 import { stagedDecided } from '@/lib/invalidate'
 import { done, useApiMutation } from '@/lib/mutation'
 import { meQuery, stagedChangeQuery } from '@/lib/queries'
-import type { Deployment, StagedChange } from '@/lib/api'
 import { useEnvironmentTrail } from '@/lib/use-trail'
 
 export const Route = createFileRoute('/_app/staged/$change')({
-  component: StagedChangePage
+  component: StagedChangePage,
 })
 
 function StagedChangePage() {
@@ -29,7 +29,7 @@ function StagedChangePage() {
   const change = useQuery(stagedChangeQuery(id))
   return (
     <QueryState query={change} rows={6} errorTitle="The staged change could not be loaded">
-      {c => <StagedChangeView c={c} />}
+      {(c) => <StagedChangeView c={c} />}
     </QueryState>
   )
 }
@@ -41,18 +41,44 @@ function StagedChangeView({ c }: { c: StagedChange }) {
   const [rejecting, setRejecting] = useState(false)
   const [started, setStarted] = useState<Deployment[]>([])
   const accept = useApiMutation({
-    mutationFn: async () => done(await unwrap(api.v1['staged-changes']({ id: c.id }).accept.post(undefined, idempotency()))),
+    mutationFn: async () =>
+      done(
+        await unwrap(
+          api.v1['staged-changes']({
+            id: c.id,
+          }).accept.post(undefined, idempotency()),
+        ),
+      ),
     invalidate: stagedDecided,
-    success: result => ({ title: 'Change accepted', description: result.deployments?.length ? `${plural(result.deployments.length, 'deployment')} started.` : 'Applied.' }),
-    onSuccess: result => !result.staged && setStarted(result.body.deployments ?? []),
-    failure: () => 'Accept was refused'
+    success: (result) => ({
+      title: 'Change accepted',
+      description: result.deployments?.length
+        ? `${plural(result.deployments.length, 'deployment')} started.`
+        : 'Applied.',
+    }),
+    onSuccess: (result) => !result.staged && setStarted(result.body.deployments ?? []),
+    failure: () => 'Accept was refused',
   })
   const reject = useApiMutation({
-    mutationFn: async () => done(await unwrap(api.v1['staged-changes']({ id: c.id }).reject.post(reason.trim() ? { reason: reason.trim() } : {}, idempotency()))),
+    mutationFn: async () =>
+      done(
+        await unwrap(
+          api.v1['staged-changes']({
+            id: c.id,
+          }).reject.post(
+            reason.trim()
+              ? {
+                  reason: reason.trim(),
+                }
+              : {},
+            idempotency(),
+          ),
+        ),
+      ),
     invalidate: stagedDecided,
     success: () => 'Change rejected',
     onSuccess: () => setRejecting(false),
-    failure: () => 'Reject was refused'
+    failure: () => 'Reject was refused',
   })
   const human = me.data?.human === true
   const open = c.status === 'staged'
@@ -62,7 +88,17 @@ function StagedChangeView({ c }: { c: StagedChange }) {
   return (
     <div className="space-y-6">
       <div>
-        <Crumbs items={[{ label: 'Staged changes', to: '/staged' }, { label: c.id }]} />
+        <Crumbs
+          items={[
+            {
+              label: 'Staged changes',
+              to: '/staged',
+            },
+            {
+              label: c.id,
+            },
+          ]}
+        />
         <PageHeader
           title={
             <span className="flex items-center gap-3">
@@ -73,7 +109,14 @@ function StagedChangeView({ c }: { c: StagedChange }) {
           meta={
             <>
               {project && environment ? (
-                <Link to="/projects/$project/$environment" params={{ project: project.name, environment: environment.name }} className="underline-offset-4 hover:underline">
+                <Link
+                  to="/projects/$project/$environment"
+                  params={{
+                    project: project.name,
+                    environment: environment.name,
+                  }}
+                  className="underline-offset-4 hover:underline"
+                >
                   {project.name} / {environment.name}
                 </Link>
               ) : (
@@ -93,7 +136,11 @@ function StagedChangeView({ c }: { c: StagedChange }) {
                   open={rejecting}
                   onOpenChange={setRejecting}
                   trigger={
-                    <Button variant="outline" size="sm" disabled={accept.isPending || reject.isPending}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={accept.isPending || reject.isPending}
+                    >
                       <X /> Reject
                     </Button>
                   }
@@ -105,10 +152,19 @@ function StagedChangeView({ c }: { c: StagedChange }) {
                   onSubmit={() => reject.mutate()}
                 >
                   <Field id="reject-reason" label="Reason (optional)">
-                    <Textarea id="reject-reason" value={reason} onChange={e => setReason(e.target.value)} rows={3} />
+                    <Textarea
+                      id="reject-reason"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      rows={3}
+                    />
                   </Field>
                 </FormDialog>
-                <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending || reject.isPending}>
+                <Button
+                  size="sm"
+                  onClick={() => accept.mutate()}
+                  disabled={accept.isPending || reject.isPending}
+                >
                   {accept.isPending ? <Loader2 className="animate-spin" /> : <Check />}
                   Accept and apply
                 </Button>
@@ -121,7 +177,10 @@ function StagedChangeView({ c }: { c: StagedChange }) {
         <Alert>
           <ShieldAlert />
           <AlertTitle>A human accepts this change</AlertTitle>
-          <AlertDescription>This session is not a human actor, so it cannot accept or reject staged changes in a protected environment.</AlertDescription>
+          <AlertDescription>
+            This session is not a human actor, so it cannot accept or reject staged changes in a
+            protected environment.
+          </AlertDescription>
         </Alert>
       )}
       {started.length > 0 && (
@@ -130,9 +189,15 @@ function StagedChangeView({ c }: { c: StagedChange }) {
           <AlertTitle>Applied</AlertTitle>
           <AlertDescription>
             <ul className="flex flex-wrap gap-3">
-              {started.map(d => (
+              {started.map((d) => (
                 <li key={d.id}>
-                  <Link to="/deployments/$deployment" params={{ deployment: d.id }} className="underline underline-offset-4">
+                  <Link
+                    to="/deployments/$deployment"
+                    params={{
+                      deployment: d.id,
+                    }}
+                    className="underline underline-offset-4"
+                  >
                     deployment #{d.number}
                   </Link>
                 </li>
@@ -149,11 +214,18 @@ function StagedChangeView({ c }: { c: StagedChange }) {
           ['Removes', c.summary.remove],
           ['Deployments', c.summary.deployments],
           ['Created', stamp(c.created_at)],
-          ['Decided by', c.accepted_by ? actorText(c.accepted_by) : '—']
+          ['Decided by', c.accepted_by ? actorText(c.accepted_by) : '—'],
         ]}
       />
-      <Section title="Diff" description="Entries apply in this order inside one transaction. Variable values never appear here; a new value shows only its length and version.">
-        {c.changes && c.changes.length > 0 ? <ChangeDiff changes={c.changes} refs={c.refs} /> : <p className="text-sm text-muted-foreground">The diff is empty.</p>}
+      <Section
+        title="Diff"
+        description="Entries apply in this order inside one transaction. Variable values never appear here; a new value shows only its length and version."
+      >
+        {c.changes && c.changes.length > 0 ? (
+          <ChangeDiff changes={c.changes} refs={c.refs} />
+        ) : (
+          <p className="text-sm text-muted-foreground">The diff is empty.</p>
+        )}
       </Section>
     </div>
   )

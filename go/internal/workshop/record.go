@@ -13,6 +13,12 @@ import (
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
+type TokenEvent struct {
+	Requested []string `json:"requested"`
+	Granted   []string `json:"granted"`
+	Dropped   []string `json:"dropped,omitempty"`
+}
+
 type Timings struct {
 	QueuedS   float64 `json:"queued_s"`
 	WorkshopS float64 `json:"workshop_s"`

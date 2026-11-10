@@ -1,0 +1,121 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - nolintlint
+    - revive
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    gosec:
+      excludes:
+        - G101
+        - G104
+        - G115
+        - G118
+        - G301
+        - G302
+        - G306
+    misspell:
+      ignore-rules:
+        - stationd
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      enable-default-rules: true
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+        - name: context-as-argument
+          arguments:
+            - allow-types-before: "*Station"
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1005
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+  exclusions:
+    generated: strict
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      - path: _test\.go
+        linters:
+          - revive
+        text: "^unused-parameter:"
+      - path: internal/dispatch/client\.go
+        linters:
+          - bodyclose
+        text: response body must be closed
+      - path: internal/dispatch/client\.go
+        linters:
+          - gosec
+        text: "^G404:"
+      - path: internal/gateway/files\.go
+        linters:
+          - gosec
+        text: "^G402:"
+      - path: internal/s3store/fakes3/
+        linters:
+          - gosec
+        text: "^G705:"
+      - path: internal/sandbox/runsc/(command|runtime)\.go
+        linters:
+          - gosec
+        text: "^G204:"
+      - path: internal/deploy/(backup|requests)\.go
+        linters:
+          - gosec
+        text: "^G110:"
+      - path: internal/(deploy/backup|sandbox/runsc/install|workshop/build)\.go
+        linters:
+          - gosec
+        text: "^G122:"
+      - path: internal/deploy/(backup|dispatchc)\.go
+        linters:
+          - gosec
+        text: "^G703:"
+      - path: internal/(deploy/inspect|deploy/sandbox_install|netns/hostaddrs)\.go
+        linters:
+          - nilerr
+      - path: internal/deploy/selfupgrade\.go
+        linters:
+          - errcheck
+        source: "^\\s*<-child\\.Exit$"
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

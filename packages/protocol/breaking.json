@@ -1,0 +1,6 @@
+[
+  {
+    "at": "protocol.json#/$defs/SandboxNetworkDesired/properties/bridge_name",
+    "reason": "Station resources take the sly- prefix from one protocol constant; stationd and Dispatch move to it in the same release"
+  }
+]

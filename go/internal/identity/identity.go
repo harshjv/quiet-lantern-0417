@@ -13,8 +13,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/harshjv/stationly/go/internal/fsx"
 	"golang.org/x/crypto/curve25519"
+
+	"github.com/harshjv/stationly/go/internal/fsx"
 )
 
 const (

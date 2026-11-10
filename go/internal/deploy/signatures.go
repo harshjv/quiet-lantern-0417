@@ -16,12 +16,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/theupdateframework/go-tuf/v2/metadata"
+	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
-	"github.com/theupdateframework/go-tuf/v2/metadata"
-	"github.com/theupdateframework/go-tuf/v2/metadata/fetcher"
 )
 
 const (
@@ -70,7 +71,7 @@ func (d dispatchSource) upstream(ctx context.Context, up protocol.BlobUpstream) 
 	}
 	if reply.Type != protocol.MessageBlobGranted {
 		var e protocol.ErrorBody
-		json.Unmarshal(reply.Body, &e)
+		_ = json.Unmarshal(reply.Body, &e)
 		return nil, fmt.Errorf("blob.grant answered %s %s: %s", reply.Type, e.Code, e.Explanation)
 	}
 	var g protocol.BlobGrant
@@ -189,7 +190,7 @@ func (s *Station) platformVerify(ctx context.Context, m dispatch.Message, body p
 	go func() {
 		rctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
-		s.verifier.Refresh(rctx, src.TUF())
+		_, _ = s.verifier.Refresh(rctx, src.TUF())
 		out := protocol.PlatformVerifyResultBody{Items: []protocol.PlatformVerifyResult{}}
 		root := s.verifier.RootState().Digest
 		out.TrustedRoot = &root
@@ -237,7 +238,7 @@ func (s *Station) verifyRelease(rel *protocol.PlatformVerifyRelease) *protocol.P
 	out.Identity = &san
 	dir := filepath.Join(ReleaseDir(s.opts.StateDir), "releases")
 	if err := os.MkdirAll(dir, 0o755); err == nil {
-		writeAtomic(filepath.Join(dir, strings.TrimPrefix(out.ManifestDigest, "sha256:")+".json"), raw)
+		_ = writeAtomic(filepath.Join(dir, strings.TrimPrefix(out.ManifestDigest, "sha256:")+".json"), raw)
 	}
 	s.log.Info("platform.verify release manifest", "digest", out.ManifestDigest, "identity", san)
 	return out
@@ -358,7 +359,7 @@ func (s *Station) reportedPath() string {
 func (s *Station) reportComponents(g *protocol.Generation) {
 	var last map[string]reportedComponent
 	if b, err := os.ReadFile(s.reportedPath()); err == nil {
-		json.Unmarshal(b, &last)
+		_ = json.Unmarshal(b, &last)
 	}
 	next := map[string]reportedComponent{}
 	changed := false
@@ -384,7 +385,7 @@ func (s *Station) reportComponents(g *protocol.Generation) {
 		return
 	}
 	b, _ := json.MarshalIndent(next, "", "  ")
-	writeAtomic(s.reportedPath(), b)
+	_ = writeAtomic(s.reportedPath(), b)
 }
 
 func ReleaseDir(stateDir string) string {

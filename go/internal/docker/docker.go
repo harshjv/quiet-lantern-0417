@@ -83,11 +83,6 @@ func (c *Client) Inspect(ctx context.Context, id string) (container.InspectRespo
 	return res.Container, err
 }
 
-func (c *Client) CreateNetwork(ctx context.Context, spec NetworkSpec) (string, error) {
-	res, err := c.api.NetworkCreate(ctx, spec.Name, spec.Options)
-	return res.ID, err
-}
-
 func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
 	_, err := c.api.NetworkRemove(ctx, id, client.NetworkRemoveOptions{})
 	return ignoreNotFound(err)

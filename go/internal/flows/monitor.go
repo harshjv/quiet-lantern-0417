@@ -221,7 +221,7 @@ func (m *Monitor) grant(w *Watch) {
 	default:
 		return
 	}
-	w.ev.SetReadDeadline(time.Now())
+	_ = w.ev.SetReadDeadline(time.Now())
 	select {
 	case <-w.synced:
 		if initial {

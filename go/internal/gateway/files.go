@@ -64,7 +64,7 @@ func Ready(ctx context.Context, addr netip.Addr) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return resp.StatusCode, nil
 }
@@ -116,7 +116,7 @@ func Inspect(ctx context.Context, gw netip.Addr, hostname string) Certificate {
 	if err != nil {
 		out.Err = err.Error()
 	} else {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 		resp.Body.Close()
 		out.Status = resp.StatusCode
 	}

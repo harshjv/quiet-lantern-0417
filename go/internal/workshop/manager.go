@@ -16,22 +16,20 @@ import (
 	"sync"
 	"time"
 
+	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/moby/api/types/container"
 )
 
 const (
-	BuildkitSource    = "docker.io/moby/buildkit"
-	RailpackSource    = "ghcr.io/railwayapp/railpack-frontend"
-	SyftScannerSource = "docker.io/docker/buildkit-syft-scanner"
-	maxDaemons        = 4
-	workshopMemory    = 4 << 30
-	readyTimeout      = 60 * time.Second
-	stopTimeoutS      = 10
+	maxDaemons     = 4
+	workshopMemory = 4 << 30
+	readyTimeout   = 60 * time.Second
+	stopTimeoutS   = 10
 )
 
 type Pins struct {
@@ -52,16 +50,16 @@ func PinsFrom(g *protocol.Generation) (Pins, error) {
 	}
 	var p Pins
 	var err error
-	if p.Buildkit, _, err = get("buildkit", BuildkitSource); err != nil {
+	if p.Buildkit, _, err = get("buildkit", protocol.BuildkitSource); err != nil {
 		return p, err
 	}
-	if p.Railpack, p.RailpackVersion, err = get("railpack_frontend", RailpackSource); err != nil {
+	if p.Railpack, p.RailpackVersion, err = get("railpack_frontend", protocol.RailpackFrontendSource); err != nil {
 		return p, err
 	}
-	if p.SyftScanner, _, err = get("syft_scanner", SyftScannerSource); err != nil {
+	if p.SyftScanner, _, err = get("syft_scanner", protocol.SyftScannerSource); err != nil {
 		return p, err
 	}
-	if p.Coupler, _, err = get("coupler_image", docker.CouplerSource); err != nil {
+	if p.Coupler, _, err = get("coupler_image", protocol.CouplerImageSource); err != nil {
 		return p, err
 	}
 	return p, nil
@@ -230,18 +228,6 @@ func (m *Manager) configDir(projectID string) string {
 	return filepath.Join(m.stateDir, "config", "workshops", projectID)
 }
 
-func volumeNames(projectID string) docker.WorkshopVolumes {
-	return docker.WorkshopVolumes{
-		Home:   docker.WorkshopName(projectID) + "-home",
-		Cache:  docker.WorkshopName(projectID) + "-cache",
-		Socket: docker.WorkshopName(projectID) + "-sock",
-	}
-}
-
-func railpackCacheVolume(projectID string) string {
-	return docker.WorkshopName(projectID) + "-railpack"
-}
-
 func (m *Manager) labels(projectID string) map[string]string {
 	return map[string]string{docker.LabelStation: m.Generation().StationId, docker.LabelRole: docker.RoleWorkshop, docker.LabelProject: projectID}
 }
@@ -269,7 +255,7 @@ func (m *Manager) ensure(ctx context.Context, projectID string, ws protocol.Desi
 	if err != nil {
 		return Workshop{}, err
 	}
-	vols := volumeNames(projectID)
+	vols := docker.WorkshopVolumeNames(projectID)
 	var sockDir string
 	for _, name := range []string{vols.Home, vols.Cache, vols.Socket} {
 		v, _, err := m.docker.EnsureVolume(ctx, name, m.labels(projectID))
@@ -283,7 +269,7 @@ func (m *Manager) ensure(ctx context.Context, projectID string, ws protocol.Desi
 			sockDir = v.Mountpoint
 		}
 	}
-	if _, _, err := m.docker.EnsureVolume(ctx, railpackCacheVolume(projectID), m.labels(projectID)); err != nil {
+	if _, _, err := m.docker.EnsureVolume(ctx, docker.RailpackCacheVolume(projectID), m.labels(projectID)); err != nil {
 		return Workshop{}, err
 	}
 
@@ -309,10 +295,10 @@ func (m *Manager) ensure(ctx context.Context, projectID string, ws protocol.Desi
 	couplerID := coupler.ID
 	if !couplerUp {
 		if daemonOK {
-			m.docker.Remove(ctx, daemon.ID)
+			_ = m.docker.Remove(ctx, daemon.ID)
 		}
 		if couplerOK {
-			m.docker.Remove(ctx, coupler.ID)
+			_ = m.docker.Remove(ctx, coupler.ID)
 		}
 		daemonUp, daemonOK = false, false
 		id, err := m.docker.CreateContainer(ctx, couplerSpec.Create)
@@ -330,7 +316,7 @@ func (m *Manager) ensure(ctx context.Context, projectID string, ws protocol.Desi
 	}
 	if !daemonUp {
 		if daemonOK {
-			m.docker.Remove(ctx, daemon.ID)
+			_ = m.docker.Remove(ctx, daemon.ID)
 		}
 		id, err := m.docker.CreateContainer(ctx, wsSpec.JoinedTo(couplerID))
 		if err != nil {
@@ -370,7 +356,7 @@ func waitDaemon(ctx context.Context, socket string) error {
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("buildkitd at %s not ready within %s: %v", socket, readyTimeout, last)
+	return fmt.Errorf("buildkitd at %s not ready within %s: %w", socket, readyTimeout, last)
 }
 
 func prepareVolume(root string, uid int, home bool) error {
@@ -518,7 +504,7 @@ func (m *Manager) Reap(ctx context.Context, now time.Time) {
 			id := v.Labels[docker.LabelProject]
 			if _, ok := g.Workshops[id]; !ok && v.Labels[docker.LabelStation] == g.StationId && v.Labels[docker.LabelRole] == docker.RoleWorkshop {
 				m.log.Info("removing Workshop volume of a project absent from the generation", "volume", v.Name)
-				m.docker.RemoveVolume(ctx, v.Name)
+				_ = m.docker.RemoveVolume(ctx, v.Name)
 			}
 		}
 	}
@@ -554,8 +540,8 @@ func (m *Manager) stop(ctx context.Context, projectID string, g *protocol.Genera
 	m.log.Info("stopping Workshop", "project", projectID, "reason", map[bool]string{true: "idle timeout", false: "project absent from the generation"}[desired])
 	for _, name := range []string{docker.WorkshopName(projectID), docker.WorkshopCouplerName(projectID)} {
 		if c, ok, _ := m.docker.ContainerByName(ctx, name); ok {
-			m.docker.Stop(ctx, c.ID, stopTimeoutS)
-			m.docker.Remove(ctx, c.ID)
+			_ = m.docker.Stop(ctx, c.ID, stopTimeoutS)
+			_ = m.docker.Remove(ctx, c.ID)
 		}
 	}
 	m.mu.Lock()
@@ -635,8 +621,8 @@ func (m *Manager) restartIdle(ctx context.Context, projectID, containerID, from 
 	g := m.Generation()
 	ws, ok := g.Workshops[projectID]
 	pins, err := PinsFrom(g)
-	m.docker.Stop(ctx, containerID, stopTimeoutS)
-	m.docker.Remove(ctx, containerID)
+	_ = m.docker.Stop(ctx, containerID, stopTimeoutS)
+	_ = m.docker.Remove(ctx, containerID)
 	m.log.Info("Workshop stopped for the BuildKit upgrade", "project", projectID, "from", from, "waited_ms", r.WaitedMs)
 	if !ok || err != nil {
 		r.TookMs = time.Since(start).Milliseconds()

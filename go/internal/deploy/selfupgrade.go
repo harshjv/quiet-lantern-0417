@@ -208,15 +208,15 @@ func (s *Station) handover(ctx context.Context, p *procState, path string, began
 	case line, ok := <-child.Ready:
 		if !ok {
 			err := <-child.Exit
-			fail(fmt.Errorf("the new stationd %s exited before reporting ready: %v", to.Version, err))
+			fail(fmt.Errorf("the new stationd %s exited before reporting ready: %w", to.Version, err))
 			return
 		}
 		ready = strings.TrimSpace(line)
 	case err := <-child.Exit:
-		fail(fmt.Errorf("the new stationd %s exited before reporting ready: %v", to.Version, err))
+		fail(fmt.Errorf("the new stationd %s exited before reporting ready: %w", to.Version, err))
 		return
 	case <-timer.C:
-		child.Cmd.Process.Kill()
+		_ = child.Cmd.Process.Kill()
 		<-child.Exit
 		fail(fmt.Errorf("the new stationd %s did not report ready within %s; it was killed and this process kept running", to.Version, handoverTimeout))
 		return

@@ -8,11 +8,13 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/millis"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/secrets"
-	"github.com/moby/moby/api/types/container"
 )
 
 type progress int
@@ -507,12 +509,12 @@ func (s *Station) stepHealth(ctx context.Context, r *rollout, row *stepRow) prog
 	row.Detail["attempts"] = h.attempts
 	row.Detail["consecutive_passes"] = h.passStreak
 	row.Detail["last_result"] = h.lastResult
-	switch {
-	case h.state == protocol.HealthStatePassing:
+	switch h.state {
+	case protocol.HealthStatePassing:
 		r.HealthyAt = stamp(h.lastCheck)
 		s.finish(r, row, statusDone)
 		return advanced
-	case h.state == protocol.HealthStateFailed:
+	case protocol.HealthStateFailed:
 		summary := rule.describe() + " did not pass within " + rule.startup.String()
 		if h.failure != nil {
 			summary = h.failure.Explanation
@@ -622,36 +624,8 @@ func (s *Station) switchNamespaces(ctx context.Context, r *rollout, row *stepRow
 	start := time.Now()
 	var written []nsTarget
 	var report []map[string]any
-	for _, t := range s.envNamespaces(ctx, r.EnvID) {
-		var err error
-		var result netns.Result
-		for try := 1; try <= cutoverTries; try++ {
-			t0 := time.Now()
-			result, _, err = s.writeNS(t)
-			if err == nil {
-				report = append(report, map[string]any{"namespace": t.name, "result": string(result), "ms": float64(time.Since(t0).Microseconds()) / 1000, "tries": try})
-				break
-			}
-			s.log.Warn("switch write failed, retrying", "deployment", r.ID, "namespace", t.name, "try", try, "error", err)
-		}
-		if err != nil {
-			row.Detail["failed_namespace"] = t.name
-			row.Detail["error"] = err.Error()
-			row.Status = statusFailed
-			for _, w := range written {
-				if _, _, rerr := s.writeNS(w); rerr != nil {
-					s.log.Error("roll back switch write", "deployment", r.ID, "namespace", w.name, "error", rerr)
-				}
-			}
-			row.Detail["rolled_back"] = len(written)
-			return false
-		}
-		written = append(written, t)
-	}
-	t0 := time.Now()
-	result, err := s.syncHost("cutover " + r.ID)
-	if err != nil {
-		row.Detail["failed_namespace"] = "host"
+	rollback := func(failed string, err error) bool {
+		row.Detail["failed_namespace"] = failed
 		row.Detail["error"] = err.Error()
 		row.Status = statusFailed
 		for _, w := range written {
@@ -662,8 +636,30 @@ func (s *Station) switchNamespaces(ctx context.Context, r *rollout, row *stepRow
 		row.Detail["rolled_back"] = len(written)
 		return false
 	}
+	for _, t := range s.envNamespaces(ctx, r.EnvID) {
+		var err error
+		var result netns.Result
+		for try := 1; try <= cutoverTries; try++ {
+			t0 := time.Now()
+			result, _, err = s.writeNS(t)
+			if err == nil {
+				report = append(report, map[string]any{"namespace": t.name, "result": string(result), "ms": millis.Of(time.Since(t0)), "tries": try})
+				break
+			}
+			s.log.Warn("switch write failed, retrying", "deployment", r.ID, "namespace", t.name, "try", try, "error", err)
+		}
+		if err != nil {
+			return rollback(t.name, err)
+		}
+		written = append(written, t)
+	}
+	t0 := time.Now()
+	result, err := s.syncHost("cutover " + r.ID)
+	if err != nil {
+		return rollback("host", err)
+	}
 	row.Detail["namespaces"] = report
-	row.Detail["switch_ms"] = float64(time.Since(start).Microseconds()) / 1000
+	row.Detail["switch_ms"] = millis.Of(time.Since(start))
 	row.Detail["host_namespace"] = s.hostDetail(r.ServiceID, result, time.Since(t0))
 	return true
 }
@@ -671,7 +667,7 @@ func (s *Station) switchNamespaces(ctx context.Context, r *rollout, row *stepRow
 func (s *Station) hostDetail(svcID string, result netns.Result, took time.Duration) map[string]any {
 	_, el, _ := s.hostState()
 	gp := s.plan.Gateway
-	d := map[string]any{"table": "inet " + netns.HostTableName, "result": string(result), "ms": float64(took.Microseconds()) / 1000}
+	d := map[string]any{"table": "inet " + netns.HostTableName, "result": string(result), "ms": millis.Of(took)}
 	var ports []string
 	for _, pp := range gp.Ports {
 		if pp.ServiceID == svcID {
@@ -711,11 +707,11 @@ func (s *Station) stepCutover(ctx context.Context, r *rollout, row *stepRow) pro
 	now := time.Now()
 	r.CutoverAt = stamp(now)
 	if r.HealthyAt != nil {
-		row.Detail["healthy_to_cutover_ms"] = float64(now.Sub(parseStamp(r.HealthyAt)).Microseconds()) / 1000
+		row.Detail["healthy_to_cutover_ms"] = millis.Of(now.Sub(parseStamp(r.HealthyAt)))
 	}
 	if r.Strategy == protocol.StrategyReplace {
 		if d := r.row(stepDrain); d.StartedAt != nil {
-			row.Detail["downtime_ms"] = float64(now.Sub(parseStamp(d.StartedAt)).Microseconds()) / 1000
+			row.Detail["downtime_ms"] = millis.Of(now.Sub(parseStamp(d.StartedAt)))
 		}
 	}
 	s.finish(r, row, statusDone)
@@ -764,15 +760,7 @@ func (s *Station) blueFlows(ctx context.Context, r *rollout, evict bool) (netns.
 			firstErr = err
 			continue
 		}
-		total.Total += rep.Total
-		total.Matched += rep.Matched
-		total.Established += rep.Established
-		total.UDP += rep.UDP
-		total.Deleted += rep.Deleted
-		total.Gone += rep.Gone
-		total.Failed += rep.Failed
-		total.DumpMS += rep.DumpMS
-		total.DeleteMS += rep.DeleteMS
+		total.Add(rep)
 	}
 	var host []netns.FlowMatch
 	gp := s.plan.Gateway
@@ -792,15 +780,7 @@ func (s *Station) blueFlows(ctx context.Context, r *rollout, evict bool) (netns.
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
-		total.Total += rep.Total
-		total.Matched += rep.Matched
-		total.Established += rep.Established
-		total.UDP += rep.UDP
-		total.Deleted += rep.Deleted
-		total.Gone += rep.Gone
-		total.Failed += rep.Failed
-		total.DumpMS += rep.DumpMS
-		total.DeleteMS += rep.DeleteMS
+		total.Add(rep)
 	}
 	return total, firstErr
 }
@@ -877,7 +857,7 @@ func (s *Station) stepDrain(ctx context.Context, r *rollout, row *stepRow) progr
 	if v.exitCode != nil {
 		row.Detail["exit_code"] = *v.exitCode
 	}
-	row.Detail["drain_ms"] = float64(time.Since(parseStamp(row.StartedAt)).Microseconds()) / 1000
+	row.Detail["drain_ms"] = millis.Of(time.Since(parseStamp(row.StartedAt)))
 	s.finish(r, row, statusDone)
 	return advanced
 }

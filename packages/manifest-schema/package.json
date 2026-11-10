@@ -12,8 +12,8 @@
     "generate": "node scripts/generate.ts"
   },
   "dependencies": {
-    "@sinclair/typebox": "0.34.52",
+    "@sinclair/typebox": "catalog:",
     "@stationly/protocol": "workspace:*",
-    "yaml": "2.9.1"
+    "yaml": "catalog:"
   }
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gowebpki/jcs"
+
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/secrets"
@@ -205,7 +206,7 @@ func (s *Station) requireCapability(m dispatch.Message, capability protocol.Capa
 
 func (s *Station) dispatchError(_ context.Context, m dispatch.Message) {
 	var e protocol.ErrorBody
-	json.Unmarshal(m.Body, &e)
+	_ = json.Unmarshal(m.Body, &e)
 	s.log.Warn("Dispatch answered with an error", "ref", deref(m.Ref), "code", e.Code, "explanation", e.Explanation)
 }
 
@@ -256,7 +257,7 @@ func (s *Station) applyGeneration(ctx context.Context, m dispatch.Message) {
 		refuse(g.Number, g.Hash, protocolError(protocol.ErrorCodeGenerationInvalid, "Send the generation to the station it was built for.", "generation is for station %s of instance %s, identity/ holds %s of %s", g.StationId, g.InstanceId, s.opts.Identity.StationID, s.opts.Identity.InstanceID))
 		return
 	}
-	if s.applied != nil && g.Number <= s.applied.Number && g.Resolution == nil && !(g.Number == s.applied.Number && g.Hash == s.applied.Hash) {
+	if s.applied != nil && g.Number <= s.applied.Number && g.Resolution == nil && (g.Number != s.applied.Number || g.Hash != s.applied.Hash) {
 		refuse(g.Number, g.Hash, protocolError(protocol.ErrorCodeGenerationStale, "Send a generation numbered above the applied one.", "generation %d is not newer than applied generation %d", g.Number, s.applied.Number))
 		return
 	}
@@ -392,11 +393,11 @@ type observedBaseline struct {
 func splitObserved(o protocol.Observed) observedBaseline {
 	raw, _ := json.Marshal(o)
 	var top map[string]json.RawMessage
-	json.Unmarshal(raw, &top)
+	_ = json.Unmarshal(raw, &top)
 	b := observedBaseline{entries: map[string]map[string]json.RawMessage{}, whole: map[string]json.RawMessage{"station": top["station"], "gateway": top["gateway"]}, at: time.Now()}
 	for _, name := range observedMaps {
 		var m map[string]json.RawMessage
-		json.Unmarshal(top[name], &m)
+		_ = json.Unmarshal(top[name], &m)
 		b.entries[name] = m
 	}
 	return b

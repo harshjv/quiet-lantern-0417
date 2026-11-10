@@ -11,27 +11,24 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/moby/sys/mountinfo"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	mountInfoPath = "/proc/self/mountinfo"
-	sysBtrfs      = "/sys/fs/btrfs"
-	sysBlock      = "/sys/block"
+	sysBtrfs = "/sys/fs/btrfs"
+	sysBlock = "/sys/block"
 )
 
 var loopName = regexp.MustCompile(`^loop[0-9]+$`)
 
 func (f FS) Inspect(ctx context.Context) (Info, error) {
 	var info Info
-	data, err := os.ReadFile(mountInfoPath)
-	if err != nil {
+	mounts, err := mountinfo.GetMounts(func(m *mountinfo.Info) (bool, bool) { return m.Mountpoint != f.Mount, false })
+	if err != nil || len(mounts) == 0 {
 		return info, err
 	}
-	entry, ok, err := parseMountInfo(string(data), f.Mount)
-	if err != nil || !ok {
-		return info, err
-	}
+	entry := mounts[len(mounts)-1]
 	info.Mounted = true
 	var st unix.Statfs_t
 	if err := unix.Statfs(f.Mount, &st); err != nil {

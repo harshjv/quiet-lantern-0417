@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
 	"github.com/harshjv/stationly/go/internal/identity"
 	"github.com/harshjv/stationly/go/internal/ids"
 	"github.com/harshjv/stationly/go/internal/outbox"
@@ -318,7 +319,7 @@ func readEnvelope(ctx context.Context, conn *websocket.Conn) (protocol.Envelope,
 	}
 }
 
-func closeOf(conn *websocket.Conn, ctx context.Context, failure *protocol.ErrorBody) error {
+func closeOf(ctx context.Context, conn *websocket.Conn, failure *protocol.ErrorBody) error {
 	for {
 		_, _, err := conn.Read(ctx)
 		if err == nil {
@@ -362,7 +363,7 @@ func (c *Client) session(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	nonce, err := challenge(hctx, conn)
@@ -401,8 +402,8 @@ func (c *Client) session(ctx context.Context) error {
 	}
 	if env.Type == protocol.MessageError {
 		var e protocol.ErrorBody
-		json.Unmarshal(env.Body, &e)
-		return closeOf(conn, hctx, &e)
+		_ = json.Unmarshal(env.Body, &e)
+		return closeOf(hctx, conn, &e)
 	}
 	if env.Type != protocol.MessageWelcome {
 		return fmt.Errorf("Dispatch answered hello with %s", env.Type)
@@ -530,7 +531,7 @@ func (c *Client) reader(ctx context.Context, conn *websocket.Conn, touch func())
 			c.sendObserved(env.Id)
 		case protocol.MessageError:
 			var e protocol.ErrorBody
-			json.Unmarshal(env.Body, &e)
+			_ = json.Unmarshal(env.Body, &e)
 			if env.Ref == nil {
 				c.log.Warn("error from Dispatch", "code", e.Code, "explanation", e.Explanation)
 				continue

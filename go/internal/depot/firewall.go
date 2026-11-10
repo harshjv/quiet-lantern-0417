@@ -9,8 +9,9 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 	"github.com/google/nftables/userdata"
-	"github.com/harshjv/stationly/go/internal/protocol"
 	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const FirewallTable = protocol.NftTablePrefix + "depot"

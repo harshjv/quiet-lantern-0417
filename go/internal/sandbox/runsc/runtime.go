@@ -45,7 +45,7 @@ type stateJSON struct {
 }
 
 func (s stateJSON) state() State {
-	return State{ID: s.ID, Status: s.Status, Pid: s.Pid, Bundle: s.Bundle, Created: s.Created}
+	return State(s)
 }
 
 func (rt Runtime) run(ctx context.Context, logDir string, args ...string) ([]byte, error) {

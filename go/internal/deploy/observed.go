@@ -10,9 +10,10 @@ import (
 	"slices"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/moby/moby/api/types/container"
 )
 
 const timestampLayout = "2006-01-02T15:04:05.000Z"

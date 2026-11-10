@@ -605,29 +605,6 @@ func TestParseDeviceStats(t *testing.T) {
 	}
 }
 
-func TestParseMountInfo(t *testing.T) {
-	data := `22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw,discard,errors=remount-ro
-101 22 0:45 / /var/lib/stationly/sandboxes rw,noatime shared:60 - btrfs /dev/loop0 rw,ssd,space_cache=v2,subvolid=5,subvol=/
-102 22 0:46 / /mnt/with\040space rw - btrfs /dev/sdb rw
-`
-	e, ok, err := parseMountInfo(data, Mount)
-	if err != nil || !ok {
-		t.Fatalf("parseMountInfo = %v, %v", ok, err)
-	}
-	if e.FSType != "btrfs" || e.Source != "/dev/loop0" || e.Options != "rw,noatime" {
-		t.Fatalf("entry = %+v", e)
-	}
-	if e, ok, _ := parseMountInfo(data, "/mnt/with space"); !ok || e.Source != "/dev/sdb" {
-		t.Fatalf("escaped mount point: %+v %v", e, ok)
-	}
-	if _, ok, _ := parseMountInfo(data, "/var/lib/stationly"); ok {
-		t.Fatal("found an unmounted path")
-	}
-	if _, _, err := parseMountInfo("broken\n", Mount); err == nil {
-		t.Fatal("broken mountinfo accepted")
-	}
-}
-
 func TestParseIncompatFlags(t *testing.T) {
 	flags, err := parseIncompatFlags("superblock: bytenr=65536, device=/dev/loop0\nflags\t\t\t0x1\nincompat_flags\t\t0x10361\n\t\t\t( MIXED_BACKREF |\n\t\t\t  SIMPLE_QUOTA )\n")
 	if err != nil || flags&incompatSimpleQta == 0 {

@@ -1,4 +1,5 @@
 import { hkdfSync } from 'node:crypto'
+
 import { apiKey } from '@better-auth/api-key'
 import { cimd } from '@better-auth/cimd'
 import { drizzleAdapter } from '@better-auth/drizzle-adapter'
@@ -9,19 +10,31 @@ import { betterAuth } from 'better-auth'
 import { APIError } from 'better-auth/api'
 import { admin, bearer, deviceAuthorization, jwt, magicLink, twoFactor } from 'better-auth/plugins'
 import { count, eq } from 'drizzle-orm'
+
+import { tokenPrefix } from '@stationly/protocol'
+
 import type { Db } from '../db/client.ts'
 import * as schema from '../db/schema.ts'
 import { readSetting, settingsSnapshot } from '../db/settings.ts'
-import { grantClaims, levelScopes, oauthAccessSeconds, oauthCodeSeconds, oauthRefreshSeconds, pendingGrant } from './grants.ts'
+
+import {
+  grantClaims,
+  levelScopes,
+  oauthAccessSeconds,
+  oauthCodeSeconds,
+  oauthRefreshSeconds,
+  pendingGrant,
+} from './grants.ts'
 import { ProofError, proofHeader, publicUrl, verifyProof } from './proof.ts'
 
-export const apiKeyPrefix = 'sly_'
 export const minPasswordLength = 12
 export const personalTokenDefaultSeconds = 90 * 24 * 3600
 export const personalTokenMaxSeconds = 365 * 24 * 3600
 export const scopedTokenDefaultSeconds = 3600
 export const scopedTokenMaxSeconds = 30 * 24 * 3600
-export const v1Permission = { v1: ['access'] }
+export const v1Permission = {
+  v1: ['access'],
+}
 export const slySessionSeconds = 12 * 3600
 export const slyClientId = 'sly'
 export const loginLinkSeconds = 15 * 60
@@ -38,7 +51,7 @@ export const takeLoginLink = (email: string) => {
 export const apiKeyFromHeaders = (headers: Headers | undefined) => {
   const authorization = headers?.get('authorization')
   const bearer = authorization?.match(/^Bearer\s+(\S+)$/i)?.[1]
-  if (bearer?.startsWith(apiKeyPrefix)) return bearer
+  if (bearer?.startsWith(tokenPrefix)) return bearer
   return headers?.get('x-api-key') ?? null
 }
 
@@ -72,7 +85,13 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
   const local = new URL(localOrigin)
   const loopbackOrigins = [localOrigin, `http://localhost:${local.port}`]
   if (!dashboard || !api) {
-    const address = db.select({ public_address: schema.station.public_address }).from(schema.station).where(eq(schema.station.hosts_dispatch, true)).get()?.public_address
+    const address = db
+      .select({
+        public_address: schema.station.public_address,
+      })
+      .from(schema.station)
+      .where(eq(schema.station.hosts_dispatch, true))
+      .get()?.public_address
     const addressOrigin = address ? `https://${address}` : null
     return {
       baseURL: `${localOrigin}/auth`,
@@ -82,7 +101,7 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
       rpID: 'localhost',
       passkeyOrigins: [`http://localhost:${local.port}`],
       trustedOrigins: addressOrigin ? [...loopbackOrigins, addressOrigin] : loopbackOrigins,
-      mcpResource: `${localOrigin}/mcp`
+      mcpResource: `${localOrigin}/mcp`,
     }
   }
   const dashboardOrigin = `https://${dashboard}`
@@ -95,18 +114,29 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
     rpID: value('auth.passkey_rp_id') ?? dashboard,
     passkeyOrigins: [dashboardOrigin, apiOrigin],
     trustedOrigins: [dashboardOrigin, ...loopbackOrigins],
-    mcpResource: `${apiOrigin}/mcp`
+    mcpResource: `${apiOrigin}/mcp`,
   }
 }
 
 export const authSecret = (masterKey: Buffer) =>
-  Buffer.from(hkdfSync('sha256', masterKey, Buffer.alloc(0), 'stationly/better-auth-secret', 32)).toString('base64url')
+  Buffer.from(
+    hkdfSync('sha256', masterKey, Buffer.alloc(0), 'stationly/better-auth-secret', 32),
+  ).toString('base64url')
 
-export const userExists = (db: Db) => (db.select({ n: count() }).from(schema.user).get()?.n ?? 0) > 0
+export const userExists = (db: Db) =>
+  (db
+    .select({
+      n: count(),
+    })
+    .from(schema.user)
+    .get()?.n ?? 0) > 0
 
-const dynamicRegistrationEnabled = (db: Db) => readSetting(db, 'oauth.dynamic_registration') === true
+const dynamicRegistrationEnabled = (db: Db) => readSetting(db, 'oauth.dynamic_registration')
 
-export type AuthOptions = { dynamicRegistration: boolean; fetchMetadata: ClientMetadataResourceFetch }
+export type AuthOptions = {
+  dynamicRegistration: boolean
+  fetchMetadata: ClientMetadataResourceFetch
+}
 
 export const createAuth = (db: Db, surface: AuthSurface, secret: string, options: AuthOptions) =>
   betterAuth({
@@ -114,26 +144,44 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
     baseURL: surface.baseURL,
     basePath: '/auth',
     secret,
-    database: drizzleAdapter(db, { provider: 'sqlite', schema }),
-    telemetry: { enabled: false },
+    database: drizzleAdapter(db, {
+      provider: 'sqlite',
+      schema,
+    }),
+    telemetry: {
+      enabled: false,
+    },
     trustedOrigins: [...new Set([...surface.trustedOrigins, surface.apiOrigin])],
-    rateLimit: { enabled: true },
+    rateLimit: {
+      enabled: true,
+    },
     disabledPaths: ['/token', '/sign-in/magic-link'],
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
       minPasswordLength,
-      requireEmailVerification: false
+      requireEmailVerification: false,
     },
     session: {
       expiresIn: 7 * 24 * 3600,
       updateAge: 24 * 3600,
-      additionalFields: { popJkt: { type: 'string', required: false, input: false } }
+      additionalFields: {
+        popJkt: {
+          type: 'string',
+          required: false,
+          input: false,
+        },
+      },
     },
     advanced: {
-      ipAddress: { ipAddressHeaders: ['x-forwarded-for'] },
+      ipAddress: {
+        ipAddressHeaders: ['x-forwarded-for'],
+      },
       useSecureCookies: surface.baseURL.startsWith('https://'),
-      defaultCookieAttributes: { httpOnly: true, sameSite: 'lax' }
+      defaultCookieAttributes: {
+        httpOnly: true,
+        sameSite: 'lax',
+      },
     },
     databaseHooks: {
       session: {
@@ -141,48 +189,76 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
           before: async (session, ctx) => {
             if (ctx?.path !== '/device/token') return
             const request = ctx.request
-            if (!request) throw new APIError('BAD_REQUEST', { error: 'invalid_dpop_proof', error_description: 'sly login must reach /auth/device/token over HTTP' })
+            if (!request)
+              throw new APIError('BAD_REQUEST', {
+                error: 'invalid_dpop_proof',
+                error_description: 'sly login must reach /auth/device/token over HTTP',
+              })
             try {
               const proof = await verifyProof(ctx.context.internalAdapter, {
                 proof: request.headers.get(proofHeader),
                 method: 'POST',
-                url: publicUrl(request, canonicalOrigin(surface, request))
+                url: publicUrl(request, canonicalOrigin(surface, request)),
               })
-              return { data: { ...session, expiresAt: new Date(Date.now() + slySessionSeconds * 1000), popJkt: proof.jkt } }
+              return {
+                data: {
+                  ...session,
+                  expiresAt: new Date(Date.now() + slySessionSeconds * 1000),
+                  popJkt: proof.jkt,
+                },
+              }
             } catch (error) {
-              if (error instanceof ProofError) throw new APIError('BAD_REQUEST', { error: 'invalid_dpop_proof', error_description: error.message })
+              if (error instanceof ProofError)
+                throw new APIError('BAD_REQUEST', {
+                  error: 'invalid_dpop_proof',
+                  error_description: error.message,
+                })
               throw error
             }
-          }
-        }
-      }
+          },
+        },
+      },
     },
     plugins: [
-      twoFactor({ issuer: 'stationly', trustDeviceMaxAge: 30 * 24 * 3600 }),
+      twoFactor({
+        issuer: 'stationly',
+        trustDeviceMaxAge: 30 * 24 * 3600,
+      }),
       passkey({
         rpID: surface.rpID,
         rpName: 'stationly',
         origin: surface.passkeyOrigins,
-        authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+        authenticatorSelection: {
+          residentKey: 'required',
+          userVerification: 'required',
+        },
         authentication: {
-          afterVerification: async ({ verification }) => {
-            if (!verification.authenticationInfo.userVerified) throw new Error('passkey assertion without user verification')
-          }
-        }
+          afterVerification: ({ verification }) => {
+            if (!verification.authenticationInfo.userVerified)
+              throw new Error('passkey assertion without user verification')
+          },
+        },
       }),
       apiKey({
-        defaultPrefix: apiKeyPrefix,
-        customAPIKeyGetter: ctx => apiKeyFromHeaders(ctx.headers),
+        defaultPrefix: tokenPrefix,
+        customAPIKeyGetter: (ctx: { headers?: Headers }) => apiKeyFromHeaders(ctx.headers),
         enableMetadata: true,
-        keyExpiration: { defaultExpiresIn: personalTokenDefaultSeconds, minExpiresIn: 1 / 24 },
-        rateLimit: { enabled: true, timeWindow: 60_000, maxRequests: 600 },
-        enableSessionForAPIKeys: false
+        keyExpiration: {
+          defaultExpiresIn: personalTokenDefaultSeconds,
+          minExpiresIn: 1 / 24,
+        },
+        rateLimit: {
+          enabled: true,
+          timeWindow: 60_000,
+          maxRequests: 600,
+        },
+        enableSessionForAPIKeys: false,
       }),
       deviceAuthorization({
         verificationUri: `${surface.dashboardOrigin}/device`,
         expiresIn: '10m',
         interval: '5s',
-        validateClient: clientId => clientId === slyClientId
+        validateClient: (clientId) => clientId === slyClientId,
       }),
       bearer(),
       admin(),
@@ -190,11 +266,13 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
         expiresIn: loginLinkSeconds,
         disableSignUp: true,
         storeToken: 'hashed',
-        sendMagicLink: async ({ email, url }) => {
+        sendMagicLink: ({ email, url }) => {
           loginLinks.set(email.toLowerCase(), url)
-        }
+        },
       }),
-      jwt({ disableSettingJwtHeader: true }),
+      jwt({
+        disableSettingJwtHeader: true,
+      }),
       mcp({
         resource: surface.mcpResource,
         loginPage: '/auth/login',
@@ -210,12 +288,15 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
         postLogin: {
           page: '/auth/consent',
           shouldRedirect: () => false,
-          consentReferenceId: ({ session }) => pendingGrant(session.id)
+          consentReferenceId: ({ session }) => pendingGrant(session.id),
         },
-        customAccessTokenClaims: ({ referenceId }) => grantClaims(db, referenceId)
+        customAccessTokenClaims: ({ referenceId }) => grantClaims(db, referenceId),
       }),
-      cimd({ fetchClientMetadataResource: options.fetchMetadata, metadataProfile: 'mcp-2026-07-28' })
-    ]
+      cimd({
+        fetchClientMetadataResource: options.fetchMetadata,
+        metadataProfile: 'mcp-2026-07-28',
+      }),
+    ],
   })
 
 export type Auth = ReturnType<typeof createAuth>
@@ -229,7 +310,12 @@ export class AuthService {
   readonly localOrigin: string
   surface: AuthSurface
 
-  constructor(db: Db, masterKey: Buffer, localOrigin: string, fetchMetadata: ClientMetadataResourceFetch) {
+  constructor(
+    db: Db,
+    masterKey: Buffer,
+    localOrigin: string,
+    fetchMetadata: ClientMetadataResourceFetch,
+  ) {
     this.db = db
     this.localOrigin = localOrigin
     this.secret = authSecret(masterKey)
@@ -242,7 +328,7 @@ export class AuthService {
   private build() {
     return createAuth(this.db, this.surface, this.secret, {
       dynamicRegistration: dynamicRegistrationEnabled(this.db),
-      fetchMetadata: this.fetchMetadata
+      fetchMetadata: this.fetchMetadata,
     })
   }
 

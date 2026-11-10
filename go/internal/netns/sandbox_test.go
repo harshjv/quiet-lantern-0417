@@ -54,7 +54,7 @@ func sbxAllow() map[string]map[netip.Addr]bool {
 	}
 }
 
-func sbxRules(b SandboxBaseline) []sandboxRule {
+func sbxRules(b SandboxBaseline) []egressRule {
 	return sandboxTable(b, namedSets(), allowSets(b))
 }
 
@@ -110,7 +110,7 @@ func TestSandboxTableOrderPerVariant(t *testing.T) {
 func TestSandboxBlockingRulesAreRecordedBeforeTheyDecide(t *testing.T) {
 	for name, b := range sbxVariants() {
 		rules := sbxRules(b)
-		exprs := sandboxExprs(rules, refusedSet())
+		exprs := egressExprs(rules, refusedSet())
 		i := 0
 		for _, r := range rules {
 			blocked := r.verdict != verdictAccept
@@ -186,7 +186,7 @@ func TestSandboxRulesReferenceTheSetsNamedInTheirText(t *testing.T) {
 
 func TestSandboxRejectsUsePortUnreachable(t *testing.T) {
 	for name, b := range sbxVariants() {
-		for _, list := range sandboxExprs(sbxRules(b), refusedSet()) {
+		for _, list := range egressExprs(sbxRules(b), refusedSet()) {
 			for _, e := range list {
 				if r, ok := e.(*expr.Reject); ok && r.Type == unix.NFT_REJECT_ICMPX_UNREACH && r.Code != unix.NFT_REJECT_ICMPX_PORT_UNREACH {
 					t.Errorf("%s: icmpx reject with code %d", name, r.Code)

@@ -38,7 +38,7 @@ func (s *Station) runscRelease() string {
 	return stationdVersion()
 }
 
-func (s *Station) runscProcedure(ctx context.Context, name string, p *procState, step func(string, map[string]any)) error {
+func (s *Station) runscProcedure(ctx context.Context, _ string, p *procState, step func(string, map[string]any)) error {
 	if !s.sbx.kernelOK || s.verifier == nil {
 		step("skipped", map[string]any{"reason": "this station runs no sandboxes"})
 		return nil
@@ -105,7 +105,7 @@ func InstallRunsc(ctx context.Context, v *verify.Verifier, src release.Source, v
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	if err := rt.Probe(pctx); err != nil {
-		runsc.Remove(runsc.LibDir, runsc.StateBase, version)
+		_ = runsc.Remove(runsc.LibDir, runsc.StateBase, version)
 		return out, fmt.Errorf("probe runsc %s on systrap: %w", version, err)
 	}
 	out.TookMs = time.Since(start).Milliseconds()

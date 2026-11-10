@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises'
-import { Exit, exitCodes, isConnectionFailure } from './errors.ts'
+
+import { Exit, exitCodes, isConnectionFailure, type EnvelopeCode } from './errors.ts'
 import { acrossOutage } from './outage.ts'
 import { progress } from './output.ts'
 
@@ -17,18 +18,29 @@ export async function* readSse(response: Response): AsyncGenerator<SseEvent> {
       for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) yield chunk
     } catch (error) {
       throw new Exit(exitCodes.connection, {
-        error: { code: 'CONNECTION_FAILED', explanation: `The stream from Dispatch ended: ${error instanceof Error ? error.message : String(error)}.`, fix: 'Run the command again; pass --since with the last id you saw to resume.' }
+        error: {
+          code: 'CONNECTION_FAILED',
+          explanation: `The stream from Dispatch ended: ${error instanceof Error ? error.message : String(error)}.`,
+          fix: 'Run the command again; pass --since with the last id you saw to resume.',
+        },
       })
     }
   })()
   for await (const chunk of chunks) {
-    buffer += decoder.decode(chunk, { stream: true })
+    buffer += decoder.decode(chunk, {
+      stream: true,
+    })
     let newline: number
     while ((newline = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, newline).replace(/\r$/, '')
       buffer = buffer.slice(newline + 1)
       if (line === '') {
-        if (data.length) yield { event, id, data: data.join('\n') }
+        if (data.length)
+          yield {
+            event,
+            id,
+            data: data.join('\n'),
+          }
         event = 'message'
         id = null
         data = []
@@ -45,7 +57,11 @@ export async function* readSse(response: Response): AsyncGenerator<SseEvent> {
   }
 }
 
-export const followSse = async (open: (lastId: string | null) => Promise<Response>, onEvent: (event: SseEvent) => number | undefined, lastId: string | null = null): Promise<number> => {
+export const followSse = async (
+  open: (lastId: string | null) => Promise<Response>,
+  onEvent: (event: SseEvent) => number | undefined,
+  lastId: string | null = null,
+): Promise<number> => {
   for (;;) {
     const response = await acrossOutage(() => open(lastId))
     try {
@@ -61,4 +77,15 @@ export const followSse = async (open: (lastId: string | null) => Promise<Respons
       progress(`${(error as Error).message} Reconnecting${lastId ? ` after ${lastId}` : ''}.`)
     }
   }
+}
+
+export const streamFailure = (data: string) => {
+  const failure = JSON.parse(data) as { code: EnvelopeCode; explanation: string }
+  return new Exit(exitCodes.api, {
+    error: {
+      code: failure.code,
+      explanation: failure.explanation,
+      fix: 'Retry when the station is connected.',
+    },
+  })
 }

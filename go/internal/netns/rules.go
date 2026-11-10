@@ -35,8 +35,6 @@ const (
 	VerdictReject = "reject"
 )
 
-var CloudMetadata = netip.MustParseAddr("169.254.169.254")
-
 var ErrRulesetMismatch = errors.New("the namespace's egress chain was not written from this baseline")
 
 type termKind int
@@ -48,6 +46,7 @@ const (
 	termDaddr
 	termDaddrPrefix
 	termDaddrSet
+	termDaddrPortSet
 	termCtOriginalSet
 	termOif
 	termEstablished
@@ -74,6 +73,8 @@ const (
 )
 
 type egressRule struct {
+	iif     string
+	iifNot  bool
 	terms   []term
 	verdict verdictKind
 	counter bool
@@ -147,11 +148,15 @@ func (t term) exprs() []expr.Any {
 	case termDaddr:
 		return []expr.Any{daddr(), &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: t.addr.AsSlice()}}
 	case termDaddrPrefix:
-		return []expr.Any{daddr(),
+		return []expr.Any{
+			daddr(),
 			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: mask(t.prefix), Xor: []byte{0, 0, 0, 0}},
-			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: t.prefix.Masked().Addr().AsSlice()}}
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: t.prefix.Masked().Addr().AsSlice()},
+		}
 	case termDaddrSet:
 		return []expr.Any{daddr(), lookup(t.set, t.invert)}
+	case termDaddrPortSet:
+		return []expr.Any{daddr(), &expr.Payload{DestRegister: regProto, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2}, lookup(t.set, false)}
 	case termCtOriginalSet:
 		return []expr.Any{&expr.Ct{Register: 1, Key: expr.CtKeyDSTIP, Direction: 0}, lookup(t.set, false)}
 	case termOif:
@@ -168,6 +173,9 @@ func (t term) exprs() []expr.Any {
 
 func (r egressRule) match() []expr.Any {
 	var out []expr.Any
+	if r.iif != "" {
+		out = iifExprs(r.iif, r.iifNot)
+	}
 	for _, t := range r.terms {
 		out = append(out, t.exprs()...)
 	}
@@ -219,6 +227,12 @@ type liveSets struct {
 	targets map[netip.Addr]bool
 	rejects map[netip.Addr]bool
 	sw      map[netip.Addr]netip.Addr
+	allow   map[string]map[netip.Addr]bool
+}
+
+type route struct {
+	original, daddr netip.Addr
+	iif, oif        string
 }
 
 func inIntervals(els []nftables.SetElement, a netip.Addr) bool {
@@ -237,67 +251,63 @@ func inIntervals(els []nftables.SetElement, a netip.Addr) bool {
 	return member
 }
 
-func (r egressRule) matches(t term, p Packet, daddr, original netip.Addr, oif string, live liveSets) bool {
+func (t term) matches(p Packet, rt route, live liveSets) bool {
 	switch t.kind {
 	case termIPv4:
-		return daddr.Is4()
+		return rt.daddr.Is4()
 	case termL4:
 		return p.Proto == t.proto
 	case termDport:
 		return p.Port == t.port
 	case termDaddr:
-		return daddr == t.addr
+		return rt.daddr == t.addr
 	case termDaddrPrefix:
-		return t.prefix.Contains(daddr)
+		return t.prefix.Contains(rt.daddr)
 	case termDaddrSet:
-		in := false
+		var in bool
 		switch t.set.Name {
 		case "host_addrs":
-			in = inIntervals(live.hosts, daddr)
+			in = inIntervals(live.hosts, rt.daddr)
 		case "private_ranges":
-			in = inIntervals(live.private, daddr)
+			in = inIntervals(live.private, rt.daddr)
 		case "vip_targets":
-			in = live.targets[daddr]
+			in = live.targets[rt.daddr]
 		case "switch_reject":
-			in = live.rejects[daddr]
+			in = live.rejects[rt.daddr]
+		default:
+			in = live.allow[t.set.Name][rt.daddr]
 		}
 		return in != t.invert
 	case termCtOriginalSet:
-		return live.targets[original]
+		return live.targets[rt.original]
 	case termOif:
-		return oif == t.name
-	case termEstablished:
-		return false
+		return rt.oif == t.name
 	}
 	return false
 }
 
-func evaluate(rules []egressRule, b Baseline, pool netip.Prefix, live liveSets, p Packet) Verdict {
-	original := p.Addr.Unmap()
-	daddr := original
-	if p.Port == 53 && (p.Proto == unix.IPPROTO_UDP || p.Proto == unix.IPPROTO_TCP) && b.Resolver.IsValid() {
-		daddr = b.Resolver
-	} else if live.targets[original] {
-		if real, ok := live.sw[original]; ok {
-			daddr = real
+func (r egressRule) applies(p Packet, rt route, live liveSets) bool {
+	if r.terms[0].kind == termEstablished {
+		return false
+	}
+	if r.iif != "" && (rt.iif == r.iif) == r.iifNot {
+		return false
+	}
+	for _, t := range r.terms {
+		if !t.matches(p, rt, live) {
+			return false
 		}
 	}
-	oif := ""
-	if daddr.IsLoopback() || daddr == b.Self {
-		oif = "lo"
-	}
+	return true
+}
+
+func dnsQuery(p Packet) bool {
+	return p.Port == 53 && (p.Proto == unix.IPPROTO_UDP || p.Proto == unix.IPPROTO_TCP)
+}
+
+func decide(rules []egressRule, pool netip.Prefix, live liveSets, p Packet, rt route) Verdict {
 	for _, r := range rules {
-		if r.terms[0].kind == termEstablished {
-			continue
-		}
-		ok := true
-		for _, t := range r.terms {
-			if !r.matches(t, p, daddr, original, oif, live) {
-				ok = false
-				break
-			}
-		}
-		if !ok {
+		if !r.applies(p, rt, live) {
 			continue
 		}
 		v := Verdict{Verdict: VerdictAccept, Path: r.path, Rule: r.text}
@@ -308,11 +318,27 @@ func evaluate(rules []egressRule, b Baseline, pool netip.Prefix, live liveSets, 
 			v.Verdict = VerdictReject
 		}
 		if r.path == PathPrivateRange {
-			v.Path = privatePath(pool, original)
+			v.Path = privatePath(pool, rt.original)
 		}
 		return v
 	}
-	return Verdict{Verdict: VerdictDrop, Path: privatePath(pool, original), Rule: "policy drop"}
+	return Verdict{Verdict: VerdictDrop, Path: privatePath(pool, rt.original), Rule: "policy drop"}
+}
+
+func evaluate(rules []egressRule, b Baseline, pool netip.Prefix, live liveSets, p Packet) Verdict {
+	rt := route{original: p.Addr.Unmap()}
+	rt.daddr = rt.original
+	if dnsQuery(p) && b.Resolver.IsValid() {
+		rt.daddr = b.Resolver
+	} else if live.targets[rt.original] {
+		if realAddr, ok := live.sw[rt.original]; ok {
+			rt.daddr = realAddr
+		}
+	}
+	if rt.daddr.IsLoopback() || rt.daddr == b.Self {
+		rt.oif = "lo"
+	}
+	return decide(rules, pool, live, p, rt)
 }
 
 func privatePath(pool netip.Prefix, a netip.Addr) string {
@@ -334,51 +360,41 @@ func readLive(c *nftables.Conn) (liveSets, error) {
 	if live.private, err = c.GetSetElements(privateRangesSet()); err != nil {
 		return live, err
 	}
-	addrs := func(s *nftables.Set) (map[netip.Addr]bool, error) {
-		els, err := c.GetSetElements(s)
-		out := map[netip.Addr]bool{}
-		for _, el := range els {
-			out[addrOf(el.Key)] = true
-		}
-		return out, err
-	}
-	if live.targets, err = addrs(vipTargetsSet()); err != nil {
+	if live.targets, err = readAddrs(c, vipTargetsSet()); err != nil {
 		return live, err
 	}
-	if live.rejects, err = addrs(switchRejectSet()); err != nil {
+	if live.rejects, err = readAddrs(c, switchRejectSet()); err != nil {
 		return live, err
 	}
-	els, err := c.GetSetElements(switchMap())
-	if err != nil {
-		return live, err
-	}
-	live.sw = map[netip.Addr]netip.Addr{}
-	for _, el := range els {
-		live.sw[addrOf(el.Key)] = addrOf(el.Val)
-	}
-	return live, nil
+	live.sw, err = readAddrMap(c, switchMap())
+	return live, err
 }
 
 func namedSets() egressSets {
 	return egressSets{hosts: hostAddrsSet(), private: privateRangesSet(), targets: vipTargetsSet(), rejects: switchRejectSet()}
 }
 
-func (n *Namespace) Verdict(b Baseline, pool netip.Prefix, p Packet) (Verdict, error) {
+func (n *Namespace) liveFor(comment string) (*nftables.Conn, liveSets, error) {
 	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
 	if err != nil {
-		return Verdict{}, err
+		return nil, liveSets{}, err
 	}
 	rules, err := c.GetRules(table, &nftables.Chain{Name: "egress", Table: table})
 	if err != nil {
-		return Verdict{}, err
+		return nil, liveSets{}, err
 	}
 	if len(rules) == 0 {
-		return Verdict{}, ErrRulesetMismatch
+		return nil, liveSets{}, ErrRulesetMismatch
 	}
-	if comment, ok := userdata.GetString(rules[0].UserData, userdata.TypeComment); !ok || comment != commentPrefix+b.fingerprint() {
-		return Verdict{}, ErrRulesetMismatch
+	if have, ok := userdata.GetString(rules[0].UserData, userdata.TypeComment); !ok || have != comment {
+		return nil, liveSets{}, ErrRulesetMismatch
 	}
 	live, err := readLive(c)
+	return c, live, err
+}
+
+func (n *Namespace) Verdict(b Baseline, pool netip.Prefix, p Packet) (Verdict, error) {
+	_, live, err := n.liveFor(commentPrefix + b.fingerprint())
 	if err != nil {
 		return Verdict{}, err
 	}

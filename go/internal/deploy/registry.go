@@ -6,11 +6,12 @@ import (
 	"context"
 	"time"
 
+	cron "github.com/netresearch/go-cron"
+
 	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/workshop"
-	cron "github.com/netresearch/go-cron"
 )
 
 const registryDeleteTimeout = 120 * time.Second

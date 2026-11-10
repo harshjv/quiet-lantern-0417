@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/harshjv/stationly/go/internal/netns"
 )
 
 const (
@@ -18,18 +20,6 @@ const (
 	maxNameLength    = 253
 	maxLabelLength   = 63
 )
-
-var privateRanges = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("224.0.0.0/4"),
-	netip.MustParsePrefix("240.0.0.0/4"),
-}
 
 type AllowDomain struct {
 	Domain   string
@@ -138,7 +128,7 @@ func rebind(a netip.Addr, blocked []netip.Prefix) bool {
 	if !a.IsValid() || !a.Is4() {
 		return true
 	}
-	for _, p := range privateRanges {
+	for _, p := range netns.PrivateRanges {
 		if p.Contains(a) {
 			return true
 		}

@@ -33,7 +33,9 @@ func (c *Client) ReadImageFiles(ctx context.Context, ref, stationID string, path
 	if err != nil {
 		return nil, err
 	}
-	defer c.api.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+	defer func() {
+		_, _ = c.api.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+	}()
 	out := map[string][]byte{}
 	for _, p := range paths {
 		res, err := c.api.CopyFromContainer(ctx, created.ID, client.CopyFromContainerOptions{SourcePath: p})

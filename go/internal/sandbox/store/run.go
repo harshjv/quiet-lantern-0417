@@ -30,14 +30,6 @@ func (e *CommandError) Unwrap() error {
 	return e.Err
 }
 
-func exitCode(err error) int {
-	var ce *CommandError
-	if errors.As(err, &ce) {
-		return ce.ExitCode
-	}
-	return -1
-}
-
 var run = func(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
