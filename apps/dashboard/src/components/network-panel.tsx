@@ -852,7 +852,7 @@ function Warnings({ map }: { map: NetworkMap }) {
             <li key={`${w.code}-${i}`}>
               <span className="font-medium text-foreground">{finding[w.code]}.</span>{' '}
               {w.explanation}{' '}
-              <span className="font-mono text-xs text-muted-foreground/80">{w.code}</span>
+              <span className="font-mono text-xs text-muted-foreground">{w.code}</span>
             </li>
           ))}
         </ul>
