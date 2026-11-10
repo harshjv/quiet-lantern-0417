@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { variableKind } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 import {
   buildNote,
@@ -62,7 +63,7 @@ export function VariableKindSelect({
       <SelectContent>
         {variableKinds.map((kind) => (
           <SelectItem key={kind} value={kind}>
-            {kind}
+            {variableKind[kind]}
           </SelectItem>
         ))}
       </SelectContent>

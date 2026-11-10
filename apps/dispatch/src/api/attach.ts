@@ -57,11 +57,11 @@ const sameActor = (
 const TerminalFrame = Type.Union([
   Type.Object({
     type: Type.Literal('resize'),
-    rows: Type.Number({
-      exclusiveMinimum: 0,
+    rows: Type.Integer({
+      minimum: 1,
     }),
-    cols: Type.Number({
-      exclusiveMinimum: 0,
+    cols: Type.Integer({
+      minimum: 1,
     }),
   }),
   Type.Object({
@@ -81,6 +81,10 @@ const terminalFrame = (buf: Buffer) => {
 const framed = (channel: number, payload: Buffer) =>
   Buffer.concat([Buffer.from([channel]), payload])
 
+const terminalSize = (value: string | null, fallback: number) => {
+  const size = Number(value)
+  return Number.isInteger(size) && size >= 1 ? size : fallback
+}
 export const createAttachServer = (deps: Deps) => {
   const { db, stations } = deps
   const wss = new WebSocketServer({
@@ -137,8 +141,8 @@ export const createAttachServer = (deps: Deps) => {
         `run ${runId} is ${r.status}; a shell attaches once, before it starts.`,
       )
     const url = new URL(request.url)
-    const rows = Number(url.searchParams.get('rows') ?? 24) || 24
-    const cols = Number(url.searchParams.get('cols') ?? 80) || 80
+    const rows = terminalSize(url.searchParams.get('rows'), 24)
+    const cols = terminalSize(url.searchParams.get('cols'), 80)
     return {
       request,
       requestId,

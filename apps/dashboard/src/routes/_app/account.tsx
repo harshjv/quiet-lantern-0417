@@ -1,24 +1,26 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { KeyRound, Loader2, ShieldCheck, Smartphone } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 
+import { Code } from '@/components/code'
 import { RemoveButton } from '@/components/confirm'
-import { CopyButton } from '@/components/copy'
 import { Field } from '@/components/field'
-import { ErrorState, Mono, PageHeader, Rows } from '@/components/page'
+import { ErrorState, PageHeader } from '@/components/page'
+import { failurePage, Panel } from '@/components/panel'
 import { QrCode } from '@/components/qr'
-import { QueryState } from '@/components/query-state'
 import { SixDigitCode } from '@/components/six-digit-code'
+import { Time } from '@/components/time'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { authClient, authMessage, passkeysAvailable, passkeysQuery, sessionQuery } from '@/lib/auth'
-import { ago } from '@/lib/format'
+import { commands } from '@/lib/commands'
 import { done, useApiMutation } from '@/lib/mutation'
+import { load, warm } from '@/lib/queries'
 import { toneOutline } from '@/lib/tone'
 
 export const Route = createFileRoute('/_app/account')({
@@ -28,15 +30,49 @@ export const Route = createFileRoute('/_app/account')({
           enroll: true,
         }
       : {},
+  loader: async ({ context }) => {
+    await Promise.all([
+      load(context.queryClient, sessionQuery),
+      passkeysAvailable() && warm(context.queryClient, passkeysQuery),
+    ])
+  },
+  errorComponent: failurePage('Couldn’t load your account'),
   component: Account,
 })
 
+function PasskeyList({
+  onRemove,
+  removing,
+}: {
+  onRemove: (id: string) => void
+  removing: boolean
+}) {
+  const { data } = useSuspenseQuery(passkeysQuery)
+  if (data.length === 0) return <p className="text-sm text-muted-foreground">No passkeys yet.</p>
+  return (
+    <ul className="divide-y rounded-md border">
+      {data.map((p) => (
+        <li key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+          <KeyRound className="size-4 text-muted-foreground" aria-hidden />
+          <span className="font-medium">{p.name ?? 'Unnamed passkey'}</span>
+          <Badge variant="outline">
+            {p.deviceType === 'multiDevice' ? 'Synced' : 'This device only'}
+          </Badge>
+          <Time value={p.createdAt} prefix="Added" className="text-muted-foreground" />
+          <RemoveButton
+            className="ml-auto"
+            label={`Remove passkey ${p.name ?? ''}`}
+            onClick={() => onRemove(p.id)}
+            disabled={removing}
+          />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Passkeys() {
   const available = passkeysAvailable()
-  const list = useQuery({
-    ...passkeysQuery,
-    enabled: available,
-  })
   const [name, setName] = useState('')
   const add = useApiMutation({
     mutationFn: async () => {
@@ -44,7 +80,7 @@ function Passkeys() {
         name: name.trim() || undefined,
       })
       if (result.error)
-        throw new Error(authMessage(result.error, 'The passkey was not registered.'))
+        throw new Error(authMessage(result.error, 'Your browser didn’t create the passkey.'))
       return done(null)
     },
     invalidate: ['auth'],
@@ -53,19 +89,20 @@ function Passkeys() {
       description: 'It signs you in on its own, without the password.',
     }),
     onSuccess: () => setName(''),
-    failure: () => 'The passkey was not added',
+    failure: () => 'add the passkey',
   })
   const remove = useApiMutation({
     mutationFn: async (id: string) => {
       const result = await authClient.passkey.deletePasskey({
         id,
       })
-      if (result.error) throw new Error(authMessage(result.error, 'The passkey was not removed.'))
+      if (result.error)
+        throw new Error(authMessage(result.error, 'Stationly couldn’t remove the passkey.'))
       return done(null)
     },
     invalidate: ['auth'],
     success: () => 'Passkey removed',
-    failure: () => 'The passkey was not removed',
+    failure: () => 'remove the passkey',
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -78,45 +115,21 @@ function Passkeys() {
           <KeyRound className="size-4" aria-hidden /> Passkeys
         </CardTitle>
         <CardDescription>
-          A passkey with user verification is a full sign-in. It also approves sly login and OAuth
-          clients.
+          A passkey signs you in on its own. You also use it to approve{' '}
+          <Code>{commands.login()}</Code> and agents that connect.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!available ? (
           <p className="text-sm text-muted-foreground">
-            Passkeys work only on the dashboard hostname over HTTPS. Open the dashboard there to add
-            one; on this address use TOTP.
+            Passkeys need the dashboard’s own hostname over HTTPS. Open it there to add one, or use
+            TOTP on this address.
           </p>
         ) : (
           <>
-            <QueryState
-              query={list}
-              rows={1}
-              isEmpty={(data) => data.length === 0}
-              empty={<p className="text-sm text-muted-foreground">No passkey is registered.</p>}
-            >
-              {(data) => (
-                <ul className="divide-y rounded-md border">
-                  {data.map((p) => (
-                    <li key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                      <KeyRound className="size-4 text-muted-foreground" aria-hidden />
-                      <span className="font-medium">{p.name ?? 'Unnamed passkey'}</span>
-                      <Badge variant="outline">
-                        {p.deviceType === 'multiDevice' ? 'synced' : 'device-bound'}
-                      </Badge>
-                      <span className="text-muted-foreground">added {ago(p.createdAt)}</span>
-                      <RemoveButton
-                        className="ml-auto"
-                        label={`Remove passkey ${p.name ?? ''}`}
-                        onClick={() => remove.mutate(p.id)}
-                        disabled={remove.isPending}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </QueryState>
+            <Panel rows={1} title="Couldn’t load passkeys">
+              <PasskeyList onRemove={(id) => remove.mutate(id)} removing={remove.isPending} />
+            </Panel>
             <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <Field id="passkey-name" label="Name" className="flex-1">
                 <Input
@@ -128,7 +141,7 @@ function Passkeys() {
               </Field>
               <Button type="submit" disabled={add.isPending}>
                 {add.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />}
-                Add a passkey
+                Add passkey
               </Button>
             </form>
           </>
@@ -158,11 +171,11 @@ function Totp({ enabled }: { enabled: boolean }) {
     setBusy(false)
     setPassword('')
     if (result.error) {
-      setError(authMessage(result.error, 'The password was not accepted.'))
+      setError(authMessage(result.error, 'Stationly didn’t accept that password.'))
       return
     }
     if (!('totpURI' in result.data)) {
-      setError('Dispatch did not return a TOTP secret.')
+      setError('Stationly didn’t return a TOTP secret. Try again.')
       return
     }
     const uri = result.data.totpURI
@@ -182,7 +195,7 @@ function Totp({ enabled }: { enabled: boolean }) {
     })
     setBusy(false)
     if (result.error) {
-      setError(authMessage(result.error, 'The code was not accepted.'))
+      setError(authMessage(result.error, 'That code didn’t match. Check the app and try again.'))
       setCode('')
       return
     }
@@ -206,7 +219,7 @@ function Totp({ enabled }: { enabled: boolean }) {
     setBusy(false)
     setPassword('')
     if (result.error) {
-      setError(authMessage(result.error, 'The password was not accepted.'))
+      setError(authMessage(result.error, 'Stationly didn’t accept that password.'))
       return
     }
     await client.invalidateQueries({
@@ -222,13 +235,13 @@ function Totp({ enabled }: { enabled: boolean }) {
           <Smartphone className="size-4" aria-hidden /> Authenticator app (TOTP)
           {enabled && (
             <Badge variant="outline" className={toneOutline.success}>
-              on
+              On
             </Badge>
           )}
         </CardTitle>
         <CardDescription>
-          Once on, password sign-in needs a six-digit code. It works on every address, including the
-          SSH forward.
+          Once it’s on, password sign-in asks for a six-digit code. It works on every address, SSH
+          forwards included.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -243,14 +256,13 @@ function Totp({ enabled }: { enabled: boolean }) {
               <QrCode value={setup.uri} label="TOTP enrollment QR code" />
               <div className="min-w-0 space-y-3 text-sm">
                 <p>Scan the code with your authenticator app, or enter the key by hand.</p>
-                <p className="flex items-center gap-1">
-                  <Mono className="break-all">{setup.secret}</Mono>
-                  <CopyButton value={setup.secret} label="key" />
+                <p>
+                  <Code copy={setup.secret}>{setup.secret}</Code>
                 </p>
                 <div>
                   <p className="font-medium">Backup codes</p>
                   <p className="text-muted-foreground">
-                    Store them now; each signs in once without the app.
+                    Save them now. Each one signs you in once without the app.
                   </p>
                   <ul
                     className="mt-2 grid grid-cols-2 gap-1 font-mono text-xs"
@@ -301,11 +313,20 @@ function Totp({ enabled }: { enabled: boolean }) {
 
 function Account() {
   const { enroll } = Route.useSearch()
-  const session = useQuery(sessionQuery)
-  if (session.isPending) return <Rows count={4} />
-  if (session.isError || !session.data)
-    return <ErrorState error={session.error ?? new Error('No session')} />
-  const user = session.data.user
+  const { data: session } = useSuspenseQuery(sessionQuery)
+  if (!session)
+    return (
+      <ErrorState
+        title="Your session ended"
+        error={new Error('Sign in again to continue.')}
+        action={
+          <Button asChild size="sm">
+            <Link to="/login">Sign in</Link>
+          </Button>
+        }
+      />
+    )
+  const user = session.user
   return (
     <div className="max-w-3xl space-y-6">
       <PageHeader title="Account and sign-in" meta={<span>{user.email}</span>} />
@@ -314,10 +335,10 @@ function Account() {
           <ShieldCheck />
           <AlertTitle>Add a passkey or TOTP</AlertTitle>
           <AlertDescription>
+            Add one before you approve <Code>{commands.login()}</Code> or connect an agent.{' '}
             {passkeysAvailable()
               ? 'Either one protects this account beyond the password.'
-              : 'On this address passkeys are not available; set up TOTP.'}{' '}
-            One of the two is required before sly login and OAuth clients can be approved.
+              : 'Passkeys don’t work on this address, so set up TOTP.'}
           </AlertDescription>
         </Alert>
       )}

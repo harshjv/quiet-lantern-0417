@@ -22,6 +22,12 @@ export type Environment = Data<ReturnType<V1['environments']>['get']>
 export type NetworkMap = Data<ReturnType<V1['environments']>['network']['get']>
 export type Connections = Data<ReturnType<V1['services']>['connections']['get']>
 export type Explanation = Data<ReturnType<V1['environments']>['network']['explain']['get']>
+export type Probe = Exclude<
+  Data<ReturnType<V1['services']>['network']['probe']['post']>,
+  {
+    status: string
+  }
+>
 export type DnsLog = Data<ReturnType<V1['services']>['dns-log']['get']>
 export type Service = Data<ReturnType<V1['services']>['get']>
 export type ServiceStatus = Service['status']
@@ -42,6 +48,7 @@ export type Change = NonNullable<StagedChange['changes']>[number]
 export type LogPage = Data<V1['logs']['get']>
 export type LogLine = LogPage['untrusted']['lines'][number]
 export type Event = Item<Data<V1['events']['get']>>
+export type Token = Item<Data<V1['tokens']['get']>>
 
 export class ApiFailure extends Error {
   readonly code: string
@@ -51,9 +58,9 @@ export class ApiFailure extends Error {
   readonly requestId: string | null
 
   constructor(status: number, body: Partial<ErrorBody> | null) {
-    super(body?.explanation ?? `The request failed with HTTP ${status}.`)
+    super(body?.explanation ?? `Stationly answered with HTTP ${status}.`)
     this.code = body?.code ?? 'INTERNAL_ERROR'
-    this.fix = body?.fix ?? 'Retry; if it keeps failing, report the request id.'
+    this.fix = body?.fix ?? 'Try again. If it fails again, share the request id below.'
     this.details = body?.details ?? {}
     this.status = status
     this.requestId = body?.request_id ?? null
@@ -108,7 +115,7 @@ export type SentOf<F> = F extends (...args: never[]) => Promise<infer R extends 
 
 export const failureText = (error: unknown) =>
   error instanceof ApiFailure
-    ? `${error.code}: ${error.message}`
+    ? `${error.message} ${error.fix}`
     : error instanceof Error
       ? error.message
       : String(error)

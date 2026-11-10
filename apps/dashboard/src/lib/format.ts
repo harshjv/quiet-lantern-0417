@@ -1,4 +1,4 @@
-import { differenceInSeconds, format, formatDistanceToNowStrict, isValid, parseISO } from 'date-fns'
+import { differenceInSeconds, format, formatDistanceStrict, isValid, parseISO } from 'date-fns'
 
 import { slugPattern as slugSource } from '@stationly/protocol/domain'
 import { bytesText } from '@stationly/protocol/format'
@@ -11,18 +11,31 @@ const parsed = (value: string | null | undefined) => {
   return isValid(date) ? date : null
 }
 
-export const ago = (value: string | null | undefined) => {
+export const blank = '—'
+
+export const ago = (value: string | null | undefined, now = new Date()) => {
   const date = parsed(value)
-  return date
-    ? formatDistanceToNowStrict(date, {
-        addSuffix: true,
-      })
-    : '—'
+  if (!date) return 'never'
+  if (Math.abs(differenceInSeconds(now, date)) < 5) return 'just now'
+  return formatDistanceStrict(date, now, {
+    addSuffix: true,
+  })
 }
 
 export const stamp = (value: string | null | undefined) => {
   const date = parsed(value)
-  return date ? format(date, 'yyyy-MM-dd HH:mm:ss') : '—'
+  return date ? format(date, 'yyyy-MM-dd HH:mm:ss zzz') : 'not yet'
+}
+
+export const span = (seconds: number) => {
+  const total = Math.max(0, Math.floor(seconds))
+  const days = Math.floor(total / 86_400)
+  const hours = Math.floor((total % 86_400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  if (days > 0) return hours ? `${days} d ${hours} h` : `${days} d`
+  if (hours > 0) return minutes ? `${hours} h ${minutes} min` : `${hours} h`
+  if (minutes > 0) return total % 60 ? `${minutes} min ${total % 60} s` : `${minutes} min`
+  return `${total} s`
 }
 
 export const clock = (value: string | null | undefined) => {
@@ -32,16 +45,11 @@ export const clock = (value: string | null | undefined) => {
 
 export const duration = (from: string | null | undefined, to: string | null | undefined) => {
   const start = parsed(from)
-  if (!start) return '—'
-  const seconds = Math.max(0, differenceInSeconds(parsed(to) ?? new Date(), start))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  return start ? span(differenceInSeconds(parsed(to) ?? new Date(), start)) : blank
 }
 
 export const bytes = (value: number | null | undefined) =>
-  value === null || value === undefined ? '—' : bytesText(value)
+  value === null || value === undefined ? blank : bytesText(value)
 
 export const shortSha = (sha: string | null | undefined) => (sha ? sha.slice(0, 7) : null)
 
@@ -56,12 +64,9 @@ export const sourceText = (service: Pick<Service, 'source'>) => {
   if (s.type === 'image') return shortDigest(s.ref.includes('@') ? s.ref : `${s.ref}@${s.digest}`)
   if (s.type === 'dockerfile' || s.type === 'railpack')
     return `${s.repo.replace(/^github\.com\//, '')}@${s.branch}`
-  if (s.type === 'local') return 'sly push'
-  return 'template'
+  if (s.type === 'local') return 'Uploaded from a folder'
+  return 'Template'
 }
-
-export const actorText = (actor: { type: string; client?: string | null }) =>
-  `${actor.type}${actor.client ? ` (${actor.client})` : ''}`
 
 export const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
 
@@ -72,3 +77,16 @@ export const inputPattern = (pattern: string) => pattern.slice(1, -1).replaceAll
 export const slugPattern = inputPattern(slugSource)
 
 export const slugTitle = 'Lower case letters, digits and hyphens, starting with a letter or digit'
+
+export const changeSummary = (summary: {
+  add: number
+  update: number
+  remove: number
+  deployments: number
+}) =>
+  [
+    `${summary.add} added`,
+    `${summary.update} changed`,
+    `${summary.remove} removed`,
+    ...(summary.deployments ? [`starts ${plural(summary.deployments, 'deployment')}`] : []),
+  ].join(' · ')

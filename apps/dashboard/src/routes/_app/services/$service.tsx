@@ -1,7 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { Box } from 'lucide-react'
+import { Box, Rocket, ShieldCheck } from 'lucide-react'
 
+import { Trigger } from '@/components/actor'
+import { AgentSheet } from '@/components/agent-sheet'
+import { AlsoWith } from '@/components/code'
 import { Crumbs } from '@/components/crumbs'
 import {
   DeployButton,
@@ -9,21 +12,26 @@ import {
   RollbackButton,
   StaleBanner,
 } from '@/components/deploy-actions'
-import { Empty, KeyValue, Mono, PageHeader } from '@/components/page'
+import { EmptyState, KeyValue, Mono, PageHeader } from '@/components/page'
+import { failurePage, Panel } from '@/components/panel'
 import { PublicNetworking } from '@/components/public-networking'
-import { noItems, QueryState } from '@/components/query-state'
 import { ServiceNetwork } from '@/components/service-network'
 import { DeploymentStatusBadge, ServiceStatus } from '@/components/status'
 import { ActionsHead, TableFrame } from '@/components/table-frame'
+import { Term } from '@/components/term'
+import { Time } from '@/components/time'
 import { Badge } from '@/components/ui/badge'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
+import { agentHints } from '@/lib/agent-hints'
 import type { Service } from '@/lib/api'
-import { ago, duration, shortDigest, shortSha, sourceText } from '@/lib/format'
-import { deploymentsQuery, serviceQuery } from '@/lib/queries'
+import { commands, type ServiceScope } from '@/lib/commands'
+import { blank, duration, shortDigest, shortSha, sourceText } from '@/lib/format'
+import { deploymentStrategy, serviceKind } from '@/lib/labels'
+import { deploymentsQuery, load, serviceQuery, warm } from '@/lib/queries'
 import { toneText } from '@/lib/tone'
-import { useEnvironmentTrail } from '@/lib/use-trail'
+import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
 const tabs = ['deployments', 'variables', 'network'] as const
@@ -36,108 +44,110 @@ export const Route = createFileRoute('/_app/services/$service')({
           tab: search.tab as Tab,
         }
       : {},
+  loader: async ({ context, params }) => {
+    const [service] = await Promise.all([
+      load(context.queryClient, serviceQuery(params.service)),
+      warm(context.queryClient, deploymentsQuery(params.service)),
+    ])
+    await loadTrail(context.queryClient, service.environment_id)
+  },
+  errorComponent: failurePage('Couldn’t load this service'),
   component: ServicePage,
 })
 
-function Deployments({ service }: { service: Service }) {
-  const deployments = useQuery(deploymentsQuery(service.id))
+function Deployments({ service, scope }: { service: Service; scope: ServiceScope }) {
+  const { data } = useSuspenseQuery(deploymentsQuery(service.id))
+  if (data.items.length === 0)
+    return (
+      <EmptyState
+        icon={Rocket}
+        title="Not deployed yet"
+        description={`Deploy ${service.name} to start it. You’ll see each step and its logs here.`}
+        action={<DeployButton service={service} />}
+        also={<AlsoWith cli={commands.deploy(scope)} tool="deploy" />}
+      />
+    )
   return (
-    <QueryState
-      query={deployments}
-      rows={5}
-      isEmpty={noItems}
-      empty={
-        <Empty title="No deployments yet">
-          Deploy from here, with sly deploy, or with the deploy MCP tool.
-        </Empty>
-      }
-    >
-      {(data) => (
-        <TableFrame>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-16">#</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="hidden sm:table-cell">Trigger</TableHead>
-              <TableHead className="hidden md:table-cell">Image or commit</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead className="hidden sm:table-cell">Duration</TableHead>
-              <ActionsHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.items.map((deployment) => (
-              <TableRow key={deployment.id} className="relative">
-                <TableCell className="tabular-nums">
-                  <Link
-                    to="/deployments/$deployment"
-                    params={{
-                      deployment: deployment.id,
-                    }}
-                    className="font-medium after:absolute after:inset-0"
-                    aria-label={`Deployment ${deployment.number}`}
-                  >
-                    {deployment.number}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <DeploymentStatusBadge status={deployment.status} />
-                    {deployment.failure?.summary && (
-                      <span className={cn('max-w-80 truncate text-xs', toneText.danger)}>
-                        {deployment.failure.summary}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden text-muted-foreground sm:table-cell">
-                  {deployment.trigger.type}
-                </TableCell>
-                <TableCell className="hidden max-w-72 truncate md:table-cell">
-                  <Mono className="text-muted-foreground">
-                    {shortSha(deployment.trigger.source_sha) ??
-                      (deployment.image_ref ? shortDigest(deployment.image_ref) : null) ??
-                      '—'}
-                  </Mono>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {ago(deployment.started_at ?? deployment.created_at)}
-                </TableCell>
-                <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
-                  {duration(deployment.started_at, deployment.finished_at)}
-                </TableCell>
-                <TableCell className="relative z-10 text-right">
-                  {deployment.id !== service.current_deployment_id &&
-                    (deployment.status === 'superseded' || deployment.status === 'active') && (
-                      <RollbackButton service={service} deployment={deployment} />
-                    )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </TableFrame>
-      )}
-    </QueryState>
+    <TableFrame>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-16">#</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="hidden sm:table-cell">Trigger</TableHead>
+          <TableHead className="hidden md:table-cell">Image or commit</TableHead>
+          <TableHead>Started</TableHead>
+          <TableHead className="hidden sm:table-cell">Duration</TableHead>
+          <ActionsHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.items.map((deployment) => (
+          <TableRow key={deployment.id} className="relative">
+            <TableCell className="tabular-nums">
+              <Link
+                to="/deployments/$deployment"
+                params={{
+                  deployment: deployment.id,
+                }}
+                className="font-medium after:absolute after:inset-0"
+                aria-label={`Deployment ${deployment.number}`}
+              >
+                {deployment.number}
+              </Link>
+            </TableCell>
+            <TableCell>
+              <div className="flex flex-col gap-1">
+                <DeploymentStatusBadge status={deployment.status} />
+                {deployment.failure?.summary && (
+                  <span className={cn('max-w-80 truncate text-xs', toneText.danger)}>
+                    {deployment.failure.summary}
+                  </span>
+                )}
+              </div>
+            </TableCell>
+            <TableCell className="hidden text-muted-foreground sm:table-cell">
+              <Trigger trigger={deployment.trigger} />
+            </TableCell>
+            <TableCell className="hidden max-w-72 truncate md:table-cell">
+              <Mono className="text-muted-foreground">
+                {shortSha(deployment.trigger.source_sha) ??
+                  (deployment.image_ref ? shortDigest(deployment.image_ref) : null) ??
+                  blank}
+              </Mono>
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+              <Time value={deployment.started_at ?? deployment.created_at} />
+            </TableCell>
+            <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">
+              {duration(deployment.started_at, deployment.finished_at)}
+            </TableCell>
+            <TableCell className="relative z-10 text-right">
+              {deployment.id !== service.current_deployment_id &&
+                (deployment.status === 'superseded' || deployment.status === 'active') && (
+                  <RollbackButton service={service} deployment={deployment} />
+                )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </TableFrame>
   )
 }
 
 function ServicePage() {
   const { service: id } = Route.useParams()
-  const service = useQuery(serviceQuery(id))
-  return (
-    <QueryState query={service} rows={6} errorTitle="The service could not be loaded">
-      {(s) => <ServiceView s={s} />}
-    </QueryState>
-  )
-}
-
-function ServiceView({ s }: { s: Service }) {
   const { tab = 'deployments' } = Route.useSearch()
   const navigate = useNavigate({
     from: Route.fullPath,
   })
+  const { data: s } = useSuspenseQuery(serviceQuery(id))
   const trail = useEnvironmentTrail(s.environment_id)
   const current = s.current_deployment
+  const scope = {
+    project: trail.project.name,
+    environment: trail.environment.name,
+    service: s.name,
+  }
 
   return (
     <div className="space-y-6">
@@ -156,7 +166,7 @@ function ServiceView({ s }: { s: Service }) {
               <Box className="size-5 text-muted-foreground" aria-hidden />
               {s.name}
               <Badge variant="outline" className="font-normal">
-                {s.kind}
+                {serviceKind[s.kind]}
               </Badge>
             </span>
           }
@@ -164,13 +174,20 @@ function ServiceView({ s }: { s: Service }) {
             <>
               <ServiceStatus status={s.status} reason={s.status_reason} />
               <Mono>{sourceText(s)}</Mono>
-              {trail.environment?.protected && (
-                <span>protected environment: changes are staged</span>
+              {trail.environment.protected && (
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck
+                    className="size-3.5 text-emerald-600 dark:text-emerald-400"
+                    aria-hidden
+                  />
+                  <Term name="protectedEnvironment">Protected</Term>
+                </span>
               )}
             </>
           }
           actions={
             <>
+              <AgentSheet hint={agentHints['/_app/services/$service']} scope={scope} />
               <RedeployButton service={s} />
               <DeployButton service={s} />
             </>
@@ -195,9 +212,9 @@ function ServiceView({ s }: { s: Service }) {
                 #{current.number} <DeploymentStatusBadge status={current.status} />
               </Link>,
             ],
-            ['Trigger', current.trigger.type],
-            ['Started', ago(current.started_at)],
-            ['Strategy', current.strategy],
+            ['Trigger', <Trigger key="trigger" trigger={current.trigger} />],
+            ['Started', <Time key="t" value={current.started_at} />],
+            ['Strategy', deploymentStrategy[current.strategy]],
           ]}
         />
       )}
@@ -218,7 +235,9 @@ function ServiceView({ s }: { s: Service }) {
           <TabsTrigger value="network">Network</TabsTrigger>
         </TabsList>
         <TabsContent value="deployments" className="mt-4">
-          <Deployments service={s} />
+          <Panel rows={5} title="Couldn’t load deployments">
+            <Deployments service={s} scope={scope} />
+          </Panel>
         </TabsContent>
         <TabsContent value="variables" className="mt-4">
           <VariablesPanel
@@ -226,13 +245,13 @@ function ServiceView({ s }: { s: Service }) {
               kind: 'service',
               service: s.id,
             }}
+            also={
+              <AlsoWith cli={commands.setServiceVariable(scope)} tool="set_service_variables" />
+            }
           />
         </TabsContent>
         <TabsContent value="network" className="mt-4 space-y-10">
-          <PublicNetworking
-            service={s}
-            protectedEnvironment={trail.environment?.protected ?? false}
-          />
+          <PublicNetworking service={s} protectedEnvironment={trail.environment.protected} />
           <ServiceNetwork service={s} />
         </TabsContent>
       </Tabs>

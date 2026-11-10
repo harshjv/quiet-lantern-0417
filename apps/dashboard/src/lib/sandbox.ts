@@ -1,5 +1,6 @@
 import { bytesText } from '@stationly/protocol/format'
 
+import { plural, span } from './format.ts'
 import { isIdle } from './status.ts'
 
 export const ttlLimits = {
@@ -37,17 +38,6 @@ export const ttlProblem = (seconds: number | null) => {
   return null
 }
 
-export const formatSpan = (seconds: number) => {
-  const total = Math.max(0, Math.floor(seconds))
-  const days = Math.floor(total / 86_400)
-  const hours = Math.floor((total % 86_400) / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m ${total % 60}s`
-  return `${total}s`
-}
-
 export const secondsUntil = (iso: string | null | undefined, nowMs: number) => {
   if (!iso) return null
   const at = Date.parse(iso)
@@ -66,12 +56,12 @@ export const remaining = (
   if (stopped)
     return {
       label: 'until deletion',
-      text: formatSpan(seconds),
+      text: span(seconds),
       urgent: seconds < 86_400,
     }
   return {
     label: 'left',
-    text: seconds <= 0 ? 'expiring' : formatSpan(seconds),
+    text: seconds <= 0 ? 'expiring' : span(seconds),
     urgent: seconds < 600,
   }
 }
@@ -85,7 +75,7 @@ export const sizeText = (size: {
 }
 
 export const imageText = (image: { ref: string | null }) =>
-  image.ref === null ? 'toolchain' : image.ref
+  image.ref === null ? 'Toolchain image' : image.ref
 
 export const attachUrl = (path: string, origin: string, size: { rows: number; cols: number }) => {
   const url = new URL(path, origin)
@@ -109,9 +99,6 @@ export const outputFrame = (frame: ArrayBuffer) => {
     bytes: view.subarray(1),
   }
 }
-
-export const forwardCommand = (sandboxId: string, port: number) =>
-  `sly sandbox forward ${sandboxId} ${port}`
 
 export type DomainEntry = { domain: string; wildcard: boolean; ports: number[] }
 
@@ -182,7 +169,9 @@ export const egressBody = (
 }
 
 export const egressText = (egress: { mode: string; domains?: unknown[] | null | undefined }) =>
-  egress.mode === 'open' ? 'open' : `allowlist, ${egress.domains?.length ?? 0} domains`
+  egress.mode === 'open'
+    ? 'any public destination'
+    : plural(egress.domains?.length ?? 0, 'allowed domain')
 
 export const allowlistText = (entries: DomainEntry[]) =>
   entries

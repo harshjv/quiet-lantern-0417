@@ -1,23 +1,23 @@
-import type { DeploymentStatus, SandboxStatus, ServiceStatus } from '@/lib/api'
+import type {
+  DeploymentStatus,
+  Sandbox,
+  SandboxStatus,
+  Service,
+  ServiceStatus,
+  StagedChange,
+} from '@/lib/api'
+import {
+  deploymentStatus,
+  sandboxReason,
+  sandboxStatus,
+  serviceStatus,
+  serviceStatusReason,
+  stagedStatus,
+  type Status,
+} from '@/lib/labels'
 import { isInFlight, isTransient } from '@/lib/status'
-import { toneBadge, toneDot, type Tone } from '@/lib/tone'
+import { toneBadge, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
-
-const serviceTone: Record<ServiceStatus, Tone> = {
-  green: 'success',
-  amber: 'warning',
-  red: 'danger',
-  stopped: 'neutral',
-  asleep: 'info',
-}
-
-const serviceLabel: Record<ServiceStatus, string> = {
-  green: 'Healthy',
-  amber: 'Degraded',
-  red: 'Failing',
-  stopped: 'Stopped',
-  asleep: 'Asleep',
-}
 
 export function ServiceStatusDot({
   status,
@@ -32,7 +32,10 @@ export function ServiceStatusDot({
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-60 motion-reduce:hidden" />
       )}
       <span
-        className={cn('relative inline-flex size-2 rounded-full', toneDot[serviceTone[status]])}
+        className={cn(
+          'relative inline-flex size-2 rounded-full',
+          toneDot[serviceStatus[status].tone],
+        )}
       />
     </span>
   )
@@ -43,29 +46,15 @@ export function ServiceStatus({
   reason,
 }: {
   status: ServiceStatus
-  reason?: string | null
+  reason?: Service['status_reason']
 }) {
   return (
     <span className="inline-flex items-center gap-2 text-sm">
       <ServiceStatusDot status={status} />
-      <span>{serviceLabel[status]}</span>
-      {reason && <span className="text-muted-foreground">({reason.replaceAll('_', ' ')})</span>}
+      <span>{serviceStatus[status].label}</span>
+      {reason && <span className="text-muted-foreground">{serviceStatusReason[reason]}</span>}
     </span>
   )
-}
-
-const deploymentTone: Record<DeploymentStatus, Tone> = {
-  queued: 'neutral',
-  building: 'info',
-  pre_deploy: 'info',
-  starting: 'info',
-  waiting_health: 'warning',
-  cutover: 'warning',
-  draining: 'warning',
-  active: 'success',
-  failed: 'danger',
-  cancelled: 'neutral',
-  superseded: 'neutral',
 }
 
 const badge =
@@ -78,34 +67,21 @@ const pulse = (
   />
 )
 
-export function DeploymentStatusBadge({ status }: { status: DeploymentStatus }) {
+export function StatusBadge({ status, busy }: { status: Status; busy?: boolean }) {
   return (
-    <span className={cn(badge, toneBadge[deploymentTone[status]])}>
-      {isInFlight(status) && pulse}
-      {status.replaceAll('_', ' ')}
+    <span className={cn(badge, toneBadge[status.tone])}>
+      {busy && pulse}
+      {status.label}
     </span>
   )
 }
 
-const stagedTone: Record<string, Tone> = {
-  staged: 'warning',
-  accepted: 'success',
-  rejected: 'danger',
-  superseded: 'neutral',
+export function DeploymentStatusBadge({ status }: { status: DeploymentStatus }) {
+  return <StatusBadge status={deploymentStatus[status]} busy={isInFlight(status)} />
 }
 
-export function StagedStatusBadge({ status }: { status: string }) {
-  return <span className={cn(badge, toneBadge[stagedTone[status] ?? 'neutral'])}>{status}</span>
-}
-
-const sandboxTone: Record<SandboxStatus, Tone> = {
-  creating: 'info',
-  starting: 'info',
-  running: 'success',
-  stopping: 'warning',
-  stopped: 'neutral',
-  failed: 'danger',
-  deleting: 'warning',
+export function StagedStatusBadge({ status }: { status: StagedChange['status'] }) {
+  return <StatusBadge status={stagedStatus[status]} />
 }
 
 export function SandboxStatusBadge({
@@ -113,17 +89,14 @@ export function SandboxStatusBadge({
   reason,
 }: {
   status: SandboxStatus
-  reason?: string | null
+  reason?: Sandbox['status_reason']
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={cn(badge, toneBadge[sandboxTone[status]])}>
-        {isTransient(status) && pulse}
-        {status}
-      </span>
+      <StatusBadge status={sandboxStatus[status]} busy={isTransient(status)} />
       {reason && status !== 'running' && (
         <span className="hidden text-xs text-muted-foreground sm:inline">
-          {reason.replaceAll('_', ' ')}
+          {sandboxReason[reason]}
         </span>
       )}
     </span>

@@ -1,16 +1,19 @@
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 
-import { CopyButton } from '@/components/copy'
+import { CommandBlock } from '@/components/code'
 import { Field } from '@/components/field'
 import { FormError } from '@/components/form-dialog'
-import { Mono, Section } from '@/components/page'
+import { Section } from '@/components/page'
 import { EgressFields } from '@/components/sandboxes-panel'
+import { Term } from '@/components/term'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api, idempotency, send, type Sandbox } from '@/lib/api'
+import { commands } from '@/lib/commands'
 import { useApiMutation } from '@/lib/mutation'
-import { allowlistText, egressBody, forwardCommand, type Egress } from '@/lib/sandbox'
+import { seedSandbox } from '@/lib/queries'
+import { allowlistText, egressBody, type Egress } from '@/lib/sandbox'
 
 function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egress'> }) {
   const [mode, setMode] = useState(sandbox.egress.mode)
@@ -30,11 +33,13 @@ function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egr
             idempotency(),
           ),
       ),
+    seed: seedSandbox,
     invalidate: ['sandboxes'],
     success: () => ({
-      title: `Egress of ${sandbox.name} saved`,
-      description: 'It applies to running connections at once.',
+      title: `Outbound traffic for ${sandbox.name} saved`,
+      description: 'Open connections follow the new rules now.',
     }),
+    failure: () => `save outbound traffic for ${sandbox.name}`,
   })
   return (
     <form
@@ -56,7 +61,7 @@ function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egr
       />
       <Button type="submit" size="sm" disabled={mutation.isPending}>
         {mutation.isPending && <Loader2 className="animate-spin" />}
-        Save egress
+        Save outbound traffic
       </Button>
     </form>
   )
@@ -65,7 +70,7 @@ function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egr
 function ForwardCommand({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'status'> }) {
   const [port, setPort] = useState('3000')
   const valid = Number.isInteger(Number(port)) && Number(port) >= 1 && Number(port) <= 65_535
-  const command = forwardCommand(sandbox.id, valid ? Number(port) : 3000)
+  const command = commands.forward(sandbox.id, valid ? Number(port) : 3000)
   return (
     <div className="max-w-xl space-y-3 rounded-lg border bg-card p-4">
       <Field id="forward-port" label="Port inside the sandbox">
@@ -80,15 +85,14 @@ function ForwardCommand({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'status'> }
           aria-invalid={!valid}
         />
       </Field>
-      <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
-        <span className="min-w-0 flex-1" data-testid="forward-command">
-          <Mono className="break-all">{command}</Mono>
-        </span>
-        <CopyButton value={command} label="forward command" />
-      </div>
+      <CommandBlock
+        commands={command}
+        caption="Run on your computer"
+        data-testid="forward-command"
+      />
       <p className="text-sm text-muted-foreground">
-        Run it on your own machine. It listens on 127.0.0.1 and opens one connection per client, for
-        previews. {sandbox.status !== 'running' && 'The sandbox must be running first.'}
+        It listens on 127.0.0.1 and opens one connection per browser tab, for previews.{' '}
+        {sandbox.status !== 'running' && 'Start the sandbox first.'}
       </p>
     </div>
   )
@@ -102,14 +106,14 @@ export function SandboxNetwork({
   return (
     <div className="space-y-6">
       <Section
-        title="Egress"
-        description="Which public destinations the sandbox may reach. DNS answers for names that are not allowed are refused."
+        title={<Term name="outboundTraffic" />}
+        description="Public destinations this sandbox can reach. Lookups for other names fail."
       >
         <EgressEditor sandbox={sandbox} />
       </Section>
       <Section
         title="Preview a port"
-        description="The browser does not forward ports. Use the sly command on your machine."
+        description="Run this on your computer to open the port at localhost. It needs sly, logged in to this instance."
       >
         <ForwardCommand sandbox={sandbox} />
       </Section>

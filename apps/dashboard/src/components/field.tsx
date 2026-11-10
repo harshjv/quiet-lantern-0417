@@ -40,6 +40,17 @@ export function Field({
   )
 }
 
+export function Suffixed({ suffix, children }: { suffix: ReactNode; children: ReactNode }) {
+  return (
+    <div className="relative [&_input]:pr-12">
+      {children}
+      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+        {suffix}
+      </span>
+    </div>
+  )
+}
+
 export function FieldSet({
   legend,
   hint,

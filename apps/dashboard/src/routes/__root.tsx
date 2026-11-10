@@ -1,7 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { createRootRouteWithContext, Link, Outlet } from '@tanstack/react-router'
+import { MapPinOff } from 'lucide-react'
 
-import { Empty } from '@/components/page'
+import { EmptyState } from '@/components/page'
+import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -22,12 +24,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   ),
   notFoundComponent: () => (
     <main className="mx-auto max-w-lg px-4 py-16">
-      <h1 className="sr-only">Not found</h1>
-      <Empty title="Nothing lives at this address">
-        <Link to="/" className="underline underline-offset-4">
-          Back to projects
-        </Link>
-      </Empty>
+      <h1 className="sr-only">Page not found</h1>
+      <EmptyState
+        icon={MapPinOff}
+        title="This page doesn’t exist"
+        description="Check the address, or start again from your projects."
+        action={
+          <Button asChild size="sm" variant="outline">
+            <Link to="/">Go to projects</Link>
+          </Button>
+        }
+      />
     </main>
   ),
 })

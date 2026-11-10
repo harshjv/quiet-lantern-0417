@@ -4,7 +4,8 @@ import { ThemeProvider } from 'next-themes'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import { ErrorState } from '@/components/page'
+import { Rows } from '@/components/page'
+import { Failure } from '@/components/panel'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiFailure } from '@/lib/api'
 
@@ -29,10 +30,13 @@ const router = createRouter({
   },
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
+  defaultPendingMs: 1000,
+  defaultPendingMinMs: 400,
+  defaultPendingComponent: () => <Rows count={6} />,
   scrollRestoration: true,
   defaultErrorComponent: ({ error }) => (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <ErrorState error={error} title="This page failed" />
+      <Failure error={error} />
     </div>
   ),
 })

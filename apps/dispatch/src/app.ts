@@ -4,10 +4,15 @@ import { and, eq } from 'drizzle-orm'
 import { Elysia } from 'elysia'
 
 import type { Deps } from './api/context.ts'
-import { ApiError, refusal, stamped } from './api/errors.ts'
+import { ApiError, notFoundError, refusal, stamped } from './api/errors.ts'
 import { createApi } from './api/index.ts'
 import { createAuthPages } from './auth/pages.ts'
-import { gateAuthRequest, recordUnauthenticated, surfaceOf } from './auth/principal.ts'
+import {
+  authenticate,
+  gateAuthRequest,
+  recordUnauthenticated,
+  surfaceOf,
+} from './auth/principal.ts'
 import { rememberSentUrl } from './auth/proof.ts'
 import type { Dashboard } from './dashboard.ts'
 import type { Db } from './db/client.ts'
@@ -119,7 +124,9 @@ export type App = ReturnType<typeof createApp>
 
 const byRef = (ref: string, prefix: string) => ref.startsWith(`${prefix}_`)
 
-const flatPath = (db: Db, pathname: string) => {
+type Missing = { entity: string; ref: string }
+
+const flatPath = (db: Db, pathname: string): string | Missing | null => {
   const parts = pathname.split('/').slice(2)
   if (parts[0] !== 'projects' || parts.length < 4 || parts[2] !== 'environments') return null
   const [, projectRef, , environmentRef, ...rest] = parts.map(decodeURIComponent) as [
@@ -136,7 +143,11 @@ const flatPath = (db: Db, pathname: string) => {
     .from(project)
     .where(byRef(projectRef, 'prj') ? eq(project.id, projectRef) : eq(project.name, projectRef))
     .get()
-  if (!proj) return null
+  if (!proj)
+    return {
+      entity: 'project',
+      ref: projectRef,
+    }
   const env = db
     .select({
       id: environment.id,
@@ -151,7 +162,11 @@ const flatPath = (db: Db, pathname: string) => {
       ),
     )
     .get()
-  if (!env) return null
+  if (!env)
+    return {
+      entity: 'environment',
+      ref: environmentRef,
+    }
   if (rest[0] === 'services' && rest.length >= 2) {
     const svc = db
       .select({
@@ -165,7 +180,11 @@ const flatPath = (db: Db, pathname: string) => {
         ),
       )
       .get()
-    if (!svc) return null
+    if (!svc)
+      return {
+        entity: 'service',
+        ref: rest[1]!,
+      }
     return ['/v1/services', svc.id, ...rest.slice(2)].join('/')
   }
   if (rest[0] === 'sandboxes' && rest.length >= 2) {
@@ -181,10 +200,24 @@ const flatPath = (db: Db, pathname: string) => {
         ),
       )
       .get()
-    if (!box) return null
+    if (!box)
+      return {
+        entity: 'sandbox',
+        ref: rest[1]!,
+      }
     return ['/v1/sandboxes', box.id, ...rest.slice(2)].join('/')
   }
   return ['/v1/environments', env.id, ...rest].join('/')
+}
+
+const missingTarget = async (deps: Deps, request: Request, missing: Missing) => {
+  try {
+    await authenticate(deps.db, deps.auth, request)
+  } catch (error) {
+    if (error instanceof ApiError) return refusal(request, error, deps.version)
+    throw error
+  }
+  return refusal(request, notFoundError(missing.entity, missing.ref), deps.version)
 }
 
 export const createFetch = (deps: Deps, app: App, dashboard?: Dashboard) => (request: Request) => {
@@ -193,6 +226,7 @@ export const createFetch = (deps: Deps, app: App, dashboard?: Dashboard) => (req
   const url = new URL(request.url)
   const flat = url.pathname.startsWith('/v1/projects/') ? flatPath(deps.db, url.pathname) : null
   if (!flat) return app.fetch(request)
+  if (typeof flat !== 'string') return missingTarget(deps, request, flat)
   url.pathname = flat
   const init: RequestInit & { duplex: 'half' } = {
     method: request.method,

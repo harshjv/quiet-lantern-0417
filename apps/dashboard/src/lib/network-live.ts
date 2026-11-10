@@ -59,7 +59,7 @@ export const useLiveNetwork = (environment: string, enabled: boolean): LiveNetwo
         setLive((prev) => ({
           ...prev,
           problem:
-            data.explanation ?? data.reason ?? data.code ?? 'The live stream reported a problem.',
+            data.explanation ?? data.reason ?? data.code ?? 'Live traffic stopped with an error.',
         }))
       } catch {
         return

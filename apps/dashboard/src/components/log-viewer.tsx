@@ -5,7 +5,7 @@ import { ErrorState } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api, ApiFailure, unwrap, type LogLine } from '@/lib/api'
-import { clock } from '@/lib/format'
+import { clock, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 type Selector =
@@ -153,12 +153,12 @@ export function LogViewer({
         <span className="text-sm font-medium">{label}</span>
         <span className="text-xs text-muted-foreground" aria-live="polite">
           {state === 'following'
-            ? 'following'
+            ? 'Following new lines'
             : state === 'loading'
-              ? 'loading'
+              ? 'Loading'
               : state === 'ended'
-                ? 'stream ended'
-                : `${lines.length} lines`}
+                ? 'No more lines'
+                : plural(lines.length, 'line')}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <Input
@@ -193,7 +193,7 @@ export function LogViewer({
       </div>
       {error ? (
         <div className="p-3">
-          <ErrorState error={error} title="Logs are unavailable" />
+          <ErrorState error={error} title="Couldn’t load logs" />
         </div>
       ) : (
         <div
@@ -212,7 +212,7 @@ export function LogViewer({
               {state === 'loading'
                 ? 'Loading lines…'
                 : filter
-                  ? 'No line matches the filter.'
+                  ? 'No lines match the filter.'
                   : 'No log lines yet.'}
             </p>
           ) : (
@@ -231,7 +231,7 @@ export function LogViewer({
                       ? 'text-red-700 dark:text-red-400'
                       : 'text-muted-foreground',
                   )}
-                  title={line.stream}
+                  title={line.stream === 'stderr' ? 'Error output' : 'Standard output'}
                 >
                   {line.stream === 'stderr' ? 'E' : '·'}
                 </span>

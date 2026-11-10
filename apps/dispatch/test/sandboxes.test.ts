@@ -3,8 +3,11 @@ import { after, before, describe, test } from 'node:test'
 
 import { eq } from 'drizzle-orm'
 
-import { sandbox } from '../src/db/schema.ts'
+import { bytesText, gibibyte } from '@stationly/protocol'
+
+import { sandbox, station as stationTable } from '../src/db/schema.ts'
 import { runRetention } from '../src/sandboxes/lifecycle.ts'
+import { fittingMemory, sandboxMemory } from '../src/sandboxes/limits.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
@@ -824,6 +827,75 @@ describe('station limits', () => {
         .memory_bytes,
       null,
     )
+  })
+
+  test('a create without memory_bytes gets the free memory rounded down to 256 MiB, and below 512 MiB the 4 GiB default meets the quota', async () => {
+    const memory = async () =>
+      (await api('GET', '/v1/stations/station-1?fields=sandbox_memory')).body.sandbox_memory
+    const { used } = await memory()
+    const limit = used + 3 * gibibyte + 100 * 1024 ** 2
+    await api('PATCH', '/v1/stations/station-1', {
+      sandbox_limits: {
+        max_running: 100,
+        memory_bytes: limit,
+      },
+    })
+    assert.deepEqual(await memory(), {
+      limit,
+      used,
+      free: limit - used,
+    })
+    const fitted = await createSandbox(h, envId, {
+      name: 'fitted-memory',
+    })
+    assert.equal(fitted.size.memory_bytes, 3 * gibibyte)
+    const busy = used + 3 * gibibyte
+    assert.deepEqual(await memory(), {
+      limit,
+      used: busy,
+      free: 100 * 1024 ** 2,
+    })
+    const refused = await api('POST', `/v1/environments/${envId}/sandboxes`, {})
+    assert.equal(refused.status, 422)
+    assert.equal(refused.body.error.code, 'SANDBOX_QUOTA_EXCEEDED')
+    assert.equal(
+      refused.body.error.explanation,
+      `Station station-1 allows ${bytesText(limit)} for memory_bytes; ${bytesText(busy)} is used and this change needs 4 GiB more.`,
+    )
+    assert.deepEqual(refused.body.error.details, {
+      station: station.stationId,
+      limit: 'memory_bytes',
+      allowed: limit,
+      used: busy,
+      requested: 4 * gibibyte,
+    })
+    assert.equal((await api('DELETE', `/v1/sandboxes/${fitted.id}`)).status, 200)
+    await api('PATCH', '/v1/stations/station-1', {
+      sandbox_limits: {
+        max_running: 20,
+        memory_bytes: null,
+      },
+    })
+  })
+
+  test('a station that reports no memory has no sandbox memory limit and fits the 4 GiB default', () => {
+    const row = h.db
+      .select()
+      .from(stationTable)
+      .where(eq(stationTable.id, station.stationId))
+      .get()!
+    const unreported = {
+      ...row,
+      resources: null,
+      sandbox_limits: {
+        ...row.sandbox_limits,
+        memory_bytes: null,
+      },
+    }
+    const memory = sandboxMemory(h.db, unreported)
+    assert.equal(memory.limit, null)
+    assert.equal(memory.free, null)
+    assert.equal(fittingMemory(h.db, unreported), 4 * gibibyte)
   })
 
   test('only an instance admin changes sandbox_limits', async () => {

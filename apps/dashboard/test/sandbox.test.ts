@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { span } from '../src/lib/format.ts'
 import {
   allowlistText,
   attachUrl,
-  formatSpan,
-  forwardCommand,
   outputFrame,
   parseAllowlist,
   parseDuration,
@@ -32,10 +31,11 @@ test('ttl limits follow the API range', () => {
 })
 
 test('spans format with the two largest units', () => {
-  assert.equal(formatSpan(45), '45s')
-  assert.equal(formatSpan(125), '2m 5s')
-  assert.equal(formatSpan(4500), '1h 15m')
-  assert.equal(formatSpan(90_000), '1d 1h')
+  assert.equal(span(45), '45 s')
+  assert.equal(span(125), '2 min 5 s')
+  assert.equal(span(4500), '1 h 15 min')
+  assert.equal(span(90_000), '1 d 1 h')
+  assert.equal(span(3600), '1 h')
 })
 
 test('a running sandbox counts down to stop_at and a stopped one to delete_at', () => {
@@ -51,7 +51,7 @@ test('a running sandbox counts down to stop_at and a stopped one to delete_at', 
     ),
     {
       label: 'left',
-      text: '1h 0m',
+      text: '1 h',
       urgent: false,
     },
   )
@@ -66,7 +66,7 @@ test('a running sandbox counts down to stop_at and a stopped one to delete_at', 
     ),
     {
       label: 'left',
-      text: '5m 0s',
+      text: '5 min',
       urgent: true,
     },
   )
@@ -81,7 +81,7 @@ test('a running sandbox counts down to stop_at and a stopped one to delete_at', 
     ),
     {
       label: 'until deletion',
-      text: '7d 0h',
+      text: '7 d',
       urgent: false,
     },
   )
@@ -117,10 +117,6 @@ test('attach frames carry the channel in the first byte', () => {
     }),
     'ws://127.0.0.1:7900/v1/runs/run_1/attach?rows=30&cols=100',
   )
-})
-
-test('the forward command names the sandbox and port', () => {
-  assert.equal(forwardCommand('sbx_1', 3000), 'sly sandbox forward sbx_1 3000')
 })
 
 test('allowlist lines parse to API entries and back', () => {

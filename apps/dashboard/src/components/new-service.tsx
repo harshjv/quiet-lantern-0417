@@ -3,10 +3,12 @@ import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
+import { AlsoWith } from '@/components/code'
 import { RemoveButton } from '@/components/confirm'
 import { CheckboxField, Field, FieldSet, hintId } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
+import { Term } from '@/components/term'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -23,8 +25,10 @@ import {
   VariableValueInput,
 } from '@/components/variable-fields'
 import { api, idempotency, send, type Environment } from '@/lib/api'
+import { commands } from '@/lib/commands'
+import { serviceKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import { onlineStationsQuery } from '@/lib/queries'
+import { onlineStationsQuery, projectQuery, seedService } from '@/lib/queries'
 import { useRows } from '@/lib/use-rows'
 import { toVariableInput, type VariableEntry } from '@/lib/variables'
 
@@ -43,6 +47,7 @@ export function NewService({
 }) {
   const navigate = useNavigate()
   const stations = useQuery(onlineStationsQuery)
+  const project = useQuery(projectQuery(environment.project_id))
   const [name, setName] = useState('')
   const [kind, setKind] = useState<Kind>('web')
   const [image, setImage] = useState('')
@@ -97,16 +102,14 @@ export function NewService({
             idempotency(),
           ),
       ),
+    seed: seedService,
     invalidate: ['services'],
-    staged: () => ({
-      title: `${name} was staged for review`,
-      description: `${environment.name} is protected; the service is created when a human accepts the change.`,
-    }),
+    staged: () => `Create ${name} in ${environment.name}`,
     success: (body) => ({
       title: `${body.name} created`,
       description: body.deployments.length
-        ? 'The first deployment started.'
-        : 'Deploy it from the service page when you are ready.',
+        ? 'Its first deployment started.'
+        : 'Deploy it from its page when you’re ready.',
     }),
     onSuccess: (result) => {
       onOpenChange(false)
@@ -128,9 +131,23 @@ export function NewService({
         onOpenChange(next)
       }}
       size="lg"
-      title="Create a service from an image"
-      description={`In ${environment.name}. sly services create --image and the create_service tool do the same; repositories and templates are created there or from a Manifest.`}
+      title={`New service in ${environment.name}`}
+      description={
+        <>
+          Runs a container image. For a repository or a template, use sly or a{' '}
+          <Term name="manifest" />.
+        </>
+      }
       error={mutation.errorText}
+      also={
+        <AlsoWith
+          cli={commands.createService({
+            project: project.data?.name ?? environment.project_id,
+            environment: environment.name,
+          })}
+          tool="create_service"
+        />
+      }
       submitLabel="Create service"
       pending={mutation.isPending}
       submitDisabled={choices.length > 1 && !station}
@@ -152,8 +169,8 @@ export function NewService({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="web">web</SelectItem>
-              <SelectItem value="worker">worker</SelectItem>
+              <SelectItem value="web">{serviceKind.web}</SelectItem>
+              <SelectItem value="worker">{serviceKind.worker}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -161,7 +178,7 @@ export function NewService({
       <Field
         id="service-image"
         label="Image"
-        hint="Dispatch resolves a tag such as nginx:1.27 to its image digest when you create the service and shows that digest on the service and each deployment. Redeploys keep it; Deploy resolves the tag again."
+        hint="Use a tag like nginx:1.27 or a digest. Stationly pins the tag to a digest when you create the service. Deploy picks up a newer image for the tag; Redeploy keeps the pinned one."
       >
         <Input
           id="service-image"
@@ -178,7 +195,7 @@ export function NewService({
       {kind === 'web' && (
         <FieldSet
           legend="Ports"
-          hint="http ports can take a domain; tcp ports can be exposed on a host port."
+          hint="HTTP ports can have a domain. TCP ports can get a public port."
         >
           <ul className="space-y-2">
             {ports.rows.map((p, i) => (
@@ -209,8 +226,8 @@ export function NewService({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="http">http</SelectItem>
-                    <SelectItem value="tcp">tcp</SelectItem>
+                    <SelectItem value="http">HTTP</SelectItem>
+                    <SelectItem value="tcp">TCP</SelectItem>
                   </SelectContent>
                 </Select>
                 <RemoveButton

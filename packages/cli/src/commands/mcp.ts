@@ -19,23 +19,25 @@ import {
 import { localTools } from '../mcp-local.ts'
 import { print, progress } from '../output.ts'
 
-const clients = ['claude-code', 'cursor', 'codex', 'windsurf', 'generic'] as const
+export const clients = ['claude-code', 'cursor', 'codex', 'windsurf', 'generic'] as const
 
 const launcher = async (client: string) => {
   const script = process.argv[1] ? await realpath(process.argv[1]) : null
   const installed = !script || basename(process.argv[1]!) === 'sly'
   return installed
     ? {
+        type: 'stdio' as const,
         command: 'sly',
         args: ['mcp', '--client', client],
       }
     : {
+        type: 'stdio' as const,
         command: process.execPath,
         args: [script, 'mcp', '--client', client],
       }
 }
 
-const writeClaudeCode = async (server: { command: string; args: string[] }) => {
+const writeClaudeCode = async (server: { type: 'stdio'; command: string; args: string[] }) => {
   const path = join(process.cwd(), '.mcp.json')
   const existing = await readFile(path, 'utf8').then(
     (text) => JSON.parse(text) as { mcpServers?: Record<string, unknown> },

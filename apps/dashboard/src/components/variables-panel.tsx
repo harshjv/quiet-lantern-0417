@@ -1,12 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
-import { Eye, EyeOff, Lock, Pencil, Plus } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Braces, Eye, EyeOff, Lock, Pencil, Plus } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
 
+import { Code } from '@/components/code'
 import { Confirm, RemoveButton } from '@/components/confirm'
 import { CheckboxField, Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
-import { Empty, ErrorState, Mono } from '@/components/page'
-import { QueryState } from '@/components/query-state'
+import { EmptyState, ErrorState } from '@/components/page'
+import { Panel } from '@/components/panel'
 import { ActionsHead, TableFrame } from '@/components/table-frame'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,7 @@ import {
 } from '@/components/variable-fields'
 import { api, idempotency, send, unwrap, type Variable } from '@/lib/api'
 import { plural } from '@/lib/format'
+import { injection as injectionLabel, variableKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
   projectVariablesQuery,
@@ -121,13 +123,13 @@ const announce = (target: VariableTarget, verb: string, deployments: number) => 
     return {
       title: verb,
       description:
-        'Running shells and execs use the new value at once; the init process at its next start.',
+        'Shells and commands use the new value now. The sandbox’s startup process gets it on next start.',
     }
   return {
     title: verb,
     description: deployments
       ? `${plural(deployments, 'deployment')} started.`
-      : 'Dependents are marked stale until they redeploy.',
+      : 'Services that use it pick it up on their next deploy.',
   }
 }
 
@@ -175,7 +177,7 @@ function VariableDialog({
         apply,
       }),
     invalidate: ['variables'],
-    staged: () => `${verb} was staged for review`,
+    staged: () => `${existing ? 'Change' : 'Add'} ${key.trim()}`,
     success: (body) => announce(target, verb, body.deployments),
     onSuccess: () => {
       setValue('')
@@ -194,13 +196,13 @@ function VariableDialog({
       description={
         <>
           {target.kind === 'project'
-            ? `Project variable for the ${target.environment} environment.`
+            ? `Shared by every service in ${target.environment}.`
             : target.kind === 'sandbox'
-              ? 'Sandbox variable. Use a reference to a project or global variable to keep a credential out of agent hands.'
-              : 'Service variable.'}{' '}
+              ? 'Reference a project or global variable to keep a credential out of an agent’s reach.'
+              : 'Reaches this service as an environment variable or a file.'}{' '}
           {target.kind === 'sandbox'
-            ? 'A new value becomes a new version.'
-            : 'A new value becomes a new version; running deployments keep the version they were given.'}
+            ? 'Each save creates a new version.'
+            : 'Each save creates a new version. Running deployments keep the one they started with.'}
         </>
       }
       error={mutation.errorText}
@@ -258,8 +260,8 @@ function VariableDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="env">environment</SelectItem>
-                <SelectItem value="file">file</SelectItem>
+                <SelectItem value="env">{injectionLabel.env}</SelectItem>
+                <SelectItem value="file">{injectionLabel.file}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -290,13 +292,15 @@ function RemoveVariable({ target, variable }: { target: VariableTarget; variable
         apply: false,
       }),
     invalidate: ['variables'],
-    staged: () => `${variable.key} removed was staged for review`,
+    staged: () => `Remove ${variable.key}`,
     success: (body) => announce(target, `${variable.key} removed`, body.deployments),
   })
   return (
     <Confirm
       title={`Remove ${variable.key}?`}
-      description="Services that reference it fail to resolve on their next deployment. Removal is refused while another variable depends on it."
+      description="Services that use it lose it on their next deployment. Stationly keeps it while another variable references it."
+      action="Remove variable"
+      cancel="Keep variable"
       onConfirm={() => mutation.mutateAsync()}
       trigger={<RemoveButton label={`Remove ${variable.key}`} />}
     />
@@ -309,28 +313,129 @@ function ValueCell({ variable, revealed }: { variable: Variable; revealed: strin
       <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-sealed="true">
         <Lock className="size-3.5" aria-hidden />
         {variable.head_version
-          ? `set, ${variable.bytes} bytes, version ${variable.head_version}`
-          : 'not set'}
+          ? `Hidden · ${variable.bytes} bytes · version ${variable.head_version}`
+          : 'Not set'}
       </span>
     )
   }
-  if (variable.kind === 'reference') return <Mono className="break-all">{variable.reference}</Mono>
-  if (revealed !== undefined) return <Mono className="break-all">{revealed}</Mono>
+  if (variable.kind === 'reference') return <Code>{variable.reference}</Code>
+  if (revealed !== undefined) return <Code>{revealed}</Code>
   return (
     <span className="text-muted-foreground">
-      {variable.head_version ? `hidden, version ${variable.head_version}` : 'not set'}
+      {variable.head_version ? `Hidden · version ${variable.head_version}` : 'Not set'}
     </span>
   )
 }
 
-export function VariablesPanel({ target }: { target: VariableTarget }) {
-  const list = useQuery(
+function VariableRows({
+  target,
+  values,
+  onEdit,
+  onAdd,
+  also,
+}: {
+  target: VariableTarget
+  values: Map<string, string>
+  onEdit: (variable: Variable) => void
+  onAdd: () => void
+  also?: ReactNode
+}) {
+  const { data } = useSuspenseQuery(
     target.kind === 'service'
       ? variablesQuery(target.service)
       : target.kind === 'sandbox'
         ? sandboxVariablesQuery(target.sandbox)
         : projectVariablesQuery(target.project, target.environment),
   )
+  const items = [...data.items].sort((a, b) => a.key.localeCompare(b.key))
+  const visible =
+    target.kind === 'project'
+      ? items.filter(
+          (v) =>
+            !v.environments ||
+            v.environments.includes(target.environment) ||
+            v.environments.includes('default'),
+        )
+      : items
+  if (visible.length === 0)
+    return (
+      <EmptyState
+        icon={Braces}
+        title="No variables yet"
+        description={
+          target.kind === 'sandbox'
+            ? 'Variables reach this sandbox as environment variables. Seal the ones that hold secrets.'
+            : target.kind === 'project'
+              ? `Shared variables reach every service in ${target.environment}. Seal the ones that hold secrets.`
+              : 'Variables reach this service as environment variables. Seal the ones that hold secrets.'
+        }
+        action={
+          <Button size="sm" onClick={onAdd}>
+            <Plus /> Add variable
+          </Button>
+        }
+        also={also}
+      />
+    )
+  return (
+    <TableFrame>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[28%]">Key</TableHead>
+          <TableHead className="w-24">Kind</TableHead>
+          <TableHead>Value</TableHead>
+          {target.kind !== 'sandbox' && (
+            <TableHead className="hidden w-36 md:table-cell">Injection</TableHead>
+          )}
+          <ActionsHead className="w-20" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {visible.map((variable) => (
+          <TableRow key={variable.id}>
+            <TableCell>
+              <span className="font-mono text-[0.8125rem] font-medium">{variable.key}</span>
+              {target.kind === 'project' &&
+                variable.environments &&
+                !variable.environments.includes(target.environment) && (
+                  <Badge variant="outline" className="ml-2 text-muted-foreground">
+                    Project default
+                  </Badge>
+                )}
+            </TableCell>
+            <TableCell>
+              <Badge variant={variable.kind === 'sealed' ? 'secondary' : 'outline'}>
+                {variableKind[variable.kind]}
+              </Badge>
+            </TableCell>
+            <TableCell className="max-w-0 whitespace-normal">
+              <ValueCell variable={variable} revealed={values.get(variable.id)} />
+            </TableCell>
+            {target.kind !== 'sandbox' && (
+              <TableCell className="hidden text-muted-foreground md:table-cell">
+                {injectionLabel[variable.injection]}
+                {variable.build && ' · also at build'}
+              </TableCell>
+            )}
+            <TableCell className="text-right">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Change ${variable.key}`}
+                onClick={() => onEdit(variable)}
+              >
+                <Pencil />
+              </Button>
+              <RemoveVariable target={target} variable={variable} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </TableFrame>
+  )
+}
+
+export function VariablesPanel({ target, also }: { target: VariableTarget; also?: ReactNode }) {
   const [reveal, setReveal] = useState(false)
   const serviceResolved = useQuery({
     ...resolvedQuery(target.kind === 'service' ? target.service : ''),
@@ -348,26 +453,16 @@ export function VariablesPanel({ target }: { target: VariableTarget }) {
       .filter((v) => !v.sealed && v.value !== undefined)
       .map((v) => [v.variable_id, v.value!]),
   )
-  const items = [...(list.data?.items ?? [])].sort((a, b) => a.key.localeCompare(b.key))
-  const visible =
-    target.kind === 'project'
-      ? items.filter(
-          (v) =>
-            !v.environments ||
-            v.environments.includes(target.environment) ||
-            v.environments.includes('default'),
-        )
-      : items
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           {target.kind === 'service'
-            ? 'Variables set on this service. References resolve at deploy time.'
+            ? 'Variables of this service. Stationly resolves references when it deploys.'
             : target.kind === 'sandbox'
-              ? 'Variables set on this sandbox. References resolve when the sandbox starts and when a value changes.'
-              : `Project variables that apply to ${target.environment}, with project defaults.`}
+              ? 'Variables of this sandbox. Stationly resolves references when the sandbox starts and when a value changes.'
+              : `Shared variables for every service in ${target.environment}, plus project defaults.`}
         </p>
         <div className="flex items-center gap-2">
           {target.kind !== 'project' && (
@@ -378,7 +473,7 @@ export function VariablesPanel({ target }: { target: VariableTarget }) {
               aria-pressed={reveal}
             >
               {reveal ? <EyeOff /> : <Eye />}
-              {reveal ? 'Hide values' : 'Show literal values'}
+              {reveal ? 'Hide values' : 'Show plain values'}
             </Button>
           )}
           <Button size="sm" onClick={() => setAdding(true)}>
@@ -388,79 +483,21 @@ export function VariablesPanel({ target }: { target: VariableTarget }) {
       </div>
       {reveal && (
         <p className="text-xs text-muted-foreground">
-          Each read of the resolved values is written to the audit log. Sealed values are never
-          shown.
+          Stationly records each read of these values in the audit log. Sealed values stay hidden.
         </p>
       )}
-      {resolved.isError && <ErrorState error={resolved.error} title="Values could not be read" />}
-      <QueryState
-        query={list}
-        isEmpty={() => visible.length === 0}
-        empty={
-          <Empty title="No variables">
-            {target.kind === 'sandbox'
-              ? 'Add one here, with sly sandbox variables set, or with the set_sandbox_variables MCP tool.'
-              : `Add one here, with sly variables set, or with the ${target.kind === 'project' ? 'set_project_variables' : 'set_service_variables'} MCP tool.`}
-          </Empty>
-        }
-      >
-        {() => (
-          <TableFrame>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[28%]">Key</TableHead>
-                <TableHead className="w-24">Kind</TableHead>
-                <TableHead>Value</TableHead>
-                {target.kind !== 'sandbox' && (
-                  <TableHead className="hidden w-36 md:table-cell">Injection</TableHead>
-                )}
-                <ActionsHead className="w-20" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((variable) => (
-                <TableRow key={variable.id}>
-                  <TableCell>
-                    <Mono className="font-medium">{variable.key}</Mono>
-                    {target.kind === 'project' &&
-                      variable.environments &&
-                      !variable.environments.includes(target.environment) && (
-                        <Badge variant="outline" className="ml-2 text-muted-foreground">
-                          default
-                        </Badge>
-                      )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={variable.kind === 'sealed' ? 'secondary' : 'outline'}>
-                      {variable.kind}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-0 whitespace-normal">
-                    <ValueCell variable={variable} revealed={values.get(variable.id)} />
-                  </TableCell>
-                  {target.kind !== 'sandbox' && (
-                    <TableCell className="hidden text-muted-foreground md:table-cell">
-                      {variable.injection}
-                      {variable.build && ' · build'}
-                    </TableCell>
-                  )}
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Change ${variable.key}`}
-                      onClick={() => setEditing(variable)}
-                    >
-                      <Pencil />
-                    </Button>
-                    <RemoveVariable target={target} variable={variable} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </TableFrame>
-        )}
-      </QueryState>
+      {resolved.isError && (
+        <ErrorState error={resolved.error} title="Couldn’t load variable values" />
+      )}
+      <Panel title="Couldn’t load variables">
+        <VariableRows
+          target={target}
+          values={values}
+          onEdit={setEditing}
+          onAdd={() => setAdding(true)}
+          also={also}
+        />
+      </Panel>
       {adding && (
         <VariableDialog target={target} existing={null} open={adding} onOpenChange={setAdding} />
       )}

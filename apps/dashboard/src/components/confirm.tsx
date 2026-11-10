@@ -20,7 +20,7 @@ export function Confirm({
   title,
   description,
   action = 'Remove',
-  cancel = 'Keep it',
+  cancel = 'Cancel',
   destructive = true,
   onConfirm,
   renderError = (failure) => <FormError>{failureText(failure)}</FormError>,

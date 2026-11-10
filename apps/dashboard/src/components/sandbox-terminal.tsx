@@ -12,6 +12,7 @@ import { StartSandbox } from '@/components/sandbox-actions'
 import { TimeLeft } from '@/components/sandbox-clock'
 import { Button } from '@/components/ui/button'
 import { api, ApiFailure, failureText, idempotency, unwrap, type Sandbox } from '@/lib/api'
+import { sandboxStatus, sentence } from '@/lib/labels'
 import { attachUrl, outputFrame, stdinFrame } from '@/lib/sandbox'
 import { isIdle, isTransient } from '@/lib/status'
 import { cn } from '@/lib/utils'
@@ -162,7 +163,7 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name'> }) {
               finish(
                 'ended',
                 control.exit_code === null
-                  ? `Session ended (${control.reason.replaceAll('_', ' ')}).`
+                  ? `Session ended: ${sentence(control.reason).toLowerCase()}.`
                   : `Session ended with exit code ${control.exit_code}.`,
               )
             } else if (control.type === 'error') {
@@ -173,7 +174,7 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name'> }) {
                   fix: 'Reconnect to open a new shell.',
                 }),
               )
-              finish('error', `The terminal could not attach: ${control.code}.`)
+              finish('error', 'Couldn’t attach to the shell.')
             }
             return
           }
@@ -243,7 +244,7 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name'> }) {
       </div>
       {phase === 'error' && failure !== null && (
         <div className="p-3">
-          <ErrorState error={failure} title="The terminal is unavailable" />
+          <ErrorState error={failure} title="Couldn’t open the terminal" />
         </div>
       )}
       <div
@@ -286,17 +287,17 @@ export function SandboxTerminal({
       <div className="space-y-1">
         <p className="text-sm font-medium">
           {busy
-            ? `Sandbox is ${sandbox.status}`
+            ? `${sandbox.name} is ${sandboxStatus[sandbox.status].label.toLowerCase()}`
             : sandbox.status === 'stopped'
-              ? 'Sandbox stopped'
-              : 'Sandbox failed'}
+              ? `${sandbox.name} is stopped`
+              : `${sandbox.name} failed`}
         </p>
         <p className="max-w-md text-sm text-muted-foreground">
           {sandbox.status === 'failed' && sandbox.failure?.summary
             ? sandbox.failure.summary
             : idle
-              ? 'The terminal opens when the sandbox runs. Its disk is kept; the sandbox is deleted if it stays stopped, in '
-              : 'The terminal opens as soon as the sandbox is running.'}
+              ? 'Start it to open the terminal. Stationly keeps its disk and deletes the sandbox if it stays stopped, in '
+              : 'The terminal opens once the sandbox is running.'}
           {idle && sandbox.status === 'stopped' && (
             <TimeLeft sandbox={sandbox} className="font-medium text-foreground" />
           )}

@@ -366,47 +366,49 @@ export const environmentRoutes = (kit: Kit) => {
           : null
         if (source) requireLevel(call.principal, environmentTarget(source), 'read')
         const id = newId('environment')
-        db.insert(environment)
-          .values({
-            id,
-            project_id: proj.id,
-            name: body.name,
-            protected: body.protected ?? false,
-            ephemeral,
-            source_environment_id: source?.id ?? null,
-            ttl_seconds: body.ttl_seconds ?? null,
-          })
-          .run()
-        const created = db.select().from(environment).where(eq(environment.id, id)).get()!
-        audit(
-          db,
-          call,
-          'environment.create',
-          {
+        const cloned = db.transaction(() => {
+          db.insert(environment)
+            .values({
+              id,
+              project_id: proj.id,
+              name: body.name,
+              protected: body.protected ?? false,
+              ephemeral,
+              source_environment_id: source?.id ?? null,
+              ttl_seconds: body.ttl_seconds ?? null,
+            })
+            .run()
+          const created = db.select().from(environment).where(eq(environment.id, id)).get()!
+          audit(
+            db,
+            call,
+            'environment.create',
+            {
+              entity: 'environment',
+              id,
+            },
+            {
+              after: {
+                name: body.name,
+                project_id: proj.id,
+                source_environment_id: source?.id ?? null,
+                protected: created.protected,
+                ephemeral,
+              },
+            },
+          )
+          emit(db, 'environment.created', {
             entity: 'environment',
             id,
-          },
-          {
-            after: {
-              name: body.name,
-              project_id: proj.id,
-              source_environment_id: source?.id ?? null,
-              protected: created.protected,
-              ephemeral,
-            },
-          },
-        )
-        emit(db, 'environment.created', {
-          entity: 'environment',
-          id,
-          project_id: proj.id,
+            project_id: proj.id,
+          })
+          return source
+            ? cloneInto(kit, call, proj, source, created, body.deploy_on_create ?? true)
+            : {
+                warnings: [],
+                deployments: [],
+              }
         })
-        const cloned = source
-          ? cloneInto(kit, call, proj, source, created, body.deploy_on_create ?? true)
-          : {
-              warnings: [],
-              deployments: [],
-            }
         set.status = 201
         return {
           ...select(

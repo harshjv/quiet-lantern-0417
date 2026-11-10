@@ -2,12 +2,15 @@ import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
+import { AlsoWith } from '@/components/code'
 import { Field, hintId } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
 import { Button } from '@/components/ui/button'
 import { api, idempotency, send } from '@/lib/api'
+import { commands } from '@/lib/commands'
 import { useApiMutation } from '@/lib/mutation'
+import { projectQuery, seed } from '@/lib/queries'
 
 export function NewProject() {
   const navigate = useNavigate()
@@ -25,6 +28,7 @@ export function NewProject() {
           idempotency(),
         ),
       ),
+    seed: (project) => [seed(projectQuery(project.name), project)],
     invalidate: ['projects'],
     success: (project) => ({
       title: `${project.name} created`,
@@ -54,7 +58,8 @@ export function NewProject() {
         </Button>
       }
       title="Create a project"
-      description="A project starts with one environment. sly projects create and the create_project tool do the same."
+      description="Starts with one environment, named production unless you pick another name."
+      also={<AlsoWith cli={commands.createProject()} tool="create_project" />}
       error={mutation.errorText}
       submitLabel="Create project"
       pending={mutation.isPending}
@@ -69,7 +74,11 @@ export function NewProject() {
           placeholder="shop"
         />
       </Field>
-      <Field id="project-environment" label="First environment" hint="Leave empty for production.">
+      <Field
+        id="project-environment"
+        label="First environment"
+        hint="Leave it empty for production."
+      >
         <SlugInput
           id="project-environment"
           value={environment}

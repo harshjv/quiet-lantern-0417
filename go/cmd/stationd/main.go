@@ -49,16 +49,20 @@ func main() {
 		fmt.Fprintln(os.Stderr, "stationd:", err)
 		os.Exit(1)
 	}
-	cmd, err := rootCmd(vars).ExecuteC()
+	os.Exit(execute(rootCmd(vars), os.Stderr))
+}
+
+func execute(root *cobra.Command, stderr io.Writer) int {
+	cmd, err := root.ExecuteC()
 	if err == nil {
-		return
+		return 0
 	}
-	fmt.Fprintln(os.Stderr, "stationd:", err)
+	fmt.Fprintln(stderr, "stationd:", err)
 	if errors.As(err, &usageError{}) {
-		fmt.Fprint(os.Stderr, cmd.UsageString())
-		os.Exit(2)
+		fmt.Fprint(stderr, cmd.UsageString())
+		return 2
 	}
-	os.Exit(1)
+	return 1
 }
 
 func rootCmd(vars environment) *cobra.Command {

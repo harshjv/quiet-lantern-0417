@@ -199,6 +199,15 @@ describe('a failed lookup answers at request time and creates nothing', () => {
     await refuses('tampered', `tampered@${claimed}`, 'SOURCE_UNREACHABLE', 'digest_mismatch', 422)
   })
 
+  test('a manifest that is null or of the wrong shape is invalid_manifest', async () => {
+    registry.fail('nullish:1', 200, null)
+    registry.fail('misshapen:1', 200, {
+      manifests: 'linux/arm64',
+    })
+    await refuses('nullish', 'nullish:1', 'SOURCE_UNREACHABLE', 'invalid_manifest', 422)
+    await refuses('misshapen', 'misshapen:1', 'SOURCE_UNREACHABLE', 'invalid_manifest', 422)
+  })
+
   test('an image without linux/arm64 fails with STATION_CAPABILITY_MISSING', async () => {
     registry.publish('amd-only:1', ['linux/amd64'])
     const error = await refuses(

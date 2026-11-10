@@ -19,9 +19,10 @@ import { SlugInput } from '@/components/slug-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api, idempotency, send, type Sandbox, type SandboxSnapshot } from '@/lib/api'
-import { plural } from '@/lib/format'
+import { plural, span } from '@/lib/format'
 import { useApiMutation } from '@/lib/mutation'
-import { formatSpan, parseDuration, ttlProblem } from '@/lib/sandbox'
+import { seedSandbox, seedSnapshot } from '@/lib/queries'
+import { parseDuration, ttlProblem } from '@/lib/sandbox'
 import { isIdle } from '@/lib/status'
 
 type Named = Pick<Sandbox, 'id' | 'name' | 'status'> & { environment_id: string }
@@ -62,16 +63,16 @@ const power = {
     success: (name: string) => ({
       title: `${name} is starting`,
     }),
-    failure: (name: string) => `${name} was not started`,
+    failure: (name: string) => `start ${name}`,
   },
   stop: {
     icon: Square,
     label: 'Stop',
     success: (name: string) => ({
       title: `${name} is stopping`,
-      description: 'Its disk is kept.',
+      description: 'Stationly keeps its disk.',
     }),
-    failure: (name: string) => `${name} was not stopped`,
+    failure: (name: string) => `stop ${name}`,
   },
 } as const
 
@@ -94,6 +95,7 @@ function PowerButton({
           })
           [action].post(undefined, idempotency()),
       ),
+    seed: seedSandbox,
     invalidate: ['sandboxes'],
     success: () => success(sandbox.name),
     failure: () => failure(sandbox.name),
@@ -145,8 +147,10 @@ export function ExtendSandbox({
             idempotency(),
           ),
       ),
+    seed: seedSandbox,
     invalidate: ['sandboxes'],
-    success: (_, ttl_s) => `${sandbox.name} runs for ${formatSpan(ttl_s)} from now`,
+    success: (_, ttl_s) => `${sandbox.name} now stops in ${span(ttl_s)}`,
+    failure: () => `extend ${sandbox.name}`,
     onSuccess: () => setOpen(false),
   })
   const submit = () => {
@@ -169,7 +173,7 @@ export function ExtendSandbox({
         open={open}
         onOpenChange={setOpen}
         title={`Extend ${sandbox.name}`}
-        description={`The sandbox stops this long from now, whatever time was left. It currently has a time to live of ${formatSpan(sandbox.ttl_s)}.`}
+        description={`${sandbox.name} stops this long from now, replacing the time it has left. Its time to live is ${span(sandbox.ttl_s)}.`}
         error={problem ?? mutation.errorText}
         submitLabel="Extend"
         pending={mutation.isPending}
@@ -204,7 +208,7 @@ export function ExtendSandbox({
 export const CopiedFilesNotice = () => (
   <p className="flex items-start gap-2 text-sm text-muted-foreground">
     <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-    Files on the disk, credentials included, are copied into every snapshot and fork.
+    Every snapshot and fork gets a copy of the disk, credentials included.
   </p>
 )
 
@@ -265,8 +269,13 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
             idempotency(),
           ),
       ),
+    seed: seedSnapshot,
     invalidate: ['sandboxes'],
-    success: (snapshot) => `Snapshot ${snapshot.name ?? snapshot.id} is ${snapshot.status}`,
+    success: (snapshot) =>
+      snapshot.status === 'ready'
+        ? `Snapshot ${snapshot.name ?? snapshot.id} is ready`
+        : `Taking snapshot ${snapshot.name ?? snapshot.id}`,
+    failure: () => `snapshot ${sandbox.name}`,
     onSuccess: () => setOpen(false),
   })
   return (
@@ -283,7 +292,7 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
         <CopyDialog
           id="snapshot-name"
           title={`Snapshot ${sandbox.name}`}
-          description="A read-only copy of the disk. A running sandbox is copied as it is, so data still in process buffers is not in it."
+          description="Saves a read-only copy of the disk. Stationly copies a running sandbox as it is, so data its processes haven’t written yet is missing."
           submitLabel="Take snapshot"
           error={mutation.errorText}
           pending={mutation.isPending}
@@ -347,8 +356,10 @@ export function ForkButton({
             idempotency(),
           ),
       ),
+    seed: seedSandbox,
     invalidate: ['sandboxes'],
     success: (created) => `${created.name} forked from ${subject}`,
+    failure: () => `fork ${subject}`,
     onSuccess: (result) => {
       setOpen(false)
       if (!result.staged)
@@ -373,7 +384,7 @@ export function ForkButton({
         <CopyDialog
           id="fork-name"
           title={`Fork ${subject}`}
-          description={`${source.kind === 'sandbox' ? 'A new sandbox on a copy of the live disk, in' : 'A new sandbox on a copy of the snapshot, in'} ${project}/${environment}, with the source's size, network and egress.`}
+          description={`Creates a sandbox in ${project}/${environment} from a copy of ${source.kind === 'sandbox' ? `${subject}’s disk` : 'the snapshot'}, with the same size, network and outbound traffic rules.`}
           submitLabel="Fork"
           error={mutation.errorText}
           pending={mutation.isPending}
@@ -417,9 +428,10 @@ export function DeleteSandbox({
   })
   return (
     <Confirm
-      title={`Delete ${sandbox.name}?`}
-      description="The sandbox and its disk are removed. Snapshots taken from it stay."
-      action="Delete"
+      title={`Delete sandbox ${sandbox.name}?`}
+      description="Stationly deletes the sandbox and its disk. Snapshots taken from it stay."
+      action="Delete sandbox"
+      cancel="Keep sandbox"
       onConfirm={() => mutation.mutateAsync()}
       trigger={
         <ActionButton
@@ -449,8 +461,9 @@ export function DeleteSnapshot({ snapshot }: { snapshot: SandboxSnapshot }) {
   return (
     <Confirm
       title={`Delete snapshot ${label}?`}
-      description="Sandboxes already forked from it keep their own disks."
-      action="Delete"
+      description="Sandboxes forked from it keep their own disks."
+      action="Delete snapshot"
+      cancel="Keep snapshot"
       onConfirm={() => mutation.mutateAsync()}
       trigger={
         <ActionButton

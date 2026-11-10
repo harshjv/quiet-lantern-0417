@@ -2,25 +2,26 @@ import { Minus, Pencil, Plus } from 'lucide-react'
 
 import type { Change } from '@/lib/api'
 import { json } from '@/lib/format'
+import { sentence } from '@/lib/labels'
 import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const opStyle = {
   add: {
     icon: Plus,
-    label: 'add',
+    label: 'Add',
     tone: toneText.success,
     bar: 'border-l-emerald-500',
   },
   update: {
     icon: Pencil,
-    label: 'update',
+    label: 'Change',
     tone: toneText.warning,
     bar: 'border-l-amber-500',
   },
   remove: {
     icon: Minus,
-    label: 'remove',
+    label: 'Remove',
     tone: toneText.danger,
     bar: 'border-l-red-500',
   },
@@ -86,7 +87,7 @@ export function ChangeDiff({
                 <Icon className="size-3.5" aria-hidden />
                 {style.label}
               </span>
-              <span className="font-medium">{change.entity}</span>
+              <span className="font-medium">{sentence(change.entity)}</span>
               <span className="font-mono text-xs text-muted-foreground">{name}</span>
               {assigned && (
                 <span className="font-mono text-xs text-muted-foreground">→ {assigned}</span>
@@ -101,11 +102,11 @@ export function ChangeDiff({
             {change.op === 'update' && (
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
-                  <p className="mb-1 text-xs text-muted-foreground">before</p>
+                  <p className="mb-1 text-xs text-muted-foreground">Before</p>
                   <Value value={change.before} tone="old" />
                 </div>
                 <div>
-                  <p className="mb-1 text-xs text-muted-foreground">after</p>
+                  <p className="mb-1 text-xs text-muted-foreground">After</p>
                   <Value value={change.after} tone="new" />
                 </div>
               </div>

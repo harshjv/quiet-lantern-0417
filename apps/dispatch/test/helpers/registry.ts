@@ -103,9 +103,11 @@ export class FakeRegistry {
       return Promise.resolve(
         new Response(
           JSON.stringify(
-            failure.body ?? {
-              errors: [],
-            },
+            failure.body === undefined
+              ? {
+                  errors: [],
+                }
+              : failure.body,
           ),
           {
             status: failure.status,

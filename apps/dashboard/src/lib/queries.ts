@@ -1,7 +1,74 @@
-import { queryOptions } from '@tanstack/react-query'
+import {
+  noop,
+  queryOptions,
+  type QueryClient,
+  type QueryExecuteOptions,
+  type QueryKey,
+  type QueryKeyWithDataTag,
+} from '@tanstack/react-query'
 
-import { api, unwrap } from './api'
+import {
+  api,
+  unwrap,
+  type Deployment,
+  type Environment,
+  type Sandbox,
+  type SandboxSnapshot,
+  type Service,
+} from './api'
 import { isTerminal, isTransient, snapshotsBusy } from './status'
+
+export const load = <TQueryFnData, TError, TData, TQueryKey extends QueryKey>(
+  client: QueryClient,
+  options: QueryExecuteOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey>,
+) =>
+  client.query({
+    ...options,
+    staleTime: 'static',
+  })
+
+export const warm = <TQueryFnData, TError, TData, TQueryKey extends QueryKey>(
+  client: QueryClient,
+  options: QueryExecuteOptions<TQueryFnData, TError, TData, TQueryFnData, TQueryKey>,
+) => load(client, options).then(noop, noop)
+
+export type Seed = (client: QueryClient) => void
+
+export const seed =
+  <T extends object>(options: QueryKeyWithDataTag<QueryKey, T>, data: NoInfer<T>): Seed =>
+  (client) =>
+    client.setQueryData(options.queryKey, (cached) =>
+      cached
+        ? {
+            ...cached,
+            ...data,
+          }
+        : data,
+    )
+
+export const seedItem =
+  <T extends { id: string }>(
+    options: QueryKeyWithDataTag<QueryKey, { items: T[] }>,
+    item: NoInfer<T>,
+  ): Seed =>
+  (client) =>
+    client.setQueryData(
+      options.queryKey,
+      (page) =>
+        page && {
+          ...page,
+          items: page.items.some((cached) => cached.id === item.id)
+            ? page.items.map((cached) =>
+                cached.id === item.id
+                  ? {
+                      ...cached,
+                      ...item,
+                    }
+                  : cached,
+              )
+            : [...page.items, item],
+        },
+    )
 
 export const meQuery = queryOptions({
   queryKey: ['me'],
@@ -527,3 +594,60 @@ export const sandboxResolvedQuery = (sandbox: string) =>
     staleTime: 0,
     gcTime: 0,
   })
+
+export const seedEnvironment = (project: string, environment: Environment) => [
+  seed(environmentQuery(environment.id), environment),
+  seedItem(environmentsQuery(project), environment),
+]
+
+export const seedService = (service: Service) => [seed(serviceQuery(service.id), service)]
+
+export const seedDeployment = (deployment: Deployment) => [
+  seed(deploymentQuery(deployment.id), deployment),
+]
+
+export const seedSandbox = (sandbox: Sandbox) => [
+  seed(sandboxQuery(sandbox.id), sandbox),
+  seedItem(sandboxesQuery(sandbox.environment_id), sandbox),
+]
+
+export const seedSnapshot = (snapshot: SandboxSnapshot) => [
+  seedItem(sandboxOwnSnapshotsQuery(snapshot.sandbox_id), snapshot),
+  seedItem(sandboxSnapshotsQuery(snapshot.environment_id), snapshot),
+]
+
+export const apiOriginQuery = queryOptions({
+  queryKey: ['settings', 'hostnames.api'],
+  queryFn: async () => {
+    const page = await unwrap(
+      api.v1.settings.get({
+        query: {
+          prefix: 'hostnames.api',
+        },
+      }),
+    )
+    const host = page.items.find((setting) => setting.key === 'hostnames.api')?.value
+    return typeof host === 'string' && host ? `https://${host}` : window.location.origin
+  },
+  staleTime: 'static',
+})
+
+export const agentTokensQuery = queryOptions({
+  queryKey: ['tokens', 'agents'],
+  queryFn: async () => {
+    const page = await unwrap(
+      api.v1.tokens.get({
+        query: {
+          kind: 'scoped',
+          limit: 200,
+        },
+      }),
+    )
+    return page.items.filter((token) => token.name.startsWith('mcp/'))
+  },
+})
+
+export const withoutToken =
+  (id: string): Seed =>
+  (client) =>
+    client.setQueryData(agentTokensQuery.queryKey, (tokens) => tokens?.filter((t) => t.id !== id))

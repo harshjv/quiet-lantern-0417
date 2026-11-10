@@ -3,6 +3,7 @@ import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
+import { Code } from '@/components/code'
 import { CheckboxField, Field } from '@/components/field'
 import { Logo } from '@/components/logo'
 import { SixDigitCode } from '@/components/six-digit-code'
@@ -18,6 +19,7 @@ import {
   serverPage,
   sessionQuery,
 } from '@/lib/auth'
+import { commands } from '@/lib/commands'
 
 type Search = { next?: string }
 
@@ -86,7 +88,9 @@ function Login() {
     const result = await authClient.signIn.passkey()
     setBusy(null)
     if (result.error) {
-      setError(authMessage(result.error, 'The passkey was not accepted.'))
+      setError(
+        authMessage(result.error, 'Your passkey didn’t work. Try again or use your password.'),
+      )
       return
     }
     await finish()
@@ -127,7 +131,7 @@ function Login() {
         })
     setBusy(null)
     if (result.error) {
-      setError(authMessage(result.error, 'The code was not accepted.'))
+      setError(authMessage(result.error, 'That code didn’t match. Check the app and try again.'))
       setCode('')
       return
     }
@@ -146,13 +150,19 @@ function Login() {
             <h1>{step === 'credentials' ? 'Sign in' : 'Two-factor code'}</h1>
           </CardTitle>
           <CardDescription>
-            {step === 'credentials'
-              ? next && serverPage(next)
-                ? 'Sign in to continue to the sly login approval.'
-                : 'Sign in as the instance admin.'
-              : backup
-                ? 'Enter one of the backup codes you saved when you enrolled TOTP.'
-                : 'Enter the six-digit code from your authenticator app.'}
+            {step === 'credentials' ? (
+              next && serverPage(next) ? (
+                <>
+                  Sign in to approve <Code>{commands.login()}</Code>.
+                </>
+              ) : (
+                'Sign in as the instance admin.'
+              )
+            ) : backup ? (
+              'Enter one of the backup codes you saved when you enrolled TOTP.'
+            ) : (
+              'Enter the six-digit code from your authenticator app.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -288,8 +298,7 @@ function Login() {
         </CardContent>
       </Card>
       <p className="mt-6 max-w-sm text-center text-xs text-muted-foreground">
-        There is no sign-up and no password reset by email. Recovery runs on the station host with
-        sly admin reset-password.
+        Forgot your password? Reset it as root on the station host.
       </p>
     </main>
   )

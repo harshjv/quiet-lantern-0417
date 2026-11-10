@@ -1,7 +1,17 @@
-import { CircleAlert, Inbox } from 'lucide-react'
+import { CircleAlert, Inbox, RotateCw, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+import { CopyButton } from '@/components/copy'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ApiFailure } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -85,36 +95,92 @@ export function Subsection({
   )
 }
 
+function ErrorFooter({ failure }: { failure: ApiFailure }) {
+  const details = [
+    failure.code,
+    ...(failure.requestId ? [`Request ${failure.requestId}`] : []),
+  ].join(' · ')
+  return (
+    <div className="flex items-center gap-1 pt-1 font-mono text-xs text-muted-foreground">
+      <span className="min-w-0 truncate">{details}</span>
+      <CopyButton
+        value={`${details}\n${window.location.href}`}
+        label="error details"
+        className="size-5"
+      />
+    </div>
+  )
+}
+
 export function ErrorState({
   error,
-  title = 'This could not be loaded',
+  title = 'Couldn’t load this page',
+  action,
+  onRetry,
 }: {
   error: unknown
   title?: string
+  action?: ReactNode
+  onRetry?: () => void
 }) {
   const failure = error instanceof ApiFailure ? error : null
   return (
-    <Alert variant="destructive">
-      <CircleAlert />
-      <AlertTitle>{failure ? `${title}: ${failure.code}` : title}</AlertTitle>
-      <AlertDescription className="text-foreground">
-        <p>{error instanceof Error ? error.message : String(error)}</p>
-        {failure && <p className="text-muted-foreground">{failure.fix}</p>}
-        {failure?.requestId && (
-          <p className="font-mono text-xs text-muted-foreground">request {failure.requestId}</p>
+    <Alert className="border-red-300 dark:border-red-900">
+      <CircleAlert className="text-red-600 dark:text-red-400" />
+      <AlertTitle className="font-medium">{title}</AlertTitle>
+      <AlertDescription className="space-y-1.5 [&_p:not(:last-child)]:mb-0">
+        <p className="text-muted-foreground">
+          {error instanceof Error ? error.message : String(error)}
+        </p>
+        {failure && <p className="text-foreground">{failure.fix}</p>}
+        {(action || onRetry) && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {action}
+            {onRetry && (
+              <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+                <RotateCw aria-hidden />
+                Try again
+              </Button>
+            )}
+          </div>
         )}
+        {failure && <ErrorFooter failure={failure} />}
       </AlertDescription>
     </Alert>
   )
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+export function EmptyState({
+  icon: Icon = Inbox,
+  title,
+  description,
+  action,
+  also,
+  className,
+}: {
+  icon?: LucideIcon
+  title: ReactNode
+  description?: ReactNode
+  action?: ReactNode
+  also?: ReactNode
+  className?: string
+}) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 py-10 text-center">
-      <Inbox className="size-5 text-muted-foreground" aria-hidden />
-      <p className="text-sm font-medium">{title}</p>
-      {children && <div className="max-w-md text-sm text-muted-foreground">{children}</div>}
-    </div>
+    <Empty className={cn('rounded-lg border border-dashed px-6 py-10', className)}>
+      <EmptyHeader className="max-w-md">
+        <EmptyMedia variant="icon">
+          <Icon className="text-muted-foreground" />
+        </EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        {description && <EmptyDescription>{description}</EmptyDescription>}
+      </EmptyHeader>
+      {(action || also) && (
+        <EmptyContent className="max-w-2xl gap-4">
+          {action}
+          {also}
+        </EmptyContent>
+      )}
+    </Empty>
   )
 }
 

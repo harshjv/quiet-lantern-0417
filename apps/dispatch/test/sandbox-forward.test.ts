@@ -357,6 +357,50 @@ describe('the attach WebSocket for sandbox runs', () => {
     assert.equal(again.body.error.code, 'VALIDATION_FAILED')
   })
 
+  test('control frames that are not a valid resize or eof are dropped and the shell keeps running', async () => {
+    const interactive = await startFakeStation(h, 'station-2', {
+      sandboxes: {
+        interactiveShell: true,
+      },
+    })
+    const box = await createSandbox(h, envId, {
+      name: 'interactive',
+      station_id: 'station-2',
+    })
+    await waitForSandbox(h, box.id, 'running')
+    const shell = await h.call('POST', `/v1/sandboxes/${box.id}/shells`, {
+      token: deployToken,
+      body: {},
+    })
+    assert.equal(shell.status, 201, shell.text)
+    const session = await open(`${shell.body.attach_url}?rows=24&cols=80`, bearer(deployToken))
+    const stdin = (text: string) =>
+      session.ws.send(Buffer.concat([Buffer.from([0]), Buffer.from(text)]))
+    const resizes = () => interactive.shellResizes.filter((r) => r.run_id === shell.body.id)
+    await until(() => session.control.some((m) => m.type === 'attached'), 'the attach')
+    for (const frame of [
+      'null',
+      '{not json',
+      '{"type":"resize"}',
+      '{"type":"resize","rows":30.5,"cols":100}',
+      '{"type":"resize","rows":0,"cols":80}',
+      '{"type":"resize","rows":50,"cols":160}',
+    ])
+      session.ws.send(frame)
+    await until(() => resizes().length > 0, 'the resize')
+    stdin('stty size\r')
+    await until(() => session.frames.some((f) => f.text.includes('50 160')), 'the new window size')
+    assert.deepEqual(resizes(), [
+      {
+        run_id: shell.body.id,
+        rows: 50,
+        cols: 160,
+      },
+    ])
+    stdin('exit\r')
+    await session.closed
+  })
+
   test('a detached exec cannot be attached', async () => {
     const detached = await h.call('POST', `/v1/sandboxes/${boxId}/exec`, {
       token: deployToken,

@@ -26,6 +26,7 @@ type FormProps = {
   title: ReactNode
   description: ReactNode
   notice?: ReactNode
+  also?: ReactNode
   error?: ReactNode
   submitLabel: ReactNode
   pending: boolean
@@ -40,6 +41,7 @@ export function DialogForm({
   title,
   description,
   notice,
+  also,
   error,
   submitLabel,
   pending,
@@ -62,6 +64,7 @@ export function DialogForm({
       {notice}
       {typeof error === 'string' ? <FormError>{error}</FormError> : error}
       {children}
+      {also && <div className="border-t pt-3 [&>*]:justify-start">{also}</div>}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
@@ -97,7 +100,17 @@ export function FormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
-      <DialogContent className={cn(dialogScroll, size && sizes[size])}>
+      <DialogContent
+        className={cn(dialogScroll, size && sizes[size])}
+        onOpenAutoFocus={(event) => {
+          const field = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
+            'form input:not([type=hidden]), form textarea, form [role=combobox]',
+          )
+          if (!field) return
+          event.preventDefault()
+          field.focus()
+        }}
+      >
         <DialogForm {...form} onCancel={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>

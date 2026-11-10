@@ -73,3 +73,32 @@ func TestWriteIfChangedSkipsIdenticalContent(t *testing.T) {
 		t.Fatalf("different write: changed=%v err=%v, want true and no error", changed, err)
 	}
 }
+
+func TestDirSizeCountsRegularFilesOnly(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "big.log")
+	sizes := map[string]int{filepath.Join(dir, "a.log"): 3, filepath.Join(dir, "nested", "b.log"): 5, filepath.Join(dir, "nested", "c.txt"): 7, outside: 1000}
+	for path, size := range sizes {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, make([]byte, size), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "link.log")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(outside), filepath.Join(dir, "linked-dir")); err != nil {
+		t.Fatal(err)
+	}
+	if got := DirSize(dir, nil); got != 15 {
+		t.Fatalf("DirSize = %d, want 15 from the three regular files", got)
+	}
+	if got := DirSize(dir, func(name string) bool { return filepath.Ext(name) == ".log" }); got != 8 {
+		t.Fatalf("DirSize of .log files = %d, want 8", got)
+	}
+	if got := DirSize(filepath.Join(dir, "missing"), nil); got != 0 {
+		t.Fatalf("DirSize of a missing root = %d, want 0", got)
+	}
+}

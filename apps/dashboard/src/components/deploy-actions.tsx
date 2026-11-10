@@ -19,7 +19,7 @@ import {
   type Service,
 } from '@/lib/api'
 import { useApiMutation } from '@/lib/mutation'
-import { deploymentsQuery } from '@/lib/queries'
+import { deploymentsQuery, seedDeployment } from '@/lib/queries'
 import { isInFlight } from '@/lib/status'
 import { warningAlert } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -27,11 +27,10 @@ import { cn } from '@/lib/utils'
 type Started = SentOf<ReturnType<typeof api.v1.services>['redeploy']['post']>
 
 function useDeploy<V = void>(
-  service: Service,
-  verb: (vars: V) => string,
+  act: (vars: V) => { started: string; staged: string; failed: string },
   mutationFn: (vars: V) => Promise<Started>,
   options: {
-    failure?: (vars: V) => string
+    inline?: boolean
     intercept?: (failure: unknown) => boolean
     onSuccess?: () => void
   } = {},
@@ -39,14 +38,12 @@ function useDeploy<V = void>(
   const navigate = useNavigate()
   return useApiMutation({
     mutationFn,
+    seed: seedDeployment,
     invalidate: ['deployments'],
-    staged: (vars) => ({
-      title: `${verb(vars)} was staged for review`,
-      description: 'This environment is protected; accept the change to start it.',
-    }),
+    staged: (vars) => act(vars).staged,
     success: (body, vars) => ({
-      title: `${verb(vars)} started`,
-      description: `${service.name} deployment #${body.number}`,
+      title: act(vars).started,
+      description: `Deployment #${body.number}`,
     }),
     onSuccess: (result) => {
       options.onSuccess?.()
@@ -58,15 +55,25 @@ function useDeploy<V = void>(
           },
         })
     },
-    failure: options.failure,
+    failure: options.inline ? undefined : (vars) => act(vars).failed,
     intercept: options.intercept,
   })
 }
 
-const useRedeploy = (service: Service, verb: string) =>
+const useRedeploy = (service: Service, verb: 'Deploy' | 'Redeploy') =>
   useDeploy(
-    service,
-    () => verb,
+    () =>
+      verb === 'Redeploy'
+        ? {
+            started: `Redeploying ${service.name}`,
+            staged: `Redeploy ${service.name}`,
+            failed: `redeploy ${service.name}`,
+          }
+        : {
+            started: `Deploying ${service.name}`,
+            staged: `Deploy ${service.name}`,
+            failed: `deploy ${service.name}`,
+          },
     () =>
       send(
         api.v1
@@ -75,9 +82,6 @@ const useRedeploy = (service: Service, verb: string) =>
           })
           .redeploy.post({}, idempotency()),
       ),
-    {
-      failure: () => `${verb} was refused`,
-    },
   )
 
 export function DeployButton({ service }: { service: Service }) {
@@ -85,8 +89,11 @@ export function DeployButton({ service }: { service: Service }) {
   const image = service.source.type === 'image' ? service.source.ref : null
   const [ref, setRef] = useState(image ?? '')
   const mutation = useDeploy(
-    service,
-    () => 'Deploy',
+    () => ({
+      started: `Deploying ${service.name}`,
+      staged: `Deploy ${service.name}`,
+      failed: `deploy ${service.name}`,
+    }),
     () => {
       const body =
         service.source.type === 'image'
@@ -107,6 +114,7 @@ export function DeployButton({ service }: { service: Service }) {
       )
     },
     {
+      inline: true,
       onSuccess: () => setOpen(false),
     },
   )
@@ -127,11 +135,11 @@ export function DeployButton({ service }: { service: Service }) {
       title={`Deploy ${service.name}`}
       description={
         repo
-          ? 'Builds the source and rolls it out with the service strategy.'
-          : 'Rolls out this image with the service strategy.'
+          ? `Stationly builds the source and rolls it out to ${service.name}.`
+          : `Stationly rolls this image out to ${service.name}.`
       }
       error={mutation.errorText}
-      submitLabel="Deploy"
+      submitLabel={`Deploy ${service.name}`}
       pending={mutation.isPending}
       onSubmit={() => mutation.mutate()}
     >
@@ -177,8 +185,11 @@ export function RollbackButton({
 }) {
   const [confirm, setConfirm] = useState<string | null>(null)
   const mutation = useDeploy(
-    service,
-    () => `Rollback to #${deployment.number}`,
+    () => ({
+      started: `Rolling back to #${deployment.number}`,
+      staged: `Roll ${service.name} back to #${deployment.number}`,
+      failed: `roll back to #${deployment.number}`,
+    }),
     (stale: boolean) =>
       send(
         api.v1
@@ -198,7 +209,6 @@ export function RollbackButton({
           ),
       ),
     {
-      failure: () => 'Rollback was refused',
       intercept: (failure) => {
         if (!(failure instanceof ApiFailure && failure.code === 'STALE_SECRETS_CONFIRM_REQUIRED'))
           return false
@@ -236,10 +246,10 @@ export function RollbackButton({
 
 const staleTitle = (codes: Set<string>) =>
   codes.has('VARIABLES_CHANGED') && codes.has('CONFIG_CHANGED')
-    ? 'Variables and configuration changed, deploy to apply'
+    ? 'Variables and settings changed. Deploy to use them.'
     : codes.has('VARIABLES_CHANGED')
-      ? 'Variables changed, deploy to apply'
-      : 'Configuration changed, deploy to apply'
+      ? 'Variables changed. Deploy to use them.'
+      : 'Settings changed. Deploy to use them.'
 
 export function StaleBanner({ service }: { service: Service }) {
   const deployments = useQuery({
@@ -277,8 +287,7 @@ export function StaleBanner({ service }: { service: Service }) {
             ))}
             {rolling && (
               <p className="mb-0!">
-                Deployment #{rolling.number} is {rolling.status.replace('_', ' ')}; the banner
-                clears when a deployment with these values is active.
+                Deployment #{rolling.number} is rolling out. This notice goes away when it’s active.
               </p>
             )}
           </AlertDescription>

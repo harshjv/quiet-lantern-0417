@@ -435,6 +435,30 @@ describe('error envelope', () => {
     assert.match(error.fix, /openapi/)
   })
 
+  test('an unknown name in a nested path is NOT_FOUND naming it, and only after authentication', async () => {
+    const created = await post('/v1/projects', {
+      name: 'nested-missing',
+    })
+    const path = `/v1/projects/${created.body.name}/environments/nope/services/web`
+    const missing = await h.call('GET', path, {
+      token: h.admin.token,
+    })
+    const error = assertEnvelope(missing, 'NOT_FOUND')
+    assert.match(error.explanation, /environment nope/)
+    const service = await h.call(
+      'GET',
+      `/v1/projects/${created.body.name}/environments/production/services/nope`,
+      {
+        token: h.admin.token,
+      },
+    )
+    assert.match(assertEnvelope(service, 'NOT_FOUND').explanation, /service nope/)
+    const anonymous = await h.call('GET', path, {
+      token: null,
+    })
+    assertEnvelope(anonymous, 'UNAUTHENTICATED')
+  })
+
   test('NAME_TAKEN is a 409 with the name in details', async () => {
     await post('/v1/projects', {
       name: 'envelope-dup',

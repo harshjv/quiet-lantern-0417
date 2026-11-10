@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { ChoiceCards } from '@/components/choice-cards'
+import { AlsoWith } from '@/components/code'
 import { CheckboxField, Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
@@ -15,19 +16,21 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api, idempotency, send, type Environment } from '@/lib/api'
+import { commands } from '@/lib/commands'
 import { plural } from '@/lib/format'
 import { useApiMutation } from '@/lib/mutation'
+import { seedEnvironment } from '@/lib/queries'
 
 const modes = [
   {
     value: 'empty',
     title: 'Empty',
-    hint: 'No services yet',
+    hint: 'No services',
   },
   {
     value: 'clone',
     title: 'Clone',
-    hint: 'Copy services and variables',
+    hint: 'Copies services and variables',
   },
 ] as const
 
@@ -38,15 +41,16 @@ export function NewEnvironment({
 }: {
   project: string
   environments: Environment[]
-  current: Environment
+  current?: Environment
 }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [mode, setMode] = useState<'empty' | 'clone'>('empty')
-  const [source, setSource] = useState(current.id)
+  const [source, setSource] = useState(current?.id ?? '')
   const [deploy, setDeploy] = useState(true)
   const [protect, setProtect] = useState(false)
+  const sourceName = environments.find((e) => e.id === source)?.name ?? ''
   const mutation = useApiMutation({
     mutationFn: () =>
       send(
@@ -69,6 +73,7 @@ export function NewEnvironment({
             idempotency(),
           ),
       ),
+    seed: (created) => seedEnvironment(project, created),
     invalidate: ['environments'],
     success: (created) => {
       const started = created.deployments.length
@@ -76,8 +81,8 @@ export function NewEnvironment({
         title: `${created.name} created`,
         description:
           mode === 'clone'
-            ? `${created.service_count} services cloned${started ? `, ${plural(started, 'deployment')} started` : ''}.`
-            : 'It has no services yet.',
+            ? `${plural(created.service_count, 'service')} cloned${started ? `, ${plural(started, 'deployment')} started` : ''}.`
+            : 'Add its first service.',
       }
     },
     onSuccess: (result) => {
@@ -109,7 +114,8 @@ export function NewEnvironment({
       }
       size="md"
       title="Create an environment"
-      description="An environment has its own network, services and variable values. sly environments create and the create_environment tool do the same."
+      description="Gets its own network, services and variable values."
+      also={<AlsoWith cli={commands.createEnvironment(project)} tool="create_environment" />}
       error={mutation.errorText}
       submitLabel="Create environment"
       pending={mutation.isPending}
@@ -124,19 +130,21 @@ export function NewEnvironment({
           placeholder="staging"
         />
       </Field>
-      <ChoiceCards
-        name="environment-mode"
-        legend="Start from"
-        value={mode}
-        onChange={setMode}
-        options={modes}
-      />
+      {current && (
+        <ChoiceCards
+          name="environment-mode"
+          legend="Start from"
+          value={mode}
+          onChange={setMode}
+          options={modes}
+        />
+      )}
       {mode === 'clone' && (
         <div className="space-y-3 rounded-md border bg-muted/30 p-3">
           <Field
             id="environment-source"
             label="Clone from"
-            hint="Volumes start empty. A protected source passes on project defaults, not its own project values."
+            hint={`Volumes start empty. When ${sourceName} is protected, variables come from the project defaults, not from ${sourceName}’s own values.`}
           >
             <Select value={source} onValueChange={setSource}>
               <SelectTrigger id="environment-source" className="w-full">
@@ -164,7 +172,7 @@ export function NewEnvironment({
         checked={protect}
         onCheckedChange={setProtect}
         label="Protected"
-        hint="Every later change is staged until a human accepts it. Only a human can set this."
+        hint="Changes from agents and tokens wait for you to accept them. Agents and tokens can’t turn this off."
       />
     </FormDialog>
   )

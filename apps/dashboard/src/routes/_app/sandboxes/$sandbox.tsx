@@ -1,12 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { CircleAlert, TerminalSquare } from 'lucide-react'
-import { lazy, Suspense } from 'react'
+import { Camera, CircleAlert, TerminalSquare } from 'lucide-react'
+import { lazy } from 'react'
 
+import { AlsoWith, Code } from '@/components/code'
 import { Crumbs } from '@/components/crumbs'
 import { LogViewer } from '@/components/log-viewer'
-import { Empty, KeyValue, Mono, PageHeader, Rows, Section } from '@/components/page'
-import { QueryState } from '@/components/query-state'
+import { EmptyState, KeyValue, PageHeader, Section } from '@/components/page'
+import { failurePage, Panel } from '@/components/panel'
 import {
   CopiedFilesNotice,
   DeleteSandbox,
@@ -25,11 +26,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
 import type { Sandbox } from '@/lib/api'
-import { bytes } from '@/lib/format'
-import { sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
+import { commands } from '@/lib/commands'
+import { blank, bytes } from '@/lib/format'
+import { sandboxNetwork, snapshotSource } from '@/lib/labels'
+import { load, sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
 import { egressText, imageText, sizeText } from '@/lib/sandbox'
 import { isIdle, isLive } from '@/lib/status'
-import { useEnvironmentTrail } from '@/lib/use-trail'
+import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 
 const SandboxTerminal = lazy(() =>
   import('@/components/sandbox-terminal').then((m) => ({
@@ -47,6 +50,11 @@ export const Route = createFileRoute('/_app/sandboxes/$sandbox')({
           tab: search.tab as Tab,
         }
       : {},
+  loader: async ({ context, params }) => {
+    const sandbox = await load(context.queryClient, sandboxQuery(params.sandbox))
+    await loadTrail(context.queryClient, sandbox.environment_id)
+  },
+  errorComponent: failurePage('Couldn’t load this sandbox'),
   component: SandboxPage,
 })
 
@@ -59,23 +67,37 @@ function Snapshots({
   project: string
   environment: string
 }) {
-  const snapshots = useQuery(sandboxOwnSnapshotsQuery(sandbox.id))
+  const { data } = useSuspenseQuery(sandboxOwnSnapshotsQuery(sandbox.id))
   return (
     <div className="space-y-3">
       <CopiedFilesNotice />
       <SnapshotsTable
-        query={snapshots}
+        snapshots={data.items}
         project={project}
         environment={environment}
-        originLabel="Source"
+        originLabel="Taken"
         origin={(snapshot) => (
-          <span className="text-muted-foreground">{snapshot.source_state}</span>
+          <span className="text-muted-foreground">{snapshotSource[snapshot.source_state]}</span>
         )}
         empty={
-          <Empty title="No snapshots of this sandbox">
-            Take one with Snapshot above, with sly sandbox snapshot, or with the snapshot_sandbox
-            MCP tool.
-          </Empty>
+          <EmptyState
+            icon={Camera}
+            title="No snapshots yet"
+            description="A snapshot saves this sandbox’s disk so you can fork new sandboxes from it."
+            action={<SnapshotSandbox sandbox={sandbox} />}
+            also={
+              <AlsoWith
+                cli={commands.snapshotSandbox(
+                  {
+                    project,
+                    environment,
+                  },
+                  sandbox.name,
+                )}
+                tool="snapshot_sandbox"
+              />
+            }
+          />
         }
       />
     </div>
@@ -88,17 +110,31 @@ function Overview({ sandbox }: { sandbox: Sandbox }) {
     <KeyValue
       framed
       items={[
-        ['Image', <Mono key="i">{imageText(sandbox.image)}</Mono>],
+        ['Image', <Code key="i">{imageText(sandbox.image)}</Code>],
         ['Size', sizeText(sandbox.size)],
-        ['Network', `${sandbox.network}${sandbox.docker ? ' · docker' : ''}`],
-        ['Egress', egressText(sandbox.egress)],
+        [
+          'Network',
+          `${sandbox.network ? sandboxNetwork[sandbox.network] : blank}${sandbox.docker ? ' · Docker inside' : ''}`,
+        ],
+        ['Outbound traffic', egressText(sandbox.egress)],
         ['Disk', `${bytes(sandbox.disk_used_bytes)} of ${bytes(sandbox.size.disk_bytes)}`],
-        ['CPU', metrics ? `${metrics.cpu_pct.toFixed(1)}%` : '—'],
+        ['CPU', metrics ? `${metrics.cpu_pct.toFixed(1)}%` : 'not running'],
         [
           'Memory',
-          metrics ? `${bytes(metrics.memory_bytes)} of ${bytes(metrics.memory_limit_bytes)}` : '—',
+          metrics
+            ? `${bytes(metrics.memory_bytes)} of ${bytes(metrics.memory_limit_bytes)}`
+            : 'not running',
         ],
-        ['Address', sandbox.address ? <Mono key="a">{sandbox.address}</Mono> : '—'],
+        [
+          'Address',
+          sandbox.address ? (
+            <Code key="a" copy={sandbox.address}>
+              {sandbox.address}
+            </Code>
+          ) : (
+            'none'
+          ),
+        ],
       ]}
     />
   )
@@ -106,22 +142,14 @@ function Overview({ sandbox }: { sandbox: Sandbox }) {
 
 function SandboxPage() {
   const { sandbox: id } = Route.useParams()
-  const sandbox = useQuery(sandboxQuery(id))
-  return (
-    <QueryState query={sandbox} rows={6} errorTitle="The sandbox could not be loaded">
-      {(s) => <SandboxView s={s} />}
-    </QueryState>
-  )
-}
-
-function SandboxView({ s }: { s: Sandbox }) {
   const { tab = 'terminal' } = Route.useSearch()
   const navigate = useNavigate({
     from: Route.fullPath,
   })
+  const { data: s } = useSuspenseQuery(sandboxQuery(id))
   const trail = useEnvironmentTrail(s.environment_id)
-  const projectName = trail.project?.name
-  const environmentName = trail.environment?.name
+  const projectName = trail.project.name
+  const environmentName = trail.environment.name
 
   return (
     <div className="space-y-6">
@@ -147,8 +175,10 @@ function SandboxView({ s }: { s: Sandbox }) {
               <span data-testid="sandbox-time">
                 <TimeLeft sandbox={s} />
               </span>
-              {s.forked_from && <span>forked</span>}
-              <Mono className="text-muted-foreground">{s.id}</Mono>
+              {s.forked_from && <span>Fork</span>}
+              <Code copy={s.id} className="text-muted-foreground">
+                {s.id}
+              </Code>
             </>
           }
           actions={
@@ -160,24 +190,22 @@ function SandboxView({ s }: { s: Sandbox }) {
               ) : null}
               <ExtendSandbox sandbox={s} />
               <SnapshotSandbox sandbox={s} />
-              {projectName && environmentName && (
-                <ForkButton
-                  source={{
-                    kind: 'sandbox',
-                    sandbox: s,
-                  }}
-                  project={projectName}
-                  environment={environmentName}
-                />
-              )}
+              <ForkButton
+                source={{
+                  kind: 'sandbox',
+                  sandbox: s,
+                }}
+                project={projectName}
+                environment={environmentName}
+              />
               <DeleteSandbox
                 sandbox={s}
                 after={() =>
                   void navigate({
                     to: '/projects/$project/$environment',
                     params: {
-                      project: projectName ?? '',
-                      environment: environmentName ?? '',
+                      project: projectName,
+                      environment: environmentName,
                     },
                     search: {
                       tab: 'sandboxes',
@@ -189,12 +217,15 @@ function SandboxView({ s }: { s: Sandbox }) {
           }
         />
       </div>
-      {trail.environment && <ProtectedNotice environment={trail.environment} />}
+      <ProtectedNotice environment={trail.environment} />
       {s.failure && (
-        <Alert variant="destructive">
-          <CircleAlert />
-          <AlertTitle>{s.failure.code}</AlertTitle>
-          <AlertDescription className="text-foreground">{s.failure.summary}</AlertDescription>
+        <Alert className="border-red-300 dark:border-red-900">
+          <CircleAlert className="text-red-600 dark:text-red-400" />
+          <AlertTitle className="font-medium">{s.name} failed</AlertTitle>
+          <AlertDescription className="space-y-1 [&_p:not(:last-child)]:mb-0">
+            <p className="text-foreground">{s.failure.summary}</p>
+            <p className="font-mono text-xs text-muted-foreground">{s.failure.code}</p>
+          </AlertDescription>
         </Alert>
       )}
       <Overview sandbox={s} />
@@ -217,9 +248,9 @@ function SandboxView({ s }: { s: Sandbox }) {
           <TabsTrigger value="network">Network</TabsTrigger>
         </TabsList>
         <TabsContent value="terminal" className="mt-4">
-          <Suspense fallback={<Rows count={4} />}>
+          <Panel rows={4} title="Couldn’t open the terminal">
             <SandboxTerminal sandbox={s} />
-          </Suspense>
+          </Panel>
         </TabsContent>
         <TabsContent value="variables" className="mt-4">
           <VariablesPanel
@@ -227,30 +258,31 @@ function SandboxView({ s }: { s: Sandbox }) {
               kind: 'sandbox',
               sandbox: s.id,
             }}
+            also={<AlsoWith cli={commands.setSandboxVariable(s.id)} tool="set_sandbox_variables" />}
           />
         </TabsContent>
         <TabsContent value="logs" className="mt-4">
           <Section
-            title="Init log"
-            description="What the sandbox's init process printed since its last start."
+            title="Startup log"
+            description="What the sandbox’s startup process printed since its last start."
           >
-            <LogViewer
-              key={`${s.id}-${s.status === 'running'}`}
-              selector={{
-                sandbox: s.id,
-                role: 'init',
-              }}
-              follow={s.status === 'running'}
-              label="Sandbox init log"
-            />
+            <Panel title="Couldn’t load the startup log">
+              <LogViewer
+                key={`${s.id}-${s.status === 'running'}`}
+                selector={{
+                  sandbox: s.id,
+                  role: 'init',
+                }}
+                follow={s.status === 'running'}
+                label="Sandbox startup log"
+              />
+            </Panel>
           </Section>
         </TabsContent>
         <TabsContent value="snapshots" className="mt-4">
-          {projectName && environmentName ? (
+          <Panel rows={2} title="Couldn’t load snapshots">
             <Snapshots sandbox={s} project={projectName} environment={environmentName} />
-          ) : (
-            <Rows count={2} />
-          )}
+          </Panel>
         </TabsContent>
         <TabsContent value="network" className="mt-4">
           <SandboxNetwork sandbox={s} />

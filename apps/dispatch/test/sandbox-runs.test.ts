@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test'
 
 import { eq } from 'drizzle-orm'
 
+import { waitForRun } from '../src/api/runs.ts'
 import { newId } from '../src/db/ids.ts'
 import { run, sandbox } from '../src/db/schema.ts'
 
@@ -342,6 +343,31 @@ describe('exec', () => {
     const cancelled = await api('POST', `/v1/runs/${queued.id}/cancel`)
     assert.equal(cancelled.status, 200, cancelled.text)
     assert.equal(cancelled.body.status, 'cancelled')
+  })
+
+  test('a missing run or sandbox is NOT_FOUND on the shared run paths', async () => {
+    const missing = newId('run')
+    for (const path of [
+      `/v1/runs/${missing}`,
+      `/v1/runs/${missing}?wait_s=2`,
+      `/v1/sandboxes/${newId('sandbox')}/runs`,
+    ]) {
+      const reply = await api('GET', path)
+      assert.equal(reply.status, 404, path)
+      assert.equal(reply.body.error.code, 'NOT_FOUND')
+    }
+    const queued = (
+      await exec({
+        command: ['bash'],
+        attach: true,
+      })
+    ).body
+    const waiting = waitForRun(h.db, queued.id, 5, new AbortController().signal)
+    h.db.delete(run).where(eq(run.id, queued.id)).run()
+    await assert.rejects(waiting, {
+      code: 'NOT_FOUND',
+      message: `run ${queued.id} does not exist or is not visible to this credential.`,
+    })
   })
 
   test('read access cannot run commands, deploy access can', async () => {

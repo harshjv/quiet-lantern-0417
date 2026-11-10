@@ -1,12 +1,14 @@
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 import type { Connections, NetworkMap } from './api'
+import { blank, plural, span } from './format'
+import { domainStatus, path as pathLabel, peerKind, routeResult, type Status } from './labels'
 
 export type MapService = NetworkMap['services'][number]
 export type MapEntry = NetworkMap['inbound']['entries'][number]
 
 export type InternetData = { label: string }
-export type EntryData = { entry: MapEntry; status: string | null }
+export type EntryData = { entry: MapEntry; status: Status | null; hostPort: number | null }
 export type ServiceData = { service: MapService }
 
 export type PeerData = {
@@ -96,13 +98,19 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
     entries.length * rowHeight.entry,
     ...byLayer.map((l) => l.length * rowHeight.service),
   )
+  const exposureOf = (entry: MapEntry & { kind: 'tcp' }) =>
+    map.services
+      .find((s) => s.name === entry.service)
+      ?.exposures.find((x) => x.public === entry.public && x.port === entry.port)
   const statusOf = (entry: MapEntry) => {
-    const svc = map.services.find((s) => s.name === entry.service)
-    if (entry.kind === 'domain')
-      return svc?.domains.find((d) => d.hostname === entry.hostname)?.status ?? null
-    return (
-      svc?.exposures.find((x) => x.public === entry.public && x.port === entry.port)?.result ?? null
-    )
+    if (entry.kind === 'domain') {
+      const domain = map.services
+        .find((s) => s.name === entry.service)
+        ?.domains.find((d) => d.hostname === entry.hostname)
+      return domain ? domainStatus[domain.status] : null
+    }
+    const result = exposureOf(entry)?.result
+    return result ? routeResult[result] : null
   }
   const hasInbound = entries.length > 0
   const firstServiceColumn = hasInbound ? 2 : 0
@@ -130,6 +138,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
         data: {
           entry: item,
           status: statusOf(item),
+          hostPort: item.kind === 'tcp' ? (exposureOf(item)?.host_port ?? null) : null,
         },
       })
   }
@@ -209,7 +218,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
 const units = ['B/s', 'kB/s', 'MB/s', 'GB/s']
 
 export const rateText = (bps: number | null) => {
-  if (bps === null) return '—'
+  if (bps === null) return blank
   let value = bps
   let unit = 0
   while (value >= 1000 && unit < units.length - 1) {
@@ -225,23 +234,28 @@ const sum = (values: (number | null)[]) =>
 type Group = Connections['connections'][number]
 
 export const peerText = (peer: Group['peer']) => {
-  if (peer.kind === 'service') return peer.service ?? peer.service_id ?? 'service'
-  if (peer.address) return `${peer.kind} ${peer.address}`
-  return peer.kind
+  if (peer.kind === 'service') return peer.service ?? peer.service_id ?? peerKind.service
+  if (peer.kind === 'sandbox') return peer.sandbox ?? peer.sandbox_id ?? peerKind.sandbox
+  if (peer.kind === 'public' && peer.address) return peer.address
+  if (peer.address) return `${peerKind[peer.kind]} ${peer.address}`
+  return peerKind[peer.kind]
 }
+
+const protocolText = (protocol: string) => (protocol === 'grpc' ? 'gRPC' : protocol.toUpperCase())
 
 export const endpointText = (endpoint: { address: string; port: number; protocol: string }) =>
-  `${endpoint.address}:${endpoint.port}/${endpoint.protocol}`
+  `${endpoint.address}:${endpoint.port} ${protocolText(endpoint.protocol)}`
 
 export const portSpecText = (port: { port: number; protocol: string; grpc: boolean }) =>
-  `${port.port}/${port.grpc ? 'grpc' : port.protocol}`
+  `${port.port} ${protocolText(port.grpc ? 'grpc' : port.protocol)}`
 
-export const ageText = (seconds: number | null) => (seconds === null ? '—' : `${seconds} s`)
+export const ageText = (seconds: number | null) => (seconds === null ? blank : span(seconds))
 
-const groupLabel = (groups: Group[]) => {
-  const flows = groups.reduce((a, g) => a + g.flows, 0)
-  return `${flows} ${flows === 1 ? 'flow' : 'flows'} · ${rateText(sum(groups.flatMap((g) => [g.bps_out, g.bps_in])))}`
-}
+const groupLabel = (groups: Group[]) =>
+  `${plural(
+    groups.reduce((a, g) => a + g.flows, 0),
+    'connection',
+  )} · ${rateText(sum(groups.flatMap((g) => [g.bps_out, g.bps_in])))}`
 
 const handlesBetween = (from: { x: number; y: number }, to: { x: number; y: number }) =>
   from.x < to.x
@@ -267,9 +281,9 @@ const handlesBetween = (from: { x: number; y: number }, to: { x: number; y: numb
 const inboundKinds = ['internet', 'gateway', 'station'] as const
 
 const inboundLabel = {
-  internet: 'Internet clients',
-  gateway: 'Gateway',
-  station: 'Station',
+  internet: 'Internet',
+  gateway: 'Your domains (Gateway)',
+  station: 'Station health checks',
 } as const
 
 export const overlayLive = (
@@ -427,7 +441,7 @@ export const overlayLive = (
         y: rightY,
       },
       data: {
-        label: `Blocked: ${path}`,
+        label: pathLabel[path],
         tone: 'blocked',
         icon: 'blocked',
         side: 'right',
@@ -443,7 +457,7 @@ export const overlayLive = (
         source: `svc:${name}`,
         target: id,
         sourceHandle: 'right',
-        label: `${count} refused`,
+        label: `${count} blocked`,
         className: 'network-edge-refused',
         markerEnd: {
           type: MarkerType.ArrowClosed,

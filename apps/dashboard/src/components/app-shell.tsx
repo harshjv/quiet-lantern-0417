@@ -24,9 +24,9 @@ import { countPill, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const liveText: Record<LiveState, string> = {
-  live: 'Live',
-  connecting: 'Connecting',
-  offline: 'Offline',
+  live: 'Updates on',
+  connecting: 'Reconnecting',
+  offline: 'Updates paused',
 }
 
 function LiveIndicator({ state }: { state: LiveState }) {
@@ -36,7 +36,7 @@ function LiveIndicator({ state }: { state: LiveState }) {
         <span
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground"
           role="status"
-          aria-label={`Event stream ${liveText[state].toLowerCase()}`}
+          aria-label={liveText[state]}
           tabIndex={0}
         >
           <span
@@ -49,7 +49,9 @@ function LiveIndicator({ state }: { state: LiveState }) {
           {liveText[state]}
         </span>
       </TooltipTrigger>
-      <TooltipContent>Status updates arrive over the events stream</TooltipContent>
+      <TooltipContent>
+        Status changes appear without refreshing. Reconnects on its own.
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -161,6 +163,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {pending}
                 </span>
               )}
+            </Link>
+            <Link to="/agents" className={navLink}>
+              Agents
             </Link>
           </nav>
           <div className="ml-auto flex items-center gap-1">

@@ -66,8 +66,12 @@ export const fail = (
   throw new ApiError(code, explanation, fix, details)
 }
 
-export const notFound = (entity: string, ref: string): never =>
-  fail('NOT_FOUND', `${entity} ${ref} does not exist or is not visible to this credential.`)
+export const notFoundError = (entity: string, ref: string) =>
+  new ApiError('NOT_FOUND', `${entity} ${ref} does not exist or is not visible to this credential.`)
+
+export const notFound = (entity: string, ref: string): never => {
+  throw notFoundError(entity, ref)
+}
 
 export const apiErrorOf = (error: unknown) =>
   error instanceof ApiError
