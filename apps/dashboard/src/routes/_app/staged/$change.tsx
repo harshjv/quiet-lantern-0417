@@ -16,11 +16,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { api, idempotency, unwrap, type Deployment } from '@/lib/api'
+import { seed } from '@/lib/cache'
 import { plural, stamp } from '@/lib/format'
 import { stagedDecided } from '@/lib/invalidate'
 import { stagedSource } from '@/lib/labels'
 import { done, useApiMutation } from '@/lib/mutation'
-import { load, meQuery, seed, seedDeployment, stagedChangeQuery } from '@/lib/queries'
+import { load, meQuery, seedDeployment, stagedChangeQuery } from '@/lib/queries'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 
 export const Route = createFileRoute('/_app/staged/$change')({

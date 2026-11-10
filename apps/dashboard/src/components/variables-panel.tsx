@@ -8,6 +8,7 @@ import { CheckboxField, Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { EmptyState, ErrorState } from '@/components/page'
 import { Panel } from '@/components/panel'
+import { Saving } from '@/components/status'
 import { ActionsHead, TableFrame } from '@/components/table-frame'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,7 @@ import {
   VariableValueInput,
 } from '@/components/variable-fields'
 import { api, idempotency, send, unwrap, type Variable } from '@/lib/api'
+import { editItems, isOptimistic } from '@/lib/cache'
 import { plural } from '@/lib/format'
 import { injection as injectionLabel, variableKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
@@ -40,6 +42,8 @@ import {
 import {
   toSandboxVariableInput,
   toVariableInput,
+  withDraft,
+  withoutKeys,
   type VariableEntry,
   type VariableKind,
 } from '@/lib/variables'
@@ -118,6 +122,22 @@ async function patchVariables(
       }
 }
 
+const listQuery = (target: VariableTarget) =>
+  target.kind === 'service'
+    ? variablesQuery(target.service)
+    : target.kind === 'sandbox'
+      ? sandboxVariablesQuery(target.sandbox)
+      : projectVariablesQuery(target.project, target.environment)
+
+const drafts = (target: VariableTarget, { set = [], unset = [] }: Patch) => [
+  editItems(listQuery(target), (list) =>
+    withoutKeys(
+      set.reduce((next, entry) => withDraft(next, entry, target.kind), list),
+      unset,
+    ),
+  ),
+]
+
 const announce = (target: VariableTarget, verb: string, deployments: number) => {
   if (target.kind === 'sandbox')
     return {
@@ -176,6 +196,11 @@ function VariableDialog({
         set: [entry],
         apply,
       }),
+    optimistic: (entry) =>
+      drafts(target, {
+        set: [entry],
+        apply,
+      }),
     invalidate: ['variables'],
     staged: () => `${existing ? 'Change' : 'Add'} ${key.trim()}`,
     success: (body) => announce(target, verb, body.deployments),
@@ -208,6 +233,7 @@ function VariableDialog({
       error={mutation.errorText}
       submitLabel="Save"
       pending={mutation.isPending}
+      hideWhilePending
       onSubmit={() =>
         mutation.mutate({
           key: key.trim(),
@@ -291,6 +317,11 @@ function RemoveVariable({ target, variable }: { target: VariableTarget; variable
         unset: [variable.key],
         apply: false,
       }),
+    optimistic: () =>
+      drafts(target, {
+        unset: [variable.key],
+        apply: false,
+      }),
     invalidate: ['variables'],
     staged: () => `Remove ${variable.key}`,
     success: (body) => announce(target, `${variable.key} removed`, body.deployments),
@@ -302,12 +333,13 @@ function RemoveVariable({ target, variable }: { target: VariableTarget; variable
       action="Remove variable"
       cancel="Keep variable"
       onConfirm={() => mutation.mutateAsync()}
-      trigger={<RemoveButton label={`Remove ${variable.key}`} />}
+      trigger={<RemoveButton label={`Remove ${variable.key}`} disabled={isOptimistic(variable)} />}
     />
   )
 }
 
 function ValueCell({ variable, revealed }: { variable: Variable; revealed: string | undefined }) {
+  if (isOptimistic(variable)) return <Saving />
   if (variable.kind === 'sealed') {
     return (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-sealed="true">
@@ -340,13 +372,7 @@ function VariableRows({
   onAdd: () => void
   also?: ReactNode
 }) {
-  const { data } = useSuspenseQuery(
-    target.kind === 'service'
-      ? variablesQuery(target.service)
-      : target.kind === 'sandbox'
-        ? sandboxVariablesQuery(target.sandbox)
-        : projectVariablesQuery(target.project, target.environment),
-  )
+  const { data } = useSuspenseQuery(listQuery(target))
   const items = [...data.items].sort((a, b) => a.key.localeCompare(b.key))
   const visible =
     target.kind === 'project'
@@ -422,6 +448,7 @@ function VariableRows({
                 variant="ghost"
                 size="icon-sm"
                 aria-label={`Change ${variable.key}`}
+                disabled={isOptimistic(variable)}
                 onClick={() => onEdit(variable)}
               >
                 <Pencil />

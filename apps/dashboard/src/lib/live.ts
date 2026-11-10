@@ -1,8 +1,12 @@
-import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { noop, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 import type { Event as EventRow } from './api'
+import { completionOf, completionText, startedByAgent } from './completion'
 import { invalidateGroups, stagedDecided, type Group } from './invalidate'
+import { deploymentQuery, serviceQuery } from './queries'
 
 export type LiveState = 'connecting' | 'live' | 'offline'
 
@@ -69,14 +73,54 @@ const apply = (client: QueryClient, event: EventRow) => {
     })
 }
 
+const followed = new Set<string>()
+
+export const follow = (deployment: string) => followed.add(deployment)
+
+type Router = ReturnType<typeof useRouter>
+
+const notify = async (client: QueryClient, router: Router, event: EventRow) => {
+  const completion = completionOf(event)
+  if (!completion) return
+  const params = {
+    deployment: completion.deployment,
+  }
+  const mine = followed.delete(completion.deployment)
+  if (
+    router.matchRoute({
+      to: '/deployments/$deployment',
+      params,
+    })
+  )
+    return
+  const deployment = await client.ensureQueryData(deploymentQuery(completion.deployment))
+  if (!mine && !startedByAgent(deployment.trigger)) return
+  const service = await client.ensureQueryData(serviceQuery(deployment.service_id))
+  const text = completionText(completion, service.name)
+  toast[completion.outcome === 'active' ? 'success' : 'error'](text.title, {
+    description: text.description,
+    action: {
+      label: text.action,
+      onClick: () =>
+        void router.navigate({
+          to: '/deployments/$deployment',
+          params,
+        }),
+    },
+  })
+}
+
 export const useLiveEvents = () => {
   const client = useQueryClient()
+  const router = useRouter()
   const [state, setState] = useState<LiveState>('connecting')
   useEffect(() => {
     const source = new EventSource(`/v1/events?types=${encodeURIComponent(watched.join(','))}`)
     const onEvent = (message: MessageEvent<string>) => {
       try {
-        apply(client, JSON.parse(message.data) as EventRow)
+        const event = JSON.parse(message.data) as EventRow
+        apply(client, event)
+        notify(client, router, event).then(noop, noop)
       } catch {
         return
       }
@@ -86,6 +130,6 @@ export const useLiveEvents = () => {
     source.onerror = () =>
       setState(source.readyState === EventSource.CLOSED ? 'offline' : 'connecting')
     return () => source.close()
-  }, [client])
+  }, [client, router])
   return state
 }

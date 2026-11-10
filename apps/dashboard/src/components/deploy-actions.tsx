@@ -18,9 +18,11 @@ import {
   type SentOf,
   type Service,
 } from '@/lib/api'
+import { editItems } from '@/lib/cache'
+import { follow } from '@/lib/live'
 import { useApiMutation } from '@/lib/mutation'
 import { deploymentsQuery, seedDeployment } from '@/lib/queries'
-import { isInFlight } from '@/lib/status'
+import { isInFlight, withQueued, type TriggerType } from '@/lib/status'
 import { warningAlert } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +31,7 @@ type Started = SentOf<ReturnType<typeof api.v1.services>['redeploy']['post']>
 type Named = Pick<Service, 'id' | 'name'>
 
 export function useDeploy<V = void>(
+  target: { service: string; trigger: TriggerType },
   act: (vars: V) => { started: string; staged: string; failed: string },
   mutationFn: (vars: V) => Promise<Started>,
   options: {
@@ -40,6 +43,9 @@ export function useDeploy<V = void>(
   const navigate = useNavigate()
   return useApiMutation({
     mutationFn,
+    optimistic: () => [
+      editItems(deploymentsQuery(target.service), (list) => withQueued(list, target.trigger)),
+    ],
     seed: seedDeployment,
     invalidate: ['deployments'],
     staged: (vars) => act(vars).staged,
@@ -49,13 +55,14 @@ export function useDeploy<V = void>(
     }),
     onSuccess: (result) => {
       options.onSuccess?.()
-      if (!result.staged)
-        void navigate({
-          to: '/deployments/$deployment',
-          params: {
-            deployment: result.body.id,
-          },
-        })
+      if (result.staged) return
+      follow(result.body.id)
+      void navigate({
+        to: '/deployments/$deployment',
+        params: {
+          deployment: result.body.id,
+        },
+      })
     },
     failure: options.inline ? undefined : (vars) => act(vars).failed,
     intercept: options.intercept,
@@ -70,6 +77,10 @@ export const deployCopy = (name: string) => ({
 
 const useRedeploy = (service: Named, verb: 'Deploy' | 'Redeploy') =>
   useDeploy(
+    {
+      service: service.id,
+      trigger: 'redeploy',
+    },
     () =>
       verb === 'Redeploy'
         ? {
@@ -93,6 +104,10 @@ export function DeployButton({ service }: { service: Service }) {
   const image = service.source.type === 'image' ? service.source.ref : null
   const [ref, setRef] = useState(image ?? '')
   const mutation = useDeploy(
+    {
+      service: service.id,
+      trigger: 'manual',
+    },
     () => deployCopy(service.name),
     () => {
       const body =
@@ -141,6 +156,7 @@ export function DeployButton({ service }: { service: Service }) {
       error={mutation.errorText}
       submitLabel={`Deploy ${service.name}`}
       pending={mutation.isPending}
+      hideWhilePending
       onSubmit={() => mutation.mutate()}
     >
       <Field id="deploy-ref" label={repo ? 'Commit, branch or tag (optional)' : 'Image'}>
@@ -179,6 +195,10 @@ export function RedeployButton({ service }: { service: Service }) {
 export function useRollback(service: Named, deployment: { id: string; label: string }) {
   const [confirm, setConfirm] = useState<string | null>(null)
   const mutation = useDeploy(
+    {
+      service: service.id,
+      trigger: 'rollback',
+    },
     () => ({
       started: `Rolling back to ${deployment.label}`,
       staged: `Roll ${service.name} back to ${deployment.label}`,

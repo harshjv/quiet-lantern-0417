@@ -43,9 +43,13 @@ export const clock = (value: string | null | undefined) => {
   return date ? format(date, 'HH:mm:ss') : ''
 }
 
-export const duration = (from: string | null | undefined, to: string | null | undefined) => {
+export const duration = (
+  from: string | null | undefined,
+  to: string | null | undefined,
+  now = new Date(),
+) => {
   const start = parsed(from)
-  return start ? span(differenceInSeconds(parsed(to) ?? new Date(), start)) : blank
+  return start ? span(differenceInSeconds(parsed(to) ?? now, start)) : blank
 }
 
 export const bytes = (value: number | null | undefined) =>

@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
 import { agentHints } from '@/lib/agent-hints'
 import type { Service } from '@/lib/api'
+import { isOptimistic } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
 import { blank, duration, shortDigest, shortSha, sourceText } from '@/lib/format'
 import { deploymentStrategy, serviceKind } from '@/lib/labels'
@@ -84,16 +85,18 @@ function Deployments({ service, scope }: { service: Service; scope: ServiceScope
         {data.items.map((deployment) => (
           <TableRow key={deployment.id} className="relative">
             <TableCell className="tabular-nums">
-              <Link
-                to="/deployments/$deployment"
-                params={{
-                  deployment: deployment.id,
-                }}
-                className="font-medium after:absolute after:inset-0"
-                aria-label={`Deployment ${deployment.number}`}
-              >
-                {deployment.number}
-              </Link>
+              {!isOptimistic(deployment) && (
+                <Link
+                  to="/deployments/$deployment"
+                  params={{
+                    deployment: deployment.id,
+                  }}
+                  className="font-medium after:absolute after:inset-0"
+                  aria-label={`Deployment ${deployment.number}`}
+                >
+                  {deployment.number}
+                </Link>
+              )}
             </TableCell>
             <TableCell>
               <div className="flex flex-col gap-1">

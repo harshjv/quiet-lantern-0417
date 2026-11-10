@@ -12,10 +12,14 @@ import { Input } from '@/components/ui/input'
 import { api, idempotency, send, type Sandbox } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { useApiMutation } from '@/lib/mutation'
-import { seedSandbox } from '@/lib/queries'
+import { patchSandbox, seedSandbox } from '@/lib/queries'
 import { allowlistText, egressBody, type Egress } from '@/lib/sandbox'
 
-function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egress'> }) {
+function EgressEditor({
+  sandbox,
+}: {
+  sandbox: Pick<Sandbox, 'id' | 'name' | 'egress' | 'environment_id'>
+}) {
   const [mode, setMode] = useState(sandbox.egress.mode)
   const [domains, setDomains] = useState(allowlistText(sandbox.egress.domains ?? []))
   const [problem, setProblem] = useState<string | null>(null)
@@ -33,6 +37,10 @@ function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egr
             idempotency(),
           ),
       ),
+    optimistic: (egress) =>
+      patchSandbox(sandbox, {
+        egress,
+      }),
     seed: seedSandbox,
     invalidate: ['sandboxes'],
     success: () => ({
@@ -101,7 +109,7 @@ function ForwardCommand({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'status'> }
 export function SandboxNetwork({
   sandbox,
 }: {
-  sandbox: Pick<Sandbox, 'id' | 'name' | 'status' | 'egress'>
+  sandbox: Pick<Sandbox, 'id' | 'name' | 'status' | 'egress' | 'environment_id'>
 }) {
   return (
     <div className="space-y-6">

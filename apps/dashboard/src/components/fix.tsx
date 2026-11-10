@@ -42,6 +42,10 @@ type RunOf<T extends Run['tool']> = Extract<Run, { tool: T }>
 
 function DeployRun({ run, ...props }: Pressable & { run: RunOf<'deploy'> }) {
   const mutation = useDeploy(
+    {
+      service: run.service,
+      trigger: 'manual',
+    },
     () => deployCopy(run.name),
     () =>
       send(

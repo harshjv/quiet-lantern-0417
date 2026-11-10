@@ -42,6 +42,7 @@ import {
   type Service,
   type ServicePort,
 } from '@/lib/api'
+import { editItems } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
 import { useInvalidate } from '@/lib/invalidate'
 import { serviceKind } from '@/lib/labels'
@@ -94,6 +95,20 @@ function usePortsChange(service: Service) {
             idempotency(),
           ),
       ),
+    optimistic: (input) => [
+      editItems(portsQuery(service.id), (ports) =>
+        ports.map((p) => {
+          const spec = input.ports.find((next) => next.port === p.port)
+          return spec
+            ? {
+                ...p,
+                protocol: spec.protocol,
+                grpc: spec.grpc,
+              }
+            : p
+        }),
+      ),
+    ],
     seed: seedService,
     invalidate: ['networking'],
     staged: (input) => input.staged,
@@ -334,6 +349,7 @@ function EditPort({
       error={change.isError && <FailureNotice error={change.error} allocations={allocations} />}
       submitLabel="Save and deploy"
       pending={change.isPending}
+      hideWhilePending
       submitDisabled={unchanged}
       onSubmit={submit}
     >

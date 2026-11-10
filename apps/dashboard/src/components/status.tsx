@@ -19,6 +19,8 @@ import { isInFlight, isTransient } from '@/lib/status'
 import { toneBadge, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
+const crossfade = 'motion-safe:transition-colors motion-safe:duration-200'
+
 export function ServiceStatusDot({
   status,
   className,
@@ -34,6 +36,7 @@ export function ServiceStatusDot({
       <span
         className={cn(
           'relative inline-flex size-2 rounded-full',
+          crossfade,
           toneDot[serviceStatus[status].tone],
         )}
       />
@@ -67,11 +70,22 @@ const pulse = (
   />
 )
 
+export function Saving() {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground" role="status">
+      {pulse}
+      Saving
+    </span>
+  )
+}
+
 export function StatusBadge({ status, busy }: { status: Status; busy?: boolean }) {
   return (
-    <span className={cn(badge, toneBadge[status.tone])}>
+    <span className={cn(badge, crossfade, toneBadge[status.tone])}>
       {busy && pulse}
-      {status.label}
+      <span key={status.label} className="motion-safe:animate-in motion-safe:fade-in-0">
+        {status.label}
+      </span>
     </span>
   )
 }

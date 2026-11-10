@@ -90,15 +90,17 @@ export function FormDialog({
   onOpenChange,
   trigger,
   size,
+  hideWhilePending,
   ...form
 }: Omit<FormProps, 'onCancel'> & {
   open: boolean
   onOpenChange: (open: boolean) => void
   trigger?: ReactNode
   size?: keyof typeof sizes
+  hideWhilePending?: boolean
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open && !(hideWhilePending && form.pending)} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent
         className={cn(dialogScroll, size && sizes[size])}

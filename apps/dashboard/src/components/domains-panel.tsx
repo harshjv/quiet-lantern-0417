@@ -23,11 +23,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api, idempotency, send, type Domain } from '@/lib/api'
+import { seedItem } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
 import { planFix } from '@/lib/fixes'
 import { domainIngress, domainKind, domainStatus, sentence } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import { domainsQuery, portsQuery, seedItem } from '@/lib/queries'
+import { domainsQuery, portsQuery } from '@/lib/queries'
 import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 

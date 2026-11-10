@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { api, idempotency, send, type Sandbox, type SandboxSnapshot } from '@/lib/api'
 import { plural, span } from '@/lib/format'
 import { useApiMutation } from '@/lib/mutation'
-import { seedSandbox, seedSnapshot } from '@/lib/queries'
+import { patchSandbox, seedSandbox, seedSnapshot } from '@/lib/queries'
 import { parseDuration, ttlProblem } from '@/lib/sandbox'
 import { isIdle } from '@/lib/status'
 
@@ -60,6 +60,7 @@ const power = {
   start: {
     icon: Play,
     label: 'Start',
+    status: 'starting',
     success: (name: string) => ({
       title: `${name} is starting`,
     }),
@@ -68,6 +69,7 @@ const power = {
   stop: {
     icon: Square,
     label: 'Stop',
+    status: 'stopping',
     success: (name: string) => ({
       title: `${name} is stopping`,
       description: 'Stationly keeps its disk.',
@@ -77,10 +79,10 @@ const power = {
 } as const
 
 export const useSandboxPower = (
-  sandbox: Pick<Sandbox, 'id' | 'name'>,
+  sandbox: Pick<Sandbox, 'id' | 'name'> & Partial<Pick<Sandbox, 'environment_id'>>,
   action: keyof typeof power,
 ) => {
-  const { success, failure } = power[action]
+  const { status, success, failure } = power[action]
   return useApiMutation({
     mutationFn: () =>
       send(
@@ -90,6 +92,11 @@ export const useSandboxPower = (
           })
           [action].post(undefined, idempotency()),
       ),
+    optimistic: () =>
+      patchSandbox(sandbox, {
+        status,
+        status_reason: null,
+      }),
     seed: seedSandbox,
     invalidate: ['sandboxes'],
     success: () => success(sandbox.name),

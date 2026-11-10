@@ -8,9 +8,10 @@ import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
 import { Button } from '@/components/ui/button'
 import { api, idempotency, send } from '@/lib/api'
+import { seed } from '@/lib/cache'
 import { commands } from '@/lib/commands'
 import { useApiMutation } from '@/lib/mutation'
-import { projectQuery, seed } from '@/lib/queries'
+import { projectQuery } from '@/lib/queries'
 
 export function NewProject({
   trigger = (

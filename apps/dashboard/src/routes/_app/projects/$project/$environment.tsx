@@ -33,11 +33,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { VariablesPanel } from '@/components/variables-panel'
 import { agentHints } from '@/lib/agent-hints'
 import { api, idempotency, send, type Environment } from '@/lib/api'
+import { merge, mergeItem } from '@/lib/cache'
 import { commands } from '@/lib/commands'
 import { byName, changeSummary, plural, shortSha, sourceText } from '@/lib/format'
 import { serviceKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
+  environmentQuery,
   environmentsQuery,
   environmentStagedQuery,
   load,
@@ -306,6 +308,14 @@ function Settings({ project, environment }: { project: string; environment: Envi
             idempotency(),
           ),
       ),
+    optimistic: (value) => [
+      mergeItem(environmentsQuery(project), environment.id, {
+        protected: value,
+      }),
+      merge(environmentQuery(environment.id), {
+        protected: value,
+      }),
+    ],
     seed: (env) => seedEnvironment(project, env),
     invalidate: ['environments'],
     success: (env) =>

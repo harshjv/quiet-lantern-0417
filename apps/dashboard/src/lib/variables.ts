@@ -1,7 +1,8 @@
 import { variableKeyPattern as variableKeySource } from '@stationly/protocol/domain'
 
 import type { Variable } from './api'
-import { inputPattern } from './format'
+import { optimistic } from './cache.ts'
+import { inputPattern } from './format.ts'
 
 export type VariableKind = Variable['kind']
 
@@ -53,3 +54,29 @@ export const toSandboxVariableInput = ({ key, kind, value }: VariableEntry) => (
   kind,
   ...valueOf(kind, value),
 })
+
+export const draftVariable = (
+  entry: VariableEntry,
+  scope: Variable['scope'],
+  existing?: Variable,
+): Variable =>
+  optimistic({
+    id: `draft-${entry.key}`,
+    head_version: null,
+    bytes: null,
+    ...existing,
+    scope,
+    key: entry.key,
+    kind: entry.kind,
+    reference: entry.kind === 'reference' ? entry.value : null,
+    injection: entry.injection ?? existing?.injection ?? 'env',
+    build: entry.build,
+  })
+
+export const withDraft = (list: Variable[], entry: VariableEntry, scope: Variable['scope']) =>
+  list.some((v) => v.key === entry.key)
+    ? list.map((v) => (v.key === entry.key ? draftVariable(entry, scope, v) : v))
+    : [...list, draftVariable(entry, scope)]
+
+export const withoutKeys = (list: Variable[], keys: string[]) =>
+  list.filter((v) => !keys.includes(v.key))

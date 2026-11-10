@@ -1,11 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { failureText } from './api'
+import { applyOptimistic, rollback, write, type Edit } from './cache'
 import { toastFailure } from './failure'
-import { useInvalidate, type Group } from './invalidate'
-import type { Seed } from './queries'
+import { invalidateGroups, type Group } from './invalidate'
 import { toastStaged } from './staged'
 
 export type Message = string | { title: string; description?: string }
@@ -41,7 +41,8 @@ const split = (message: Message) =>
 
 export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
   mutationFn: (vars: V) => Promise<R>
-  seed?: (body: Body<R>, vars: V) => Seed[]
+  optimistic?: (vars: V) => Edit[]
+  seed?: (body: Body<R>, vars: V) => Edit[]
   invalidate?: Group[]
   staged?: (vars: V) => string
   success?: (body: Body<R>, vars: V) => Message | void
@@ -50,16 +51,16 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
   intercept?: (failure: unknown, vars: V) => boolean
 }) {
   const navigate = useNavigate()
-  const client = useQueryClient()
-  const invalidate = useInvalidate()
   const mutation = useMutation({
     mutationFn: options.mutationFn,
-    onSuccess: (result, vars) => {
-      if (!result.staged)
-        for (const write of options.seed?.(result.body as Body<R>, vars) ?? []) write(client)
-      invalidate(...(options.invalidate ?? []), ...(result.staged ? (['staged'] as const) : []))
-      if (result.staged) toastStaged(navigate, result.body.id, options.staged?.(vars))
-      else {
+    onMutate: (vars, { client }) =>
+      options.optimistic ? applyOptimistic(client, options.optimistic(vars)) : undefined,
+    onSuccess: (result, vars, snapshot, { client }) => {
+      if (result.staged) {
+        if (snapshot) rollback(client, snapshot)
+        toastStaged(navigate, result.body.id, options.staged?.(vars))
+      } else {
+        write(client, options.seed?.(result.body as Body<R>, vars) ?? [])
         const message = options.success?.(result.body as Body<R>, vars)
         if (message) {
           const { title, description } = split(message)
@@ -71,10 +72,16 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
       }
       options.onSuccess?.(result, vars)
     },
-    onError: (failure, vars) => {
+    onError: (failure, vars, snapshot, { client }) => {
+      if (snapshot) rollback(client, snapshot)
       if (options.intercept?.(failure, vars)) return
       if (options.failure) toastFailure(options.failure(vars), failure)
     },
+    onSettled: (result, _failure, _vars, _snapshot, { client }) =>
+      invalidateGroups(client, [
+        ...(options.invalidate ?? []),
+        ...(result?.staged ? (['staged'] as const) : []),
+      ]),
   })
   return {
     ...mutation,

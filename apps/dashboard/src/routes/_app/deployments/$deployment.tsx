@@ -9,7 +9,7 @@ import { LogViewer } from '@/components/log-viewer'
 import { KeyValue, Mono, PageHeader, Section } from '@/components/page'
 import { failurePage, Panel } from '@/components/panel'
 import { DeploymentStatusBadge } from '@/components/status'
-import { Time } from '@/components/time'
+import { Time, useNow } from '@/components/time'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, idempotency, send, type DeploymentStep } from '@/lib/api'
@@ -32,7 +32,7 @@ import {
   serviceQuery,
   warm,
 } from '@/lib/queries'
-import { isCancellable, isTerminal } from '@/lib/status'
+import { isCancellable, isTerminal, stepProgress } from '@/lib/status'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
@@ -113,6 +113,12 @@ function Steps({ steps }: { steps: DeploymentStep[] }) {
   )
 }
 
+function StepHeader({ steps }: { steps: DeploymentStep[] }) {
+  const now = useNow(1000)
+  const text = stepProgress(steps, new Date(now))
+  return text && <span className="text-foreground tabular-nums">{text}</span>
+}
+
 function DeploymentPage() {
   const { deployment: id } = Route.useParams()
   const { data: d } = useSuspenseQuery(deploymentQuery(id))
@@ -172,6 +178,7 @@ function DeploymentPage() {
               </Link>
               <Mono>{d.id}</Mono>
               <Time value={d.started_at ?? d.created_at} />
+              {live && <StepHeader steps={d.steps ?? []} />}
             </>
           }
           actions={
