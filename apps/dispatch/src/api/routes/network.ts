@@ -147,7 +147,7 @@ export const networkRoutes = (kit: Kit) => {
           fail(
             'NOT_FOUND',
             `The station returned no connection sample for ${ctx.service.name}.`,
-            'Read the connections again; check the station with sly stations describe.',
+            `Read the connections again; check the station with sly stations get ${ctx.service.station_id}.`,
             {
               service_id: ctx.service.id,
             },
@@ -333,9 +333,7 @@ export const networkRoutes = (kit: Kit) => {
         operation: {
           id: 'explain_network',
           level: 'read',
-          cli: {
-            render: 'explanation',
-          },
+          cli: false,
         },
         params: t.Object({
           environment: t.String(),
@@ -398,6 +396,9 @@ export const networkRoutes = (kit: Kit) => {
         operation: {
           id: 'probe_network',
           level: 'deploy',
+          cli: {
+            render: 'probe',
+          },
         },
         params: t.Object({
           service: t.String(),

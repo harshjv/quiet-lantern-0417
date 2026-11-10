@@ -743,6 +743,9 @@ export const platformRoutes = (kit: Kit) => {
         operation: {
           id: 'platform_inventory',
           level: 'instance read',
+          cli: {
+            render: 'inventory',
+          },
         },
         query: t.Object({
           station: t.Optional(t.String()),
@@ -1032,6 +1035,7 @@ export const platformRoutes = (kit: Kit) => {
         operation: {
           id: 'platform_upgrade',
           level: 'instance admin',
+          cli: false,
         },
         body: t.Object({
           version: t.Optional(t.String()),

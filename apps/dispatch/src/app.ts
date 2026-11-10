@@ -6,6 +6,7 @@ import { Elysia } from 'elysia'
 import type { Deps } from './api/context.ts'
 import { ApiError, notFoundError, refusal, stamped } from './api/errors.ts'
 import { createApi } from './api/index.ts'
+import { operationTags } from './api/tags.ts'
 import { createAuthPages } from './auth/pages.ts'
 import {
   authenticate,
@@ -59,6 +60,7 @@ export const createApp = (deps: Deps) => {
             description:
               'The Stationly Dispatch API. Errors use the envelope { error: { code, explanation, fix, details, request_id } }.',
           },
+          tags: operationTags,
           components: {
             securitySchemes: {
               token: {

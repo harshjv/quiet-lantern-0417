@@ -84,7 +84,7 @@ const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget =
     throw new BackupError(
       'VOLUME_BACKUP_TARGET_MISSING',
       'No target was given and the volume_backup.target setting is empty.',
-      'sly settings set volume_backup.target \'{"type":"path","path":"volumes"}\', or pass --to.',
+      'sly settings update --body \'{"volume_backup.target":{"type":"path","path":"volumes"}}\', or pass --to.',
     )
   if (target.type === 'path')
     return {
@@ -360,7 +360,7 @@ export const restorePlan = (db: Db, volumeId: string, snapshotId: string, statio
     throw new BackupError(
       'NOT_FOUND',
       `backup ${snapshotId} of volume ${volumeId} does not exist`,
-      'List backups with sly volumes backups <volume>.',
+      `List backups with sly volumes list-backups ${volumeId}.`,
     )
   if (snap.status !== 'complete' || !snap.sha256 || !snap.objects || !snap.target)
     throw new BackupError(
@@ -479,7 +479,7 @@ export const restoreBackup = async (
     snapshot_id: snap.id,
     station_id,
     status: 'running' as const,
-    adopt: `sly volumes adopt ${id} <service> --mount-path ${source.mount_path}`,
+    adopt: `sly volumes adopt ${id} --service-id <service id> --mount-path ${source.mount_path}`,
   }
 }
 

@@ -130,7 +130,7 @@ const signatures = (db: Db, names: Map<string, string>) => {
       'warn',
       'allow_unsigned',
       'platform.allow_unsigned is true: stationd runs platform artifacts without a verified signature',
-      'sly settings set platform.allow_unsigned false',
+      `sly settings update --body '{"platform.allow_unsigned": false}'`,
     )
   let verified = 0
   for (const c of db.select().from(component).all()) {

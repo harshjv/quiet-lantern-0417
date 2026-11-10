@@ -615,9 +615,7 @@ function Expose({
                 <ErrorState error={mutation.error} title={`Couldn’t expose port ${chosen?.port}`} />
               )
             }
-            also={
-              <AlsoWith cli={commands.exposeTcp(scope, chosen?.port ?? null)} tool="expose_tcp" />
-            }
+            also={<AlsoWith cli={commands.exposeTcp(chosen?.id ?? null)} tool="expose_tcp" />}
             submitLabel="Expose port"
             pending={mutation.isPending}
             submitDisabled={!chosen}
@@ -755,12 +753,7 @@ function ExposuresPart({
               <Cable /> Expose port {candidates[0]?.port}
             </Button>
           }
-          also={
-            <AlsoWith
-              cli={commands.exposeTcp(scope, candidates[0]?.port ?? null)}
-              tool="expose_tcp"
-            />
-          }
+          also={<AlsoWith cli={commands.exposeTcp(candidates[0]?.id ?? null)} tool="expose_tcp" />}
         />
       ) : (
         <ul className="divide-y overflow-hidden rounded-lg border" aria-label="Public TCP ports">

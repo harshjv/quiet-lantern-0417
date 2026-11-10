@@ -603,6 +603,9 @@ export const serviceRoutes = (kit: Kit) => {
         operation: {
           id: 'create_service',
           level: 'admin',
+          cli: {
+            args: ['name'],
+          },
         },
         params: t.Object({
           environment: t.String(),
@@ -752,6 +755,9 @@ export const serviceRoutes = (kit: Kit) => {
         operation: {
           id: 'restart_service',
           level: 'deploy',
+          cli: {
+            wait: 'wait_for_deployment',
+          },
         },
         params: t.Object({
           service: t.String(),

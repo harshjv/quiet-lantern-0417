@@ -60,7 +60,7 @@ export const requireQuota = (db: Db, st: StationRow, request: QuotaRequest) => {
     return fail(
       'SANDBOX_QUOTA_EXCEEDED',
       `Station ${st.name} allows ${text(allowed)} for ${limit}; ${text(used)} ${limit === 'memory_bytes' ? 'is' : 'are'} used and this change needs ${text(requested)} more.`,
-      `Delete or stop a sandbox on ${st.name}, or ask an instance admin to raise sandbox_limits.${limit} with sly stations update ${st.name}.`,
+      `Delete or stop a sandbox on ${st.name}, or ask an instance admin to raise sandbox_limits.${limit} with sly stations update ${st.name} --sandbox-limits ${limit}=<n>.`,
       {
         station: st.id,
         limit,
@@ -89,7 +89,7 @@ export const requireDiskRoom = (st: StationRow) => {
   fail(
     'SANDBOX_DISK_FULL',
     `Station ${st.name}'s sandbox filesystem has ${free} bytes free, below the ${floor} byte floor for new disks, snapshots and forks.`,
-    'Delete sandboxes or snapshots, or grow the sandbox filesystem with sly platform storage grow.',
+    `Delete sandboxes or snapshots, or grow the sandbox filesystem with sly sandboxes grow-storage ${st.name} --size-bytes <size>.`,
     {
       station: st.id,
       free_bytes: free,

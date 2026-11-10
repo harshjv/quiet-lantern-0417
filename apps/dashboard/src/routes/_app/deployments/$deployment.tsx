@@ -49,7 +49,15 @@ export const Route = createFileRoute('/_app/deployments/$deployment')({
   component: DeploymentPage,
 })
 
-function Diagnosis({ deployment, context }: { deployment: string; context: FixContext }) {
+function Diagnosis({
+  deployment,
+  build,
+  context,
+}: {
+  deployment: string
+  build: string | null
+  context: FixContext
+}) {
   const { data } = useSuspenseQuery(diagnosisQuery(deployment))
   return (
     <DiagnosisPanel
@@ -58,7 +66,7 @@ function Diagnosis({ deployment, context }: { deployment: string; context: FixCo
         ...context,
         deployment: {
           id: deployment,
-          build: data.phase === 'build',
+          build: data.phase === 'build' ? build : null,
         },
       }}
     />
@@ -225,6 +233,7 @@ function DeploymentPage() {
         <Panel title="Couldn’t load the diagnosis">
           <Diagnosis
             deployment={d.id}
+            build={d.build?.id ?? null}
             context={{
               project: trail.project.name,
               environment: trail.environment.name,

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 
+import type { OpenApiDocument } from '@stationly/mcp'
+
+import { generatedCommands } from '../../../packages/cli/src/generated.ts'
+import { handWrittenProgram } from '../../../packages/cli/src/program.ts'
+
 import { startDispatch, type Dispatch } from './helpers/dispatch.ts'
 import { docsSkip, readDoc } from './helpers/docs.ts'
 
@@ -56,7 +61,7 @@ const docLevels: Record<string, string> = {
 }
 
 const catalogRows = (file: string) => {
-  const rows: { file: string; key: string; level: string | null; tool: string }[] = []
+  const rows: { file: string; key: string; level: string | null; tool: string; sly: string }[] = []
   let columns: string[] | null = null
   for (const line of readDoc(file).split('\n')) {
     if (!line.startsWith('|')) {
@@ -69,7 +74,7 @@ const catalogRows = (file: string) => {
       .map((cell) => cell.trim())
     if (cells.every((cell) => /^-+$/.test(cell))) continue
     if (!columns) {
-      columns = ['Method', 'Path', 'Level', 'Tool'].every((name) => cells.includes(name))
+      columns = ['Method', 'Path', 'Level', 'Tool', 'sly'].every((name) => cells.includes(name))
         ? cells
         : []
       continue
@@ -84,13 +89,22 @@ const catalogRows = (file: string) => {
       key: `${at('Method')} ${path.replace(/\{[^}]+\}/g, '{}')}`,
       level: level ? (level[1] ?? level[2]!) : null,
       tool: at('Tool'),
+      sly: at('sly'),
     })
   }
   return rows
 }
 
+type Tree = { name: () => string; commands: readonly Tree[] }
+
+const handWritten = (command: Tree, path: string[] = []): string[] =>
+  command.commands.flatMap((child) => [
+    [...path, child.name()].join(' '),
+    ...handWritten(child, [...path, child.name()]),
+  ])
+
 test(
-  'every route has one row in 22-rest-endpoints.md or 24-sandboxes.md, and its Level and Tool columns match the route',
+  'every route has one row in 22-rest-endpoints.md or 24-sandboxes.md, and its Level, Tool and sly columns match the route',
   {
     skip: docsSkip,
   },
@@ -101,11 +115,18 @@ test(
       })
     ).body
     const rows = [...catalogRows('22-rest-endpoints.md'), ...catalogRows('24-sandboxes.md')]
+    const commands = new Map(
+      generatedCommands(doc as OpenApiDocument).map((g) => [g.endpoint.name, g.path.join(' ')]),
+    )
+    const written = new Set(handWritten(handWrittenProgram()))
     const problems: string[] = []
     for (const [path, item] of Object.entries<
       Record<
         string,
-        { operationId?: string; 'x-stationly'?: { level: string; mcp?: false | object } }
+        {
+          operationId?: string
+          'x-stationly'?: { level: string; mcp?: false | object; cli?: false | object }
+        }
       >
     >(doc.paths)) {
       for (const method of methods) {
@@ -129,6 +150,15 @@ test(
         if (!tool)
           problems.push(
             `${row.file} ${key}: Tool ${row.tool} but the route is ${meta.mcp === false ? 'mcp false' : operation.operationId}`,
+          )
+        const command = /^`sly ([^`]+)`$/.exec(row.sly)?.[1]
+        const sly =
+          meta.cli === false
+            ? command !== undefined && written.has(command)
+            : command === commands.get(operation.operationId)
+        if (!sly)
+          problems.push(
+            `${row.file} ${key}: sly ${row.sly} but the route's command is ${meta.cli === false ? 'hand-written' : `sly ${commands.get(operation.operationId)}`}`,
           )
       }
     }

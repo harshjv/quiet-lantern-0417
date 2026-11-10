@@ -24,7 +24,7 @@ export type FixContext = Scope & {
   names?: Record<string, string>
   deployment?: {
     id: string
-    build: boolean
+    build: string | null
   }
   station?: string
 }
@@ -246,11 +246,11 @@ export const remedies: Record<RemedyCode, Remedy> = {
   EXPOSE_TCP: {
     ask: ({ target, input }) =>
       `expose ${target.name}’s TCP port${count(input.port) === null ? '' : ` ${count(input.port)}`} on the station`,
-    command: ({ target, input }) => commands.exposeTcp(target.scope, count(input.port)),
+    command: ({ input }) => commands.exposeTcp(text(input.port_id)),
   },
   ADD_DOMAIN: {
     ask: ({ target }) => `add a direct domain to ${target.name}`,
-    command: ({ target }) => commands.addDomain(target.scope, null),
+    command: ({ input }) => commands.addDomain(text(input.port_id)),
   },
   WAIT_FOR_APPLY: {
     ask: ({ target }) =>

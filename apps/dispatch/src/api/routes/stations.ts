@@ -465,6 +465,9 @@ export const stationRoutes = (kit: Kit) => {
         operation: {
           id: 'enroll_station',
           level: 'instance admin',
+          cli: {
+            args: ['name'],
+          },
         },
         body: t.Object(
           {

@@ -74,7 +74,7 @@ export const requireStationReady = (
     fail(
       'STATION_OFFLINE',
       `Station ${row.name} is draining, so no new deployments are placed on it.`,
-      'Place the service on another station, or end the drain with sly stations update --no-draining.',
+      `Place the service on another station, or end the drain with sly stations update ${row.name} --no-draining.`,
       {
         station_id: row.id,
         status: row.status,

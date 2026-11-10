@@ -53,8 +53,9 @@ export const openApiDocument = async () => {
     })
     const response = await app.handle(new Request(`${origin}/openapi/json`))
     if (!response.ok) throw new Error(`GET /openapi/json answered ${response.status}`)
-    const { paths, components } = (await response.json()) as Record<string, unknown>
+    const { paths, components, tags } = (await response.json()) as Record<string, unknown>
     return {
+      tags,
       paths,
       components,
     }

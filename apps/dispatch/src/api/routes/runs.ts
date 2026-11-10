@@ -111,6 +111,9 @@ export const runRoutes = (kit: Kit) => {
           mcp: {
             poll: true,
           },
+          cli: {
+            render: 'run',
+          },
         },
         params: t.Object({
           id: t.String(),
@@ -186,6 +189,7 @@ export const runRoutes = (kit: Kit) => {
         operation: {
           id: 'run_command',
           level: 'deploy',
+          cli: false,
         },
         params: t.Object({
           service: t.String(),

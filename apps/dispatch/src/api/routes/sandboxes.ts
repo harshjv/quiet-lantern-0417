@@ -588,6 +588,9 @@ export const sandboxRoutes = (kit: Kit) => {
         operation: {
           id: 'create_sandbox',
           level: 'deploy',
+          cli: {
+            args: ['name'],
+          },
         },
         params: t.Object({
           environment: t.String(),
@@ -1038,6 +1041,7 @@ export const sandboxRoutes = (kit: Kit) => {
         operation: {
           id: 'sandbox_exec',
           level: 'deploy',
+          cli: false,
         },
         params: t.Object({
           sandbox: t.String(),
@@ -1537,6 +1541,9 @@ export const sandboxRoutes = (kit: Kit) => {
         operation: {
           id: 'probe_sandbox_network',
           level: 'deploy',
+          cli: {
+            render: 'probe',
+          },
         },
         params: t.Object({
           sandbox: t.String(),

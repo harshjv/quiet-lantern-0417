@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
+    "generate": "node scripts/generate.ts",
     "test": "node --test --test-timeout=60000 \"test/**/*.test.ts\""
   },
   "dependencies": {

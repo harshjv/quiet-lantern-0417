@@ -196,6 +196,9 @@ export const projectRoutes = (kit: Kit) => {
         operation: {
           id: 'create_project',
           level: 'admin',
+          cli: {
+            args: ['name'],
+          },
         },
         response: replies({
           201: Project,

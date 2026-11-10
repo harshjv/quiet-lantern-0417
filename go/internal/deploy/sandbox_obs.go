@@ -466,9 +466,9 @@ func (s *Station) checkSandboxStorage() protocol.DoctorCheck {
 	minFree := info.Bytes / 20
 	switch {
 	case info.FreeBytes < minFree:
-		c.raise(protocol.DoctorStatusFail, "sandbox_fs_low", fmt.Sprintf("the sandbox filesystem has %s free, below min_free_bytes %s", human(info.FreeBytes), human(minFree)), fmt.Sprintf("Run sly platform storage grow --size <bytes>, at most %d.", maxBytes))
+		c.raise(protocol.DoctorStatusFail, "sandbox_fs_low", fmt.Sprintf("the sandbox filesystem has %s free, below min_free_bytes %s", human(info.FreeBytes), human(minFree)), fmt.Sprintf("Run sly sandboxes grow-storage %s --size-bytes <bytes>, at most %d.", s.opts.Identity.StationID, maxBytes))
 	case info.FreeBytes < 2*minFree:
-		c.raise(protocol.DoctorStatusWarn, "sandbox_fs_low", fmt.Sprintf("the sandbox filesystem has %s free, below twice min_free_bytes %s", human(info.FreeBytes), human(minFree)), fmt.Sprintf("Run sly platform storage grow --size <bytes>, at most %d.", maxBytes))
+		c.raise(protocol.DoctorStatusWarn, "sandbox_fs_low", fmt.Sprintf("the sandbox filesystem has %s free, below twice min_free_bytes %s", human(info.FreeBytes), human(minFree)), fmt.Sprintf("Run sly sandboxes grow-storage %s --size-bytes <bytes>, at most %d.", s.opts.Identity.StationID, maxBytes))
 	}
 	var errs []string
 	for k, v := range info.DeviceErrors {

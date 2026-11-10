@@ -726,9 +726,9 @@ describe('protected environments', () => {
     assert.equal(exec.status, 201, exec.text)
     const snapshot = await human('POST', `/v1/sandboxes/${id}/snapshots`, {})
     assert.equal(snapshot.status, 201)
+    assert.equal((await api('DELETE', `/v1/sandbox-snapshots/${snapshot.body.id}`)).status, 403)
     const deleted = await human('DELETE', `/v1/sandbox-snapshots/${snapshot.body.id}`)
     assert.equal(deleted.status, 200)
-    assert.equal((await api('DELETE', `/v1/sandbox-snapshots/${snapshot.body.id}`)).status, 403)
     assert.equal(
       rows(
         h,

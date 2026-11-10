@@ -1,5 +1,7 @@
 import { Elysia, type DocumentDecoration } from 'elysia'
 
+import type { CliMeta } from '@stationly/mcp'
+
 import type { Principal } from '../auth/principal.ts'
 import { anyTarget, type Level, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
@@ -10,8 +12,6 @@ import { targets, type TargetEntity } from './lookup.ts'
 export type RouteLevel = 'public' | 'any' | Level | 'instance read' | 'instance admin'
 
 export type Mcp = false | { destructive?: true; always_load?: true; poll?: true }
-
-export type Cli = false | { path?: string[]; args?: string[]; render?: string }
 
 export type TargetInput = {
   params: Record<string, string>
@@ -24,7 +24,7 @@ export type Operation = {
   id: string
   level: RouteLevel
   mcp?: Mcp
-  cli?: Cli
+  cli?: CliMeta
   stream?: true
   target?: (input: TargetInput) => Target
 }

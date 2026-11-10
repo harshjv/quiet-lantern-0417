@@ -15,6 +15,7 @@ export {
   requestOf,
   resolved,
   slugPaths,
+  type CliMeta,
   type Endpoint,
   type Json,
   type OpenApiDocument,

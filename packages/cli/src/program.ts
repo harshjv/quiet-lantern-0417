@@ -1,15 +1,17 @@
+import type { CommandUnknownOpts } from '@commander-js/extra-typings'
+
 import { createProgram } from './command.ts'
-import { adminCommands } from './commands/admin.ts'
 import { authCommands } from './commands/auth.ts'
 import { adminHostCommands, hostCommands } from './commands/host.ts'
 import { linkCommands } from './commands/link.ts'
 import { manifestCommands } from './commands/manifest.ts'
 import { mcpCommands } from './commands/mcp.ts'
 import { networkCommands } from './commands/network.ts'
-import { operationCommands } from './commands/operations.ts'
-import { resourceCommands } from './commands/resources.ts'
+import { platformCommands } from './commands/platform.ts'
 import { sandboxCommands } from './commands/sandbox.ts'
+import { serviceCommands } from './commands/service.ts'
 import { variableCommands } from './commands/variables.ts'
+import { volumeCommands } from './commands/volumes.ts'
 import { version } from './env.ts'
 import { registerGenerated } from './generated.ts'
 
@@ -18,11 +20,11 @@ export const handWrittenProgram = () => {
 
   authCommands(program)
   linkCommands(program)
-  resourceCommands(program)
+  serviceCommands(program)
   variableCommands(program)
   networkCommands(program)
-  adminCommands(program)
-  operationCommands(program)
+  volumeCommands(program)
+  platformCommands(program)
   manifestCommands(program)
   mcpCommands(program)
   hostCommands(program)
@@ -45,8 +47,16 @@ export const handWrittenProgram = () => {
   return program
 }
 
+const sorted = (command: CommandUnknownOpts) => {
+  command.configureHelp({
+    sortSubcommands: true,
+  })
+  command.commands.forEach(sorted)
+}
+
 export const buildProgram = () => {
   const program = handWrittenProgram()
   registerGenerated(program)
+  sorted(program)
   return program
 }

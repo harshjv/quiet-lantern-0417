@@ -1,13 +1,10 @@
-import { runTerminalStatuses } from '@stationly/protocol'
-
 import { exitCodes } from './errors.ts'
 import { send, type Api, type Data, type Globals, type Run } from './kit.ts'
 import { pollUntil } from './outage.ts'
 import { json, progress } from './output.ts'
+import { runEnded } from './renderers/deployments.ts'
 
 export type RunRow = Data<ReturnType<Api['runs']>['get']>
-
-const terminalRun = new Set<string>(runTerminalStatuses)
 
 export const waitRun = (run: Run, id: string) =>
   pollUntil(
@@ -26,7 +23,7 @@ export const waitRun = (run: Run, id: string) =>
             }),
         )
       ).data,
-    (row) => terminalRun.has(row.status),
+    (row) => runEnded(row.status),
   )
 
 export const reportRun = (globals: Globals, row: RunRow) => {

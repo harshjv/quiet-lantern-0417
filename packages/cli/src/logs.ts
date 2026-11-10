@@ -1,20 +1,14 @@
-import { sseHeaders, stream, type Api, type Data, type Globals, type Run } from './kit.ts'
+import { sseHeaders, stream, type Api, type Globals, type Run } from './kit.ts'
+import { lineText, type LogLine } from './renderers/observability.ts'
 import { followSse, streamed } from './sse.ts'
 
 export type LogQuery = NonNullable<NonNullable<Parameters<Api['logs']['get']>[0]>['query']>
-
-type LogLine = Data<Api['logs']['get']>['untrusted']['lines'][number]
 
 export const showLine = (
   globals: Globals,
   line: LogLine,
   sink: NodeJS.WriteStream = process.stdout,
-) =>
-  sink.write(
-    globals.json
-      ? `${JSON.stringify(line)}\n`
-      : `${line.at} ${line.stream === 'stderr' ? 'E' : ' '} ${line.role && line.role !== 'service' ? `[${line.role}] ` : ''}${line.text}\n`,
-  )
+) => sink.write(`${globals.json ? JSON.stringify(line) : lineText(line)}\n`)
 
 export const streamLogs = (
   run: Run,

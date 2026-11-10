@@ -26,7 +26,7 @@ const context: FixContext = {
   },
   deployment: {
     id: 'dep_14',
-    build: false,
+    build: null,
   },
 }
 
@@ -79,7 +79,7 @@ test('raising memory is one click that patches the limits and redeploys', () => 
   })
   assert.equal(
     plan.command,
-    'sly --project shop --environment production --service web services update --memory 1073741824',
+    'sly --project shop --environment production --service web services update --limits memory_bytes=1073741824',
   )
   assert.equal(
     plan.prompt,
@@ -124,7 +124,7 @@ test('rollback targets the last good deployment the diagnosis names', () => {
   })
   assert.equal(
     plan.command,
-    'sly --project shop --environment production --service web rollback dep_12 --wait',
+    'sly --project shop --environment production --service web rollback --deployment-id dep_12 --wait',
   )
 })
 
@@ -142,10 +142,10 @@ test('log fixes point at the failed deployment, and at its build for a build fai
       ...context,
       deployment: {
         id: 'dep_14',
-        build: true,
+        build: 'bld_14',
       },
     }).command,
-    'sly --project shop --environment production --service web logs --deployment dep_14 --build',
+    'sly --project shop --environment production --service web logs --build bld_14',
   )
 })
 
@@ -262,5 +262,8 @@ test('error codes with a remedy map to a fix that keeps the API fix text', () =>
     name: 'web-sbx',
     sandbox: 'sbx_1',
   })
-  assert.equal(plan.command, 'sly --project shop --environment production sandbox start web-sbx')
+  assert.equal(
+    plan.command,
+    'sly --project shop --environment production --sandbox web-sbx sandboxes start',
+  )
 })

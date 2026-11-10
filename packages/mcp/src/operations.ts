@@ -14,7 +14,8 @@ type Content = Record<string, { schema?: Json }>
 
 export type McpFlags = { destructive?: true; always_load?: true; poll?: true }
 
-export type CliMeta = false | { path?: string[]; args?: string[]; render?: string }
+export type CliMeta =
+  false | { path?: string[]; args?: string[]; render?: string; wait?: string; exclusive?: string[] }
 
 export type Meta = { level: RouteLevel; mcp?: false | McpFlags; cli?: CliMeta; stream?: true }
 
@@ -29,9 +30,12 @@ export type Operation = {
   'x-stationly'?: Meta
 }
 
+export type Tag = { name: string; description?: string }
+
 export type OpenApiDocument = {
   paths: Record<string, Record<string, Operation>>
   components?: { schemas?: Record<string, Json> }
+  tags?: Tag[]
 }
 
 export type Endpoint = {

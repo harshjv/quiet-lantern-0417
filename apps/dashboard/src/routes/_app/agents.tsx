@@ -460,7 +460,14 @@ function AgentsPage() {
             </div>
             <CommandBlock
               commands={[
-                commands.createToken(`${projectId}:${environmentId}:${access}`, expiry),
+                commands.createToken(
+                  {
+                    project: projectId,
+                    environment: environmentId,
+                    level: access,
+                  },
+                  expiry,
+                ),
                 'export STATIONLY_TOKEN=<key>',
                 `export STATIONLY_API_URL=${origin}`,
               ]}

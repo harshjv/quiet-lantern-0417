@@ -452,6 +452,9 @@ export const environmentRoutes = (kit: Kit) => {
         operation: {
           id: 'create_environment',
           level: 'deploy',
+          cli: {
+            args: ['name'],
+          },
         },
         response: replies({
           201: EnvironmentCreated,

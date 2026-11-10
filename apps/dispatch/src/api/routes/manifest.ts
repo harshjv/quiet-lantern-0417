@@ -328,9 +328,7 @@ export const manifestRoutes = (kit: Kit) => {
         operation: {
           id: 'apply_manifest',
           level: 'deploy',
-          cli: {
-            render: 'plan-diff',
-          },
+          cli: false,
           target: ({ params, body }: TargetInput) =>
             target(
               projectByRef(db, params.project!),
@@ -418,6 +416,7 @@ export const manifestRoutes = (kit: Kit) => {
         operation: {
           id: 'validate_manifest',
           level: 'any',
+          cli: false,
         },
         body: t.Object(
           {
@@ -451,6 +450,7 @@ export const manifestRoutes = (kit: Kit) => {
         operation: {
           id: 'export_manifest',
           level: 'read',
+          cli: false,
           target: ({ params, query }: TargetInput) =>
             target(projectByRef(db, params.project!), query.environment).scope,
         },

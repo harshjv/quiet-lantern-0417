@@ -4,7 +4,7 @@ import type { Command } from '@commander-js/extra-typings'
 
 import { validateSchema, type Issue } from '@stationly/manifest-schema'
 
-import { action, call, type Program, type ProgramOptions } from '../command.ts'
+import { action, group, type Program, type ProgramOptions } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
 import { connect, document, send, type Globals } from '../kit.ts'
 import { json, print, progress } from '../output.ts'
@@ -73,7 +73,7 @@ export const manifestCommands = (program: Program) => {
   applyOptions(
     program.command('apply').description('Plan or apply a Manifest (alias of sly manifest apply)'),
   )
-  const manifest = program.command('manifest').description('The Manifest: stationly.yaml')
+  const manifest = group(program, 'manifest')
   applyOptions(
     manifest.command('apply').description('Plan or apply a Manifest against one environment'),
   )
@@ -168,20 +168,6 @@ export const manifestCommands = (program: Program) => {
           process.stdout.write(result.valid ? 'valid\n' : `${result.issues.length} problems\n`)
         }
         return result.valid ? exitCodes.ok : exitCodes.api
-      }),
-    )
-
-  const github = program.command('github').description('The GitHub App connection')
-  github
-    .command('status')
-    .description(
-      'Connected Apps and installations, with the links a human opens to connect or install',
-    )
-    .option('--refresh', 'read every installation from GitHub first')
-    .action(
-      call(async (run, options) => {
-        if (options.refresh) await send(run.api.v1.github.installations.sync.post())
-        return run.api.v1.github.get()
       }),
     )
 }

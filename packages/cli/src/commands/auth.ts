@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-import { action, call, type Program } from '../command.ts'
+import { action, type Program } from '../command.ts'
 import {
   normalizeInstance,
   readCredentials,
@@ -233,9 +233,4 @@ export const authCommands = (program: Program) => {
         return exitCodes.ok
       }),
     )
-
-  program
-    .command('whoami')
-    .description('The caller: actor, human flag, token kind, scopes and expiry')
-    .action(call(async (run) => run.api.v1.me.get()))
 }

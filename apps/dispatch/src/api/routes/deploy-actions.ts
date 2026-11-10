@@ -301,6 +301,9 @@ export const deployActionRoutes = (kit: Kit) => {
             always_load: true,
             poll: true,
           },
+          cli: {
+            render: 'deployment',
+          },
         },
         params: t.Object({
           id: t.String(),
@@ -426,6 +429,9 @@ export const deployActionRoutes = (kit: Kit) => {
         operation: {
           id: 'redeploy',
           level: 'deploy',
+          cli: {
+            wait: 'wait_for_deployment',
+          },
         },
         params: t.Object({
           service: t.String(),
@@ -473,6 +479,10 @@ export const deployActionRoutes = (kit: Kit) => {
         operation: {
           id: 'rebuild_service',
           level: 'deploy',
+          cli: {
+            path: ['services', 'rebuild'],
+            wait: 'wait_for_deployment',
+          },
         },
         params: t.Object({
           service: t.String(),
@@ -519,6 +529,9 @@ export const deployActionRoutes = (kit: Kit) => {
           level: 'deploy',
           mcp: {
             destructive: true,
+          },
+          cli: {
+            wait: 'wait_for_deployment',
           },
         },
         params: t.Object({

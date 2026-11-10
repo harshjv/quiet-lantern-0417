@@ -126,7 +126,7 @@ describe('request mapping', () => {
       'projects',
       'create',
       'beta',
-      '--default-environment',
+      '--default-environment-name',
       'live',
     ])
     assert.equal(result.code, 0, result.stderr)
@@ -139,7 +139,7 @@ describe('request mapping', () => {
     assert.equal(JSON.parse(result.stdout).name, 'beta')
   })
 
-  test('services create maps flags to the request body', async () => {
+  test('services create maps flags, key=value objects and repeated objects to the request body', async () => {
     server.requests.length = 0
     const result = await sly([
       '--project',
@@ -147,18 +147,20 @@ describe('request mapping', () => {
       'services',
       'create',
       'web',
-      '--image',
-      'nginx:1.27',
-      '--port',
-      '80',
-      '--no-deploy',
+      '--kind',
+      'web',
+      '--source',
+      'type=image,ref=nginx:1.27',
+      '--ports',
+      'port=80',
+      '--no-deploy-on-create',
       '--json',
       '--environment',
       'production',
     ])
     assert.equal(result.code, 0, result.stderr)
     const sent = server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!
-    assert.match(sent.path, /^\/v1\/environments\/env_[A-Z0-9]+\/services$/)
+    assert.equal(sent.path, '/v1/projects/alpha/environments/production/services')
     assert.deepEqual(JSON.parse(sent.body), {
       name: 'web',
       kind: 'web',
@@ -177,33 +179,9 @@ describe('request mapping', () => {
     assert.equal(created.source.digest.startsWith('sha256:'), true)
   })
 
-  test('services create --local sends a local source, with the Dockerfile when named', async () => {
+  test('an object flag also takes JSON, and a pair without = is a usage error that sends nothing', async () => {
     server.requests.length = 0
-    const railpack = await sly([
-      '--project',
-      'alpha',
-      '--environment',
-      'production',
-      'services',
-      'create',
-      'built',
-      '--local',
-      '--port',
-      '3000',
-      '--no-deploy',
-      '--json',
-    ])
-    assert.equal(railpack.code, 0, railpack.stderr)
-    assert.deepEqual(
-      JSON.parse(
-        server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!.body,
-      ).source,
-      {
-        type: 'local',
-      },
-    )
-    server.requests.length = 0
-    const dockerfile = await sly([
+    const local = await sly([
       '--project',
       'alpha',
       '--environment',
@@ -211,29 +189,36 @@ describe('request mapping', () => {
       'services',
       'create',
       'docked',
-      '--local',
-      '--port',
-      '3000',
-      '--dockerfile',
-      'Dockerfile',
-      '--no-deploy',
+      '--kind',
+      'web',
+      '--source',
+      '{"type":"local","dockerfile":"Dockerfile"}',
+      '--ports',
+      'port=3000,protocol=http',
+      '--limits',
+      'memory_bytes=512MiB',
+      '--no-deploy-on-create',
       '--json',
     ])
-    assert.equal(dockerfile.code, 0, dockerfile.stderr)
-    assert.deepEqual(
-      JSON.parse(
-        server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!.body,
-      ).source,
-      {
-        type: 'local',
-        dockerfile: 'Dockerfile',
-      },
+    assert.equal(local.code, 0, local.stderr)
+    const body = JSON.parse(
+      server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!.body,
     )
-  })
-
-  test('services create refuses --dockerfile without --local and --local with another source', async () => {
+    assert.deepEqual(body.source, {
+      type: 'local',
+      dockerfile: 'Dockerfile',
+    })
+    assert.deepEqual(body.ports, [
+      {
+        port: 3000,
+        protocol: 'http',
+      },
+    ])
+    assert.deepEqual(body.limits, {
+      memory_bytes: 512 * 1024 ** 2,
+    })
     server.requests.length = 0
-    const alone = await sly([
+    const bad = await sly([
       '--project',
       'alpha',
       '--environment',
@@ -241,25 +226,14 @@ describe('request mapping', () => {
       'services',
       'create',
       'x',
-      '--dockerfile',
-      'Dockerfile',
+      '--kind',
+      'web',
+      '--source',
+      'nginx',
       '--json',
     ])
-    assert.equal(alone.code, 2, alone.stderr)
-    const both = await sly([
-      '--project',
-      'alpha',
-      '--environment',
-      'production',
-      'services',
-      'create',
-      'x',
-      '--local',
-      '--image',
-      'nginx:1.27',
-      '--json',
-    ])
-    assert.equal(both.code, 2, both.stderr)
+    assert.equal(bad.code, 2, bad.stderr)
+    assert.match(bad.stderr, /nginx is not key=value/)
     assert.equal(
       server.requests.some((r) => r.method === 'POST'),
       false,
@@ -327,7 +301,7 @@ describe('request mapping', () => {
     assert.match(result.stdout, /web/)
   })
 
-  test('a service given by name resolves through the flat project path', async () => {
+  test('a service given by name is one call to its nested path', async () => {
     server.requests.length = 0
     const result = await sly([
       '--project',
@@ -341,15 +315,10 @@ describe('request mapping', () => {
       'stop',
     ])
     assert.equal(result.code, 0, result.stderr)
-    assert.ok(
-      server.requests.some(
-        (r) =>
-          r.method === 'GET' &&
-          /^\/v1\/projects\/alpha\/environments\/env_[A-Z0-9]+\/services\/web$/.test(r.path),
-      ),
+    assert.deepEqual(
+      server.requests.map((r) => `${r.method} ${r.path}`),
+      ['POST /v1/projects/alpha/environments/production/services/web/stop'],
     )
-    const stop = server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/stop'))!
-    assert.match(stop.path, /^\/v1\/services\/svc_[A-Z0-9]+\/stop$/)
     assert.equal(JSON.parse(result.stdout).desired_state, 'stopped')
   })
 
@@ -416,10 +385,12 @@ describe('exit codes', () => {
       'services',
       'create',
       'api',
-      '--image',
-      'nginx:1.27',
-      '--port',
-      '80',
+      '--kind',
+      'web',
+      '--source',
+      'type=image,ref=nginx:1.27',
+      '--ports',
+      'port=80',
       '--json',
     ])
     assert.equal(result.code, 3, result.stderr)
@@ -734,7 +705,7 @@ describe('time flags', () => {
     assert.equal(result.code, 0, result.stdout + result.stderr)
     const sent = server.requests.find((r) => r.path.startsWith('/v1/logs'))!
     assert.equal(new URL(sent.path, 'http://x').searchParams.get('since'), '10m')
-    assert.equal(JSON.parse(lastLine(result.stdout)!).text, 'listening on :3000')
+    assert.equal(JSON.parse(result.stdout).untrusted.lines.at(-1).text, 'listening on :3000')
   })
 
   test('logs --since -1h and an RFC 3339 instant still succeed', async () => {
@@ -920,6 +891,52 @@ describe('waiting and streaming', () => {
             done: polls >= 3,
           }),
         )
+      } else if (path === '/v1/doctor') {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+        })
+        res.end(
+          JSON.stringify({
+            status: 'fail',
+            checked_at: '2026-11-10T00:00:00Z',
+            checks: [],
+          }),
+        )
+      } else if (req.method === 'POST' && path === '/v1/services/svc_LIVE/deployments') {
+        res.writeHead(201, {
+          'content-type': 'application/json',
+        })
+        res.end(
+          JSON.stringify({
+            id: 'dep_LIVE',
+            status: 'queued',
+          }),
+        )
+      } else if (path.startsWith('/v1/deployments/dep_LIVE/wait')) {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+        })
+        res.end(
+          JSON.stringify({
+            id: 'dep_LIVE',
+            status: 'failed',
+            done: true,
+          }),
+        )
+      } else if (path.startsWith('/v1/logs')) {
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+        })
+        res.write(
+          `id: c1\nevent: log\ndata: ${JSON.stringify({
+            at: '2026-11-10T00:00:00Z',
+            role: 'service',
+            stream: 'stdout',
+            text: 'ready',
+          })}\n\n`,
+        )
+        res.write('event: truncated\ndata: {"cursor":"c0"}\n\n')
+        res.end('event: end\ndata: {"reason":"service_deleted"}\n\n')
       } else if (path.startsWith('/v1/environments/env_LIVE/network/live')) {
         res.writeHead(200, {
           'content-type': 'text/event-stream',
@@ -944,7 +961,14 @@ describe('waiting and streaming', () => {
     }
   }
 
-  const live = ['--environment', 'env_LIVE', '--service', 'web', 'network', 'stream-connections']
+  const live = [
+    '--environment',
+    'env_LIVE',
+    '--service',
+    'svc_LIVE',
+    'network',
+    'stream-connections',
+  ]
 
   test('--wait repeats a polled operation through the MCP poll loop until done', async () => {
     const dispatch = await stub()
@@ -993,7 +1017,7 @@ describe('waiting and streaming', () => {
       assert.equal(result.code, 0, result.stderr)
       assert.match(result.stdout, /^2026-11-10T00:00:00Z web deployment - conntrack entries 3$/m)
       assert.doesNotMatch(result.stdout, /00:00:05/)
-      assert.match(dispatch.seen[0]!.path, /\?service=web$/)
+      assert.match(dispatch.seen[0]!.path, /\?service=svc_LIVE$/)
     } finally {
       await dispatch.close()
     }
@@ -1017,6 +1041,37 @@ describe('waiting and streaming', () => {
           .map((line) => JSON.parse(line).at),
         ['2026-11-10T00:00:00Z', '2026-11-10T00:00:05Z'],
       )
+    } finally {
+      await dispatch.close()
+    }
+  })
+
+  test('a stream renders its events with the renderer event form and skips the ones it does not show', async () => {
+    const dispatch = await stub()
+    try {
+      const human = await sly(['--service', 'svc_LIVE', 'logs', '-f'], dispatch.env)
+      assert.equal(human.code, 0, human.stderr)
+      assert.equal(human.stdout, '2026-11-10T00:00:00Z   ready\n')
+      assert.match(dispatch.seen.at(-1)!.path, /^\/v1\/logs\?service=svc_LIVE&follow=true$/)
+      const json = await sly(['--json', '--service', 'svc_LIVE', 'logs', '-f'], dispatch.env)
+      assert.equal(JSON.parse(json.stdout).text, 'ready')
+    } finally {
+      await dispatch.close()
+    }
+  })
+
+  test('a renderer sets the exit code: doctor fail exits 1, a failed deployment after --wait exits 4', async () => {
+    const dispatch = await stub()
+    try {
+      const doctor = await sly(['platform', 'doctor'], dispatch.env)
+      assert.equal(doctor.code, 1, doctor.stderr)
+      assert.match(doctor.stdout, /^doctor fail at /)
+      const json = await sly(['--json', 'platform', 'doctor'], dispatch.env)
+      assert.equal(json.code, 1)
+      const deployed = await sly(['--service', 'svc_LIVE', 'deploy', '--wait'], dispatch.env)
+      assert.equal(deployed.code, 4, deployed.stderr)
+      assert.match(deployed.stdout, /diagnosis: sly deployments get-diagnosis dep_LIVE/)
+      assert.match(deployed.stderr, /dep_LIVE: done/)
     } finally {
       await dispatch.close()
     }

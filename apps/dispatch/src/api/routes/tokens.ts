@@ -251,6 +251,9 @@ export const tokenRoutes = (kit: Kit) => {
         operation: {
           id: 'create_token',
           level: 'any',
+          cli: {
+            args: ['name'],
+          },
         },
         body: t.Object(
           {

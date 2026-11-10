@@ -2,6 +2,104 @@
 import type { OpenApiDocument } from '@stationly/mcp'
 
 export const openApiDocument = {
+  "tags": [
+    {
+      "name": "identity",
+      "description": "The caller"
+    },
+    {
+      "name": "projects",
+      "description": "Projects"
+    },
+    {
+      "name": "environments",
+      "description": "Environments of a project"
+    },
+    {
+      "name": "services",
+      "description": "Services of an environment"
+    },
+    {
+      "name": "ports",
+      "description": "Ports of a service"
+    },
+    {
+      "name": "volumes",
+      "description": "Volumes, their backups and restores"
+    },
+    {
+      "name": "domains",
+      "description": "Domains and TCP exposures of a service"
+    },
+    {
+      "name": "network",
+      "description": "The network map, live connections, explanations, probes and DNS logs"
+    },
+    {
+      "name": "deployments",
+      "description": "Deployments, builds, redeploys and rollbacks of a service"
+    },
+    {
+      "name": "runs",
+      "description": "One-off runs of a service"
+    },
+    {
+      "name": "sandboxes",
+      "description": "Persistent Linux machines for agents, isolated with gVisor"
+    },
+    {
+      "name": "logs",
+      "description": "Logs of a service, deployment, build, run, sandbox or platform component"
+    },
+    {
+      "name": "metrics",
+      "description": "Live metrics of services"
+    },
+    {
+      "name": "events",
+      "description": "Events visible to the caller"
+    },
+    {
+      "name": "notifications",
+      "description": "Notification channels"
+    },
+    {
+      "name": "variables",
+      "description": "Variables, secret values and grants; sealed values are never shown"
+    },
+    {
+      "name": "staged-changes",
+      "description": "Changes that wait for a human in a protected environment or platform"
+    },
+    {
+      "name": "settings",
+      "description": "Instance settings"
+    },
+    {
+      "name": "tokens",
+      "description": "Personal and scoped tokens"
+    },
+    {
+      "name": "stations",
+      "description": "Stations"
+    },
+    {
+      "name": "platform",
+      "description": "Lockfile, signatures, inventory, health and releases"
+    },
+    {
+      "name": "audit",
+      "description": "The audit trail"
+    },
+    {
+      "name": "manifest",
+      "description": "The Manifest: stationly.yaml"
+    },
+    {
+      "name": "github",
+      "description": "The GitHub App connection"
+    }
+  ],
   "paths": {
     "/v1/me": {
       "get": {
@@ -374,7 +472,12 @@ export const openApiDocument = {
         ],
         "operationId": "create_project",
         "x-stationly": {
-          "level": "admin"
+          "level": "admin",
+          "cli": {
+            "args": [
+              "name"
+            ]
+          }
         },
         "requestBody": {
           "required": true,
@@ -1451,7 +1554,12 @@ export const openApiDocument = {
         ],
         "operationId": "create_environment",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "args": [
+              "name"
+            ]
+          }
         },
         "parameters": [
           {
@@ -2618,7 +2726,12 @@ export const openApiDocument = {
         ],
         "operationId": "create_service",
         "x-stationly": {
-          "level": "admin"
+          "level": "admin",
+          "cli": {
+            "args": [
+              "name"
+            ]
+          }
         },
         "parameters": [
           {
@@ -7167,7 +7280,10 @@ export const openApiDocument = {
         ],
         "operationId": "restart_service",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "wait": "wait_for_deployment"
+          }
         },
         "parameters": [
           {
@@ -9877,7 +9993,8 @@ export const openApiDocument = {
         ],
         "operationId": "backup_volume",
         "x-stationly": {
-          "level": "admin"
+          "level": "admin",
+          "cli": false
         },
         "parameters": [
           {
@@ -12406,9 +12523,7 @@ export const openApiDocument = {
         "operationId": "explain_network",
         "x-stationly": {
           "level": "read",
-          "cli": {
-            "render": "explanation"
-          }
+          "cli": false
         },
         "parameters": [
           {
@@ -12606,7 +12721,10 @@ export const openApiDocument = {
         ],
         "operationId": "probe_network",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "render": "probe"
+          }
         },
         "parameters": [
           {
@@ -13351,6 +13469,9 @@ export const openApiDocument = {
           "level": "deploy",
           "mcp": {
             "always_load": true
+          },
+          "cli": {
+            "wait": "wait_for_deployment"
           }
         },
         "parameters": [
@@ -14116,6 +14237,9 @@ export const openApiDocument = {
           "mcp": {
             "always_load": true,
             "poll": true
+          },
+          "cli": {
+            "render": "deployment"
           }
         },
         "parameters": [
@@ -14785,7 +14909,10 @@ export const openApiDocument = {
         ],
         "operationId": "redeploy",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "wait": "wait_for_deployment"
+          }
         },
         "parameters": [
           {
@@ -14977,7 +15104,14 @@ export const openApiDocument = {
         ],
         "operationId": "rebuild_service",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "path": [
+              "services",
+              "rebuild"
+            ],
+            "wait": "wait_for_deployment"
+          }
         },
         "parameters": [
           {
@@ -15172,6 +15306,9 @@ export const openApiDocument = {
           "level": "deploy",
           "mcp": {
             "destructive": true
+          },
+          "cli": {
+            "wait": "wait_for_deployment"
           }
         },
         "parameters": [
@@ -16100,7 +16237,8 @@ export const openApiDocument = {
         ],
         "operationId": "run_command",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": false
         },
         "parameters": [
           {
@@ -16364,6 +16502,9 @@ export const openApiDocument = {
           "level": "read",
           "mcp": {
             "poll": true
+          },
+          "cli": {
+            "render": "run"
           }
         },
         "parameters": [
@@ -17479,7 +17620,12 @@ export const openApiDocument = {
         ],
         "operationId": "create_sandbox",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "args": [
+              "name"
+            ]
+          }
         },
         "parameters": [
           {
@@ -19226,7 +19372,8 @@ export const openApiDocument = {
         ],
         "operationId": "sandbox_exec",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": false
         },
         "parameters": [
           {
@@ -21371,7 +21518,10 @@ export const openApiDocument = {
         ],
         "operationId": "probe_sandbox_network",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "render": "probe"
+          }
         },
         "parameters": [
           {
@@ -22949,6 +23099,20 @@ export const openApiDocument = {
         "operationId": "get_logs",
         "x-stationly": {
           "level": "any",
+          "cli": {
+            "path": [
+              "logs"
+            ],
+            "render": "logs",
+            "exclusive": [
+              "service",
+              "deployment",
+              "build",
+              "run",
+              "sandbox",
+              "component"
+            ]
+          },
           "stream": true
         },
         "parameters": [
@@ -23541,6 +23705,9 @@ export const openApiDocument = {
         "x-stationly": {
           "level": "read",
           "mcp": false,
+          "cli": {
+            "render": "metrics"
+          },
           "stream": true
         },
         "parameters": [
@@ -23564,6 +23731,12 @@ export const openApiDocument = {
         "operationId": "get_events",
         "x-stationly": {
           "level": "any",
+          "cli": {
+            "path": [
+              "events"
+            ],
+            "render": "events"
+          },
           "stream": true
         },
         "parameters": [
@@ -30863,7 +31036,12 @@ export const openApiDocument = {
         ],
         "operationId": "create_token",
         "x-stationly": {
-          "level": "any"
+          "level": "any",
+          "cli": {
+            "args": [
+              "name"
+            ]
+          }
         },
         "requestBody": {
           "required": true,
@@ -31852,7 +32030,12 @@ export const openApiDocument = {
         ],
         "operationId": "enroll_station",
         "x-stationly": {
-          "level": "instance admin"
+          "level": "instance admin",
+          "cli": {
+            "args": [
+              "name"
+            ]
+          }
         },
         "requestBody": {
           "required": true,
@@ -32862,7 +33045,10 @@ export const openApiDocument = {
         ],
         "operationId": "platform_inventory",
         "x-stationly": {
-          "level": "instance read"
+          "level": "instance read",
+          "cli": {
+            "render": "inventory"
+          }
         },
         "parameters": [
           {
@@ -34057,7 +34243,8 @@ export const openApiDocument = {
         ],
         "operationId": "platform_upgrade",
         "x-stationly": {
-          "level": "instance admin"
+          "level": "instance admin",
+          "cli": false
         },
         "requestBody": {
           "required": true,
@@ -34955,7 +35142,12 @@ export const openApiDocument = {
         ],
         "operationId": "get_audit_events",
         "x-stationly": {
-          "level": "any"
+          "level": "any",
+          "cli": {
+            "path": [
+              "audit"
+            ]
+          }
         },
         "parameters": [
           {
@@ -35212,9 +35404,7 @@ export const openApiDocument = {
         "operationId": "apply_manifest",
         "x-stationly": {
           "level": "deploy",
-          "cli": {
-            "render": "plan-diff"
-          }
+          "cli": false
         },
         "parameters": [
           {
@@ -35957,7 +36147,8 @@ export const openApiDocument = {
         ],
         "operationId": "validate_manifest",
         "x-stationly": {
-          "level": "any"
+          "level": "any",
+          "cli": false
         },
         "requestBody": {
           "required": true,
@@ -36248,7 +36439,8 @@ export const openApiDocument = {
         ],
         "operationId": "export_manifest",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": false
         },
         "parameters": [
           {

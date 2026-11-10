@@ -298,6 +298,9 @@ export const deploymentRoutes = (kit: Kit) => {
           mcp: {
             always_load: true,
           },
+          cli: {
+            wait: 'wait_for_deployment',
+          },
         },
         params: t.Object({
           service: t.String(),

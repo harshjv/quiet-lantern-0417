@@ -495,6 +495,7 @@ export const volumeRoutes = (kit: Kit) => {
         operation: {
           id: 'backup_volume',
           level: 'admin',
+          cli: false,
         },
         response: replies({
           201: BackupStarted,

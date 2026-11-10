@@ -1,3 +1,4 @@
+import { exitCodes } from '../errors.ts'
 import type { Api, Data } from '../kit.ts'
 
 type UpgradeView = Data<Api['platform']['upgrade']['post']>
@@ -40,6 +41,8 @@ export const renderDoctor = (d: DoctorView) => {
   }
   return lines.join('\n')
 }
+
+export const doctorExit = (d: DoctorView) => (d.status === 'fail' ? exitCodes.api : exitCodes.ok)
 
 type InventoryView = Data<Api['inventory']['get']>
 

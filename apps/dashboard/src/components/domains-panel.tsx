@@ -107,12 +107,7 @@ function AddDomain({
         </>
       }
       error={mutation.errorText}
-      also={
-        <AlsoWith
-          cli={commands.addDomain(scope, http.find((p) => p.id === chosen)?.port ?? null)}
-          tool="add_domain"
-        />
-      }
+      also={<AlsoWith cli={commands.addDomain(chosen || null)} tool="add_domain" />}
       submitLabel="Add domain"
       pending={mutation.isPending}
       submitDisabled={!chosen}
@@ -196,7 +191,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
   const [adding, setAdding] = useState(false)
   const portOf = new Map(ports.items.map((p) => [p.id, p.port]))
   const noHttp = !ports.items.some((p) => p.protocol === 'http')
-  const firstHttp = ports.items.find((p) => p.protocol === 'http')?.port ?? null
+  const firstHttp = ports.items.find((p) => p.protocol === 'http')?.id ?? null
   return (
     <Subsection
       title="Domains"
@@ -229,9 +224,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
               </Button>
             )
           }
-          also={
-            !noHttp && <AlsoWith cli={commands.addDomain(scope, firstHttp)} tool="add_domain" />
-          }
+          also={!noHttp && <AlsoWith cli={commands.addDomain(firstHttp)} tool="add_domain" />}
         />
       ) : (
         <ul className="divide-y overflow-hidden rounded-lg border">

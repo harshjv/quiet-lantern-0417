@@ -18,7 +18,7 @@ import {
   pinPlatform,
   waitForSandbox,
 } from '../../../apps/dispatch/test/helpers/seed.ts'
-import { allowOf, bytesOf } from '../src/commands/sandbox.ts'
+import { bytes } from '../src/command.ts'
 
 const entry = new URL('../src/index.ts', import.meta.url).pathname
 
@@ -40,14 +40,14 @@ const env = (extra: Record<string, string | undefined> = {}) =>
     ...extra,
   }) as NodeJS.ProcessEnv
 
-const sly = (args: string[], input = '', extra: Record<string, string | undefined> = {}) =>
+const sly = (args: string[], input = '') =>
   new Promise<Result>((resolve) => {
     const child = execFile(
       process.execPath,
       [entry, '--project', 'alpha', ...args],
       {
         cwd: home,
-        env: env(extra),
+        env: env(),
       },
       (error, stdout, stderr) =>
         resolve({
@@ -59,10 +59,28 @@ const sly = (args: string[], input = '', extra: Record<string, string | undefine
     child.stdin?.end(input)
   })
 
+const inSandbox =
+  (sandbox: string) =>
+  (args: string[], input = '') =>
+    sly(['--sandbox', sandbox, ...args], input)
+
+const dev = inSandbox('dev')
+
 const json = (result: Result) => JSON.parse(result.stdout)
 
 const sent = (method: string, suffix: string) =>
   server.requests.filter((r) => r.method === method && r.path.endsWith(suffix)).at(-1)!
+
+const bodyOf = (method: string, suffix: string) => JSON.parse(sent(method, suffix).body)
+
+const admin = async (path: string) =>
+  (
+    await h.call('GET', path, {
+      token: h.admin.token,
+    })
+  ).body
+
+const assertOk = (result: Result) => assert.equal(result.code, 0, result.stderr)
 
 before(async () => {
   home = mkdtempSync(join(tmpdir(), 'sly-sbx-'))
@@ -96,24 +114,18 @@ after(async () => {
 })
 
 describe('flag parsing', () => {
-  test('sizes accept bytes, MiB and GiB and a bare small number means GiB', () => {
-    assert.equal(bytesOf('8GiB', '--memory'), 8 * 1024 ** 3)
-    assert.equal(bytesOf('512MiB', '--memory'), 512 * 1024 ** 2)
-    assert.equal(bytesOf('2147483648', '--memory'), 2147483648)
-    assert.equal(bytesOf('4', '--disk'), 4 * 1024 ** 3)
-    assert.throws(() => bytesOf('lots', '--disk'))
-  })
-
-  test('allow entries carry wildcard and ports', () => {
-    assert.deepEqual(allowOf('github.com:443,22'), {
-      domain: 'github.com',
-      wildcard: false,
-      ports: [443, 22],
-    })
-    assert.deepEqual(allowOf('*.githubusercontent.com'), {
-      domain: 'githubusercontent.com',
-      wildcard: true,
-    })
+  test('sizes accept bytes, binary units and short forms', () => {
+    assert.equal(bytes('8GiB'), 8 * 1024 ** 3)
+    assert.equal(bytes('512MiB'), 512 * 1024 ** 2)
+    assert.equal(bytes('64KiB'), 64 * 1024)
+    assert.equal(bytes('2TiB'), 2 * 1024 ** 4)
+    assert.equal(bytes('4k'), 4 * 1024)
+    assert.equal(bytes('1.5g'), 1.5 * 1024 ** 3)
+    assert.equal(bytes('2t'), 2 * 1024 ** 4)
+    assert.equal(bytes('2147483648'), 2147483648)
+    assert.equal(bytes('4'), 4)
+    assert.throws(() => bytes('lots'))
+    assert.throws(() => bytes('4 parsecs'))
   })
 })
 
@@ -128,37 +140,46 @@ const withoutLiveMetrics = (body: unknown): unknown => {
   return body
 }
 
+const sameIgnoringMetrics = (actual: unknown, expected: unknown) =>
+  assert.deepEqual(withoutLiveMetrics(actual), withoutLiveMetrics(expected))
+
 describe('lifecycle commands', () => {
   let id = ''
+  const nested = () => `/v1/projects/alpha/environments/${environmentId}/sandboxes/dev`
 
   test('create maps every flag to the request body', async () => {
     server.requests.length = 0
     const result = await sly([
       '--json',
-      'sandbox',
+      'sandboxes',
       'create',
       'dev',
-      '--cpu',
-      '4000',
-      '--memory',
-      '8GiB',
-      '--disk',
-      '40GiB',
+      '--size',
+      'cpu_millis=4000,memory_bytes=8GiB,disk_bytes=40GiB',
       '--network',
       'environment',
       '--docker',
-      '--allow',
-      'github.com:443,22',
-      '--allow',
-      '*.githubusercontent.com',
-      '--ttl',
+      '--egress',
+      JSON.stringify({
+        mode: 'allowlist',
+        domains: [
+          {
+            domain: 'github.com',
+            wildcard: false,
+            ports: [443, 22],
+          },
+          {
+            domain: 'githubusercontent.com',
+            wildcard: true,
+          },
+        ],
+      }),
+      '--ttl-s',
       '2h',
     ])
-    assert.equal(result.code, 0, result.stderr)
-    const request = server.requests.find(
-      (r) => r.method === 'POST' && r.path.endsWith('/sandboxes'),
-    )!
-    assert.match(request.path, new RegExp(`^/v1/environments/${environmentId}/sandboxes$`))
+    assertOk(result)
+    const request = sent('POST', '/sandboxes')
+    assert.equal(request.path, `/v1/environments/${environmentId}/sandboxes`)
     assert.deepEqual(JSON.parse(request.body), {
       name: 'dev',
       size: {
@@ -191,62 +212,44 @@ describe('lifecycle commands', () => {
     await waitForSandbox(h, id, 'running')
   })
 
-  test('list, describe by name and by id match the REST bodies', async () => {
-    const listed = await sly(['--json', 'sandbox', 'list', '--status', 'running'])
-    assert.equal(listed.code, 0, listed.stderr)
-    assert.deepEqual(
-      withoutLiveMetrics(json(listed)),
-      withoutLiveMetrics(
-        (
-          await h.call('GET', `/v1/environments/${environmentId}/sandboxes?status=running`, {
-            token: h.admin.token,
-          })
-        ).body,
-      ),
+  test('list and get by name and by id match the REST bodies', async () => {
+    const listed = await sly(['--json', 'sandboxes', 'list', '--status', 'running'])
+    assertOk(listed)
+    sameIgnoringMetrics(
+      json(listed),
+      await admin(`/v1/environments/${environmentId}/sandboxes?status=running`),
     )
-    const byName = await sly(['--json', 'sandbox', 'describe', 'dev'])
-    assert.equal(byName.code, 0, byName.stderr)
-    assert.match(
-      server.requests.find(
-        (r) =>
-          r.method === 'GET' &&
-          /\/projects\/alpha\/environments\/env_[A-Z0-9]+\/sandboxes\/dev$/.test(r.path),
-      )!.path,
-      /sandboxes\/dev$/,
-    )
-    assert.deepEqual(
-      withoutLiveMetrics(json(byName)),
-      withoutLiveMetrics(
-        (
-          await h.call('GET', `/v1/sandboxes/${id}?fields=*`, {
-            token: h.admin.token,
-          })
-        ).body,
-      ),
-    )
-    assert.equal(json(await sly(['--json', 'sandbox', 'describe', id])).id, id)
-    const human = await sly(['sandbox', 'list'])
-    assert.match(human.stdout, /dev\s+running\s+toolchain/)
+    const byName = await dev(['--json', 'sandboxes', 'get', '--fields', '*'])
+    assertOk(byName)
+    assert.ok(sent('GET', `${nested()}?fields=*`))
+    sameIgnoringMetrics(json(byName), await admin(`/v1/sandboxes/${id}?fields=*`))
+    const byId = await inSandbox(id)(['--json', 'sandboxes', 'get'])
+    assert.equal(json(byId).id, id)
+    assert.ok(sent('GET', `/v1/sandboxes/${id}`))
+    const human = await sly(['sandboxes', 'list'])
+    assertOk(human)
+    assert.match(human.stdout, /^ID\s.*\sNAME\s+STATUS\s/)
+    assert.match(human.stdout, new RegExp(`^${id}\\s.*\\sdev\\s+running\\s`, 'm'))
   })
 
-  test('update sends only the given fields and --open-egress replaces the allowlist', async () => {
-    const ttl = await sly(['--json', 'sandbox', 'update', 'dev', '--ttl', '30m', '--no-docker'])
-    assert.equal(ttl.code, 0, ttl.stderr)
-    assert.deepEqual(JSON.parse(sent('PATCH', `/sandboxes/${id}`).body), {
+  test('update sends only the given fields and an open egress replaces the allowlist', async () => {
+    const ttl = await dev(['--json', 'sandboxes', 'update', '--ttl-s', '30m', '--no-docker'])
+    assertOk(ttl)
+    assert.deepEqual(bodyOf('PATCH', nested()), {
       ttl_s: 1800,
       docker: false,
     })
-    const open = await sly([
+    const open = await dev([
       '--json',
-      'sandbox',
+      'sandboxes',
       'update',
-      'dev',
-      '--open-egress',
-      '--memory',
-      '16GiB',
+      '--egress',
+      'mode=open',
+      '--size',
+      'memory_bytes=16GiB',
     ])
-    assert.equal(open.code, 0, open.stderr)
-    assert.deepEqual(JSON.parse(sent('PATCH', `/sandboxes/${id}`).body), {
+    assertOk(open)
+    assert.deepEqual(bodyOf('PATCH', nested()), {
       size: {
         memory_bytes: 16 * 1024 ** 3,
       },
@@ -255,28 +258,19 @@ describe('lifecycle commands', () => {
       },
     })
     assert.equal(json(open).warnings[0].code, 'SANDBOX_RESTART_REQUIRED')
-    const clash = await sly(['sandbox', 'update', 'dev', '--open-egress', '--allow', 'a.com'])
-    assert.equal(clash.code, 2)
   })
 
   test('stop, start with a ttl and the --dry-run request', async () => {
-    const stopped = await sly(['--json', 'sandbox', 'stop', 'dev'])
-    assert.equal(stopped.code, 0, stopped.stderr)
+    const stopped = await dev(['--json', 'sandboxes', 'stop'])
+    assertOk(stopped)
     await waitForSandbox(h, id, 'stopped')
-    const dry = await sly(['--dry-run', 'sandbox', 'start', 'dev', '--ttl', '10m'])
-    assert.equal(dry.code, 0, dry.stderr)
+    const dry = await dev(['--dry-run', 'sandboxes', 'start', '--ttl-s', '10m'])
+    assertOk(dry)
     assert.equal(JSON.parse(dry.stdout).method, 'POST')
-    assert.equal(
-      (
-        await h.call('GET', `/v1/sandboxes/${id}`, {
-          token: h.admin.token,
-        })
-      ).body.status,
-      'stopped',
-    )
-    const started = await sly(['--json', 'sandbox', 'start', 'dev', '--ttl', '10m'])
-    assert.equal(started.code, 0, started.stderr)
-    assert.deepEqual(JSON.parse(sent('POST', `/sandboxes/${id}/start`).body), {
+    assert.equal((await admin(`/v1/sandboxes/${id}`)).status, 'stopped')
+    const started = await dev(['--json', 'sandboxes', 'start', '--ttl-s', '10m'])
+    assertOk(started)
+    assert.deepEqual(bodyOf('POST', `${nested()}/start`), {
       ttl_s: 600,
     })
     assert.equal(json(started).ttl_s, 600)
@@ -284,26 +278,24 @@ describe('lifecycle commands', () => {
   })
 
   test('exec streams output and exits 0, and a failing command exits 1 with the code on stderr', async () => {
-    const ok = await sly(['sandbox', 'exec', 'dev', '--', 'echo', 'hi'])
-    assert.equal(ok.code, 0, ok.stderr)
+    const ok = await dev(['sandboxes', 'exec', '--', 'echo', 'hi'])
+    assertOk(ok)
     assert.match(ok.stdout, /ran echo hi/)
-    const body = JSON.parse(sent('POST', `/sandboxes/${id}/exec`).body)
-    assert.deepEqual(body, {
+    assert.deepEqual(bodyOf('POST', `/sandboxes/${id}/exec`), {
       command: ['echo', 'hi'],
       attach: true,
     })
-    const bad = await sly(['sandbox', 'exec', 'dev', '--', 'false'])
+    const bad = await dev(['sandboxes', 'exec', '--', 'false'])
     assert.equal(bad.code, 1)
     assert.match(bad.stderr, /exit code 1/)
     assert.match(bad.stderr, /EXIT_NONZERO/)
   })
 
   test('exec passes user, cwd, env and timeout, and --json prints the final run', async () => {
-    const result = await sly([
+    const result = await dev([
       '--json',
-      'sandbox',
+      'sandboxes',
       'exec',
-      'dev',
       '--user',
       'agent',
       '--cwd',
@@ -316,8 +308,8 @@ describe('lifecycle commands', () => {
       'printenv',
       'CI',
     ])
-    assert.equal(result.code, 0, result.stderr)
-    assert.deepEqual(JSON.parse(sent('POST', `/sandboxes/${id}/exec`).body), {
+    assertOk(result)
+    assert.deepEqual(bodyOf('POST', `/sandboxes/${id}/exec`), {
       command: ['printenv', 'CI'],
       user: 'agent',
       cwd: '/home/agent',
@@ -332,9 +324,9 @@ describe('lifecycle commands', () => {
   })
 
   test('exec --detach prints the run and does not stream', async () => {
-    const result = await sly(['--json', 'sandbox', 'exec', 'dev', '--detach', '--', 'sleep', '1'])
-    assert.equal(result.code, 0, result.stderr)
-    assert.deepEqual(JSON.parse(sent('POST', `/sandboxes/${id}/exec`).body), {
+    const result = await dev(['--json', 'sandboxes', 'exec', '--detach', '--', 'sleep', '1'])
+    assertOk(result)
+    assert.deepEqual(bodyOf('POST', `/sandboxes/${id}/exec`), {
       command: ['sleep', '1'],
       attach: false,
       wait_s: 0,
@@ -343,74 +335,58 @@ describe('lifecycle commands', () => {
   })
 
   test('exec stdin reaches the sandbox', async () => {
-    const result = await sly(['sandbox', 'exec', 'dev', '--', 'cat'], 'piped')
-    assert.equal(result.code, 0, result.stderr)
+    assertOk(await dev(['sandboxes', 'exec', '--', 'cat'], 'piped'))
   })
 
-  test('logs read the init log and --runtime selects the runtime role', async () => {
-    const init = await sly(['sandbox', 'logs', 'dev', '--tail', '5'])
-    assert.equal(init.code, 0, init.stderr)
+  test('logs read the init log by default and --role runtime selects the runtime role', async () => {
+    const logPath = () => server.requests.filter((r) => r.path.startsWith('/v1/logs')).at(-1)!.path
+    const init = await dev(['logs', '--tail', '5'])
+    assertOk(init)
     assert.match(init.stdout, /sandbox init started/)
-    assert.match(sent('GET', `sandbox=${id}&role=init&tail=5`).path, /role=init/)
-    await sly(['sandbox', 'logs', 'dev', '--runtime'])
-    assert.match(
-      server.requests.filter((r) => r.path.startsWith('/v1/logs')).at(-1)!.path,
-      /role=runtime/,
-    )
+    assert.equal(logPath(), `/v1/logs?sandbox=${id}&tail=5`)
+    assertOk(await dev(['logs', '--role', 'runtime']))
+    assert.match(logPath(), /role=runtime/)
   })
 
-  test('network shows connections, --refused only the refused and --dns the resolver log', async () => {
-    const all = await sly(['--json', 'sandbox', 'network', 'dev'])
-    assert.equal(all.code, 0, all.stderr)
-    assert.equal(json(all).sandbox.name, 'dev')
-    const refused = await sly(['--json', 'sandbox', 'network', 'dev', '--refused'])
-    assert.equal(json(refused)[0].path, 'domain_not_allowed')
-    const dns = await sly(['--json', 'sandbox', 'network', 'dev', '--dns'])
+  test('get-connections shows connections with the refused attempts and get-dns-log the resolver log', async () => {
+    const connections = await dev(['--json', 'sandboxes', 'get-connections'])
+    assertOk(connections)
+    assert.equal(json(connections).sandbox.name, 'dev')
+    assert.equal(json(connections).refused[0].path, 'domain_not_allowed')
+    const dns = await dev(['--json', 'sandboxes', 'get-dns-log'])
+    assertOk(dns)
     assert.equal(json(dns).untrusted.source, 'resolver log')
   })
 
-  test('explain judges the path from the sandbox and probe sends one DNS query as it', async () => {
-    const explained = await sly([
-      '--json',
-      'sandbox',
-      'explain',
-      'dev',
-      '--to',
-      'registry.npmjs.org:443',
-    ])
-    assert.equal(explained.code, 0, explained.stderr)
+  test('explain judges the path from the sandbox and probe-network sends one DNS query as it', async () => {
+    const explained = await dev(['--json', 'network', 'explain', '--to', 'registry.npmjs.org:443'])
+    assertOk(explained)
     assert.equal(json(explained).entity.from, 'dev')
     assert.ok(json(explained).hops.some((hop: { hop: string }) => hop.hop === 'firewall'))
-    const text = await sly([
-      'sandbox',
-      'explain',
-      'dev',
-      '--to',
-      'registry.npmjs.org',
-      '--port',
-      '443',
-    ])
+    const text = await dev(['network', 'explain', '--to', 'registry.npmjs.org', '--port', '443'])
     assert.match(text.stdout, /^dev -> registry\.npmjs\.org:443\/tcp/)
-    const probed = await sly([
+    const probed = await dev([
       '--json',
-      'sandbox',
-      'probe',
-      'dev',
+      'sandboxes',
+      'probe-network',
       '--to',
       'registry.npmjs.org',
-      '--dns',
+      '--kind',
+      'dns',
     ])
-    assert.equal(probed.code, 0, probed.stderr)
+    assertOk(probed)
     assert.equal(json(probed).sandbox, 'dev')
     assert.equal(json(probed).dns.rcode, 'NOERROR')
-    assert.equal(sent('POST', '/network/probe').path.includes('/sandboxes/sbx_'), true)
-    const bad = await sly([
-      'sandbox',
-      'probe',
-      'dev',
+    assert.deepEqual(bodyOf('POST', `${nested()}/network/probe`), {
+      to: 'registry.npmjs.org',
+      kind: 'dns',
+    })
+    const bad = await dev([
+      'sandboxes',
+      'probe-network',
       '--to',
       'registry.npmjs.org',
-      '--timeout',
+      '--timeout-s',
       '30',
     ])
     assert.notEqual(bad.code, 0)
@@ -430,17 +406,15 @@ describe('lifecycle commands', () => {
         ],
       },
     })
-    const set = await sly([
+    const set = await dev([
       '--json',
-      'sandbox',
       'variables',
       'set',
-      'dev',
       'MODE=fast',
       'GH_TOKEN=${{project.GH_TOKEN}}',
     ])
-    assert.equal(set.code, 0, set.stderr)
-    assert.deepEqual(JSON.parse(sent('PATCH', `/sandboxes/${id}/variables`).body), {
+    assertOk(set)
+    assert.deepEqual(bodyOf('PATCH', `/sandboxes/${id}/variables`), {
       set: [
         {
           key: 'MODE',
@@ -460,17 +434,9 @@ describe('lifecycle commands', () => {
         .sort(),
       ['GH_TOKEN', 'MODE'],
     )
-    const sealed = await sly([
-      '--json',
-      'sandbox',
-      'variables',
-      'set',
-      'dev',
-      '--sealed',
-      'API_KEY=abcdefgh12345',
-    ])
-    assert.equal(sealed.code, 0, sealed.stderr)
-    assert.deepEqual(JSON.parse(sent('PATCH', `/sandboxes/${id}/variables`).body), {
+    const sealed = await dev(['--json', 'variables', 'set', '--sealed', 'API_KEY=abcdefgh12345'])
+    assertOk(sealed)
+    assert.deepEqual(bodyOf('PATCH', `/sandboxes/${id}/variables`), {
       set: [
         {
           key: 'API_KEY',
@@ -480,36 +446,54 @@ describe('lifecycle commands', () => {
       ],
     })
     assert.ok(!sealed.stdout.includes('abcdefgh12345'))
-    const listed = await sly(['--json', 'sandbox', 'variables', 'list', 'dev'])
+    const listed = await dev(['--json', 'sandboxes', 'list-variables'])
+    assertOk(listed)
     assert.deepEqual(
       json(listed).items.map((v: { key: string }) => v.key),
       ['API_KEY', 'GH_TOKEN', 'MODE'],
     )
-    const resolved = await sly(['--json', 'sandbox', 'variables', 'list', 'dev', '--resolved'])
-    assert.equal(resolved.code, 0, resolved.stderr)
+    const resolved = await dev(['--json', 'sandboxes', 'get-resolved-variables'])
+    assertOk(resolved)
     assert.equal(json(resolved).sandbox_id, id)
-    const unset = await sly(['--json', 'sandbox', 'variables', 'unset', 'dev', 'MODE', 'API_KEY'])
-    assert.equal(unset.code, 0, unset.stderr)
-    assert.deepEqual(JSON.parse(sent('PATCH', `/sandboxes/${id}/variables`).body), {
+    const unset = await dev([
+      '--json',
+      'sandboxes',
+      'set-variables',
+      '--unset',
+      'MODE',
+      '--unset',
+      'API_KEY',
+    ])
+    assertOk(unset)
+    assert.deepEqual(bodyOf('PATCH', `${nested()}/variables`), {
       unset: ['MODE', 'API_KEY'],
     })
   })
 
-  test('snapshot, snapshots, fork from the snapshot by name and snapshot-delete', async () => {
-    const snap = await sly(['--json', 'sandbox', 'snapshot', 'dev', '--name', 'base'])
-    assert.equal(snap.code, 0, snap.stderr)
-    assert.deepEqual(JSON.parse(sent('POST', `/sandboxes/${id}/snapshots`).body), {
+  test('snapshot, list-snapshots, fork from the snapshot and the live disk, delete-snapshot', async () => {
+    const snap = await dev(['--json', 'sandboxes', 'snapshot', '--name', 'base'])
+    assertOk(snap)
+    assert.deepEqual(bodyOf('POST', `${nested()}/snapshots`), {
       name: 'base',
     })
     assert.equal(json(snap).status, 'ready')
     const snapshotId = json(snap).id
-    const bySandbox = await sly(['--json', 'sandbox', 'snapshots', 'dev'])
+    const bySandbox = await dev(['--json', 'sandboxes', 'list-snapshots'])
     assert.equal(json(bySandbox).items.length, 1)
-    const all = await sly(['--json', 'sandbox', 'snapshots'])
+    const all = await sly(['--json', 'sandboxes', 'list-environment-snapshots'])
     assert.equal(json(all).items[0].id, snapshotId)
-    const fork = await sly(['--json', 'sandbox', 'fork', 'base', 'dev-b', '--ttl', '1h'])
-    assert.equal(fork.code, 0, fork.stderr)
-    assert.deepEqual(JSON.parse(sent('POST', '/sandboxes').body), {
+    const fork = await sly([
+      '--json',
+      'sandboxes',
+      'create',
+      'dev-b',
+      '--from',
+      `snapshot=${snapshotId}`,
+      '--ttl-s',
+      '1h',
+    ])
+    assertOk(fork)
+    assert.deepEqual(bodyOf('POST', '/sandboxes'), {
       name: 'dev-b',
       from: {
         snapshot: snapshotId,
@@ -517,23 +501,30 @@ describe('lifecycle commands', () => {
       ttl_s: 3600,
     })
     assert.equal(json(fork).forked_from.snapshot_id, snapshotId)
-    const liveFork = await sly(['--json', 'sandbox', 'fork', 'dev', 'dev-c'])
-    assert.equal(liveFork.code, 0, liveFork.stderr)
-    assert.deepEqual(JSON.parse(sent('POST', '/sandboxes').body), {
+    const liveFork = await sly([
+      '--json',
+      'sandboxes',
+      'create',
+      'dev-c',
+      '--from',
+      `sandbox=${id}`,
+    ])
+    assertOk(liveFork)
+    assert.deepEqual(bodyOf('POST', '/sandboxes'), {
       name: 'dev-c',
       from: {
         sandbox: id,
       },
     })
-    const removed = await sly(['--json', 'sandbox', 'snapshot-delete', 'base'])
-    assert.equal(removed.code, 0, removed.stderr)
+    const removed = await sly(['--json', 'sandboxes', 'delete-snapshot', snapshotId])
+    assertOk(removed)
     assert.deepEqual(json(removed), {
       deleted: true,
     })
   })
 
   test('shell refuses without a terminal', async () => {
-    const result = await sly(['sandbox', 'shell', 'dev'])
+    const result = await dev(['sandboxes', 'shell'])
     assert.equal(result.code, 2)
     assert.match(result.stderr, /needs a terminal/)
   })
@@ -541,7 +532,18 @@ describe('lifecycle commands', () => {
   test('forward round trips bytes through the fake station and prints the local address', async () => {
     const child = spawn(
       process.execPath,
-      [entry, '--project', 'alpha', 'sandbox', 'forward', 'dev', '8080', '--local-port', '0'],
+      [
+        entry,
+        '--project',
+        'alpha',
+        '--sandbox',
+        'dev',
+        'sandboxes',
+        'forward',
+        '8080',
+        '--local-port',
+        '0',
+      ],
       {
         cwd: home,
         env: env(),
@@ -572,22 +574,30 @@ describe('lifecycle commands', () => {
   })
 
   test('exec on a stopped sandbox is SANDBOX_NOT_RUNNING', async () => {
-    await sly(['sandbox', 'stop', 'dev'])
+    await dev(['sandboxes', 'stop'])
     await waitForSandbox(h, id, 'stopped')
-    const result = await sly(['--json', 'sandbox', 'exec', 'dev', '--', 'ls'])
+    const result = await dev(['--json', 'sandboxes', 'exec', '--', 'ls'])
     assert.equal(result.code, 1)
     assert.equal(json(result).error.code, 'SANDBOX_NOT_RUNNING')
   })
 
   test('create --no-start leaves the sandbox stopped, and delete removes it', async () => {
-    const created = await sly(['--json', 'sandbox', 'create', 'idle', '--no-start', '--image', 'x'])
-    assert.equal(created.code, 1)
-    const idle = await sly(['--json', 'sandbox', 'create', 'idle', '--no-start'])
-    assert.equal(idle.code, 0, idle.stderr)
-    assert.equal(JSON.parse(sent('POST', '/sandboxes').body).start, false)
+    const rejected = await sly([
+      '--json',
+      'sandboxes',
+      'create',
+      'idle',
+      '--no-start',
+      '--image',
+      'ref=x',
+    ])
+    assert.equal(rejected.code, 1)
+    const idle = await sly(['--json', 'sandboxes', 'create', 'idle', '--no-start'])
+    assertOk(idle)
+    assert.equal(bodyOf('POST', '/sandboxes').start, false)
     assert.equal(json(idle).status, 'stopped')
-    const deleted = await sly(['--json', 'sandbox', 'delete', 'idle'])
-    assert.equal(deleted.code, 0, deleted.stderr)
+    const deleted = await inSandbox('idle')(['--json', 'sandboxes', 'delete'])
+    assertOk(deleted)
     assert.deepEqual(json(deleted), {
       deleted: true,
       snapshots_kept: 0,
@@ -595,15 +605,16 @@ describe('lifecycle commands', () => {
   })
 })
 
-describe('platform storage grow', () => {
-  test('uses the only sandbox station and parses GiB', async () => {
+describe('sandboxes grow-storage', () => {
+  const grow = (size: string) =>
+    sly(['--json', 'sandboxes', 'grow-storage', 'station-1', '--size-bytes', size])
+
+  test('takes the station by name and parses GiB', async () => {
     server.requests.length = 0
-    const result = await sly(['--json', 'platform', 'storage', 'grow', '--size', '150GiB'])
-    assert.equal(result.code, 0, result.stderr)
-    const request = server.requests.find(
-      (r) => r.method === 'POST' && r.path.endsWith('/sandbox-storage/grow'),
-    )!
-    assert.match(request.path, /^\/v1\/stations\/stn_[A-Z0-9]+\/sandbox-storage\/grow$/)
+    const result = await grow('150GiB')
+    assertOk(result)
+    const request = sent('POST', '/sandbox-storage/grow')
+    assert.equal(request.path, '/v1/stations/station-1/sandbox-storage/grow')
     assert.deepEqual(JSON.parse(request.body), {
       size_bytes: 150 * 1024 ** 3,
     })
@@ -611,18 +622,8 @@ describe('platform storage grow', () => {
   })
 
   test('a size below the current one is VALIDATION_FAILED at /size_bytes', async () => {
-    const result = await sly([
-      '--json',
-      'platform',
-      'storage',
-      'grow',
-      '--size',
-      '10GiB',
-      '--station',
-      'station-1',
-    ])
+    const result = await grow('10GiB')
     assert.equal(result.code, 1)
     assert.equal(json(result).error.code, 'VALIDATION_FAILED')
-    assert.match(sent('POST', '/sandbox-storage/grow').path, /\/v1\/stations\/station-1\//)
   })
 })

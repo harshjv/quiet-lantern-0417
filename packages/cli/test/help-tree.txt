@@ -1,0 +1,350 @@
+sly admin
+  Host-only administration, as root on the station host through stationd's root socket
+sly admin recovery-key
+  Print the recovery key again; the display is audited
+sly apply
+  Plan or apply a Manifest (alias of sly manifest apply)
+sly audit
+  Audit events; rows outside the caller scopes are omitted
+sly deploy
+  Create a deployment record (queued); execution belongs to the station
+sly deployments
+  Deployments, builds, redeploys and rollbacks of a service
+sly deployments cancel <id>
+  Cancel a deployment before cutover; never staged
+sly deployments get <id>
+  Get a deployment
+sly deployments get-build <id>
+  Get a build; a failed build answers BUILD_FAILED with its diagnosis
+sly deployments get-build-diagnosis <id>
+  The diagnosis object of a failed build
+sly deployments get-diagnosis <id>
+  The diagnosis object of a failed deployment
+sly deployments list
+  List the deployments of a service
+sly deployments list-builds
+  List the builds of a service
+sly deployments list-environment
+  List the deployments of an environment
+sly deployments list-steps <id>
+  Deployment steps in step order
+sly deployments wait-for <id>
+  Wait up to 10 s for a deployment to reach a terminal state or cutover
+sly domains
+  Domains and TCP exposures of a service
+sly domains add <id>
+  Add a generated or custom domain to an http port
+sly domains expose-tcp <id>
+  Expose a tcp port on a host port
+sly domains get <id>
+  Get a domain
+sly domains list
+  List the domains of a service
+sly domains list-tcp-exposures
+  List the TCP exposures of a service
+sly domains remove <id>
+  Remove a domain
+sly domains remove-tcp-exposure <id>
+  Remove a TCP exposure
+sly environments
+  Environments of a project
+sly environments create <name>
+  Create an environment, empty or as a clone of source_environment_id
+sly environments delete
+  Delete an environment; staged when protected
+sly environments describe
+  Get an environment
+sly environments list
+  List the environments of a project
+sly environments update
+  Update protected or ttl_seconds
+sly events
+  Events visible to the caller; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
+sly github
+  The GitHub App connection
+sly github disconnect-app <id>
+  Disconnect a GitHub App (human only)
+sly github get-connection
+  GitHub Apps, their installations, and the links a human opens to connect or install
+sly github list-repositories <id>
+  Repositories an installation covers
+sly github sync-installations
+  Re-read every installation from GitHub
+sly link
+  Write .stationly/context.json in the working directory: the instance, project, environment and service later commands default to
+sly login
+  Interactive device authorization: approve in a browser and get a 12 hour session bound to this machine; --with-token stores a token instead
+sly logout
+  Revoke the sly session on the instance, then forget it and its machine key
+sly logs
+  Read logs for one selector; follow = true streams new lines as SSE
+sly manifest
+  The Manifest: stationly.yaml
+sly manifest apply
+  Plan or apply a Manifest against one environment
+sly manifest export
+  Write the current configuration as a canonical Manifest
+sly manifest validate
+  Check a Manifest: the bundled schema, then the instance for the semantic pass
+sly mcp
+  Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client
+sly mcp install <client>
+  
+sly metrics
+  Live metrics of services
+sly metrics get
+  Latest live metrics sample of a service
+sly metrics stream
+  SSE: one metrics sample per running service every 5 s
+sly network
+  The network map, live connections, explanations, probes and DNS logs
+sly network describe
+  Get an environment's network map: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path
+sly network explain
+  Why the selected service or sandbox can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain or TCP exposure), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.
+sly network get-connections
+  Live connections of a service grouped by peer, and refused attempts with the path that refused them; one sample
+sly network get-dns-log
+  The service's recent DNS queries from the resolver's ring, newest first, as untrusted data
+sly network probe
+  Send one TCP handshake or one DNS query from inside the service's own namespace, under its own rules; staged for a non-human actor in a protected environment
+sly network stream-connections
+  SSE: one connections sample per watched service every 5 s, as event network with { at, samples }
+sly notifications
+  Notification channels
+sly notifications add
+  Add a webhook channel; a generated secret is returned once
+sly notifications get <id>
+  Get a notification channel
+sly notifications list
+  List notification channels
+sly notifications remove <id>
+  Remove a notification channel
+sly notifications test <id>
+  Send a test delivery; success returns a failing channel to active
+sly notifications update <id>
+  Change a channel URL, secret or filter
+sly platform
+  Lockfile, signatures, inventory, health and releases
+sly platform check
+  Releases newer than the pinned one; enabled = false while platform.release_check is false
+sly platform doctor
+  Health report: each check ok, warn or fail with a finding, a code and a fix; a row that changes status emits doctor.finding
+sly platform inventory
+  Components with versions, digests, signatures and lockfile drift; the pinned release; base images with their last check
+sly platform upgrade [component]
+  Upgrade to a signed release with --version, or override one component by digest or reset its override; --plan prints the diff without staging, --wait follows the upgrade in the inventory
+sly ports
+  Ports of a service
+sly ports add
+  Add a port; deploys
+sly ports list
+  List the ports of a service
+sly ports remove <id>
+  Remove a port; deploys
+sly ports update <id>
+  Mark a port as gRPC
+sly projects
+  Projects
+sly projects create <name>
+  Create a project with its default environment
+sly projects delete
+  Delete an empty project
+sly projects get
+  Get a project by id or name
+sly projects list
+  List projects visible to the caller
+sly projects update
+  Update a project
+sly push [path]
+  Upload a local directory (honoring .dockerignore) as the service source and deploy it
+sly redeploy
+  Redeploy the current image with current variables
+sly rollback
+  Roll back to a previous deployment
+sly run <command...>
+  Run a one-off command in the service's image and variables, streaming its output; put the command after --
+sly runs
+  One-off runs of a service
+sly runs cancel <id>
+  Cancel a queued or running run; never staged
+sly runs get-diagnosis <id>
+  The diagnosis of a failed run
+sly runs list
+  List the runs of a service
+sly runs wait-for <id>
+  Get a run with done; wait_s keeps waiting up to 10 s for it to finish
+sly sandboxes
+  Persistent Linux machines for agents, isolated with gVisor
+sly sandboxes create [name]
+  Create a sandbox, or fork one from a snapshot or a live sandbox disk with from
+sly sandboxes delete
+  Delete a sandbox and its disk; its snapshots stay
+sly sandboxes delete-snapshot <id>
+  Delete a sandbox snapshot
+sly sandboxes exec <command...>
+  Run a command in the running sandbox --sandbox and stream its output; put the command after --
+sly sandboxes forward <port>
+  Listen on 127.0.0.1 and forward to a port of the running sandbox --sandbox
+sly sandboxes get
+  Get a sandbox
+sly sandboxes get-connections
+  Live connections and refused attempts of a sandbox; one sample
+sly sandboxes get-dns-log
+  The sandbox's recent DNS queries from the resolver's ring, newest first, as untrusted data
+sly sandboxes get-metrics
+  Latest live metrics sample of a sandbox
+sly sandboxes get-resolved-variables
+  The resolved variables of a sandbox with their sources; a value only with admin and never a sealed one
+sly sandboxes get-snapshot <id>
+  Get a sandbox snapshot
+sly sandboxes grow-storage <station>
+  Grow a station's sandbox filesystem to size_bytes while sandboxes run; staged for a non-human actor under platform.protected
+sly sandboxes list
+  List the sandboxes of an environment
+sly sandboxes list-environment-snapshots
+  List the sandbox snapshots of an environment
+sly sandboxes list-runs
+  List the runs of a sandbox
+sly sandboxes list-snapshots
+  List the snapshots of a sandbox
+sly sandboxes list-variables
+  List the variables of a sandbox; values are never listed
+sly sandboxes probe-network
+  Ask the sandbox's resolver as the sandbox, or judge one TCP handshake with the sandbox ruleset and send it from the station when the ruleset accepts the destination
+sly sandboxes set-variables
+  Set and unset a sandbox's variables; references to project and global variables keep values out of the agent's hands
+sly sandboxes shell [command...]
+  Interactive shell in the running sandbox --sandbox; needs a terminal and a human actor in protected environments
+sly sandboxes snapshot
+  Take a read-only copy of a sandbox's disk; files on the disk, credentials included, are copied into every snapshot and fork
+sly sandboxes start
+  Start a stopped sandbox; ttl_s replaces the stored one
+sly sandboxes stop
+  Stop a sandbox and keep its disk
+sly sandboxes update
+  Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start
+sly services
+  Services of an environment
+sly services create <name>
+  Create a service
+sly services delete
+  Delete a service; volumes are retained
+sly services describe
+  Get a service
+sly services list
+  List the services of an environment
+sly services rebuild
+  Rebuild from the same source and deploy
+sly services restart
+  Restart: a redeploy of the current deployment
+sly services start
+  Start: desired_state = running
+sly services stop
+  Stop: desired_state = stopped
+sly services update
+  Update a service; deploys when deploy = true and the configuration changed
+sly settings
+  Instance settings
+sly settings get
+  Read instance settings
+sly settings update
+  Change instance settings, all or nothing; frozen keys refuse with SETTING_FROZEN
+sly setup
+  First-admin bootstrap on the station host, as root, through stationd's root socket
+sly shell
+  Interactive shell in a fresh run of the service; a human actor is required in protected environments
+sly staged-changes
+  Changes that wait for a human in a protected environment or platform
+sly staged-changes accept <id>
+  Accept a staged change and apply its diff
+sly staged-changes get <id>
+  Get a staged change with its diff
+sly staged-changes list
+  List staged changes of an environment (default status staged; status=all for every row)
+sly staged-changes list-instance
+  List staged changes across the instance
+sly staged-changes reject <id>
+  Reject a staged change
+sly stations
+  Stations
+sly stations enroll <name>
+  Create a station in enrolling state and a one-time enrollment token (15 minutes)
+sly stations get <station>
+  Get a station by id or name
+sly stations list
+  List stations; removed stations only with revoked = true
+sly stations remove <station>
+  Remove a station: its key is revoked and kept, so it is told STATION_REVOKED
+sly stations update <station>
+  Change a station: public_address, concurrency_cap, draining (no new deployments are placed on it) and intermittent; sleep_schedule is phase 2
+sly tokens
+  Personal and scoped tokens
+sly tokens create <name>
+  Create a token; the key is returned once
+sly tokens list
+  List tokens the caller manages; never key material
+sly tokens renew <id>
+  Renew a personal token; human only
+sly tokens revoke <id>
+  Revoke a token
+sly variables
+  Variables, secret values and grants; sealed values are never shown
+sly variables apply-changes <id>
+  Redeploy every stale dependent of a variable
+sly variables delete <id>
+  Delete a variable
+sly variables get <id>
+  Get a variable; never its value
+sly variables get-resolved
+  The resolved variables of the next deployment; sealed values never appear
+sly variables grant <id>
+  Grant a global variable to a project
+sly variables list-global
+  List global variables
+sly variables list-grants <id>
+  List the grants of a global variable
+sly variables list-project
+  List project variables
+sly variables list-service
+  List the variables of a service; values are never listed
+sly variables list-versions <id>
+  List the versions of a variable; never their values
+sly variables restore-secret-version <id>
+  Undo a revocation
+sly variables revoke-grant <id>
+  Revoke a grant
+sly variables revoke-secret-version <id>
+  Revoke a secret version
+sly variables set [assignments...]
+  Set variables from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --sealed
+sly variables set-global
+  Set and unset global variables
+sly variables set-project
+  Set and unset project variables for one environment or the default
+sly variables set-service
+  Set and unset service variables
+sly version
+  Print the sly version
+sly volumes
+  Volumes, their backups and restores
+sly volumes add
+  Add a volume; deploys
+sly volumes adopt <id>
+  Adopt a retained volume into a service
+sly volumes backup <id>
+  Back up a volume to the volume_backup.target setting or a station directory; --wait polls its backups until this one ends
+sly volumes get <id>
+  Get a volume
+sly volumes list
+  List volumes visible to the caller
+sly volumes list-backups <id>
+  Backups of a volume, newest first
+sly volumes list-service
+  List the volumes of a service
+sly volumes remove <id>
+  Release a volume into retention
+sly volumes restore <id>
+  Restore a complete backup into a new retained volume of the same project; completion arrives as volume.restore_done; staged for a non-human actor in a protected environment
+sly whoami
+  The caller: actor, human flag, token kind, scopes and expiry

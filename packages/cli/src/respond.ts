@@ -1,13 +1,15 @@
 import { repeatUntilDone } from '@stationly/mcp'
 
 import { apiFailure, exitCodes } from './errors.ts'
-import { sseHeaders, type Globals } from './kit.ts'
+import { sseHeaders, type Globals, type Sent } from './kit.ts'
 import { acrossOutage } from './outage.ts'
 import { print, progress } from './output.ts'
-import type { Render } from './renderers/index.ts'
+import type { Renderer } from './renderers/index.ts'
 import { followSse, readSse, streamed, type SseEvent } from './sse.ts'
 
 type Input = Record<string, unknown>
+
+type Warning = { code: string; explanation: string }
 
 const parsed = (text: string): unknown => {
   try {
@@ -25,17 +27,24 @@ const accepted = async (response: Response) => {
 const typed = (response: Response, type: string) =>
   response.headers.get('content-type')?.includes(type) === true
 
-const shown = (globals: Globals, render: Render) =>
-  streamed('stream', (event: SseEvent) => {
+const printed = (globals: Globals, sent: Sent, { text, exit }: Renderer) => {
+  const code = print(globals, sent, text)
+  return code === exitCodes.ok && exit ? exit(sent.data) : code
+}
+
+const shown = (globals: Globals, { text, event }: Renderer) =>
+  streamed('stream', (sse: SseEvent) => {
+    const data = JSON.parse(sse.data) as unknown
+    const line = event ? event(data, sse.event) : text(data)
+    if (line === null) return
     if (globals.json) {
-      process.stdout.write(`${event.data}\n`)
+      process.stdout.write(`${sse.data}\n`)
       return
     }
-    const text = render(JSON.parse(event.data))
-    process.stdout.write(text.includes('\n') ? `${text}\n\n` : `${text}\n`)
+    process.stdout.write(line.includes('\n') ? `${line}\n\n` : `${line}\n`)
   })
 
-export const reply = async (globals: Globals, sent: Response, render: Render) => {
+export const reply = async (globals: Globals, sent: Response, render: Renderer) => {
   const response = await accepted(sent)
   if (typed(response, 'text/event-stream')) {
     const show = shown(globals, render)
@@ -48,7 +57,7 @@ export const reply = async (globals: Globals, sent: Response, render: Render) =>
         process.stdout.write(chunk)
     return exitCodes.ok
   }
-  return print(
+  return printed(
     globals,
     {
       status: response.status,
@@ -58,10 +67,32 @@ export const reply = async (globals: Globals, sent: Response, render: Render) =>
   )
 }
 
+export const replyThen = async (
+  globals: Globals,
+  sent: Response,
+  render: Renderer,
+  then: (data: Input) => Promise<number>,
+) => {
+  const response = await accepted(sent)
+  const data = (await response.json()) as Input
+  if (response.status === 202)
+    return printed(
+      globals,
+      {
+        status: response.status,
+        data,
+      },
+      render,
+    )
+  for (const w of (data.warnings as Warning[] | undefined) ?? [])
+    progress(`warning ${w.code}: ${w.explanation}`)
+  return then(data)
+}
+
 export const follow = (
   globals: Globals,
   open: (headers: Record<string, string>) => Promise<Response>,
-  render: Render,
+  render: Renderer,
 ) => followSse(async (lastId) => accepted(await open(sseHeaders(lastId))), shown(globals, render))
 
 export type Polled = { label: string; wait: string; input: Input }
@@ -70,7 +101,7 @@ export const waitUntilDone = async (
   globals: Globals,
   { label, wait, input }: Polled,
   send: (input: Input) => Promise<Response>,
-  render: Render,
+  render: Renderer,
 ) => {
   let status = 200
   const outcome = await repeatUntilDone({
@@ -90,7 +121,7 @@ export const waitUntilDone = async (
     },
   })
   if (!outcome.ok) throw apiFailure(status, outcome.envelope)
-  return print(
+  return printed(
     globals,
     {
       status,

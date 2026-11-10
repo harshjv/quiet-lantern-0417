@@ -2188,7 +2188,7 @@ export const createStationServer = (options: StationServerOptions) => {
       code: 'STATION_REVOKED',
       close: closeCodes.revoked,
       explanation: `The station was removed at ${revokedAt.toISOString()}.`,
-      fix: 'Enroll the host again with a new token from sly stations add.',
+      fix: 'Enroll the host again with a new token from sly stations enroll.',
     })
     return true
   }

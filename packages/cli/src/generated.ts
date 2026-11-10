@@ -20,17 +20,33 @@ import {
   type OpenApiDocument,
 } from '@stationly/mcp'
 
-import { action, parseJson, seconds, type Program } from './command.ts'
-import { connect, environmentId, isId, projectRef, type Globals, type Run } from './kit.ts'
+import { action, bytes, group, parseJson, seconds, type Program } from './command.ts'
+import { Exit } from './errors.ts'
+import {
+  connect,
+  environmentId,
+  isId,
+  projectId,
+  projectRef,
+  sandboxId,
+  serviceId,
+  type Globals,
+  type Run,
+} from './kit.ts'
 import { openApiDocument } from './openapi.gen.ts'
 import { human } from './output.ts'
 import { need } from './prompt.ts'
-import { renderer, type Render } from './renderers/index.ts'
-import { follow, reply, waitUntilDone } from './respond.ts'
+import { renderer, type Renderer } from './renderers/index.ts'
+import { follow, reply, replyThen, waitUntilDone } from './respond.ts'
 
 type Scalar = 'string' | 'integer' | 'number' | 'boolean'
 
-type Kind = { scalar: Scalar; choices?: string[]; many: boolean }
+type Kind = { scalar: Scalar; choices?: string[] }
+
+type Shape =
+  (Kind & { fields?: never }) | { scalar?: never; choices?: never; fields: Record<string, Json> }
+
+type Input = Record<string, unknown>
 
 type Target = 'project' | 'environment' | 'service' | 'sandbox'
 
@@ -44,6 +60,9 @@ const plural = (word: string) =>
     : /(s|x|ch|sh)$/.test(word)
       ? `${word}es`
       : `${word}s`
+
+const singular = (word: string) =>
+  word.endsWith('ies') ? `${word.slice(0, -3)}y` : word.replace(/s$/, '')
 
 export const derivedPath = (operationId: string, tag: string) => {
   const words = operationId.split('_')
@@ -69,10 +88,13 @@ export const generatedCommands = (document: OpenApiDocument = openApiDocument): 
     ]
   })
 
-const scalarOf = (
-  schema: Json | undefined,
-  components: Record<string, Json>,
-): Omit<Kind, 'many'> | null => {
+export const endpointNamed = (name: string) => {
+  const endpoint = endpoints(openApiDocument).find((e) => e.name === name)
+  if (!endpoint) throw new Error(`The OpenAPI document sly embeds has no operation ${name}`)
+  return endpoint
+}
+
+const scalarOf = (schema: Json | undefined, components: Record<string, Json>): Kind | null => {
   const s = resolved(schema, components)
   if (!s) return null
   if (Array.isArray(s.enum))
@@ -91,7 +113,7 @@ const scalarOf = (
       .filter((branch) => branch.type !== 'null')
       .map((branch) => scalarOf(branch, components))
     if (kinds.some((kind) => kind === null)) return null
-    const known = kinds as Omit<Kind, 'many'>[]
+    const known = kinds as Kind[]
     if (known.every((kind) => kind.choices))
       return {
         scalar: 'string',
@@ -111,67 +133,171 @@ const scalarOf = (
     : null
 }
 
-const kindOf = (schema: Json | undefined, components: Record<string, Json>): Kind | null => {
+const fieldsOf = (
+  schema: Json | undefined,
+  components: Record<string, Json>,
+): Record<string, Json> | null => {
   const s = resolved(schema, components)
-  const types: unknown[] = Array.isArray(s?.type) ? s.type : [s?.type]
-  if (types.includes('array')) {
-    const item = isObject(s?.items) ? scalarOf(s.items, components) : null
-    return item && item.scalar !== 'boolean'
-      ? {
-          ...item,
-          many: true,
-        }
-      : null
+  if (!s) return null
+  const branches = (s.anyOf ?? s.oneOf) as Json[] | undefined
+  if (branches) {
+    const objects = branches
+      .filter((branch) => resolved(branch, components)?.type !== 'null')
+      .map((branch) => fieldsOf(branch, components))
+    if (!objects.length || !objects.every(Boolean)) return null
+    const merged: Record<string, Json[]> = {}
+    for (const object of objects as Record<string, Json>[])
+      for (const [key, field] of Object.entries(object)) (merged[key] ??= []).push(field)
+    return Object.fromEntries(
+      Object.entries(merged).map(([key, fields]) => [
+        key,
+        fields.length === 1
+          ? fields[0]!
+          : {
+              anyOf: fields,
+            },
+      ]),
+    )
   }
-  const one = scalarOf(s, components)
-  return one
+  return s.type === 'object' || isObject(s.properties)
+    ? ((s.properties ?? {}) as Record<string, Json>)
+    : null
+}
+
+const shapeOf = (schema: Json | undefined, components: Record<string, Json>): Shape | null => {
+  const kind = scalarOf(schema, components)
+  if (kind) return kind
+  const fields = fieldsOf(schema, components)
+  return fields
     ? {
-        ...one,
-        many: false,
+        fields,
       }
     : null
+}
+
+const listOf = (schema: Json | undefined, components: Record<string, Json>) => {
+  const s = resolved(schema, components)
+  const types: unknown[] = Array.isArray(s?.type) ? s.type : [s?.type]
+  return types.includes('array') && isObject(s?.items) ? s.items : null
 }
 
 const invalid = (value: string, what: string) =>
   new InvalidArgumentError(`${value} is not ${what}.`)
 
-const parserOf = (kind: Kind) => (value: string) => {
-  if (kind.choices && !kind.choices.includes(value))
-    throw invalid(value, `one of ${kind.choices.join(', ')}`)
-  if (kind.scalar === 'string') return value
-  const n = Number(value)
-  if (value.trim() === '' || !Number.isFinite(n)) throw invalid(value, 'a number')
-  if (kind.scalar === 'integer' && !Number.isInteger(n)) throw invalid(value, 'an integer')
-  return n
+const asArgument =
+  <T>(parse: (value: string) => T) =>
+  (value: string) => {
+    try {
+      return parse(value)
+    } catch (error) {
+      if (error instanceof Exit) throw new InvalidArgumentError(error.message)
+      throw error
+    }
+  }
+
+type Unit = { placeholder: string; hint: string; parse: (value: string) => number }
+
+const units: [RegExp, Unit][] = [
+  [
+    /_bytes$/,
+    {
+      placeholder: 'size',
+      hint: 'bytes, or a size such as 512MiB or 8GiB',
+      parse: asArgument(bytes),
+    },
+  ],
+  [
+    /(^|_)(s|seconds)$/,
+    {
+      placeholder: 'duration',
+      hint: 'seconds, or a duration such as 90s, 10m or 24h',
+      parse: asArgument(seconds),
+    },
+  ],
+]
+
+const unitOf = (property: string, kind: Kind) =>
+  kind.scalar === 'integer' ? units.find(([pattern]) => pattern.test(property))?.[1] : undefined
+
+const parserOf = (property: string, kind: Kind) => {
+  const unit = unitOf(property, kind)
+  return (value: string): unknown => {
+    if (kind.choices && !kind.choices.includes(value))
+      throw invalid(value, `one of ${kind.choices.join(', ')}`)
+    if (kind.scalar === 'string') return value
+    if (kind.scalar === 'boolean') {
+      if (value !== 'true' && value !== 'false') throw invalid(value, 'true or false')
+      return value === 'true'
+    }
+    if (unit) return unit.parse(value)
+    const n = Number(value)
+    if (value.trim() === '' || !Number.isFinite(n)) throw invalid(value, 'a number')
+    if (kind.scalar === 'integer' && !Number.isInteger(n)) throw invalid(value, 'an integer')
+    return n
+  }
 }
+
+const jsonOf = (value: string, flag: string) => {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    throw new InvalidArgumentError(`${flag} is not valid JSON.`)
+  }
+}
+
+const shorthandOf =
+  (flag: string, fields: Record<string, Json>, components: Record<string, Json>) =>
+  (value: string) => {
+    if (/^\s*[[{]/.test(value)) return jsonOf(value, flag)
+    return Object.fromEntries(
+      value.split(',').map((pair) => {
+        const at = pair.indexOf('=')
+        if (at < 1) throw invalid(pair, 'key=value')
+        const key = pair.slice(0, at)
+        const kind = scalarOf(fields[key], components)
+        const raw = pair.slice(at + 1)
+        return [key, kind ? parserOf(key, kind)(raw) : raw]
+      }),
+    )
+  }
 
 type Binding = { attribute: string; property: string }
 
+type Field = { property: string; where: string; schema: Json | undefined; required: boolean }
+
 const optionsOf = (
-  property: string,
-  where: string,
-  schema: Json | undefined,
+  { property, where, schema, required }: Field,
   components: Record<string, Json>,
-  required: boolean,
 ): Option[] => {
-  const kind = kindOf(schema, components)
-  if (!kind) return []
+  const item = listOf(schema, components)
+  const shape = shapeOf(item ?? schema, components)
+  if (!shape || (item && shape.scalar === 'boolean')) return []
   const flag = `--${property.replaceAll('_', '-')}`
+  const unit = shape.scalar ? unitOf(property, shape) : undefined
   const description = [
     typeof schema?.description === 'string' ? schema.description : `${where} ${property}`,
-    ...(kind.many ? ['repeatable'] : []),
+    ...(unit ? [unit.hint] : []),
+    ...(shape.fields ? ['key=value pairs separated by commas, or JSON'] : []),
+    ...(item ? ['repeatable'] : []),
     ...(required ? ['required'] : []),
   ].join('; ')
-  if (kind.scalar === 'boolean')
+  if (shape.scalar === 'boolean')
     return [
       new Option(flag, description),
       new Option(`--no-${flag.slice(2)}`, `send ${property} false`),
     ]
-  const option = new Option(`${flag} <${kind.choices ? 'choice' : kind.scalar}>`, description)
-  if (kind.choices) option.choices(kind.choices)
-  const parse = parserOf(kind)
+  const placeholder = shape.fields
+    ? 'key=value,...'
+    : shape.choices
+      ? 'choice'
+      : (unit?.placeholder ?? shape.scalar)
+  const option = new Option(`${flag} <${placeholder}>`, description)
+  if (shape.choices) option.choices(shape.choices)
+  const parse = shape.fields
+    ? shorthandOf(flag, shape.fields, components)
+    : parserOf(property, shape)
   return [
-    kind.many
+    item
       ? option.argParser((value: string, previous: unknown) => [
           ...((previous as unknown[] | undefined) ?? []),
           parse(value),
@@ -180,6 +306,12 @@ const optionsOf = (
   ]
 }
 
+const selected = (run: Run, target: 'service' | 'sandbox') =>
+  need(run.selection[target], {
+    what: target === 'service' ? 'Service' : 'Sandbox',
+    flag: `--${target} <id or name>`,
+  })
+
 const scoped = async (run: Run, entity: 'service' | 'sandbox', ref: string) =>
   isId(entity, ref)
     ? ref
@@ -187,7 +319,7 @@ const scoped = async (run: Run, entity: 'service' | 'sandbox', ref: string) =>
         '/',
       )
 
-const targets: Record<Target, (run: Run) => Promise<string>> = {
+const paths: Record<Target, (run: Run) => Promise<string>> = {
   project: projectRef,
   environment: async (run) => {
     const ref = run.selection.environment
@@ -195,27 +327,23 @@ const targets: Record<Target, (run: Run) => Promise<string>> = {
       ? environmentId(run, ref)
       : `${await projectRef(run)}/${ref}`
   },
-  service: async (run) =>
-    scoped(
-      run,
-      'service',
-      await need(run.selection.service, {
-        what: 'Service',
-        flag: '--service <id or name>',
-      }),
-    ),
-  sandbox: async (run) =>
-    scoped(
-      run,
-      'sandbox',
-      await need(run.selection.sandbox, {
-        what: 'Sandbox',
-        flag: '--sandbox <id or name>',
-      }),
-    ),
+  service: async (run) => scoped(run, 'service', await selected(run, 'service')),
+  sandbox: async (run) => scoped(run, 'sandbox', await selected(run, 'sandbox')),
 }
 
-const isTarget = (name: string): name is Target => name in targets
+const ids: Record<Target, (run: Run) => Promise<string>> = {
+  project: async (run) => {
+    const ref = await projectRef(run)
+    return isId('project', ref) ? ref : projectId(run, ref)
+  },
+  environment: (run) => environmentId(run),
+  service: serviceId,
+  sandbox: async (run) => sandboxId(run, await selected(run, 'sandbox')),
+}
+
+export const targetId = (run: Run, target: Target) => ids[target](run)
+
+const isTarget = (name: string): name is Target => name in paths
 
 const successSchema = ({ operation, components }: Endpoint) =>
   resolved(
@@ -234,8 +362,10 @@ export const summaryColumns = (endpoint: Endpoint) => {
   )
 }
 
-export const renderOf = (endpoint: Endpoint): Render => {
-  const name = (endpoint.meta.cli || {}).render
+const cliOf = (endpoint: Endpoint) => endpoint.meta.cli || {}
+
+export const renderOf = (endpoint: Endpoint): Renderer => {
+  const name = cliOf(endpoint).render
   if (name) {
     const registered = renderer(name)
     if (!registered)
@@ -243,21 +373,118 @@ export const renderOf = (endpoint: Endpoint): Render => {
     return registered
   }
   const columns = summaryColumns(endpoint)
-  return (data) => human(data, columns)
+  return {
+    text: (data) => human(data, columns),
+  }
 }
 
-type Flow = { wait?: true; timeout?: number; follow?: true }
+export const waitedBy = (endpoint: Endpoint) => {
+  const name = cliOf(endpoint).wait
+  if (!name) return null
+  const waited = endpointNamed(name)
+  const wait = pollParameter(waited)
+  if (!wait || !waited.parameters.some((p) => p.in === 'path' && p.name === 'id'))
+    throw new Error(`${endpoint.name} waits with ${name}, which does not poll one entity by id`)
+  return {
+    endpoint: waited,
+    wait,
+  }
+}
 
-const flowsOf = (command: Command, endpoint: Endpoint) => {
+const routeOf = ({ method, path, parameters, operation }: Endpoint) => ({
+  method,
+  path,
+  params: parameters.map((p) => p.name),
+  query: parameters.filter((p) => p.in === 'query').map((p) => p.name),
+  body: operation.requestBody !== undefined,
+})
+
+const sender = (run: Run, endpoint: Endpoint) => {
+  const route = routeOf(endpoint)
+  return (input: Input, headers: Record<string, string> = {}) => {
+    const request = requestOf(route, input)
+    return run.request(request.path, {
+      ...request.init,
+      headers: {
+        ...(request.init.headers as Record<string, string>),
+        ...headers,
+      },
+    })
+  }
+}
+
+export type Flow = { wait?: true; timeout?: number; follow?: true }
+
+export const runOperation = async (
+  globals: Globals,
+  run: Run,
+  endpoint: Endpoint,
+  input: Input,
+  { wait, timeout, follow: following }: Flow = {},
+) => {
+  const send = sender(run, endpoint)
+  const render = renderOf(endpoint)
+  const limit =
+    timeout === undefined
+      ? {}
+      : {
+          timeout_s: timeout,
+        }
+  const polled = pollParameter(endpoint)
+  if (polled && wait)
+    return waitUntilDone(
+      globals,
+      {
+        label: typeof input.id === 'string' ? input.id : endpoint.name,
+        wait: polled,
+        input: {
+          ...input,
+          ...limit,
+        },
+      },
+      send,
+      render,
+    )
+  const waited = wait ? waitedBy(endpoint) : null
+  if (waited)
+    return replyThen(globals, await send(input), render, (data) =>
+      waitUntilDone(
+        globals,
+        {
+          label: typeof data.id === 'string' ? data.id : waited.endpoint.name,
+          wait: waited.wait,
+          input: {
+            id: data.id,
+            ...limit,
+          },
+        },
+        sender(run, waited.endpoint),
+        renderOf(waited.endpoint),
+      ),
+    )
+  if (following) return follow(globals, (headers) => send(input, headers), render)
+  return reply(globals, await send(input), render)
+}
+
+export const waitOptions = (command: CommandUnknownOpts, endpoint: Endpoint) => {
   const wait = pollParameter(endpoint)
-  if (wait)
+  const then = cliOf(endpoint).wait
+  if (wait || then)
     command
-      .option('--wait', 'repeat the call until done is true')
+      .option(
+        '--wait',
+        then ? `then repeat ${then} until done is true` : 'repeat the call until done is true',
+      )
       .option(
         '--timeout <duration>',
-        `how long --wait repeats it, such as 90s or 10m (default ${pollTimeout.default} s, at most ${pollTimeout.max} s)`,
-        seconds,
+        `how long --wait waits, such as 90s or 10m (default ${pollTimeout.default} s, at most ${pollTimeout.max} s)`,
+        asArgument(seconds),
       )
+  return wait
+}
+
+const flowsOf = (command: Command, endpoint: Endpoint) => {
+  const wait = waitOptions(command, endpoint)
   const follow = endpoint.meta.stream === true
   if (follow) command.option('-f, --follow', 'follow the event stream until it ends')
   return {
@@ -271,8 +498,48 @@ const extraBody = (value: unknown) =>
     ? parseJson(value.startsWith('@') ? readFileSync(value.slice(1), 'utf8') : value, '--body')
     : {}
 
+const describedParameter = (path: string, name: string) => {
+  const collection = /\/([^/]+)\/\{([^}]+)\}/g
+  for (const [, segment, parameter] of path.matchAll(collection))
+    if (parameter === name)
+      return name === 'id'
+        ? `${singular(segment!).replaceAll('-', ' ')} id`
+        : `${name.replaceAll('_', ' ')} id or name`
+  return name.replaceAll('_', ' ')
+}
+
+const fieldsOfEndpoint = ({ parameters, body, operation }: Endpoint): Field[] => {
+  const required = (body?.required as string[] | undefined) ?? []
+  return [
+    ...parameters
+      .filter((p) => p.in === 'query')
+      .map((p) => ({
+        property: p.name,
+        where: 'query parameter',
+        schema: {
+          ...p.schema,
+          ...(p.description
+            ? {
+                description: p.description,
+              }
+            : {}),
+        },
+        required: p.required === true,
+      })),
+    ...Object.entries((body?.properties as Record<string, Json> | undefined) ?? {}).map(
+      ([property, schema]) => ({
+        property,
+        where: 'body field',
+        schema,
+        required: operation.requestBody?.required !== false && required.includes(property),
+      }),
+    ),
+  ]
+}
+
 const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>) => {
-  const { name, method, path, operation, meta, parameters, body, components } = endpoint
+  const { name, path, operation, parameters, components } = endpoint
+  const cli = cliOf(endpoint)
   const summary = operation.summary ?? name
   const pathParameters = parameters.filter((p) => p.in === 'path')
   const contextual = pathParameters.map((p) => p.name).filter(isTarget)
@@ -283,50 +550,31 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
         ? `${summary}\n\nTarget: ${contextual.map((t) => `--${t} <id or name>`).join(', ')}. Names resolve within --project and --environment, with defaults from .stationly/context.json.`
         : summary,
     )
-  const args =
-    (meta.cli || {}).args ?? pathParameters.map((p) => p.name).filter((n) => !isTarget(n))
-  for (const arg of args)
-    command.addArgument(
-      new Argument(
-        `<${arg}>`,
-        pathParameters.find((p) => p.name === arg)?.description ?? `the ${arg} of the target`,
-      ),
+  const fields = fieldsOfEndpoint(endpoint)
+  const args = cli.args ?? pathParameters.map((p) => p.name).filter((n) => !isTarget(n))
+  for (const arg of args) {
+    const field = fields.find((f) => f.property === arg)
+    const kind = field ? scalarOf(field.schema, components) : null
+    const required = !field || field.required
+    const argument = new Argument(
+      required ? `<${arg}>` : `[${arg}]`,
+      typeof field?.schema?.description === 'string'
+        ? field.schema.description
+        : describedParameter(path, arg),
     )
+    if (kind) argument.argParser(parserOf(arg, kind))
+    command.addArgument(argument)
+  }
   const flows = flowsOf(command, endpoint)
   const bindings: Binding[] = []
   const fromGlobals: Target[] = []
-  const required = (body?.required as string[] | undefined) ?? []
-  const inputs: [string, string, Json | undefined, boolean][] = [
-    ...parameters
-      .filter((p) => p.in === 'query')
-      .map((p): [string, string, Json | undefined, boolean] => [
-        p.name,
-        'query parameter',
-        {
-          ...p.schema,
-          ...(p.description
-            ? {
-                description: p.description,
-              }
-            : {}),
-        },
-        p.required === true,
-      ]),
-    ...Object.entries((body?.properties as Record<string, Json> | undefined) ?? {}).map(
-      ([property, schema]): [string, string, Json | undefined, boolean] => [
-        property,
-        'body field',
-        schema,
-        operation.requestBody?.required !== false && required.includes(property),
-      ],
-    ),
-  ]
-  for (const [property, where, schema, needed] of inputs) {
+  for (const field of fields) {
+    const { property } = field
     if (isTarget(property)) {
       fromGlobals.push(property)
       continue
     }
-    if (property === flows.wait) continue
+    if (property === flows.wait || args.includes(property)) continue
     if (flows.follow && property === 'follow') {
       bindings.push({
         attribute: property,
@@ -334,7 +582,7 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
       })
       continue
     }
-    for (const option of optionsOf(property, where, schema, components, needed)) {
+    for (const option of optionsOf(field, components)) {
       if (reserved.has(option.attributeName())) continue
       command.addOption(option)
       if (!option.negate)
@@ -344,69 +592,28 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
         })
     }
   }
-  const hasBody = operation.requestBody !== undefined
-  if (hasBody)
+  if (operation.requestBody !== undefined)
     command.option('--body <json>', 'other fields of the request body as a JSON object, or @file')
-  const route = {
-    method,
-    path,
-    params: parameters.map((p) => p.name),
-    query: parameters.filter((p) => p.in === 'query').map((p) => p.name),
-    body: hasBody,
-  }
+  const exclusive = cli.exclusive ?? []
   command.action(
-    action<string[], Record<string, unknown>, Globals>(async (options, ...positional) => {
+    action<unknown[], Record<string, unknown>, Globals>(async (options, ...positional) => {
       const run = await connect(options)
-      const input: Record<string, unknown> = {
+      const input: Input = {
         ...extraBody(options.body),
       }
       for (const { attribute, property } of bindings)
         if (options[attribute] !== undefined) input[property] = options[attribute]
-      for (const target of fromGlobals)
-        if (run.selection[target] !== undefined) input[target] = run.selection[target]
       args.forEach((arg, i) => {
-        input[arg] = positional[i]
+        if (positional[i] !== undefined) input[arg] = positional[i]
       })
-      for (const target of contextual) input[target] = await targets[target](run)
-      const render = renderOf(endpoint)
-      const { wait, timeout, follow: following } = options as Flow
-      const send = (next: Record<string, unknown>) => {
-        const request = requestOf(route, next)
-        return run.request(request.path, request.init)
+      const chosen = exclusive.some((n) => !isTarget(n) && input[n] !== undefined)
+      for (const target of fromGlobals) {
+        if (input[target] !== undefined || run.selection[target] === undefined) continue
+        if (chosen && exclusive.includes(target)) continue
+        input[target] = await ids[target](run)
       }
-      if (flows.wait && wait)
-        return waitUntilDone(
-          options,
-          {
-            label: positional[0] ?? name,
-            wait: flows.wait,
-            input: {
-              ...input,
-              ...(timeout === undefined
-                ? {}
-                : {
-                    timeout_s: timeout,
-                  }),
-            },
-          },
-          send,
-          render,
-        )
-      const request = requestOf(route, input)
-      if (following)
-        return follow(
-          options,
-          (headers) =>
-            run.request(request.path, {
-              ...request.init,
-              headers: {
-                ...(request.init.headers as Record<string, string>),
-                ...headers,
-              },
-            }),
-          render,
-        )
-      return reply(options, await send(input), render)
+      for (const target of contextual) input[target] = await paths[target](run)
+      return runOperation(options, run, endpoint, input, options as Flow)
     }),
   )
   return command
@@ -415,43 +622,29 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
 const childOf = (parent: CommandUnknownOpts, name: string) =>
   parent.commands.find((c) => c.name() === name)
 
+const parentOf = (program: Program, words: string[]) =>
+  words.reduce<CommandUnknownOpts | null>((parent, word) => {
+    const child = parent && childOf(parent, word)
+    if (child && !child.commands.length) return null
+    return parent && group(parent, word)
+  }, program)
+
 export const registerGenerated = (program: Program) => {
   const reserved = new Set(program.options.map((o) => o.attributeName()))
   reserved.add('body')
-  const created = new Set<CommandUnknownOpts>()
   const clashes: string[] = []
   for (const generated of generatedCommands()) {
     const words = generated.path
-    let parent: CommandUnknownOpts = program
-    let clash = false
-    for (const word of words.slice(0, -1)) {
-      const child = childOf(parent, word)
-      if (child && !child.commands.length) {
-        clash = true
-        break
-      }
-      if (child) {
-        parent = child
-        continue
-      }
-      const group = new Command(word).description(`API operations tagged ${word}`)
-      parent.addCommand(group)
-      created.add(group)
-      parent = group
-    }
+    const parent = parentOf(program, words.slice(0, -1))
     const leaf = words.at(-1)!
-    const existing = clash ? undefined : childOf(parent, leaf)
-    if (existing && created.has(existing))
-      throw new Error(
-        `${generated.endpoint.name} and another operation both derive sly ${words.join(' ')}`,
-      )
-    if (clash || existing) {
-      clashes.push(generated.endpoint.name)
+    if (!parent || childOf(parent, leaf)) {
+      clashes.push(`sly ${words.join(' ')} (${generated.endpoint.name})`)
       continue
     }
-    const command = commandOf(leaf, generated, reserved)
-    parent.addCommand(command)
-    created.add(command)
+    parent.addCommand(commandOf(leaf, generated, reserved))
   }
-  return clashes
+  if (clashes.length)
+    throw new Error(
+      `${clashes.join(', ')} clash with hand-written commands; give the routes cli: false or another cli.path`,
+    )
 }

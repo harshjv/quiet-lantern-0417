@@ -92,6 +92,9 @@ export const auditRoutes = (kit: Kit) => {
         operation: {
           id: 'get_audit_events',
           level: 'any',
+          cli: {
+            path: ['audit'],
+          },
         },
         query: t.Object({
           ...listQuery,

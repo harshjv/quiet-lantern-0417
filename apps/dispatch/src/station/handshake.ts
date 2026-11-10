@@ -214,7 +214,7 @@ export const verifyHello = (
       'STATION_REVOKED',
       closeCodes.revoked,
       `The station was removed at ${station.revoked_at.toISOString()}.`,
-      'Enroll the host again with a new token from sly stations add.',
+      'Enroll the host again with a new token from sly stations enroll.',
       {
         revoked_at: station.revoked_at.toISOString(),
       },
@@ -246,14 +246,14 @@ export const verifyEnroll = (
       'ENROLL_TOKEN_INVALID',
       closeCodes.revoked,
       'The enrollment token is unknown or already used.',
-      'Create a new token with sly stations add.',
+      'Create a new token with sly stations enroll.',
     )
   if (token.kind === 'row' && now >= token.expiresAt.getTime())
     return refuse(
       'ENROLL_TOKEN_EXPIRED',
       closeCodes.revoked,
       'The enrollment token expired.',
-      'Create a new token with sly stations add.',
+      'Create a new token with sly stations enroll.',
     )
   const identityKey = decodeBase64Url(body.identity_key, 32)
   const signature = decodeBase64Url(body.signature, 64)

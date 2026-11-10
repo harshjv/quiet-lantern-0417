@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json && pnpm -r --parallel typecheck",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
-    "generate": "pnpm --filter @stationly/protocol --filter @stationly/manifest-schema generate && pnpm --filter @stationly/dispatch openapi && node installer/lib/station.ts",
+    "generate": "pnpm --filter @stationly/protocol --filter @stationly/manifest-schema generate && pnpm --filter @stationly/dispatch openapi && pnpm --filter @stationly/cli generate && node installer/lib/station.ts",
     "db:generate": "pnpm --filter @stationly/dispatch db:generate",
     "check:catalog": "node scripts/check-catalog.ts",
     "check:literals": "node scripts/check-literals.ts",
