@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm'
 
-import type { MessageBody } from '@stationly/protocol'
+import { remedy, type MessageBody } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { deployment, drift, service, station, station_generation } from '../db/schema.ts'
@@ -79,16 +79,17 @@ export const buildDesired = (db: Db, stationId: string): Built => {
   )
 }
 
-const imageFix = (serviceId: string) => ({
-  code: 'RESOLVE_IMAGE',
-  text: 'The image reference is not pinned to a digest. Set the image source again so Dispatch resolves the tag to its digest, then deploy.',
-  action: {
-    tool: 'update_service',
-    input: {
-      service: serviceId,
+const imageFix = (serviceId: string) =>
+  remedy(
+    'RESOLVE_IMAGE',
+    'The image reference is not pinned to a digest. Set the image source again so Dispatch resolves the tag to its digest, then deploy.',
+    {
+      tool: 'update_service',
+      input: {
+        service: serviceId,
+      },
     },
-  },
-})
+  )
 
 const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
   const failed: string[] = []
@@ -114,16 +115,16 @@ const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
       fixes: [
         e.explanation.includes('/image_ref')
           ? imageFix(dep.service_id)
-          : {
-              code: 'FIX_CONFIGURATION',
-              text: 'Correct the service setting the summary names, then deploy again.',
-              action: {
+          : remedy(
+              'FIX_CONFIGURATION',
+              'Correct the service setting the summary names, then deploy again.',
+              {
                 tool: 'update_service',
                 input: {
                   service: dep.service_id,
                 },
               },
-            },
+            ),
       ],
     }
     db.transaction((tx) => {

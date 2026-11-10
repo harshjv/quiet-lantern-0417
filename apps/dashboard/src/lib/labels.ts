@@ -191,6 +191,22 @@ export const diagnosisPhase: Record<Diagnosis['phase'], string> = {
   network: 'Network',
 }
 
+export const diagnosisFailed: Record<Diagnosis['phase'], string> = {
+  preflight: 'couldn’t be prepared for deployment',
+  build: 'failed to build',
+  pre_deploy: 'failed its pre-deploy command',
+  start: 'failed to start',
+  health: 'failed its health check',
+  cutover: 'couldn’t take over traffic',
+  recovery: 'couldn’t recover after a station restart',
+  run: 'failed while running',
+  route: 'couldn’t get a route on the station',
+  certificate: 'couldn’t get a certificate',
+  unpack: 'couldn’t unpack its image',
+  disk: 'ran out of disk',
+  network: 'couldn’t set up its network',
+}
+
 export const stagedStatus: Record<StagedChange['status'], Status> = {
   staged: {
     label: 'Waiting for review',

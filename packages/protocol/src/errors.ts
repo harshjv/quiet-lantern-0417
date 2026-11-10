@@ -642,3 +642,50 @@ export const warningCatalog = [
 ] as const
 
 export type WarningCode = (typeof warningCatalog)[number]
+
+export const remedyCatalog = [
+  'RAISE_MEMORY',
+  'RAISE_STARTUP_TIMEOUT',
+  'CHECK_HEALTH_PATH',
+  'READ_LOGS',
+  'READ_BUILD_LOGS',
+  'ROLLBACK',
+  'RESOLVE_IMAGE',
+  'FIX_CONFIGURATION',
+  'DEPLOY_TARGET',
+  'START_TARGET',
+  'BIND_ALL_INTERFACES',
+  'USE_DECLARED_PORT',
+  'DECLARE_PORT',
+  'USE_INTERNAL_NAME',
+  'ATTACH_SHARED',
+  'EXPOSE_TCP',
+  'ADD_DOMAIN',
+  'WAIT_FOR_APPLY',
+  'CHECK_DNS_RECORD',
+  'SET_PUBLIC_ADDRESS',
+  'RUN_PROBE',
+  'ALLOW_DOMAIN',
+  'JOIN_ENVIRONMENT',
+] as const
+
+export type RemedyCode = (typeof remedyCatalog)[number]
+
+export type Remedy = {
+  code: RemedyCode
+  text: string
+  action?: {
+    tool: string
+    input: Record<string, unknown>
+  }
+}
+
+export const remedy = (code: RemedyCode, text: string, action?: Remedy['action']): Remedy => ({
+  code,
+  text,
+  ...(action
+    ? {
+        action,
+      }
+    : {}),
+})

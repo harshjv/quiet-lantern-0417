@@ -7,6 +7,7 @@ import { AlsoWith, Code } from '@/components/code'
 import { Confirm, RemoveButton } from '@/components/confirm'
 import { CopyButton } from '@/components/copy'
 import { Field } from '@/components/field'
+import { FixActions } from '@/components/fix'
 import { FormDialog } from '@/components/form-dialog'
 import { EmptyState, ErrorState, Subsection } from '@/components/page'
 import { Term } from '@/components/term'
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { api, idempotency, send, type Domain } from '@/lib/api'
 import { commands, type ServiceScope } from '@/lib/commands'
+import { planFix } from '@/lib/fixes'
 import { domainIngress, domainKind, domainStatus, sentence } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import { domainsQuery, portsQuery, seedItem } from '@/lib/queries'
@@ -273,9 +275,20 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
                 <div className="space-y-1 text-sm">
                   <p className="text-destructive">{domain.error.summary}</p>
                   {(domain.error.fixes ?? []).map((fix) => (
-                    <p key={fix.code} className="text-foreground">
-                      {fix.text}
-                    </p>
+                    <div key={fix.code} className="space-y-1.5">
+                      <p className="text-foreground">{fix.text}</p>
+                      <FixActions
+                        plan={planFix(fix, {
+                          ...scope,
+                          subject: {
+                            kind: 'service',
+                            id: service,
+                            name: scope.service,
+                          },
+                        })}
+                        primary={false}
+                      />
+                    </div>
                   ))}
                   {domain.error.code && (
                     <p className="font-mono text-xs text-muted-foreground">{domain.error.code}</p>

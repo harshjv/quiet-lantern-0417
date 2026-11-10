@@ -49,6 +49,23 @@ export const commands = {
   createService: (scope: Scope) =>
     sly(...scoped(scope), 'services', 'create', '<name>', '--image', '<image>'),
   deploy: (scope: ServiceScope) => sly(...serviceScoped(scope), 'deploy', '--wait'),
+  startService: (scope: ServiceScope) => sly(...serviceScoped(scope), 'services', 'start'),
+  rollback: (scope: ServiceScope, deployment: string) =>
+    sly(...serviceScoped(scope), 'rollback', deployment, '--wait'),
+  setMemory: (scope: ServiceScope, bytes: number) =>
+    sly(...serviceScoped(scope), 'services', 'update', '--memory', String(bytes)),
+  logs: (scope: ServiceScope, deployment: string, build: boolean) =>
+    sly(...serviceScoped(scope), 'logs', '--deployment', deployment, ...(build ? ['--build'] : [])),
+  probe: (scope: ServiceScope, to: string, port: number | null) =>
+    sly(
+      ...serviceScoped(scope),
+      'network',
+      'explain',
+      '--to',
+      to,
+      ...(port === null ? [] : ['--port', String(port)]),
+      '--probe',
+    ),
   setServiceVariable: (scope: ServiceScope) =>
     sly(...serviceScoped(scope), 'variables', 'set', 'KEY=value'),
   setProjectVariable: (scope: Scope) => sly(...scoped(scope), 'variables', 'set', 'KEY=value'),
@@ -65,6 +82,8 @@ export const commands = {
     sly(...serviceScoped(scope), 'expose', 'tcp', port === null ? '<port>' : String(port)),
   setPublicAddress: (station: string) =>
     sly('stations', 'update', station, '--public-address', '<ipv4>'),
+  startSandbox: (scope: Scope, sandbox: string) =>
+    sly(...scoped(scope), 'sandbox', 'start', sandbox),
   createSandbox: (scope: Scope) =>
     sly(...scoped(scope), 'sandbox', 'create', '<name>', '--ttl', '2h'),
   snapshotSandbox: (scope: Scope, sandbox: string) =>
@@ -84,6 +103,11 @@ export const tools = [
   'create_environment',
   'create_service',
   'deploy',
+  'start_service',
+  'rollback',
+  'probe_network',
+  'start_sandbox',
+  'update_sandbox',
   'set_service_variables',
   'set_project_variables',
   'add_domain',

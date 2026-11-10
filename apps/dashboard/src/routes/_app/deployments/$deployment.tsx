@@ -13,6 +13,7 @@ import { Time } from '@/components/time'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, idempotency, send, type DeploymentStep } from '@/lib/api'
+import type { FixContext } from '@/lib/fixes'
 import { clock, duration, shortDigest, shortSha, span, stamp } from '@/lib/format'
 import {
   builder,
@@ -48,9 +49,20 @@ export const Route = createFileRoute('/_app/deployments/$deployment')({
   component: DeploymentPage,
 })
 
-function Diagnosis({ deployment }: { deployment: string }) {
+function Diagnosis({ deployment, context }: { deployment: string; context: FixContext }) {
   const { data } = useSuspenseQuery(diagnosisQuery(deployment))
-  return <DiagnosisPanel diagnosis={data} />
+  return (
+    <DiagnosisPanel
+      diagnosis={data}
+      context={{
+        ...context,
+        deployment: {
+          id: deployment,
+          build: data.phase === 'build',
+        },
+      }}
+    />
+  )
 }
 
 function StepIcon({ status }: { status: DeploymentStep['status'] }) {
@@ -204,7 +216,19 @@ function DeploymentPage() {
       </KeyValue>
       {d.status === 'failed' && (
         <Panel title="Couldn’t load the diagnosis">
-          <Diagnosis deployment={d.id} />
+          <Diagnosis
+            deployment={d.id}
+            context={{
+              project: trail.project.name,
+              environment: trail.environment.name,
+              subject: {
+                kind: 'service',
+                id: service.id,
+                name: service.name,
+              },
+              station: service.station_id ?? undefined,
+            }}
+          />
         </Panel>
       )}
       <Section title="Steps">

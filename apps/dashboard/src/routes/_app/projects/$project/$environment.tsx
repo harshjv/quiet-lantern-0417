@@ -506,7 +506,7 @@ function EnvironmentPage() {
         </TabsContent>
         <TabsContent value="network" className="mt-4">
           <Panel rows={4} title="Couldn’t load the network map">
-            <NetworkPanel environment={environment} />
+            <NetworkPanel project={project} environment={environment} />
           </Panel>
         </TabsContent>
         <TabsContent value="variables" className="mt-4">

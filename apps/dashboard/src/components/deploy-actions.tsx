@@ -26,7 +26,9 @@ import { cn } from '@/lib/utils'
 
 type Started = SentOf<ReturnType<typeof api.v1.services>['redeploy']['post']>
 
-function useDeploy<V = void>(
+type Named = Pick<Service, 'id' | 'name'>
+
+export function useDeploy<V = void>(
   act: (vars: V) => { started: string; staged: string; failed: string },
   mutationFn: (vars: V) => Promise<Started>,
   options: {
@@ -60,7 +62,13 @@ function useDeploy<V = void>(
   })
 }
 
-const useRedeploy = (service: Service, verb: 'Deploy' | 'Redeploy') =>
+export const deployCopy = (name: string) => ({
+  started: `Deploying ${name}`,
+  staged: `Deploy ${name}`,
+  failed: `deploy ${name}`,
+})
+
+const useRedeploy = (service: Named, verb: 'Deploy' | 'Redeploy') =>
   useDeploy(
     () =>
       verb === 'Redeploy'
@@ -69,11 +77,7 @@ const useRedeploy = (service: Service, verb: 'Deploy' | 'Redeploy') =>
             staged: `Redeploy ${service.name}`,
             failed: `redeploy ${service.name}`,
           }
-        : {
-            started: `Deploying ${service.name}`,
-            staged: `Deploy ${service.name}`,
-            failed: `deploy ${service.name}`,
-          },
+        : deployCopy(service.name),
     () =>
       send(
         api.v1
@@ -89,11 +93,7 @@ export function DeployButton({ service }: { service: Service }) {
   const image = service.source.type === 'image' ? service.source.ref : null
   const [ref, setRef] = useState(image ?? '')
   const mutation = useDeploy(
-    () => ({
-      started: `Deploying ${service.name}`,
-      staged: `Deploy ${service.name}`,
-      failed: `deploy ${service.name}`,
-    }),
+    () => deployCopy(service.name),
     () => {
       const body =
         service.source.type === 'image'
@@ -176,19 +176,13 @@ export function RedeployButton({ service }: { service: Service }) {
   )
 }
 
-export function RollbackButton({
-  service,
-  deployment,
-}: {
-  service: Service
-  deployment: Deployment
-}) {
+export function useRollback(service: Named, deployment: { id: string; label: string }) {
   const [confirm, setConfirm] = useState<string | null>(null)
   const mutation = useDeploy(
     () => ({
-      started: `Rolling back to #${deployment.number}`,
-      staged: `Roll ${service.name} back to #${deployment.number}`,
-      failed: `roll back to #${deployment.number}`,
+      started: `Rolling back to ${deployment.label}`,
+      staged: `Roll ${service.name} back to ${deployment.label}`,
+      failed: `roll back to ${deployment.label}`,
     }),
     (stale: boolean) =>
       send(
@@ -217,6 +211,35 @@ export function RollbackButton({
       },
     },
   )
+  return {
+    mutation,
+    confirm: (
+      <Confirm
+        open={confirm !== null}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        title="Roll back with older secret versions?"
+        description={confirm}
+        action="Roll back anyway"
+        cancel="Cancel"
+        destructive={false}
+        renderError={() => null}
+        onConfirm={() => mutation.mutateAsync(true)}
+      />
+    ),
+  }
+}
+
+export function RollbackButton({
+  service,
+  deployment,
+}: {
+  service: Service
+  deployment: Deployment
+}) {
+  const { mutation, confirm } = useRollback(service, {
+    id: deployment.id,
+    label: `#${deployment.number}`,
+  })
   return (
     <>
       <Button
@@ -229,17 +252,7 @@ export function RollbackButton({
         {mutation.isPending ? <Loader2 className="animate-spin" /> : <Undo2 />}
         Roll back
       </Button>
-      <Confirm
-        open={confirm !== null}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Roll back with older secret versions?"
-        description={confirm}
-        action="Roll back anyway"
-        cancel="Cancel"
-        destructive={false}
-        renderError={() => null}
-        onConfirm={() => mutation.mutateAsync(true)}
-      />
+      {confirm}
     </>
   )
 }

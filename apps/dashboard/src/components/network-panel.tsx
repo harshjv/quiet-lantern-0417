@@ -27,6 +27,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 
 import { Code, Command } from '@/components/code'
 import { ConnectionsTable } from '@/components/connections-table'
+import { FixActions } from '@/components/fix'
 import { EmptyState } from '@/components/page'
 import { ServiceStatusDot } from '@/components/status'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
@@ -42,6 +43,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Environment, NetworkMap } from '@/lib/api'
 import { commands } from '@/lib/commands'
+import { findingPlan } from '@/lib/fixes'
 import { ago, plural } from '@/lib/format'
 import {
   domainStatus,
@@ -837,8 +839,12 @@ function Summary({ map }: { map: NetworkMap }) {
   )
 }
 
-function Warnings({ map }: { map: NetworkMap }) {
+function Warnings({ map, project }: { map: NetworkMap; project: string }) {
   if (map.warnings.length === 0) return null
+  const scope = {
+    project,
+    environment: map.environment.name,
+  }
   return (
     <Alert>
       <CircleAlert className={toneText.warning} />
@@ -848,20 +854,32 @@ function Warnings({ map }: { map: NetworkMap }) {
       </AlertTitle>
       <AlertDescription>
         <ul className="space-y-1.5">
-          {map.warnings.map((w, i) => (
-            <li key={`${w.code}-${i}`}>
-              <span className="font-medium text-foreground">{finding[w.code]}.</span>{' '}
-              {w.explanation}{' '}
-              <span className="font-mono text-xs text-muted-foreground">{w.code}</span>
-            </li>
-          ))}
+          {map.warnings.map((w, i) => {
+            const plan = findingPlan(w, map.services, scope)
+            return (
+              <li key={`${w.code}-${i}`} className="space-y-1.5">
+                <p>
+                  <span className="font-medium text-foreground">{finding[w.code]}.</span>{' '}
+                  {w.explanation}{' '}
+                  <span className="font-mono text-xs text-muted-foreground">{w.code}</span>
+                </p>
+                {plan && <FixActions plan={plan} primary={false} />}
+              </li>
+            )
+          })}
         </ul>
       </AlertDescription>
     </Alert>
   )
 }
 
-export function NetworkPanel({ environment }: { environment: Environment }) {
+export function NetworkPanel({
+  project,
+  environment,
+}: {
+  project: string
+  environment: Environment
+}) {
   const { data: map } = useSuspenseQuery(networkQuery(environment.id))
   const [view, setView] = useState<'map' | 'table'>('map')
   const [liveOn, setLiveOn] = useState(false)
@@ -869,7 +887,7 @@ export function NetworkPanel({ environment }: { environment: Environment }) {
   return (
     <div className="space-y-4">
       <Summary map={map} />
-      <Warnings map={map} />
+      <Warnings map={map} project={project} />
       <Tabs value={view} onValueChange={(value) => setView(value as 'map' | 'table')}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList aria-label="Network view">

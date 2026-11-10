@@ -1,7 +1,7 @@
 import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 
-import type { Diagnosis, ErrorBody, Observed } from '@stationly/protocol'
+import { remedy, type Diagnosis, type ErrorBody, type Observed } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { domain, service, service_port } from '../db/schema.ts'
@@ -15,10 +15,11 @@ type ErrorBodyValue = Static<typeof ErrorBody>
 type Status = DomainRow['status']
 type Certificate = NonNullable<DomainRow['certificate']>
 
-const checkDns = (hostname: string) => ({
-  code: 'CHECK_DNS_RECORD',
-  text: `Point the A record of ${hostname} at the station's public address, then wait for the Gateway's next attempt.`,
-})
+const checkDns = (hostname: string) =>
+  remedy(
+    'CHECK_DNS_RECORD',
+    `Point the A record of ${hostname} at the station's public address, then wait for the Gateway's next attempt.`,
+  )
 
 const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
   const failure = route.failure
@@ -31,10 +32,10 @@ const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
         blocked_by: route.blocked_by ?? null,
       },
       fixes: [
-        {
-          code: 'WAIT_FOR_APPLY',
-          text: `Fix ${route.blocked_by ?? 'the blocking object'} first; the route applies once it does.`,
-        },
+        remedy(
+          'WAIT_FOR_APPLY',
+          `Fix ${route.blocked_by ?? 'the blocking object'} first; the route applies once it does.`,
+        ),
       ],
     }
   return {
@@ -47,14 +48,7 @@ const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
           details: failure.details,
         }
       : {}),
-    fixes: failure?.fix
-      ? [
-          {
-            code: 'WAIT_FOR_APPLY',
-            text: failure.fix,
-          },
-        ]
-      : [],
+    fixes: failure?.fix ? [remedy('WAIT_FOR_APPLY', failure.fix)] : [],
   }
 }
 
@@ -86,12 +80,7 @@ const certificateDiagnosis = (
           details: failure.details,
         }
       : {}),
-    fixes: [
-      {
-        code: rateLimited ? 'ADD_DOMAIN' : 'CHECK_DNS_RECORD',
-        text: failure.fix,
-      },
-    ],
+    fixes: [remedy(rateLimited ? 'ADD_DOMAIN' : 'CHECK_DNS_RECORD', failure.fix)],
   }
 }
 

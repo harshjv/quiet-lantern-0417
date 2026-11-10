@@ -1,7 +1,7 @@
 import type { Static } from '@sinclair/typebox'
 import { and, asc, desc, eq, inArray, lt } from 'drizzle-orm'
 
-import type { Diagnosis } from '@stationly/protocol'
+import { remedy, type Diagnosis, type RemedyCode } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { build, deployment, deployment_step, run, service } from '../db/schema.ts'
@@ -137,15 +137,15 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
 
 const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): Fix[] => {
   const fixes: Fix[] = [...(d.fixes ?? [])]
-  const has = (code: string) => fixes.some((f) => f.code === code)
+  const has = (code: RemedyCode) => fixes.some((f) => f.code === code)
   const limits = dep.config_snapshot.limits as
     { memory_bytes: number; cpu_millis: number } | undefined
   if (d.code === 'OOM_KILLED' && limits) {
     const memory = limits.memory_bytes * 2
-    const raise = {
-      code: 'RAISE_MEMORY',
-      text: `The kernel killed the process at its ${limits.memory_bytes}-byte limit. Raise limits.memory_bytes to at least ${memory}.`,
-      action: {
+    const raise = remedy(
+      'RAISE_MEMORY',
+      `The kernel killed the process at its ${limits.memory_bytes}-byte limit. Raise limits.memory_bytes to at least ${memory}.`,
+      {
         tool: 'update_service',
         input: {
           service: dep.service_id,
@@ -155,40 +155,48 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
           },
         },
       },
-    }
+    )
     const at = fixes.findIndex((f) => f.code === 'RAISE_MEMORY')
     if (at >= 0) fixes[at] = raise
     else fixes.unshift(raise)
   }
   if (d.code === 'HEALTH_TIMEOUT' && !has('CHECK_HEALTH_PATH')) {
     const health = dep.config_snapshot.health as { path?: string; port?: number } | null
-    fixes.push({
-      code: 'CHECK_HEALTH_PATH',
-      text: `Confirm ${serviceName} listens on ${health?.port ?? 'its port'} on all interfaces and answers ${health?.path ?? 'the health check'}.`,
-    })
+    fixes.push(
+      remedy(
+        'CHECK_HEALTH_PATH',
+        `Confirm ${serviceName} listens on ${health?.port ?? 'its port'} on all interfaces and answers ${health?.path ?? 'the health check'}.`,
+      ),
+    )
   }
   if (d.code === 'EXIT_NONZERO' && !has('READ_LOGS'))
-    fixes.push({
-      code: 'READ_LOGS',
-      text: 'The container exited before it was healthy. Read the log excerpt; get_logs with the cursor shows more.',
-    })
+    fixes.push(
+      remedy(
+        'READ_LOGS',
+        'The container exited before it was healthy. Read the log excerpt; get_logs with the cursor shows more.',
+      ),
+    )
   if (d.code === 'BUILD_FAILED' && !has('READ_BUILD_LOGS'))
-    fixes.push({
-      code: 'READ_BUILD_LOGS',
-      text: 'Read the build log with get_logs and fix the Dockerfile or source, then deploy again.',
-    })
+    fixes.push(
+      remedy(
+        'READ_BUILD_LOGS',
+        'Read the build log with get_logs and fix the Dockerfile or source, then deploy again.',
+      ),
+    )
   if (d.diff_from_last_good && !has('ROLLBACK')) {
-    fixes.push({
-      code: 'ROLLBACK',
-      text: `Deployment ${d.diff_from_last_good.deployment_id} was the last good one; rolling back restores it while you fix this.`,
-      action: {
-        tool: 'rollback',
-        input: {
-          service: dep.service_id,
-          deployment_id: d.diff_from_last_good.deployment_id,
+    fixes.push(
+      remedy(
+        'ROLLBACK',
+        `Deployment ${d.diff_from_last_good.deployment_id} was the last good one; rolling back restores it while you fix this.`,
+        {
+          tool: 'rollback',
+          input: {
+            service: dep.service_id,
+            deployment_id: d.diff_from_last_good.deployment_id,
+          },
         },
-      },
-    })
+      ),
+    )
   }
   return fixes
 }
@@ -293,10 +301,10 @@ export const buildDiagnosis = (b: BuildRow, redact: Redactor): DiagnosisValue | 
   d.fixes = d.fixes?.length
     ? d.fixes
     : [
-        {
-          code: 'READ_BUILD_LOGS',
-          text: 'Read the build log with get_logs (build) and fix the Dockerfile or source, then deploy again.',
-        },
+        remedy(
+          'READ_BUILD_LOGS',
+          'Read the build log with get_logs (build) and fix the Dockerfile or source, then deploy again.',
+        ),
       ]
   return bound(d)
 }

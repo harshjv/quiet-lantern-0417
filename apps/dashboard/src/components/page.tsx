@@ -2,6 +2,7 @@ import { CircleAlert, Inbox, RotateCw, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { CopyButton } from '@/components/copy'
+import { ErrorFix } from '@/components/fix'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,6 +15,7 @@ import {
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ApiFailure } from '@/lib/api'
+import type { FixContext } from '@/lib/fixes'
 import { cn } from '@/lib/utils'
 
 export function PageHeader({
@@ -117,11 +119,13 @@ export function ErrorState({
   title = 'Couldn’t load this page',
   action,
   onRetry,
+  fixes,
 }: {
   error: unknown
   title?: string
   action?: ReactNode
   onRetry?: () => void
+  fixes?: FixContext
 }) {
   const failure = error instanceof ApiFailure ? error : null
   return (
@@ -133,6 +137,7 @@ export function ErrorState({
           {error instanceof Error ? error.message : String(error)}
         </p>
         {failure && <p className="text-foreground">{failure.fix}</p>}
+        {failure && fixes && <ErrorFix failure={failure} context={fixes} />}
         {(action || onRetry) && (
           <div className="flex flex-wrap gap-2 pt-1">
             {action}

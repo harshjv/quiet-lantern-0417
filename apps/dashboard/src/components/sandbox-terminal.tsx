@@ -15,6 +15,7 @@ import { api, ApiFailure, failureText, idempotency, unwrap, type Sandbox } from 
 import { sandboxStatus, sentence } from '@/lib/labels'
 import { attachUrl, outputFrame, stdinFrame } from '@/lib/sandbox'
 import { isIdle, isTransient } from '@/lib/status'
+import { useEnvironmentTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
 type Phase = 'connecting' | 'live' | 'ended' | 'error'
@@ -43,7 +44,8 @@ const themes = {
 
 const dim = (text: string) => `\r\n\x1b[2m${text}\x1b[0m\r\n`
 
-function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name'> }) {
+function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'environment_id'> }) {
+  const trail = useEnvironmentTrail(sandbox.environment_id)
   const { resolvedTheme } = useTheme()
   const container = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -244,7 +246,19 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name'> }) {
       </div>
       {phase === 'error' && failure !== null && (
         <div className="p-3">
-          <ErrorState error={failure} title="Couldn’t open the terminal" />
+          <ErrorState
+            error={failure}
+            title="Couldn’t open the terminal"
+            fixes={{
+              project: trail.project.name,
+              environment: trail.environment.name,
+              subject: {
+                kind: 'sandbox',
+                id: sandbox.id,
+                name: sandbox.name,
+              },
+            }}
+          />
         </div>
       )}
       <div

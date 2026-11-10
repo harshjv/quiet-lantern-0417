@@ -76,17 +76,12 @@ const power = {
   },
 } as const
 
-function PowerButton({
-  sandbox,
-  action,
-  size,
-}: {
-  sandbox: Named
-  action: keyof typeof power
-  size?: Size
-}) {
-  const { icon, label, success, failure } = power[action]
-  const mutation = useApiMutation({
+export const useSandboxPower = (
+  sandbox: Pick<Sandbox, 'id' | 'name'>,
+  action: keyof typeof power,
+) => {
+  const { success, failure } = power[action]
+  return useApiMutation({
     mutationFn: () =>
       send(
         api.v1
@@ -100,6 +95,19 @@ function PowerButton({
     success: () => success(sandbox.name),
     failure: () => failure(sandbox.name),
   })
+}
+
+function PowerButton({
+  sandbox,
+  action,
+  size,
+}: {
+  sandbox: Named
+  action: keyof typeof power
+  size?: Size
+}) {
+  const { icon, label } = power[action]
+  const mutation = useSandboxPower(sandbox, action)
   return (
     <ActionButton
       icon={icon}

@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
-  Bot,
   CircleAlert,
   CircleCheck,
   CircleDashed,
@@ -12,13 +11,13 @@ import {
   RefreshCw,
   ShieldBan,
   TriangleAlert,
-  Wrench,
 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
-import { AlsoWith, Code } from '@/components/code'
+import { Code } from '@/components/code'
 import { ConnectionsTable } from '@/components/connections-table'
 import { Field, Hint } from '@/components/field'
+import { FixList } from '@/components/fix'
 import { ErrorState, Section } from '@/components/page'
 import { Panel } from '@/components/panel'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
@@ -36,7 +35,6 @@ import {
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, idempotency, send, unwrap, type Explanation, type Service } from '@/lib/api'
-import { tools, type Tool } from '@/lib/commands'
 import { ago, plural } from '@/lib/format'
 import {
   explanationVerdict,
@@ -49,13 +47,13 @@ import {
   rcode,
 } from '@/lib/labels'
 import { endpointText } from '@/lib/network-layout'
-import { connectionsQuery, dnsLogQuery } from '@/lib/queries'
+import { connectionsQuery, dnsLogQuery, servicesQuery } from '@/lib/queries'
 import { stagedTitle } from '@/lib/staged'
 import { tonePanel, toneText } from '@/lib/tone'
+import { useEnvironmentTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
 type Hop = Explanation['hops'][number]
-type Fix = Explanation['fixes'][number]
 
 const verdictIcon: Record<Explanation['verdict'], typeof CircleCheck> = {
   reachable: CircleCheck,
@@ -119,8 +117,6 @@ const detailText = (detail: Record<string, unknown>) =>
     .filter(([k, v]) => v !== null && v !== undefined && !hiddenFacts.has(k))
     .map(([k, v]) => fact(k, v))
     .join(' · ')
-
-const isTool = (name: string): name is Tool => (tools as readonly string[]).includes(name)
 
 const hostOf = (target: string) => target.split(':')[0] ?? target
 
@@ -259,18 +255,9 @@ function ProbeResult({ service, input }: { service: Service; input: ProbeInput }
   )
 }
 
-function FixAgent({ tool }: { tool: string }) {
-  if (isTool(tool)) return <AlsoWith tool={tool} className="justify-start" />
-  return (
-    <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      Your agent applies it with
-      <Bot className="size-3.5" aria-hidden />
-      <Code className="text-xs">{tool}</Code>
-    </p>
-  )
-}
-
 function ExplanationView({ service, explanation }: { service: Service; explanation: Explanation }) {
+  const trail = useEnvironmentTrail(service.environment_id)
+  const services = useQuery(servicesQuery(service.environment_id))
   const verdict = explanationVerdict[explanation.verdict]
   const Icon = verdictIcon[explanation.verdict]
   const probe = explanation.fixes.find((f) => f.code === 'RUN_PROBE')
@@ -340,25 +327,20 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
           })}
         </TableBody>
       </TableFrame>
-      {explanation.fixes.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">How to fix</h3>
-          <ol className="space-y-2">
-            {explanation.fixes.map((f: Fix) => (
-              <li key={f.code} className="flex gap-3 rounded-md border px-3 py-2">
-                <Wrench className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <div className="min-w-0 flex-1 space-y-1.5 text-sm">
-                  <p>{f.text}</p>
-                  {f.action && f.code !== 'RUN_PROBE' && <FixAgent tool={f.action.tool} />}
-                </div>
-                <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
-                  {f.code}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
+      <FixList
+        fixes={explanation.fixes}
+        context={{
+          project: trail.project.name,
+          environment: trail.environment.name,
+          subject: {
+            kind: 'service',
+            id: service.id,
+            name: service.name,
+          },
+          names: Object.fromEntries((services.data?.items ?? []).map((s) => [s.id, s.name])),
+          station: service.station_id ?? undefined,
+        }}
+      />
       {probeInput?.to && (
         <ProbeResult
           key={`${probeInput.to}:${probeInput.port ?? ''}`}

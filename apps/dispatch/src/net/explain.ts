@@ -3,7 +3,7 @@ import { isIPv4 } from 'node:net'
 import type { Static } from '@sinclair/typebox'
 import { eq, inArray } from 'drizzle-orm'
 
-import { slugPattern, type MessageBody } from '@stationly/protocol'
+import { remedy as fix, slugPattern, type MessageBody } from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
 import type { EnvironmentRow, SandboxRow, ServiceRow } from '../api/lookup.ts'
@@ -11,7 +11,7 @@ import type { NetworkExplanation } from '../api/shapes.ts'
 import { deployment, domain, sandbox, service, service_port, station } from '../db/schema.ts'
 import { generationNumbered } from '../station/generations.ts'
 
-import type { HopName, HopStatus, NetworkRemedy } from './explain-values.ts'
+import type { HopName, HopStatus } from './explain-values.ts'
 import type { NetworkFinding } from './findings.ts'
 import { networkMap, type NetworkSources } from './map.ts'
 
@@ -43,16 +43,6 @@ const hop = (name: HopName, status: HopStatus, detail: Json = {}, code?: Network
       }
     : {}),
   detail,
-})
-
-const fix = (code: NetworkRemedy, text: string, action?: Fix['action']): Fix => ({
-  code,
-  text,
-  ...(action
-    ? {
-        action,
-      }
-    : {}),
 })
 
 const targetInvalid = (
