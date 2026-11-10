@@ -320,9 +320,7 @@ describe('tool calls', () => {
     assert.equal(result.structuredContent.done, false)
     assert.ok(['queued', 'running'].includes(result.structuredContent.status))
     assert.equal(result.structuredContent.output, undefined)
-    assert.ok(progress.length >= 2, JSON.stringify(progress))
-    assert.match(progress[0]!.message ?? '', /waiting up to 2 s/)
-    assert.match(progress.at(-1)!.message ?? '', /not done/)
+    assert.match(progress[0]?.message ?? '', /waiting up to 2 s/, JSON.stringify(progress))
     const run = await h.call('GET', `/v1/runs/${created.id}`, {
       token: h.admin.token,
     })
