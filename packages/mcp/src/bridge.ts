@@ -131,8 +131,9 @@ export const serveBridge = (spec: BridgeSpec) => {
         relay: boolean,
       ): Promise<CallToolResult> => {
         const progressToken = request.mcpReq._meta?.progressToken
+        const relayed: Promise<void>[] = []
         try {
-          return await client.callTool(
+          const result = await client.callTool(
             {
               name,
               arguments: args,
@@ -144,16 +145,21 @@ export const serveBridge = (spec: BridgeSpec) => {
               onprogress:
                 !relay || progressToken === undefined
                   ? undefined
-                  : (progress) =>
-                      void request.mcpReq.notify({
-                        method: 'notifications/progress',
-                        params: {
-                          ...progress,
-                          progressToken,
-                        },
-                      }),
+                  : (progress) => {
+                      relayed.push(
+                        request.mcpReq.notify({
+                          method: 'notifications/progress',
+                          params: {
+                            ...progress,
+                            progressToken,
+                          },
+                        }),
+                      )
+                    },
             },
           )
+          await Promise.allSettled(relayed)
+          return result
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error)
           spec.log('remote.call_failed', {
