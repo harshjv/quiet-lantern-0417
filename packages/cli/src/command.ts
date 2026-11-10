@@ -13,6 +13,7 @@ export const createProgram = () =>
     .option('--project <project>', 'project id or name (default from .stationly/context.json)')
     .option('--environment <environment>', 'environment id or name (default: the project default)')
     .option('--service <service>', 'service id or name')
+    .option('--sandbox <sandbox>', 'sandbox id or name')
     .exitOverride()
     .configureOutput({
       writeErr: (text) => process.stderr.write(text),

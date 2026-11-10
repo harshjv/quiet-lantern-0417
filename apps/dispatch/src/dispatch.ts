@@ -3,6 +3,7 @@ import { Command, CommanderError } from 'commander'
 import { bootstrapCommand } from './scripts/bootstrap.ts'
 import { handshakeVectorsCommand } from './scripts/handshake-vectors.ts'
 import { migrateCommand } from './scripts/migrate.ts'
+import { openapiCommand } from './scripts/openapi.ts'
 import { secretsCommand } from './scripts/secrets.ts'
 
 const program = new Command('dispatch')
@@ -22,6 +23,7 @@ migrateCommand(program)
 bootstrapCommand(program)
 secretsCommand(program)
 handshakeVectorsCommand(program)
+openapiCommand(program)
 
 try {
   await program.parseAsync()

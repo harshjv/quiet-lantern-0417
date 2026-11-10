@@ -1,31 +1,20 @@
 #!/bin/sh
 set -eu
 
-SLY_RELEASE='0.1.0'
+SLY_RELEASE='0.1.1'
 STATIONLY_RELEASES='https://ghcr.io/harshjv/stationly/release'
-SLY_SHA256_LINUX_AMD64='d749953c99eda417613b3b825f72adb7488911c0db5c4507b8fe85b05da8e4f2'
-SLY_SHA256_LINUX_ARM64='65c868cc960acff24f8186390d2b2047c1063c6986c91e2d423e23a250d93229'
-SLY_SHA256_DARWIN_ARM64='8c5f05b95d08ad43cfe7f43fb4cfa9fb0547a74f2f348ddfcb389457ff8965a3'
-SLY_SHA256_DARWIN_AMD64='9f0a77c97cb6089b559b60b6901bfd7f0c693f76c82c91de6f88a36446e70b73'
+SLY_SHA256_LINUX_AMD64='34600a912c3118b28de957560b282b7888240df56381940eba097ae121a08a1d'
+SLY_SHA256_LINUX_ARM64='0beef9eed694bea18b5bf9429ad3049321de3c6426ea3fc1135b37f6ce2b0b5c'
+SLY_SHA256_DARWIN_ARM64='df056dab28d0d6cc708eca2a517c83b345cc8f189a1c06b3a355fc30ff99eec3'
+SLY_SHA256_DARWIN_AMD64='3939f4212976df6ccb3e2983b8394b1947cd2d5495380f61856e61caf769317e'
 
 dir=
+
+INSTALLER='sly installer'
 work=
 
-say() { printf '%s\n' "sly installer: $*" >&2; }
-fail() { printf '%s\n' "sly installer: error: $*" >&2; exit 1; }
-
-usage() {
-	cat >&2 <<EOF
-usage: curl -fsSL https://stationly.netlify.app/install-sly.sh | sh
-       curl -fsSL https://stationly.netlify.app/install-sly.sh | sh -s -- [--dir DIR]
-
-Installs sly ${SLY_RELEASE}, the Stationly CLI, as a single binary on macOS (arm64, x86_64) or Linux
-(amd64, arm64). The binary comes from ${STATIONLY_RELEASES} and is checked against the SHA-256
-written into this script. No Node.js or npm is needed.
-
-  --dir DIR    install into DIR (default /usr/local/bin as root, otherwise ~/.local/bin)
-EOF
-}
+say() { printf '%s\n' "$INSTALLER: $*" >&2; }
+fail() { printf '%s\n' "$INSTALLER: error: $*" >&2; exit 1; }
 
 placeholder() { case "$1" in @*@) return 0 ;; *) return 1 ;; esac; }
 
@@ -42,13 +31,13 @@ registry_get() {
 }
 
 fetch_blob() {
-	scheme=${releases%%://*}
-	rest=${releases#*://}
+	scheme=${1%%://*}
+	rest=${1#*://}
 	registry=${rest%%/*}
 	repository=${rest#*/}
-	url=$scheme://$registry/v2/$repository/blobs/sha256:$1
+	url=$scheme://$registry/v2/$repository/blobs/sha256:$2
 	token=
-	code=$(registry_get "$url" "$2")
+	code=$(registry_get "$url" "$3")
 	if [ "$code" = 401 ]; then
 		challenge=$(tr -d '\r' <"$work/headers" | awk 'tolower($1) == "www-authenticate:" && tolower($2) == "bearer" {sub(/^[^:]*:[ \t]*[Bb]earer[ \t]+/, ""); print " " $0; exit}')
 		realm=$(bearer_param "$challenge" realm)
@@ -58,9 +47,22 @@ fetch_blob() {
 		say "requesting an anonymous pull token from $realm"
 		token=$(curl -fsS --retry 3 --proto "=$scheme" -G --data-urlencode "service=$service" --data-urlencode "scope=${scope:-repository:$repository:pull}" "$realm" | sed -n 's/.*"token"[ ]*:[ ]*"\([^"]*\)".*/\1/p') || fail "the token request to $realm failed"
 		[ -n "$token" ] || fail "$realm returned no anonymous pull token for $repository"
-		code=$(registry_get "$url" "$2")
+		code=$(registry_get "$url" "$3")
 	fi
 	[ "$code" = 200 ] || fail "GET $url answered HTTP $code"
+}
+
+usage() {
+	cat >&2 <<EOF
+usage: curl -fsSL https://stationly.netlify.app/install-sly.sh | sh
+       curl -fsSL https://stationly.netlify.app/install-sly.sh | sh -s -- [--dir DIR]
+
+Installs sly ${SLY_RELEASE}, the Stationly CLI, as a single binary on macOS (arm64, x86_64) or Linux
+(amd64, arm64). The binary comes from ${STATIONLY_RELEASES} and is checked against the SHA-256
+written into this script. No Node.js or npm is needed.
+
+  --dir DIR    install into DIR (default /usr/local/bin as root, otherwise ~/.local/bin)
+EOF
 }
 
 parse_args() {
@@ -113,7 +115,7 @@ main() {
 	target_dir
 	work=$(mktemp -d)
 	say "downloading sly $SLY_RELEASE for $os/$arch from ${releases#*://}:v$SLY_RELEASE (blob sha256:$want)"
-	fetch_blob "$want" "$work/sly"
+	fetch_blob "$releases" "$want" "$work/sly"
 	got=$(sha256_of "$work/sly")
 	[ "$got" = "$want" ] || fail "sly has SHA-256 $got, but this installer expects $want; refusing to install"
 	chmod 0755 "$work/sly"

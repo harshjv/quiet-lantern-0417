@@ -73,15 +73,15 @@ jobs:
       - name: Build the dashboard
         run: pnpm --filter @stationly/dashboard build
 
-      - name: Regenerate protocol schemas, Go structs and station shell constants
+      - name: Regenerate protocol schemas, Go structs, the OpenAPI document sly embeds and station shell constants
         run: pnpm generate
 
       - name: Fail on generated drift
         run: |
-          drift="$(git status --porcelain -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts installer/lib/station.gen.sh)"
+          drift="$(git status --porcelain -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts packages/cli/src/openapi.gen.ts installer/lib/station.gen.sh)"
           if [ -n "$drift" ]; then
             echo "$drift"
-            git diff -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts installer/lib/station.gen.sh
+            git diff -- packages/protocol/schema go/internal/protocol apps/dashboard/src/routeTree.gen.ts packages/cli/src/openapi.gen.ts installer/lib/station.gen.sh
             exit 1
           fi
 

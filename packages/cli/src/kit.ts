@@ -18,6 +18,7 @@ export type Globals = {
   project?: string
   environment?: string
   service?: string
+  sandbox?: string
 }
 
 export type Context = {
@@ -80,7 +81,12 @@ const describeRequest = (url: string, init: RequestInit | undefined) => {
   }
 }
 
-export type Selection = { project?: string; environment?: string; service?: string }
+export type Selection = {
+  project?: string
+  environment?: string
+  service?: string
+  sandbox?: string
+}
 
 export type Run = {
   globals: Globals
@@ -88,6 +94,7 @@ export type Run = {
   credentials: Credentials
   userAgent: string
   api: ApiClient
+  request: (path: string, init: RequestInit) => Promise<Response>
 }
 
 export const resolveInstance = async (globals: Globals) => {
@@ -178,9 +185,19 @@ export const connectWith = (
       project: globals.project ?? context.project,
       environment: globals.environment ?? context.environment,
       service: globals.service ?? context.service,
+      sandbox: globals.sandbox,
     },
     credentials,
     userAgent: agent,
+    request: (path, init) =>
+      fetcher(`${credentials.instance}${path}`, {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string>),
+          authorization: `Bearer ${credentials.token}`,
+          'user-agent': agent,
+        },
+      }),
     api: createApiClient(credentials.instance, {
       token: credentials.token,
       userAgent: agent,

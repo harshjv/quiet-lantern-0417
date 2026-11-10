@@ -3,18 +3,25 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ChevronRight, FolderGit2 } from 'lucide-react'
 
 import { AlsoWith } from '@/components/code'
+import { GetStarted, useGetStarted } from '@/components/get-started'
 import { NewProject } from '@/components/new-project'
 import { EmptyState, PageHeader } from '@/components/page'
 import { failurePage } from '@/components/panel'
 import { ServiceStatusDot } from '@/components/status'
 import type { ServiceStatus } from '@/lib/api'
+import { passkeysQuery } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { byName, plural } from '@/lib/format'
 import { serviceStatus } from '@/lib/labels'
-import { load, projectsQuery } from '@/lib/queries'
+import { agentTokensQuery, load, projectsQuery, warm } from '@/lib/queries'
 
 export const Route = createFileRoute('/_app/')({
-  loader: ({ context }) => load(context.queryClient, projectsQuery),
+  loader: ({ context }) =>
+    Promise.all([
+      load(context.queryClient, projectsQuery),
+      warm(context.queryClient, passkeysQuery),
+      warm(context.queryClient, agentTokensQuery),
+    ]),
   errorComponent: failurePage('Couldn’t load your projects'),
   component: Projects,
 })
@@ -23,6 +30,7 @@ const order: ServiceStatus[] = ['red', 'amber', 'green', 'asleep', 'stopped']
 
 function Projects() {
   const { data } = useSuspenseQuery(projectsQuery)
+  const guide = useGetStarted(data.items)
   return (
     <div className="space-y-6">
       <PageHeader
@@ -30,14 +38,17 @@ function Projects() {
         meta={<span>{plural(data.items.length, 'project')}</span>}
         actions={<NewProject />}
       />
+      {guide.visible && <GetStarted guide={guide} />}
       {data.items.length === 0 ? (
-        <EmptyState
-          icon={FolderGit2}
-          title="No projects yet"
-          description="A project groups services that deploy together, with an environment for each stage."
-          action={<NewProject />}
-          also={<AlsoWith cli={commands.createProject()} tool="create_project" />}
-        />
+        !guide.visible && (
+          <EmptyState
+            icon={FolderGit2}
+            title="No projects yet"
+            description="A project groups services that deploy together, with an environment for each stage."
+            action={<NewProject />}
+            also={<AlsoWith cli={commands.createProject()} tool="create_project" />}
+          />
+        )
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[...data.items].sort(byName).map((project) => (

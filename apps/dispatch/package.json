@@ -13,7 +13,8 @@
     "start": "node src/dispatch.ts serve",
     "secrets": "node src/dispatch.ts secrets",
     "bootstrap": "node src/dispatch.ts bootstrap",
-    "vectors:handshake": "node src/dispatch.ts handshake-vectors"
+    "vectors:handshake": "node src/dispatch.ts handshake-vectors",
+    "openapi": "node src/dispatch.ts openapi"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.18",

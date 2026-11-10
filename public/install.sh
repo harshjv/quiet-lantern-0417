@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-STATIONLY_RELEASE='0.1.0'
+STATIONLY_RELEASE='0.1.1'
 STATIONLY_RELEASES='https://ghcr.io/harshjv/stationly/release'
-STATIOND_SHA256_AMD64='97685bb6ca7726babac7bb3a55e1a6398a0918ffc07e3b9ac061fb96e968c8bf'
+STATIOND_SHA256_AMD64='8a331f88984f85d1795b7923e3796b9ecf8420ba8ce4426955bfe56bf536fbbd'
 STATIOND_SHA256_ARM64=''
 TEST_TRUST_URL='@TEST_TRUST_URL@'
 TEST_TRUST_SHA256='@TEST_TRUST_SHA256@'
@@ -26,10 +26,48 @@ litestream_endpoint=
 sandbox_device=
 sandbox_device_wipe=
 sandbox_size=
+
+INSTALLER=stationly
 work=
 
-say() { printf '%s\n' "stationly: $*" >&2; }
-fail() { printf '%s\n' "stationly: error: $*" >&2; exit 1; }
+say() { printf '%s\n' "$INSTALLER: $*" >&2; }
+fail() { printf '%s\n' "$INSTALLER: error: $*" >&2; exit 1; }
+
+placeholder() { case "$1" in @*@) return 0 ;; *) return 1 ;; esac; }
+
+cleanup() { if [ -n "$work" ]; then rm -rf "$work"; fi; }
+
+sha256_of() {
+	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+bearer_param() { printf '%s\n' "$1" | sed -n "s/.*[ ,]$2=\"\([^\"]*\)\".*/\1/p"; }
+
+registry_get() {
+	curl -sS --retry 3 --proto "=$scheme" --proto-redir "=$scheme" -L -D "$work/headers" -o "$2" -w '%{http_code}' ${token:+-H "Authorization: Bearer $token"} "$1" || echo 000
+}
+
+fetch_blob() {
+	scheme=${1%%://*}
+	rest=${1#*://}
+	registry=${rest%%/*}
+	repository=${rest#*/}
+	url=$scheme://$registry/v2/$repository/blobs/sha256:$2
+	token=
+	code=$(registry_get "$url" "$3")
+	if [ "$code" = 401 ]; then
+		challenge=$(tr -d '\r' <"$work/headers" | awk 'tolower($1) == "www-authenticate:" && tolower($2) == "bearer" {sub(/^[^:]*:[ \t]*[Bb]earer[ \t]+/, ""); print " " $0; exit}')
+		realm=$(bearer_param "$challenge" realm)
+		service=$(bearer_param "$challenge" service)
+		scope=$(bearer_param "$challenge" scope)
+		[ -n "$realm" ] || fail "$registry answered 401 for $url without a Bearer challenge"
+		say "requesting an anonymous pull token from $realm"
+		token=$(curl -fsS --retry 3 --proto "=$scheme" -G --data-urlencode "service=$service" --data-urlencode "scope=${scope:-repository:$repository:pull}" "$realm" | sed -n 's/.*"token"[ ]*:[ ]*"\([^"]*\)".*/\1/p') || fail "the token request to $realm failed"
+		[ -n "$token" ] || fail "$realm returned no anonymous pull token for $repository"
+		code=$(registry_get "$url" "$3")
+	fi
+	[ "$code" = 200 ] || fail "GET $url answered HTTP $code"
+}
 
 usage() {
 	cat >&2 <<EOF
@@ -64,10 +102,6 @@ Test-only options (CI and development; never for production):
                                 into this script)
 EOF
 }
-
-placeholder() { case "$1" in @*@) return 0 ;; *) return 1 ;; esac; }
-
-cleanup() { if [ -n "$work" ]; then rm -rf "$work"; fi; }
 
 parse_args() {
 	while [ $# -gt 0 ]; do
@@ -111,8 +145,6 @@ check_restore() {
 		fail "STATIONLY_RECOVERY_KEY goes with --litestream-bucket"
 	fi
 }
-
-sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
 
 check_sha256() {
 	got=$(sha256_of "$1")
@@ -198,14 +230,16 @@ choose_release() {
 	fi
 }
 
+apt_get() { DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+
 apt_install() {
-	DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" >>"$LOG" 2>&1 || fail "apt-get install $* failed; see $LOG"
+	apt_get install -y -q -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" >>"$LOG" 2>&1 || fail "apt-get install $* failed; see $LOG"
 }
 
 apparmor_enabled() { [ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = Y ]; }
 
 prerequisites() {
-	DEBIAN_FRONTEND=noninteractive apt-get update -q >>"$LOG" 2>&1 || fail "apt-get update failed; see $LOG"
+	apt_get update -q >>"$LOG" 2>&1 || fail "apt-get update failed; see $LOG"
 	if apparmor_enabled; then
 		say "installing prerequisites (ca-certificates, curl, git, apparmor: the kernel enforces AppArmor)"
 		apt_install ca-certificates curl git apparmor
@@ -292,7 +326,7 @@ Package: docker-ce docker-ce-cli
 Pin: version 5:$DOCKER_MAJOR.*
 Pin-Priority: 1001
 EOF
-	DEBIAN_FRONTEND=noninteractive apt-get update -q >>"$LOG" 2>&1 || fail "apt-get update failed after adding Docker's repository; see $LOG"
+	apt_get update -q >>"$LOG" 2>&1 || fail "apt-get update failed after adding Docker's repository; see $LOG"
 	version=$(apt-cache madison docker-ce | awk '{print $3}' | grep "^5:$DOCKER_MAJOR\." | head -n 1)
 	[ -n "$version" ] || fail "Docker's repository offers no docker-ce $DOCKER_MAJOR.x for $os_id $os_codename $arch"
 	say "installing Docker Engine $version"
@@ -311,37 +345,9 @@ image_store() {
 	esac
 }
 
-bearer_param() { printf '%s\n' "$1" | sed -n "s/.*[ ,]$2=\"\([^\"]*\)\".*/\1/p"; }
-
-registry_get() {
-	curl -sS --retry 3 --proto "=$scheme" --proto-redir "=$scheme" -L -D "$work/headers" -o "$2" -w '%{http_code}' ${token:+-H "Authorization: Bearer $token"} "$1" || echo 000
-}
-
-fetch_blob() {
-	scheme=${releases%%://*}
-	rest=${releases#*://}
-	registry=${rest%%/*}
-	repository=${rest#*/}
-	url=$scheme://$registry/v2/$repository/blobs/sha256:$1
-	token=
-	code=$(registry_get "$url" "$2")
-	if [ "$code" = 401 ]; then
-		challenge=$(tr -d '\r' <"$work/headers" | awk 'tolower($1) == "www-authenticate:" && tolower($2) == "bearer" {sub(/^[^:]*:[ \t]*[Bb]earer[ \t]+/, ""); print " " $0; exit}')
-		realm=$(bearer_param "$challenge" realm)
-		service=$(bearer_param "$challenge" service)
-		scope=$(bearer_param "$challenge" scope)
-		[ -n "$realm" ] || fail "$registry answered 401 for $url without a Bearer challenge"
-		say "requesting an anonymous pull token from $realm"
-		token=$(curl -fsS --retry 3 --proto "=$scheme" -G --data-urlencode "service=$service" --data-urlencode "scope=${scope:-repository:$repository:pull}" "$realm" | sed -n 's/.*"token"[ ]*:[ ]*"\([^"]*\)".*/\1/p') || fail "the token request to $realm failed"
-		[ -n "$token" ] || fail "$realm returned no anonymous pull token for $repository"
-		code=$(registry_get "$url" "$2")
-	fi
-	[ "$code" = 200 ] || fail "GET $url answered HTTP $code"
-}
-
 fetch_stationd() {
 	say "downloading stationd for linux/$arch from $release_ref (blob sha256:$stationd_sha256)"
-	fetch_blob "$stationd_sha256" "$work/stationd"
+	fetch_blob "$releases" "$stationd_sha256" "$work/stationd"
 	check_sha256 "$work/stationd" "$stationd_sha256" "stationd" "this installer"
 	chmod 0755 "$work/stationd"
 	if [ "$mode" = test ]; then

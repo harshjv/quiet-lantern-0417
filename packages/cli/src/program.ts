@@ -11,8 +11,9 @@ import { resourceCommands } from './commands/resources.ts'
 import { sandboxCommands } from './commands/sandbox.ts'
 import { variableCommands } from './commands/variables.ts'
 import { version } from './env.ts'
+import { registerGenerated } from './generated.ts'
 
-export const buildProgram = () => {
+export const handWrittenProgram = () => {
   const program = createProgram()
 
   authCommands(program)
@@ -41,5 +42,11 @@ export const buildProgram = () => {
       )
     })
 
+  return program
+}
+
+export const buildProgram = () => {
+  const program = handWrittenProgram()
+  registerGenerated(program)
   return program
 }

@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { AlsoWith } from '@/components/code'
 import { Field, hintId } from '@/components/field'
@@ -12,7 +12,15 @@ import { commands } from '@/lib/commands'
 import { useApiMutation } from '@/lib/mutation'
 import { projectQuery, seed } from '@/lib/queries'
 
-export function NewProject() {
+export function NewProject({
+  trigger = (
+    <Button size="sm">
+      <Plus /> New project
+    </Button>
+  ),
+}: {
+  trigger?: ReactNode
+}) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -52,11 +60,7 @@ export function NewProject() {
         setOpen(next)
         if (!next) mutation.reset()
       }}
-      trigger={
-        <Button size="sm">
-          <Plus /> New project
-        </Button>
-      }
+      trigger={trigger}
       title="Create a project"
       description="Starts with one environment, named production unless you pick another name."
       also={<AlsoWith cli={commands.createProject()} tool="create_project" />}

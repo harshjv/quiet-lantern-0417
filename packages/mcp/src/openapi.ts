@@ -1,49 +1,19 @@
 import type { JsonSchemaType, ToolAnnotations } from '@modelcontextprotocol/server'
 
+import {
+  componentRef,
+  endpoints,
+  isObject,
+  slugPaths,
+  type Endpoint,
+  type Json,
+  type McpFlags,
+  type OpenApiDocument,
+} from './operations.ts'
 import { jsonSchema } from './schema.ts'
-import type { RouteLevel, ToolDef } from './tools.ts'
-
-type Json = Record<string, unknown>
-
-type Parameter = {
-  name: string
-  in: string
-  required?: boolean
-  description?: string
-  schema?: Json
-}
-
-type Content = Record<string, { schema?: Json }>
-
-type Flags = { destructive?: true; always_load?: true; poll?: true }
-
-type Operation = {
-  operationId?: string
-  summary?: string
-  description?: string
-  parameters?: Parameter[]
-  requestBody?: { required?: boolean; content?: Content }
-  responses?: Record<string, { content?: Content }>
-  'x-stationly'?: { level: RouteLevel; mcp?: false | Flags }
-}
-
-export type OpenApiDocument = {
-  paths: Record<string, Record<string, Operation>>
-  components?: { schemas?: Record<string, Json> }
-}
-
-const methods = ['get', 'put', 'post', 'patch', 'delete']
-
-const componentRef = '#/components/schemas/'
+import type { ToolDef } from './tools.ts'
 
 const waitParameters = ['wait_s', 'timeout_s']
-
-export const slugPaths: Record<string, string> = {
-  project: 'project',
-  environment: 'project/environment',
-  service: 'project/environment/service',
-  sandbox: 'project/environment/sandbox',
-}
 
 const idempotencyKey = {
   type: 'string',
@@ -60,9 +30,6 @@ const timeout = {
   default: 600,
   description: 'How long to keep repeating the call until done is true, in seconds',
 }
-
-const isObject = (value: unknown): value is Json =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
 
 const local = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(local)
@@ -109,14 +76,7 @@ const withDefinitions = (schema: Json, components: Record<string, Json>): JsonSc
   } as JsonSchemaType
 }
 
-const resolved = (schema: Json | undefined, components: Record<string, Json>): Json | undefined => {
-  const ref = schema?.$ref
-  return typeof ref === 'string' && ref.startsWith(componentRef)
-    ? components[ref.slice(componentRef.length)]
-    : schema
-}
-
-const annotationsOf = (method: string, title: string, flags: Flags): ToolAnnotations =>
+const annotationsOf = (method: string, title: string, flags: McpFlags): ToolAnnotations =>
   method === 'GET'
     ? {
         title,
@@ -131,17 +91,17 @@ const annotationsOf = (method: string, title: string, flags: Flags): ToolAnnotat
         openWorldHint: false,
       }
 
-const toolOf = (
-  method: string,
-  path: string,
-  operation: Operation,
-  components: Record<string, Json>,
-): ToolDef => {
-  const name = operation.operationId
-  const meta = operation['x-stationly']
-  if (!name || !meta) throw new Error(`${method} ${path} has no operationId or x-stationly`)
+const toolOf = ({
+  name,
+  method,
+  path,
+  operation,
+  meta,
+  parameters,
+  body,
+  components,
+}: Endpoint): ToolDef => {
   const flags = meta.mcp || {}
-  const parameters = (operation.parameters ?? []).filter((p) => p.in === 'path' || p.in === 'query')
   const poll = flags.poll
     ? (parameters.find((p) => p.in === 'query' && waitParameters.includes(p.name))?.name ?? null)
     : null
@@ -174,7 +134,6 @@ const toolOf = (
       parameter.in === 'path' || parameter.required === true,
     )
   }
-  const body = resolved(operation.requestBody?.content?.['application/json']?.schema, components)
   for (const [key, schema] of Object.entries((body?.properties as Json | undefined) ?? {}))
     claim(
       key,
@@ -236,16 +195,7 @@ const toolOf = (
   }
 }
 
-export const generateTools = (document: OpenApiDocument): ToolDef[] => {
-  const components = document.components?.schemas ?? {}
-  return Object.entries(document.paths).flatMap(([path, item]) =>
-    Object.entries(item)
-      .filter(
-        ([method, operation]) =>
-          methods.includes(method) &&
-          operation['x-stationly'] &&
-          operation['x-stationly'].mcp !== false,
-      )
-      .map(([method, operation]) => toolOf(method.toUpperCase(), path, operation, components)),
-  )
-}
+export const generateTools = (document: OpenApiDocument): ToolDef[] =>
+  endpoints(document)
+    .filter((endpoint) => endpoint.meta.mcp !== false)
+    .map(toolOf)

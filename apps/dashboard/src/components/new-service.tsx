@@ -36,24 +36,28 @@ type Kind = 'web' | 'worker'
 
 type PortEntry = { port: string; protocol: 'http' | 'tcp' }
 
+export type ServicePreset = { name: string; image: string; port: PortEntry }
+
 export function NewService({
   environment,
+  preset,
   open,
   onOpenChange,
 }: {
   environment: Environment
+  preset?: ServicePreset
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const navigate = useNavigate()
   const stations = useQuery(onlineStationsQuery)
   const project = useQuery(projectQuery(environment.project_id))
-  const [name, setName] = useState('')
+  const [name, setName] = useState(preset?.name ?? '')
   const [kind, setKind] = useState<Kind>('web')
-  const [image, setImage] = useState('')
+  const [image, setImage] = useState(preset?.image ?? '')
   const ports = useRows<PortEntry>(
     [
-      {
+      preset?.port ?? {
         port: '8080',
         protocol: 'http',
       },

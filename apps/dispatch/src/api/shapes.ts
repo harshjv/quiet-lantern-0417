@@ -926,10 +926,19 @@ export const Project = component(
       environment_count: Int,
       service_count: Int,
       status_counts: StatusCounts,
+      sandbox_count: Int,
       environments: Type.Array(Environment),
       variables: Type.Array(Variable),
     },
-    ['id', 'name', 'default_environment_id', 'environment_count', 'service_count', 'status_counts'],
+    [
+      'id',
+      'name',
+      'default_environment_id',
+      'environment_count',
+      'service_count',
+      'status_counts',
+      'sandbox_count',
+    ],
   ),
 )
 

@@ -14,7 +14,11 @@ import {
   type Dispatch,
 } from '../../../apps/dispatch/test/helpers/dispatch.ts'
 import { FakeRegistry } from '../../../apps/dispatch/test/helpers/registry.ts'
-import { createEnvironment, createProject } from '../../../apps/dispatch/test/helpers/seed.ts'
+import {
+  createEnvironment,
+  createProject,
+  createService,
+} from '../../../apps/dispatch/test/helpers/seed.ts'
 
 const entry = new URL('../src/index.ts', import.meta.url).pathname
 
@@ -481,6 +485,95 @@ describe('exit codes', () => {
     await new Promise<void>((resolve) => broken.close(() => resolve()))
     assert.equal(result.code, 1)
     assert.equal(lastLine(result.stderr), 'INTERNAL_ERROR')
+  })
+})
+
+describe('generated commands', () => {
+  let service: { id: string }
+
+  before(async () => {
+    const project = await h.call('GET', '/v1/projects/alpha', {
+      token: h.admin.token,
+    })
+    service = await createService(h, project.body.default_environment_id, {
+      name: 'store',
+      kind: 'worker',
+      ref: 'nginx:1.27',
+      extra: {
+        strategy: 'replace',
+      },
+    })
+  })
+
+  test('volumes add --service <id> --mount-path /data --json sends POST /v1/services/{id}/volumes', async () => {
+    server.requests.length = 0
+    const result = await sly([
+      'volumes',
+      'add',
+      '--service',
+      service.id,
+      '--mount-path',
+      '/data',
+      '--json',
+    ])
+    assert.equal(result.code, 0, result.stderr)
+    const sent = server.requests.filter((r) => r.method === 'POST')
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0]!.path, `/v1/services/${service.id}/volumes`)
+    assert.deepEqual(JSON.parse(sent[0]!.body), {
+      mount_path: '/data',
+    })
+    assert.match(sent[0]!.headers.get('idempotency-key') ?? '', /.+/)
+    const volume = JSON.parse(result.stdout)
+    assert.equal(volume.mount_path, '/data')
+    const rest = await h.call('GET', `/v1/services/${service.id}/volumes`, {
+      token: h.admin.token,
+    })
+    assert.ok(rest.body.items.some((v: { id: string }) => v.id === volume.id))
+  })
+
+  test('a service given by name resolves through the nested project path', async () => {
+    server.requests.length = 0
+    const result = await sly([
+      '--project',
+      'alpha',
+      '--service',
+      'store',
+      'volumes',
+      'list-service',
+    ])
+    assert.equal(result.code, 0, result.stderr)
+    assert.ok(
+      server.requests.some((r) =>
+        /^\/v1\/projects\/alpha\/environments\/env_[A-Z0-9]+\/services\/store\/volumes$/.test(
+          r.path,
+        ),
+      ),
+    )
+    assert.equal(JSON.parse(result.stdout).items[0].mount_path, '/data')
+  })
+
+  test('--dry-run prints the request with positional arguments and sends nothing', async () => {
+    server.requests.length = 0
+    const result = await sly(['--dry-run', 'volumes', 'remove', 'vol_01JC7ZABCDEFGHJKMNPQRSTVWX'])
+    assert.equal(result.code, 0, result.stderr)
+    const shown = JSON.parse(result.stdout)
+    assert.equal(shown.method, 'DELETE')
+    assert.match(shown.url, /\/v1\/volumes\/vol_01JC7ZABCDEFGHJKMNPQRSTVWX$/)
+    assert.equal(shown.headers.authorization, 'Bearer [redacted]')
+    assert.equal(server.requests.length, 0)
+  })
+
+  test('an API error goes through the shared handler and exits 1', async () => {
+    const result = await sly(['volumes', 'get', 'vol_01JC7ZABCDEFGHJKMNPQRSTVWX'])
+    assert.equal(result.code, 1)
+    assert.equal(lastLine(result.stderr), 'NOT_FOUND')
+  })
+
+  test('a flag typed integer refuses text as a usage error, exit 2', async () => {
+    const result = await sly(['ports', 'add', '--service', service.id, '--port', 'eighty'])
+    assert.equal(result.code, 2)
+    assert.match(result.stderr, /eighty is not a number/)
   })
 })
 

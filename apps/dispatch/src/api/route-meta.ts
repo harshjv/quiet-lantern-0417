@@ -11,6 +11,8 @@ export type RouteLevel = 'public' | 'any' | Level | 'instance read' | 'instance 
 
 export type Mcp = false | { destructive?: true; always_load?: true; poll?: true }
 
+export type Cli = false | { path?: string[]; args?: string[]; render?: string }
+
 export type TargetInput = {
   params: Record<string, string>
   query: Record<string, string | undefined>
@@ -22,6 +24,7 @@ export type Operation = {
   id: string
   level: RouteLevel
   mcp?: Mcp
+  cli?: Cli
   target?: (input: TargetInput) => Target
 }
 
@@ -61,18 +64,22 @@ export const routeMeta = (db: Db, principalOf: (request: Request) => Promise<Pri
   new Elysia({
     name: 'stationly.route-meta',
   }).macro({
-    operation: ({ id, level, mcp, target: targetFrom }: Operation) => ({
+    operation: ({ id, level, mcp, cli, target: targetFrom }: Operation) => ({
       detail: {
         operationId: id,
-        'x-stationly':
-          mcp === undefined
-            ? {
-                level,
-              }
+        'x-stationly': {
+          level,
+          ...(mcp === undefined
+            ? {}
             : {
-                level,
                 mcp,
-              },
+              }),
+          ...(cli === undefined
+            ? {}
+            : {
+                cli,
+              }),
+        },
       } as DocumentDecoration,
       beforeHandle: async (context: {
         request: Request

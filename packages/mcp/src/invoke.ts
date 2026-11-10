@@ -1,13 +1,11 @@
 import type { ServerContext } from '@modelcontextprotocol/server'
 
-import { slugPaths } from './openapi.ts'
+import { requestOf } from './operations.ts'
 import type { Outcome, ToolDef } from './tools.ts'
 
 export type Send = (path: string, init: RequestInit, request: ServerContext) => Promise<Response>
 
 type Input = Record<string, unknown>
-
-const parents = ['projects', 'environments']
 
 const defaultTimeout = 600
 
@@ -22,18 +20,6 @@ export const internalEnvelope = (error: unknown) => ({
     fix: 'Retry; if it keeps failing, report the explanation.',
   },
 })
-
-const pathOf = (template: string, input: Input) =>
-  template.replace(/\/([^/]+)\/\{([^}]+)\}/g, (_, collection: string, name: string) => {
-    const value = String(input[name])
-    const segments = slugPaths[name] ? value.split('/') : [value]
-    return segments
-      .map(
-        (segment, i) =>
-          `/${i === segments.length - 1 ? collection : (parents[i] ?? collection)}/${encodeURIComponent(segment)}`,
-      )
-      .join('')
-  })
 
 const outcomeOf = async (response: Response): Promise<Outcome> => {
   const text = await response.text()
@@ -60,40 +46,17 @@ const outcomeOf = async (response: Response): Promise<Outcome> => {
 }
 
 const once = async (tool: ToolDef, input: Input, send: Send, request: ServerContext) => {
-  const { idempotency_key: key, ...rest } = input
-  const query = new URLSearchParams()
-  for (const name of tool.query) {
-    const value = rest[name] as string | number | boolean | undefined
-    if (value !== undefined) query.set(name, String(value))
-  }
-  const body = Object.fromEntries(
-    Object.entries(rest).filter(([name]) => !tool.params.includes(name)),
+  const { path, init } = requestOf(tool, input)
+  return outcomeOf(
+    await send(
+      path,
+      {
+        ...init,
+        signal: request.mcpReq.signal,
+      },
+      request,
+    ),
   )
-  const search = query.size ? `?${query.toString()}` : ''
-  const headers: Record<string, string> = {
-    accept: 'application/json',
-    ...(typeof key === 'string'
-      ? {
-          'idempotency-key': key,
-        }
-      : {}),
-  }
-  const init: RequestInit = tool.body
-    ? {
-        method: tool.method,
-        headers: {
-          ...headers,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: request.mcpReq.signal,
-      }
-    : {
-        method: tool.method,
-        headers,
-        signal: request.mcpReq.signal,
-      }
-  return outcomeOf(await send(`${pathOf(tool.path, rest)}${search}`, init, request))
 }
 
 const progress = async (request: ServerContext, step: number, message: string) => {

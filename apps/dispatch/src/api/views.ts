@@ -765,6 +765,15 @@ export const createViews = (db: Db) => {
         environment_count: envIds.length,
         service_count: services.length,
         status_counts,
+        sandbox_count: envIds.length
+          ? (db
+              .select({
+                n: count(),
+              })
+              .from(sandbox)
+              .where(inArray(sandbox.environment_id, envIds))
+              .get()?.n ?? 0)
+          : 0,
       }
     },
     summary: [
@@ -774,6 +783,7 @@ export const createViews = (db: Db) => {
       'environment_count',
       'service_count',
       'status_counts',
+      'sandbox_count',
     ],
     expand: {
       environments: (row, sub) =>

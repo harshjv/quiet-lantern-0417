@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { LogOut, Monitor, Moon, Sun, UserRound } from 'lucide-react'
+import { ListChecks, LogOut, Monitor, Moon, Sun, UserRound } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import type { ReactNode } from 'react'
 
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { authClient, sessionQuery } from '@/lib/auth'
+import { setGuideHidden, useGuideHidden } from '@/lib/first-run'
 import { useLiveEvents, type LiveState } from '@/lib/live'
 import { stagedQuery } from '@/lib/queries'
 import { countPill, toneDot } from '@/lib/tone'
@@ -86,6 +87,7 @@ function ThemeMenu() {
 
 function UserMenu() {
   const session = useQuery(sessionQuery)
+  const guideHidden = useGuideHidden()
   const client = useQueryClient()
   const navigate = useNavigate()
   const signOut = async () => {
@@ -113,6 +115,13 @@ function UserMenu() {
             <UserRound /> Account and sign-in
           </Link>
         </DropdownMenuItem>
+        {guideHidden && (
+          <DropdownMenuItem asChild>
+            <Link to="/" onClick={() => setGuideHidden(false)}>
+              <ListChecks /> Get started
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut /> Sign out
         </DropdownMenuItem>

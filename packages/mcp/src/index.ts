@@ -8,7 +8,18 @@ export {
   type RouteLevel,
   type ToolDef,
 } from './tools.ts'
-export { generateTools, type OpenApiDocument } from './openapi.ts'
+export { generateTools } from './openapi.ts'
+export {
+  endpoints,
+  isObject,
+  requestOf,
+  resolved,
+  slugPaths,
+  type Endpoint,
+  type Json,
+  type OpenApiDocument,
+  type Parameter,
+} from './operations.ts'
 export { internalEnvelope, invoke, type Send } from './invoke.ts'
 export { alwaysLoadKey, buildServer, toResult, type ServerSpec } from './server.ts'
 export {

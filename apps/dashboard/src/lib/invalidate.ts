@@ -16,7 +16,7 @@ export const groups = {
     ['deployments'],
     ['network'],
   ],
-  sandboxes: [['sandboxes'], ['sandbox-snapshots']],
+  sandboxes: [['sandboxes'], ['sandbox-snapshots'], ['projects']],
   staged: [['staged']],
   auth: [['auth']],
 } satisfies Record<string, QueryKey[]>

@@ -113,7 +113,7 @@ export function EgressFields({
 
 type NewSandboxBody = Parameters<ReturnType<typeof api.v1.environments>['sandboxes']['post']>[0]
 
-function NewSandbox({
+export function NewSandbox({
   environment,
   scope,
   open,

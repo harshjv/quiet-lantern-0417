@@ -12,7 +12,13 @@ import {
 } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import { compileResponse } from './helpers/json-schema.ts'
-import { createProject, createSandbox, pinPlatform, waitForSandbox } from './helpers/seed.ts'
+import {
+  createEnvironment,
+  createProject,
+  createSandbox,
+  pinPlatform,
+  waitForSandbox,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let station: FakeStation
@@ -215,6 +221,30 @@ describe('the OpenAPI document', () => {
       assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
       assert.ok(reply.body.error.details.issues.length > 0)
     }
+  })
+})
+
+describe('the project summary', () => {
+  test('sandbox_count counts the sandboxes across every environment of the project', async () => {
+    const counted = await createProject(h, 'counted')
+    const empty = await createProject(h, 'uncounted')
+    const staging = await createEnvironment(h, counted.id, 'staging')
+    const count = async (id: string) => {
+      const list = await api('GET', '/v1/projects')
+      const one = await api('GET', `/v1/projects/${id}`)
+      const listed = list.body.items.find((p: any) => p.id === id)
+      assert.equal(listed.sandbox_count, one.body.sandbox_count)
+      return one.body.sandbox_count
+    }
+    assert.equal(await count(counted.id), 0)
+    await createSandbox(h, counted.default_environment_id, {
+      name: 'first',
+    })
+    await createSandbox(h, staging.id, {
+      name: 'second',
+    })
+    assert.equal(await count(counted.id), 2)
+    assert.equal(await count(empty.id), 0)
   })
 })
 

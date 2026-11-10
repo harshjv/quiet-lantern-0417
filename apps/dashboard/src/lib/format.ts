@@ -70,7 +70,8 @@ export const sourceText = (service: Pick<Service, 'source'>) => {
 
 export const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
 
-export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+export const plural = (count: number, word: string, many = `${word}s`) =>
+  `${count} ${count === 1 ? word : many}`
 
 export const inputPattern = (pattern: string) => pattern.slice(1, -1).replaceAll('-]', '\\-]')
 
