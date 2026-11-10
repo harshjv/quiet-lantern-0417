@@ -16,10 +16,10 @@ import {
 } from '../kit.ts'
 import { showLine, streamLogs } from '../logs.ts'
 import { human, print, progress } from '../output.ts'
+import { explanationText, probeText } from '../renderers/network.ts'
 import { reportRun, waitRun } from '../runs.ts'
 import { attachRun, forwardPort, shellExit } from '../sockets.ts'
 
-import { explanationText, probeText } from './network.ts'
 import { toSet } from './variables.ts'
 
 const units: Record<string, number> = {

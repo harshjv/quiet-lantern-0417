@@ -250,6 +250,7 @@ export const eventRoutes = (kit: Kit) => {
         operation: {
           id: 'get_events',
           level: 'any',
+          stream: true,
         },
         query: eventQuery,
         response: replies({

@@ -328,6 +328,9 @@ export const manifestRoutes = (kit: Kit) => {
         operation: {
           id: 'apply_manifest',
           level: 'deploy',
+          cli: {
+            render: 'plan-diff',
+          },
           target: ({ params, body }: TargetInput) =>
             target(
               projectByRef(db, params.project!),

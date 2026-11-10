@@ -1,5 +1,6 @@
 import type { JsonSchemaType, ToolAnnotations } from '@modelcontextprotocol/server'
 
+import { pollTimeout } from './invoke.ts'
 import {
   componentRef,
   endpoints,
@@ -26,8 +27,8 @@ const idempotencyKey = {
 const timeout = {
   type: 'integer',
   minimum: 0,
-  maximum: 3600,
-  default: 600,
+  maximum: pollTimeout.max,
+  default: pollTimeout.default,
   description: 'How long to keep repeating the call until done is true, in seconds',
 }
 
@@ -91,22 +92,18 @@ const annotationsOf = (method: string, title: string, flags: McpFlags): ToolAnno
         openWorldHint: false,
       }
 
-const toolOf = ({
-  name,
-  method,
-  path,
-  operation,
-  meta,
-  parameters,
-  body,
-  components,
-}: Endpoint): ToolDef => {
-  const flags = meta.mcp || {}
-  const poll = flags.poll
-    ? (parameters.find((p) => p.in === 'query' && waitParameters.includes(p.name))?.name ?? null)
-    : null
-  if (flags.poll && !poll)
+export const pollParameter = ({ name, meta, parameters }: Endpoint) => {
+  if (!(meta.mcp || {}).poll) return null
+  const wait = parameters.find((p) => p.in === 'query' && waitParameters.includes(p.name))?.name
+  if (!wait)
     throw new Error(`${name} polls but its route takes none of ${waitParameters.join(', ')}`)
+  return wait
+}
+
+const toolOf = (endpoint: Endpoint): ToolDef => {
+  const { name, method, path, operation, meta, parameters, body, components } = endpoint
+  const flags = meta.mcp || {}
+  const poll = pollParameter(endpoint)
   const properties: Json = {}
   const required: string[] = []
   const claim = (key: string, schema: unknown, needed: boolean) => {

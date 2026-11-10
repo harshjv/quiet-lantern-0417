@@ -784,6 +784,9 @@ export const platformRoutes = (kit: Kit) => {
         operation: {
           id: 'platform_doctor',
           level: 'instance read',
+          cli: {
+            render: 'doctor',
+          },
         },
         query: t.Object({
           station: t.Optional(t.String()),

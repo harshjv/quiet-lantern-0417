@@ -11,21 +11,36 @@ const cell = (value: unknown) =>
       ? value
       : JSON.stringify(value)
 
-export const table = (rows: Record<string, unknown>[], width = 60) => {
-  if (rows.length === 0) return '(none)'
-  const columns = Object.keys(rows[0]!)
+const present = (value: unknown) => value !== null && value !== undefined && value !== ''
+
+const fitting = (widths: number[]) => {
+  const limit = process.stdout.isTTY ? process.stdout.columns : Infinity
+  let used = -2
+  return widths.findIndex((width) => (used += width + 2) > limit)
+}
+
+export const table = (
+  rows: Record<string, unknown>[],
+  width = 60,
+  columns = Object.keys(rows[0] ?? {})
     .filter((key) => rows.some((row) => scalar(row[key])))
-    .slice(0, 7)
-  const cells = rows.map((row) => columns.map((column) => cell(row[column]).slice(0, width)))
-  const widths = columns.map((column, i) =>
-    Math.max(column.length, ...cells.map((r) => r[i]!.length)),
+    .slice(0, 7),
+) => {
+  if (rows.length === 0) return '(none)'
+  const shown = columns.filter((column) => rows.some((row) => present(row[column])))
+  const headers = shown.map((column) => column.replaceAll('_', ' ').toUpperCase())
+  const cells = rows.map((row) => shown.map((column) => cell(row[column]).slice(0, width)))
+  const widths = headers.map((header, i) =>
+    Math.max(header.length, ...cells.map((r) => r[i]!.length)),
   )
+  const cut = fitting(widths)
   const line = (values: string[]) =>
     values
+      .slice(0, cut < 1 ? undefined : cut)
       .map((v, i) => v.padEnd(widths[i]!))
       .join('  ')
       .trimEnd()
-  return [line(columns.map((c) => c.toUpperCase())), ...cells.map(line)].join('\n')
+  return [line(headers), ...cells.map(line)].join('\n')
 }
 
 const tree = (value: unknown, indent = ''): string => {
@@ -39,20 +54,26 @@ const tree = (value: unknown, indent = ''): string => {
     return value.map((v) => `${indent}- ${cell(v)}`).join('\n')
   }
   if (value === null || typeof value !== 'object') return `${indent}${cell(value)}`
-  return Object.entries(value as Record<string, unknown>)
-    .map(([key, v]) =>
-      scalar(v) ? `${indent}${key}: ${cell(v)}` : `${indent}${key}:\n${tree(v, `${indent}  `)}`,
+  const entries = Object.entries(value as Record<string, unknown>)
+  const key = Math.max(0, ...entries.filter(([, v]) => scalar(v)).map(([k]) => k.length))
+  return entries
+    .map(([k, v]) =>
+      scalar(v)
+        ? `${indent}${k.padEnd(key)}  ${cell(v)}`
+        : `${indent}${k}\n${tree(v, `${indent}  `)}`,
     )
     .join('\n')
 }
 
-export const human = (data: unknown) => {
-  if (data !== null && typeof data === 'object' && 'items' in data && Array.isArray(data.items)) {
-    const { items, next_cursor } = data as {
-      items: Record<string, unknown>[]
-      next_cursor?: string | null
-    }
-    return next_cursor ? `${table(items)}\n\nmore: --cursor ${next_cursor}` : table(items)
+const isPage = (
+  data: unknown,
+): data is { items: Record<string, unknown>[]; next_cursor?: string | null } =>
+  data !== null && typeof data === 'object' && 'items' in data && Array.isArray(data.items)
+
+export const human = (data: unknown, columns?: string[]) => {
+  if (isPage(data)) {
+    const rows = table(data.items, 60, columns)
+    return data.next_cursor ? `${rows}\n\nmore: --cursor ${data.next_cursor}` : rows
   }
   return tree(data)
 }

@@ -97,6 +97,9 @@ export const networkRoutes = (kit: Kit) => {
         operation: {
           id: 'describe_network',
           level: 'read',
+          cli: {
+            render: 'network-map',
+          },
         },
         params: t.Object({
           environment: t.String(),
@@ -164,6 +167,9 @@ export const networkRoutes = (kit: Kit) => {
         operation: {
           id: 'get_connections',
           level: 'read',
+          cli: {
+            render: 'connections',
+          },
         },
         params: t.Object({
           service: t.String(),
@@ -289,6 +295,10 @@ export const networkRoutes = (kit: Kit) => {
           id: 'stream_connections',
           level: 'read',
           mcp: false,
+          cli: {
+            render: 'live-connections',
+          },
+          stream: true,
         },
         params: t.Object({
           environment: t.String(),
@@ -323,6 +333,9 @@ export const networkRoutes = (kit: Kit) => {
         operation: {
           id: 'explain_network',
           level: 'read',
+          cli: {
+            render: 'explanation',
+          },
         },
         params: t.Object({
           environment: t.String(),
@@ -457,6 +470,9 @@ export const networkRoutes = (kit: Kit) => {
         operation: {
           id: 'get_dns_log',
           level: 'read',
+          cli: {
+            render: 'dns-log',
+          },
         },
         params: t.Object({
           service: t.String(),

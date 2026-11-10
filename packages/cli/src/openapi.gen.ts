@@ -12034,7 +12034,10 @@ export const openApiDocument = {
         ],
         "operationId": "describe_network",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": {
+            "render": "network-map"
+          }
         },
         "parameters": [
           {
@@ -12195,7 +12198,10 @@ export const openApiDocument = {
         ],
         "operationId": "get_connections",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": {
+            "render": "connections"
+          }
         },
         "parameters": [
           {
@@ -12352,7 +12358,11 @@ export const openApiDocument = {
         "operationId": "stream_connections",
         "x-stationly": {
           "level": "read",
-          "mcp": false
+          "mcp": false,
+          "cli": {
+            "render": "live-connections"
+          },
+          "stream": true
         },
         "parameters": [
           {
@@ -12395,7 +12405,10 @@ export const openApiDocument = {
         ],
         "operationId": "explain_network",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": {
+            "render": "explanation"
+          }
         },
         "parameters": [
           {
@@ -12917,7 +12930,10 @@ export const openApiDocument = {
         ],
         "operationId": "get_dns_log",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": {
+            "render": "dns-log"
+          }
         },
         "parameters": [
           {
@@ -16633,7 +16649,8 @@ export const openApiDocument = {
         "operationId": "open_shell",
         "x-stationly": {
           "level": "deploy",
-          "mcp": false
+          "mcp": false,
+          "cli": false
         },
         "parameters": [
           {
@@ -19515,7 +19532,8 @@ export const openApiDocument = {
         "operationId": "open_sandbox_shell",
         "x-stationly": {
           "level": "deploy",
-          "mcp": false
+          "mcp": false,
+          "cli": false
         },
         "parameters": [
           {
@@ -21165,7 +21183,10 @@ export const openApiDocument = {
         ],
         "operationId": "get_sandbox_dns_log",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": {
+            "render": "dns-log"
+          }
         },
         "parameters": [
           {
@@ -22771,7 +22792,8 @@ export const openApiDocument = {
         "operationId": "upload_blob",
         "x-stationly": {
           "level": "deploy",
-          "mcp": false
+          "mcp": false,
+          "cli": false
         },
         "responses": {
           "201": {
@@ -22926,7 +22948,8 @@ export const openApiDocument = {
         ],
         "operationId": "get_logs",
         "x-stationly": {
-          "level": "any"
+          "level": "any",
+          "stream": true
         },
         "parameters": [
           {
@@ -23517,7 +23540,8 @@ export const openApiDocument = {
         "operationId": "stream_metrics",
         "x-stationly": {
           "level": "read",
-          "mcp": false
+          "mcp": false,
+          "stream": true
         },
         "parameters": [
           {
@@ -23539,7 +23563,8 @@ export const openApiDocument = {
         ],
         "operationId": "get_events",
         "x-stationly": {
-          "level": "any"
+          "level": "any",
+          "stream": true
         },
         "parameters": [
           {
@@ -33648,7 +33673,10 @@ export const openApiDocument = {
         ],
         "operationId": "platform_doctor",
         "x-stationly": {
-          "level": "instance read"
+          "level": "instance read",
+          "cli": {
+            "render": "doctor"
+          }
         },
         "parameters": [
           {
@@ -35183,7 +35211,10 @@ export const openApiDocument = {
         ],
         "operationId": "apply_manifest",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "cli": {
+            "render": "plan-diff"
+          }
         },
         "parameters": [
           {

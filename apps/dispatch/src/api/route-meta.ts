@@ -25,6 +25,7 @@ export type Operation = {
   level: RouteLevel
   mcp?: Mcp
   cli?: Cli
+  stream?: true
   target?: (input: TargetInput) => Target
 }
 
@@ -64,7 +65,7 @@ export const routeMeta = (db: Db, principalOf: (request: Request) => Promise<Pri
   new Elysia({
     name: 'stationly.route-meta',
   }).macro({
-    operation: ({ id, level, mcp, cli, target: targetFrom }: Operation) => ({
+    operation: ({ id, level, mcp, cli, stream, target: targetFrom }: Operation) => ({
       detail: {
         operationId: id,
         'x-stationly': {
@@ -79,6 +80,11 @@ export const routeMeta = (db: Db, principalOf: (request: Request) => Promise<Pri
             : {
                 cli,
               }),
+          ...(stream
+            ? {
+                stream,
+              }
+            : {}),
         },
       } as DocumentDecoration,
       beforeHandle: async (context: {

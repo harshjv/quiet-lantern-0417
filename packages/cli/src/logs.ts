@@ -1,7 +1,5 @@
-import { exitCodes } from './errors.ts'
 import { sseHeaders, stream, type Api, type Data, type Globals, type Run } from './kit.ts'
-import { progress } from './output.ts'
-import { followSse, streamFailure } from './sse.ts'
+import { followSse, streamed } from './sse.ts'
 
 export type LogQuery = NonNullable<NonNullable<Parameters<Api['logs']['get']>[0]>['query']>
 
@@ -35,12 +33,7 @@ export const streamLogs = (
           headers: sseHeaders(lastId),
         }),
       ),
-    (event) => {
+    streamed('log stream', (event) => {
       if (event.event === 'log') showLine(globals, JSON.parse(event.data) as LogLine, sink)
-      else if (event.event === 'end') {
-        progress(`log stream ended: ${(JSON.parse(event.data) as { reason: string }).reason}`)
-        return exitCodes.ok
-      } else if (event.event === 'error') throw streamFailure(event.data)
-      return undefined
-    },
+    }),
   )

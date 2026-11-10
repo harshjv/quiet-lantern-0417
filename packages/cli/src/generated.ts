@@ -11,6 +11,8 @@ import {
 import {
   endpoints,
   isObject,
+  pollParameter,
+  pollTimeout,
   requestOf,
   resolved,
   type Endpoint,
@@ -18,12 +20,13 @@ import {
   type OpenApiDocument,
 } from '@stationly/mcp'
 
-import { action, parseJson, type Program } from './command.ts'
-import { apiFailure, exitCodes } from './errors.ts'
+import { action, parseJson, seconds, type Program } from './command.ts'
 import { connect, environmentId, isId, projectRef, type Globals, type Run } from './kit.ts'
 import { openApiDocument } from './openapi.gen.ts'
-import { print } from './output.ts'
+import { human } from './output.ts'
 import { need } from './prompt.ts'
+import { renderer, type Render } from './renderers/index.ts'
+import { follow, reply, waitUntilDone } from './respond.ts'
 
 type Scalar = 'string' | 'integer' | 'number' | 'boolean'
 
@@ -214,30 +217,53 @@ const targets: Record<Target, (run: Run) => Promise<string>> = {
 
 const isTarget = (name: string): name is Target => name in targets
 
-const parsed = (text: string): unknown => {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
+const successSchema = ({ operation, components }: Endpoint) =>
+  resolved(
+    Object.entries(operation.responses ?? {}).find(([status]) => status.startsWith('2'))?.[1]
+      .content?.['application/json']?.schema,
+    components,
+  )
+
+export const summaryColumns = (endpoint: Endpoint) => {
+  const items = (successSchema(endpoint)?.properties as Json | undefined)?.items
+  if (!isObject(items) || !isObject(items.items)) return undefined
+  const entity = resolved(items.items, endpoint.components)
+  const properties = (entity?.properties ?? {}) as Record<string, Json>
+  return ((entity?.required as string[] | undefined) ?? []).filter(
+    (name) => scalarOf(properties[name], endpoint.components) !== null,
+  )
 }
 
-const reply = async (globals: Globals, response: Response) => {
-  if (!response.ok) throw apiFailure(response.status, parsed(await response.text()))
-  if (!response.headers.get('content-type')?.includes('json')) {
-    if (response.body)
-      for await (const chunk of response.body as AsyncIterable<Uint8Array>)
-        process.stdout.write(chunk)
-    return exitCodes.ok
+export const renderOf = (endpoint: Endpoint): Render => {
+  const name = (endpoint.meta.cli || {}).render
+  if (name) {
+    const registered = renderer(name)
+    if (!registered)
+      throw new Error(`${endpoint.name} renders with ${name}, which is not registered`)
+    return registered
   }
-  return print(
-    globals,
-    {
-      status: response.status,
-      data: await response.json(),
-    },
-    (data) => JSON.stringify(data, null, 2),
-  )
+  const columns = summaryColumns(endpoint)
+  return (data) => human(data, columns)
+}
+
+type Flow = { wait?: true; timeout?: number; follow?: true }
+
+const flowsOf = (command: Command, endpoint: Endpoint) => {
+  const wait = pollParameter(endpoint)
+  if (wait)
+    command
+      .option('--wait', 'repeat the call until done is true')
+      .option(
+        '--timeout <duration>',
+        `how long --wait repeats it, such as 90s or 10m (default ${pollTimeout.default} s, at most ${pollTimeout.max} s)`,
+        seconds,
+      )
+  const follow = endpoint.meta.stream === true
+  if (follow) command.option('-f, --follow', 'follow the event stream until it ends')
+  return {
+    wait,
+    follow,
+  }
 }
 
 const extraBody = (value: unknown) =>
@@ -266,6 +292,7 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
         pathParameters.find((p) => p.name === arg)?.description ?? `the ${arg} of the target`,
       ),
     )
+  const flows = flowsOf(command, endpoint)
   const bindings: Binding[] = []
   const fromGlobals: Target[] = []
   const required = (body?.required as string[] | undefined) ?? []
@@ -297,6 +324,14 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   for (const [property, where, schema, needed] of inputs) {
     if (isTarget(property)) {
       fromGlobals.push(property)
+      continue
+    }
+    if (property === flows.wait) continue
+    if (flows.follow && property === 'follow') {
+      bindings.push({
+        attribute: property,
+        property,
+      })
       continue
     }
     for (const option of optionsOf(property, where, schema, components, needed)) {
@@ -333,8 +368,45 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
         input[arg] = positional[i]
       })
       for (const target of contextual) input[target] = await targets[target](run)
+      const render = renderOf(endpoint)
+      const { wait, timeout, follow: following } = options as Flow
+      const send = (next: Record<string, unknown>) => {
+        const request = requestOf(route, next)
+        return run.request(request.path, request.init)
+      }
+      if (flows.wait && wait)
+        return waitUntilDone(
+          options,
+          {
+            label: positional[0] ?? name,
+            wait: flows.wait,
+            input: {
+              ...input,
+              ...(timeout === undefined
+                ? {}
+                : {
+                    timeout_s: timeout,
+                  }),
+            },
+          },
+          send,
+          render,
+        )
       const request = requestOf(route, input)
-      return reply(options, await run.request(request.path, request.init))
+      if (following)
+        return follow(
+          options,
+          (headers) =>
+            run.request(request.path, {
+              ...request.init,
+              headers: {
+                ...(request.init.headers as Record<string, string>),
+                ...headers,
+              },
+            }),
+          render,
+        )
+      return reply(options, await send(input), render)
     }),
   )
   return command

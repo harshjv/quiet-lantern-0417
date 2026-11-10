@@ -419,6 +419,7 @@ export const logRoutes = (kit: Kit) => {
         operation: {
           id: 'get_logs',
           level: 'any',
+          stream: true,
         },
         query: logQuery,
         response: replies({
@@ -571,6 +572,7 @@ export const logRoutes = (kit: Kit) => {
           id: 'stream_metrics',
           level: 'read',
           mcp: false,
+          stream: true,
         },
         params: t.Object({
           environment: t.String(),

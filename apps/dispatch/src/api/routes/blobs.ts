@@ -158,6 +158,7 @@ export const blobRoutes = (kit: Kit) => {
           id: 'upload_blob',
           level: 'deploy',
           mcp: false,
+          cli: false,
           target: ({ headers }: TargetInput) => uploadService(headers).target,
         },
         parse: 'none',

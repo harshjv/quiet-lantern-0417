@@ -7,9 +7,10 @@ export type Send = (path: string, init: RequestInit, request: ServerContext) => 
 
 type Input = Record<string, unknown>
 
-const defaultTimeout = 600
-
-const maxTimeout = 3600
+export const pollTimeout = {
+  default: 600,
+  max: 3600,
+}
 
 const maxWait = 10
 
@@ -77,39 +78,50 @@ const stateOf = (body: unknown) => {
   return typeof status === 'string' ? `is ${status}` : 'is not done'
 }
 
-const poll = async (
-  tool: ToolDef,
-  wait: string,
-  input: Input,
-  send: Send,
-  request: ServerContext,
-) => {
+export type Attempt = (input: Input) => Promise<Outcome>
+
+export type Report = (step: number, message: string) => Promise<void> | void
+
+export type Repeat = {
+  name: string
+  wait: string
+  input: Input
+  attempt: Attempt
+  report: Report
+  aborted?: () => boolean
+}
+
+export const repeatUntilDone = async ({
+  name,
+  wait,
+  input,
+  attempt,
+  report,
+  aborted = () => false,
+}: Repeat) => {
   const { timeout_s: requested, ...rest } = input
-  const limit = Math.min(typeof requested === 'number' ? requested : defaultTimeout, maxTimeout)
+  const limit = Math.min(
+    typeof requested === 'number' ? requested : pollTimeout.default,
+    pollTimeout.max,
+  )
   const deadline = Date.now() + limit * 1000
   let step = 0
-  await progress(request, ++step, `${tool.name}: waiting up to ${limit} s`)
+  await report(++step, `${name}: waiting up to ${limit} s`)
   for (;;) {
     const seconds = Math.max(0, Math.min(maxWait, Math.ceil((deadline - Date.now()) / 1000)))
-    const result = await once(
-      tool,
-      {
-        ...rest,
-        [wait]: seconds,
-      },
-      send,
-      request,
-    )
+    const result = await attempt({
+      ...rest,
+      [wait]: seconds,
+    })
     const done = result.ok && (result.body as { done?: unknown }).done === true
-    if (!result.ok || done || Date.now() >= deadline || request.mcpReq.signal.aborted) {
-      await progress(
-        request,
+    if (!result.ok || done || Date.now() >= deadline || aborted()) {
+      await report(
         ++step,
-        `${tool.name}: ${!result.ok ? 'refused' : done ? 'done' : `stopped after ${limit} s, not done`}`,
+        `${name}: ${!result.ok ? 'refused' : done ? 'done' : `stopped after ${limit} s, not done`}`,
       )
       return result
     }
-    await progress(request, ++step, `${tool.name}: ${stateOf(result.body)}`)
+    await report(++step, `${name}: ${stateOf(result.body)}`)
   }
 }
 
@@ -119,4 +131,13 @@ export const invoke = (
   send: Send,
   request: ServerContext,
 ): Promise<Outcome> =>
-  tool.poll ? poll(tool, tool.poll, input, send, request) : once(tool, input, send, request)
+  tool.poll
+    ? repeatUntilDone({
+        name: tool.name,
+        wait: tool.poll,
+        input,
+        attempt: (next) => once(tool, next, send, request),
+        report: (step, message) => progress(request, step, message),
+        aborted: () => request.mcpReq.signal.aborted,
+      })
+    : once(tool, input, send, request)

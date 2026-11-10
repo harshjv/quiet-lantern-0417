@@ -273,6 +273,7 @@ export const runRoutes = (kit: Kit) => {
           id: 'open_shell',
           level: 'deploy',
           mcp: false,
+          cli: false,
         },
         params: t.Object({
           service: t.String(),

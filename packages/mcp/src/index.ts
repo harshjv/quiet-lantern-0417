@@ -8,7 +8,7 @@ export {
   type RouteLevel,
   type ToolDef,
 } from './tools.ts'
-export { generateTools } from './openapi.ts'
+export { generateTools, pollParameter } from './openapi.ts'
 export {
   endpoints,
   isObject,
@@ -20,7 +20,7 @@ export {
   type OpenApiDocument,
   type Parameter,
 } from './operations.ts'
-export { internalEnvelope, invoke, type Send } from './invoke.ts'
+export { internalEnvelope, invoke, pollTimeout, repeatUntilDone, type Send } from './invoke.ts'
 export { alwaysLoadKey, buildServer, toResult, type ServerSpec } from './server.ts'
 export {
   bridgeProtocolVersion,

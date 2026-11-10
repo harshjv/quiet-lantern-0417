@@ -550,7 +550,36 @@ describe('generated commands', () => {
         ),
       ),
     )
-    assert.equal(JSON.parse(result.stdout).items[0].mount_path, '/data')
+    const [header, row] = result.stdout.split('\n')
+    assert.match(
+      header!,
+      /^ID\s+OWNER\s+SERVICE ID\s+STATION ID\s+MOUNT PATH\s+SIZE BYTES\s+STATUS$/,
+    )
+    assert.match(row!, /^vol_\S+\s+service\s+svc_\S+\s+\S+\s+\/data\s/)
+    assert.doesNotMatch(result.stdout, /RETAIN UNTIL|[{}"]/)
+  })
+
+  test('an entity prints as aligned keys and values, and --json prints the response unmodified', async () => {
+    const listed = await sly(['--service', service.id, '--json', 'volumes', 'list-service'])
+    const volume = JSON.parse(listed.stdout).items[0]
+    const human = await sly(['volumes', 'get', volume.id])
+    assert.equal(human.code, 0, human.stderr)
+    assert.match(human.stdout, /^id\s+vol_/m)
+    assert.match(human.stdout, /^mount_path\s+\/data$/m)
+    const starts = human.stdout
+      .trimEnd()
+      .split('\n')
+      .map((line) => /^\S+\s+/.exec(line)![0].length)
+    assert.equal(new Set(starts).size, 1, human.stdout)
+    const json = await sly(['--json', 'volumes', 'get', volume.id])
+    assert.deepEqual(
+      JSON.parse(json.stdout),
+      (
+        await h.call('GET', `/v1/volumes/${volume.id}`, {
+          token: h.admin.token,
+        })
+      ).body,
+    )
   })
 
   test('--dry-run prints the request with positional arguments and sends nothing', async () => {
@@ -834,6 +863,162 @@ describe('--json stdout', () => {
       }
     } finally {
       await stub.close()
+    }
+  })
+})
+
+describe('waiting and streaming', () => {
+  const sample = (at: string) => ({
+    service: {
+      id: 'svc_LIVE',
+      name: 'web',
+    },
+    deployment_id: null,
+    at,
+    conntrack: {
+      entries: 3,
+      stale: false,
+      lossy: false,
+      truncated: false,
+      accounting: true,
+      timestamps: true,
+    },
+    connections: [],
+    refused: [],
+    refused_truncated: false,
+    untrusted: {
+      source: 'conntrack',
+      names: {},
+    },
+  })
+
+  const tick = (at: string) =>
+    `id: ${at}\nevent: network\ndata: ${JSON.stringify({
+      at,
+      samples: [sample(at)],
+    })}\n\n`
+
+  const stub = async () => {
+    const seen: { path: string; accept: string }[] = []
+    let polls = 0
+    const server = createServer((req, res) => {
+      const path = req.url ?? ''
+      seen.push({
+        path,
+        accept: req.headers.accept ?? '',
+      })
+      if (path.startsWith('/v1/runs/run_WAIT')) {
+        polls++
+        res.writeHead(200, {
+          'content-type': 'application/json',
+        })
+        res.end(
+          JSON.stringify({
+            id: 'run_WAIT',
+            status: polls < 3 ? 'running' : 'succeeded',
+            exit_code: polls < 3 ? null : 0,
+            done: polls >= 3,
+          }),
+        )
+      } else if (path.startsWith('/v1/environments/env_LIVE/network/live')) {
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+        })
+        res.write(': connected\n\n')
+        res.write(tick('2026-11-10T00:00:00Z'))
+        if (!req.headers.accept?.includes('text/event-stream')) return
+        res.write(tick('2026-11-10T00:00:05Z'))
+        res.end('event: end\ndata: {"reason":"replaced by a newer live stream"}\n\n')
+      } else res.writeHead(404).end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    return {
+      env: {
+        STATIONLY_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      },
+      seen,
+      close: async () => {
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      },
+    }
+  }
+
+  const live = ['--environment', 'env_LIVE', '--service', 'web', 'network', 'stream-connections']
+
+  test('--wait repeats a polled operation through the MCP poll loop until done', async () => {
+    const dispatch = await stub()
+    try {
+      const result = await sly(
+        ['runs', 'wait-for', 'run_WAIT', '--wait', '--timeout', '1m'],
+        dispatch.env,
+      )
+      assert.equal(result.code, 0, result.stderr)
+      const polls = dispatch.seen.filter((r) => r.path.startsWith('/v1/runs/run_WAIT'))
+      assert.equal(polls.length, 3)
+      assert.ok(
+        polls.every((r) => /[?&]wait_s=\d+/.test(r.path)),
+        JSON.stringify(polls),
+      )
+      assert.match(result.stdout, /^status\s+succeeded$/m)
+      assert.match(result.stderr, /run_WAIT: waiting up to 60 s/)
+      assert.match(result.stderr, /run_WAIT: is running/)
+      assert.match(result.stderr, /run_WAIT: done/)
+    } finally {
+      await dispatch.close()
+    }
+  })
+
+  test('without --wait a polled operation is one call, and its wait parameter is no flag', async () => {
+    const dispatch = await stub()
+    try {
+      const result = await sly(['--json', 'runs', 'wait-for', 'run_WAIT'], dispatch.env)
+      assert.equal(result.code, 0, result.stderr)
+      assert.equal(JSON.parse(result.stdout).done, false)
+      assert.deepEqual(
+        dispatch.seen.map((r) => r.path),
+        ['/v1/runs/run_WAIT'],
+      )
+      const refused = await sly(['runs', 'wait-for', 'run_WAIT', '--wait-s', '5'], dispatch.env)
+      assert.equal(refused.code, 2)
+    } finally {
+      await dispatch.close()
+    }
+  })
+
+  test('a stream prints its first event with its registered renderer and exits without --follow', async () => {
+    const dispatch = await stub()
+    try {
+      const result = await sly(live, dispatch.env)
+      assert.equal(result.code, 0, result.stderr)
+      assert.match(result.stdout, /^2026-11-10T00:00:00Z web deployment - conntrack entries 3$/m)
+      assert.doesNotMatch(result.stdout, /00:00:05/)
+      assert.match(dispatch.seen[0]!.path, /\?service=web$/)
+    } finally {
+      await dispatch.close()
+    }
+  })
+
+  test('-f follows a stream through the shared reader until it ends; --json prints each event', async () => {
+    const dispatch = await stub()
+    try {
+      const human = await sly([...live, '-f'], dispatch.env)
+      assert.equal(human.code, 0, human.stderr)
+      assert.match(human.stdout, /00:00:00Z web deployment/)
+      assert.match(human.stdout, /00:00:05Z web deployment/)
+      assert.match(human.stderr, /stream ended: replaced by a newer live stream/)
+      assert.match(dispatch.seen[0]!.accept, /text\/event-stream/)
+      const json = await sly(['--json', ...live, '--follow'], dispatch.env)
+      assert.equal(json.code, 0, json.stderr)
+      assert.deepEqual(
+        json.stdout
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line).at),
+        ['2026-11-10T00:00:00Z', '2026-11-10T00:00:05Z'],
+      )
+    } finally {
+      await dispatch.close()
     }
   })
 })

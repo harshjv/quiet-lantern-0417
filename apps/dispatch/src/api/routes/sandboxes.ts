@@ -1121,6 +1121,7 @@ export const sandboxRoutes = (kit: Kit) => {
           id: 'open_sandbox_shell',
           level: 'deploy',
           mcp: false,
+          cli: false,
         },
         params: t.Object({
           sandbox: t.String(),
@@ -1478,6 +1479,9 @@ export const sandboxRoutes = (kit: Kit) => {
         operation: {
           id: 'get_sandbox_dns_log',
           level: 'read',
+          cli: {
+            render: 'dns-log',
+          },
         },
         params: t.Object({
           sandbox: t.String(),

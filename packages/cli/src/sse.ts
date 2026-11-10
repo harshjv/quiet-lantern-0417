@@ -89,3 +89,15 @@ export const streamFailure = (data: string) => {
     },
   })
 }
+
+export const streamed =
+  (label: string, show: (event: SseEvent) => void) =>
+  (event: SseEvent): number | undefined => {
+    if (event.event === 'end') {
+      progress(`${label} ended: ${(JSON.parse(event.data) as { reason: string }).reason}`)
+      return exitCodes.ok
+    }
+    if (event.event === 'error') throw streamFailure(event.data)
+    show(event)
+    return undefined
+  }
