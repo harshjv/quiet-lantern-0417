@@ -8,7 +8,7 @@ import type { Diagnosis } from '@/lib/api'
 import type { FixContext } from '@/lib/fixes'
 import { bytes, clock, json, plural, shortSha } from '@/lib/format'
 import { deploymentStep, diagnosisFailed, diagnosisPhase, sentence } from '@/lib/labels'
-import { endpointText } from '@/lib/network-layout'
+import { endpointText } from '@/lib/network-text'
 import { tonePanel } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 

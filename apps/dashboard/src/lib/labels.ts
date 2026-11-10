@@ -329,6 +329,11 @@ export const domainStatus: Record<MapDomain['status'], Status> = {
   },
 }
 
+export const domainLive: Status = {
+  label: 'Live, certificate valid',
+  tone: 'success',
+}
+
 export const domainKind: Record<MapDomain['kind'], string> = {
   generated: 'Generated',
   custom: 'Your own',
@@ -446,6 +451,28 @@ export const hop: Record<Hop['hop'], string> = {
   route: 'Route on the station',
 }
 
+export const hopFact: Record<string, string> = {
+  station: 'station',
+  virtual_ip: 'stable address',
+  host_port: 'public port',
+  web_ports: 'web traffic',
+  listening: 'listening on',
+  declared: 'declared ports',
+  expires_at: 'expires',
+  reason: '',
+  error: '',
+  hostname: '',
+}
+
+export const hiddenHopFacts = new Set([
+  'generation',
+  'rule',
+  'at',
+  'matched',
+  'entrypoint',
+  'gateway_target',
+])
+
 export const hopStatus: Record<Hop['status'], Status> = {
   pass: {
     label: 'Passed',
@@ -505,6 +532,12 @@ export const peerKind: Record<Connection['peer']['kind'], string> = {
   address: 'Address',
   other: 'Other',
 }
+
+export const inboundPeer = {
+  internet: peerKind.internet,
+  gateway: 'Your domains (Gateway)',
+  station: peerKind.station,
+} as const satisfies Partial<Record<Connection['peer']['kind'], string>>
 
 export const probeTcp: Record<NonNullable<Probe['tcp']>['result'], string> = {
   connected: 'Connected',

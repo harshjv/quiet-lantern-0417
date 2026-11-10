@@ -6,7 +6,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Connections } from '@/lib/api'
 import { direction } from '@/lib/labels'
-import { ageText, peerText, rateText } from '@/lib/network-layout'
+import { ageText, peerText, portText, rateText } from '@/lib/network-text'
 import { cn } from '@/lib/utils'
 
 type Connection = Connections['connections'][number]
@@ -79,9 +79,7 @@ export function ConnectionsTable({
                   <LookedUp name={names[c.peer.address]!} />
                 )}
               </TableCell>
-              <TableCell className={port}>
-                {c.port} {c.protocol.toUpperCase()}
-              </TableCell>
+              <TableCell className={port}>{portText(c.port, c.protocol)}</TableCell>
               <TableCell
                 className="hidden text-right tabular-nums sm:table-cell"
                 title={c.protocol === 'tcp' ? `${c.established} established` : undefined}

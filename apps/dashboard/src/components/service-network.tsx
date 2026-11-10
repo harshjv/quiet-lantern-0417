@@ -35,18 +35,17 @@ import {
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { api, idempotency, send, unwrap, type Explanation, type Service } from '@/lib/api'
-import { ago, plural } from '@/lib/format'
+import { ago } from '@/lib/format'
 import {
   explanationVerdict,
   finding,
-  hop as hopLabel,
   hopStatus,
   path as pathLabel,
   probeTcp,
   probeVerdict,
   rcode,
 } from '@/lib/labels'
-import { endpointText } from '@/lib/network-layout'
+import { blockedText, endpointText, hopDetail, stepText } from '@/lib/network-text'
 import { connectionsQuery, dnsLogQuery, servicesQuery } from '@/lib/queries'
 import { stagedTitle } from '@/lib/staged'
 import { tonePanel, toneText } from '@/lib/tone'
@@ -68,63 +67,6 @@ const hopIcon: Record<Hop['status'], typeof CircleCheck> = {
   warn: TriangleAlert,
   skipped: CircleDashed,
   unknown: CircleHelp,
-}
-
-const factName: Record<string, string> = {
-  virtual_ip: 'stable address',
-  host_port: 'public port',
-  web_ports: 'web traffic',
-  listening: 'listening on',
-  declared: 'declared ports',
-  expires_at: 'expires',
-}
-
-const hiddenFacts = new Set(['generation', 'rule', 'at', 'matched', 'entrypoint', 'gateway_target'])
-
-const bareFacts = new Set(['reason', 'error', 'hostname'])
-
-const factValue = (value: unknown): string => {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
-    return String(value)
-  if (Array.isArray(value))
-    return value
-      .map((item: unknown) =>
-        item && typeof item === 'object' && 'address' in item && 'port' in item
-          ? endpointText(item as { address: string; port: number; protocol: string })
-          : factValue(item),
-      )
-      .join(', ')
-  return Object.entries(value as Record<string, unknown>)
-    .map(([k, v]) => `${k.replaceAll('_', ' ')} ${factValue(v)}`)
-    .join(', ')
-}
-
-const fact = (key: string, value: unknown) => {
-  if (key === 'deployment') return `Deployment #${factValue(value)}`
-  if (key === 'station') return `station ${factValue(value)}`
-  if (key === 'path' && typeof value === 'string' && value in pathLabel)
-    return `rule “${pathLabel[value as keyof typeof pathLabel]}”`
-  if (key === 'listening' && Array.isArray(value) && value.length === 0)
-    return 'listening on nothing'
-  const text = factValue(value)
-  if (bareFacts.has(key)) return text
-  return `${factName[key] ?? key.replaceAll('_', ' ')} ${text}`
-}
-
-const detailText = (detail: Record<string, unknown>) =>
-  Object.entries(detail)
-    .filter(([k, v]) => v !== null && v !== undefined && !hiddenFacts.has(k))
-    .map(([k, v]) => fact(k, v))
-    .join(' · ')
-
-const hostOf = (target: string) => target.split(':')[0] ?? target
-
-const stepText = (hop: Hop['hop'], explanation: Explanation) => {
-  if (hop === 'source') return `${explanation.entity.from} is running`
-  if (hop === 'target') return `${hostOf(explanation.entity.to)} is running and healthy`
-  if (hop === 'listening') return `${hostOf(explanation.entity.to)} listens on the port`
-  return hopLabel[hop]
 }
 
 function RefreshButton({ query }: { query: { refetch: () => unknown; isFetching: boolean } }) {
@@ -274,11 +216,11 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 className="text-sm font-semibold">{verdict.label}</h3>
-            <span className="font-mono text-xs opacity-80">
+            <span className="font-mono text-xs">
               {explanation.entity.from} → {explanation.entity.to}
             </span>
             {explanation.code && (
-              <span className="ml-auto font-mono text-xs opacity-60">{explanation.code}</span>
+              <span className="ml-auto font-mono text-xs">{explanation.code}</span>
             )}
           </div>
           <p className="text-sm">{explanation.summary}</p>
@@ -296,11 +238,11 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
           {explanation.hops.map((h) => {
             const status = hopStatus[h.status]
             const HopIcon = hopIcon[h.status]
-            const details = detailText(h.detail)
+            const details = hopDetail(h.detail)
             return (
               <TableRow key={h.hop}>
                 <TableCell className="font-medium whitespace-normal">
-                  {stepText(h.hop, explanation)}
+                  {stepText(h.hop, explanation.entity)}
                 </TableCell>
                 <TableCell>
                   <span
@@ -317,9 +259,7 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
                   {h.code && <span className="mr-2 font-medium">{finding[h.code]}.</span>}
                   <span className="text-muted-foreground">{details}</span>
                   {h.code && (
-                    <span className="ml-2 font-mono text-xs text-muted-foreground/70">
-                      {h.code}
-                    </span>
+                    <span className="ml-2 font-mono text-xs text-muted-foreground">{h.code}</span>
                   )}
                 </TableCell>
               </TableRow>
@@ -483,7 +423,7 @@ function Connections({ service }: { service: Service }) {
           {sample.refused.map((r, i) => (
             <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <ShieldBan className={cn('size-4', toneText.danger)} aria-hidden />
-              <span>Blocked {r.count === 1 ? 'once' : plural(r.count, 'time')} reaching</span>
+              <span>{blockedText(r.count)} reaching</span>
               <Code>{endpointText(r)}</Code>
               <span className="text-muted-foreground" title={r.path}>
                 ({pathLabel[r.path]})
@@ -571,7 +511,7 @@ function DnsLog({ service }: { service: Service }) {
               <span className="ml-2 text-xs text-muted-foreground">{e.type}</span>
               {e.probe && (
                 <Badge variant="outline" className="ml-2 font-normal">
-                  test
+                  Test
                 </Badge>
               )}
             </TableCell>
@@ -585,7 +525,7 @@ function DnsLog({ service }: { service: Service }) {
             </TableCell>
             <TableCell className="hidden whitespace-normal sm:table-cell">
               <span className="font-mono text-[0.8125rem] text-muted-foreground">
-                {e.answers.join(', ') || 'none'}
+                {e.answers.join(', ') || 'None'}
               </span>
             </TableCell>
             <TableCell className="hidden text-right tabular-nums md:table-cell">

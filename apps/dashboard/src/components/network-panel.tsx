@@ -16,6 +16,7 @@ import {
   Info,
   Network,
   Plug,
+  Plus,
   Server,
   ShieldBan,
   ShieldCheck,
@@ -28,6 +29,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Code, Command } from '@/components/code'
 import { ConnectionsTable } from '@/components/connections-table'
 import { FixActions } from '@/components/fix'
+import { NewService } from '@/components/new-service'
 import { EmptyState } from '@/components/page'
 import { ServiceStatusDot } from '@/components/status'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
@@ -46,20 +48,16 @@ import { commands } from '@/lib/commands'
 import { findingPlan } from '@/lib/fixes'
 import { ago, plural } from '@/lib/format'
 import {
-  domainStatus,
+  explanationVerdict,
   finding,
   pathFrom,
   path as pathLabel,
   pathResult,
-  routeResult,
-  routing,
   serviceKind,
 } from '@/lib/labels'
 import {
-  endpointText,
   layoutNetwork,
   overlayLive,
-  portSpecText,
   type EntryData,
   type InternetData,
   type MapNode,
@@ -68,53 +66,64 @@ import {
   type ServiceData,
 } from '@/lib/network-layout'
 import { useLiveNetwork, type LiveNetwork } from '@/lib/network-live'
+import {
+  domainState,
+  drainingText,
+  endpointText,
+  exposureState,
+  exposureText,
+  portSpecText,
+  servingText,
+} from '@/lib/network-text'
 import { networkQuery } from '@/lib/queries'
 import { toneDot, toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const hidden = '!size-1 !min-h-0 !min-w-0 !border-0 !bg-transparent'
 
-type Domain = MapService['domains'][number]
-type Exposure = MapService['exposures'][number]
+const notAssigned = 'Not assigned'
+
+function None({ children = 'None', className }: { children?: ReactNode; className?: string }) {
+  return <span className={cn('text-muted-foreground', className)}>{children}</span>
+}
 
 function Serving({ service }: { service: MapService }) {
-  const sw = service.switch
-  const draining = sw.draining && (
-    <span className="text-muted-foreground">#{sw.draining.number} finishing open connections</span>
-  )
-  if (sw.state === 'mismatch')
-    return (
-      <span className="flex flex-wrap items-center gap-x-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span tabIndex={0} className={cn('cursor-help', toneText.danger)}>
-              {routing.mismatch.label}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            Traffic still goes to an old container. Redeploy {service.name} or wait for the station
-            to catch up.
-          </TooltipContent>
-        </Tooltip>
-        {draining}
-      </span>
-    )
+  const serving = servingText(service)
+  const draining = drainingText(service.switch)
+  const deployment = service.switch.state === 'serving' ? service.switch.deployment : null
+  const tone = serving.tone && toneText[serving.tone]
   return (
     <span className="flex flex-wrap items-center gap-x-2">
-      {sw.state === 'no_target' && (
-        <span className="text-muted-foreground">Not running. Calls to {service.name} fail.</span>
+      {deployment ? (
+        <Link
+          to="/deployments/$deployment"
+          params={{
+            deployment: deployment.id,
+          }}
+          title={serving.hint ?? undefined}
+          className="underline-offset-4 hover:underline"
+        >
+          {serving.label}
+        </Link>
+      ) : serving.hint ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} className={cn('cursor-help', tone)}>
+              {serving.label}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{serving.hint}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <span className={cn(tone)}>{serving.label}</span>
       )}
-      {sw.state === 'pending' && (
-        <span className={toneText.warning}>
-          Switching to {sw.deployment ? `#${sw.deployment.number}` : 'a new deployment'}
-        </span>
-      )}
-      {sw.state === 'serving' && sw.deployment && (
-        <span title={sw.deployment.address ?? undefined}>Deployment #{sw.deployment.number}</span>
-      )}
-      {draining}
+      {draining && <span className="text-muted-foreground">{draining}</span>}
     </span>
   )
+}
+
+function Ports({ service }: { service: MapService }) {
+  return service.ports.length ? service.ports.map(portSpecText).join(' · ') : <None />
 }
 
 function InternetNode({ data }: NodeProps<MapNode & { type: 'internet'; data: InternetData }>) {
@@ -127,8 +136,11 @@ function InternetNode({ data }: NodeProps<MapNode & { type: 'internet'; data: In
   )
 }
 
+const noPublicAddress = (station: string | null) =>
+  `${station ? `Station ${station}` : 'The station'} has no public address yet.`
+
 function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryData }>) {
-  const { entry, status, hostPort } = data
+  const { entry, status, hostPort, station } = data
   const label =
     entry.kind === 'domain'
       ? entry.hostname
@@ -157,8 +169,9 @@ function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryDat
       {entry.kind === 'tcp' && entry.public === null && (
         <span
           className={cn('size-1.5 shrink-0 rounded-full', toneDot.warning)}
-          title="The station has no public address yet."
-          aria-label="The station has no public address yet."
+          role="img"
+          title={noPublicAddress(station)}
+          aria-label={noPublicAddress(station)}
         />
       )}
       {problem && (
@@ -220,15 +233,11 @@ function ServiceNode({ data }: NodeProps<MapNode & { type: 'service'; data: Serv
           <Term name="stableAddress" />
         </dt>
         <dd className="font-mono">
-          {s.virtual_ip ?? <span className="font-sans text-muted-foreground">not assigned</span>}
+          {s.virtual_ip ?? <None className="font-sans">{notAssigned}</None>}
         </dd>
         <dt className="text-muted-foreground">Ports</dt>
         <dd>
-          {s.ports.length ? (
-            s.ports.map(portSpecText).join(' · ')
-          ) : (
-            <span className="text-muted-foreground">none</span>
-          )}
+          <Ports service={s} />
         </dd>
         <dt className="text-muted-foreground">Serving</dt>
         <dd>
@@ -280,7 +289,7 @@ function PeerNode({ data }: NodeProps<MapNode & { type: 'peer'; data: PeerData }
         <Handle type="target" position={Position.Left} isConnectable={false} className={hidden} />
       )}
       {data.tone === 'blocked' && (
-        <p className="text-xs text-muted-foreground">Blocked by the traffic rule</p>
+        <p className="text-xs text-muted-foreground">{explanationVerdict.blocked.label}</p>
       )}
       <div
         className={cn(
@@ -393,35 +402,6 @@ const resultIcon = {
   rejected: Undo2,
 } as const
 
-function None({ children = 'none' }: { children?: ReactNode }) {
-  return <span className="text-muted-foreground">{children}</span>
-}
-
-const stationName = (map: NetworkMap, id: string) =>
-  map.subnets.find((s) => s.station.id === id)?.station.name ?? 'the station'
-
-const exposureText = (map: NetworkMap, x: Exposure) =>
-  x.public
-    ? `${x.public} to port ${x.port}`
-    : `Port ${x.host_port} on ${stationName(map, x.station_id)} (no public address)`
-
-const domainState = (domain: Domain) => {
-  if (domain.status === 'error') return domainStatus.error
-  if (domain.certificate.status !== 'valid') return domainStatus.pending
-  if (domain.route.result !== 'ok')
-    return {
-      label: 'Not routed yet',
-      tone: 'warning' as const,
-    }
-  return {
-    label: 'Live, certificate valid',
-    tone: 'success' as const,
-  }
-}
-
-const exposureState = (x: Exposure | undefined) =>
-  x?.result ? routeResult[x.result] : routeResult.pending
-
 function InboundSummary({ map }: { map: NetworkMap }) {
   const station = map.subnets[0]?.station.name
   return (
@@ -491,10 +471,10 @@ function TableView({ map }: { map: NetworkMap }) {
                   <Code copy={s.dns}>{s.dns}</Code>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
-                  {s.virtual_ip ? <Code>{s.virtual_ip}</Code> : <None>not assigned</None>}
+                  {s.virtual_ip ? <Code>{s.virtual_ip}</Code> : <None>{notAssigned}</None>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  {s.ports.length ? s.ports.map(portSpecText).join(' · ') : <None />}
+                  <Ports service={s} />
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   <Serving service={s} />
@@ -576,7 +556,7 @@ function TableView({ map }: { map: NetworkMap }) {
                     ) : exposure ? (
                       exposureText(map, exposure)
                     ) : (
-                      <None>no public address</None>
+                      <None>No public address</None>
                     )}
                   </TableCell>
                   <TableCell>{e.service}</TableCell>
@@ -883,6 +863,7 @@ export function NetworkPanel({
   const { data: map } = useSuspenseQuery(networkQuery(environment.id))
   const [view, setView] = useState<'map' | 'table'>('map')
   const [liveOn, setLiveOn] = useState(false)
+  const [creating, setCreating] = useState(false)
   const live = useLiveNetwork(environment.id, liveOn)
   return (
     <div className="space-y-4">
@@ -903,15 +884,8 @@ export function NetworkPanel({
               title="No services yet"
               description="Services you create here appear on the map with their routes."
               action={
-                <Button asChild size="sm" variant="outline">
-                  <Link
-                    to="."
-                    search={{
-                      tab: 'services',
-                    }}
-                  >
-                    Go to services
-                  </Link>
+                <Button size="sm" onClick={() => setCreating(true)}>
+                  <Plus /> New service
                 </Button>
               }
             />
@@ -925,6 +899,9 @@ export function NetworkPanel({
           <TableView map={map} />
         </TabsContent>
       </Tabs>
+      {creating && (
+        <NewService environment={environment} open={creating} onOpenChange={setCreating} />
+      )}
     </div>
   )
 }
