@@ -26,8 +26,8 @@ func rolloutTestStation(t *testing.T) *Station {
 		rollouts: map[string]*rollout{},
 		plan: &Plan{
 			Generation: g,
-			Networks:   map[string]docker.NetworkSpec{alphaEnv: {Name: "or-aaaaaaaaaaaa"}},
-			Services:   map[string]*ServicePlan{alphaWhoami: {ID: alphaWhoami, EnvID: alphaEnv, NetworkName: "or-aaaaaaaaaaaa"}},
+			Networks:   map[string]docker.NetworkSpec{alphaEnv: {Name: "sly-aaaaaaaaaaa"}},
+			Services:   map[string]*ServicePlan{alphaWhoami: {ID: alphaWhoami, EnvID: alphaEnv, NetworkName: "sly-aaaaaaaaaaa"}},
 		},
 	}
 }
@@ -36,7 +36,7 @@ func TestARolloutKeepsTheNetworkNameOfItsEnvironment(t *testing.T) {
 	s := rolloutTestStation(t)
 	s.syncRollouts()
 	r := s.rollouts["dep_01JCROLLOUT0000000000000A"]
-	if r == nil || r.Network != "or-aaaaaaaaaaaa" || r.EnvID != alphaEnv {
+	if r == nil || r.Network != "sly-aaaaaaaaaaa" || r.EnvID != alphaEnv {
 		t.Fatalf("the rollout must record its environment and network when it arrives, got %+v", r)
 	}
 }
@@ -50,7 +50,7 @@ func TestRolloutNamespaceOfAServiceThatLeftTheGenerationIsAbsentNotAPanic(t *tes
 	delete(s.plan.Services, alphaWhoami)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, ok := s.rolloutNamespace(ctx, r, "or-coupler-green"); ok {
+	if _, ok := s.rolloutNamespace(ctx, r, "sly-coupler-green"); ok {
 		t.Fatal("a deleted service has no namespace to write")
 	}
 	if reason := s.cancelReason(r); reason == nil || *reason != protocol.CancelReasonSuperseded {
@@ -77,7 +77,7 @@ func capStation(t *testing.T, cap int) (*Station, *rollout, *rollout) {
 		log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		opts:     Options{StateDir: t.TempDir()},
 		rollouts: map[string]*rollout{},
-		plan:     &Plan{Generation: g, Networks: map[string]docker.NetworkSpec{alphaEnv: {Name: "or-aaaaaaaaaaaa"}}},
+		plan:     &Plan{Generation: g, Networks: map[string]docker.NetworkSpec{alphaEnv: {Name: "sly-aaaaaaaaaaa"}}},
 	}
 	s.syncRollouts()
 	running := s.rollouts[first]

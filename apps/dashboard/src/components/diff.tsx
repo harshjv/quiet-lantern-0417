@@ -1,12 +1,13 @@
 import { Minus, Pencil, Plus } from 'lucide-react'
 import { json } from '@/lib/format'
 import type { Change } from '@/lib/api'
+import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const opStyle = {
-  add: { icon: Plus, label: 'add', tone: 'text-emerald-700 dark:text-emerald-400', bar: 'border-l-emerald-500' },
-  update: { icon: Pencil, label: 'update', tone: 'text-amber-700 dark:text-amber-400', bar: 'border-l-amber-500' },
-  remove: { icon: Minus, label: 'remove', tone: 'text-red-700 dark:text-red-400', bar: 'border-l-red-500' }
+  add: { icon: Plus, label: 'add', tone: toneText.success, bar: 'border-l-emerald-500' },
+  update: { icon: Pencil, label: 'update', tone: toneText.warning, bar: 'border-l-amber-500' },
+  remove: { icon: Minus, label: 'remove', tone: toneText.danger, bar: 'border-l-red-500' }
 } as const
 
 function Value({ value, tone }: { value: unknown; tone: 'old' | 'new' }) {

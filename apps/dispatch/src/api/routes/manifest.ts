@@ -6,10 +6,11 @@ import { JsonObject } from '@stationly/protocol'
 import { Type, type Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
+import type { TargetInput } from '../route-meta.ts'
 import { project, service } from '../../db/schema.ts'
 import { exportManifest, manifestYaml } from '../../manifest/export.ts'
 import { planManifest, requireDiffLevel } from '../../manifest/plan.ts'
-import { requireLevel, seesProject } from '../access.ts'
+import { seesProject } from '../access.ts'
 import { commit, stripValues } from '../changes.ts'
 import { ApiError } from '../errors.ts'
 import { parseFields, project as select } from '../fields.ts'
@@ -92,7 +93,7 @@ export const manifestRoutes = (kit: Kit) => {
     return { env, scope: { project_id: proj.id, environment_id: env.id } }
   }
 
-  return new Elysia({ normalize: false }).use(models())
+  return new Elysia({ normalize: false }).use(models()).use(kit.operations)
     .get(
       '/schema/manifest.json',
       ({ request }) => {
@@ -100,7 +101,7 @@ export const manifestRoutes = (kit: Kit) => {
         if (request.headers.get('if-none-match') === schemaEtag) return new Response(null, { status: 304, headers })
         return new Response(schemaText, { headers: { ...headers, 'content-type': 'application/schema+json' } })
       },
-      { detail: { summary: 'The Manifest JSON Schema', tags } }
+      { operation: { id: 'get_manifest_schema', level: 'public', mcp: false }, detail: { summary: 'The Manifest JSON Schema', tags } }
     )
     .post(
       '/v1/projects/:project/manifest/apply',
@@ -108,7 +109,6 @@ export const manifestRoutes = (kit: Kit) => {
         const call = await kit.call(request)
         const proj = projectByRef(db, params.project)
         const { env, scope } = target(proj, body.environment)
-        requireLevel(call.principal, scope, 'deploy')
         const planOnly = body.plan ?? true
         const { plan, locate } = await evaluate(body.manifest, proj, env, { prune: body.prune ?? false, allowUnresolved: body.allow_unresolved ?? true })
         if (plan.issues.length) throw validationError(plan.issues.map(i => locate(i)))
@@ -138,6 +138,7 @@ export const manifestRoutes = (kit: Kit) => {
         return respond(kit, set, result, () => ({ ...select(kit.views.staged, result.staged, parseFields('changes,refs,deployments')), unmanaged: plan.unmanaged }), warnings) as Static<typeof ManifestApplied>
       },
       {
+        operation: { id: 'apply_manifest', level: 'deploy', target: ({ params, body }: TargetInput) => target(projectByRef(db, params.project!), (body as { environment?: string }).environment).scope },
         params: t.Object({ project: t.String() }),
         body: t.Object(
           {
@@ -169,6 +170,7 @@ export const manifestRoutes = (kit: Kit) => {
         return { valid: plan.issues.length === 0, issues: plan.issues.map(i => locate(i)), warnings: plan.warnings }
       },
       {
+        operation: { id: 'validate_manifest', level: 'any' },
         body: t.Object({ manifest: ManifestInput, environment: t.Optional(t.String()) }, { additionalProperties: false }),
         response: replies({ 200: Validation }),
         detail: { summary: 'Validate a Manifest: the schema pass, then the semantic pass when its project is visible', tags }
@@ -177,15 +179,14 @@ export const manifestRoutes = (kit: Kit) => {
     .get(
       '/v1/projects/:project/manifest',
       async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
         const proj = projectByRef(db, params.project)
         const env = query.environment ? environmentInProject(db, proj, query.environment) : null
-        requireLevel(principal, { project_id: proj.id, environment_id: env?.id ?? proj.default_environment_id }, 'read')
         const doc = exportManifest(db, keyring, proj, env)
         if ((request.headers.get('accept') ?? '').includes('application/json')) return doc
         return manifestYaml(doc, `${kit.deps.auth.surface.apiOrigin}/schema/manifest.json`)
       },
       {
+        operation: { id: 'export_manifest', level: 'read', target: ({ params, query }: TargetInput) => target(projectByRef(db, params.project!), query.environment).scope },
         mapResponse: ({ responseValue, set }) => {
           if (typeof responseValue !== 'string') return
           return new Response(responseValue, { status: typeof set.status === 'number' ? set.status : 200, headers: { ...(set.headers as Record<string, string>), 'content-type': 'text/yaml; charset=utf-8' } })

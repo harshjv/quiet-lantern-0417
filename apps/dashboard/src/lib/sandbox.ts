@@ -1,3 +1,5 @@
+import { isIdle } from './status.ts'
+
 export const ttlLimits = { min: 60, max: 2_592_000, default: 3600 } as const
 
 const unitSeconds = { s: 1, m: 60, h: 3600, d: 86_400 } as const
@@ -44,7 +46,7 @@ export const secondsUntil = (iso: string | null | undefined, nowMs: number) => {
 export type Clock = { label: 'left' | 'until deletion'; text: string; urgent: boolean }
 
 export const remaining = (sandbox: { status: string; stop_at: string | null; delete_at: string | null }, nowMs: number): Clock | null => {
-  const stopped = sandbox.status === 'stopped' || sandbox.status === 'failed'
+  const stopped = isIdle(sandbox.status)
   const seconds = secondsUntil(stopped ? sandbox.delete_at : sandbox.stop_at, nowMs)
   if (seconds === null) return null
   if (stopped) return { label: 'until deletion', text: formatSpan(seconds), urgent: seconds < 86_400 }
@@ -97,6 +99,18 @@ export const parseAllowlist = (text: string): { entries: DomainEntry[]; problem:
   }
   return { entries, problem: null }
 }
+
+export type Egress = { mode: 'open' } | { mode: 'allowlist'; domains: DomainEntry[] }
+
+export const egressBody = (mode: Egress['mode'], text: string): { egress: Egress; problem: null } | { egress: null; problem: string } => {
+  const parsed = parseAllowlist(text)
+  if (parsed.problem) return { egress: null, problem: parsed.problem }
+  if (mode === 'open') return { egress: { mode }, problem: null }
+  if (parsed.entries.length === 0) return { egress: null, problem: 'An allowlist needs at least one domain.' }
+  return { egress: { mode, domains: parsed.entries }, problem: null }
+}
+
+export const egressText = (egress: { mode: string; domains?: unknown[] | null | undefined }) => (egress.mode === 'open' ? 'open' : `allowlist, ${egress.domains?.length ?? 0} domains`)
 
 export const allowlistText = (entries: DomainEntry[]) =>
   entries.map(e => `${e.wildcard ? '*.' : ''}${e.domain}${e.ports.length ? `:${e.ports.join(',')}` : ''}`).join('\n')

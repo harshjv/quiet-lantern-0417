@@ -313,9 +313,9 @@ describe('logs, metrics and network', () => {
   test('GET /v1/logs reads the init and runtime log of a sandbox', async () => {
     const init = await api('GET', `/v1/logs?sandbox=${boxId}`)
     assert.equal(init.status, 200, init.text)
-    assert.equal(init.body.lines[0].role, 'init')
+    assert.equal(init.body.untrusted.lines[0].role, 'init')
     const runtime = await api('GET', `/v1/logs?sandbox=${boxId}&role=runtime`)
-    assert.equal(runtime.body.lines[0].role, 'runtime')
+    assert.equal(runtime.body.untrusted.lines[0].role, 'runtime')
     const sent = station.received.filter(m => m.type === 'logs.query' && (m.body as any).source === 'sandbox').map(m => m.body as any)
     assert.deepEqual(sent.map(b => [b.sandbox_id, b.role]), [[boxId, 'init'], [boxId, 'runtime']])
     const bad = await api('GET', `/v1/logs?sandbox=${boxId}&role=service`)

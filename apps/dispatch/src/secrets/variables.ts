@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Actor } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { audit_event, deployment, environment, grant, sandbox, secret_value, service, variable } from '../db/schema.ts'
 import { newId } from '../db/ids.ts'
@@ -10,6 +10,7 @@ import { valueBytes, type Keyring } from './keyring.ts'
 import { hasReference, keyPattern, parseValue } from './reference.ts'
 import { Resolver, isFallback, isSealed, leaves, render, type SourceNode, type ValueNode } from './resolve.ts'
 import type { EnvSnapshot } from './deploy.ts'
+import { decryptValue, headValue, nextValueVersion } from './values.ts'
 
 type ActorValue = Static<typeof Actor>
 
@@ -42,22 +43,6 @@ const generatorOf = (value: string) => {
 }
 
 const deferrable = new Set(['VARIABLE_UNRESOLVED', 'VARIABLE_TARGET_MISSING', 'VARIABLE_NOT_GRANTED', 'VARIABLE_PROTECTED_SOURCE'])
-
-const nextVersion = (db: Db, variableId: string, environmentId: string | null) => {
-  const last = db
-    .select({ version: secret_value.version })
-    .from(secret_value)
-    .where(
-      and(
-        eq(secret_value.variable_id, variableId),
-        environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId)
-      )
-    )
-    .orderBy(desc(secret_value.version))
-    .limit(1)
-    .get()
-  return (last?.version ?? 0) + 1
-}
 
 const findVariable = (db: Db, input: VariableInput) => {
   const parent =
@@ -150,7 +135,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
     let written: { secret_value_id: string; version: number } | null = null
     if (plaintext !== null) {
       const id = newId('secret_value')
-      const version = nextVersion(tx as unknown as Db, variableId, environmentId)
+      const version = nextValueVersion(tx as unknown as Db, variableId, environmentId)
       const sealedValue = keyring.encrypt(id, plaintext)
       tx.insert(secret_value)
         .values({ id, variable_id: variableId, environment_id: environmentId, version, ...sealedValue, created_by: input.actor })
@@ -250,7 +235,7 @@ export const decryptLeaf = (db: Db, keyring: Keyring, leaf: ValueNode) => {
   const row = db.select().from(secret_value).where(eq(secret_value.id, leaf.secret_value_id)).get()
   if (!row || row.version !== leaf.version) throw new SecretsError('SECRETS_UNAVAILABLE', `secret_value ${leaf.secret_value_id} version ${leaf.version} is gone`)
   if (row.revoked_at) throw new SecretsError('ROLLBACK_SECRET_REVOKED', `${leaf.key} version ${leaf.version} is revoked`, { keys: [leaf.key] })
-  return keyring.decrypt(row.id, row.data_key_id, row.ciphertext)
+  return decryptValue(keyring, row)
 }
 
 export const storedBytes = (db: Db, secretValueId: string) => {
@@ -277,16 +262,9 @@ export const sealedGlobalValue = (db: Db, keyring: Keyring, key: string) => {
   const row = db.select().from(variable).where(and(eq(variable.scope, 'global'), eq(variable.key, key))).get()
   if (!row) throw new SecretsError('NOT_FOUND', `global variable ${key} does not exist`, { key })
   if (row.kind !== 'sealed') throw new SecretsError('VALIDATION_FAILED', `global variable ${key} is not sealed`, { key })
-  const value = db
-    .select()
-    .from(secret_value)
-    .where(and(eq(secret_value.variable_id, row.id), isNull(secret_value.environment_id), isNull(secret_value.revoked_at)))
-    .orderBy(desc(secret_value.version))
-    .limit(1)
-    .get()
+  const value = headValue(db, row.id, null)
   if (!value) throw new SecretsError('SECRETS_UNAVAILABLE', `global variable ${key} has no value`, { key })
-  if (value.needs_reentry) throw new SecretsError('SECRETS_NEED_REENTRY', `global variable ${key} must be re-entered after a restore`, { key })
-  return { secret_value_id: value.id, value: keyring.decrypt(value.id, value.data_key_id, value.ciphertext) }
+  return { secret_value_id: value.id, value: decryptValue(keyring, value) }
 }
 
 export const sealedGlobalExists = (db: Db, key: string) => {

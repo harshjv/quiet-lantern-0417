@@ -47,7 +47,7 @@ const serviceLayers = (map: NetworkMap) => {
   return layer
 }
 
-const column = <T,>(items: T[], height: number, tallest: number) => {
+const column = <T>(items: T[], height: number, tallest: number) => {
   const offset = (tallest - items.length * height) / 2
   return items.map((item, i) => ({ item, y: offset + i * height }))
 }
@@ -104,6 +104,18 @@ export const rateText = (bps: number | null) => {
 const sum = (values: (number | null)[]) => (values.some(v => v !== null) ? values.reduce<number>((a, v) => a + (v ?? 0), 0) : null)
 
 type Group = Connections['connections'][number]
+
+export const peerText = (peer: Group['peer']) => {
+  if (peer.kind === 'service') return peer.service ?? peer.service_id ?? 'service'
+  if (peer.address) return `${peer.kind} ${peer.address}`
+  return peer.kind
+}
+
+export const endpointText = (endpoint: { address: string; port: number; protocol: string }) => `${endpoint.address}:${endpoint.port}/${endpoint.protocol}`
+
+export const portSpecText = (port: { port: number; protocol: string; grpc: boolean }) => `${port.port}/${port.grpc ? 'grpc' : port.protocol}`
+
+export const ageText = (seconds: number | null) => (seconds === null ? '—' : `${seconds} s`)
 
 const groupLabel = (groups: Group[]) => {
   const flows = groups.reduce((a, g) => a + g.flows, 0)
@@ -163,7 +175,7 @@ export const overlayLive = (layout: { nodes: MapNode[]; edges: Edge[] }, samples
   for (const path of paths) {
     const id = `live:blocked:${path}`
     const items = refused.filter(x => x.r.path === path)
-    nodes.push({ id, type: 'peer', position: { x: right, y: rightY }, data: { label: `Blocked: ${path}`, tone: 'blocked', icon: 'blocked', side: 'right', lines: [...new Set(items.map(x => `${x.r.address}:${x.r.port}/${x.r.protocol}`))].slice(0, 4) } })
+    nodes.push({ id, type: 'peer', position: { x: right, y: rightY }, data: { label: `Blocked: ${path}`, tone: 'blocked', icon: 'blocked', side: 'right', lines: [...new Set(items.map(x => endpointText(x.r)))].slice(0, 4) } })
     rightY += rowHeight.entry * 2
     for (const name of new Set(items.map(x => x.service))) {
       if (!serviceNode(name)) continue

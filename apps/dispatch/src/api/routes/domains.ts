@@ -1,8 +1,8 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import { parse } from 'tldts'
-import { domain, port_allocation, service_port, setting } from '../../db/schema.ts'
-import { requireLevel } from '../access.ts'
+import { domain, port_allocation, service_port } from '../../db/schema.ts'
+import { readSetting } from '../../db/settings.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail } from '../errors.ts'
 import { project as select, projectAll } from '../fields.ts'
@@ -19,13 +19,11 @@ export const domainRoutes = (kit: Kit) => {
   const allocationView = (id: string) => select(kit.views.allocation, db.select().from(port_allocation).where(eq(port_allocation.id, id)).get()!, undefined)
   const portsOf = (serviceId: string) => db.select({ id: service_port.id }).from(service_port).where(eq(service_port.service_id, serviceId)).all().map(p => p.id)
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/services/:service/domains',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = serviceById(db, params.service)
-        requireLevel(principal, ctx.target, 'read')
         const ports = portsOf(ctx.service.id)
         const rows = ports.length
           ? db
@@ -37,24 +35,18 @@ export const domainRoutes = (kit: Kit) => {
           : []
         return { items: projectAll(kit.views.domain, rows, kit.fields(query.fields)), next_cursor: null }
       },
-      { params: t.Object({ service: t.String() }), query: t.Object({ ...getQuery, status: t.Optional(t.String()) }), response: replies({ 200: Page(Domain) }), detail: { summary: 'List the domains of a service', tags } }
+      { operation: { id: 'list_domains', level: 'read' }, params: t.Object({ service: t.String() }), query: t.Object({ ...getQuery, status: t.Optional(t.String()) }), response: replies({ 200: Page(Domain) }), detail: { summary: 'List the domains of a service', tags } }
     )
     .get(
       '/domains/:id',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
-        const ctx = domainById(db, params.id)
-        requireLevel(principal, ctx.target, 'read')
-        return select(kit.views.domain, ctx.domain, kit.fields(query.fields))
-      },
-      { params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: Domain }), detail: { summary: 'Get a domain', tags } }
+      async ({ params, query }) => select(kit.views.domain, domainById(db, params.id).domain, kit.fields(query.fields)),
+      { operation: { id: 'get_domain', level: 'read', mcp: false }, params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: Domain }), detail: { summary: 'Get a domain', tags } }
     )
     .post(
       '/ports/:id/domains',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = portById(db, params.id)
-        requireLevel(call.principal, ctx.target, 'admin')
         const ingress = body.ingress ?? 'direct'
         if (ctx.port.protocol !== 'http' || ctx.port.grpc) {
           if (ingress === 'tunnel') fail('TUNNEL_UNSUPPORTED_PROTOCOL', `Port ${ctx.port.port} is ${ctx.port.grpc ? 'gRPC' : ctx.port.protocol}, which the Tunnel cannot carry.`, 'Use ingress = direct, or expose a tcp port with POST /v1/ports/{id}/port-allocations.')
@@ -73,7 +65,7 @@ export const domainRoutes = (kit: Kit) => {
             fail('DOMAIN_INVALID', 'No domains.zone is set and the station has not reported a public address, so no hostname can be generated.', 'Set the domains.zone setting, or send a hostname.')
         }
         if (db.select({ id: domain.id }).from(domain).where(eq(domain.hostname, hostname)).get()) fail('NAME_TAKEN', `${hostname} is already routed.`, undefined, { hostname })
-        const ownKey = (['hostnames.dashboard', 'hostnames.api'] as const).find(key => db.select().from(setting).where(eq(setting.key, key)).get()?.value === hostname)
+        const ownKey = (['hostnames.dashboard', 'hostnames.api'] as const).find(key => readSetting(db, key) === hostname)
         if (ownKey) fail('NAME_TAKEN', `${hostname} is Dispatch's own hostname (${ownKey}).`, 'Choose another hostname for the service.', { hostname, setting: ownKey })
         const changes = new ChangeSet()
         changes.add('domain', ctx.port.id, { hostname, kind: body.generated ? 'generated' : 'custom', ingress })
@@ -83,6 +75,7 @@ export const domainRoutes = (kit: Kit) => {
         return domainView(result.refs['new:domain:1']!, 'dns_instructions')
       },
       {
+        operation: { id: 'add_domain', level: 'admin' },
         params: t.Object({ id: t.String() }),
         body: t.Object(
           { generated: t.Optional(t.Boolean()), hostname: t.Optional(t.String({ minLength: 1 })), ingress: t.Optional(t.Union([t.Literal('direct'), t.Literal('tunnel')])) },
@@ -97,21 +90,18 @@ export const domainRoutes = (kit: Kit) => {
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = domainById(db, params.id)
-        requireLevel(call.principal, ctx.target, 'admin')
         const changes = new ChangeSet()
         changes.remove('domain', ctx.domain.id, select(kit.views.domain, ctx.domain, undefined))
         const result = commit(kit.deps, call, { environment: ctx.environment, protect: ctx.environment.protected }, changes)
         if (!result.applied) return kit.stagedBody(result, set)
         return { deleted: true as const }
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: Deleted, 202: Staged }), detail: { summary: 'Remove a domain', tags } }
+      { operation: { id: 'remove_domain', level: 'admin' }, params: t.Object({ id: t.String() }), response: replies({ 200: Deleted, 202: Staged }), detail: { summary: 'Remove a domain', tags } }
     )
     .get(
       '/services/:service/port-allocations',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = serviceById(db, params.service)
-        requireLevel(principal, ctx.target, 'read')
         const ports = portsOf(ctx.service.id)
         const rows = ports.length
           ? db
@@ -123,14 +113,13 @@ export const domainRoutes = (kit: Kit) => {
           : []
         return { items: projectAll(kit.views.allocation, rows, kit.fields(query.fields)), next_cursor: null }
       },
-      { params: t.Object({ service: t.String() }), query: t.Object({ ...getQuery, status: t.Optional(t.String()) }), response: replies({ 200: Page(PortAllocation) }), detail: { summary: 'List the TCP exposures of a service', tags } }
+      { operation: { id: 'list_tcp_exposures', level: 'read' }, params: t.Object({ service: t.String() }), query: t.Object({ ...getQuery, status: t.Optional(t.String()) }), response: replies({ 200: Page(PortAllocation) }), detail: { summary: 'List the TCP exposures of a service', tags } }
     )
     .post(
       '/ports/:id/port-allocations',
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = portById(db, params.id)
-        requireLevel(call.principal, ctx.target, 'admin')
         if (ctx.port.protocol !== 'tcp') fail('VALIDATION_FAILED', `Port ${ctx.port.port} is ${ctx.port.protocol}; only tcp ports are exposed this way.`, 'Add a domain for an http port instead.', { issues: [{ path: '/id', message: 'port is not tcp' }] })
         const picker = hostPortPicker(db, ctx.service.station_id)
         const hostPort = picker.next() ?? fail('PORT_RANGE_EXHAUSTED', `Every port in ${picker.range} is allocated on this station.`, 'Remove an unused TCP exposure, or widen exposure.port_range.')
@@ -141,14 +130,13 @@ export const domainRoutes = (kit: Kit) => {
         set.status = 201
         return allocationView(result.refs['new:port_allocation:1']!)
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 201: PortAllocation, 202: Staged }), detail: { summary: 'Expose a tcp port on a host port', tags } }
+      { operation: { id: 'expose_tcp', level: 'admin' }, params: t.Object({ id: t.String() }), response: replies({ 201: PortAllocation, 202: Staged }), detail: { summary: 'Expose a tcp port on a host port', tags } }
     )
     .delete(
       '/port-allocations/:id',
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = allocationById(db, params.id)
-        requireLevel(call.principal, ctx.target, 'admin')
         if (ctx.allocation.status === 'removed') return allocationView(ctx.allocation.id)
         const changes = new ChangeSet()
         changes.update('port_allocation', ctx.allocation.id, '/status', ctx.allocation.status, 'removed')
@@ -156,6 +144,6 @@ export const domainRoutes = (kit: Kit) => {
         if (!result.applied) return kit.stagedBody(result, set)
         return allocationView(ctx.allocation.id)
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: PortAllocation, 202: Staged }), detail: { summary: 'Remove a TCP exposure', tags } }
+      { operation: { id: 'remove_tcp_exposure', level: 'admin' }, params: t.Object({ id: t.String() }), response: replies({ 200: PortAllocation, 202: Staged }), detail: { summary: 'Remove a TCP exposure', tags } }
     )
 }

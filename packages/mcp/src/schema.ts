@@ -1,7 +1,9 @@
 import { fromJsonSchema, type JsonSchemaType } from '@modelcontextprotocol/server'
+import { Ajv, AjvJsonSchemaValidator, addFormats } from '@modelcontextprotocol/server/validators/ajv'
 
-export type Schema = { static: unknown }
+const engine = new Ajv({ strict: false, validateFormats: true, validateSchema: false, allErrors: true, logger: false })
+addFormats(engine)
 
-export type StaticOf<S extends Schema> = S['static']
+const validator = new AjvJsonSchemaValidator(engine)
 
-export const toolInput = <S extends Schema>(schema: S) => fromJsonSchema<StaticOf<S>>(schema as unknown as JsonSchemaType)
+export const jsonSchema = (schema: JsonSchemaType) => fromJsonSchema<Record<string, unknown>>(schema, validator)

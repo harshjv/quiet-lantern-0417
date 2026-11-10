@@ -736,7 +736,7 @@ func (s *Station) syncNetwork(ctx context.Context) {
 		if !ok || err != nil || sb.pid <= 0 || sb.rec.Status != protocol.SandboxReportStatusRunning {
 			continue
 		}
-		t := netTarget{serviceID: id, container: "or-sbx-coupler-" + id, pid: sb.pid, inode: sb.inode, self: netns.SandboxLink, ring: addr, sandbox: true, state: "running", resolver: sb.baseline.Resolver, baseline: sb.baseline, runsc: sb.rec.Runsc}
+		t := netTarget{serviceID: id, container: docker.SandboxCouplerName(id), pid: sb.pid, inode: sb.inode, self: netns.SandboxLink, ring: addr, sandbox: true, state: "running", resolver: sb.baseline.Resolver, baseline: sb.baseline, runsc: sb.rec.Runsc}
 		if d.Network == protocol.SandboxNetworkEnvironment {
 			e := env(d.EnvironmentId)
 			e.containers[addr] = owner{serviceID: id, sandbox: true}
@@ -758,33 +758,14 @@ func (s *Station) syncNetwork(ctx context.Context) {
 	h.state.Store(st)
 }
 
-func (s *Station) networkBody(m dispatch.Message, b any) bool {
-	if !s.requireCapability(m, protocol.CapabilityNetworkV1) {
-		return false
-	}
-	if err := json.Unmarshal(m.Body, b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a "+m.Type+" body that matches its schema.", "%v", err))
-		return false
-	}
-	return true
-}
-
-func (s *Station) sampleNetwork(m dispatch.Message) {
-	var b protocol.NetworkSampleBody
-	if !s.networkBody(m, &b) {
-		return
-	}
+func (s *Station) sampleNetwork(_ context.Context, m dispatch.Message, b protocol.NetworkSampleBody) {
 	ref := m.ID
 	go func() {
 		s.send(protocol.MessageNetworkSampleResult, &ref, protocol.NetworkSampleResultBody{Samples: s.net.sample(append(append([]string{}, b.ServiceIds...), b.SandboxIds...))})
 	}()
 }
 
-func (s *Station) subscribeNetwork(ctx context.Context, m dispatch.Message) {
-	var b protocol.NetworkSubscribeBody
-	if !s.networkBody(m, &b) {
-		return
-	}
+func (s *Station) subscribeNetwork(ctx context.Context, m dispatch.Message, b protocol.NetworkSubscribeBody) {
 	st, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, nil, nil)
 	if err != nil {
 		s.replyError(m, streamFailure(err))

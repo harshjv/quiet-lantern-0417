@@ -1,0 +1,89 @@
+{
+  "cases": [
+    {
+      "name": "empty",
+      "env": [],
+      "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "name": "platform entries keep their values out of the digest",
+      "env": [
+        {
+          "key": "PORT",
+          "injection": "env",
+          "refs": [],
+          "value": "8080",
+          "platform": true
+        },
+        {
+          "key": "STATIONLY_SERVICE_ID",
+          "injection": "env",
+          "refs": [],
+          "value": "svc_01JC7ZABCDEFGHJKMNPQRSTVWX",
+          "platform": true
+        }
+      ],
+      "digest": "sha256:d2d6d13942fd842c6edfa3d3ccf10a6fabdec52caca67b798decf2094fabffe1"
+    },
+    {
+      "name": "secret and export refs with a file injection",
+      "env": [
+        {
+          "key": "DATABASE_URL",
+          "injection": "env",
+          "refs": [
+            {
+              "secret_value_id": "sec_01JC7ZABCDEFGHJKMNPQRSTVWX",
+              "version": 4
+            },
+            {
+              "export": {
+                "service_id": "svc_01JC7ZABCDEFGHJKMNPQRSTVWY",
+                "key": "HOST"
+              }
+            }
+          ],
+          "platform": false
+        },
+        {
+          "key": "TLS_KEY",
+          "injection": "file",
+          "refs": [
+            {
+              "secret_value_id": "sec_01JD7ZABCDEFGHJKMNPQRSTVWX",
+              "version": 1
+            }
+          ],
+          "platform": false
+        }
+      ],
+      "digest": "sha256:a2a63938e5033f4efe36aa15fbc3dd5fd758e3c08a27f1746da2ea780e984a09"
+    },
+    {
+      "name": "unicode and escapes in keys and values",
+      "env": [
+        {
+          "key": "ÜBER_KEY",
+          "injection": "env",
+          "refs": [],
+          "platform": false,
+          "value": "p@ss:w0rd!/ ✓\n\"q\""
+        },
+        {
+          "key": "Z\u0000\u001f ",
+          "injection": "env",
+          "refs": [
+            {
+              "export": {
+                "service_id": "svc_01JC7ZABCDEFGHJKMNPQRSTVWX",
+                "key": "é\t<>&"
+              }
+            }
+          ],
+          "platform": false
+        }
+      ],
+      "digest": "sha256:36df091f4cfb27fdaacb49707d4ccdbe5a3ea2d95f563b6c443c28e22aa2d4d4"
+    }
+  ]
+}

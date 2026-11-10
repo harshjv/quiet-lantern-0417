@@ -16,6 +16,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/nftables v0.3.1-0.20260430172505-f9b52ed2ba65
+	github.com/google/renameio/v2 v2.0.2
 	github.com/gowebpki/jcs v1.0.2
 	github.com/jsimonetti/rtnetlink/v2 v2.2.0
 	github.com/klauspost/compress v1.20.3

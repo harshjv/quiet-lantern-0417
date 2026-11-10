@@ -12,6 +12,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/harshjv/stationly/go/internal/fsx"
 )
 
 const (
@@ -116,23 +118,7 @@ func (o *Outbox) saveState() error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(o.dir, "."+stateFile+".tmp")
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(o.dir, stateFile))
+	return fsx.WriteFile(filepath.Join(o.dir, stateFile), b, 0o600)
 }
 
 func (o *Outbox) Notify() <-chan struct{} {
@@ -290,17 +276,7 @@ func (o *Outbox) rewrite() {
 		buf.Write(b)
 		buf.WriteByte('\n')
 	}
-	tmp := filepath.Join(o.dir, "."+logFile+".tmp")
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return
-	}
-	if _, err := f.Write(buf.Bytes()); err != nil || f.Sync() != nil {
-		f.Close()
-		return
-	}
-	f.Close()
-	if err := os.Rename(tmp, filepath.Join(o.dir, logFile)); err != nil {
+	if err := fsx.WriteFile(filepath.Join(o.dir, logFile), buf.Bytes(), 0o600); err != nil {
 		return
 	}
 	o.file.Close()

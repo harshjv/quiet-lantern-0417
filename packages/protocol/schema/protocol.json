@@ -6676,6 +6676,393 @@
         }
       }
     },
+    "RootSocketDetectedAddress": {
+      "title": "RootSocketDetectedAddress",
+      "type": "object",
+      "required": [
+        "address",
+        "interface",
+        "public"
+      ],
+      "properties": {
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interface": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketLine": {
+      "title": "RootSocketLine",
+      "type": "object",
+      "required": [
+        "v",
+        "id"
+      ],
+      "properties": {
+        "v": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "progress": {
+          "$ref": "#/$defs/RootSocketProgress"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "result": {
+          "goJSONSchema": {
+            "type": "json.RawMessage",
+            "nillable": true,
+            "imports": [
+              "encoding/json"
+            ]
+          }
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorBody"
+        }
+      }
+    },
+    "RootSocketLogsParams": {
+      "title": "RootSocketLogsParams",
+      "type": "object",
+      "required": [
+        "deployment_id"
+      ],
+      "properties": {
+        "deployment_id": {
+          "type": "string"
+        },
+        "tail": {
+          "type": "integer"
+        }
+      }
+    },
+    "RootSocketNoParams": {
+      "title": "RootSocketNoParams",
+      "type": "object",
+      "properties": {}
+    },
+    "RootSocketProgress": {
+      "title": "RootSocketProgress",
+      "type": "object",
+      "required": [
+        "step"
+      ],
+      "properties": {
+        "step": {
+          "type": "string"
+        },
+        "detail": {
+          "goJSONSchema": {
+            "type": "string",
+            "nillable": true
+          },
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketRecoveryKey": {
+      "title": "RootSocketRecoveryKey",
+      "type": "object",
+      "required": [
+        "recovery_key"
+      ],
+      "properties": {
+        "recovery_key": {
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketRequest": {
+      "title": "RootSocketRequest",
+      "type": "object",
+      "required": [
+        "v",
+        "id",
+        "op"
+      ],
+      "properties": {
+        "v": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "params": {
+          "goJSONSchema": {
+            "type": "json.RawMessage",
+            "nillable": true,
+            "imports": [
+              "encoding/json"
+            ]
+          }
+        }
+      }
+    },
+    "RootSocketRetainParams": {
+      "title": "RootSocketRetainParams",
+      "type": "object",
+      "required": [
+        "project_id"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketSetupHostnames": {
+      "title": "RootSocketSetupHostnames",
+      "type": "object",
+      "required": [
+        "api",
+        "dashboard",
+        "status"
+      ],
+      "properties": {
+        "api": {
+          "type": "string"
+        },
+        "dashboard": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketSetupLitestream": {
+      "title": "RootSocketSetupLitestream",
+      "type": "object",
+      "required": [
+        "bucket",
+        "endpoint",
+        "active",
+        "note"
+      ],
+      "properties": {
+        "bucket": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketSetupLockfile": {
+      "title": "RootSocketSetupLockfile",
+      "type": "object",
+      "required": [
+        "release",
+        "manifest_digest"
+      ],
+      "properties": {
+        "release": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifest_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "RootSocketSetupParams": {
+      "title": "RootSocketSetupParams",
+      "type": "object",
+      "required": [
+        "email",
+        "password"
+      ],
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "acme_email": {
+          "type": "string"
+        },
+        "hostnames": {
+          "type": "object",
+          "required": [
+            "api",
+            "dashboard"
+          ],
+          "properties": {
+            "api": {
+              "type": "string"
+            },
+            "dashboard": {
+              "type": "string"
+            }
+          }
+        },
+        "public_address": {
+          "type": "string"
+        },
+        "litestream": {
+          "type": "object",
+          "required": [
+            "bucket",
+            "endpoint",
+            "access_key",
+            "secret_key"
+          ],
+          "properties": {
+            "bucket": {
+              "type": "string"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "access_key": {
+              "type": "string"
+            },
+            "secret_key": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "RootSocketSetupResult": {
+      "title": "RootSocketSetupResult",
+      "type": "object",
+      "required": [
+        "admin_user_id",
+        "email",
+        "instance_id",
+        "settings",
+        "login_link",
+        "login_link_expires_at",
+        "lockfile",
+        "hostnames",
+        "public_address",
+        "litestream",
+        "reach"
+      ],
+      "properties": {
+        "admin_user_id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "instance_id": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "login_link": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "login_link_expires_at": {
+          "type": "string"
+        },
+        "recovery_key": {
+          "type": "string"
+        },
+        "lockfile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RootSocketSetupLockfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hostnames": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RootSocketSetupHostnames"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "public_address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "litestream": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RootSocketSetupLitestream"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reach": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "RootSocketTokenParams": {
+      "title": "RootSocketTokenParams",
+      "type": "object",
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ttl_s": {
+          "type": "integer"
+        }
+      }
+    },
     "Route": {
       "title": "Route",
       "type": "object",
@@ -7245,7 +7632,7 @@
       ],
       "properties": {
         "bridge_name": {
-          "const": "stationly-sandbox",
+          "const": "sly-sandbox",
           "type": "string"
         },
         "subnet": {

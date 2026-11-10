@@ -4,18 +4,34 @@ import { Background, Controls, Handle, Position, ReactFlow, type NodeProps, type
 import { Activity, Box, CircleAlert, Globe, Network, Plug, Server, ShieldBan, ShieldCheck, Undo2, Waypoints } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useMemo, useState } from 'react'
-import { ErrorState, Mono, Rows } from '@/components/page'
+import { ConnectionsTable } from '@/components/connections-table'
+import { Mono } from '@/components/page'
+import { QueryState } from '@/components/query-state'
+import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { ServiceStatusDot } from '@/components/status'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { Connections, Environment, NetworkMap } from '@/lib/api'
+import type { Environment, NetworkMap } from '@/lib/api'
 import { ago } from '@/lib/format'
-import { layoutNetwork, overlayLive, rateText, type EntryData, type InternetData, type MapNode, type MapService, type PeerData, type ServiceData } from '@/lib/network-layout'
+import {
+  ageText,
+  endpointText,
+  layoutNetwork,
+  overlayLive,
+  portSpecText,
+  type EntryData,
+  type InternetData,
+  type MapNode,
+  type MapService,
+  type PeerData,
+  type ServiceData
+} from '@/lib/network-layout'
 import { useLiveNetwork, type LiveNetwork } from '@/lib/network-live'
 import { networkQuery } from '@/lib/queries'
+import { toneOutline, toneText, type Tone } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const hidden = '!size-1 !min-h-0 !min-w-0 !border-0 !bg-transparent'
@@ -25,16 +41,16 @@ const switchText = (sw: MapService['switch']) => {
   return `#${sw.deployment.number}${sw.deployment.address ? ` ${sw.deployment.address}` : ''}`
 }
 
-const switchTone: Record<MapService['switch']['state'], string> = {
-  serving: 'border-emerald-300 text-emerald-800 dark:border-emerald-800 dark:text-emerald-300',
-  pending: 'border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300',
-  mismatch: 'border-red-300 text-red-800 dark:border-red-800 dark:text-red-300',
-  no_target: 'border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300'
+const switchTone: Record<MapService['switch']['state'], Tone> = {
+  serving: 'success',
+  pending: 'warning',
+  mismatch: 'danger',
+  no_target: 'neutral'
 }
 
 function SwitchBadge({ sw }: { sw: MapService['switch'] }) {
   return (
-    <Badge variant="outline" className={cn('font-normal', switchTone[sw.state])}>
+    <Badge variant="outline" className={cn('font-normal', toneOutline[switchTone[sw.state]])}>
       {sw.state.replace('_', ' ')}
     </Badge>
   )
@@ -61,7 +77,7 @@ function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryDat
         {label}
       </span>
       <span className="shrink-0 text-muted-foreground">{entry.kind === 'domain' ? `:${entry.port}` : `→ ${entry.port}`}</span>
-      {status && status !== 'active' && status !== 'ok' && <span className="shrink-0 text-amber-700 dark:text-amber-400">{status}</span>}
+      {status && status !== 'active' && status !== 'ok' && <span className={cn('shrink-0', toneText.warning)}>{status}</span>}
       <Handle type="source" position={Position.Right} isConnectable={false} className={hidden} />
     </div>
   )
@@ -89,13 +105,13 @@ function ServiceNode({ data }: NodeProps<MapNode & { type: 'service'; data: Serv
         <dt className="text-muted-foreground">VIP</dt>
         <dd className="font-mono">{s.virtual_ip ?? '—'}</dd>
         <dt className="text-muted-foreground">Ports</dt>
-        <dd className="font-mono">{s.ports.length ? s.ports.map(p => `${p.port}/${p.grpc ? 'grpc' : p.protocol}`).join(' ') : '—'}</dd>
+        <dd className="font-mono">{s.ports.length ? s.ports.map(portSpecText).join(' ') : '—'}</dd>
         <dt className="text-muted-foreground">Switch</dt>
         <dd className="flex flex-wrap items-center gap-1">
           <span className="font-mono">{switchText(s.switch)}</span>
           {s.switch.state !== 'serving' && s.switch.state !== 'no_target' && <SwitchBadge sw={s.switch} />}
           {s.switch.draining && (
-            <Badge variant="outline" className="border-sky-300 font-normal text-sky-800 dark:border-sky-800 dark:text-sky-300">
+            <Badge variant="outline" className={cn('font-normal', toneOutline.info)}>
               draining #{s.switch.draining.number}
             </Badge>
           )}
@@ -115,7 +131,7 @@ function PeerNode({ data }: NodeProps<MapNode & { type: 'peer'; data: PeerData }
   return (
     <div className={cn('w-60 rounded-lg border bg-card px-3 py-2 text-sm shadow-xs', data.tone === 'blocked' && 'border-red-300 dark:border-red-800')}>
       {data.side === 'right' && <Handle type="target" position={Position.Left} isConnectable={false} className={hidden} />}
-      <div className={cn('flex items-center gap-2 font-medium', data.tone === 'blocked' && 'text-red-700 dark:text-red-400')}>
+      <div className={cn('flex items-center gap-2 font-medium', data.tone === 'blocked' && toneText.danger)}>
         <Icon className="size-4 shrink-0" aria-hidden />
         <span className="truncate">{data.label}</span>
       </div>
@@ -170,7 +186,7 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
 }
 
 const verdictIcon = { allowed: ShieldCheck, blocked: ShieldBan, rejected: Undo2 } as const
-const verdictTone = { allowed: 'text-emerald-700 dark:text-emerald-400', blocked: 'text-red-700 dark:text-red-400', rejected: 'text-amber-700 dark:text-amber-400' } as const
+const verdictTone = { allowed: toneText.success, blocked: toneText.danger, rejected: toneText.warning } as const
 
 function TableView({ map }: { map: NetworkMap }) {
   return (
@@ -179,51 +195,70 @@ function TableView({ map }: { map: NetworkMap }) {
         <h2 id="network-services" className="text-sm font-semibold">
           Services
         </h2>
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Service</TableHead>
-                <TableHead className="hidden md:table-cell">DNS name</TableHead>
-                <TableHead className="hidden sm:table-cell">Virtual IP</TableHead>
-                <TableHead className="hidden lg:table-cell">Ports</TableHead>
-                <TableHead>Switch</TableHead>
-                <TableHead className="hidden lg:table-cell">Domains</TableHead>
-                <TableHead className="hidden lg:table-cell">TCP</TableHead>
+        <TableFrame>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Service</TableHead>
+              <TableHead className="hidden md:table-cell">DNS name</TableHead>
+              <TableHead className="hidden sm:table-cell">Virtual IP</TableHead>
+              <TableHead className="hidden lg:table-cell">Ports</TableHead>
+              <TableHead>Switch</TableHead>
+              <TableHead className="hidden lg:table-cell">Domains</TableHead>
+              <TableHead className="hidden lg:table-cell">TCP</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {map.services.map(s => (
+              <TableRow key={s.id}>
+                <TableCell>
+                  <Link to="/services/$service" params={{ service: s.id }} className="inline-flex items-center gap-2 font-medium underline-offset-4 hover:underline">
+                    <Box className="size-4 text-muted-foreground" aria-hidden />
+                    {s.name}
+                  </Link>
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  <Mono>{s.dns}</Mono>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell">
+                  <Mono>{s.virtual_ip ?? '—'}</Mono>
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  <Mono>{s.ports.map(portSpecText).join(', ') || '—'}</Mono>
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <span className="flex flex-wrap items-center gap-1">
+                    {s.switch.deployment && <Mono>{switchText(s.switch)}</Mono>}
+                    <SwitchBadge sw={s.switch} />
+                    {s.switch.draining && (
+                      <span className="text-xs text-muted-foreground">
+                        draining #{s.switch.draining.number}
+                        {s.switch.draining.address ? ` ${s.switch.draining.address}` : ''}
+                      </span>
+                    )}
+                  </span>
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {s.domains.length ? (
+                    s.domains.map(d => (
+                      <Mono key={d.id} className="block">
+                        {d.hostname}
+                      </Mono>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {s.exposures.length ? (
+                    s.exposures.map(x => <Mono key={x.id} className="block">{`${x.public ?? `:${x.host_port}`} → ${x.port}`}</Mono>)
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {map.services.map(s => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <Link to="/services/$service" params={{ service: s.id }} className="inline-flex items-center gap-2 font-medium underline-offset-4 hover:underline">
-                      <Box className="size-4 text-muted-foreground" aria-hidden />
-                      {s.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <Mono>{s.dns}</Mono>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <Mono>{s.virtual_ip ?? '—'}</Mono>
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    <Mono>{s.ports.map(p => `${p.port}/${p.grpc ? 'grpc' : p.protocol}`).join(', ') || '—'}</Mono>
-                  </TableCell>
-                  <TableCell className="whitespace-normal">
-                    <span className="flex flex-wrap items-center gap-1">
-                      {s.switch.deployment && <Mono>{switchText(s.switch)}</Mono>}
-                      <SwitchBadge sw={s.switch} />
-                      {s.switch.draining && <span className="text-xs text-muted-foreground">draining #{s.switch.draining.number}{s.switch.draining.address ? ` ${s.switch.draining.address}` : ''}</span>}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">{s.domains.length ? s.domains.map(d => <Mono key={d.id} className="block">{d.hostname}</Mono>) : <span className="text-muted-foreground">—</span>}</TableCell>
-                  <TableCell className="hidden lg:table-cell">{s.exposures.length ? s.exposures.map(x => <Mono key={x.id} className="block">{`${x.public ?? `:${x.host_port}`} → ${x.port}`}</Mono>) : <span className="text-muted-foreground">—</span>}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </TableFrame>
       </section>
       <section className="space-y-2" aria-labelledby="network-inbound">
         <h2 id="network-inbound" className="text-sm font-semibold">
@@ -232,48 +267,40 @@ function TableView({ map }: { map: NetworkMap }) {
         <p className="text-sm text-muted-foreground">
           Web ports {map.inbound.web_ports} · public address <Mono>{map.inbound.public_address ?? 'not set'}</Mono>
         </p>
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="hidden sm:table-cell">Kind</TableHead>
-                <TableHead>Entry</TableHead>
-                <TableHead>Service</TableHead>
-                <TableHead className="hidden sm:table-cell">Port</TableHead>
-                <TableHead className="hidden md:table-cell">State</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {map.inbound.entries.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    Nothing in this environment is reachable from the internet.
+        <TableFrame>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="hidden sm:table-cell">Kind</TableHead>
+              <TableHead>Entry</TableHead>
+              <TableHead>Service</TableHead>
+              <TableHead className="hidden sm:table-cell">Port</TableHead>
+              <TableHead className="hidden md:table-cell">State</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {map.inbound.entries.length === 0 && <EmptyRow columns={5}>Nothing in this environment is reachable from the internet.</EmptyRow>}
+            {map.inbound.entries.map(e => {
+              const svc = map.services.find(s => s.name === e.service)
+              const domain = e.kind === 'domain' ? svc?.domains.find(d => d.hostname === e.hostname) : undefined
+              const exposure = e.kind === 'tcp' ? svc?.exposures.find(x => x.public === e.public && x.port === e.port) : undefined
+              return (
+                <TableRow key={e.kind === 'domain' ? e.hostname : `${e.public}-${e.port}`}>
+                  <TableCell className="hidden sm:table-cell">{e.kind === 'domain' ? 'Domain' : 'TCP'}</TableCell>
+                  <TableCell className="max-w-48 truncate sm:max-w-none">
+                    <Mono>{e.kind === 'domain' ? e.hostname : (e.public ?? 'no public address')}</Mono>
+                  </TableCell>
+                  <TableCell>{e.service}</TableCell>
+                  <TableCell className="hidden tabular-nums sm:table-cell">{e.port}</TableCell>
+                  <TableCell className="hidden text-sm md:table-cell">
+                    {domain
+                      ? `${domain.status}, certificate ${domain.certificate.status}, route ${domain.route.result ?? 'not reported'}`
+                      : `${exposure?.status ?? '—'}, ${exposure?.result ?? 'not reported'}`}
                   </TableCell>
                 </TableRow>
-              )}
-              {map.inbound.entries.map(e => {
-                const svc = map.services.find(s => s.name === e.service)
-                const domain = e.kind === 'domain' ? svc?.domains.find(d => d.hostname === e.hostname) : undefined
-                const exposure = e.kind === 'tcp' ? svc?.exposures.find(x => x.public === e.public && x.port === e.port) : undefined
-                return (
-                  <TableRow key={e.kind === 'domain' ? e.hostname : `${e.public}-${e.port}`}>
-                    <TableCell className="hidden sm:table-cell">{e.kind === 'domain' ? 'Domain' : 'TCP'}</TableCell>
-                    <TableCell className="max-w-48 truncate sm:max-w-none">
-                      <Mono>{e.kind === 'domain' ? e.hostname : (e.public ?? 'no public address')}</Mono>
-                    </TableCell>
-                    <TableCell>{e.service}</TableCell>
-                    <TableCell className="hidden tabular-nums sm:table-cell">{e.port}</TableCell>
-                    <TableCell className="hidden text-sm md:table-cell">
-                      {domain
-                        ? `${domain.status}, certificate ${domain.certificate.status}, route ${domain.route.result ?? 'not reported'}`
-                        : `${exposure?.status ?? '—'}, ${exposure?.result ?? 'not reported'}`}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
+              )
+            })}
+          </TableBody>
+        </TableFrame>
       </section>
       <PathsTable map={map} />
     </div>
@@ -286,52 +313,42 @@ function PathsTable({ map }: { map: NetworkMap }) {
       <h2 id="network-paths" className="text-sm font-semibold">
         Paths
       </h2>
-      <div className="overflow-hidden rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Path</TableHead>
-              <TableHead className="hidden md:table-cell">From</TableHead>
-              <TableHead>To</TableHead>
-              <TableHead>Verdict</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {map.paths.map(p => {
-              const Icon = verdictIcon[p.verdict]
-              return (
-                <TableRow key={p.path}>
-                  <TableCell>
-                    <Mono>{p.path}</Mono>
-                  </TableCell>
-                  <TableCell className="hidden text-muted-foreground md:table-cell">{p.from}</TableCell>
-                  <TableCell className="whitespace-normal sm:min-w-56">{p.to}</TableCell>
-                  <TableCell>
-                    <span className={cn('inline-flex items-center gap-1.5 text-sm font-medium', verdictTone[p.verdict])}>
-                      <Icon className="size-4" aria-hidden />
-                      {p.verdict}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
+      <TableFrame>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Path</TableHead>
+            <TableHead className="hidden md:table-cell">From</TableHead>
+            <TableHead>To</TableHead>
+            <TableHead>Verdict</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {map.paths.map(p => {
+            const Icon = verdictIcon[p.verdict]
+            return (
+              <TableRow key={p.path}>
+                <TableCell>
+                  <Mono>{p.path}</Mono>
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">{p.from}</TableCell>
+                <TableCell className="whitespace-normal sm:min-w-56">{p.to}</TableCell>
+                <TableCell>
+                  <span className={cn('inline-flex items-center gap-1.5 text-sm font-medium', verdictTone[p.verdict])}>
+                    <Icon className="size-4" aria-hidden />
+                    {p.verdict}
+                  </span>
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </TableFrame>
     </section>
   )
 }
 
-const peerText = (peer: Connections['connections'][number]['peer']) => {
-  if (peer.kind === 'service') return peer.service ?? peer.service_id ?? 'service'
-  if (peer.address) return `${peer.kind} ${peer.address}`
-  return peer.kind
-}
-
-const ageText = (seconds: number | null) => (seconds === null ? '—' : `${seconds} s`)
-
 function LiveTables({ live }: { live: LiveNetwork }) {
-  const rows = live.samples.flatMap(s => s.connections.map((c, i) => ({ key: `${s.service.id}-${i}`, service: s.service.name, names: s.untrusted.names, c })))
+  const rows = live.samples.flatMap(s => s.connections.map((connection, i) => ({ key: `${s.service.id}-${i}`, service: s.service.name, names: s.untrusted.names, connection })))
   const refused = live.samples.flatMap(s => s.refused.map((r, i) => ({ key: `${s.service.id}-r${i}`, service: s.service.name, r })))
   return (
     <div className="space-y-6">
@@ -339,92 +356,40 @@ function LiveTables({ live }: { live: LiveNetwork }) {
         <h2 id="network-live-connections" className="text-sm font-semibold">
           Live connections
         </h2>
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Service</TableHead>
-                <TableHead>Direction</TableHead>
-                <TableHead>Peer</TableHead>
-                <TableHead className="hidden sm:table-cell">Port</TableHead>
-                <TableHead className="hidden sm:table-cell">Flows</TableHead>
-                <TableHead className="hidden md:table-cell">Out</TableHead>
-                <TableHead className="hidden md:table-cell">In</TableHead>
-                <TableHead className="hidden lg:table-cell">Oldest</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-muted-foreground">
-                    {live.at ? 'No open connections in the last sample.' : 'Waiting for the first sample.'}
-                  </TableCell>
-                </TableRow>
-              )}
-              {rows.map(({ key, service, names, c }) => (
-                <TableRow key={key}>
-                  <TableCell>{service}</TableCell>
-                  <TableCell>{c.direction}</TableCell>
-                  <TableCell className="whitespace-normal">
-                    <Mono>{peerText(c.peer)}</Mono>
-                    {c.peer.address && names[c.peer.address] && <span className="ml-2 text-xs text-muted-foreground">resolved as {names[c.peer.address]}</span>}
-                  </TableCell>
-                  <TableCell className="hidden tabular-nums sm:table-cell">
-                    {c.port}/{c.protocol}
-                  </TableCell>
-                  <TableCell className="hidden tabular-nums sm:table-cell">
-                    {c.flows}
-                    {c.protocol === 'tcp' ? ` (${c.established} established)` : ''}
-                  </TableCell>
-                  <TableCell className="hidden tabular-nums md:table-cell">{rateText(c.bps_out)}</TableCell>
-                  <TableCell className="hidden tabular-nums md:table-cell">{rateText(c.bps_in)}</TableCell>
-                  <TableCell className="hidden tabular-nums lg:table-cell">{ageText(c.oldest_s)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ConnectionsTable live rows={rows} empty={live.at ? 'No open connections in the last sample.' : 'Waiting for the first sample.'} />
       </section>
       <section className="space-y-2" aria-labelledby="network-live-refused">
         <h2 id="network-live-refused" className="text-sm font-semibold">
           Refused attempts
         </h2>
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Service</TableHead>
-                <TableHead>Path</TableHead>
-                <TableHead className="hidden sm:table-cell">Destination</TableHead>
-                <TableHead className="hidden sm:table-cell">Count</TableHead>
-                <TableHead className="hidden md:table-cell">Expires in</TableHead>
+        <TableFrame>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Service</TableHead>
+              <TableHead>Path</TableHead>
+              <TableHead className="hidden sm:table-cell">Destination</TableHead>
+              <TableHead className="hidden sm:table-cell">Count</TableHead>
+              <TableHead className="hidden md:table-cell">Expires in</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {refused.length === 0 && <EmptyRow columns={5}>No refused attempts recorded.</EmptyRow>}
+            {refused.map(({ key, service, r }) => (
+              <TableRow key={key}>
+                <TableCell>{service}</TableCell>
+                <TableCell>
+                  <Mono className="block">{r.path}</Mono>
+                  <Mono className="block text-muted-foreground sm:hidden">{endpointText(r)}</Mono>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell">
+                  <Mono>{endpointText(r)}</Mono>
+                </TableCell>
+                <TableCell className="hidden tabular-nums sm:table-cell">{r.count}</TableCell>
+                <TableCell className="hidden tabular-nums md:table-cell">{ageText(r.expires_in_s)}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {refused.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    No refused attempts recorded.
-                  </TableCell>
-                </TableRow>
-              )}
-              {refused.map(({ key, service, r }) => (
-                <TableRow key={key}>
-                  <TableCell>{service}</TableCell>
-                  <TableCell>
-                    <Mono className="block">{r.path}</Mono>
-                    <Mono className="block text-muted-foreground sm:hidden">{`${r.address}:${r.port}/${r.protocol}`}</Mono>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <Mono>{`${r.address}:${r.port}/${r.protocol}`}</Mono>
-                  </TableCell>
-                  <TableCell className="hidden tabular-nums sm:table-cell">{r.count}</TableCell>
-                  <TableCell className="hidden tabular-nums md:table-cell">{ageText(r.expires_in_s)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </TableFrame>
       </section>
     </div>
   )
@@ -466,7 +431,7 @@ function Summary({ map }: { map: NetworkMap }) {
             on {s.station.name}, resolver <Mono>{s.resolver}</Mono>
           </span>
           {s.stale ? (
-            <Badge variant="outline" className="border-amber-300 font-normal text-amber-800 dark:border-amber-800 dark:text-amber-300">
+            <Badge variant="outline" className={cn('font-normal', toneOutline.warning)}>
               stale{s.observed_at ? `, reported ${ago(s.observed_at)}` : ', never reported'}
             </Badge>
           ) : (
@@ -505,12 +470,17 @@ function Warnings({ map }: { map: NetworkMap }) {
 
 export function NetworkPanel({ environment }: { environment: Environment }) {
   const network = useQuery(networkQuery(environment.id))
+  return (
+    <QueryState query={network} rows={4} errorTitle="The network map could not be loaded">
+      {map => <NetworkView environment={environment} map={map} />}
+    </QueryState>
+  )
+}
+
+function NetworkView({ environment, map }: { environment: Environment; map: NetworkMap }) {
   const [view, setView] = useState<'map' | 'table'>('map')
   const [liveOn, setLiveOn] = useState(false)
   const live = useLiveNetwork(environment.id, liveOn)
-  if (network.isPending) return <Rows count={4} />
-  if (network.isError) return <ErrorState error={network.error} title="The network map could not be loaded" />
-  const map = network.data
   return (
     <div className="space-y-4">
       <Summary map={map} />

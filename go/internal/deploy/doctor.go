@@ -91,10 +91,7 @@ func (c *checkBuilder) build() protocol.DoctorCheck {
 	return out
 }
 
-func (s *Station) doctorRun(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityDoctorV1) {
-		return
-	}
+func (s *Station) doctorRun(ctx context.Context, m dispatch.Message, _ protocol.DoctorRunBody) {
 	ref := m.ID
 	s.send(protocol.MessageDoctorReport, &ref, s.doctorReport(ctx))
 }
@@ -227,7 +224,7 @@ type diskFS struct {
 }
 
 func (s *Station) diskThresholds() (warn, crit int) {
-	warn, crit = 80, 90
+	warn, crit = protocol.SettingDefaultDiskWarningPct, protocol.SettingDefaultDiskCriticalPct
 	if s.plan != nil {
 		if v := s.plan.Generation.Station.Settings.DiskWarningPct; v > 0 {
 			warn = v
@@ -245,9 +242,9 @@ func (s *Station) diskBreakdown() map[string]int64 {
 		switch {
 		case name == docker.DepotVolume:
 			breakdown["depot"] += size
-		case strings.HasPrefix(name, "or-workshop-") || strings.HasPrefix(name, "or-railpack-"):
+		case strings.HasPrefix(name, protocol.ResourcePrefix+"workshop-") || strings.HasPrefix(name, protocol.ResourcePrefix+"railpack-"):
 			breakdown["build_cache"] += size
-		case strings.HasPrefix(name, "or-"):
+		case strings.HasPrefix(name, protocol.ResourcePrefix):
 			breakdown["platform"] += size
 		default:
 			breakdown["volumes"] += size

@@ -1,6 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
-import { McpServer, fromJsonSchema, type CallToolResult, type JsonSchemaType } from '@modelcontextprotocol/server'
+import { McpServer, type CallToolResult, type JsonSchemaType, type ServerContext } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
+import { jsonSchema } from './schema.ts'
 
 export const bridgeProtocolVersion = '2026-07-28'
 
@@ -10,7 +11,12 @@ export type LocalTool = {
   description: string
   inputSchema: JsonSchemaType
   annotations: Record<string, unknown>
-  run: (args: Record<string, unknown>, progress: (message: string) => Promise<void>) => Promise<CallToolResult>
+  run: (args: Record<string, unknown>, context: LocalContext) => Promise<CallToolResult>
+}
+
+export type LocalContext = {
+  progress: (message: string) => Promise<void>
+  call: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>
 }
 
 export type BridgeSpec = {
@@ -66,50 +72,52 @@ export const serveBridge = (spec: BridgeSpec) => {
       const client = await connect()
       const { tools } = await client.listTools()
       const server = new McpServer({ name: 'stationly', version: spec.version }, { capabilities: { tools: { listChanged: false } }, instructions: client.getInstructions() })
+      const forward = async (name: string, args: Record<string, unknown>, request: ServerContext, relay: boolean): Promise<CallToolResult> => {
+        const progressToken = request.mcpReq._meta?.progressToken
+        try {
+          return (await client.callTool(
+            { name, arguments: args },
+            {
+              signal: request.mcpReq.signal,
+              timeout: 3_700_000,
+              resetTimeoutOnProgress: true,
+              onprogress:
+                !relay || progressToken === undefined
+                  ? undefined
+                  : progress => void request.mcpReq.notify({ method: 'notifications/progress', params: { ...progress, progressToken } })
+            }
+          )) as CallToolResult
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error)
+          spec.log('remote.call_failed', { tool: name, error: detail })
+          return /401|unauthori[sz]ed/i.test(detail) ? unauthenticated(spec.client, detail) : unreachable(detail)
+        }
+      }
       for (const tool of tools) {
         server.registerTool(
           tool.name,
           {
             title: tool.title,
             description: tool.description,
-            inputSchema: fromJsonSchema(tool.inputSchema as JsonSchemaType),
+            inputSchema: jsonSchema(tool.inputSchema as JsonSchemaType),
+            ...(tool.outputSchema ? { outputSchema: jsonSchema(tool.outputSchema as JsonSchemaType) } : {}),
             annotations: tool.annotations,
             _meta: tool._meta
           },
-          async (args, request) => {
-            const progressToken = request.mcpReq._meta?.progressToken
-            try {
-              return (await client.callTool(
-                { name: tool.name, arguments: args as Record<string, unknown> },
-                {
-                  signal: request.mcpReq.signal,
-                  timeout: 3_700_000,
-                  resetTimeoutOnProgress: true,
-                  onprogress:
-                    progressToken === undefined
-                      ? undefined
-                      : progress => void request.mcpReq.notify({ method: 'notifications/progress', params: { ...progress, progressToken } })
-                }
-              )) as CallToolResult
-            } catch (error) {
-              const detail = error instanceof Error ? error.message : String(error)
-              spec.log('remote.call_failed', { tool: tool.name, error: detail })
-              return /401|unauthori[sz]ed/i.test(detail) ? unauthenticated(spec.client, detail) : unreachable(detail)
-            }
-          }
+          (args, request) => forward(tool.name, args, request, true)
         )
       }
       for (const local of spec.local ?? []) {
-        server.registerTool(local.name, { title: local.title, description: local.description, inputSchema: fromJsonSchema(local.inputSchema), annotations: local.annotations }, async (args, request) => {
+        server.registerTool(local.name, { title: local.title, description: local.description, inputSchema: jsonSchema(local.inputSchema), annotations: local.annotations }, async (args, request) => {
           const progressToken = request.mcpReq._meta?.progressToken
           let step = 0
           const progress = async (message: string) => {
             if (progressToken !== undefined) await request.mcpReq.notify({ method: 'notifications/progress', params: { progressToken, progress: ++step, message } })
           }
           try {
-            return await local.run(args as Record<string, unknown>, progress)
+            return await local.run(args, { progress, call: (name, input) => forward(name, input, request, false) })
           } catch (error) {
-            return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'INTERNAL_ERROR', explanation: error instanceof Error ? error.message : String(error), fix: 'Check the path and retry.' } }) }] }
+            return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'INTERNAL_ERROR', explanation: error instanceof Error ? error.message : String(error), fix: 'Check the input and retry.' } }) }] }
           }
         })
       }

@@ -386,8 +386,8 @@ func (m *Manager) solve(ctx context.Context, socket string, rec Record, registry
 
 func (m *Manager) prepare(ctx context.Context, req Request, pins Pins, couplerID, stationID string) (string, error) {
 	vols := docker.PrepareVolumes{
-		Context: "or-prepare-" + req.BuildID + "-ctx",
-		Plan:    "or-prepare-" + req.BuildID + "-plan",
+		Context: docker.PrepareName(req.BuildID) + "-ctx",
+		Plan:    docker.PrepareName(req.BuildID) + "-plan",
 		Cache:   railpackCacheVolume(req.ProjectID),
 	}
 	labels := map[string]string{docker.LabelStation: stationID, docker.LabelRole: docker.RolePrepare, docker.LabelProject: req.ProjectID}

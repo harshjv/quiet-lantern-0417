@@ -1,0 +1,222 @@
+{
+  "encodings": [
+    {
+      "value": ">>>???~~~secret",
+      "forms": [
+        ">>>???~~~secret",
+        "Pj4+Pz8/fn5+c2VjcmV0",
+        "Pj4-Pz8_fn5-c2VjcmV0",
+        "%3E%3E%3E%3F%3F%3F~~~secret",
+        "%3E%3E%3E%3F%3F%3F~~~secret",
+        "%3E%3E%3E%3F%3F%3F~~~secret"
+      ]
+    },
+    {
+      "value": "p@ss:w0rd!",
+      "forms": [
+        "p@ss:w0rd!",
+        "cEBzczp3MHJkIQ",
+        "cEBzczp3MHJkIQ",
+        "p%40ss%3Aw0rd%21",
+        "p%40ss%3Aw0rd%21",
+        "p%40ss%3Aw0rd!"
+      ]
+    },
+    {
+      "value": "a/b/c/secret-1",
+      "forms": [
+        "a/b/c/secret-1",
+        "YS9iL2Mvc2VjcmV0LTE",
+        "YS9iL2Mvc2VjcmV0LTE",
+        "a%2Fb%2Fc%2Fsecret-1",
+        "a%2Fb%2Fc%2Fsecret-1",
+        "a%2Fb%2Fc%2Fsecret-1"
+      ]
+    },
+    {
+      "value": "correct horse battery",
+      "forms": [
+        "correct horse battery",
+        "Y29ycmVjdCBob3JzZSBiYXR0ZXJ5",
+        "Y29ycmVjdCBob3JzZSBiYXR0ZXJ5",
+        "correct%20horse%20battery",
+        "correct+horse+battery",
+        "correct%20horse%20battery"
+      ]
+    },
+    {
+      "value": "pässwörd✓",
+      "forms": [
+        "pässwörd✓",
+        "cMOkc3N3w7ZyZOKckw",
+        "cMOkc3N3w7ZyZOKckw",
+        "p%C3%A4ssw%C3%B6rd%E2%9C%93",
+        "p%C3%A4ssw%C3%B6rd%E2%9C%93",
+        "p%C3%A4ssw%C3%B6rd%E2%9C%93"
+      ]
+    },
+    {
+      "value": "it's (very) *secret*",
+      "forms": [
+        "it's (very) *secret*",
+        "aXQncyAodmVyeSkgKnNlY3JldCo",
+        "aXQncyAodmVyeSkgKnNlY3JldCo",
+        "it%27s%20%28very%29%20%2Asecret%2A",
+        "it%27s+%28very%29+%2Asecret%2A",
+        "it's%20(very)%20*secret*"
+      ]
+    },
+    {
+      "value": "multi-line-one\nmulti-line-two\r\nok",
+      "forms": [
+        "multi-line-one\nmulti-line-two\r\nok",
+        "bXVsdGktbGluZS1vbmUKbXVsdGktbGluZS10d28NCm9r",
+        "bXVsdGktbGluZS1vbmUKbXVsdGktbGluZS10d28NCm9r",
+        "multi-line-one%0Amulti-line-two%0D%0Aok",
+        "multi-line-one%0Amulti-line-two%0D%0Aok",
+        "multi-line-one%0Amulti-line-two%0D%0Aok"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "reserved characters in every encoded form",
+      "known": [
+        {
+          "key": "DB_PASSWORD",
+          "value": "p@ss:w0rd!"
+        }
+      ],
+      "input": "[p@ss:w0rd!] [cEBzczp3MHJkIQ] [cEBzczp3MHJkIQ] [p%40ss%3Aw0rd%21] [p%40ss%3Aw0rd%21] [p%40ss%3Aw0rd!]",
+      "output": "[[redacted:DB_PASSWORD]] [[redacted:DB_PASSWORD]] [[redacted:DB_PASSWORD]] [[redacted:DB_PASSWORD]] [[redacted:DB_PASSWORD]] [[redacted:DB_PASSWORD]]"
+    },
+    {
+      "name": "base64 and base64url differ in + and /",
+      "known": [
+        {
+          "key": "BYTES",
+          "value": ">>>???~~~secret"
+        }
+      ],
+      "input": ">>>???~~~secret Pj4+Pz8/fn5+c2VjcmV0 Pj4-Pz8_fn5-c2VjcmV0 %3E%3E%3E%3F%3F%3F~~~secret %3E%3E%3E%3F%3F%3F~~~secret %3E%3E%3E%3F%3F%3F~~~secret",
+      "output": "[redacted:BYTES] [redacted:BYTES] [redacted:BYTES] [redacted:BYTES] [redacted:BYTES] [redacted:BYTES]"
+    },
+    {
+      "name": "slashes in a URL",
+      "known": [
+        {
+          "key": "TOKEN",
+          "value": "a/b/c/secret-1"
+        }
+      ],
+      "input": "GET https://x.test/a/b/c/secret-1?k=a%2Fb%2Fc%2Fsecret-1",
+      "output": "GET https://x.test/[redacted:TOKEN]?k=[redacted:TOKEN]"
+    },
+    {
+      "name": "spaces as %20 and as +",
+      "known": [
+        {
+          "key": "PHRASE",
+          "value": "correct horse battery"
+        }
+      ],
+      "input": "q=correct+horse+battery path=/correct%20horse%20battery raw=correct horse battery",
+      "output": "q=[redacted:PHRASE] path=/[redacted:PHRASE] raw=[redacted:PHRASE]"
+    },
+    {
+      "name": "unicode in plain, base64 and percent forms",
+      "known": [
+        {
+          "key": "UNI",
+          "value": "pässwörd✓"
+        }
+      ],
+      "input": "pässwörd✓\ncMOkc3N3w7ZyZOKckw\ncMOkc3N3w7ZyZOKckw\np%C3%A4ssw%C3%B6rd%E2%9C%93\np%C3%A4ssw%C3%B6rd%E2%9C%93\np%C3%A4ssw%C3%B6rd%E2%9C%93",
+      "output": "[redacted:UNI]\n[redacted:UNI]\n[redacted:UNI]\n[redacted:UNI]\n[redacted:UNI]\n[redacted:UNI]"
+    },
+    {
+      "name": "seven characters that are more than eight bytes are not redacted",
+      "known": [
+        {
+          "key": "SHORT_UNICODE",
+          "value": "pässwör"
+        }
+      ],
+      "input": "value=pässwör",
+      "output": "value=pässwör"
+    },
+    {
+      "name": "characters encodeURIComponent leaves alone",
+      "known": [
+        {
+          "key": "QUOTED",
+          "value": "it's (very) *secret*"
+        }
+      ],
+      "input": "it's (very) *secret* | aXQncyAodmVyeSkgKnNlY3JldCo | aXQncyAodmVyeSkgKnNlY3JldCo | it%27s%20%28very%29%20%2Asecret%2A | it%27s+%28very%29+%2Asecret%2A | it's%20(very)%20*secret*",
+      "output": "[redacted:QUOTED] | [redacted:QUOTED] | [redacted:QUOTED] | [redacted:QUOTED] | [redacted:QUOTED] | [redacted:QUOTED]"
+    },
+    {
+      "name": "a multi-line value redacted whole and line by line",
+      "known": [
+        {
+          "key": "PEM",
+          "value": "multi-line-one\nmulti-line-two\r\nok"
+        }
+      ],
+      "input": "whole:multi-line-one\nmulti-line-two\r\nok\nline: multi-line-two\r\nother: multi-line-one\nshort: ok",
+      "output": "whole:[redacted:PEM]\nline: [redacted:PEM]\r\nother: [redacted:PEM]\nshort: ok"
+    },
+    {
+      "name": "short and purely numeric values are not redacted",
+      "known": [
+        {
+          "key": "PIN",
+          "value": "1234567890"
+        },
+        {
+          "key": "TINY",
+          "value": "short"
+        }
+      ],
+      "input": "pin=1234567890 tiny=short",
+      "output": "pin=1234567890 tiny=short"
+    },
+    {
+      "name": "token patterns without a known value",
+      "known": [],
+      "input": "key=sly_abcdefgh12345678 recovery=sly-rk-ABCDEFGH234567 not=sly_short",
+      "output": "key=[redacted] recovery=[redacted] not=sly_short"
+    },
+    {
+      "name": "the longer of two overlapping values wins",
+      "known": [
+        {
+          "key": "INNER",
+          "value": "inner-secret"
+        },
+        {
+          "key": "OUTER",
+          "value": "outer-inner-secret-x"
+        }
+      ],
+      "input": "outer-inner-secret-x and inner-secret",
+      "output": "[redacted:OUTER] and [redacted:INNER]"
+    },
+    {
+      "name": "one pass never rewrites an inserted replacement",
+      "known": [
+        {
+          "key": "FIRST",
+          "value": "abcdefgh-1234"
+        },
+        {
+          "key": "WORD",
+          "value": "redacted"
+        }
+      ],
+      "input": "abcdefgh-1234 redacted",
+      "output": "[redacted:FIRST] [redacted:WORD]"
+    }
+  ]
+}

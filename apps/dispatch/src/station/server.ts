@@ -7,6 +7,7 @@ import type { Duplex } from 'node:stream'
 import {
   closeCodes,
   limits,
+  networkLayout,
   protocolVersion,
   stationConnectPath,
   subprotocol,
@@ -23,8 +24,11 @@ import { and, asc, eq, inArray, isNull, lt, or } from 'drizzle-orm'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { audit_event, build, deployment, run, sandbox, service, setting, station, token, variable } from '../db/schema.ts'
+import { audit_event, build, deployment, run, sandbox, service, station, token, variable } from '../db/schema.ts'
+import { readSetting, storedSetting, writeSetting } from '../db/settings.ts'
+import { contains, hostAt, parseCidr, slash24Index, slash24sFrom } from '../net/cidr.ts'
 import { cloneUrl } from '../github/client.ts'
+import { env } from '../env.ts'
 import type { GitHub } from '../github/service.ts'
 import { GenerationError } from '../generation/build.ts'
 import { secretsDeliver } from '../secrets/deploy.ts'
@@ -51,7 +55,7 @@ const reconcileEveryMs = 2_000
 const ackEveryMs = 1_000
 const ackEveryRecords = 100
 const requestTimeoutMs = 30_000
-const dispatchCapabilities: Capability[] = ['generation.v1', 'secrets.v1', 'registry.v1', 'platform.v1', 'doctor.v1', 'volumes.v1', 'logs.follow', 'metrics.v1', 'network.v1', 'exec.tty', 'sandbox.v1']
+const dispatchCapabilities: Capability[] = ['generation.v1', 'secrets.v1', 'registry.v1', 'platform.v1', 'doctor.v1', 'volumes.v1', 'logs.follow', 'metrics.v1', 'network.v1', 'exec.tty', 'forward.tcp', 'sandbox.v1']
 const streamHighWater = 1024 * 1024
 const streamLowWater = 256 * 1024
 const creditBatch = limits.streamWindowBytes / 4
@@ -63,7 +67,7 @@ type Pending = { type: MessageType; resolve: (envelope: RawEnvelope) => void; re
 
 type StreamRequest = 'logs.follow' | 'metrics.subscribe' | 'network.subscribe' | 'forward.open'
 
-const streamCapability: Record<StreamRequest, Capability> = { 'logs.follow': 'logs.follow', 'metrics.subscribe': 'metrics.v1', 'network.subscribe': 'network.v1', 'forward.open': 'sandbox.v1' }
+const streamCapability: Record<StreamRequest, Capability> = { 'logs.follow': 'logs.follow', 'metrics.subscribe': 'metrics.v1', 'network.subscribe': 'network.v1', 'forward.open': 'forward.tcp' }
 
 export type StreamHandlers = {
   onData?: (items: unknown[], bytes: number) => void
@@ -153,29 +157,15 @@ export type StationServerOptions = {
   log?: (event: string, fields: Record<string, unknown>) => void
 }
 
-const octetsOf = (cidr: string) => {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(cidr)
-  if (!m) return null
-  const o = m.slice(1, 5).map(Number)
-  const bits = Number(m[5])
-  if (o.some(v => v > 255) || bits > 32) return null
-  return { value: ((o[0]! << 24) >>> 0) + (o[1]! << 16) + (o[2]! << 8) + o[3]!, bits, octets: o }
-}
-
-const contains = (outer: { value: number; bits: number }, inner: { value: number; bits: number }) => {
-  if (inner.bits < outer.bits) return false
-  const mask = outer.bits === 0 ? 0 : (~0 << (32 - outer.bits)) >>> 0
-  return ((outer.value & mask) >>> 0) === ((inner.value & mask) >>> 0)
-}
+const registryAddress = (subnet: string) => `${hostAt(subnet, networkLayout.registryHost)}:${networkLayout.registryPort}`
 
 export const installProposalProblem = (proposal: { ipam_pool: string; registry_subnet: string }) => {
-  const pool = octetsOf(proposal.ipam_pool)
-  const subnet = octetsOf(proposal.registry_subnet)
+  const pool = parseCidr(proposal.ipam_pool)
+  const subnet = parseCidr(proposal.registry_subnet)
   if (!pool || pool.bits > 22) return `ipam_pool ${proposal.ipam_pool} is not a CIDR of /22 or wider`
   if (!subnet || subnet.bits !== 24) return `registry_subnet ${proposal.registry_subnet} is not a /24`
   if (!contains(pool, subnet)) return `registry_subnet ${proposal.registry_subnet} lies outside ipam_pool ${proposal.ipam_pool}`
-  const index = subnet.octets[2]! - pool.octets[2]!
-  if (index < 2) return `registry_subnet ${proposal.registry_subnet} is one of the system and ingress /24s`
+  if (slash24Index(pool, subnet) <= networkLayout.ingressIndex) return `registry_subnet ${proposal.registry_subnet} is one of the system and ingress /24s`
   return null
 }
 
@@ -855,7 +845,7 @@ export const createStationServer = (options: StationServerOptions) => {
   }
 
   const enrollToken = (presentedToken: string): EnrollToken | undefined => {
-    const bootstrap = process.env.STATIONLY_BOOTSTRAP_ENROLL_SHA256
+    const bootstrap = env().STATIONLY_BOOTSTRAP_ENROLL_SHA256
     const presented = tokenDigest(presentedToken)
     if (bootstrap && sameDigest(presented, bootstrap.toLowerCase())) {
       const hosts = db.select({ id: station.id }).from(station).where(and(eq(station.hosts_dispatch, true), isNull(station.revoked_at))).all()
@@ -871,13 +861,9 @@ export const createStationServer = (options: StationServerOptions) => {
   }
 
   const allocateRegistry = () => {
-    const pool = (db.select().from(setting).where(eq(setting.key, 'ipam.pool')).get()?.value as string | undefined) ?? '10.200.0.0/16'
-    const [base] = pool.split('/')
-    const [a, b, third] = base!.split('.').map(Number)
     const taken = new Set(db.select({ subnet: station.registry_subnet }).from(station).all().map(s => s.subnet))
-    for (let i = 3; i < 256 - third!; i++) {
-      const subnet = `${a}.${b}.${third! + i}.0/24`
-      if (!taken.has(subnet)) return { registry_subnet: subnet, registry_address: `${a}.${b}.${third! + i}.2:5000` }
+    for (const { subnet } of slash24sFrom(readSetting(db, 'ipam.pool'), networkLayout.registryFirstIndex)) {
+      if (!taken.has(subnet)) return { registry_subnet: subnet, registry_address: registryAddress(subnet) }
     }
     throw new Error('no free /24 left in ipam.pool for a registry subnet')
   }
@@ -888,24 +874,22 @@ export const createStationServer = (options: StationServerOptions) => {
     const enrolledWith = enrollToken(body.token)
     const verified = verifyEnroll(body, enrolledWith, conn.challenge, now)
     if (!verified.ok) return fatal(conn, verified.refusal)
-    const instanceId = db.select().from(setting).where(eq(setting.key, 'instance.id')).get()?.value as string | undefined
+    const instanceId = readSetting(db, 'instance.id')
     if (!instanceId) return fatal(conn, { code: 'ENROLL_TOKEN_INVALID', close: closeCodes.revoked, explanation: 'Dispatch has no instance.id yet', fix: 'Run sly setup first.' })
     const proposal = enrolledWith?.kind === 'bootstrap' ? body.install : undefined
     const stationId = enrolledWith?.kind === 'row' ? enrolledWith.stationId : (proposal?.station_id ?? newId('station'))
     if (body.install && !proposal) log('station.enroll_install_ignored', { connection: conn.id, reason: 'only the bootstrap enrollment carries install-time values' })
     if (proposal) {
       const problem = installProposalProblem(proposal)
-      const stored = db.select().from(setting).where(eq(setting.key, 'ipam.pool')).get()?.value as string | undefined
+      const stored = storedSetting(db, 'ipam.pool')
       const refusal = problem ?? (stored !== undefined && stored !== proposal.ipam_pool ? `ipam.pool is ${stored} in Dispatch, the installer chose ${proposal.ipam_pool}` : null)
       if (refusal) return fatal(conn, { code: 'VALIDATION_FAILED', close: closeCodes.revoked, explanation: `The installer's values were refused: ${refusal}.`, fix: 'Reinstall so that the installer and Dispatch start from the same ipam.pool.' })
     }
     const registry = db.transaction(() => {
       let allocated: { registry_subnet: string; registry_address: string }
       if (proposal) {
-        const [a, b, c] = proposal.registry_subnet.split('/')[0]!.split('.')
-        allocated = { registry_subnet: proposal.registry_subnet, registry_address: `${a}.${b}.${c}.2:5000` }
-        if (db.select().from(setting).where(eq(setting.key, 'ipam.pool')).get() === undefined)
-          db.insert(setting).values({ key: 'ipam.pool', value: proposal.ipam_pool, updated_by: { type: 'station', id: stationId, client: 'bootstrap-enroll' } }).run()
+        allocated = { registry_subnet: proposal.registry_subnet, registry_address: registryAddress(proposal.registry_subnet) }
+        if (storedSetting(db, 'ipam.pool') === undefined) writeSetting(db, 'ipam.pool', proposal.ipam_pool, { type: 'station', id: stationId, client: 'bootstrap-enroll' })
       } else allocated = allocateRegistry()
       const enrolled = {
         public_key: body.public_key,
@@ -929,13 +913,12 @@ export const createStationServer = (options: StationServerOptions) => {
       }
       return { ...allocated, adopted: Boolean(proposal) }
     })
-    const settings = Object.fromEntries(db.select().from(setting).where(inArray(setting.key, ['ipam.pool', 'ipam.virtual_prefix'])).all().map(s => [s.key, s.value as string]))
     send(conn, 'enrolled', {
       station_id: stationId,
       instance_id: instanceId,
       registry_subnet: registry.registry_subnet,
       registry_address: registry.registry_address,
-      settings: { 'ipam.pool': settings['ipam.pool'] ?? '10.200.0.0/16', 'ipam.virtual_prefix': settings['ipam.virtual_prefix'] ?? '100.64.0.0/16' }
+      settings: { 'ipam.pool': readSetting(db, 'ipam.pool'), 'ipam.virtual_prefix': readSetting(db, 'ipam.virtual_prefix') }
     })
     log('station.enrolled', { station_id: stationId, connection: conn.id, token: enrolledWith?.kind, ...registry, skew_ms: verified.skewMs, remote: conn.remote })
     conn.phase = 'closed'
@@ -949,7 +932,7 @@ export const createStationServer = (options: StationServerOptions) => {
     const verified = verifyHello(body, st, conn.challenge, now)
     if (!verified.ok) return fatal(conn, verified.refusal)
     const stationId = st!.id
-    const instanceId = db.select().from(setting).where(eq(setting.key, 'instance.id')).get()?.value as string
+    const instanceId = readSetting(db, 'instance.id')!
     const older = byStation.get(stationId)
     if (older && older !== conn) {
       log('station.duplicate', { station_id: stationId, older: older.id, newer: conn.id })
@@ -1249,7 +1232,7 @@ export const createStationServer = (options: StationServerOptions) => {
   let gcPattern: { text: string; cron: Cron } | null = null
   let gcCheckedAt = new Date()
   const gcTick = () => {
-    const text = (db.select().from(setting).where(eq(setting.key, 'registry.gc_schedule')).get()?.value as string | undefined) ?? '0 3 * * *'
+    const text = readSetting(db, 'registry.gc_schedule')
     if (gcPattern?.text !== text) {
       try {
         gcPattern = { text, cron: new Cron(text, { timezone: 'UTC', paused: true }) }

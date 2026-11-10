@@ -19,32 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const (
-	DefaultPath = "/run/stationly/stationd.sock"
-	version     = 1
-	maxRequest  = 1 << 20
-)
-
-type Request struct {
-	V      int             `json:"v"`
-	ID     string          `json:"id"`
-	Op     string          `json:"op"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type ProgressBody struct {
-	Step   string `json:"step"`
-	Detail string `json:"detail,omitempty"`
-}
-
-type Line struct {
-	V        int                 `json:"v"`
-	ID       string              `json:"id"`
-	Progress *ProgressBody       `json:"progress,omitempty"`
-	OK       *bool               `json:"ok,omitempty"`
-	Result   json.RawMessage     `json:"result,omitempty"`
-	Error    *protocol.ErrorBody `json:"error,omitempty"`
-}
+const maxRequest = 1 << 20
 
 type Handler func(ctx context.Context, params json.RawMessage, progress func(step, detail string)) (any, *protocol.ErrorBody)
 
@@ -129,15 +104,15 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	defer conn.Close()
 	var mu sync.Mutex
 	enc := json.NewEncoder(conn)
-	write := func(l Line) {
+	write := func(l protocol.RootSocketLine) {
 		mu.Lock()
 		defer mu.Unlock()
-		l.V = version
+		l.V = protocol.RootSocketVersion
 		enc.Encode(l)
 	}
 	fail := func(id string, code protocol.ErrorCode, explanation, fix string) {
 		f := false
-		write(Line{ID: id, OK: &f, Error: &protocol.ErrorBody{Code: string(code), Explanation: explanation, Fix: fix}})
+		write(protocol.RootSocketLine{Id: id, Ok: &f, Error: &protocol.ErrorBody{Code: string(code), Explanation: explanation, Fix: fix}})
 	}
 	uid, err := peerUID(conn)
 	if err != nil || uid != 0 {
@@ -150,27 +125,27 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	if !sc.Scan() {
 		return
 	}
-	var req Request
-	if err := json.Unmarshal(sc.Bytes(), &req); err != nil || req.V != version || req.Op == "" {
-		fail(req.ID, protocol.ErrorCodeProtocolInvalidMessage, fmt.Sprintf("request is not a v%d root socket request", version), "Send {\"v\":1,\"id\",\"op\",\"params\"} on one line.")
+	var req protocol.RootSocketRequest
+	if err := json.Unmarshal(sc.Bytes(), &req); err != nil || req.V != protocol.RootSocketVersion || req.Op == "" {
+		fail(req.Id, protocol.ErrorCodeProtocolInvalidMessage, fmt.Sprintf("request is not a v%d root socket request", protocol.RootSocketVersion), "Send {\"v\":1,\"id\",\"op\",\"params\"} on one line.")
 		return
 	}
 	h, ok := s.handlers[req.Op]
 	if !ok {
-		fail(req.ID, protocol.ErrorCodeProtocolInvalidMessage, "unknown op "+req.Op, "Use one of the documented ops.")
+		fail(req.Id, protocol.ErrorCodeProtocolInvalidMessage, "unknown op "+req.Op, "Use one of the documented ops.")
 		return
 	}
-	s.log.Info("root socket request", "id", req.ID, "op", req.Op)
+	s.log.Info("root socket request", "id", req.Id, "op", req.Op)
 	result, failure := h(ctx, req.Params, func(step, detail string) {
-		write(Line{ID: req.ID, Progress: &ProgressBody{Step: step, Detail: detail}})
+		write(protocol.RootSocketLine{Id: req.Id, Progress: &protocol.RootSocketProgress{Step: step, Detail: detail}})
 	})
 	if failure != nil {
 		f := false
-		write(Line{ID: req.ID, OK: &f, Error: failure, Result: marshal(result)})
+		write(protocol.RootSocketLine{Id: req.Id, Ok: &f, Error: failure, Result: marshal(result)})
 		return
 	}
 	t := true
-	write(Line{ID: req.ID, OK: &t, Result: marshal(result)})
+	write(protocol.RootSocketLine{Id: req.Id, Ok: &t, Result: marshal(result)})
 }
 
 func marshal(v any) json.RawMessage {
@@ -184,7 +159,7 @@ func marshal(v any) json.RawMessage {
 	return b
 }
 
-func Call(path, op string, params any, progress func(ProgressBody)) (json.RawMessage, *protocol.ErrorBody, error) {
+func Call(path, op string, params any, progress func(protocol.RootSocketProgress)) (json.RawMessage, *protocol.ErrorBody, error) {
 	conn, err := net.Dial("unix", path)
 	if err != nil {
 		return nil, nil, err
@@ -195,13 +170,13 @@ func Call(path, op string, params any, progress func(ProgressBody)) (json.RawMes
 		return nil, nil, err
 	}
 	id := fmt.Sprintf("r%d", os.Getpid())
-	if err := json.NewEncoder(conn).Encode(Request{V: version, ID: id, Op: op, Params: body}); err != nil {
+	if err := json.NewEncoder(conn).Encode(protocol.RootSocketRequest{V: protocol.RootSocketVersion, Id: id, Op: op, Params: body}); err != nil {
 		return nil, nil, err
 	}
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 64<<10), 64<<20)
 	for sc.Scan() {
-		var l Line
+		var l protocol.RootSocketLine
 		if err := json.Unmarshal(sc.Bytes(), &l); err != nil {
 			return nil, nil, err
 		}
@@ -209,8 +184,8 @@ func Call(path, op string, params any, progress func(ProgressBody)) (json.RawMes
 			progress(*l.Progress)
 			continue
 		}
-		if l.OK != nil {
-			if !*l.OK {
+		if l.Ok != nil {
+			if !*l.Ok {
 				return l.Result, l.Error, nil
 			}
 			return l.Result, nil, nil

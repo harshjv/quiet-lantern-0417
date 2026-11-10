@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { api, ApiFailure, failureText, idempotency, unwrap } from '@/lib/api'
 import type { Sandbox } from '@/lib/api'
 import { attachUrl, outputFrame, stdinFrame } from '@/lib/sandbox'
+import { isIdle, isTransient } from '@/lib/status'
 import { cn } from '@/lib/utils'
 
 type Phase = 'connecting' | 'live' | 'ended' | 'error'
@@ -187,8 +188,8 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name'> }) {
 
 export function SandboxTerminal({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'status' | 'stop_at' | 'delete_at' | 'environment_id'> & { failure?: Sandbox['failure'] } }) {
   if (sandbox.status === 'running') return <ShellSession sandbox={sandbox} />
-  const busy = sandbox.status === 'creating' || sandbox.status === 'starting' || sandbox.status === 'stopping' || sandbox.status === 'deleting'
-  const idle = sandbox.status === 'stopped' || sandbox.status === 'failed'
+  const busy = isTransient(sandbox.status)
+  const idle = isIdle(sandbox.status)
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center" data-testid="terminal-stopped">
       {busy ? <Loader2 className="size-5 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden /> : sandbox.status === 'stopped' ? <Moon className="size-5 text-muted-foreground" aria-hidden /> : <TerminalSquare className="size-5 text-muted-foreground" aria-hidden />}

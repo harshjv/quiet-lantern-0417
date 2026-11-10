@@ -1,8 +1,7 @@
 import { Type } from '@sinclair/typebox'
-import { sandboxNetworkValues, sandboxTtl } from './model.ts'
-import { Port, StringEnum } from './primitives.ts'
-
-export const sandboxNamePattern = '^[a-z0-9][a-z0-9-]{0,62}$'
+import { variableKindValues } from './domain.ts'
+import { sandboxEgressModeValues, sandboxNetworkValues, sandboxTtl } from './model.ts'
+import { Port, slugPattern, StringEnum, variableKeyPattern } from './primitives.ts'
 
 export const sandboxExecLimits = { envBytes: 64 * 1024, stdinBytes: 256 * 1024, timeoutS: { default: 1800, max: 86400 }, activeRuns: 16, forwards: 16 } as const
 
@@ -17,7 +16,7 @@ export const SandboxSizeInput = Type.Object(
 
 export const SandboxEgressInput = Type.Object(
   {
-    mode: StringEnum(['open', 'allowlist']),
+    mode: StringEnum(sandboxEgressModeValues),
     domains: Type.Optional(
       Type.Array(
         Type.Object(
@@ -36,8 +35,8 @@ export const SandboxEgressInput = Type.Object(
 
 export const SandboxVariableSet = Type.Object(
   {
-    key: Type.String({ pattern: '^[A-Z_][A-Z0-9_]*$' }),
-    kind: StringEnum(['literal', 'reference', 'sealed']),
+    key: Type.String({ pattern: variableKeyPattern }),
+    kind: StringEnum(variableKindValues),
     value: Type.Optional(Type.String()),
     reference: Type.Optional(Type.String())
   },
@@ -59,7 +58,7 @@ const configurable = {
 
 export const SandboxCreateBody = Type.Object(
   {
-    name: Type.Optional(Type.String({ pattern: sandboxNamePattern })),
+    name: Type.Optional(Type.String({ pattern: slugPattern })),
     image: Type.Optional(Type.Object({ ref: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
     from: Type.Optional(
       Type.Union([Type.Object({ sandbox: Type.String({ minLength: 1 }) }, { additionalProperties: false }), Type.Object({ snapshot: Type.String({ minLength: 1 }) }, { additionalProperties: false })])
@@ -102,12 +101,12 @@ export const SandboxShellBody = Type.Object(
 export const SandboxVariablesPatchBody = Type.Object(
   {
     set: Type.Optional(Type.Array(SandboxVariableSet)),
-    unset: Type.Optional(Type.Array(Type.String({ pattern: '^[A-Z_][A-Z0-9_]*$' }))),
+    unset: Type.Optional(Type.Array(Type.String({ pattern: variableKeyPattern }))),
     allow_unresolved: Type.Optional(Type.Boolean())
   },
   { additionalProperties: false }
 )
 
-export const SandboxSnapshotBody = Type.Object({ name: Type.Optional(Type.String({ pattern: sandboxNamePattern })) }, { additionalProperties: false })
+export const SandboxSnapshotBody = Type.Object({ name: Type.Optional(Type.String({ pattern: slugPattern })) }, { additionalProperties: false })
 
 export const SandboxStorageGrowRequest = Type.Object({ size_bytes: Type.Integer({ minimum: 1 }) }, { additionalProperties: false })

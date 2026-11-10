@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { remaining } from '@/lib/sandbox'
+import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 export const useNow = (intervalMs = 1000) => {
@@ -15,7 +16,7 @@ export function TimeLeft({ sandbox, className }: { sandbox: { status: string; st
   const clock = remaining(sandbox, useNow())
   if (!clock) return <span className="text-muted-foreground">—</span>
   return (
-    <span className={cn('tabular-nums', clock.urgent && 'text-amber-700 dark:text-amber-400', className)}>
+    <span className={cn('tabular-nums', clock.urgent && toneText.warning, className)}>
       {clock.text} <span className="text-muted-foreground">{clock.label}</span>
     </span>
   )

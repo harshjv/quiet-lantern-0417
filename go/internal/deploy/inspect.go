@@ -49,11 +49,7 @@ func checkError(kind protocol.NetworkCheckKind, code string) protocol.NetworkChe
 	return protocol.NetworkCheckResult{Kind: kind, Error: ptr(code)}
 }
 
-func (s *Station) inspectNetwork(ctx context.Context, m dispatch.Message) {
-	var b protocol.NetworkInspectBody
-	if !s.networkBody(m, &b) {
-		return
-	}
+func (s *Station) inspectNetwork(ctx context.Context, m dispatch.Message, b protocol.NetworkInspectBody) {
 	if len(b.Checks) > 16 {
 		s.replyError(m, protocolError(protocol.ErrorCodeProtocolLimit, "Send at most 16 checks per network.inspect.", "network.inspect carried %d checks", len(b.Checks)))
 		return
@@ -262,11 +258,7 @@ func millisSince(t time.Time) float64 {
 	return float64(time.Since(t).Microseconds()) / 1000
 }
 
-func (s *Station) probeNetwork(ctx context.Context, m dispatch.Message) {
-	var b protocol.NetworkProbeBody
-	if !s.networkBody(m, &b) {
-		return
-	}
+func (s *Station) probeNetwork(ctx context.Context, m dispatch.Message, b protocol.NetworkProbeBody) {
 	key := b.ServiceId
 	if key == nil {
 		key = b.SandboxId
@@ -442,11 +434,7 @@ func (s *Station) probeDNS(ctx context.Context, ns *netns.Namespace, resolver ne
 	return out, answers, nil
 }
 
-func (s *Station) dnsLog(m dispatch.Message) {
-	var b protocol.DnsLogBody
-	if !s.networkBody(m, &b) {
-		return
-	}
+func (s *Station) dnsLog(_ context.Context, m dispatch.Message, b protocol.DnsLogBody) {
 	ref := m.ID
 	st := s.net.state.Load()
 	entries := []protocol.DnsLogEntry{}

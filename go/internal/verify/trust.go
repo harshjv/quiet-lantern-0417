@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 )
@@ -24,15 +25,11 @@ var embeddedTrustedRoot []byte
 var embeddedTUFRoot []byte
 
 const (
-	DefaultSignaturesRepository = "ghcr.io/harshjv/stationly/signatures"
-	DefaultTUFMirror            = "https://tuf-repo-cdn.sigstore.dev"
-	DefaultReleasesRepository   = "ghcr.io/harshjv/stationly/release"
-	LetsEncryptProduction       = "https://acme-v02.api.letsencrypt.org/directory"
-	LetsEncryptStaging          = "https://acme-staging-v02.api.letsencrypt.org/directory"
-	BundleArtifactType          = "application/vnd.dev.sigstore.bundle.v0.3+json"
-	SignPredicateType           = "https://sigstore.dev/cosign/sign/v1"
-	maxBundleBytes              = 1 << 20
-	maxBundlesPerDigest         = 16
+	LetsEncryptProduction = "https://acme-v02.api.letsencrypt.org/directory"
+	LetsEncryptStaging    = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	SignPredicateType     = "https://sigstore.dev/cosign/sign/v1"
+	maxBundleBytes        = 1 << 20
+	maxBundlesPerDigest   = 16
 )
 
 type Identity struct {
@@ -68,18 +65,18 @@ func ReleaseTrust() Trust {
 	return Trust{
 		Name: "stationly release",
 		Identity: Identity{
-			SANRegex: `^https://github\.com/harshjv/quiet-lantern-0417/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`,
-			Issuer:   "https://token.actions.githubusercontent.com",
+			SANRegex: "^" + regexp.QuoteMeta(protocol.SigningSourceRepository+"/"+protocol.SigningWorkflow) + `@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`,
+			Issuer:   protocol.SigningIssuer,
 			Extensions: certificate.Extensions{
-				SourceRepositoryURI:             "https://github.com/harshjv/quiet-lantern-0417",
-				SourceRepositoryIdentifier:      "1451760752",
-				SourceRepositoryOwnerIdentifier: "2311316",
-				RunnerEnvironment:               "github-hosted",
+				SourceRepositoryURI:             protocol.SigningSourceRepository,
+				SourceRepositoryIdentifier:      protocol.SigningSourceRepositoryId,
+				SourceRepositoryOwnerIdentifier: protocol.SigningSourceRepositoryOwnerId,
+				RunnerEnvironment:               protocol.SigningRunnerEnvironment,
 			},
 		},
-		SignaturesRepository: DefaultSignaturesRepository,
-		TUFMirror:            DefaultTUFMirror,
-		ReleasesRepository:   DefaultReleasesRepository,
+		SignaturesRepository: protocol.SignaturesRepository,
+		TUFMirror:            protocol.TUFMirror,
+		ReleasesRepository:   protocol.ReleaseRepository,
 		Production:           true,
 		TUFRoot:              embeddedTUFRoot,
 		TrustedRoot:          embeddedTrustedRoot,
@@ -139,7 +136,7 @@ func ParseTestTrust(b []byte, dir string) (Trust, error) {
 		slices.Sort(missing)
 		return Trust{}, fmt.Errorf("trust file is missing %s; a test trust inherits nothing from the production release identity", strings.Join(missing, ", "))
 	}
-	if t.ReleasesRepository == DefaultReleasesRepository || t.TUFMirror == DefaultTUFMirror || t.SignaturesRepository == DefaultSignaturesRepository {
+	if t.ReleasesRepository == protocol.ReleaseRepository || t.TUFMirror == protocol.TUFMirror || t.SignaturesRepository == protocol.SignaturesRepository {
 		return Trust{}, fmt.Errorf("trust file %q points at the production release locations; a test trust names its own release host", t.Name)
 	}
 	if t.ACMECAServer == "" {

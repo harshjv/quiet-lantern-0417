@@ -21,7 +21,7 @@ const testSourceRate = 20
 func testHostLayout(webOpen bool) HostLayout {
 	return HostLayout{
 		Public:        testPublic,
-		IngressBridge: "or-ingress",
+		IngressBridge: "sly-ingress",
 		VirtualPrefix: netip.MustParsePrefix("100.64.0.0/16"),
 		Translated:    []netip.Prefix{netip.MustParsePrefix("10.200.0.0/24"), netip.MustParsePrefix("10.200.1.0/24")},
 		WebOpen:       webOpen,

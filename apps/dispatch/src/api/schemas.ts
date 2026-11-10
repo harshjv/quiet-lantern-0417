@@ -1,6 +1,8 @@
+import { injectionValues, portProtocolValues, portRange, slugPattern, StringEnum, variableKeyPattern, variableKindValues } from '@stationly/protocol'
+import type { Static, TSchema } from '@sinclair/typebox'
 import { t } from 'elysia'
 
-const slug = '^[a-z0-9][a-z0-9-]{0,62}$'
+export const input = <S extends TSchema>(schema: S) => t.Unsafe<Static<S>>(schema)
 
 export const BackupTargetInput = t.Union([
   t.Object({ type: t.Literal('path'), path: t.String({ minLength: 1 }) }, { additionalProperties: false }),
@@ -27,14 +29,14 @@ const timing = {
 }
 
 export const HealthInput = t.Union([
-  t.Object({ type: t.Literal('http'), path: t.String({ pattern: '^/' }), port: t.Integer({ minimum: 1, maximum: 65535 }), host: t.Optional(t.String({ pattern: '^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$' })), ...timing }, { additionalProperties: false }),
-  t.Object({ type: t.Literal('tcp'), port: t.Integer({ minimum: 1, maximum: 65535 }), ...timing }, { additionalProperties: false }),
+  t.Object({ type: t.Literal('http'), path: t.String({ pattern: '^/' }), port: t.Integer(portRange), host: t.Optional(t.String({ pattern: '^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$' })), ...timing }, { additionalProperties: false }),
+  t.Object({ type: t.Literal('tcp'), port: t.Integer(portRange), ...timing }, { additionalProperties: false }),
   t.Object({ type: t.Literal('image') }, { additionalProperties: false }),
   t.Object({ type: t.Literal('alive'), seconds: t.Integer({ minimum: 1 }) }, { additionalProperties: false })
 ])
 
 export const PortInput = t.Object(
-  { port: t.Integer({ minimum: 1, maximum: 65535 }), protocol: t.Optional(t.Union([t.Literal('http'), t.Literal('tcp')])), grpc: t.Optional(t.Boolean()) },
+  { port: t.Integer(portRange), protocol: t.Optional(input(StringEnum(portProtocolValues))), grpc: t.Optional(t.Boolean()) },
   { additionalProperties: false }
 )
 
@@ -42,11 +44,11 @@ export const VolumeInput = t.Object({ mount_path: t.String({ pattern: '^/' }) },
 
 export const VariableSet = t.Object(
   {
-    key: t.String({ pattern: '^[A-Z_][A-Z0-9_]*$' }),
-    kind: t.Union([t.Literal('literal'), t.Literal('reference'), t.Literal('sealed')]),
+    key: t.String({ pattern: variableKeyPattern }),
+    kind: input(StringEnum(variableKindValues)),
     value: t.Optional(t.String()),
     reference: t.Optional(t.String()),
-    injection: t.Optional(t.Union([t.Literal('env'), t.Literal('file')])),
+    injection: t.Optional(input(StringEnum(injectionValues))),
     build: t.Optional(t.Boolean())
   },
   { additionalProperties: false }
@@ -80,7 +82,7 @@ const mutable = {
 
 export const ServiceCreate = t.Object(
   {
-    name: t.String({ pattern: slug }),
+    name: t.String({ pattern: slugPattern }),
     kind: t.Union([t.Literal('web'), t.Literal('worker'), t.Literal('cron'), t.Literal('one_off')]),
     ...mutable,
     source: ServiceSource,
@@ -93,7 +95,7 @@ export const ServicePatch = t.Object({ ...mutable, deploy: t.Optional(t.Boolean(
 
 export const VariablesPatch = {
   set: t.Optional(t.Array(VariableSet)),
-  unset: t.Optional(t.Array(t.String({ pattern: '^[A-Z_][A-Z0-9_]*$' }))),
+  unset: t.Optional(t.Array(t.String({ pattern: variableKeyPattern }))),
   apply: t.Optional(t.Boolean()),
   allow_unresolved: t.Optional(t.Boolean())
 }

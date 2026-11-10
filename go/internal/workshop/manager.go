@@ -232,14 +232,14 @@ func (m *Manager) configDir(projectID string) string {
 
 func volumeNames(projectID string) docker.WorkshopVolumes {
 	return docker.WorkshopVolumes{
-		Home:   "or-workshop-" + projectID + "-home",
-		Cache:  "or-workshop-" + projectID + "-cache",
-		Socket: "or-workshop-" + projectID + "-sock",
+		Home:   docker.WorkshopName(projectID) + "-home",
+		Cache:  docker.WorkshopName(projectID) + "-cache",
+		Socket: docker.WorkshopName(projectID) + "-sock",
 	}
 }
 
 func railpackCacheVolume(projectID string) string {
-	return "or-workshop-" + projectID + "-railpack"
+	return docker.WorkshopName(projectID) + "-railpack"
 }
 
 func (m *Manager) labels(projectID string) map[string]string {

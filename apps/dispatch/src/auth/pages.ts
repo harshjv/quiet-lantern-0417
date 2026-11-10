@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
 import { and, asc, count, eq } from 'drizzle-orm'
+import { tokenLevelValues } from '@stationly/protocol'
 import { Elysia } from 'elysia'
 import { audit, requestIdOf, type Deps } from '../api/context.ts'
 import { newId } from '../db/ids.ts'
@@ -9,7 +10,7 @@ import { environment, passkey, project, token, user } from '../db/schema.ts'
 import { canonicalOrigin, type Auth } from './auth.ts'
 import { levelOfScope, levelScopes, oauthRefreshSeconds, withPendingGrant } from './grants.ts'
 import { surfaceOf, type Principal } from './principal.ts'
-import { fullAdmin, levels, type Level, type Scope } from './scopes.ts'
+import { fullAdmin, type Level, type Scope } from './scopes.ts'
 
 const escape = (value: unknown) =>
   String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!)
@@ -207,7 +208,7 @@ export const createAuthPages = (deps: Deps) => {
       .api.getOAuthClientPublic({ query: { client_id: clientId }, headers })
       .catch(() => null)) as { client_name?: string; client_uri?: string; logo_uri?: string } | null
     const requested = (query.get('scope') ?? '').split(' ').filter(Boolean)
-    const offered = levels.filter(level => requested.includes(levelScopes[level]))
+    const offered = tokenLevelValues.filter(level => requested.includes(levelScopes[level]))
     const redirectUri = query.get('redirect_uri') ?? ''
     const redirectHost = (() => {
       try {
@@ -324,7 +325,7 @@ export const createAuthPages = (deps: Deps) => {
           return redirectFrom(result)
         }
         const requested = (query.get('scope') ?? '').split(' ').filter(Boolean)
-        const level = levels.find(l => l === form.get('level'))
+        const level = tokenLevelValues.find(l => l === form.get('level'))
         if (!level || !requested.includes(levelScopes[level])) return consentPage(request, oauthQuery, 'Pick one of the levels the client asked for.')
         const scopes = scopesFrom(form.getAll('target'), level)
         if (!scopes) return consentPage(request, oauthQuery, 'Pick at least one project or environment.')

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -88,23 +89,7 @@ func Save(etcDir string, c *Config) error {
 	if err := os.MkdirAll(etcDir, 0o755); err != nil {
 		return err
 	}
-	tmp := Path(etcDir) + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, Path(etcDir))
+	return fsx.WriteFile(Path(etcDir), b, 0o600)
 }
 
 func NewMasterKey() (string, error) {

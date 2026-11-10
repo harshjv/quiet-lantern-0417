@@ -1,9 +1,10 @@
-import { createServer, type Socket } from 'node:net'
 import type { Command } from 'commander'
 import { action, collect, integer, seconds, type Options } from '../command.ts'
 import { Exit, apiFailure, exitCodes, usage } from '../errors.ts'
-import { connect, credentialHeaders, environmentId, projectRef, type Run, type Sent } from '../kit.ts'
+import { connect, environmentId, isId, projectRef, type Run, type Sent } from '../kit.ts'
 import { human, print, progress } from '../output.ts'
+import { reportRun, waitRun, type RunRow } from '../runs.ts'
+import { attachUrl, bytesOfMessage, forwardPort, openSocket } from '../sockets.ts'
 import { followSse } from '../sse.ts'
 import { explanationText, probeText } from './network.ts'
 
@@ -13,7 +14,6 @@ type SandboxRef = { id: string; name: string }
 
 type LogLine = { at: string; role: string | null; stream: string; text: string }
 
-type RunRow = { id: string; status: string; exit_code: number | null; failure?: { code?: string } | null }
 
 const seg = encodeURIComponent
 
@@ -65,14 +65,14 @@ const sent = async (run: Run, method: string, path: string, body?: unknown): Pro
 const defined = (values: Json) => Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined))
 
 const sandboxRef = async (run: Run, ref: string) => {
-  if (ref.startsWith('sbx_')) return ref
+  if (isId('sandbox', ref)) return ref
   const project = await projectRef(run)
   const environment = await environmentId(run)
   return (await run.get<SandboxRef>(`/v1/projects/${seg(project)}/environments/${environment}/sandboxes/${seg(ref)}`)).id
 }
 
 const snapshotRef = async (run: Run, ref: string) => {
-  if (ref.startsWith('sbs_')) return ref
+  if (isId('sandbox_snapshot', ref)) return ref
   const environment = await environmentId(run)
   const list = await run.get<{ items: { id: string; name: string | null }[] }>(`/v1/environments/${environment}/sandbox-snapshots?limit=200`)
   const found = list.items.find(s => s.name === ref)
@@ -81,8 +81,8 @@ const snapshotRef = async (run: Run, ref: string) => {
 }
 
 const forkSource = async (run: Run, ref: string) => {
-  if (ref.startsWith('sbs_')) return { snapshot: ref }
-  if (ref.startsWith('sbx_')) return { sandbox: ref }
+  if (isId('sandbox_snapshot', ref)) return { snapshot: ref }
+  if (isId('sandbox', ref)) return { sandbox: ref }
   try {
     return { sandbox: await sandboxRef(run, ref) }
   } catch (error) {
@@ -110,20 +110,6 @@ const renderList = (data: unknown) => {
     })
   })
 }
-
-const attachUrl = (run: Run, path: string) => {
-  const url = new URL(path, run.credentials.instance)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url
-}
-
-const openSocket = (run: Run, url: URL) => {
-  const ws = new WebSocket(url, { headers: { ...credentialHeaders(run.credentials, 'GET', url.href), 'user-agent': 'sly' } } as unknown as string[])
-  ws.binaryType = 'arraybuffer'
-  return ws
-}
-
-const bytesOfMessage = (data: unknown) => Buffer.from(data as ArrayBuffer)
 
 const attachRun = (run: Run, created: { id: string; attach_url: string }, mode: { tty: boolean; stdin: boolean; json: boolean }) => {
   const url = attachUrl(run, created.attach_url)
@@ -166,12 +152,8 @@ const attachRun = (run: Run, created: { id: string; attach_url: string }, mode: 
 
 const finishRun = async (run: Run, options: Options, id: string, exit: { status: string; exit_code: number | null } | null) => {
   if (!exit) return exitCodes.connection
-  const row = (await sent(run, 'GET', `/v1/runs/${id}?wait_s=10&fields=failure`)).data as RunRow
-  progress(`${row.id}: ${row.status}, exit code ${row.exit_code ?? exit.exit_code ?? '-'}`)
-  if (options.json) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`)
-  if (row.status === 'succeeded') return exitCodes.ok
-  process.stderr.write(`${row.failure?.code ?? 'EXIT_NONZERO'}\n`)
-  return exitCodes.api
+  const read = async () => (await sent(run, 'GET', `/v1/runs/${id}?wait_s=10&fields=failure`)).data as RunRow
+  return reportRun(options, await waitRun(await read(), read))
 }
 
 const showLine = (options: Options, line: LogLine) =>
@@ -422,8 +404,8 @@ export const sandboxCommands = (program: Command) => {
             }
           )
         }
-        const page = (await sent(run, 'GET', `/v1/logs?${params}`)).data as { lines: LogLine[] }
-        for (const line of page.lines) showLine(options, line)
+        const page = (await sent(run, 'GET', `/v1/logs?${params}`)).data as { untrusted: { lines: LogLine[] } }
+        for (const line of page.untrusted.lines) showLine(options, line)
         return exitCodes.ok
       })
     )
@@ -493,58 +475,11 @@ export const sandboxCommands = (program: Command) => {
         const run = await connect(options)
         const id = await sandboxRef(run, ref!)
         const remote = Number(port)
-        const connections = new Set<Socket>()
-        const server = createServer(socket => {
-          connections.add(socket)
-          const url = attachUrl(run, `/v1/sandboxes/${id}/forward`)
-          url.searchParams.set('port', String(remote))
-          const ws = openSocket(run, url)
-          const queued: Buffer[] = []
-          let open = false
-          ws.onopen = () => {
-            open = true
-            for (const chunk of queued) ws.send(Buffer.concat([Buffer.from([0]), chunk]))
-            queued.length = 0
-          }
-          ws.onmessage = message => {
-            if (typeof message.data === 'string') {
-              const control = JSON.parse(message.data) as { type: string; reason?: string; explanation?: string }
-              if (control.type === 'error') progress(`forward failed: ${control.explanation}`)
-              if (control.type === 'end' && control.reason) progress(`forward ended: ${control.reason}`)
-              return
-            }
-            socket.write(bytesOfMessage(message.data).subarray(1))
-          }
-          ws.onclose = () => socket.end()
-          ws.onerror = () => socket.destroy()
-          socket.on('data', (chunk: Buffer) => (open ? ws.send(Buffer.concat([Buffer.from([0]), chunk])) : queued.push(chunk)))
-          socket.on('close', () => {
-            connections.delete(socket)
-            ws.close()
-          })
-          socket.on('error', () => socket.destroy())
-        })
-        const listen = (at: number) =>
-          new Promise<number>((resolve, reject) => {
-            server.once('error', reject)
-            server.listen(at, '127.0.0.1', () => {
-              server.off('error', reject)
-              resolve((server.address() as { port: number }).port)
-            })
-          })
-        const wanted = (options.localPort as number | undefined) ?? remote
-        const bound = await listen(wanted).catch(error => {
-          if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE' && options.localPort === undefined) return listen(0)
-          throw error
-        })
-        const address = `127.0.0.1:${bound}`
+        const { address, close } = await forwardPort(run, id, remote, options.localPort as number | undefined, { control: progress })
         process.stdout.write(options.json ? `${JSON.stringify({ local_address: address })}\n` : `${address}\n`)
         progress(`forwarding ${address} to port ${remote} of ${id}; press Ctrl-C to stop`)
         return new Promise<number>(resolve => {
-          const stop = () => {
-            for (const socket of connections) socket.destroy()
-            server.close(() => resolve(exitCodes.ok))
-          }
+          const stop = () => void close().then(() => resolve(exitCodes.ok))
           process.once('SIGINT', stop)
           process.once('SIGTERM', stop)
         })

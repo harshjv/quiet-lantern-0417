@@ -2,17 +2,22 @@ package secrets
 
 import (
 	"encoding/base64"
-	"net/url"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
-const minRedactLength = 8
-
 var (
-	digitsOnly    = regexp.MustCompile(`^[0-9]+$`)
-	tokenPatterns = regexp.MustCompile(`sly_[A-Za-z0-9_-]{8,}|sly-rk-[A-Za-z2-7]{8,}`)
+	excluded      = regexp.MustCompile(protocol.RedactExcludedPattern)
+	tokenPatterns = regexp.MustCompile(protocol.RedactTokenPattern)
+	base64Of      = map[protocol.Base64Encoding]*base64.Encoding{
+		protocol.Base64EncodingBase64:    base64.RawStdEncoding,
+		protocol.Base64EncodingBase64url: base64.RawURLEncoding,
+	}
 )
 
 type Known struct {
@@ -26,16 +31,33 @@ type Redactor struct {
 }
 
 func Redactable(value string) bool {
-	return len(value) >= minRedactLength && !digitsOnly.MatchString(value)
+	return utf8.RuneCountInString(value) >= protocol.RedactMinLength && !excluded.MatchString(value)
 }
 
-func forms(value string) []string {
+func urlEncode(b []byte, enc protocol.URLEncoding) string {
+	var out strings.Builder
+	for _, c := range b {
+		switch {
+		case c == ' ':
+			out.WriteString(enc.Space)
+		case c < utf8.RuneSelf && strings.IndexByte(enc.Unescaped, c) >= 0:
+			out.WriteByte(c)
+		default:
+			fmt.Fprintf(&out, "%%%02X", c)
+		}
+	}
+	return out.String()
+}
+
+func encodedForms(value string) []string {
 	b := []byte(value)
 	out := []string{value}
-	for _, enc := range []*base64.Encoding{base64.RawStdEncoding, base64.RawURLEncoding} {
-		out = append(out, enc.EncodeToString(b))
+	for _, enc := range protocol.RedactBase64Encodings {
+		out = append(out, base64Of[enc].EncodeToString(b))
 	}
-	out = append(out, url.QueryEscape(value), url.PathEscape(value))
+	for _, enc := range protocol.RedactURLEncodings {
+		out = append(out, urlEncode(b, enc))
+	}
 	return out
 }
 
@@ -47,9 +69,9 @@ func NewRedactor(known []Known) *Redactor {
 		if !Redactable(k.Value) {
 			continue
 		}
-		candidates := forms(k.Value)
+		candidates := encodedForms(k.Value)
 		for _, line := range strings.Split(k.Value, "\n") {
-			if line = strings.TrimRight(line, "\r"); line != k.Value && Redactable(line) {
+			if line = strings.TrimSuffix(line, "\r"); line != k.Value && Redactable(line) {
 				candidates = append(candidates, line)
 			}
 		}
@@ -58,7 +80,7 @@ func NewRedactor(known []Known) *Redactor {
 				continue
 			}
 			seen[f] = true
-			pairs = append(pairs, pair{f, "[redacted:" + k.Key + "]"})
+			pairs = append(pairs, pair{f, protocol.RedactKeyedReplacementPrefix + k.Key + protocol.RedactKeyedReplacementSuffix})
 		}
 	}
 	sort.SliceStable(pairs, func(i, j int) bool { return len(pairs[i].from) > len(pairs[j].from) })
@@ -80,7 +102,7 @@ func (r *Redactor) Redact(s string) string {
 	if r != nil && r.patterns > 0 {
 		s = r.replacer.Replace(s)
 	}
-	return tokenPatterns.ReplaceAllString(s, "[redacted]")
+	return tokenPatterns.ReplaceAllLiteralString(s, protocol.RedactTokenReplacement)
 }
 
 func (r *Redactor) Lines(lines []string) []string {

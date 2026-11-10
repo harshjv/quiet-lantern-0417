@@ -8,8 +8,6 @@ export type Db = BetterSQLite3Database<typeof schema>
 
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url))
 
-export const replicatedFromEnv = () => process.env.STATIONLY_LITESTREAM === '1'
-
 export const openDb = (path: string, options: { replicated?: boolean } = {}) => {
   const sqlite = new Database(path)
   sqlite.pragma('journal_mode = WAL')

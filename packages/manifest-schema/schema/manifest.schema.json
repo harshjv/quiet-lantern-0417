@@ -79,7 +79,7 @@
                   }
                 },
                 "sealed": {
-                  "description": "Declared; values are set per environment with set_variables",
+                  "description": "Declared; values are set per environment with set_project_variables",
                   "const": true,
                   "type": "boolean"
                 },

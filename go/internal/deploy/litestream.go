@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/litestream"
 	"github.com/harshjv/stationly/go/internal/protocol"
@@ -102,11 +103,7 @@ func (p *litestreamPlan) writeConfig() error {
 	if err := os.MkdirAll(filepath.Dir(p.files.ConfigHost), 0o755); err != nil {
 		return err
 	}
-	tmp := p.files.ConfigHost + ".tmp"
-	if err := os.WriteFile(tmp, p.config, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, p.files.ConfigHost)
+	return fsx.WriteFile(p.files.ConfigHost, p.config, 0o644)
 }
 
 func runLitestreamTask(ctx context.Context, dc *docker.Client, spec docker.ContainerSpec, stateDir string, timeout time.Duration) (string, error) {
@@ -285,7 +282,7 @@ func (s *Station) checkLitestream(ctx context.Context) protocol.DoctorCheck {
 		if ok {
 			state = string(sidecar.State)
 		}
-		c.raise(protocol.DoctorStatusFail, "litestream_down", "the Litestream sidecar is "+state+"; Dispatch's writes are not leaving this host", "stationd restarts it at its next reconcile; read its log with docker logs or-litestream.")
+		c.raise(protocol.DoctorStatusFail, "litestream_down", "the Litestream sidecar is "+state+"; Dispatch's writes are not leaving this host", "stationd restarts it at its next reconcile; read its log with docker logs "+docker.LitestreamName+".")
 		return c.build()
 	}
 	l := s.dispatchLaunch()
@@ -313,7 +310,7 @@ func raiseReplica(c *checkBuilder, st litestream.State) {
 	case st.ReplicaTXID == 0:
 		c.raise(protocol.DoctorStatusWarn, "replica_empty", "the bucket holds no replica of Dispatch yet", "Wait a few seconds after the sidecar starts, then run the doctor again.")
 	case st.Stalled():
-		c.raise(protocol.DoctorStatusFail, "replication_stalled", fmt.Sprintf("%d transactions have waited %s for the bucket; the last replicated change is from %s", st.BehindTXIDs, st.Lag.Round(time.Second), tstamp(st.LastReplicated)), "Read the sidecar's log (docker logs or-litestream) and check the bucket's reachability and credentials.")
+		c.raise(protocol.DoctorStatusFail, "replication_stalled", fmt.Sprintf("%d transactions have waited %s for the bucket; the last replicated change is from %s", st.BehindTXIDs, st.Lag.Round(time.Second), tstamp(st.LastReplicated)), "Read the sidecar's log (docker logs "+docker.LitestreamName+") and check the bucket's reachability and credentials.")
 	default:
 		c.note(fmt.Sprintf("replica at transaction %d, behind by %d, lag %s, last replicated change %s", st.ReplicaTXID, st.BehindTXIDs, st.Lag.Round(time.Millisecond), tstamp(st.LastReplicated)))
 	}

@@ -56,6 +56,22 @@ export const idPrefixes = {
 
 export type IdEntity = keyof typeof idPrefixes
 
+const resourceStem = 'sly'
+
+export const resourcePrefix = `${resourceStem}-` as const
+
+export const nftTableName = resourceStem
+
+export const nftTablePrefix = `${resourceStem}_` as const
+
+export const interfaceNameMaxLength = 15
+
+export const sandboxNetworkName = `${resourcePrefix}sandbox` as const
+
+export const bridgeName = (environmentId: string) => `${resourcePrefix}${environmentId.slice(-(interfaceNameMaxLength - resourcePrefix.length)).toLowerCase()}`
+
+export const volumeDockerName = (volumeId: string) => `${resourcePrefix}vol-${volumeId.slice(idPrefixes.volume.length + 1).toLowerCase()}`
+
 export const idPattern = (entity: IdEntity) => `^${idPrefixes[entity]}_${crockfordUlid}$`
 
 export const Id = (entity: IdEntity) => Type.String({ pattern: idPattern(entity) })
@@ -87,7 +103,15 @@ export const Seconds = Type.Integer({ minimum: 0 })
 
 export const Bytes = Type.Integer({ minimum: 0 })
 
-export const Port = Type.Integer({ minimum: 1, maximum: 65535 })
+export const portRange = { minimum: 1, maximum: 65535 } as const
+
+export const Port = Type.Integer(portRange)
+
+export const slugPattern = '^[a-z0-9][a-z0-9-]{0,62}$'
+
+export const variableKeyPattern = '^[A-Z_][A-Z0-9_]*$'
+
+export const schemaBaseUrl = 'https://stationly.harshjv.com/schema/'
 
 export const Json = Type.Unknown()
 

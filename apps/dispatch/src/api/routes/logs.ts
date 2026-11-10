@@ -1,17 +1,23 @@
+import { Type } from '@sinclair/typebox'
 import { messages, type MessageBody } from '@stationly/protocol'
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
-import { build, deployment, run, sandbox, service, station } from '../../db/schema.ts'
+import { deployment, sandbox, service, station } from '../../db/schema.ts'
 import type { StreamHandle } from '../../station/server.ts'
 import { requireInstance, requireLevel } from '../access.ts'
-import { fail, invalid, notFound } from '../errors.ts'
+import { fail, invalid } from '../errors.ts'
 import { parseTime, type Kit } from '../kit.ts'
-import { deploymentById, environmentById, runOwner, sandboxById, serviceById, stationByRef } from '../lookup.ts'
+import { buildById, deploymentById, environmentById, runById, sandboxById, serviceById, stationByRef } from '../lookup.ts'
 import { createSse } from '../sse.ts'
 import { stationError } from './runs.ts'
 import { models, replies } from '../shapes.ts'
 
-const LogPage = messages['logs.page'].body
+const StationLogPage = messages['logs.page'].body
+
+const LogPage = Type.Object(
+  { untrusted: Type.Object({ source: Type.String(), lines: StationLogPage.properties.lines }), next_cursor: StationLogPage.properties.next_cursor, truncated: StationLogPage.properties.truncated },
+  { additionalProperties: false }
+)
 const MetricSample = messages['metrics.sample.result'].body.properties.samples.items
 
 type Selector = MessageBody<'logs.query'>
@@ -96,13 +102,11 @@ export const logRoutes = (kit: Kit) => {
       return { call, stationId: ctx.service.station_id, selector: { deployment_id: ctx.deployment.id, ...runtime } as Selector, deployments: [ctx.deployment.id], sandboxId: undefined as string | undefined }
     }
     if (query.build !== undefined) {
-      const b = db.select().from(build).where(eq(build.id, query.build)).get() ?? notFound('build', query.build)
-      const ctx = deploymentById(db, b.deployment_id)
+      const ctx = buildById(db, query.build)
       requireLevel(call.principal, ctx.target, 'read')
-      return { call, stationId: ctx.service.station_id, selector: { source: 'build', build_id: b.id, ...base } as Selector, deployments: [b.deployment_id], sandboxId: undefined as string | undefined }
+      return { call, stationId: ctx.service.station_id, selector: { source: 'build', build_id: ctx.build.id, ...base } as Selector, deployments: [ctx.build.deployment_id], sandboxId: undefined as string | undefined }
     }
-    const r = db.select().from(run).where(eq(run.id, query.run!)).get() ?? notFound('run', query.run!)
-    const owner = runOwner(db, r)
+    const { run: r, ...owner } = runById(db, query.run!)
     requireLevel(call.principal, owner.target, 'read')
     return { call, stationId: owner.station_id, selector: { source: 'run', run_id: r.id, ...base } as Selector, deployments: r.deployment_id ? [r.deployment_id] : [], sandboxId: r.sandbox_id ?? undefined }
   }
@@ -118,9 +122,12 @@ export const logRoutes = (kit: Kit) => {
     return { stationId, selector, shown, page, lines: page.lines.map(shown) }
   }
 
+  const sourceOf = (query: typeof logQuery.static) =>
+    query.component ? `${query.component} component log` : query.sandbox ? 'sandbox log' : query.build ? 'build log' : query.run ? 'run log' : 'runtime log'
+
   const pageLogs = async (request: Request, query: typeof logQuery.static) => {
     const { page, lines } = await firstPage(request, query)
-    return { lines, next_cursor: page.next_cursor, truncated: page.truncated }
+    return { untrusted: { source: sourceOf(query), lines }, next_cursor: page.next_cursor, truncated: page.truncated }
   }
 
   const followLogs = async (request: Request, query: typeof logQuery.static): Promise<Response> => {
@@ -157,31 +164,27 @@ export const logRoutes = (kit: Kit) => {
     return sse.response
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/logs',
       async ({ request, query }) => (query.follow ? ((await followLogs(request, query)) as never) : pageLogs(request, query)),
-      { query: logQuery, response: replies({ 200: LogPage }), detail: { summary: 'Read logs for one selector; follow = true streams new lines as SSE', tags: ['logs'] } }
+      { operation: { id: 'get_logs', level: 'any' }, query: logQuery, response: replies({ 200: LogPage }), detail: { summary: 'Read logs for one selector; follow = true streams new lines as SSE', tags: ['logs'] } }
     )
     .get(
       '/services/:service/metrics',
-      async ({ request, params }) => {
-        const principal = await kit.principal(request)
+      async ({ params }) => {
         const ctx = serviceById(db, params.service)
-        requireLevel(principal, ctx.target, 'read')
         const reply = await stations.ask(ctx.service.station_id, 'metrics.sample', { service_ids: [ctx.service.id] }, { capability: 'metrics.v1' }).catch(stationError)
         const sample = (reply.body as MessageBody<'metrics.sample.result'>).samples.find(s => s.service_id === ctx.service.id)
         if (!sample) fail('NOT_FOUND', `${ctx.service.name} has no running container reporting metrics.`, 'Start or deploy the service, then read metrics again.', { service_id: ctx.service.id, status: ctx.service.status })
         return sample!
       },
-      { params: t.Object({ service: t.String() }), response: replies({ 200: MetricSample }), detail: { summary: 'Latest live metrics sample of a service', tags: ['metrics'] } }
+      { operation: { id: 'get_metrics', level: 'read' }, params: t.Object({ service: t.String() }), response: replies({ 200: MetricSample }), detail: { summary: 'Latest live metrics sample of a service', tags: ['metrics'] } }
     )
     .get(
       '/environments/:environment/metrics',
       async ({ request, params }) => {
-        const principal = await kit.principal(request)
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const running = db
           .select({ id: service.id, station_id: service.station_id })
           .from(service)
@@ -227,6 +230,6 @@ export const logRoutes = (kit: Kit) => {
         })()
         return sse.response
       },
-      { params: t.Object({ environment: t.String() }), detail: { summary: 'SSE: one metrics sample per running service every 5 s', tags: ['metrics'] } }
+      { operation: { id: 'stream_metrics', level: 'read', mcp: false }, params: t.Object({ environment: t.String() }), detail: { summary: 'SSE: one metrics sample per running service every 5 s', tags: ['metrics'] } }
     )
 }

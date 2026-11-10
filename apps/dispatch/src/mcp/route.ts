@@ -8,23 +8,24 @@ import {
   type AuthInfo,
   type McpRequestContext
 } from '@modelcontextprotocol/server'
-import { buildServer, type Level } from '@stationly/mcp'
+import { buildServer, type Level, type ToolDef } from '@stationly/mcp'
+import { tokenLevelValues } from '@stationly/protocol'
 import { ApiError, envelope } from '../api/errors.ts'
 import type { Deps } from '../api/context.ts'
 import { requestIdOf } from '../api/context.ts'
 import { authenticate, surfaceOf, type Principal } from '../auth/principal.ts'
-import { isInstanceAdmin, levels, type Scope } from '../auth/scopes.ts'
-import type { Dispatch, Session } from './api.ts'
-import { catalog, instructions } from './catalog.ts'
+import { isInstanceAdmin, type Scope } from '../auth/scopes.ts'
+import { loadTools, sendFor, type Dispatch, type Session } from './api.ts'
+import { instructions } from './instructions.ts'
 
 const loopbackOrigins = ['127.0.0.1', 'localhost', '[::1]']
 
 const hostOf = (origin: string) => new URL(origin).hostname
 
 const highest = (scopes: Scope[]): Level | null =>
-  scopes.reduce<Level | null>((best, scope) => (best === null || levels.indexOf(scope.level) > levels.indexOf(best) ? scope.level : best), null)
+  scopes.reduce<Level | null>((best, scope) => (best === null || tokenLevelValues.indexOf(scope.level) > tokenLevelValues.indexOf(best) ? scope.level : best), null)
 
-type Grant = { principal: Principal; session: Session }
+type Grant = { principal: Principal; session: Session; tools: ToolDef[] }
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -32,6 +33,12 @@ export type McpRoute = { handle: (request: Request) => Promise<Response>; connec
 
 export const createMcpRoute = (deps: Deps): McpRoute => {
   let dispatch: Dispatch | null = null
+  let catalog: Promise<ToolDef[]> | null = null
+  const toolsFor = (session: Session) =>
+    (catalog ??= loadTools(session).catch(error => {
+      catalog = null
+      throw error
+    }))
 
   const handler = createMcpHandler(
     (ctx: McpRequestContext) => {
@@ -42,9 +49,9 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
         name: 'stationly',
         version: deps.version,
         instructions,
-        tools: catalog,
+        tools: grant.tools,
         caller: { level: highest(scopes), instanceAdmin: isInstanceAdmin(scopes) },
-        context: grant.session
+        send: sendFor(grant.session)
       })
     },
     { legacy: 'stateless', responseMode: 'auto', onerror: error => console.error(JSON.stringify({ event: 'mcp_error', message: error.message })) }
@@ -75,7 +82,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
           if (principal.token_kind === 'session') throw new OAuthError(OAuthErrorCode.InvalidToken, 'a sly session is never accepted on /mcp; use a scoped token or OAuth')
           if (!dispatch) throw new Error('the /mcp route is not connected to the API')
           const session: Session = { origin, token, userAgent: request.headers.get('user-agent')?.split(' ')[0] ?? null, dispatch }
-          const grant: Grant = { principal, session }
+          const grant: Grant = { principal, session, tools: await toolsFor(session) }
           return {
             token,
             clientId: principal.token_id ?? principal.actor.id ?? principal.user_id,

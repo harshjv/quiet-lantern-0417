@@ -4,8 +4,8 @@ package depot
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 )
@@ -49,7 +50,7 @@ func SettingsFrom(g *protocol.Generation) (Settings, error) {
 		return Settings{}, fmt.Errorf("registry.subnet %q is not an IPv4 prefix of /28 or larger", r.Subnet)
 	}
 	subnet = subnet.Masked()
-	ipRange := upperHalf(subnet)
+	ipRange := cidr.UpperHalf(subnet)
 	dist := DistAddress(front)
 	for _, a := range []netip.Addr{front.Addr(), dist.Addr()} {
 		if !subnet.Contains(a) || ipRange.Contains(a) || a == subnet.Addr() {
@@ -68,14 +69,6 @@ func SettingsFrom(g *protocol.Generation) (Settings, error) {
 
 func DistAddress(front netip.AddrPort) netip.AddrPort {
 	return netip.AddrPortFrom(front.Addr().Next(), front.Port())
-}
-
-func upperHalf(p netip.Prefix) netip.Prefix {
-	b := p.Addr().As4()
-	host := 32 - p.Bits() - 1
-	v := uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
-	v |= 1 << host
-	return netip.PrefixFrom(netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)}), p.Bits()+1)
 }
 
 type Depot struct {
@@ -285,24 +278,11 @@ func (d *Depot) writeFiles() error {
 		"config.yml":          Config(s.Front, s.Dist, false),
 		"config-readonly.yml": Config(s.Front, s.Dist, true),
 	} {
-		if err := writeIfChanged(filepath.Join(d.configDir(), name), body, 0o644); err != nil {
+		if _, err := fsx.WriteIfChanged(filepath.Join(d.configDir(), name), body, 0o644); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func writeIfChanged(path string, body []byte, mode os.FileMode) error {
-	if have, err := os.ReadFile(path); err == nil && string(have) == string(body) {
-		return nil
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, body, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 func (d *Depot) ensureNetwork(ctx context.Context) error {

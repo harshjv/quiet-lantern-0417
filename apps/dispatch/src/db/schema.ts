@@ -1,18 +1,33 @@
 import {
+  appliedStatusValues,
   attestationKindValues,
+  baseImageCheckValues,
   builderValues,
   buildStatusValues,
   cancelReasonValues,
   componentNameValues,
   componentStatusValues,
+  deploymentStatusValues,
   deploymentStepNameValues,
   deploymentStepStatusValues,
+  deploymentTriggerValues,
   desiredStateValues,
+  doctorStatusValues,
+  domainKindValues,
+  domainStatusValues,
   firewallModeValues,
   flowVerdictValues,
+  githubRepositorySelectionValues,
+  grantSourceValues,
   ingressValues,
   injectionValues,
+  notificationChannelKindValues,
+  notificationChannelStatusValues,
+  platformUpgradeStatusValues,
+  portAllocationStatusValues,
   portProtocolValues,
+  releaseChannelValues,
+  repoAuthValues,
   runKindValues,
   runStatusValues,
   sandboxNetworkValues,
@@ -21,11 +36,25 @@ import {
   sandboxStatusReasonValues,
   sandboxStatusValues,
   serviceKindValues,
+  serviceStatusReasonValues,
+  serviceStatusValues,
   signatureStateValues,
+  stagedChangeSourceValues,
+  stagedChangeStatusValues,
+  staleReasonCodeValues,
   stationArchValues,
   stationOsValues,
+  stationStatusValues,
   strategyValues,
+  tokenKindValues,
+  variableKindValues,
+  variableScopeValues,
   versionSkewValues,
+  volumeOwnerValues,
+  volumeSnapshotSourceValues,
+  volumeSnapshotStatusValues,
+  volumeSnapshotTriggerValues,
+  volumeStatusValues,
   type Actor,
   type IdEntity,
   type Diagnosis,
@@ -46,7 +75,7 @@ import { newId } from './ids.ts'
 type ActorValue = Static<typeof Actor>
 type DiagnosisValue = Static<typeof Diagnosis>
 type ErrorBodyValue = Static<typeof ErrorBody>
-export type StaleReasonValue = { code: 'VARIABLES_CHANGED' | 'CONFIG_CHANGED'; explanation: string; keys: string[] }
+export type StaleReasonValue = { code: (typeof staleReasonCodeValues)[number]; explanation: string; keys: string[] }
 type EntityTarget = { entity: string; id: string }
 export type BaseImageRecord = {
   ref: string
@@ -75,22 +104,6 @@ const entity = (kind: IdEntity) => ({
     .$onUpdateFn(() => new Date())
 })
 
-export const deploymentStatusValues = [
-  'queued',
-  'building',
-  'pre_deploy',
-  'starting',
-  'waiting_health',
-  'cutover',
-  'draining',
-  'active',
-  'failed',
-  'cancelled',
-  'superseded'
-] as const
-
-export const baseImageCheckValues = ['current', 'moved', 'auth_required', 'not_found', 'rate_limited', 'no_digest', 'unreachable'] as const
-
 export const station = sqliteTable(
   'station',
   {
@@ -105,7 +118,7 @@ export const station = sqliteTable(
     intermittent: bool('intermittent').notNull().default(false),
     routes: json<unknown>('routes'),
     resources: json<Static<typeof Resources>>('resources'),
-    status: text('status', { enum: ['enrolling', 'online', 'offline', 'asleep'] })
+    status: text('status', { enum: stationStatusValues })
       .notNull()
       .default('enrolling'),
     draining: bool('draining').notNull().default(false),
@@ -199,10 +212,10 @@ export const service = sqliteTable(
     gpu: json<{ count: number }>('gpu'),
     exports: json<string[]>('exports').notNull(),
     current_deployment_id: text('current_deployment_id'),
-    status: text('status', { enum: ['green', 'amber', 'red', 'stopped', 'asleep'] })
+    status: text('status', { enum: serviceStatusValues })
       .notNull()
       .default('amber'),
-    status_reason: text('status_reason', { enum: ['station_asleep', 'gaming_mode', 'schedule'] }),
+    status_reason: text('status_reason', { enum: serviceStatusReasonValues }),
     desired_state: text('desired_state', { enum: desiredStateValues }).notNull().default('running')
   },
   table => [uniqueIndex('service_environment_name_unique').on(table.environment_id, table.name)]
@@ -297,7 +310,7 @@ export const service_port = sqliteTable(
 
 export const volume = sqliteTable('volume', {
   ...entity('volume'),
-  owner: text('owner', { enum: ['service', 'station'] }).notNull(),
+  owner: text('owner', { enum: volumeOwnerValues }).notNull(),
   service_id: text('service_id').references(() => service.id),
   project_id: text('project_id').references(() => project.id),
   mount_path: text('mount_path').notNull(),
@@ -306,7 +319,7 @@ export const volume = sqliteTable('volume', {
     .references(() => station.id),
   docker_name: text('docker_name').notNull(),
   size_bytes: integer('size_bytes').notNull().default(0),
-  status: text('status', { enum: ['active', 'retained', 'destroyed'] })
+  status: text('status', { enum: volumeStatusValues })
     .notNull()
     .default('active'),
   retain_until: timestamp('retain_until')
@@ -320,11 +333,11 @@ export const domain = sqliteTable(
       .notNull()
       .references(() => service_port.id),
     hostname: text('hostname').notNull(),
-    kind: text('kind', { enum: ['generated', 'custom'] }).notNull(),
+    kind: text('kind', { enum: domainKindValues }).notNull(),
     ingress: text('ingress', { enum: ingressValues }).notNull(),
     cloudflare: json<{ zone_id: string; record_id: string }>('cloudflare'),
     certificate: json<{ resolver: string; status: string; not_before: string | null; expires_at: string | null }>('certificate'),
-    status: text('status', { enum: ['pending', 'active', 'error'] })
+    status: text('status', { enum: domainStatusValues })
       .notNull()
       .default('pending'),
     last_checked_at: timestamp('last_checked_at'),
@@ -344,7 +357,7 @@ export const port_allocation = sqliteTable(
       .notNull()
       .references(() => station.id),
     host_port: integer('host_port').notNull(),
-    status: text('status', { enum: ['active', 'removed'] })
+    status: text('status', { enum: portAllocationStatusValues })
       .notNull()
       .default('active')
   },
@@ -362,7 +375,7 @@ export const deployment = sqliteTable(
     service_id: text('service_id').notNull(),
     number: integer('number').notNull(),
     trigger: json<{
-      type: 'push' | 'manual' | 'rollback' | 'variable_change' | 'redeploy' | 'base_image' | 'agent'
+      type: (typeof deploymentTriggerValues)[number]
       actor: ActorValue
       source_sha: string | null
       rollback_of: string | null
@@ -443,12 +456,12 @@ export const variable = sqliteTable(
   'variable',
   {
     ...entity('variable'),
-    scope: text('scope', { enum: ['global', 'project', 'service', 'sandbox'] }).notNull(),
+    scope: text('scope', { enum: variableScopeValues }).notNull(),
     project_id: text('project_id').references(() => project.id),
     service_id: text('service_id').references(() => service.id),
     sandbox_id: text('sandbox_id').references(() => sandbox.id),
     key: text('key').notNull(),
-    kind: text('kind', { enum: ['literal', 'reference', 'sealed'] }).notNull(),
+    kind: text('kind', { enum: variableKindValues }).notNull(),
     reference: text('reference'),
     injection: text('injection', { enum: injectionValues }).notNull().default('env'),
     build: bool('build').notNull().default(false),
@@ -514,7 +527,7 @@ export const grant = sqliteTable('grant', {
     .notNull()
     .references(() => project.id),
   alias: text('alias'),
-  source: text('source', { enum: ['manual', 'attachment'] }).notNull(),
+  source: text('source', { enum: grantSourceValues }).notNull(),
   attachment_id: text('attachment_id').references(() => attachment.id)
 })
 
@@ -545,8 +558,8 @@ export const staged_change = sqliteTable('staged_change', {
   actor: json<ActorValue>('actor').notNull(),
   changes: json<JsonObject[]>('changes').notNull(),
   refs: json<Record<string, string>>('refs').notNull(),
-  source: text('source', { enum: ['api', 'manifest', 'compose_import', 'agent', 'ui'] }).notNull(),
-  status: text('status', { enum: ['staged', 'accepted', 'rejected', 'superseded'] }).notNull(),
+  source: text('source', { enum: stagedChangeSourceValues }).notNull(),
+  status: text('status', { enum: stagedChangeStatusValues }).notNull(),
   accepted_by: json<ActorValue>('accepted_by'),
   deployments: json<string[]>('deployments').notNull()
 })
@@ -694,12 +707,12 @@ export const volume_snapshot = sqliteTable('volume_snapshot', {
   taken_at: timestamp('taken_at').notNull(),
   location: text('location').notNull(),
   size_bytes: integer('size_bytes').notNull().default(0),
-  source: text('source', { enum: ['tar', 'restic', 'hook'] }).notNull(),
-  status: text('status', { enum: ['running', 'complete', 'failed', 'expired'] })
+  source: text('source', { enum: volumeSnapshotSourceValues }).notNull(),
+  status: text('status', { enum: volumeSnapshotStatusValues })
     .notNull()
     .default('running'),
   station_id: text('station_id').references(() => station.id),
-  trigger: text('trigger', { enum: ['manual', 'schedule'] })
+  trigger: text('trigger', { enum: volumeSnapshotTriggerValues })
     .notNull()
     .default('manual'),
   target: json<StoredBackupTarget>('target'),
@@ -747,7 +760,7 @@ export const token = sqliteTable(
     ...entity('token'),
     user_id: text('user_id').notNull(),
     name: text('name').notNull(),
-    kind: text('kind', { enum: ['personal', 'scoped', 'station_enroll', 'oauth'] }).notNull(),
+    kind: text('kind', { enum: tokenKindValues }).notNull(),
     scopes: json<{ project_id: string; environment_id: string; level: 'read' | 'deploy' | 'admin' }[]>('scopes').notNull(),
     expires_at: timestamp('expires_at').notNull(),
     last_used_at: timestamp('last_used_at'),
@@ -818,10 +831,10 @@ export const event = sqliteTable(
 
 export const notification_channel = sqliteTable('notification_channel', {
   ...entity('notification_channel'),
-  kind: text('kind', { enum: ['webhook', 'slack', 'discord', 'email'] }).notNull(),
+  kind: text('kind', { enum: notificationChannelKindValues }).notNull(),
   config: json<JsonObject>('config').notNull(),
   filter: json<JsonObject>('filter').notNull(),
-  status: text('status', { enum: ['active', 'failing'] })
+  status: text('status', { enum: notificationChannelStatusValues })
     .notNull()
     .default('active'),
   failing_since: timestamp('failing_since')
@@ -862,7 +875,7 @@ export const station_generation = sqliteTable(
     generation: integer('generation').notNull(),
     document: json<Generation>('document').notNull(),
     hash: text('hash').notNull(),
-    ack: text('ack', { enum: ['applied', 'partial', 'rejected'] }),
+    ack: text('ack', { enum: appliedStatusValues }),
     failure: json<ErrorBodyValue>('failure')
   },
   table => [uniqueIndex('station_generation_station_generation_unique').on(table.station_id, table.generation)]
@@ -899,7 +912,7 @@ export const platform_release = sqliteTable(
   {
     ...entity('platform_release'),
     release: text('release').notNull(),
-    channel: text('channel', { enum: ['stable', 'edge'] }).notNull(),
+    channel: text('channel', { enum: releaseChannelValues }).notNull(),
     manifest: json<ReleaseManifestDoc>('manifest').notNull(),
     manifest_raw: text('manifest_raw').notNull(),
     manifest_digest: text('manifest_digest').notNull(),
@@ -935,7 +948,7 @@ export const platform_upgrade = sqliteTable(
     lockfile_before: json<JsonObject>('lockfile_before').notNull(),
     lockfile_after: json<JsonObject>('lockfile_after').notNull(),
     steps: json<UpgradeStep[]>('steps').notNull(),
-    status: text('status', { enum: ['running', 'reverting', 'done', 'failed', 'reverted'] }).notNull(),
+    status: text('status', { enum: platformUpgradeStatusValues }).notNull(),
     failure: json<ErrorBodyValue>('failure'),
     actor: json<ActorValue>('actor').notNull(),
     backup: text('backup'),
@@ -982,7 +995,7 @@ export const github_installation = sqliteTable(
       .references(() => github_app.id),
     installation_id: integer('installation_id').notNull(),
     account: text('account').notNull(),
-    repository_selection: text('repository_selection', { enum: ['all', 'selected'] }).notNull(),
+    repository_selection: text('repository_selection', { enum: githubRepositorySelectionValues }).notNull(),
     suspended_at: timestamp('suspended_at')
   },
   table => [uniqueIndex('github_installation_installation_id_unique').on(table.installation_id)]
@@ -1024,7 +1037,7 @@ export const source_poll = sqliteTable(
   {
     repo: text('repo').notNull(),
     branch: text('branch').notNull(),
-    auth: text('auth', { enum: ['app', 'public'] }).notNull(),
+    auth: text('auth', { enum: repoAuthValues }).notNull(),
     sha: text('sha'),
     etag: text('etag'),
     interval_s: integer('interval_s'),
@@ -1040,7 +1053,7 @@ export const doctor_check = sqliteTable(
   {
     name: text('name').notNull(),
     station: text('station').notNull(),
-    status: text('status', { enum: ['ok', 'warn', 'fail'] }).notNull(),
+    status: text('status', { enum: doctorStatusValues }).notNull(),
     code: text('code'),
     changed_at: timestamp('changed_at').notNull()
   },

@@ -1,12 +1,12 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
-import type { Principal } from '../../auth/principal.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
 import { audit, emit, type Call } from '../context.ts'
-import { deployment, environment, secret_value, service, service_port, variable, volume } from '../../db/schema.ts'
+import { deployment, environment, service, service_port, variable, volume } from '../../db/schema.ts'
 import { SecretsError } from '../../secrets/errors.ts'
 import { setVariable, type VariableWrite } from '../../secrets/variables.ts'
+import { decryptValue, headValue } from '../../secrets/values.ts'
 import { settleVariableWrites } from '../stale.ts'
 import { requireHuman, requireLevel, seesEnvironment } from '../access.ts'
 import { ChangeSet, commit, exportNames, requireNoSandboxes } from '../changes.ts'
@@ -14,29 +14,14 @@ import { createDeploymentRecord } from '../deployments.ts'
 import { ensureNetwork, ensureVirtualIp } from '../ipam.ts'
 import { ApiError, fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
-import { slugPattern, warning, type Kit } from '../kit.ts'
+import { warning, type Kit } from '../kit.ts'
 import { environmentById, environmentInProject, projectByRef, type EnvironmentRow, type ProjectRow } from '../lookup.ts'
 import { before, collect, getQuery, listQuery } from '../pagination.ts'
 import { Type } from '@sinclair/typebox'
+import { slugPattern, volumeDockerName } from '@stationly/protocol'
 import { DeletedRetaining, Deployment, Environment, extend, models, Page, replies, Staged, Warnings } from '../shapes.ts'
 
 const EnvironmentCreated = extend(Environment, { deployments: Type.Array(Deployment), warnings: Warnings })
-
-const decryptValue = (kit: { deps: Pick<Kit['deps'], 'keyring'> }, row: typeof secret_value.$inferSelect) => kit.deps.keyring.decrypt(row.id, row.data_key_id, row.ciphertext)
-
-const headOf = (db: Db, variableId: string, environmentId: string | null) =>
-  db
-    .select()
-    .from(secret_value)
-    .where(
-      and(
-        eq(secret_value.variable_id, variableId),
-        environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId),
-        isNull(secret_value.revoked_at)
-      )
-    )
-    .orderBy(desc(secret_value.version))
-    .get()
 
 export const cloneInto = (kit: { deps: Pick<Kit['deps'], 'db' | 'keyring'> }, call: Call, proj: ProjectRow, source: EnvironmentRow, target: EnvironmentRow, deploy: boolean) => {
   const db = kit.deps.db
@@ -61,7 +46,7 @@ export const cloneInto = (kit: { deps: Pick<Kit['deps'], 'db' | 'keyring'> }, ca
       for (const vol of tdb.select().from(volume).where(and(eq(volume.service_id, svc.id), eq(volume.owner, 'service'))).all()) {
         const volumeId = newId('volume')
         tdb.insert(volume)
-          .values({ id: volumeId, owner: 'service', service_id: id, project_id: proj.id, mount_path: vol.mount_path, station_id: vol.station_id, docker_name: `or-vol-${volumeId.slice(4).toLowerCase()}` })
+          .values({ id: volumeId, owner: 'service', service_id: id, project_id: proj.id, mount_path: vol.mount_path, station_id: vol.station_id, docker_name: volumeDockerName(volumeId) })
           .run()
       }
       copied.push(id)
@@ -70,10 +55,10 @@ export const cloneInto = (kit: { deps: Pick<Kit['deps'], 'db' | 'keyring'> }, ca
       for (const v of tdb.select().from(variable).where(and(eq(variable.scope, 'service'), eq(variable.service_id, svc.id))).all()) {
         let value = v.reference ?? ''
         if (v.reference === null) {
-          const head = headOf(tdb, v.id, null)
+          const head = headValue(tdb, v.id, null)
           if (!head) continue
           decrypted.push(head.id)
-          value = v.kind === 'sealed' ? decryptValue(kit, head) : decryptValue(kit, head).replaceAll('${{', () => '$${{')
+          value = v.kind === 'sealed' ? decryptValue(kit.deps.keyring, head) : decryptValue(kit.deps.keyring, head).replaceAll('${{', () => '$${{')
         }
         const result = setVariable(tdb, kit.deps.keyring, {
           scope: 'service',
@@ -92,7 +77,7 @@ export const cloneInto = (kit: { deps: Pick<Kit['deps'], 'db' | 'keyring'> }, ca
     }
     if (!source.protected) {
       for (const v of tdb.select().from(variable).where(and(eq(variable.scope, 'project'), eq(variable.project_id, proj.id))).all()) {
-        const head = headOf(tdb, v.id, source.id)
+        const head = headValue(tdb, v.id, source.id)
         if (!head) continue
         decrypted.push(head.id)
         const result = setVariable(tdb, kit.deps.keyring, {
@@ -100,7 +85,7 @@ export const cloneInto = (kit: { deps: Pick<Kit['deps'], 'db' | 'keyring'> }, ca
           project_id: proj.id,
           environment_id: target.id,
           key: v.key,
-          value: v.kind === 'sealed' ? decryptValue(kit, head) : decryptValue(kit, head).replaceAll('${{', () => '$${{'),
+          value: v.kind === 'sealed' ? decryptValue(kit.deps.keyring, head) : decryptValue(kit.deps.keyring, head).replaceAll('${{', () => '$${{'),
           sealed: v.kind === 'sealed',
           injection: v.injection,
           build: v.build,
@@ -129,14 +114,11 @@ export const cloneInto = (kit: { deps: Pick<Kit['deps'], 'db' | 'keyring'> }, ca
 
 const environmentTarget = (row: EnvironmentRow) => ({ project_id: row.project_id, environment_id: row.id })
 
-const requireEnvironmentWrite = (principal: Principal, row: EnvironmentRow, ephemeralLevel: 'deploy' | 'admin') =>
-  requireLevel(principal, environmentTarget(row), row.ephemeral ? ephemeralLevel : 'admin')
-
 export const environmentRoutes = (kit: Kit) => {
   const { db } = kit.deps
   const tags = ['environments']
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/projects/:project/environments',
       async ({ request, params, query }) => {
@@ -164,6 +146,7 @@ export const environmentRoutes = (kit: Kit) => {
         return { items: page.rows.map(row => select(kit.views.environment, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_environments', level: 'any' },
         params: t.Object({ project: t.String() }),
         query: t.Object({ ...listQuery, ephemeral: t.Optional(t.BooleanString()), protected: t.Optional(t.BooleanString()) }),
         response: replies({ 200: Page(Environment) }),
@@ -172,13 +155,8 @@ export const environmentRoutes = (kit: Kit) => {
     )
     .get(
       '/environments/:environment',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
-        const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
-        return select(kit.views.environment, ctx.environment, kit.fields(query.fields))
-      },
-      { params: t.Object({ environment: t.String() }), query: t.Object(getQuery), response: replies({ 200: Environment }), detail: { summary: 'Get an environment', tags } }
+      async ({ params, query }) => select(kit.views.environment, environmentById(db, params.environment).environment, kit.fields(query.fields)),
+      { operation: { id: 'describe_environment', level: 'read', mcp: { always_load: true } }, params: t.Object({ environment: t.String() }), query: t.Object(getQuery), response: replies({ 200: Environment }), detail: { summary: 'Get an environment', tags } }
     )
     .post(
       '/projects/:project/environments',
@@ -186,7 +164,7 @@ export const environmentRoutes = (kit: Kit) => {
         const call = await kit.call(request)
         const proj = projectByRef(db, params.project)
         const ephemeral = body.ephemeral ?? false
-        requireLevel(call.principal, { project_id: proj.id, environment_id: '*' }, ephemeral ? 'deploy' : 'admin')
+        if (!ephemeral) requireLevel(call.principal, { project_id: proj.id, environment_id: '*' }, 'admin')
         if (body.protected) requireHuman(call.principal, 'Creating a protected environment', { protected: true })
         if (ephemeral && body.ttl_seconds === undefined) fail('VALIDATION_FAILED', 'ttl_seconds is required for an ephemeral environment.', undefined, { issues: [{ path: '/ttl_seconds', message: 'required when ephemeral' }] })
         if (db.select({ id: environment.id }).from(environment).where(and(eq(environment.project_id, proj.id), eq(environment.name, body.name))).get()) {
@@ -230,6 +208,7 @@ export const environmentRoutes = (kit: Kit) => {
           },
           { additionalProperties: false }
         ),
+        operation: { id: 'create_environment', level: 'deploy' },
         response: replies({ 201: EnvironmentCreated }),
         detail: { summary: 'Create an environment, empty or as a clone of source_environment_id', tags }
       }
@@ -239,7 +218,6 @@ export const environmentRoutes = (kit: Kit) => {
       async ({ request, params, body }) => {
         const call = await kit.call(request)
         const ctx = environmentById(db, params.environment)
-        requireLevel(call.principal, ctx.target, 'admin')
         if (body.protected !== undefined && body.protected !== ctx.environment.protected) {
           requireHuman(call.principal, 'Changing environment.protected', { ...ctx.target, level: 'admin' })
         }
@@ -250,6 +228,7 @@ export const environmentRoutes = (kit: Kit) => {
       {
         params: t.Object({ environment: t.String() }),
         body: t.Object({ protected: t.Optional(t.Boolean()), ttl_seconds: t.Optional(t.Union([t.Integer({ minimum: 60 }), t.Null()])) }, { additionalProperties: false }),
+        operation: { id: 'update_environment', level: 'admin' },
         response: replies({ 200: Environment }),
         detail: { summary: 'Update protected or ttl_seconds', tags }
       }
@@ -259,7 +238,7 @@ export const environmentRoutes = (kit: Kit) => {
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = environmentById(db, params.environment)
-        requireEnvironmentWrite(call.principal, ctx.environment, 'deploy')
+        if (!ctx.environment.ephemeral) requireLevel(call.principal, ctx.target, 'admin')
         if (ctx.project.default_environment_id === ctx.environment.id) {
           fail('ENVIRONMENT_IS_DEFAULT', `${ctx.environment.name} is the default environment of ${ctx.project.name}.`, 'Set another default_environment_id on the project first.')
         }
@@ -273,6 +252,6 @@ export const environmentRoutes = (kit: Kit) => {
         kit.deps.stations.reconcile()
         return { deleted: true as const, volumes_retained_until: result.retained_until?.toISOString() ?? null }
       },
-      { params: t.Object({ environment: t.String() }), response: replies({ 200: DeletedRetaining, 202: Staged }), detail: { summary: 'Delete an environment; staged when protected', tags } }
+      { operation: { id: 'delete_environment', level: 'deploy' }, params: t.Object({ environment: t.String() }), response: replies({ 200: DeletedRetaining, 202: Staged }), detail: { summary: 'Delete an environment; staged when protected', tags } }
     )
 }

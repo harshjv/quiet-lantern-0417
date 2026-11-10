@@ -1,11 +1,12 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { Principal } from '../auth/principal.ts'
 import type { Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { environment, secret_value, service, variable } from '../db/schema.ts'
+import { environment, service, variable } from '../db/schema.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { hasReference, parseValue } from '../secrets/reference.ts'
+import { decryptValue, headValue, nextValueVersion } from '../secrets/values.ts'
 import { requireInstance, requireLevel } from './access.ts'
 import type { ChangeSet } from './changes.ts'
 import { fail, fromSecretsError, invalid } from './errors.ts'
@@ -44,14 +45,6 @@ export const existingVariables = (db: Db, scope: VariableScope): VariableRow[] =
   if (scope.scope === 'project') return db.select().from(variable).where(and(eq(variable.scope, 'project'), eq(variable.project_id, scope.parent))).all()
   return db.select().from(variable).where(eq(variable.scope, 'global')).all()
 }
-
-const nextVersion = (db: Db, variableId: string, environmentId: string | null) =>
-  (db
-    .select({ version: secret_value.version })
-    .from(secret_value)
-    .where(and(eq(secret_value.variable_id, variableId), environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId)))
-    .orderBy(desc(secret_value.version))
-    .get()?.version ?? 0) + 1
 
 export const dependentsOf = (db: Db, row: VariableRow) => {
   const candidates = db.select().from(variable).where(and(eq(variable.scope, 'service'), eq(variable.kind, 'reference'))).all()
@@ -96,13 +89,8 @@ const unchanged = (db: Db, keyring: Keyring, prior: VariableRow | undefined, ite
   if ((item.injection ?? prior.injection) !== prior.injection || (item.build ?? prior.build) !== prior.build) return false
   if (item.kind === 'reference') return item.reference === prior.reference
   if (item.kind !== 'literal' || item.reference !== undefined || prior.reference !== null || item.value === undefined) return false
-  const head = db
-    .select()
-    .from(secret_value)
-    .where(and(eq(secret_value.variable_id, prior.id), environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId), isNull(secret_value.revoked_at)))
-    .orderBy(desc(secret_value.version))
-    .get()
-  return head !== undefined && keyring.decrypt(head.id, head.data_key_id, head.ciphertext) === item.value
+  const head = headValue(db, prior.id, environmentId, 'unset')
+  return head !== undefined && decryptValue(keyring, head) === item.value
 }
 
 export const planVariables = (
@@ -162,7 +150,7 @@ export const planVariables = (
       injection: item.injection ?? prior?.injection ?? 'env',
       build: item.build ?? prior?.build ?? false,
       value_length: plaintext === null ? null : Buffer.byteLength(plaintext, 'utf8'),
-      version: plaintext === null && reference === null ? null : prior ? nextVersion(db, prior.id, environmentId) : 1,
+      version: plaintext === null && reference === null ? null : prior ? nextValueVersion(db, prior.id, environmentId) : 1,
       allow_unresolved: input.allow_unresolved ?? false,
       ...(environmentId ? { environment_id: environmentId } : {}),
       ...(plaintext === null ? {} : { value_id: set.secret(plaintext) })

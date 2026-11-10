@@ -3,6 +3,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
+release_config=$root/release.config.json
 client_image=docker.io/library/ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 net=stationly-installer-test
 reg=stationly-installer-test-registry
@@ -50,7 +51,7 @@ trap cleanup EXIT
 cleanup
 
 (cd "$root/installer/test-release/testsign" && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH="$(docker version -f '{{.Server.Arch}}')" go build -trimpath -o "$work/testsign-linux" .)
-registry_image=$(jq -r '.depot.source + "@" + .depot.digest' "$here/components.json")
+registry_image=$(jq -r '.components.depot.source + "@" + .components.depot.digest' "$release_config")
 docker network create "$net" >/dev/null
 docker run -d --name "$reg" --network "$net" -p 127.0.0.1::5000 "$registry_image" >/dev/null
 reg_port=$(docker port "$reg" 5000/tcp | head -n1 | sed 's/.*://')
@@ -66,14 +67,13 @@ for t in linux-amd64 linux-arm64 darwin-arm64 darwin-amd64; do
 		printf '#!/bin/sh\necho "sly %s (%s stand-in)"\n' "$version" "$t" >"$files/sly-$t"
 	fi
 done
-(cd "$files" && oras push --plain-http --artifact-type application/vnd.stationly.release.v1 "127.0.0.1:$reg_port/stationly/release:v$version" ./* >/dev/null)
+(cd "$files" && oras push --plain-http --artifact-type "$(jq -r .media_types.release_artifact "$release_config")" "127.0.0.1:$reg_port/stationly/release:v$version" ./* >/dev/null)
 ok "pushed the release artifact to the local registry"
 
 render_sly() {
-	sed -e "s|@RELEASE@|$version|" -e "s|@RELEASES@|$1|" \
-		-e "s|@SLY_SHA256_LINUX_AMD64@|$2|" -e "s|@SLY_SHA256_LINUX_ARM64@|$(sha256 "$files/sly-linux-arm64")|" \
-		-e "s|@SLY_SHA256_DARWIN_ARM64@|$(sha256 "$files/sly-darwin-arm64")|" -e "s|@SLY_SHA256_DARWIN_AMD64@|$(sha256 "$files/sly-darwin-amd64")|" \
-		"$root/installer/install-sly.sh"
+	"$here/render.sh" "$root/installer/install-sly.sh" "RELEASE=$version" "RELEASES=$1" \
+		"SLY_SHA256_LINUX_AMD64=$2" "SLY_SHA256_LINUX_ARM64=$(sha256 "$files/sly-linux-arm64")" \
+		"SLY_SHA256_DARWIN_ARM64=$(sha256 "$files/sly-darwin-arm64")" "SLY_SHA256_DARWIN_AMD64=$(sha256 "$files/sly-darwin-amd64")"
 }
 in_proxy_net="http://$proxy:5051/stationly/release"
 render_sly "$in_proxy_net" "$(sha256 "$files/sly-linux-amd64")" >"$work/install-sly.sh"

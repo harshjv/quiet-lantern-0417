@@ -12,7 +12,6 @@ import {
   secret_value,
   service,
   service_port,
-  setting,
   staged_change,
   staged_value,
   variable,
@@ -24,7 +23,8 @@ import { setVariable, type VariableWrite } from '../secrets/variables.ts'
 import { refreshStale, settleVariableWrites } from './stale.ts'
 import { audit, emit, type Call, type Deps } from './context.ts'
 import { startUpgrade } from '../platform/upgrade.ts'
-import type { LockfileDoc } from '@stationly/protocol'
+import { volumeDockerName, type LockfileDoc, type SettingKey } from '@stationly/protocol'
+import { deleteSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import type { BackupTarget } from '../volumes/backups.ts'
 import { createDeploymentRecord, type TriggerType } from './deployments.ts'
 import { ensureNetwork, ensureVirtualIp } from './ipam.ts'
@@ -319,7 +319,7 @@ const applyChanges = (deps: Store, call: Call, changes: Change[], plaintext: (va
               project_id: env.project_id,
               mount_path: after.mount_path as string,
               station_id: owner.station_id,
-              docker_name: `or-vol-${id.slice(4).toLowerCase()}`
+              docker_name: volumeDockerName(id)
             })
             .run()
           refs[change.ref] = id
@@ -516,17 +516,15 @@ const applyChanges = (deps: Store, call: Call, changes: Change[], plaintext: (va
           break
         }
         case 'setting': {
-          const existing = db.select().from(setting).where(eq(setting.key, id)).get()
-          if (change.after === null) db.delete(setting).where(eq(setting.key, id)).run()
-          else if (existing) db.update(setting).set({ value: change.after, updated_by: call.principal.actor }).where(eq(setting.key, id)).run()
-          else db.insert(setting).values({ key: id, value: change.after, updated_by: call.principal.actor }).run()
+          if (change.after === null) deleteSetting(db, id as SettingKey)
+          else writeSetting(db, id as SettingKey, change.after, call.principal.actor)
           break
         }
         case 'lockfile': {
-          const row = db.select().from(setting).where(eq(setting.key, 'platform.lockfile')).get()
-          if (!row) fail('VALIDATION_FAILED', 'There is no platform.lockfile to change; install a release first.')
-          lockfileBefore ??= structuredClone(row!.value) as LockfileDoc
-          let value = structuredClone(row!.value) as Json
+          const stored = storedSetting(db, 'platform.lockfile')
+          if (stored === undefined) fail('VALIDATION_FAILED', 'There is no platform.lockfile to change; install a release first.')
+          lockfileBefore ??= structuredClone(stored!)
+          let value = structuredClone(stored!) as Json
           if (change.path === '/') value = structuredClone(change.after) as Json
           else {
             const overrides = { ...((value.overrides as Json | undefined) ?? {}) }
@@ -536,7 +534,7 @@ const applyChanges = (deps: Store, call: Call, changes: Change[], plaintext: (va
             value.overrides = overrides
           }
           value.updated_at = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
-          db.update(setting).set({ value, updated_by: call.principal.actor }).where(eq(setting.key, 'platform.lockfile')).run()
+          writeSetting(db, 'platform.lockfile', value, call.principal.actor)
           break
         }
         case 'environment':
@@ -581,7 +579,7 @@ const applyChanges = (deps: Store, call: Call, changes: Change[], plaintext: (va
   }
   if (variablesChanged) settleVariableWrites(db, writes)
   else refreshStale(db, [...touched])
-  const lockfile = lockfileBefore ? { before: lockfileBefore, after: db.select().from(setting).where(eq(setting.key, 'platform.lockfile')).get()!.value as LockfileDoc } : null
+  const lockfile = lockfileBefore ? { before: lockfileBefore, after: storedSetting(db, 'platform.lockfile')! } : null
   return { refs, deployments, retained_until, lockfile, backups, restores, probes, grows }
 }
 

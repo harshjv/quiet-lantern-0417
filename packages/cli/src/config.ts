@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { env } from './env.ts'
 import type { MachineKey } from './proof.ts'
 
 export type McpClientToken = { token: string; token_id: string; expires_at: string }
@@ -17,8 +17,7 @@ export type Credentials = {
 
 type Config = { current: string | null }
 
-export const configDir = () =>
-  join(process.platform === 'win32' ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')) : process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'stationly')
+export const configDir = () => join(process.platform === 'win32' ? env.APPDATA : env.XDG_CONFIG_HOME, 'stationly')
 
 const credentialsPath = (instance: string) => join(configDir(), 'credentials', `${new URL(instance).host.replace(/[^A-Za-z0-9.-]/g, '_')}.json`)
 

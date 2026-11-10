@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
-import { buildRedactor } from '../src/api/redaction.ts'
+import { buildRedactor, encodedForms } from '../src/api/redaction.ts'
 import { redactionKnown, secretsDeliver } from '../src/secrets/deploy.ts'
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
@@ -51,11 +51,6 @@ after(async () => {
 })
 
 const decode = (value: string) => Buffer.from(value, 'base64url').toString('utf8')
-
-const encodedForms = (value: string) => {
-  const bytes = Buffer.from(value, 'utf8')
-  return [value, bytes.toString('base64').replace(/=+$/, ''), bytes.toString('base64url'), encodeURIComponent(value), encodeURIComponent(value).replace(/%20/g, '+')]
-}
 
 describe('log redaction covers sealed values and generated secrets only', () => {
   test('secrets.deliver carries the sealed value, the generated secret and the entries that embed a sealed value', () => {

@@ -3,6 +3,7 @@ import { KeyValue, Mono } from '@/components/page'
 import { Badge } from '@/components/ui/badge'
 import { bytes, clock, json, shortSha } from '@/lib/format'
 import type { Diagnosis } from '@/lib/api'
+import { endpointText } from '@/lib/network-layout'
 
 export function DiagnosisPanel({ diagnosis }: { diagnosis: Diagnosis }) {
   const diff = diagnosis.diff_from_last_good
@@ -28,7 +29,7 @@ export function DiagnosisPanel({ diagnosis }: { diagnosis: Diagnosis }) {
             ['Out of memory', diagnosis.oom_killed ? 'yes' : 'no'],
             ['Health', diagnosis.health ? `${diagnosis.health.type}${diagnosis.health.path ? ` ${diagnosis.health.path}` : ''}${diagnosis.health.port ? ` :${diagnosis.health.port}` : ''} · ${diagnosis.health.result}${diagnosis.health.attempts ? ` after ${diagnosis.health.attempts}` : ''}` : '—'],
             ['Memory', diagnosis.resources ? `${bytes(diagnosis.resources.memory_peak_bytes)} peak of ${bytes(diagnosis.resources.memory_limit_bytes)}` : '—'],
-            ...(diagnosis.network ? [['Listening', diagnosis.network.listening.length ? diagnosis.network.listening.map(l => `${l.address}:${l.port}/${l.protocol}`).join(', ') : 'nothing'] as [string, string]] : [])
+            ...(diagnosis.network ? [['Listening', diagnosis.network.listening.length ? diagnosis.network.listening.map(endpointText).join(', ') : 'nothing'] as [string, string]] : [])
           ]}
         />
         {diagnosis.fixes && diagnosis.fixes.length > 0 && (

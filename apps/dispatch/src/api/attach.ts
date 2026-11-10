@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { sandboxExecLimits } from '@stationly/protocol'
+import { runTerminalStatuses, sandboxExecLimits } from '@stationly/protocol'
 import { eq } from 'drizzle-orm'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import { authenticate, type Principal } from '../auth/principal.ts'
@@ -99,7 +99,7 @@ export const createAttachServer = (deps: Deps) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(body))
     }
     const finish = async (reason: string, exitCode: number | null) => {
-      const terminal = (status: string) => ['succeeded', 'failed', 'cancelled', 'skipped'].includes(status)
+      const terminal = (status: string) => (runTerminalStatuses as readonly string[]).includes(status)
       const deadline = Date.now() + exitWaitMs
       let row = db.select().from(run).where(eq(run.id, r.id)).get()!
       while (exitCode === null && !terminal(row.status) && Date.now() < deadline) {

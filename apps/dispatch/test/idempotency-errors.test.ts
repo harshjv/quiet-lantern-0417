@@ -161,7 +161,7 @@ describe('error envelope', () => {
     const key = await mintToken(h, [{ project_id: created.body.id, environment_id: created.body.default_environment_id, level: 'read' }], 'reader')
     const reply = await post(`/v1/projects/${created.body.id}/environments`, { name: 'extra' }, {}, key)
     const error = assertEnvelope(reply, 'FORBIDDEN_SCOPE')
-    assert.equal(error.details.required.level, 'admin')
+    assert.equal(error.details.required.level, 'deploy')
     assert.equal(error.details.required.project_id, created.body.id)
   })
 

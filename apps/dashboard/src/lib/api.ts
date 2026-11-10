@@ -36,7 +36,7 @@ export type SandboxShell = Data<ReturnType<V1['sandboxes']>['shells']['post']>
 export type StagedChange = Data<ReturnType<V1['staged-changes']>['get']>
 export type Change = NonNullable<StagedChange['changes']>[number]
 export type LogPage = Data<V1['logs']['get']>
-export type LogLine = LogPage['lines'][number]
+export type LogLine = LogPage['untrusted']['lines'][number]
 export type Event = Item<Data<V1['events']['get']>>
 
 export class ApiFailure extends Error {

@@ -1,7 +1,7 @@
 FROM docker.io/library/node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS build
 RUN npm install --global --no-fund --no-audit pnpm@12.17.0
 WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json release.config.json ./
 COPY packages ./packages
 COPY apps/dispatch ./apps/dispatch
 COPY apps/dashboard ./apps/dashboard

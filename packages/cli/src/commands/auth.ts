@@ -3,7 +3,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import type { Command } from 'commander'
 import { action } from '../command.ts'
 import { normalizeInstance, readCredentials, removeCredentials, saveCredentials, type Credentials } from '../config.ts'
-import { Exit, exitCodes, notLoggedIn, unreachable } from '../errors.ts'
+import { Exit, exitCodes, notLoggedIn, unreachable, type EnvelopeCode } from '../errors.ts'
 import { connect, connectWith, credentialHeaders, resolveInstance, send, userAgent } from '../kit.ts'
 import { print, progress } from '../output.ts'
 import { newMachineKey, proofFor, type MachineKey } from '../proof.ts'
@@ -17,7 +17,7 @@ type DeviceToken = { access_token?: string; expires_in?: number; error?: string;
 
 const deviceGrant = 'urn:ietf:params:oauth:grant-type:device_code'
 
-const refused = (code: string, explanation: string, fix: string) => new Exit(exitCodes.connection, { error: { code, explanation, fix } })
+const refused = (code: EnvelopeCode, explanation: string, fix: string) => new Exit(exitCodes.connection, { error: { code, explanation, fix } })
 
 const post = async (url: string, body: unknown, headers: Record<string, string> = {}) => {
   try {

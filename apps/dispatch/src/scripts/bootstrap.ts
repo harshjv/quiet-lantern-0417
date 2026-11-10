@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { networkLayout } from '@stationly/protocol'
 import { join } from 'node:path'
 import { text } from 'node:stream/consumers'
 import { parseArgs } from 'node:util'
@@ -8,10 +9,12 @@ import { createMetadataFetch } from '../auth/metadata-fetch.ts'
 import { openDb } from '../db/client.ts'
 import { Keyring, masterKeyFromEnv } from '../secrets/keyring.ts'
 
-const { values } = parseArgs({ options: { db: { type: 'string' }, origin: { type: 'string', default: 'http://127.0.0.1:7900' }, release: { type: 'string' } } })
+const localOrigin = `http://${networkLayout.dispatchHostAddress}:${networkLayout.dispatchPort}`
+
+const { values } = parseArgs({ options: { db: { type: 'string' }, origin: { type: 'string', default: localOrigin }, release: { type: 'string' } } })
 
 if (!values.db) {
-  console.error('usage (local development without a station; on a station run sly setup): pnpm bootstrap --db <sqlite file> [--origin http://127.0.0.1:7900] [--release <dir stationd install wrote>] < {"email","password","name"?,"acme_email"?,"hostnames"?: {"dashboard","api"}}')
+  console.error(`usage (local development without a station; on a station run sly setup): pnpm bootstrap --db <sqlite file> [--origin ${localOrigin}] [--release <dir stationd install wrote>] < {"email","password","name"?,"acme_email"?,"hostnames"?: {"dashboard","api"}}`)
   process.exit(2)
 }
 

@@ -6,18 +6,7 @@ import { can } from '../access.ts'
 import { ApiError } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { parseTime, type Kit } from '../kit.ts'
-import {
-  allocationById,
-  deploymentById,
-  domainById,
-  environmentById,
-  portById,
-  projectByRef,
-  serviceById,
-  stagedById,
-  variableById,
-  volumeById
-} from '../lookup.ts'
+import { targets, type TargetEntity } from '../lookup.ts'
 import { before, collect, listQuery } from '../pagination.ts'
 import { AuditEvent, models, Page, replies } from '../shapes.ts'
 
@@ -26,40 +15,16 @@ export const auditRoutes = (kit: Kit) => {
   const tags = ['audit']
 
   const targetOf = (entity: string, id: string): Target | null => {
+    if (!Object.hasOwn(targets, entity)) return null
     try {
-      switch (entity) {
-        case 'project':
-          return { project_id: projectByRef(db, id).id, environment_id: '*' }
-        case 'environment':
-          return environmentById(db, id).target
-        case 'service':
-          return serviceById(db, id).target
-        case 'service_port':
-          return portById(db, id).target
-        case 'domain':
-          return domainById(db, id).target
-        case 'port_allocation':
-          return allocationById(db, id).target
-        case 'deployment':
-          return deploymentById(db, id).target
-        case 'variable':
-          return variableById(db, id).target
-        case 'staged_change':
-          return stagedById(db, id).target
-        case 'volume': {
-          const ctx = volumeById(db, id)
-          return ctx.owner?.target ?? (ctx.volume.project_id ? { project_id: ctx.volume.project_id, environment_id: '*' } : null)
-        }
-        default:
-          return null
-      }
+      return targets[entity as TargetEntity](db, id).target
     } catch (error) {
       if (error instanceof ApiError) return null
       throw error
     }
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).get(
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations).get(
     '/audit',
     async ({ request, query }) => {
       const principal = await kit.principal(request)
@@ -97,6 +62,7 @@ export const auditRoutes = (kit: Kit) => {
       return { items: page.rows.map(row => select(kit.views.audit, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
     },
     {
+      operation: { id: 'get_audit_events', level: 'any' },
       query: t.Object({
         ...listQuery,
         since: t.Optional(t.String()),

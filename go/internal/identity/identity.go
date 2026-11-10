@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -131,41 +132,17 @@ func Save(stateDir string, st Station, keys Keys) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(dir, keyFile), []byte(b64.EncodeToString(keys.Key.Seed())+"\n")); err != nil {
+	if err := fsx.WriteFile(filepath.Join(dir, keyFile), []byte(b64.EncodeToString(keys.Key.Seed())+"\n"), 0o600); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(dir, wireguardKey), []byte(b64.EncodeToString(keys.WireGuard)+"\n")); err != nil {
+	if err := fsx.WriteFile(filepath.Join(dir, wireguardKey), []byte(b64.EncodeToString(keys.WireGuard)+"\n"), 0o600); err != nil {
 		return err
 	}
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeFile(filepath.Join(dir, stationFile), append(b, '\n'))
-}
-
-func writeFile(path string, b []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return fsx.WriteFile(filepath.Join(dir, stationFile), append(b, '\n'), 0o600)
 }
 
 func CheckURL(raw string) error {

@@ -48,6 +48,7 @@ var Capabilities = []string{
 	string(protocol.CapabilityLogsFollow),
 	string(protocol.CapabilityMetricsV1),
 	string(protocol.CapabilityExecTty),
+	string(protocol.CapabilityForwardTcp),
 	string(protocol.CapabilityNetworkV1),
 	string(protocol.CapabilitySandboxV1),
 }

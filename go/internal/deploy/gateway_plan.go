@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"net/netip"
 	"regexp"
 	"slices"
@@ -85,12 +86,6 @@ type PortPlan struct {
 	ContainerPort uint16
 }
 
-func offset(p netip.Prefix, n uint32) netip.Addr {
-	b := p.Masked().Addr().As4()
-	v := (uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])) + n
-	return netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)})
-}
-
 func portRange(s string) (int, int, error) {
 	lo, hi, ok := strings.Cut(s, "-")
 	if !ok {
@@ -125,7 +120,7 @@ func checkGateway(g *protocol.Generation) *Rejection {
 		return invalid("ingress network gateway %q is not an address inside %s", g.Station.Networks.Ingress.Gateway, ingress)
 	}
 	for _, n := range []uint32{cloudflaredOffset, slotOffsetA, slotOffsetB} {
-		if offset(ingress, n) == bridge {
+		if cidr.Offset(ingress, n) == bridge {
 			return invalid("ingress network gateway %s collides with the fixed cloudflared or Gateway Coupler addresses", bridge)
 		}
 	}
@@ -259,15 +254,15 @@ func planGateway(g *protocol.Generation, couplerImage string, now time.Time, tru
 	}
 	gp := &GatewayPlan{
 		Ingress:       ingress,
-		IPRange:       upperHalf(ingress),
+		IPRange:       cidr.UpperHalf(ingress),
 		Bridge:        netip.MustParseAddr(g.Station.Networks.Ingress.Gateway),
-		Cloudflared:   offset(ingress, cloudflaredOffset),
-		Slots:         map[string]netip.Addr{gatewaySlotA: offset(ingress, slotOffsetA), gatewaySlotB: offset(ingress, slotOffsetB)},
+		Cloudflared:   cidr.Offset(ingress, cloudflaredOffset),
+		Slots:         map[string]netip.Addr{gatewaySlotA: cidr.Offset(ingress, slotOffsetA), gatewaySlotB: cidr.Offset(ingress, slotOffsetB)},
 		VirtualPrefix: vp.Masked(),
 		WebOpen:       g.Station.Inbound.WebPorts == protocol.WebPortsOpen,
 		SourceRate:    g.Station.Settings.GatewayRatePerSource,
 		ClassicHours:  gateway.ClassicHours(now),
-		Static:        gateway.Static{Email: g.Gateway.Acme.Email, Cloudflared: offset(ingress, cloudflaredOffset)},
+		Static:        gateway.Static{Email: g.Gateway.Acme.Email, Cloudflared: cidr.Offset(ingress, cloudflaredOffset)},
 	}
 	if p := g.Station.PublicAddress; p != nil {
 		gp.Public = netip.MustParseAddr(*p)
@@ -320,8 +315,4 @@ func planGateway(g *protocol.Generation, couplerImage string, now time.Time, tru
 	}
 	sort.Slice(gp.Ports, func(i, j int) bool { return gp.Ports[i].HostPort < gp.Ports[j].HostPort })
 	return gp, nil
-}
-
-func upperHalf(p netip.Prefix) netip.Prefix {
-	return netip.PrefixFrom(offset(p, 1<<(32-p.Bits()-1)), p.Bits()+1)
 }

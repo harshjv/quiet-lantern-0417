@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -29,7 +30,6 @@ const (
 	dispatchStateFile   = "dispatch.json"
 	dispatchHealthWait  = 60 * time.Second
 	dispatchRestartWait = 10 * time.Second
-	dispatchHostIndex   = 2
 	dispatchBackupDir   = "backups"
 )
 
@@ -84,7 +84,7 @@ func saveDispatchState(stateDir string, st dispatchState) error {
 }
 
 func dispatchAddress(systemSubnet netip.Prefix) netip.Addr {
-	return hostAt(systemSubnet, dispatchHostIndex)
+	return cidr.Offset(systemSubnet, protocol.NetworkDispatchHost)
 }
 
 type dispatchLaunch struct {
@@ -155,7 +155,7 @@ func startDispatch(ctx context.Context, dc *docker.Client, l dispatchLaunch, sid
 func dispatchHealthy(ctx context.Context, wait time.Duration) (time.Duration, error) {
 	start := time.Now()
 	hc := &http.Client{Timeout: time.Second}
-	url := fmt.Sprintf("http://%s:%d/v1/healthz", docker.DispatchHostAddress, docker.DispatchPort)
+	url := fmt.Sprintf("http://%s:%d/v1/healthz", protocol.NetworkDispatchHostAddress, protocol.NetworkDispatchPort)
 	var last string
 	for time.Since(start) < wait {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

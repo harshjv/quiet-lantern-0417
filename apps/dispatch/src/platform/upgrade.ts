@@ -4,7 +4,8 @@ import type { LockfileDoc, ReleaseManifestDoc } from '@stationly/protocol'
 import type Database from 'better-sqlite3'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
-import { component, platform_release, platform_upgrade, setting, station, type UpgradePin, type UpgradeStep } from '../db/schema.ts'
+import { writeSetting } from '../db/settings.ts'
+import { component, platform_release, platform_upgrade, station, type UpgradePin, type UpgradeStep } from '../db/schema.ts'
 import { emitEvent } from '../station/events.ts'
 import { resolvePins, type Pins } from './lockfile.ts'
 
@@ -152,7 +153,7 @@ const finish = (db: Db, row: Row, result: 'done' | 'failed' | 'reverted') => {
   row.status = result
   row.finished_at = new Date()
   if (result === 'reverted') {
-    db.update(setting).set({ value: row.lockfile_before, updated_by: { type: 'system', id: null, client: 'platform-upgrade-revert' } }).where(eq(setting.key, 'platform.lockfile')).run()
+    writeSetting(db, 'platform.lockfile', row.lockfile_before, { type: 'system', id: null, client: 'platform-upgrade-revert' })
     syncComponentLockfile(db, row.lockfile_before as unknown as LockfileDoc)
   }
   save(db, row)

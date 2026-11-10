@@ -51,7 +51,7 @@ up() {
 	mkdir -p "$out/www" "$out/registry"
 	if ! registry_running; then
 		docker rm -f "$container" >/dev/null 2>&1 || true
-		image="$(jq -r '.depot.source + "@" + .depot.digest' "$here/../release/components.json")"
+		image="$(jq -r '.components.depot.source + "@" + .components.depot.digest' "$here/../../release.config.json")"
 		docker run -d --name "$container" --restart no -p "$registry_port:5000" \
 			-e REGISTRY_STORAGE_DELETE_ENABLED=true -e REGISTRY_LOG_LEVEL=warn \
 			-v "$out/registry:/var/lib/registry" "$image" >/dev/null

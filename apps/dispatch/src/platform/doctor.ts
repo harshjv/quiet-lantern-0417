@@ -4,7 +4,7 @@ import type { Db } from '../db/client.ts'
 import { agent_hook, component, doctor_check, domain, drift, notification_channel, station, token, volume_snapshot } from '../db/schema.ts'
 import { emitEvent } from '../station/events.ts'
 import type { StationServer } from '../station/server.ts'
-import { readSetting } from '../api/settings.ts'
+import { readSetting } from '../db/settings.ts'
 import { baseImageInventory } from './base-images.ts'
 import { currentRelease } from './lockfile.ts'
 import { upgradeDoctorRow } from './upgrade.ts'
@@ -78,7 +78,7 @@ const lockfileDrift = (db: Db, names: Map<string, string>) => {
 
 const signatures = (db: Db, names: Map<string, string>) => {
   const row = new Row('signatures')
-  if (readSetting<boolean>(db, 'platform.allow_unsigned')) row.raise('warn', 'allow_unsigned', 'platform.allow_unsigned is true: stationd runs platform artifacts without a verified signature', 'sly settings set platform.allow_unsigned false')
+  if (readSetting(db, 'platform.allow_unsigned')) row.raise('warn', 'allow_unsigned', 'platform.allow_unsigned is true: stationd runs platform artifacts without a verified signature', 'sly settings set platform.allow_unsigned false')
   let verified = 0
   for (const c of db.select().from(component).all()) {
     if (!c.station_id || c.signature === 'not_applicable') continue
@@ -168,16 +168,16 @@ const volumeBackups = (db: Db) => {
   const since = new Date(Date.now() - day)
   const failed = db.select().from(volume_snapshot).where(and(eq(volume_snapshot.status, 'failed'), gt(volume_snapshot.taken_at, since))).all()
   for (const f of failed) row.raise('warn', 'backup_failed', `backup ${f.id} of ${f.volume_id} failed: ${(f.failure as { explanation?: string } | null)?.explanation ?? 'unknown'}`, `sly volumes backup ${f.volume_id}`)
-  const schedule = readSetting<string>(db, 'volume_backup.schedule')
+  const schedule = readSetting(db, 'volume_backup.schedule')
   row.detail.schedule = schedule
-  row.detail.keep = readSetting<number>(db, 'volume_backup.keep')
+  row.detail.keep = readSetting(db, 'volume_backup.keep')
   row.note(schedule ? `scheduled ${schedule}, keeping ${String(readSetting(db, 'volume_backup.keep'))} per volume; no failure in 24 h` : 'no schedule (volume_backup.schedule); no failure in 24 h')
   return row.done()
 }
 
 const releaseCheck = (db: Db) => {
   const row = new Row('release_check')
-  row.note(readSetting<boolean>(db, 'platform.release_check') ? 'release check enabled; the release feed is not read in this build' : 'release check disabled')
+  row.note(readSetting(db, 'platform.release_check') ? 'release check enabled; the release feed is not read in this build' : 'release check disabled')
   return row.done()
 }
 

@@ -1,7 +1,8 @@
+import { releaseRepositories } from '@stationly/protocol/release-config'
 import { effectivePins } from '../platform/lockfile.ts'
 import { generationLockfile, overlayPins } from '../platform/upgrade.ts'
 import { isIP } from 'node:net'
-import { ContainerSpec, DesiredDeployment, DesiredEnvironment, DesiredPortAllocation, DesiredSandbox, DesiredSandboxSnapshot, DesiredService, DesiredVolume, Generation, Route } from '@stationly/protocol'
+import { bridgeName, ContainerSpec, DesiredDeployment, DesiredEnvironment, DesiredPortAllocation, DesiredSandbox, DesiredSandboxSnapshot, DesiredService, DesiredVolume, Generation, networkLayout, Route, sandboxNetworkName, stationSettingKeys } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
@@ -17,13 +18,14 @@ import {
   sandbox_snapshot,
   service,
   service_port,
-  setting,
   station,
   station_generation,
   virtual_ip,
   volume
 } from '../db/schema.ts'
-import { dispatchPort, dispatchVirtualIp } from '../api/ipam.ts'
+import { dispatchVirtualIp } from '../api/ipam.ts'
+import { settingsSnapshot, type SettingsSnapshot } from '../db/settings.ts'
+import { parseCidr, slash24At } from '../net/cidr.ts'
 import { envDigest, generationEnv } from '../secrets/deploy.ts'
 import { sandboxEnv } from '../secrets/sandbox.ts'
 import { pinnedRef } from '../platform/image-source.ts'
@@ -46,56 +48,31 @@ export class GenerationError extends Error {
   }
 }
 
-const settingDefaults: Settings = {
-  'ipam.pool': '10.200.0.0/16',
-  'ipam.virtual_prefix': '100.64.0.0/16',
-  'exposure.port_range': '30000-32767',
-  'disk.warning_pct': 80,
-  'disk.critical_pct': 90,
-  'workshop.idle_timeout_s': 3600,
-  'workshop.max_builds_per_project': 1,
-  'registry.gc_schedule': '0 3 * * *',
-  'acme.email': '',
-  'platform.allow_unsigned': false,
-  'gateway.rate_per_source': 20
-}
-
-const optionalSettings = [
-  'logs.retention.runtime_days',
-  'logs.retention.build_days',
-  'logs.retention.run_days',
-  'logs.retention.system_days',
-  'logs.retention.runtime_bytes_per_service',
-  'platform.lockfile'
-] as const
-
 const inFlightStatuses = ['queued', 'pre_deploy', 'starting', 'waiting_health', 'cutover', 'draining'] as const
 
 const unlistedComponents = new Set(['docker_engine', 'grype_db'])
 
 const budgetDefaults = { pull_s: 600, start_s: 120, health_s: 120, slack_s: 300 }
 
-const toolchainSource = 'ghcr.io/harshjv/stationly/sandbox-toolchain'
-
 const workshopCache = { reserved_bytes: 1024 ** 3, min_free_bytes: 5 * 1024 ** 3 }
 
 const subnetOfPool = (pool: string, index: number) => {
-  const [base, bits] = pool.split('/')
-  const octets = base!.split('.').map(Number)
-  if (octets.length !== 4 || Number(bits) > 24) throw new GenerationError(`ipam.pool ${pool} cannot hold the platform /24 bridges`)
-  const third = octets[2]! + index
-  return { subnet: `${octets[0]}.${octets[1]}.${third}.0/24`, gateway: `${octets[0]}.${octets[1]}.${third}.1` }
+  const cidr = parseCidr(pool)
+  if (!cidr || cidr.bits > 24) throw new GenerationError(`ipam.pool ${pool} cannot hold the platform /24 bridges`)
+  return slash24At(pool, index)
 }
 
-export const bridgeName = (environmentId: string) => `or-${environmentId.slice(-12).toLowerCase()}`
-
 const readSettings = (db: Db) => {
-  const rows = new Map(db.select({ key: setting.key, value: setting.value }).from(setting).all().map(row => [row.key, row.value]))
+  const read = settingsSnapshot(db)
   const settings: Record<string, unknown> = {}
-  for (const [key, fallback] of Object.entries(settingDefaults)) settings[key] = rows.get(key) ?? fallback
-  for (const key of optionalSettings) if (rows.has(key)) settings[key] = rows.get(key)
-  if (rows.has('platform.lockfile')) settings['platform.lockfile'] = generationLockfile(db, rows.get('platform.lockfile'))
-  return { settings: settings as Settings, rows }
+  for (const key of stationSettingKeys) {
+    const value = read(key)
+    if (value !== null) settings[key] = value
+  }
+  settings['acme.email'] ??= ''
+  const lockfile = read('platform.lockfile')
+  if (lockfile !== null) settings['platform.lockfile'] = generationLockfile(db, lockfile)
+  return { settings: settings as Settings, read }
 }
 
 const healthBudget = (health: HealthCheck) => (health && 'startup_timeout_s' in health ? health.startup_timeout_s : budgetDefaults.health_s)
@@ -214,9 +191,9 @@ export const systemRouteIds = { dashboard: 'system-dashboard', api: 'system-api'
 
 type SystemRoute = { id: string; hostname: string; resolver: 'letsencrypt' | 'letsencrypt-shortlived' }
 
-const systemRoutes = (rows: Map<string, unknown>, publicAddress: string | null): SystemRoute[] => {
-  const dashboard = rows.get('hostnames.dashboard')
-  const api = rows.get('hostnames.api')
+const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): SystemRoute[] => {
+  const dashboard = read('hostnames.dashboard')
+  const api = read('hostnames.api')
   if (typeof dashboard === 'string' && dashboard && typeof api === 'string' && api) {
     return [
       { id: systemRouteIds.api, hostname: api, resolver: 'letsencrypt' },
@@ -230,10 +207,10 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const st = db.select().from(station).where(eq(station.id, stationId)).get()
   if (!st) throw new GenerationError(`station ${stationId} does not exist`)
   if (!st.registry_address || !st.registry_subnet) throw new GenerationError(`station ${stationId} has no registry address yet`)
-  const { settings, rows } = readSettings(db)
-  const instanceId = rows.get('instance.id')
+  const { settings, read } = readSettings(db)
+  const instanceId = read('instance.id')
   if (typeof instanceId !== 'string') throw new GenerationError('the instance.id setting is missing')
-  if (!rows.get('platform.lockfile')) throw new GenerationError('platform.lockfile is not set yet; sly setup writes it from the release stationd install verified')
+  if (!read('platform.lockfile')) throw new GenerationError('platform.lockfile is not set yet; sly setup writes it from the release stationd install verified')
 
   const previous = db.select({ document: station_generation.document }).from(station_generation).where(eq(station_generation.station_id, stationId)).orderBy(desc(station_generation.generation)).limit(1).get()?.document
   const excluded: Exclusion[] = []
@@ -366,7 +343,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     const at = keyOf('sandbox', row.id)
     const destroy = row.status === 'deleting'
     if (!destroy && row.network === 'environment' && !environmentDocs[row.environment_id]) throw new GenerationError(`${at}: environment ${row.environment_id} is not in this generation`)
-    const image_ref = row.image.ref === null ? `${pins.sandbox_toolchain?.source ?? toolchainSource}@${row.image.digest}` : pinnedRef(row.image.ref, row.image.digest)
+    const image_ref = row.image.ref === null ? `${pins.sandbox_toolchain?.source ?? releaseRepositories.sandbox_toolchain}@${row.image.digest}` : pinnedRef(row.image.ref, row.image.digest)
     const built = hashed({
       environment_id: row.environment_id,
       project_id: row.project_id,
@@ -477,10 +454,10 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const ports = serviceIds.length ? db.select().from(service_port).where(inArray(service_port.service_id, serviceIds)).all() : []
   const portById = new Map(ports.map(p => [p.id, p]))
   const routes: GenerationContent['gateway']['routes'] = {}
-  const dispatchTarget = st.hosts_dispatch ? { system: 'dispatch' as const, virtual_ip: dispatchVirtualIp(settings['ipam.virtual_prefix']), port: dispatchPort } : null
+  const dispatchTarget = st.hosts_dispatch ? { system: 'dispatch' as const, virtual_ip: dispatchVirtualIp(settings['ipam.virtual_prefix']), port: networkLayout.dispatchPort } : null
   const systemHosts = new Map<string, string>()
   if (dispatchTarget) {
-    for (const r of systemRoutes(rows, st.public_address)) {
+    for (const r of systemRoutes(read, st.public_address)) {
       const route = guarded('route', r.id, previous?.gateway.routes[r.id], () => {
         if (!st.public_address) throw new GenerationError(`${keyOf('route', r.id)}: ${r.hostname} is a direct route, which needs the station's public_address; set it with sly stations update ${st.name} --public-address <ipv4>`)
         const built = hashed({ hostname: r.hostname, ingress: 'direct' as const, target: dispatchTarget, tls: { resolver: r.resolver }, redirect_http: true })
@@ -568,9 +545,9 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     components[name] = { version: pin.version, digest: pin.digest }
   }
 
-  const gatewayAcme = { email: settings['acme.email'], ca_server: typeof rows.get('acme.ca_server') === 'string' ? (rows.get('acme.ca_server') as string) : null }
+  const gatewayAcme = { email: settings['acme.email'], ca_server: read('acme.ca_server') }
   const hasDirect = Object.values(routes).some(r => r.ingress === 'direct')
-  const ingressMode = rows.get('ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
+  const ingressMode = read('ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
 
   return {
     excluded,
@@ -581,13 +558,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       station: {
         settings,
         registry: { address: st.registry_address, subnet: st.registry_subnet, token_issuer: 'stationd', pull_scope: 'station', key_ref: 'registry-token.key' },
-        networks: { system: subnetOfPool(settings['ipam.pool'], 0), ingress: subnetOfPool(settings['ipam.pool'], 1) },
+        networks: { system: subnetOfPool(settings['ipam.pool'], networkLayout.systemIndex), ingress: subnetOfPool(settings['ipam.pool'], networkLayout.ingressIndex) },
         inbound: { mode: ingressMode, web_ports: hasDirect ? 'open' : 'closed', setup_port_until: null },
         public_address: st.public_address ?? null,
         concurrency_cap: st.concurrency_cap,
         intermittent: st.intermittent,
         hosts_dispatch: st.hosts_dispatch,
-        ...(sandboxCapable ? { sandbox_network: st.sandbox_subnet ? { bridge_name: 'stationly-sandbox' as const, subnet: st.sandbox_subnet, gateway: st.sandbox_subnet.replace(/\.0\/\d+$/, '.1') } : null } : {})
+        ...(sandboxCapable ? { sandbox_network: st.sandbox_subnet ? { bridge_name: sandboxNetworkName, subnet: st.sandbox_subnet, gateway: st.sandbox_subnet.replace(/\.0\/\d+$/, '.1') } : null } : {})
       },
       components,
       environments: environmentDocs,

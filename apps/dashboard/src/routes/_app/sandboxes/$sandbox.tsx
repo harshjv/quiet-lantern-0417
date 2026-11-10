@@ -4,20 +4,22 @@ import { CircleAlert, TerminalSquare } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 import { Crumbs } from '@/components/crumbs'
 import { LogViewer } from '@/components/log-viewer'
-import { Empty, ErrorState, KeyValue, Mono, PageHeader, Rows, Section } from '@/components/page'
-import { CopiedFilesNotice, DeleteSandbox, DeleteSnapshot, ExtendSandbox, ForkButton, SnapshotSandbox, StartSandbox, StopSandbox } from '@/components/sandbox-actions'
+import { Empty, KeyValue, Mono, PageHeader, Rows, Section } from '@/components/page'
+import { QueryState } from '@/components/query-state'
+import { SnapshotsTable } from '@/components/snapshots-table'
+import { CopiedFilesNotice, DeleteSandbox, ExtendSandbox, ForkButton, SnapshotSandbox, StartSandbox, StopSandbox } from '@/components/sandbox-actions'
 import { TimeLeft } from '@/components/sandbox-clock'
 import { SandboxNetwork } from '@/components/sandbox-network'
 import { ProtectedNotice } from '@/components/sandboxes-panel'
 import { SandboxStatusBadge } from '@/components/status'
 import { VariablesPanel } from '@/components/variables-panel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ago, bytes } from '@/lib/format'
-import { environmentQuery, projectQuery, sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
-import { imageText, sizeText } from '@/lib/sandbox'
+import { bytes } from '@/lib/format'
+import { sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
+import { egressText, imageText, sizeText } from '@/lib/sandbox'
+import { useEnvironmentTrail } from '@/lib/use-trail'
+import { isIdle, isLive } from '@/lib/status'
 import type { Sandbox } from '@/lib/api'
 
 const SandboxTerminal = lazy(() => import('@/components/sandbox-terminal').then(m => ({ default: m.SandboxTerminal })))
@@ -35,51 +37,14 @@ function Snapshots({ sandbox, project, environment }: { sandbox: Sandbox; projec
   return (
     <div className="space-y-3">
       <CopiedFilesNotice />
-      {snapshots.isPending ? (
-        <Rows count={2} />
-      ) : snapshots.isError ? (
-        <ErrorState error={snapshots.error} />
-      ) : snapshots.data.items.length === 0 ? (
-        <Empty title="No snapshots of this sandbox">Take one with Snapshot above, with sly sandbox snapshot, or with the snapshot_sandbox MCP tool.</Empty>
-      ) : (
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Snapshot</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead className="hidden sm:table-cell">Source</TableHead>
-                <TableHead className="hidden md:table-cell">Size</TableHead>
-                <TableHead>Taken</TableHead>
-                <TableHead className="text-right">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {snapshots.data.items.map(snapshot => (
-                <TableRow key={snapshot.id}>
-                  <TableCell>
-                    <Mono className="font-medium">{snapshot.name ?? snapshot.id}</Mono>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{snapshot.status}</Badge>
-                  </TableCell>
-                  <TableCell className="hidden text-muted-foreground sm:table-cell">{snapshot.source_state}</TableCell>
-                  <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">{bytes(snapshot.referenced_bytes)}</TableCell>
-                  <TableCell className="text-muted-foreground">{ago(snapshot.taken_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <span className="inline-flex items-center gap-1">
-                      {snapshot.status === 'ready' && <ForkButton source={{ kind: 'snapshot', snapshot }} project={project} environment={environment} iconOnly />}
-                      <DeleteSnapshot snapshot={snapshot} />
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <SnapshotsTable
+        query={snapshots}
+        project={project}
+        environment={environment}
+        originLabel="Source"
+        origin={snapshot => <span className="text-muted-foreground">{snapshot.source_state}</span>}
+        empty={<Empty title="No snapshots of this sandbox">Take one with Snapshot above, with sly sandbox snapshot, or with the snapshot_sandbox MCP tool.</Empty>}
+      />
     </div>
   )
 }
@@ -87,54 +52,43 @@ function Snapshots({ sandbox, project, environment }: { sandbox: Sandbox; projec
 function Overview({ sandbox }: { sandbox: Sandbox }) {
   const metrics = sandbox.metrics
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <KeyValue
-        items={[
-          ['Image', <Mono key="i">{imageText(sandbox.image)}</Mono>],
-          ['Size', sizeText(sandbox.size)],
-          ['Network', `${sandbox.network}${sandbox.docker ? ' · docker' : ''}`],
-          ['Egress', sandbox.egress.mode === 'open' ? 'open' : `allowlist, ${sandbox.egress.domains?.length ?? 0} domains`],
-          ['Disk', `${bytes(sandbox.disk_used_bytes)} of ${bytes(sandbox.size.disk_bytes)}`],
-          ['CPU', metrics ? `${metrics.cpu_pct.toFixed(1)}%` : '—'],
-          ['Memory', metrics ? `${bytes(metrics.memory_bytes)} of ${bytes(metrics.memory_limit_bytes)}` : '—'],
-          ['Address', sandbox.address ? <Mono key="a">{sandbox.address}</Mono> : '—']
-        ]}
-      />
-    </div>
+    <KeyValue
+      framed
+      items={[
+        ['Image', <Mono key="i">{imageText(sandbox.image)}</Mono>],
+        ['Size', sizeText(sandbox.size)],
+        ['Network', `${sandbox.network}${sandbox.docker ? ' · docker' : ''}`],
+        ['Egress', egressText(sandbox.egress)],
+        ['Disk', `${bytes(sandbox.disk_used_bytes)} of ${bytes(sandbox.size.disk_bytes)}`],
+        ['CPU', metrics ? `${metrics.cpu_pct.toFixed(1)}%` : '—'],
+        ['Memory', metrics ? `${bytes(metrics.memory_bytes)} of ${bytes(metrics.memory_limit_bytes)}` : '—'],
+        ['Address', sandbox.address ? <Mono key="a">{sandbox.address}</Mono> : '—']
+      ]}
+    />
   )
 }
 
 function SandboxPage() {
   const { sandbox: id } = Route.useParams()
+  const sandbox = useQuery(sandboxQuery(id))
+  return (
+    <QueryState query={sandbox} rows={6} errorTitle="The sandbox could not be loaded">
+      {s => <SandboxView s={s} />}
+    </QueryState>
+  )
+}
+
+function SandboxView({ s }: { s: Sandbox }) {
   const { tab = 'terminal' } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
-  const sandbox = useQuery(sandboxQuery(id))
-  const environment = useQuery({ ...environmentQuery(sandbox.data?.environment_id ?? ''), enabled: Boolean(sandbox.data) })
-  const project = useQuery({ ...projectQuery(environment.data?.project_id ?? ''), enabled: Boolean(environment.data) })
-
-  if (sandbox.isPending) return <Rows count={6} />
-  if (sandbox.isError) return <ErrorState error={sandbox.error} title="The sandbox could not be loaded" />
-  const s = sandbox.data
-  const idle = s.status === 'stopped' || s.status === 'failed'
-  const live = s.status === 'running' || s.status === 'starting' || s.status === 'creating'
-  const projectName = project.data?.name
-  const environmentName = environment.data?.name
+  const trail = useEnvironmentTrail(s.environment_id)
+  const projectName = trail.project?.name
+  const environmentName = trail.environment?.name
 
   return (
     <div className="space-y-6">
       <div>
-        <Crumbs
-          items={[
-            { label: 'Projects', to: '/' },
-            ...(projectName && environmentName
-              ? [
-                  { label: projectName, to: '/projects/$project', params: { project: projectName } },
-                  { label: environmentName, to: '/projects/$project/$environment', params: { project: projectName, environment: environmentName } }
-                ]
-              : []),
-            { label: s.name }
-          ]}
-        />
+        <Crumbs items={[...trail.crumbs, { label: s.name }]} />
         <PageHeader
           title={
             <span className="flex items-center gap-2">
@@ -154,7 +108,7 @@ function SandboxPage() {
           }
           actions={
             <>
-              {idle ? <StartSandbox sandbox={s} /> : live ? <StopSandbox sandbox={s} /> : null}
+              {isIdle(s.status) ? <StartSandbox sandbox={s} /> : isLive(s.status) ? <StopSandbox sandbox={s} /> : null}
               <ExtendSandbox sandbox={s} />
               <SnapshotSandbox sandbox={s} />
               {projectName && environmentName && <ForkButton source={{ kind: 'sandbox', sandbox: s }} project={projectName} environment={environmentName} />}
@@ -163,7 +117,7 @@ function SandboxPage() {
           }
         />
       </div>
-      {environment.data && <ProtectedNotice environment={environment.data} />}
+      {trail.environment && <ProtectedNotice environment={trail.environment} />}
       {s.failure && (
         <Alert variant="destructive">
           <CircleAlert />

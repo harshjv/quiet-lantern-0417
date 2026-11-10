@@ -76,22 +76,20 @@ func (s *Station) opSecretsStatus(_ context.Context, _ json.RawMessage, _ func(s
 }
 
 func (s *Station) opLogs(ctx context.Context, params json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
-	var p struct {
-		DeploymentID string `json:"deployment_id"`
-		Tail         int    `json:"tail"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil || p.DeploymentID == "" {
+	var p protocol.RootSocketLogsParams
+	if err := json.Unmarshal(params, &p); err != nil || p.DeploymentId == "" {
 		return nil, invalidParams(errors.New("deployment_id is required"))
 	}
-	if p.Tail <= 0 {
-		p.Tail = 200
+	tail := 200
+	if p.Tail != nil && *p.Tail > 0 {
+		tail = *p.Tail
 	}
-	lines, err := s.docker.LogTail(ctx, docker.ServiceName(p.DeploymentID), p.Tail)
+	lines, err := s.docker.LogTail(ctx, docker.ServiceName(p.DeploymentId), tail)
 	if err != nil {
 		return nil, &protocol.ErrorBody{Code: string(protocol.ErrorCodeNotFound), Explanation: err.Error(), Fix: "Name a deployment whose service container exists."}
 	}
-	red := s.redactorFor(p.DeploymentID)
-	return map[string]any{"deployment_id": p.DeploymentID, "redaction_patterns": red.Patterns(), "lines": red.Lines(lines)}, nil
+	red := s.redactorFor(p.DeploymentId)
+	return map[string]any{"deployment_id": p.DeploymentId, "redaction_patterns": red.Patterns(), "lines": red.Lines(lines)}, nil
 }
 
 func (s *Station) redactorFor(deploymentID string) *secrets.Redactor {

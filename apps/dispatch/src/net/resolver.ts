@@ -2,8 +2,6 @@ import { Resolver } from 'node:dns'
 import { isIP, type LookupFunction } from 'node:net'
 import { Agent, setGlobalDispatcher } from 'undici'
 
-export const resolverAddress = () => process.env.STATIONLY_RESOLVER || null
-
 export const stationLookup = (address: string): LookupFunction => {
   const resolver = new Resolver({ timeout: 2000, tries: 2 })
   resolver.setServers([address])

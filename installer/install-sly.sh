@@ -16,8 +16,8 @@ fail() { printf '%s\n' "sly installer: error: $*" >&2; exit 1; }
 
 usage() {
 	cat >&2 <<EOF
-usage: curl -fsSL https://stationly.netlify.app/install-sly.sh | sh
-       curl -fsSL https://stationly.netlify.app/install-sly.sh | sh -s -- [--dir DIR]
+usage: curl -fsSL @INSTALLER_URL@/install-sly.sh | sh
+       curl -fsSL @INSTALLER_URL@/install-sly.sh | sh -s -- [--dir DIR]
 
 Installs sly ${SLY_RELEASE}, the Stationly CLI, as a single binary on macOS (arm64, x86_64) or Linux
 (amd64, arm64). The binary comes from ${STATIONLY_RELEASES} and is checked against the SHA-256

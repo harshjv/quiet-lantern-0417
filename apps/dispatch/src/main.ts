@@ -1,12 +1,13 @@
 import { createServer, type RequestListener } from 'node:http'
 import { dirname, join } from 'node:path'
+import { networkLayout } from '@stationly/protocol'
 import { toNodeHandler } from 'srvx/node'
-import packageJson from '../package.json' with { type: 'json' }
 import { createApp, createFetch } from './app.ts'
 import { createDashboard, dashboardDir } from './dashboard.ts'
 import { AuthService } from './auth/auth.ts'
 import { createMetadataFetch } from './auth/metadata-fetch.ts'
-import { openDb, replicatedFromEnv } from './db/client.ts'
+import { openDb } from './db/client.ts'
+import { env } from './env.ts'
 import { Keyring, masterKeyFromEnv } from './secrets/keyring.ts'
 import { createStationServer } from './station/server.ts'
 import { createAttachServer } from './api/attach.ts'
@@ -15,26 +16,23 @@ import { createGitHub } from './github/service.ts'
 import { startBaseImageChecker } from './platform/base-images.ts'
 import { recordDispatchComponent } from './platform/lockfile.ts'
 import { ensureInstanceId, SetupError, setupInstance, type SetupInput } from './auth/bootstrap.ts'
-import { resolverAddress, routeFetchThroughStation } from './net/resolver.ts'
+import { routeFetchThroughStation } from './net/resolver.ts'
 import { HostAdminError, type HostAdmin } from './station/server.ts'
 import { pruneBackups, startBackupScheduler } from './volumes/backups.ts'
 import { createUpgradeDriver } from './platform/upgrade.ts'
 import { startSandboxRetention } from './sandboxes/lifecycle.ts'
 
-const port = Number(process.env.STATIONLY_PORT ?? 7900)
-const version = process.env.STATIONLY_DISPATCH_VERSION || packageJson.version
+const { STATIONLY_PORT: port, STATIONLY_DISPATCH_VERSION: version, STATIONLY_DATABASE: databasePath, STATIONLY_RESOLVER: resolver, STATIONLY_LITESTREAM: replicated, STATIONLY_DISPATCH_DIGEST: digest } = env()
 
-const databasePath = process.env.STATIONLY_DATABASE
 if (!databasePath) throw new Error('STATIONLY_DATABASE must name the SQLite file Dispatch owns')
 const log = (event: string, fields: Record<string, unknown>) => console.log(JSON.stringify({ at: new Date().toISOString(), event, ...fields }))
-const resolver = resolverAddress()
 const routed = routeFetchThroughStation(resolver)
 log('resolver', { address: resolver, fetch: routed ? 'through the stationd host listener' : 'host resolver (STATIONLY_RESOLVER unset)', cimd: resolver ? 'through the stationd host listener' : 'refused' })
-const db = openDb(databasePath, { replicated: replicatedFromEnv() })
+const db = openDb(databasePath, { replicated })
 ensureInstanceId(db)
 const masterKey = masterKeyFromEnv()
 const keyring = new Keyring(db, masterKey)
-const auth = new AuthService(db, masterKey, `http://127.0.0.1:${port}`, createMetadataFetch(resolver))
+const auth = new AuthService(db, masterKey, `http://${networkLayout.dispatchHostAddress}:${port}`, createMetadataFetch(resolver))
 const blobDir = join(dirname(databasePath), 'blobs')
 const github = createGitHub({ db, keyring, auth })
 const hostAdmin: HostAdmin = async (stationId, op, params) => {
@@ -70,7 +68,7 @@ const baseImages = startBaseImageChecker(db)
 const backupSchedule = startBackupScheduler({ db, stations, keyring }, log)
 const sandboxRetention = startSandboxRetention({ db, stations }, log)
 recordDispatchComponent(db, version)
-log('dispatch.version', { version, digest: process.env.STATIONLY_DISPATCH_DIGEST ?? null, database: databasePath })
+log('dispatch.version', { version, digest: digest ?? null, database: databasePath })
 const server = createServer((req, res) => {
   if (!stations.handleRequest(req, res)) appHandler(req, res)
 })

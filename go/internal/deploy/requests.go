@@ -60,12 +60,7 @@ func (s *Station) recoverBuilds() {
 	}
 }
 
-func (s *Station) startBuild(ctx context.Context, m dispatch.Message) {
-	var b protocol.BuildStartBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a build.start body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) startBuild(ctx context.Context, m dispatch.Message, b protocol.BuildStartBody) {
 	if s.plan == nil {
 		s.replyError(m, protocolError(protocol.ErrorCodeBuildFailed, "Send a generation before build.start.", "no generation is applied"))
 		return
@@ -119,12 +114,7 @@ func (s *Station) startBuild(ctx context.Context, m dispatch.Message) {
 	}()
 }
 
-func (s *Station) cancelBuild(m dispatch.Message) {
-	var b protocol.BuildRefBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a build.cancel body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) cancelBuild(_ context.Context, m dispatch.Message, b protocol.BuildRefBody) {
 	if cancel, ok := s.builds[b.BuildId]; ok {
 		cancel()
 	}
@@ -311,12 +301,7 @@ func extractTarGz(r io.Reader, dst string) error {
 	}
 }
 
-func (s *Station) startRequestedRun(ctx context.Context, m dispatch.Message) {
-	var b protocol.RunStartBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a run.start body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) startRequestedRun(ctx context.Context, m dispatch.Message, b protocol.RunStartBody) {
 	if (b.Attach || b.Tty) && !s.requireCapability(m, protocol.CapabilityExecTty) {
 		return
 	}
@@ -380,12 +365,7 @@ func (s *Station) startRequestedRun(ctx context.Context, m dispatch.Message) {
 	s.driveRun(ctx, rr)
 }
 
-func (s *Station) cancelRequestedRun(ctx context.Context, m dispatch.Message) {
-	var b protocol.RunRefBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a run.cancel body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) cancelRequestedRun(ctx context.Context, m dispatch.Message, b protocol.RunRefBody) {
 	if rr := s.runs[b.RunId]; rr != nil && !rr.terminal() {
 		if rr.SandboxID != "" {
 			s.cancelSandboxRun(rr, "cancelled by Dispatch")

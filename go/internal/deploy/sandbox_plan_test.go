@@ -76,11 +76,11 @@ func TestDecideSandbox(t *testing.T) {
 
 func sandboxGeneration() *protocol.Generation {
 	digest := "sha256:" + strings.Repeat("a", 64)
-	ref := "ghcr.io/harshjv/stationly/sandbox-toolchain@" + digest
+	ref := protocol.SandboxToolchainRepository + "@" + digest
 	return &protocol.Generation{
-		Station: protocol.DesiredStation{SandboxNetwork: &protocol.DesiredStationSandboxNetwork{BridgeName: "stationly-sandbox", Subnet: "10.200.20.0/24", Gateway: "10.200.20.1"}},
+		Station: protocol.DesiredStation{SandboxNetwork: &protocol.DesiredStationSandboxNetwork{BridgeName: "sly-sandbox", Subnet: "10.200.20.0/24", Gateway: "10.200.20.1"}},
 		Environments: protocol.GenerationEnvironments{
-			"env_01": {Network: protocol.EnvironmentNetwork{Subnet: "10.200.10.0/24", Gateway: "10.200.10.1", BridgeName: "or-env1"}},
+			"env_01": {Network: protocol.EnvironmentNetwork{Subnet: "10.200.10.0/24", Gateway: "10.200.10.1", BridgeName: "sly-env1"}},
 		},
 		Sandboxes: protocol.GenerationSandboxes{
 			"sbx_01JCB4ABCDEF": {

@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -67,7 +68,7 @@ func CheckInvariants(spec ContainerSpec, stateDir string) error {
 		}
 	}
 	if hc.PublishAllPorts || (len(hc.PortBindings) > 0 && (spec.Role != RoleDispatch || !dispatchLoopbackOnly(hc.PortBindings))) {
-		return fail("published ports", "only Dispatch publishes a port, %s:%d on the host loopback; 80, 443 and port allocations are host DNAT in stationly_host", DispatchHostAddress, DispatchPort)
+		return fail("published ports", "only Dispatch publishes a port, %s:%d on the host loopback; 80, 443 and port allocations are DNAT in the host table", protocol.NetworkDispatchHostAddress, protocol.NetworkDispatchPort)
 	}
 	if !slices.Contains(hc.CapDrop, "ALL") {
 		return fail("capability allowlist", "CapDrop does not contain ALL")
@@ -161,11 +162,11 @@ func dispatchLoopbackOnly(m network.PortMap) bool {
 		return false
 	}
 	for port, bindings := range m {
-		if port.Num() != DispatchPort || len(bindings) != 1 {
+		if port.Num() != protocol.NetworkDispatchPort || len(bindings) != 1 {
 			return false
 		}
 		b := bindings[0]
-		if b.HostIP.String() != DispatchHostAddress || b.HostPort != strconv.Itoa(DispatchPort) {
+		if b.HostIP.String() != protocol.NetworkDispatchHostAddress || b.HostPort != strconv.Itoa(protocol.NetworkDispatchPort) {
 			return false
 		}
 	}

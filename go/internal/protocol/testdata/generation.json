@@ -60,7 +60,7 @@
       "name": "alpha",
       "ipam_allocation_id": "ipa_01JCAAAAAAAAAAAAAAAAAAAAAA",
       "network": {
-        "bridge_name": "or-aaaaaaaaaaaa",
+        "bridge_name": "sly-aaaaaaaaaaa",
         "subnet": "10.200.10.0/24",
         "gateway": "10.200.10.1",
         "gateway_mode": "nat"
@@ -98,7 +98,7 @@
       "name": "beta",
       "ipam_allocation_id": "ipa_01JCBBBBBBBBBBBBBBBBBBBBBB",
       "network": {
-        "bridge_name": "or-bbbbbbbbbbbb",
+        "bridge_name": "sly-bbbbbbbbbbb",
         "subnet": "10.200.11.0/24",
         "gateway": "10.200.11.1",
         "gateway_mode": "nat"

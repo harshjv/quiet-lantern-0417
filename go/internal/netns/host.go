@@ -14,12 +14,13 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 	"github.com/google/nftables/userdata"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	HostTableName     = "stationly_host"
+	HostTableName     = protocol.NftTablePrefix + "host"
 	hostLayoutVersion = "1a.8"
 	hostCommentPrefix = "stationly host "
 	AcceptMark        = 0x10000

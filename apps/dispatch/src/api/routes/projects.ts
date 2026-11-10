@@ -1,15 +1,15 @@
+import { slugPattern } from '@stationly/protocol'
 import { and, desc, eq, inArray, max, ne } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
 import { environment, grant, project, sandbox, secret_value, service, staged_change, staged_value, variable, vex_statement, volume } from '../../db/schema.ts'
-import { requireLevel, seesProject } from '../access.ts'
+import { seesProject } from '../access.ts'
 import { removeEnvironment } from '../changes.ts'
 import { audit, emit } from '../context.ts'
 import { fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
-import { slugPattern } from '../kit.ts'
 import { projectByRef } from '../lookup.ts'
 import { before, collect, getQuery, listQuery } from '../pagination.ts'
 import { Deleted, models, Page, Project, replies } from '../shapes.ts'
@@ -21,7 +21,7 @@ export const projectRoutes = (kit: Kit) => {
   const { db } = kit.deps
   const tags = ['projects']
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/projects',
       async ({ request, query }) => {
@@ -40,23 +40,17 @@ export const projectRoutes = (kit: Kit) => {
         )
         return { items: page.rows.map(row => select(kit.views.project, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
-      { query: t.Object({ ...listQuery, name: t.Optional(t.String()) }), response: replies({ 200: Page(Project) }), detail: { summary: 'List projects visible to the caller', tags } }
+      { operation: { id: 'list_projects', level: 'any' }, query: t.Object({ ...listQuery, name: t.Optional(t.String()) }), response: replies({ 200: Page(Project) }), detail: { summary: 'List projects visible to the caller', tags } }
     )
     .get(
       '/projects/:project',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
-        const row = projectByRef(db, params.project)
-        if (!seesProject(principal, row.id)) requireLevel(principal, { project_id: row.id, environment_id: '*' }, 'read')
-        return select(kit.views.project, row, kit.fields(query.fields))
-      },
-      { params: t.Object({ project: t.String() }), query: t.Object(getQuery), response: replies({ 200: Project }), detail: { summary: 'Get a project by id or name', tags } }
+      async ({ params, query }) => select(kit.views.project, projectByRef(db, params.project), kit.fields(query.fields)),
+      { operation: { id: 'get_project', level: 'read' }, params: t.Object({ project: t.String() }), query: t.Object(getQuery), response: replies({ 200: Project }), detail: { summary: 'Get a project by id or name', tags } }
     )
     .post(
       '/projects',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
-        requireLevel(call.principal, { project_id: '*', environment_id: '*' }, 'admin')
         if (db.select({ id: project.id }).from(project).where(eq(project.name, body.name)).get()) {
           fail('NAME_TAKEN', `A project named ${body.name} exists.`, undefined, { name: body.name })
         }
@@ -91,6 +85,7 @@ export const projectRoutes = (kit: Kit) => {
           },
           { additionalProperties: false }
         ),
+        operation: { id: 'create_project', level: 'admin' },
         response: replies({ 201: Project }),
         detail: { summary: 'Create a project with its default environment', tags }
       }
@@ -100,7 +95,6 @@ export const projectRoutes = (kit: Kit) => {
       async ({ request, params, body }) => {
         const call = await kit.call(request)
         const row = projectByRef(db, params.project)
-        requireLevel(call.principal, { project_id: row.id, environment_id: '*' }, 'admin')
         if (body.default_environment_id) {
           const env = db.select().from(environment).where(eq(environment.id, body.default_environment_id)).get()
           if (!env || env.project_id !== row.id) fail('VALIDATION_FAILED', 'default_environment_id must name an environment of this project.', undefined, { issues: [{ path: '/default_environment_id', message: 'not in this project' }] })
@@ -124,6 +118,7 @@ export const projectRoutes = (kit: Kit) => {
           },
           { additionalProperties: false }
         ),
+        operation: { id: 'update_project', level: 'admin' },
         response: replies({ 200: Project }),
         detail: { summary: 'Update a project', tags }
       }
@@ -133,7 +128,6 @@ export const projectRoutes = (kit: Kit) => {
       async ({ request, params }) => {
         const call = await kit.call(request)
         const row = projectByRef(db, params.project)
-        requireLevel(call.principal, { project_id: row.id, environment_id: '*' }, 'admin')
         if (row.shared) fail('DELETE_HAS_DEPENDENTS', 'The Shared project cannot be deleted.')
         const others = db
           .select({ id: environment.id, name: environment.name })
@@ -177,6 +171,6 @@ export const projectRoutes = (kit: Kit) => {
         })
         return { deleted: true as const }
       },
-      { params: t.Object({ project: t.String() }), response: replies({ 200: Deleted }), detail: { summary: 'Delete an empty project', tags } }
+      { operation: { id: 'delete_project', level: 'admin' }, params: t.Object({ project: t.String() }), response: replies({ 200: Deleted }), detail: { summary: 'Delete an empty project', tags } }
     )
 }

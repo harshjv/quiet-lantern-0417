@@ -40,9 +40,11 @@ func setupLitestream(raw any) (*hostconfig.Litestream, *protocol.ErrorBody) {
 func (s *Station) opDetectPublicAddress(context.Context, json.RawMessage, func(string, string)) (any, *protocol.ErrorBody) {
 	route, err := netns.DefaultRouteAddress()
 	if err != nil {
-		return map[string]any{"address": nil, "interface": nil, "public": false, "reason": err.Error()}, nil
+		reason := err.Error()
+		return protocol.RootSocketDetectedAddress{Reason: &reason}, nil
 	}
-	return map[string]any{"address": route.Address.String(), "interface": route.Interface, "public": netns.PublicIPv4(route.Address)}, nil
+	address := route.Address.String()
+	return protocol.RootSocketDetectedAddress{Address: &address, Interface: &route.Interface, Public: netns.PublicIPv4(route.Address)}, nil
 }
 
 func (s *Station) opRecoveryKey(context.Context, json.RawMessage, func(string, string)) (any, *protocol.ErrorBody) {
@@ -59,7 +61,7 @@ func (s *Station) opRecoveryKey(context.Context, json.RawMessage, func(string, s
 		"actor":   map[string]any{"type": "station", "id": s.opts.Identity.StationID, "client": "root-socket"},
 		"purpose": "recovery key displayed through the root socket",
 	})
-	return map[string]any{"recovery_key": key}, nil
+	return protocol.RootSocketRecoveryKey{RecoveryKey: key}, nil
 }
 
 func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress func(string, string)) (any, *protocol.ErrorBody) {

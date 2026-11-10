@@ -1,4 +1,4 @@
-import type { MessageBody, MessageType } from '@stationly/protocol'
+import { deploymentTerminalStatuses, type MessageBody, type MessageType } from '@stationly/protocol'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { attestation, audit_event, build, component, deployment, deployment_step, run, service, station, station_outbox } from '../db/schema.ts'
@@ -66,7 +66,7 @@ export const outboxedTypes = new Set<string>([
 
 export type IngestResult = { status: 'applied' | 'duplicate'; seq: number; reconcile: boolean }
 
-const terminalDeployment = new Set(['active', 'failed', 'cancelled', 'superseded'])
+const terminalDeployment = new Set<string>(deploymentTerminalStatuses)
 
 const stepStatus: Record<string, (typeof deployment.$inferSelect)['status']> = {
   pull: 'starting',

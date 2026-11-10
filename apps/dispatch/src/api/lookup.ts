@@ -1,14 +1,17 @@
 import { and, eq } from 'drizzle-orm'
-import type { Target } from '../auth/scopes.ts'
+import { anyTarget, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 import {
+  build,
   deployment,
   domain,
   environment,
   port_allocation,
   project,
+  run,
   sandbox,
   sandbox_snapshot,
+  secret_value,
   service,
   service_port,
   staged_change,
@@ -41,6 +44,11 @@ export const projectByRef = (db: Db, ref: string) => {
     .where(ref.startsWith('prj_') ? eq(project.id, ref) : eq(project.name, ref))
     .get()
   return row ?? notFound('project', ref)
+}
+
+export const projectContext = (db: Db, ref: string) => {
+  const row = projectByRef(db, ref)
+  return { project: row, target: { project_id: row.id, environment_id: '*' } }
 }
 
 export const environmentById = (db: Db, id: string) => {
@@ -79,7 +87,8 @@ export const portById = (db: Db, id: string) => {
 
 export const volumeById = (db: Db, id: string) => {
   const row = db.select().from(volume).where(eq(volume.id, id)).get() ?? notFound('volume', id)
-  return { volume: row, owner: row.service_id ? serviceById(db, row.service_id) : null }
+  const owner = row.service_id ? serviceById(db, row.service_id) : null
+  return { volume: row, owner, target: owner?.target ?? (row.project_id ? { project_id: row.project_id, environment_id: '*' } : anyTarget) }
 }
 
 export const domainById = (db: Db, id: string) => {
@@ -95,6 +104,11 @@ export const allocationById = (db: Db, id: string) => {
 export const deploymentById = (db: Db, id: string) => {
   const row = db.select().from(deployment).where(eq(deployment.id, id)).get() ?? notFound('deployment', id)
   return { deployment: row, ...serviceById(db, row.service_id) }
+}
+
+export const buildById = (db: Db, id: string) => {
+  const row = db.select().from(build).where(eq(build.id, id)).get() ?? notFound('build', id)
+  return { build: row, ...deploymentById(db, row.deployment_id) }
 }
 
 export const stationByRef = (db: Db, ref: string) =>
@@ -146,11 +160,16 @@ export const runOwner = (db: Db, r: { service_id: string | null; sandbox_id: str
   return { target: ctx.target, environment: ctx.environment, station_id: ctx.service.station_id }
 }
 
+export const runById = (db: Db, id: string) => {
+  const row = db.select().from(run).where(eq(run.id, id)).get() ?? notFound('run', id)
+  return { run: row, ...runOwner(db, row) }
+}
+
 export const variableTarget = (db: Db, row: VariableRow): Target => {
   if (row.scope === 'service') return serviceById(db, row.service_id!).target
   if (row.scope === 'sandbox') return sandboxById(db, row.sandbox_id!).target
   if (row.scope === 'project') return { project_id: row.project_id!, environment_id: '*' }
-  return { project_id: '*', environment_id: '*' }
+  return anyTarget
 }
 
 export const variableById = (db: Db, id: string) => {
@@ -158,9 +177,36 @@ export const variableById = (db: Db, id: string) => {
   return { variable: row, target: variableTarget(db, row) }
 }
 
+export const secretValueById = (db: Db, id: string) => {
+  const row = db.select().from(secret_value).where(eq(secret_value.id, id)).get() ?? notFound('secret_value', id)
+  const owner = variableById(db, row.variable_id)
+  const target = row.environment_id && owner.variable.scope === 'project' ? { project_id: owner.variable.project_id!, environment_id: row.environment_id } : owner.target
+  return { secretValue: row, variable: owner.variable, target }
+}
+
 export const stagedById = (db: Db, id: string) => {
   const row = db.select().from(staged_change).where(eq(staged_change.id, id)).get() ?? notFound('staged_change', id)
   const live = row.environment_id ? db.select({ id: environment.id }).from(environment).where(eq(environment.id, row.environment_id)).get() : undefined
   const env = live ? environmentById(db, live.id) : null
-  return { staged: row, environment: env, target: env?.target ?? { project_id: '*', environment_id: '*' } }
+  return { staged: row, environment: env, target: env?.target ?? anyTarget }
 }
+
+export const targets = {
+  project: projectContext,
+  environment: environmentById,
+  service: serviceById,
+  service_port: portById,
+  domain: domainById,
+  port_allocation: allocationById,
+  deployment: deploymentById,
+  build: buildById,
+  run: runById,
+  volume: volumeById,
+  variable: variableById,
+  secret_value: secretValueById,
+  staged_change: stagedById,
+  sandbox: sandboxById,
+  sandbox_snapshot: snapshotById
+} satisfies Record<string, (db: Db, id: string) => { target: Target }>
+
+export type TargetEntity = keyof typeof targets

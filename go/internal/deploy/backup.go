@@ -22,6 +22,7 @@ import (
 
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/s3store"
 	"github.com/harshjv/stationly/go/internal/secrets"
@@ -140,15 +141,7 @@ func (s *Station) servicesMounting(volumeID string) []*ServicePlan {
 	return out
 }
 
-func (s *Station) volumeBackup(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityVolumesV1) {
-		return
-	}
-	var b protocol.VolumeBackupBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a volume.backup body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) volumeBackup(ctx context.Context, m dispatch.Message, b protocol.VolumeBackupBody) {
 	dest, failure := s.destinationFor(b.SnapshotId, b.Target)
 	if failure != nil {
 		s.replyError(m, failure)
@@ -307,7 +300,7 @@ func (s *Station) writeBackup(ctx context.Context, b protocol.VolumeBackupBody, 
 	if err := os.Rename(tmp, final); err != nil {
 		return size, "", archived, err
 	}
-	if err := writePrivate(filepath.Join(dest.dir, objects.Metadata), s.backupMetadata(b, size, sum, started)); err != nil {
+	if err := fsx.WriteFile(filepath.Join(dest.dir, objects.Metadata), s.backupMetadata(b, size, sum, started), 0o600); err != nil {
 		return size, sum, archived, err
 	}
 	return size, sum, archived, nil
@@ -416,15 +409,7 @@ func tarTree(ctx context.Context, root string, w io.Writer) (int64, error) {
 	return size, tw.Close()
 }
 
-func (s *Station) volumeRestore(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityVolumesV1) {
-		return
-	}
-	var b protocol.VolumeRestoreBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a volume.restore body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) volumeRestore(ctx context.Context, m dispatch.Message, b protocol.VolumeRestoreBody) {
 	dest, failure := s.destinationFor(b.SnapshotId, b.Target)
 	if failure != nil {
 		s.replyError(m, failure)
@@ -747,15 +732,7 @@ func deleteObjects(ctx context.Context, r protocol.VolumeBackupDeleteResult, des
 	return r
 }
 
-func (s *Station) volumeBackupDelete(m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityVolumesV1) {
-		return
-	}
-	var b protocol.VolumeBackupDeleteBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a volume.backup.delete body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) volumeBackupDelete(_ context.Context, m dispatch.Message, b protocol.VolumeBackupDeleteBody) {
 	results := make([]protocol.VolumeBackupDeleteResult, len(b.Items))
 	remote := map[int]*destination{}
 	for i, it := range b.Items {

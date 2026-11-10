@@ -1,6 +1,6 @@
 import type { Command } from 'commander'
 import { action, integer, seconds } from '../command.ts'
-import { apiFailure, Exit, exitCodes, usage } from '../errors.ts'
+import { apiFailure, Exit, exitCodes, usage, type EnvelopeCode } from '../errors.ts'
 import { connect, environmentId, portId, send, serviceId } from '../kit.ts'
 import { acrossOutage } from '../outage.ts'
 import { print, progress, table } from '../output.ts'
@@ -213,7 +213,7 @@ export const networkCommands = (program: Command) => {
               progress(`live stream ended: ${end.reason}`)
               if (end.reason.startsWith('replaced')) return exitCodes.ok
             } else if (event.event === 'error') {
-              const e = JSON.parse(event.data) as { code: string; explanation: string }
+              const e = JSON.parse(event.data) as { code: EnvelopeCode; explanation: string }
               throw new Exit(exitCodes.api, { error: { code: e.code, explanation: e.explanation, fix: 'Retry when the station is connected.' } })
             }
             return undefined

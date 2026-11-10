@@ -20,6 +20,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/harshjv/stationly/go/internal/fsx"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/tuf"
@@ -138,15 +140,7 @@ func (v *Verifier) RootState() RootState {
 
 func (v *Verifier) saveState() {
 	b, _ := json.MarshalIndent(v.state, "", "  ")
-	writeFile(v.statePath(), b)
-}
-
-func writeFile(path string, b []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	fsx.WriteFile(v.statePath(), b, 0o600)
 }
 
 func (v *Verifier) Refresh(ctx context.Context, f fetcher.Fetcher) (RootState, error) {
@@ -168,8 +162,8 @@ func (v *Verifier) Refresh(ctx context.Context, f fetcher.Fetcher) (RootState, e
 	if err == nil {
 		var tr *root.TrustedRoot
 		if tr, err = root.NewTrustedRootFromJSON(raw); err == nil {
-			if err = writeFile(v.rootPath(), raw); err == nil {
-				writeFile(filepath.Join(v.cacheDir, "trusted_root."+strings.TrimPrefix(digestOf(raw), "sha256:")+".json"), raw)
+			if err = fsx.WriteFile(v.rootPath(), raw, 0o600); err == nil {
+				fsx.WriteFile(filepath.Join(v.cacheDir, "trusted_root."+strings.TrimPrefix(digestOf(raw), "sha256:")+".json"), raw, 0o600)
 				v.root = tr
 				v.state = RootState{Digest: digestOf(raw), Origin: "tuf", RefreshedAt: v.state.AttemptedAt, AttemptedAt: v.state.AttemptedAt}
 			}
@@ -301,7 +295,7 @@ func (v *Verifier) Image(ctx context.Context, src Source, component, version, di
 		res.Signature, res.Identity, res.Reason = Verified, san, ""
 		r := Record{Component: component, Version: version, Digest: digest, Identity: san, TrustedRoot: res.TrustedRoot, Trust: v.trust.Name, VerifiedAt: time.Now().UTC(), Bundle: string(raw)}
 		b, _ := json.MarshalIndent(r, "", "  ")
-		if err := writeFile(v.recordPath(digest), b); err != nil {
+		if err := fsx.WriteFile(v.recordPath(digest), b, 0o600); err != nil {
 			v.log.Error("record verified digest", "digest", digest, "error", err)
 		}
 		return done()
@@ -349,7 +343,7 @@ func ListBundles(ctx context.Context, trust Trust, digest string) ([][]byte, err
 		return nil, err
 	}
 	ropts := []remote.Option{remote.WithContext(ctx)}
-	idx, err := remote.Referrers(repo.Digest(digest), append(ropts, remote.WithFilter("artifactType", BundleArtifactType))...)
+	idx, err := remote.Referrers(repo.Digest(digest), append(ropts, remote.WithFilter("artifactType", protocol.MediaTypeSigstoreBundle))...)
 	if err != nil {
 		var te *transport.Error
 		if errors.As(err, &te) && te.StatusCode == http.StatusNotFound {
@@ -366,7 +360,7 @@ func ListBundles(ctx context.Context, trust Trust, digest string) ([][]byte, err
 		if i >= maxBundlesPerDigest {
 			break
 		}
-		if m.ArtifactType != BundleArtifactType {
+		if m.ArtifactType != protocol.MediaTypeSigstoreBundle {
 			continue
 		}
 		img, err := remote.Image(repo.Digest(m.Digest.String()), ropts...)

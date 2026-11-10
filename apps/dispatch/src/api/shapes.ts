@@ -1,16 +1,22 @@
 import {
   Actor as ActorSchema,
+  appliedStatusValues,
   attestationKindValues,
   BaseImage as BaseImageSchema,
+  baseImageCheckValues,
   builderValues,
   buildStatusValues,
   cancelReasonValues,
   componentNameValues,
   componentStatusValues,
+  deploymentStatusValues,
   deploymentStepNameValues,
   deploymentStepStatusValues,
+  deploymentTriggerValues,
   desiredStateValues,
   Diagnosis as DiagnosisSchema,
+  domainKindValues,
+  domainStatusValues,
   ErrorBody,
   errorCatalog,
   HealthCheck as HealthCheckSchema,
@@ -20,34 +26,53 @@ import {
   networkPathIds,
   networkPeerKinds,
   networkVerdicts,
+  notificationChannelKindValues,
+  notificationChannelStatusValues,
+  Nullable,
+  portAllocationStatusValues,
+  portProtocolValues,
   probeKinds,
   probeTcpResults,
-  Nullable,
-  portProtocolValues,
   refusedPaths,
+  repoAuthValues,
   Resources as ResourcesSchema,
   runKindValues,
   runStatusValues,
   SandboxEgressDomain as SandboxEgressDomainSchema,
+  sandboxEgressModeValues,
+  SandboxLimits as SandboxLimitsSchema,
   sandboxNetworkValues,
+  SandboxSize as SandboxSizeSchema,
   sandboxSnapshotStatusValues,
   sandboxSourceStateValues,
   sandboxStatusReasonValues,
   sandboxStatusValues,
-  SandboxSize as SandboxSizeSchema,
-  SandboxLimits as SandboxLimitsSchema,
   Schedule as ScheduleSchema,
   serviceKindValues,
-  StationCapabilities as StationCapabilitiesSchema,
+  serviceStatusReasonValues,
+  serviceStatusValues,
+  stagedChangeSourceValues,
+  stagedChangeStatusValues,
+  staleReasonCodeValues,
   stationArchValues,
+  StationCapabilities as StationCapabilitiesSchema,
   stationOsValues,
+  stationStatusValues,
   strategyValues,
   StringEnum,
-  versionSkewValues
+  tokenKindValues,
+  tokenLevelValues,
+  variableKindValues,
+  variableScopeValues,
+  versionSkewValues,
+  volumeOwnerValues,
+  volumeSnapshotSourceValues,
+  volumeSnapshotStatusValues,
+  volumeSnapshotTriggerValues,
+  volumeStatusValues
 } from '@stationly/protocol'
 import { Type, type Static, type TLiteral, type TNull, type TObject, type TOptional, type TProperties, type TSchema, type TUnion, type TUnsafe } from '@sinclair/typebox'
 import { Elysia, type t } from 'elysia'
-import { baseImageCheckValues, deploymentStatusValues } from '../db/schema.ts'
 import { networkFindingValues } from '../net/findings.ts'
 import { pathIdValues, pathVerdictValues } from '../net/paths.ts'
 import { explanationVerdicts, hopNames, hopStatuses } from '../net/explain-values.ts'
@@ -136,15 +161,13 @@ export const Deleted = Type.Object({ deleted: Type.Literal(true) }, { additional
 
 export const DeletedRetaining = Type.Object({ deleted: Type.Literal(true), volumes_retained_until: NTime }, { additionalProperties: false })
 
-export const Scope = component('Scope', Type.Object({ project_id: Str, environment_id: Str, level: StringEnum(['read', 'deploy', 'admin']) }, { title: 'Scope' }))
-
-export const serviceStatusValues = ['green', 'amber', 'red', 'stopped', 'asleep'] as const
+export const Scope = component('Scope', Type.Object({ project_id: Str, environment_id: Str, level: StringEnum(tokenLevelValues) }, { title: 'Scope' }))
 
 export const ServiceStatus = component('ServiceStatus', StringEnum(serviceStatusValues, { title: 'ServiceStatus' }))
 
 export const StaleReason = component(
   'StaleReason',
-  Type.Object({ code: StringEnum(['VARIABLES_CHANGED', 'CONFIG_CHANGED']), explanation: Str, keys: Type.Array(Str) }, { title: 'StaleReason', additionalProperties: false })
+  Type.Object({ code: StringEnum(staleReasonCodeValues), explanation: Str, keys: Type.Array(Str) }, { title: 'StaleReason', additionalProperties: false })
 )
 
 export const DeploymentStatus = component('DeploymentStatus', StringEnum(deploymentStatusValues, { title: 'DeploymentStatus' }))
@@ -202,7 +225,7 @@ export const Deployment = component('Deployment', selectable(
     number: Int,
     status: DeploymentStatus,
     trigger: Type.Object({
-      type: StringEnum(['push', 'manual', 'rollback', 'variable_change', 'redeploy', 'base_image', 'agent']),
+      type: StringEnum(deploymentTriggerValues),
       source_sha: NStr,
       actor: Type.Optional(Actor),
       rollback_of: Type.Optional(NStr)
@@ -234,9 +257,9 @@ export const Domain = component('Domain', selectable(
     ...stamps,
     service_port_id: Str,
     hostname: Str,
-    kind: StringEnum(['generated', 'custom']),
+    kind: StringEnum(domainKindValues),
     ingress: StringEnum(ingressValues),
-    status: StringEnum(['pending', 'active', 'error']),
+    status: StringEnum(domainStatusValues),
     certificate: Certificate,
     last_checked_at: NTime,
     dns_instructions: Type.Array(DnsInstruction),
@@ -247,7 +270,7 @@ export const Domain = component('Domain', selectable(
 
 export const PortAllocation = component('PortAllocation', selectable(
   'PortAllocation',
-  { ...stamps, service_port_id: Str, station_id: Str, host_port: Int, status: StringEnum(['active', 'removed']), address: NStr },
+  { ...stamps, service_port_id: Str, station_id: Str, host_port: Int, status: StringEnum(portAllocationStatusValues), address: NStr },
   ['id', 'service_port_id', 'station_id', 'host_port', 'status', 'address']
 ))
 
@@ -276,9 +299,9 @@ export const VolumeSnapshot = component('VolumeSnapshot', Type.Object(
     archive_bytes: NInt,
     sha256: NStr,
     consistent: Nullable(Bool),
-    source: StringEnum(['tar', 'restic', 'hook']),
-    trigger: StringEnum(['manual', 'schedule']),
-    status: StringEnum(['running', 'complete', 'failed', 'expired']),
+    source: StringEnum(volumeSnapshotSourceValues),
+    trigger: StringEnum(volumeSnapshotTriggerValues),
+    status: StringEnum(volumeSnapshotStatusValues),
     failure: Nullable(JsonObject)
   },
   { title: 'VolumeSnapshot', additionalProperties: false }
@@ -288,13 +311,13 @@ export const Volume = component('Volume', selectable(
   'Volume',
   {
     ...stamps,
-    owner: StringEnum(['service', 'station']),
+    owner: StringEnum(volumeOwnerValues),
     service_id: NStr,
     station_id: Str,
     mount_path: Str,
     docker_name: Str,
     size_bytes: Int,
-    status: StringEnum(['active', 'retained', 'destroyed']),
+    status: StringEnum(volumeStatusValues),
     retain_until: NTime,
     backups: Type.Array(VolumeSnapshot)
   },
@@ -318,13 +341,13 @@ export const SecretValue = component('SecretValue', selectable(
   ['id', 'variable_id', 'environment_id', 'version', 'bytes', 'created_by', 'created_at', 'revoked_at', 'needs_reentry', 'pinned_by']
 ))
 
-export const VariableKind = component('VariableKind', StringEnum(['literal', 'reference', 'sealed'], { title: 'VariableKind' }))
+export const VariableKind = component('VariableKind', StringEnum(variableKindValues, { title: 'VariableKind' }))
 
 export const Variable = component('Variable', selectable(
   'Variable',
   {
     ...stamps,
-    scope: StringEnum(['global', 'project', 'service', 'sandbox']),
+    scope: StringEnum(variableScopeValues),
     project_id: NStr,
     service_id: NStr,
     sandbox_id: NStr,
@@ -343,7 +366,7 @@ export const Variable = component('Variable', selectable(
   ['id', 'scope', 'key', 'kind', 'reference', 'injection', 'build', 'head_version', 'bytes']
 ))
 
-const repoSource = { repo: Str, branch: Str, path: Type.Optional(Str), auth: NullableEnum(['app', 'public']) }
+const repoSource = { repo: Str, branch: Str, path: Type.Optional(Str), auth: NullableEnum(repoAuthValues) }
 
 export const ServiceSource = component('ServiceSource', Type.Union(
   [
@@ -381,7 +404,7 @@ export const Service = component('Service', selectable(
     schedule: Nullable(Schedule),
     current_deployment_id: NStr,
     status: ServiceStatus,
-    status_reason: NullableEnum(['station_asleep', 'gaming_mode', 'schedule']),
+    status_reason: NullableEnum(serviceStatusReasonValues),
     desired_state: StringEnum(desiredStateValues),
     stale: Bool,
     stale_reasons: Type.Array(StaleReason),
@@ -451,8 +474,8 @@ export const StagedChange = component('StagedChange', selectable(
   {
     ...stamps,
     environment_id: NStr,
-    status: StringEnum(['staged', 'accepted', 'rejected', 'superseded']),
-    source: StringEnum(['api', 'manifest', 'compose_import', 'agent', 'ui']),
+    status: StringEnum(stagedChangeStatusValues),
+    source: StringEnum(stagedChangeSourceValues),
     actor: Actor,
     accepted_by: Nullable(Actor),
     summary: Type.Object({ add: Int, update: Int, remove: Int, deployments: Int }, { additionalProperties: false }),
@@ -472,7 +495,7 @@ export const Token = component('Token', selectable(
   {
     ...stamps,
     name: Str,
-    kind: StringEnum(['personal', 'scoped', 'station_enroll', 'oauth']),
+    kind: StringEnum(tokenKindValues),
     scopes: Type.Array(Scope),
     expires_at: Time,
     last_used_at: NTime,
@@ -501,7 +524,7 @@ export const Station = component('Station', selectable(
   {
     ...stamps,
     name: Str,
-    status: StringEnum(['enrolling', 'online', 'offline', 'asleep']),
+    status: StringEnum(stationStatusValues),
     draining: Bool,
     os: NullableEnum(stationOsValues),
     arch: NullableEnum(stationArchValues),
@@ -519,7 +542,7 @@ export const Station = component('Station', selectable(
     revoked_at: NTime,
     capabilities: Nullable(StationCapabilities),
     routes: Type.Unknown(),
-    generation_failure: Nullable(Type.Object({ generation: Int, ack: NullableEnum(['applied', 'partial', 'rejected']), failure: Nullable(ErrorBody) })),
+    generation_failure: Nullable(Type.Object({ generation: Int, ack: NullableEnum(appliedStatusValues), failure: Nullable(ErrorBody) })),
     components: Type.Array(Component)
   },
   ['id', 'name', 'status', 'draining', 'os', 'arch', 'version_skew', 'last_seen_at', 'concurrency_cap', 'resources']
@@ -592,7 +615,7 @@ export const Event = component('Event', selectable(
 
 export const NotificationChannel = component('NotificationChannel', selectable(
   'NotificationChannel',
-  { ...stamps, kind: StringEnum(['webhook', 'slack', 'discord', 'email']), filter: JsonObject, status: StringEnum(['active', 'failing']), failing_since: NTime, config: JsonObject },
+  { ...stamps, kind: StringEnum(notificationChannelKindValues), filter: JsonObject, status: StringEnum(notificationChannelStatusValues), failing_since: NTime, config: JsonObject },
   ['id', 'kind', 'filter', 'status', 'failing_since']
 ))
 
@@ -651,9 +674,9 @@ export const NetworkMap = component('NetworkMap', Type.Object(
             id: Str,
             service_port_id: Str,
             hostname: Str,
-            kind: StringEnum(['generated', 'custom']),
+            kind: StringEnum(domainKindValues),
             ingress: StringEnum(ingressValues),
-            status: StringEnum(['pending', 'active', 'error']),
+            status: StringEnum(domainStatusValues),
             certificate: Type.Object({ status: Str, expires_at: NStr }, { additionalProperties: false }),
             port: Int,
             route: Type.Object({ entrypoint: StringEnum(['websecure', 'web']), target: NStr, result: ObjectResult }, { additionalProperties: false })
@@ -666,7 +689,7 @@ export const NetworkMap = component('NetworkMap', Type.Object(
             service_port_id: Str,
             station_id: Str,
             host_port: Int,
-            status: StringEnum(['active', 'removed']),
+            status: StringEnum(portAllocationStatusValues),
             address: NStr,
             public: NStr,
             port: Int,
@@ -684,7 +707,7 @@ export const NetworkMap = component('NetworkMap', Type.Object(
         status: StringEnum(sandboxStatusValues),
         station_id: Str,
         address: NStr,
-        egress: Type.Object({ mode: StringEnum(['open', 'allowlist']), domains: Type.Array(Type.Object({ domain: Str, wildcard: Bool, ports: Type.Array(Int) }, { additionalProperties: false })) }, { additionalProperties: false })
+        egress: Type.Object({ mode: StringEnum(sandboxEgressModeValues), domains: Type.Array(Type.Object({ domain: Str, wildcard: Bool, ports: Type.Array(Int) }, { additionalProperties: false })) }, { additionalProperties: false })
       },
       { additionalProperties: false }
     )),
@@ -817,7 +840,7 @@ export const SandboxStatus = component('SandboxStatus', StringEnum(sandboxStatus
 export const SandboxImage = component('SandboxImage', Type.Object({ ref: NStr, digest: Str }, { title: 'SandboxImage', additionalProperties: false }))
 
 const SandboxEgressView = Type.Object(
-  { mode: StringEnum(['open', 'allowlist']), domains: Type.Optional(Type.Array(component('SandboxEgressDomain', SandboxEgressDomainSchema))) },
+  { mode: StringEnum(sandboxEgressModeValues), domains: Type.Optional(Type.Array(component('SandboxEgressDomain', SandboxEgressDomainSchema))) },
   { additionalProperties: false }
 )
 

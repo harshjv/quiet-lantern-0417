@@ -57,7 +57,7 @@ export function LogViewer({ selector, follow: followAtMount, label }: { selector
       unwrap(api.v1.logs.get({ query: { ...queryOf(selector), tail } }))
         .then(page => {
           if (cancelled) return
-          setLines(page.lines)
+          setLines(page.untrusted.lines)
           setState('idle')
         })
         .catch(failure => !cancelled && (setError(failure), setState('idle')))

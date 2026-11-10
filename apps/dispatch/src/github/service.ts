@@ -20,7 +20,8 @@ import {
 import type { Call } from '../api/context.ts'
 import { ChangeSet, commit } from '../api/changes.ts'
 import { ApiError } from '../api/errors.ts'
-import { readSetting } from '../api/settings.ts'
+import { readSetting } from '../db/settings.ts'
+import { env } from '../env.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { eventBus } from '../station/events.ts'
 import { advertisement, appJwt, gh, GitHubError, type GitHubResponse, githubWeb, repoOf, signatureValid, splitRepo } from './client.ts'
@@ -501,7 +502,7 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const pollOnce = async () => {
     const results: Json[] = []
-    const intervalS = Math.max(10, Number(readSetting<number>(db, 'github.poll_interval_s') ?? 300))
+    const intervalS = Math.max(10, readSetting(db, 'github.poll_interval_s'))
     const pollingApps = db.select().from(github_app).where(eq(github_app.webhooks, false)).all()
     for (const app of pollingApps) {
       if (Date.now() - (lastSync.get(app.id) ?? 0) < intervalS * 1000) continue
@@ -572,7 +573,7 @@ export const createGitHub = (deps: GitHubDeps) => {
     const poll = guarded('poll', pollOnce)
     const statuses = guarded('statuses', postStatuses)
     setTimeout(sweep, 2_000)
-    timers.push(setInterval(sweep, Number(process.env.STATIONLY_GITHUB_SWEEP_MS ?? 600_000)))
+    timers.push(setInterval(sweep, env().STATIONLY_GITHUB_SWEEP_MS))
     let polling = false
     timers.push(
       setInterval(async () => {

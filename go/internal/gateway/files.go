@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -15,21 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-)
 
-func WriteFile(dir, name string, body []byte) (bool, error) {
-	path := filepath.Join(dir, name)
-	if have, err := os.ReadFile(path); err == nil && bytes.Equal(have, body) {
-		return false, nil
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return false, err
-	}
-	tmp := filepath.Join(dir, "."+name+".tmp")
-	if err := os.WriteFile(tmp, body, 0o644); err != nil {
-		return false, err
-	}
-	return true, os.Rename(tmp, path)
-}
+	"github.com/harshjv/stationly/go/internal/fsx"
+)
 
 func ConfigFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
@@ -53,14 +40,7 @@ func CopyStore(dir string, from, to int) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, "."+StoreName(to)+".tmp")
-	if err := os.WriteFile(tmp, body, 0o600); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, StoreName(to)))
+	return fsx.WriteFile(filepath.Join(dir, StoreName(to)), body, 0o600)
 }
 
 func RemoveStore(dir string, n int) error {

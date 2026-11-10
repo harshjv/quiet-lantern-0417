@@ -1,9 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { api, unwrap } from './api'
-
-const terminal = new Set(['active', 'failed', 'cancelled', 'superseded'])
-
-export const isTerminal = (status: string | undefined) => (status ? terminal.has(status) : false)
+import { isTerminal, isTransient, snapshotsBusy } from './status'
 
 export const meQuery = queryOptions({
   queryKey: ['me'],
@@ -132,6 +129,28 @@ export const allocationsQuery = (service: string) =>
     queryFn: () => unwrap(api.v1.services({ service })['port-allocations'].get({ query: { status: 'active' } }))
   })
 
+export const onlineStationsQuery = queryOptions({
+  queryKey: ['stations', 'online'],
+  queryFn: () => unwrap(api.v1.stations.get({ query: { status: 'online', limit: 200 } })),
+  staleTime: 60_000
+})
+
+export const connectionsQuery = (service: string) =>
+  queryOptions({
+    queryKey: ['connections', service],
+    queryFn: () => unwrap(api.v1.services({ service }).connections.get({ query: {} })),
+    staleTime: Infinity,
+    retry: false
+  })
+
+export const dnsLogQuery = (service: string) =>
+  queryOptions({
+    queryKey: ['dns-log', service],
+    queryFn: () => unwrap(api.v1.services({ service })['dns-log'].get({ query: { tail: 50 } })),
+    staleTime: Infinity,
+    retry: false
+  })
+
 export const stationQuery = (station: string) =>
   queryOptions({
     queryKey: ['stations', station],
@@ -159,34 +178,32 @@ export const stagedChangeQuery = (id: string) =>
 
 const sandboxFields = 'id,environment_id,station_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,created_at,failure,exit_code'
 
-const sandboxSteady = new Set(['running', 'stopped', 'failed'])
-
 export const sandboxesQuery = (environment: string) =>
   queryOptions({
     queryKey: ['sandboxes', 'of', environment],
     queryFn: () => unwrap(api.v1.environments({ environment }).sandboxes.get({ query: { limit: 200, fields: sandboxFields } })),
-    refetchInterval: query => (query.state.data?.items.every(s => sandboxSteady.has(s.status)) === false ? 2000 : false)
+    refetchInterval: query => (query.state.data?.items.some(s => isTransient(s.status)) ? 2000 : false)
   })
 
 export const sandboxQuery = (sandbox: string) =>
   queryOptions({
     queryKey: ['sandboxes', sandbox],
     queryFn: () => unwrap(api.v1.sandboxes({ sandbox }).get({ query: { fields: `${sandboxFields},metrics` } })),
-    refetchInterval: query => (query.state.data && sandboxSteady.has(query.state.data.status) ? (query.state.data.status === 'running' ? 5000 : false) : 2000)
+    refetchInterval: query => (query.state.data && !isTransient(query.state.data.status) ? (query.state.data.status === 'running' ? 5000 : false) : 2000)
   })
 
 export const sandboxSnapshotsQuery = (environment: string) =>
   queryOptions({
     queryKey: ['sandbox-snapshots', 'of', environment],
     queryFn: () => unwrap(api.v1.environments({ environment })['sandbox-snapshots'].get({ query: { limit: 200 } })),
-    refetchInterval: query => (query.state.data?.items.some(s => s.status === 'creating' || s.status === 'deleting') ? 2000 : false)
+    refetchInterval: query => (snapshotsBusy(query.state.data?.items) ? 2000 : false)
   })
 
 export const sandboxOwnSnapshotsQuery = (sandbox: string) =>
   queryOptions({
     queryKey: ['sandbox-snapshots', 'from', sandbox],
     queryFn: () => unwrap(api.v1.sandboxes({ sandbox }).snapshots.get({ query: { limit: 200 } })),
-    refetchInterval: query => (query.state.data?.items.some(s => s.status === 'creating' || s.status === 'deleting') ? 2000 : false)
+    refetchInterval: query => (snapshotsBusy(query.state.data?.items) ? 2000 : false)
   })
 
 export const sandboxVariablesQuery = (sandbox: string) =>

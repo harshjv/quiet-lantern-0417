@@ -1,9 +1,10 @@
-import type { MessageBody, Observed } from '@stationly/protocol'
+import { runActiveStatuses, type MessageBody, type Observed } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
 import type { Actor } from '@stationly/protocol'
 import { and, count, eq, inArray, isNotNull, ne } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
-import { run, sandbox, sandbox_snapshot, secret_value, setting, station, variable } from '../db/schema.ts'
+import { run, sandbox, sandbox_snapshot, secret_value, station, variable } from '../db/schema.ts'
+import { readSetting } from '../db/settings.ts'
 import { emitEvent } from '../station/events.ts'
 
 type ActorValue = Static<typeof Actor>
@@ -13,7 +14,6 @@ export const systemActor: ActorValue = { type: 'system', id: null, client: 'disp
 
 export const expiringLeadS = 86400
 
-export const retentionDefaultS = 604800
 
 export const sandboxSubject = (row: Pick<SandboxRow, 'id' | 'project_id' | 'environment_id'>) => ({
   entity: 'sandbox',
@@ -23,10 +23,7 @@ export const sandboxSubject = (row: Pick<SandboxRow, 'id' | 'project_id' | 'envi
   environment_id: row.environment_id
 })
 
-export const retentionSeconds = (db: Db) => {
-  const value = db.select().from(setting).where(eq(setting.key, 'sandbox.stopped_retention_s')).get()?.value
-  return typeof value === 'number' ? value : retentionDefaultS
-}
+export const retentionSeconds = (db: Db) => readSetting(db, 'sandbox.stopped_retention_s')
 
 export const deleteAt = (row: Pick<SandboxRow, 'status' | 'stopped_at'>, retention: number) =>
   row.status === 'stopped' && retention > 0 && row.stopped_at ? new Date(row.stopped_at.getTime() + retention * 1000) : null
@@ -49,7 +46,7 @@ const endRuns = (db: Db, sandboxId: string) =>
   db
     .update(run)
     .set({ status: 'cancelled', finished_at: new Date() })
-    .where(and(eq(run.sandbox_id, sandboxId), inArray(run.status, ['queued', 'running'])))
+    .where(and(eq(run.sandbox_id, sandboxId), inArray(run.status, [...runActiveStatuses])))
     .run()
 
 export const requestDeletion = (db: Db, row: SandboxRow, by: { actor: ActorValue; reason: 'user' | 'retention' | 'environment' }) => {

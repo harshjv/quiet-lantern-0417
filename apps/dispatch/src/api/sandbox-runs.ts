@@ -1,4 +1,4 @@
-import type { MessageBody } from '@stationly/protocol'
+import { runTerminalStatuses, type MessageBody } from '@stationly/protocol'
 import { eq } from 'drizzle-orm'
 import { run, sandbox } from '../db/schema.ts'
 import type { Call } from './context.ts'
@@ -32,7 +32,7 @@ export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
   }
 }
 
-const terminal = new Set<RunRow['status']>(['succeeded', 'failed', 'skipped', 'cancelled'])
+const terminal = new Set<RunRow['status']>(runTerminalStatuses)
 
 export const waitForRun = async (kit: Kit, id: string, seconds: number, signal: AbortSignal) => {
   const { db } = kit.deps

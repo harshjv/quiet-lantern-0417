@@ -1,20 +1,24 @@
 import { createHash } from 'node:crypto'
 import {
   dnsLogTail,
+  type MessageBody,
+  portRange,
   probeTimeout,
-  sandboxExecLimits,
+  runActiveStatuses,
   SandboxCreateBody,
   SandboxExecBody,
+  sandboxExecLimits,
+  sandboxIdleStatuses,
   SandboxPatchBody,
   SandboxShellBody,
+  sandboxSizeDefaults,
   SandboxSnapshotBody,
   SandboxStartBody,
   SandboxStorageGrowRequest,
-  SandboxVariablesPatchBody,
-  sandboxSizeDefaults,
-  type MessageBody
+  SandboxVariablesPatchBody
 } from '@stationly/protocol'
-import type { Static, TSchema } from '@sinclair/typebox'
+import type { Static } from '@sinclair/typebox'
+import { releaseRepositories } from '@stationly/protocol/release-config'
 import { and, desc, eq, gte, inArray, isNull } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import type { Db } from '../../db/client.ts'
@@ -29,7 +33,7 @@ import { growStorage, requireGrowable } from '../../sandboxes/storage.ts'
 import { shapeSandboxSample } from '../../net/connections.ts'
 import { probeTarget } from '../../net/explain.ts'
 import { sendSandboxProbe } from '../../net/probe.ts'
-import { can, requireHuman, requireInstance, requireLevel } from '../access.ts'
+import { can, requireHuman, requireLevel } from '../access.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
 import { requireStationReady } from '../deployments.ts'
@@ -63,13 +67,10 @@ import {
   StorageGrown,
   Variable
 } from '../shapes.ts'
-import { readSetting } from '../settings.ts'
+import { readSetting } from '../../db/settings.ts'
 import { planVariables } from '../variable-changes.ts'
+import { input } from '../schemas.ts'
 import { stationError } from './runs.ts'
-
-const input = <S extends TSchema>(schema: S) => t.Unsafe<Static<S>>(schema)
-
-const toolchainSource = 'ghcr.io/harshjv/stationly/sandbox-toolchain'
 
 const snapshotWaitMs = 10_000
 
@@ -81,9 +82,13 @@ export const sandboxRoutes = (kit: Kit) => {
 
   const stationRow = (id: string) => db.select().from(station).where(eq(station.id, id)).get()!
 
+  const requireHumanIn = (call: Call, environment: EnvironmentRow) => {
+    if (environment.protected) requireHuman(call.principal, 'A sandbox operation in a protected environment', { environment_id: environment.id })
+  }
+
   const requireWrite = (call: Call, ctx: { target: SandboxContext['target']; environment: EnvironmentRow }) => {
     requireLevel(call.principal, ctx.target, 'deploy')
-    if (ctx.environment.protected) requireHuman(call.principal, 'A sandbox operation in a protected environment', { environment_id: ctx.environment.id })
+    requireHumanIn(call, ctx.environment)
   }
 
   const requireConnected = (stationId: string) => {
@@ -147,7 +152,7 @@ export const sandboxRoutes = (kit: Kit) => {
     }
     const pin = effectivePins(db, st.arch).sandbox_toolchain
     if (!pin?.digest) {
-      fail('STATION_CAPABILITY_MISSING', 'The platform lockfile pins no sandbox_toolchain image, so there is no default sandbox image.', 'Upgrade to a release that pins sandbox_toolchain with sly platform upgrade, or name an image.', { missing: 'sandbox_toolchain', source: toolchainSource })
+      fail('STATION_CAPABILITY_MISSING', 'The platform lockfile pins no sandbox_toolchain image, so there is no default sandbox image.', 'Upgrade to a release that pins sandbox_toolchain with sly platform upgrade, or name an image.', { missing: 'sandbox_toolchain', source: releaseRepositories.sandbox_toolchain })
     }
     return { ref: null, digest: pin!.digest! }
   }
@@ -190,7 +195,7 @@ export const sandboxRoutes = (kit: Kit) => {
     db
       .select({ id: run.id })
       .from(run)
-      .where(and(eq(run.sandbox_id, sandboxId), inArray(run.status, ['queued', 'running'])))
+      .where(and(eq(run.sandbox_id, sandboxId), inArray(run.status, [...runActiveStatuses])))
       .all().length
 
   const envBytes = (env: Record<string, string>) => Object.entries(env).reduce((sum, [key, value]) => sum + Buffer.byteLength(key) + Buffer.byteLength(value), 0)
@@ -199,12 +204,11 @@ export const sandboxRoutes = (kit: Kit) => {
 
   return new Elysia({ prefix: '/v1', normalize: false })
     .use(models())
+    .use(kit.operations)
     .get(
       '/environments/:environment/sandboxes',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const statuses = csv(query.status)
         const stationId = query.station ? stationByRef(db, query.station).id : undefined
         const page = collect(
@@ -229,6 +233,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { items: await Promise.all(page.rows.map(row => present(row, query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_sandboxes', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ ...listQuery, status: t.Optional(t.String()), station: t.Optional(t.String()), network: t.Optional(t.Union([t.Literal('isolated'), t.Literal('environment')])) }),
         response: replies({ 200: Page(Sandbox) }),
@@ -237,20 +242,18 @@ export const sandboxRoutes = (kit: Kit) => {
     )
     .get(
       '/sandboxes/:sandbox',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(principal, ctx.target, 'read')
         return present(ctx.sandbox, query.fields)
       },
-      { params: t.Object({ sandbox: t.String() }), query: t.Object(getQuery), response: replies({ 200: Sandbox }), detail: { summary: 'Get a sandbox', tags } }
+      { operation: { id: 'get_sandbox', level: 'read' }, params: t.Object({ sandbox: t.String() }), query: t.Object(getQuery), response: replies({ 200: Sandbox }), detail: { summary: 'Get a sandbox', tags } }
     )
     .post(
       '/environments/:environment/sandboxes',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = environmentById(db, params.environment)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const source = body.from ? sourceOf(call, ctx, body.from) : null
         const st = body.from ? stationRow(source!.stationId) : pickStation(body.station_id)
         if (source && body.station_id !== undefined && stationByRef(db, body.station_id).id !== st.id) invalid([{ path: '/station_id', message: `a fork runs on its source's station ${st.name}` }])
@@ -312,6 +315,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { ...shown(rowOf(id), undefined), warnings: source?.warnings ?? [] }
       },
       {
+        operation: { id: 'create_sandbox', level: 'deploy' },
         params: t.Object({ environment: t.String() }),
         body: input(SandboxCreateBody),
         response: replies({ 201: SandboxCreated }),
@@ -323,13 +327,13 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, body }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
         if (!Object.keys(body).length) invalid([{ path: '/', message: 'send at least one of ttl_s, egress, size, network, docker, command' }])
         if (row.status === 'deleting') conflict(row, ['creating', 'starting', 'running', 'stopping', 'stopped', 'failed'])
         const live = row.desired_state === 'running'
-        const idle = row.status === 'stopped' || row.status === 'failed'
-        if (body.network !== undefined && body.network !== row.network && !idle) conflict(row, ['stopped', 'failed'])
+        const idle = (sandboxIdleStatuses as readonly string[]).includes(row.status)
+        if (body.network !== undefined && body.network !== row.network && !idle) conflict(row, [...sandboxIdleStatuses])
         const size = { ...row.size, ...(body.size ?? {}) }
         if (size.disk_bytes < row.size.disk_bytes && size.disk_bytes < row.disk_used_bytes) invalid([{ path: '/size/disk_bytes', message: `the disk holds ${row.disk_used_bytes} bytes, more than ${size.disk_bytes}` }])
         const st = stationRow(row.station_id)
@@ -358,6 +362,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { ...shown(rowOf(row.id), undefined), warnings: restart ? [warning('SANDBOX_RESTART_REQUIRED', `${changed.join(', ')} ${changed.length === 1 ? 'is' : 'are'} stored and apply at the next start.`)] : [] }
       },
       {
+        operation: { id: 'update_sandbox', level: 'deploy' },
         params: t.Object({ sandbox: t.String() }),
         body: input(SandboxPatchBody),
         response: replies({ 200: SandboxCreated }),
@@ -369,7 +374,7 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, body }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
         if (row.status === 'deleting') conflict(row, ['stopping', 'stopped', 'failed'])
         requireConnected(row.station_id)
@@ -388,14 +393,14 @@ export const sandboxRoutes = (kit: Kit) => {
         stations.reconcile(row.station_id)
         return shown(rowOf(row.id), undefined)
       },
-      { params: t.Object({ sandbox: t.String() }), body: t.Optional(input(SandboxStartBody)), response: replies({ 200: Sandbox }), detail: { summary: 'Start a stopped sandbox; ttl_s replaces the stored one', tags } }
+      { operation: { id: 'start_sandbox', level: 'deploy' }, params: t.Object({ sandbox: t.String() }), body: t.Optional(input(SandboxStartBody)), response: replies({ 200: Sandbox }), detail: { summary: 'Start a stopped sandbox; ttl_s replaces the stored one', tags } }
     )
     .post(
       '/sandboxes/:sandbox/stop',
       async ({ request, params }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
         if (row.status === 'deleting') conflict(row, ['creating', 'starting', 'running', 'stopping', 'stopped', 'failed'])
         requireConnected(row.station_id)
@@ -409,28 +414,28 @@ export const sandboxRoutes = (kit: Kit) => {
         stations.reconcile(row.station_id)
         return shown(rowOf(row.id), undefined)
       },
-      { params: t.Object({ sandbox: t.String() }), response: replies({ 200: Sandbox }), detail: { summary: 'Stop a sandbox and keep its disk', tags } }
+      { operation: { id: 'stop_sandbox', level: 'deploy' }, params: t.Object({ sandbox: t.String() }), response: replies({ 200: Sandbox }), detail: { summary: 'Stop a sandbox and keep its disk', tags } }
     )
     .delete(
       '/sandboxes/:sandbox',
       async ({ request, params }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         requireConnected(ctx.sandbox.station_id)
         const kept = requestDeletion(db, ctx.sandbox, { actor: call.principal.actor, reason: 'user' })
         audit(db, call, 'sandbox.delete', { entity: 'sandbox', id: ctx.sandbox.id }, { before: { name: ctx.sandbox.name, status: ctx.sandbox.status }, after: { snapshots_kept: kept } })
         stations.reconcile(ctx.sandbox.station_id)
         return { deleted: true as const, snapshots_kept: kept }
       },
-      { params: t.Object({ sandbox: t.String() }), response: replies({ 200: SandboxDeleted }), detail: { summary: 'Delete a sandbox and its disk; its snapshots stay', tags } }
+      { operation: { id: 'delete_sandbox', level: 'deploy' }, params: t.Object({ sandbox: t.String() }), response: replies({ 200: SandboxDeleted }), detail: { summary: 'Delete a sandbox and its disk; its snapshots stay', tags } }
     )
     .post(
       '/sandboxes/:sandbox/exec',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
         if (row.status !== 'running') fail('SANDBOX_NOT_RUNNING', `Sandbox ${row.name} is ${row.status}, so nothing can run in it.`, 'Start the sandbox with start_sandbox, then run the command again.', { status: row.status })
         requireConnected(row.station_id)
@@ -479,6 +484,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return output ? { ...shownRun, output } : shownRun
       },
       {
+        operation: { id: 'sandbox_exec', level: 'deploy' },
         params: t.Object({ sandbox: t.String() }),
         body: input(SandboxExecBody),
         response: replies({ 201: SandboxExec }),
@@ -490,7 +496,7 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
         if (row.status !== 'running') fail('SANDBOX_NOT_RUNNING', `Sandbox ${row.name} is ${row.status}, so no shell can open in it.`, 'Start the sandbox with start_sandbox, then open the shell.', { status: row.status })
         requireConnected(row.station_id)
@@ -516,6 +522,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { ...select(kit.views.run, db.select().from(run).where(eq(run.id, id)).get()!, undefined), tty: true, attach_url: `/v1/runs/${id}/attach` }
       },
       {
+        operation: { id: 'open_sandbox_shell', level: 'deploy', mcp: false },
         params: t.Object({ sandbox: t.String() }),
         body: input(SandboxShellBody),
         response: replies({ 201: SandboxShell }),
@@ -524,10 +531,8 @@ export const sandboxRoutes = (kit: Kit) => {
     )
     .get(
       '/sandboxes/:sandbox/runs',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(principal, ctx.target, 'read')
         const since = parseTime(query.since, '/since')
         const kinds = csv(query.kind)
         const statuses = csv(query.status)
@@ -553,6 +558,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { items: page.rows.map(row => select(kit.views.run, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_sandbox_runs', level: 'read', mcp: false },
         params: t.Object({ sandbox: t.String() }),
         query: t.Object({ ...listQuery, kind: t.Optional(t.String()), status: t.Optional(t.String()), since: t.Optional(t.String()) }),
         response: replies({ 200: Page(Run) }),
@@ -561,45 +567,39 @@ export const sandboxRoutes = (kit: Kit) => {
     )
     .get(
       '/sandboxes/:sandbox/metrics',
-      async ({ request, params }) => {
-        const principal = await kit.principal(request)
+      async ({ params }) => {
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(principal, ctx.target, 'read')
         const reply = await stations.ask(ctx.sandbox.station_id, 'metrics.sample', { sandbox_ids: [ctx.sandbox.id] }, { capability: 'metrics.v1' }).catch(stationError)
         const sample = (reply.body as MessageBody<'metrics.sample.result'>).samples.find(s => s.sandbox_id === ctx.sandbox.id)
         if (!sample) fail('NOT_FOUND', `${ctx.sandbox.name} reports no metrics.`, 'Start the sandbox, then read metrics again.', { sandbox_id: ctx.sandbox.id, status: ctx.sandbox.status })
         const { service_id: _s, deployment_id: _d, restarts: _r, sandbox_id: _b, ...rest } = sample!
         return { sandbox_id: ctx.sandbox.id, ...rest }
       },
-      { params: t.Object({ sandbox: t.String() }), response: replies({ 200: SandboxMetricSample }), detail: { summary: 'Latest live metrics sample of a sandbox', tags } }
+      { operation: { id: 'get_sandbox_metrics', level: 'read', mcp: false }, params: t.Object({ sandbox: t.String() }), response: replies({ 200: SandboxMetricSample }), detail: { summary: 'Latest live metrics sample of a sandbox', tags } }
     )
     .get(
       '/sandboxes/:sandbox/variables',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(principal, ctx.target, 'read')
         const rows = db.select().from(variable).where(and(eq(variable.scope, 'sandbox'), eq(variable.sandbox_id, ctx.sandbox.id))).all()
         return { items: rows.sort((a, b) => a.key.localeCompare(b.key)).map(row => select(kit.views.variable, row, kit.fields(query.fields))), next_cursor: null }
       },
-      { params: t.Object({ sandbox: t.String() }), query: t.Object(getQuery), response: replies({ 200: Page(Variable) }), detail: { summary: 'List the variables of a sandbox; values are never listed', tags } }
+      { operation: { id: 'list_sandbox_variables', level: 'read' }, params: t.Object({ sandbox: t.String() }), query: t.Object(getQuery), response: replies({ 200: Page(Variable) }), detail: { summary: 'List the variables of a sandbox; values are never listed', tags } }
     )
     .get(
       '/sandboxes/:sandbox/variables/resolved',
       async ({ request, params }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(call.principal, ctx.target, 'read')
         return sandboxResolvedView(kit, call, ctx, { admin: can(call.principal, ctx.target, 'admin') }) as Static<typeof SandboxResolved>
       },
-      { params: t.Object({ sandbox: t.String() }), response: replies({ 200: SandboxResolved }), detail: { summary: "The resolved variables of a sandbox with their sources; a value only with admin and never a sealed one", tags } }
+      { operation: { id: 'get_sandbox_resolved_variables', level: 'read' }, params: t.Object({ sandbox: t.String() }), response: replies({ 200: SandboxResolved }), detail: { summary: "The resolved variables of a sandbox with their sources; a value only with admin and never a sealed one", tags } }
     )
     .patch(
       '/sandboxes/:sandbox/variables',
       async ({ request, params, body }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(call.principal, ctx.target, 'deploy')
         if (ctx.environment.protected) requireHuman(call.principal, 'A sandbox variable change in a protected environment', { environment_id: ctx.environment.id })
         if (ctx.sandbox.status === 'deleting') conflict(ctx.sandbox, ['creating', 'starting', 'running', 'stopping', 'stopped', 'failed'])
         const changes = new ChangeSet()
@@ -614,6 +614,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { variables: rows.map(row => select(kit.views.variable, row, undefined)) }
       },
       {
+        operation: { id: 'set_sandbox_variables', level: 'deploy' },
         params: t.Object({ sandbox: t.String() }),
         body: input(SandboxVariablesPatchBody),
         response: replies({ 200: SandboxVariablesOutcome }),
@@ -625,13 +626,13 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, query }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(call.principal, ctx.target, 'read')
         const reply = await stations.ask(ctx.sandbox.station_id, 'network.sample', { sandbox_ids: [ctx.sandbox.id] }, { capability: 'network.v1', timeoutMs: 10_000 }).catch(stationError)
         const sample = (reply.body as MessageBody<'network.sample.result'>).samples.find(s => s.sandbox_id === ctx.sandbox.id)
         if (!sample) fail('NOT_FOUND', `The station returned no connection sample for ${ctx.sandbox.name}.`, 'Start the sandbox, then read the connections again.', { sandbox_id: ctx.sandbox.id })
         return shapeSandboxSample({ db, redaction: kit.redaction, sandboxRedaction: kit.sandboxRedaction, actor: call.principal.actor, requestId: call.request_id }, sample!, ctx.sandbox, query.direction)
       },
       {
+        operation: { id: 'get_sandbox_connections', level: 'read' },
         params: t.Object({ sandbox: t.String() }),
         query: t.Object({ direction: t.Optional(t.Union([t.Literal('in'), t.Literal('out')])) }),
         response: replies({ 200: SandboxConnections }),
@@ -643,7 +644,6 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, query }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(call.principal, ctx.target, 'read')
         const reply = await stations
           .ask(ctx.sandbox.station_id, 'dns.log', { sandbox_id: ctx.sandbox.id, tail: query.tail ?? dnsLogTail.default, ...(query.name ? { name: query.name } : {}), ...(query.rcode ? { rcode: query.rcode } : {}) }, { capability: 'network.v1', timeoutMs: 10_000 })
           .catch(stationError)
@@ -652,6 +652,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { untrusted: { source: 'resolver log' as const, entries } }
       },
       {
+        operation: { id: 'get_sandbox_dns_log', level: 'read' },
         params: t.Object({ sandbox: t.String() }),
         query: t.Object({ tail: t.Optional(t.Numeric({ minimum: 1, maximum: dnsLogTail.max })), name: t.Optional(t.String({ minLength: 1, maxLength: 253 })), rcode: t.Optional(t.String({ minLength: 1, maxLength: 16 })) }),
         response: replies({ 200: DnsLog }),
@@ -663,7 +664,7 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, body }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         if (ctx.sandbox.status !== 'running') conflict(ctx.sandbox, ['running'])
         kit.probeLimit(ctx.sandbox.id, ctx.environment.id)
         const kind = body.kind ?? 'tcp'
@@ -671,11 +672,12 @@ export const sandboxRoutes = (kit: Kit) => {
         return sendSandboxProbe(kit.deps, call, ctx.sandbox, { kind, to: target.to, port: target.port, timeout_s: body.timeout_s ?? probeTimeout.defaultS })
       },
       {
+        operation: { id: 'probe_sandbox_network', level: 'deploy' },
         params: t.Object({ sandbox: t.String() }),
         body: t.Object(
           {
             to: t.String({ minLength: 1, maxLength: 260 }),
-            port: t.Optional(t.Integer({ minimum: 1, maximum: 65535 })),
+            port: t.Optional(t.Integer(portRange)),
             kind: t.Optional(t.Union([t.Literal('tcp'), t.Literal('dns')])),
             timeout_s: t.Optional(t.Integer({ minimum: probeTimeout.minS, maximum: probeTimeout.maxS }))
           },
@@ -690,7 +692,7 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = sandboxById(db, params.sandbox)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
         if (row.status === 'creating' || row.status === 'deleting') conflict(row, ['starting', 'running', 'stopping', 'stopped', 'failed'])
         requireConnected(row.station_id)
@@ -711,6 +713,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { ...select(kit.views.sandboxSnapshot, created, undefined), warnings: warningsFor(row) }
       },
       {
+        operation: { id: 'snapshot_sandbox', level: 'deploy' },
         params: t.Object({ sandbox: t.String() }),
         body: t.Optional(input(SandboxSnapshotBody)),
         response: replies({ 201: SandboxSnapshotCreated }),
@@ -719,13 +722,12 @@ export const sandboxRoutes = (kit: Kit) => {
     )
     .get(
       '/sandboxes/:sandbox/snapshots',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = sandboxById(db, params.sandbox)
-        requireLevel(principal, ctx.target, 'read')
         return listSnapshots(query, and(eq(sandbox_snapshot.sandbox_id, ctx.sandbox.id), eq(sandbox_snapshot.environment_id, ctx.environment.id)))
       },
       {
+        operation: { id: 'list_sandbox_snapshots', level: 'read' },
         params: t.Object({ sandbox: t.String() }),
         query: t.Object({ ...listQuery, status: t.Optional(t.String()) }),
         response: replies({ 200: Page(SandboxSnapshot) }),
@@ -734,15 +736,14 @@ export const sandboxRoutes = (kit: Kit) => {
     )
     .get(
       '/environments/:environment/sandbox-snapshots',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const source = query.sandbox ? (query.sandbox.startsWith('sbx_') ? query.sandbox : sandboxInEnvironment(db, ctx.environment.id, query.sandbox)?.id) : undefined
         if (query.sandbox && !source) return { items: [], next_cursor: null }
         return listSnapshots(query, and(eq(sandbox_snapshot.environment_id, ctx.environment.id), source ? eq(sandbox_snapshot.sandbox_id, source) : undefined))
       },
       {
+        operation: { id: 'list_environment_sandbox_snapshots', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ ...listQuery, sandbox: t.Optional(t.String()), status: t.Optional(t.String()) }),
         response: replies({ 200: Page(SandboxSnapshot) }),
@@ -751,20 +752,18 @@ export const sandboxRoutes = (kit: Kit) => {
     )
     .get(
       '/sandbox-snapshots/:id',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = snapshotById(db, params.id)
-        requireLevel(principal, ctx.target, 'read')
         return select(kit.views.sandboxSnapshot, ctx.snapshot, kit.fields(query.fields))
       },
-      { params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: SandboxSnapshot }), detail: { summary: 'Get a sandbox snapshot', tags } }
+      { operation: { id: 'get_sandbox_snapshot', level: 'read', mcp: false }, params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: SandboxSnapshot }), detail: { summary: 'Get a sandbox snapshot', tags } }
     )
     .delete(
       '/sandbox-snapshots/:id',
       async ({ request, params }) => {
         const call = await kit.call(request)
         const ctx = snapshotById(db, params.id)
-        requireWrite(call, ctx)
+        requireHumanIn(call, ctx.environment)
         requireConnected(ctx.snapshot.station_id)
         if (ctx.snapshot.status === 'failed') db.delete(sandbox_snapshot).where(eq(sandbox_snapshot.id, ctx.snapshot.id)).run()
         else db.update(sandbox_snapshot).set({ status: 'deleting' }).where(eq(sandbox_snapshot.id, ctx.snapshot.id)).run()
@@ -772,16 +771,15 @@ export const sandboxRoutes = (kit: Kit) => {
         stations.reconcile(ctx.snapshot.station_id)
         return { deleted: true as const }
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: SandboxSnapshotDeleted }), detail: { summary: 'Delete a sandbox snapshot', tags } }
+      { operation: { id: 'delete_sandbox_snapshot', level: 'deploy' }, params: t.Object({ id: t.String() }), response: replies({ 200: SandboxSnapshotDeleted }), detail: { summary: 'Delete a sandbox snapshot', tags } }
     )
     .post(
       '/stations/:station/sandbox-storage/grow',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        requireInstance(call.principal, 'admin')
         const st = stationByRef(db, params.station)
         const before = requireGrowable(st, body.size_bytes).filesystem_bytes
-        if (Boolean(readSetting<boolean>(db, 'platform.protected')) && !call.principal.human) {
+        if (Boolean(readSetting(db, 'platform.protected')) && !call.principal.human) {
           const changes = new ChangeSet()
           changes.add('sandbox_storage', st.id, { size_bytes: body.size_bytes })
           const result = commit(kit.deps, call, { environment: null, protect: true }, changes)
@@ -792,6 +790,7 @@ export const sandboxRoutes = (kit: Kit) => {
         return { filesystem_bytes: grown.filesystem_bytes, filesystem_free_bytes: grown.filesystem_free_bytes }
       },
       {
+        operation: { id: 'grow_sandbox_storage', level: 'instance admin' },
         params: t.Object({ station: t.String() }),
         body: input(SandboxStorageGrowRequest),
         response: replies({ 200: StorageGrown, 202: Staged }),

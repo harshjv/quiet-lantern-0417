@@ -1,11 +1,9 @@
 import { createHmac, sign, timingSafeEqual } from 'node:crypto'
+import { env } from '../env.ts'
 
 export const apiVersion = '2026-03-10'
 
-const trim = (url: string) => url.replace(/\/+$/, '')
-
-export const githubWeb = () => trim(process.env.STATIONLY_GITHUB_URL ?? 'https://github.com')
-export const githubApi = () => trim(process.env.STATIONLY_GITHUB_API_URL ?? 'https://api.github.com')
+export const githubWeb = () => env().STATIONLY_GITHUB_URL
 
 export const splitRepo = (repo: string) => {
   const [, owner, name] = repo.split('/') as [string, string, string]
@@ -50,7 +48,7 @@ export const gh = async <T = unknown>(
   if (options.token) headers.authorization = `Bearer ${options.token}`
   if (options.body !== undefined) headers['content-type'] = 'application/json'
   if (options.etag) headers['if-none-match'] = options.etag
-  const response = await fetch(`${githubApi()}${path}`, {
+  const response = await fetch(`${env().STATIONLY_GITHUB_API_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),

@@ -6,6 +6,7 @@ import { parseFields, project, type FieldTree } from './fields.ts'
 import { createRedaction, createSandboxRedaction } from './redaction.ts'
 import type { Static } from '@sinclair/typebox'
 import type { Staged } from './shapes.ts'
+import { routeMeta } from './route-meta.ts'
 import { createViews } from './views.ts'
 import { createLiveHub } from '../net/live.ts'
 import { createProbeLimits } from '../net/probe.ts'
@@ -21,6 +22,7 @@ export const createKit = (deps: Deps) => {
     live: createLiveHub(deps.stations),
     probeLimit: createProbeLimits(),
     principal,
+    operations: routeMeta(deps.db, principal),
     call: async (request: Request) => callOf(request, await principal(request)),
     fields: (text: string | undefined): FieldTree | undefined => parseFields(text),
     stagedBody: (result: Extract<CommitResult, { applied: false }>, set: { status?: number | string }) => {
@@ -31,8 +33,6 @@ export const createKit = (deps: Deps) => {
 }
 
 export type Kit = ReturnType<typeof createKit>
-
-export const slugPattern = '^[a-z0-9][a-z0-9-]{0,62}$'
 
 const durationUnits: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }
 

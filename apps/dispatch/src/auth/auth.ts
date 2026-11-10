@@ -8,9 +8,10 @@ import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
 import { APIError } from 'better-auth/api'
 import { admin, bearer, deviceAuthorization, jwt, magicLink, twoFactor } from 'better-auth/plugins'
-import { count, eq, inArray } from 'drizzle-orm'
+import { count, eq } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import * as schema from '../db/schema.ts'
+import { readSetting, settingsSnapshot } from '../db/settings.ts'
 import { grantClaims, levelScopes, oauthAccessSeconds, oauthCodeSeconds, oauthRefreshSeconds, pendingGrant } from './grants.ts'
 import { ProofError, proofHeader, publicUrl, verifyProof } from './proof.ts'
 
@@ -58,12 +59,12 @@ export const canonicalOrigin = (surface: AuthSurface, request: Request) => {
   return origin === surface.apiOrigin || origin === surface.dashboardOrigin ? origin : null
 }
 
-const surfaceKeys = ['hostnames.dashboard', 'hostnames.api', 'auth.passkey_rp_id'] as const
+export const surfaceKeys = ['hostnames.dashboard', 'hostnames.api', 'auth.passkey_rp_id'] as const
 
 export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
-  const rows = db.select().from(schema.setting).where(inArray(schema.setting.key, [...surfaceKeys])).all()
+  const read = settingsSnapshot(db)
   const value = (key: (typeof surfaceKeys)[number]) => {
-    const found = rows.find(row => row.key === key)?.value
+    const found = read(key)
     return typeof found === 'string' && found.length > 0 ? found : null
   }
   const dashboard = value('hostnames.dashboard')
@@ -103,7 +104,7 @@ export const authSecret = (masterKey: Buffer) =>
 
 export const userExists = (db: Db) => (db.select({ n: count() }).from(schema.user).get()?.n ?? 0) > 0
 
-const dynamicRegistrationEnabled = (db: Db) => db.select().from(schema.setting).where(eq(schema.setting.key, 'oauth.dynamic_registration')).get()?.value === true
+const dynamicRegistrationEnabled = (db: Db) => readSetting(db, 'oauth.dynamic_registration') === true
 
 export type AuthOptions = { dynamicRegistration: boolean; fetchMetadata: ClientMetadataResourceFetch }
 

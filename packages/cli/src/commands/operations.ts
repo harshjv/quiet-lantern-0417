@@ -1,22 +1,20 @@
 import type { Command } from 'commander'
 import { action, collect, integer, seconds, type Options } from '../command.ts'
-import { Exit, apiFailure, exitCodes, usage } from '../errors.ts'
-import { connect, credentialHeaders, environmentId, projectRef, send, serviceId, type Run } from '../kit.ts'
+import { Exit, apiFailure, exitCodes, usage, type EnvelopeCode } from '../errors.ts'
+import { connect, credentialHeaders, environmentId, isId, projectRef, send, serviceId, type Run } from '../kit.ts'
 import { human, print, progress } from '../output.ts'
-import { acrossOutage } from '../outage.ts'
+import { reportRun, waitRun, type RunRow } from '../runs.ts'
 import { uploadAndDeploy } from '../push.ts'
 import { followSse, readSse } from '../sse.ts'
 import { follow } from './resources.ts'
 
 type LogLine = { at: string; role: string | null; stream: string; level: string | null; text: string; cursor?: string }
-type RunRow = { id: string; status: string; exit_code: number | null; failure?: { code?: string; summary?: string } | null }
 
-const terminalRun = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
 
 const group = (program: Command, name: string) => program.commands.find(c => c.name() === name)!
 
 const deploymentId = async (run: Run, ref: string) => {
-  if (ref.startsWith('dep_')) return ref
+  if (isId('deployment', ref)) return ref
   if (!/^\d+$/.test(ref)) throw usage(`${ref} is not a deployment id or number.`, 'Pass dep_... or the deployment number shown by sly deployments list.')
   const service = await serviceId(run)
   const list = await run.get<{ items: { id: string; number: number }[] }>(`/v1/services/${service}/deployments?limit=200`)
@@ -62,7 +60,7 @@ const streamLogs = (run: Run, options: Options, params: Record<string, string | 
         progress(`log stream ended: ${(JSON.parse(event.data) as { reason: string }).reason}`)
         return exitCodes.ok
       } else if (event.event === 'error') {
-        const e = JSON.parse(event.data) as { code: string; explanation: string }
+        const e = JSON.parse(event.data) as { code: EnvelopeCode; explanation: string }
         throw new Exit(exitCodes.api, { error: { code: e.code, explanation: e.explanation, fix: 'Retry when the station is connected.' } })
       }
       return undefined
@@ -159,8 +157,8 @@ export const operationCommands = (program: Command) => {
         else selector = { service: await serviceId(run), ...(role ? { role } : {}) }
         const params = { ...selector, since: options.since as string | undefined, until: options.until as string | undefined, tail: options.tail as number | undefined, grep: options.grep as string | undefined, level: options.level as string | undefined, cursor: options.cursor as string | undefined }
         if (options.follow) return streamLogs(run, options, params)
-        const page = (await (await failIfNotOk(await run.raw(`/v1/logs?${query(params)}`))).json()) as { lines: LogLine[]; next_cursor: string | null; truncated: boolean }
-        for (const line of page.lines) showLine(options, line)
+        const page = (await (await failIfNotOk(await run.raw(`/v1/logs?${query(params)}`))).json()) as { untrusted: { lines: LogLine[] }; next_cursor: string | null; truncated: boolean }
+        for (const line of page.untrusted.lines) showLine(options, line)
         if (!options.json && page.next_cursor) progress(`next: --cursor ${page.next_cursor}`)
         if (page.truncated) progress('the cursor pointed at a deleted segment; reading started at the oldest line')
         return exitCodes.ok
@@ -209,13 +207,8 @@ export const operationCommands = (program: Command) => {
         await streamLogs(run, { ...options, json: false }, { run: created.id, tail: 5000 }, options.json ? process.stderr : process.stdout).catch(error => {
           progress(`log stream unavailable: ${(error as Error).message}`)
         })
-        let row = created
-        while (!terminalRun.has(row.status)) row = (await acrossOutage(() => send(run.api.v1.runs({ id: created.id }).get({ query: { wait_s: 10, fields: 'failure' } })))).data as RunRow
-        progress(`${row.id}: ${row.status}, exit code ${row.exit_code ?? '-'}`)
-        if (options.json) process.stdout.write(`${JSON.stringify(row, null, 2)}\n`)
-        if (row.status === 'succeeded') return exitCodes.ok
-        process.stderr.write(`${row.failure?.code ?? 'EXIT_NONZERO'}\n`)
-        return exitCodes.api
+        const row = await waitRun(created, async () => (await send(run.api.v1.runs({ id: created.id }).get({ query: { wait_s: 10, fields: 'failure' } }))).data as RunRow)
+        return reportRun(options, row)
       })
     )
 

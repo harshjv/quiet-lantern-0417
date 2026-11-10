@@ -3,7 +3,9 @@ import { Lockfile, ReleaseManifest, type LockfileDoc, type ReleaseComponentDoc, 
 import { Value } from '@sinclair/typebox/value'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
-import { component, platform_release, setting } from '../db/schema.ts'
+import { env } from '../env.ts'
+import { component, platform_release } from '../db/schema.ts'
+import { storedSetting } from '../db/settings.ts'
 
 export type Pin = { version: string; digest: string | null; source: string | null; kind: ReleaseComponentDoc['kind'] | null; origin: 'release' | 'override' }
 
@@ -29,7 +31,7 @@ export const parseManifest = (raw: string): ReleaseManifestDoc => {
 }
 
 export const readLockfile = (db: Db): LockfileDoc | null => {
-  const value = db.select().from(setting).where(eq(setting.key, 'platform.lockfile')).get()?.value
+  const value = storedSetting(db, 'platform.lockfile')
   return value && Value.Check(Lockfile, value) ? value : null
 }
 
@@ -86,7 +88,7 @@ export const storeRelease = (db: Db, input: { manifestRaw: string; bundle: strin
 
 export const recordDispatchComponent = (db: Db, version: string) => {
   const pin = effectivePins(db, hostArch()).dispatch
-  const digest = process.env.STATIONLY_DISPATCH_DIGEST || null
+  const digest = env().STATIONLY_DISPATCH_DIGEST || null
   const values = {
     version,
     digest,

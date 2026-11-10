@@ -1,10 +1,10 @@
+import { deploymentCancellableStatuses } from '@stationly/protocol'
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import { deployment, service } from '../../db/schema.ts'
-import { requireLevel } from '../access.ts'
 import { audit, emit } from '../context.ts'
 import { ChangeSet, commit } from '../changes.ts'
-import { cancellableStatuses, requireStationReady, usableBlob } from '../deployments.ts'
+import { requireStationReady, usableBlob } from '../deployments.ts'
 import { fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { csv, parseTime, warning, type Kit } from '../kit.ts'
@@ -41,13 +41,11 @@ export const deploymentRoutes = (kit: Kit) => {
     ]
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/services/:service/deployments',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = serviceById(db, params.service)
-        requireLevel(principal, ctx.target, 'read')
         const where = conditions(query)
         const page = collect(
           (cursor, size) =>
@@ -62,14 +60,12 @@ export const deploymentRoutes = (kit: Kit) => {
         )
         return { items: page.rows.map(row => select(kit.views.deployment, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
-      { params: t.Object({ service: t.String() }), query: t.Object({ ...listQuery, ...filters }), response: replies({ 200: Page(Deployment) }), detail: { summary: 'List the deployments of a service', tags } }
+      { operation: { id: 'list_deployments', level: 'read' }, params: t.Object({ service: t.String() }), query: t.Object({ ...listQuery, ...filters }), response: replies({ 200: Page(Deployment) }), detail: { summary: 'List the deployments of a service', tags } }
     )
     .get(
       '/environments/:environment/deployments',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const services = db.select({ id: service.id }).from(service).where(eq(service.environment_id, ctx.environment.id)).all().map(s => s.id)
         const scoped = query.service ? services.filter(id => id === query.service) : services
         const where = conditions(query)
@@ -89,6 +85,7 @@ export const deploymentRoutes = (kit: Kit) => {
         return { items: page.rows.map(row => select(kit.views.deployment, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_environment_deployments', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ ...listQuery, ...filters, service: t.Optional(t.String()) }),
         response: replies({ 200: Page(Deployment) }),
@@ -97,20 +94,17 @@ export const deploymentRoutes = (kit: Kit) => {
     )
     .get(
       '/deployments/:id',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = deploymentById(db, params.id)
-        requireLevel(principal, ctx.target, 'read')
         return select(kit.views.deployment, ctx.deployment, kit.fields(query.fields))
       },
-      { params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: Deployment }), detail: { summary: 'Get a deployment', tags } }
+      { operation: { id: 'get_deployment', level: 'read' }, params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: Deployment }), detail: { summary: 'Get a deployment', tags } }
     )
     .post(
       '/services/:service/deployments',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         const source = ctx.service.source as { type: string }
         if (body.image !== undefined && source.type !== 'image') fail('VALIDATION_FAILED', 'image is accepted only for image sources.', undefined, { issues: [{ path: '/image', message: `source is ${source.type}` }] })
         if (body.blob_id !== undefined) usableBlob(db, body.blob_id, ctx.service.id)
@@ -142,6 +136,7 @@ export const deploymentRoutes = (kit: Kit) => {
         return { ...created, warnings: [...imageWarnings, ...(created.strategy === 'replace' ? [warning('DOWNTIME_EXPECTED', 'strategy = replace stops the old container before the new one is healthy.')] : [])] }
       },
       {
+        operation: { id: 'deploy', level: 'deploy', mcp: { always_load: true } },
         params: t.Object({ service: t.String() }),
         body: t.Object(
           { source_ref: t.Optional(t.String({ minLength: 1 })), image: t.Optional(t.String({ minLength: 1 })), blob_id: t.Optional(t.String()), supersede: t.Optional(t.Boolean()) },
@@ -156,8 +151,7 @@ export const deploymentRoutes = (kit: Kit) => {
       async ({ request, params }) => {
         const call = await kit.call(request)
         const ctx = deploymentById(db, params.id)
-        requireLevel(call.principal, ctx.target, 'deploy')
-        if (!(cancellableStatuses as readonly string[]).includes(ctx.deployment.status)) {
+        if (!(deploymentCancellableStatuses as readonly string[]).includes(ctx.deployment.status)) {
           fail('DEPLOYMENT_NOT_CANCELLABLE', `Deployment ${ctx.deployment.number} is ${ctx.deployment.status}.`, 'Use rollback to undo a deployment at or past cutover.', { status: ctx.deployment.status })
         }
         db.update(deployment).set({ status: 'cancelled', cancel_reason: 'user', finished_at: new Date() }).where(eq(deployment.id, ctx.deployment.id)).run()
@@ -165,6 +159,6 @@ export const deploymentRoutes = (kit: Kit) => {
         emit(db, 'deployment.cancelled', { entity: 'deployment', id: ctx.deployment.id, project_id: ctx.project.id, environment_id: ctx.environment.id, service_id: ctx.service.id }, { deployment: ctx.deployment.id, cancel_reason: 'user', actor: call.principal.actor })
         return view(ctx.deployment.id)
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: Deployment }), detail: { summary: 'Cancel a deployment before cutover; never staged', tags } }
+      { operation: { id: 'cancel_deployment', level: 'deploy' }, params: t.Object({ id: t.String() }), response: replies({ 200: Deployment }), detail: { summary: 'Cancel a deployment before cutover; never staged', tags } }
     )
 }

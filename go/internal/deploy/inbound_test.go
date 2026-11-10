@@ -110,7 +110,7 @@ func TestAVariableChangeRolloutKeepsEveryNamespaceLayout(t *testing.T) {
 		t.Fatalf("the variable change must arrive as one deployment, got %d", len(after.Generation.Deployments))
 	}
 	if b, a := hostLayoutOf(before), hostLayoutOf(after); !reflect.DeepEqual(b, a) {
-		t.Fatalf("a variable change must leave stationly_host's layout alone, so cutover only swaps switch elements\nbefore %+v\nafter  %+v", b, a)
+		t.Fatalf("a variable change must leave the host table's layout alone, so cutover only swaps switch elements\nbefore %+v\nafter  %+v", b, a)
 	}
 	self := netip.MustParseAddr("10.200.16.4")
 	for envID := range before.Generation.Environments {

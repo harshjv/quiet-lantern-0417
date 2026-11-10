@@ -9,10 +9,11 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 	"github.com/google/nftables/userdata"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"golang.org/x/sys/unix"
 )
 
-const FirewallTable = "stationly_depot"
+const FirewallTable = protocol.NftTablePrefix + "depot"
 
 var bridgeTable = &nftables.Table{Name: FirewallTable, Family: nftables.TableFamilyBridge}
 

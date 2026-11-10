@@ -41,4 +41,10 @@ export const requireHuman = (principal: Principal, what: string, required: Recor
 export const seesProject = (principal: Principal, projectId: string) =>
   principal.scopes.some(scope => scope.project_id === '*' || scope.project_id === projectId)
 
+export const authorize = (principal: Principal, target: Target, level: Level) => {
+  if (target.project_id === '*' && target.environment_id === '*') return requireInstance(principal, level)
+  if (level === 'read' && target.environment_id === '*' && seesProject(principal, target.project_id)) return
+  requireLevel(principal, target, level)
+}
+
 export const seesEnvironment = (principal: Principal, target: Target) => can(principal, target, 'read')

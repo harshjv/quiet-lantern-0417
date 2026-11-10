@@ -12,7 +12,7 @@ import { resourceCommands } from './commands/resources.ts'
 import { sandboxCommands } from './commands/sandbox.ts'
 import { variableCommands } from './commands/variables.ts'
 import { exitCodes } from './errors.ts'
-import { version } from './version.ts'
+import { version } from './env.ts'
 
 process.stdout.on('error', error => {
   if ((error as NodeJS.ErrnoException).code === 'EPIPE') process.exit(exitCodes.brokenPipe)

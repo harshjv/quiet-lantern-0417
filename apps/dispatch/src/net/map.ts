@@ -1,10 +1,9 @@
-import type { Observed } from '@stationly/protocol'
+import { bridgeName, type Observed } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
 import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { deployment, deployment_step, domain, ipam_allocation, port_allocation, sandbox, service, service_port, station, virtual_ip } from '../db/schema.ts'
-import { bridgeName } from '../generation/build.ts'
-import { readSetting } from '../api/settings.ts'
+import { readSetting } from '../db/settings.ts'
 import { notFound } from '../api/errors.ts'
 import type { EnvironmentRow } from '../api/lookup.ts'
 import type { NetworkMap } from '../api/shapes.ts'
@@ -236,7 +235,7 @@ export const networkMap = (sources: NetworkSources, env: EnvironmentRow, options
   const map: MapDoc = {
     environment: { id: env.id, name: env.name, project_id: env.project_id },
     computed_at: now.toISOString(),
-    virtual_prefix: readSetting<string>(db, 'ipam.virtual_prefix') ?? '100.64.0.0/16',
+    virtual_prefix: readSetting(db, 'ipam.virtual_prefix'),
     subnets,
     services: entries,
     sandboxes,

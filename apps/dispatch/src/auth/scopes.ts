@@ -1,6 +1,6 @@
-export const levels = ['read', 'deploy', 'admin'] as const
+import { tokenLevelValues } from '@stationly/protocol'
 
-export type Level = (typeof levels)[number]
+export type Level = (typeof tokenLevelValues)[number]
 
 export type Scope = { project_id: string; environment_id: string; level: Level }
 
@@ -8,7 +8,7 @@ export type Target = { project_id: string; environment_id: string }
 
 export const anyTarget: Target = { project_id: '*', environment_id: '*' }
 
-const rank = (level: Level) => levels.indexOf(level)
+const rank = (level: Level) => tokenLevelValues.indexOf(level)
 
 const covers = (granted: string, wanted: string) => granted === '*' || granted === wanted
 

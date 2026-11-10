@@ -166,7 +166,7 @@ export class FakeStation {
       signature: sign(null, helloMessage(nonce, keys.station_id, timestamp), createPrivateKey(keys.key)).toString('base64url'),
       stationd_version: '0.0.0',
       protocol: 1,
-      capabilities: ['generation.v1', 'secrets.v1', 'logs.follow', 'metrics.v1', 'network.v1', 'exec.tty', ...(this.config.sandboxes ? ['sandbox.v1'] : [])],
+      capabilities: ['generation.v1', 'secrets.v1', 'logs.follow', 'metrics.v1', 'network.v1', 'exec.tty', 'forward.tcp', ...(this.config.sandboxes ? ['sandbox.v1'] : [])],
       applied: this.applied,
       outbox: { epoch, first_seq: 0, last_seq: 0 },
       boot_id: 'test-fake',

@@ -1,4 +1,4 @@
-import { dnsLogTail, probeTimeout, type MessageBody } from '@stationly/protocol'
+import { dnsLogTail, portRange, probeTimeout, type MessageBody } from '@stationly/protocol'
 import { and, eq, inArray, isNotNull, or } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import { service } from '../../db/schema.ts'
@@ -8,7 +8,6 @@ import { networkMap } from '../../net/map.ts'
 import { explainNetwork, probeTarget, type Check, type CheckResult } from '../../net/explain.ts'
 import { sendProbe } from '../../net/probe.ts'
 import { ChangeSet, commit } from '../changes.ts'
-import { requireLevel } from '../access.ts'
 import { fail, invalid } from '../errors.ts'
 import { csv, type Kit } from '../kit.ts'
 import { environmentById, serviceById } from '../lookup.ts'
@@ -44,16 +43,16 @@ export const networkRoutes = (kit: Kit) => {
 
   return new Elysia({ prefix: '/v1', normalize: false })
     .use(models())
+    .use(kit.operations)
     .get(
       '/environments/:environment/network',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const fields = kit.fields(query.fields)
         return networkMap(sources, ctx.environment, { service: query.service, rules: selects(fields, 'paths', 'rule'), bridges: selects(fields, 'subnets', 'bridge') })
       },
       {
+        operation: { id: 'describe_network', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ ...getQuery, service: t.Optional(t.String({ minLength: 1 })) }),
         response: replies({ 200: NetworkMap }),
@@ -65,13 +64,13 @@ export const networkRoutes = (kit: Kit) => {
       async ({ request, params, query }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'read')
         const reply = await stations.ask(ctx.service.station_id, 'network.sample', { service_ids: [ctx.service.id] }, { capability: 'network.v1', timeoutMs: 10_000 }).catch(stationError)
         const sample = (reply.body as MessageBody<'network.sample.result'>).samples.find(s => s.service_id === ctx.service.id)
         if (!sample) fail('NOT_FOUND', `The station returned no connection sample for ${ctx.service.name}.`, 'Read the connections again; check the station with sly stations describe.', { service_id: ctx.service.id })
         return shapeSamples({ db, redaction: kit.redaction, actor: call.principal.actor, requestId: call.request_id }, [sample!], query.direction)[0]!
       },
       {
+        operation: { id: 'get_connections', level: 'read' },
         params: t.Object({ service: t.String() }),
         query: t.Object({ direction }),
         response: replies({ 200: NetworkConnections }),
@@ -83,7 +82,6 @@ export const networkRoutes = (kit: Kit) => {
       async ({ request, params, query }) => {
         const call = await kit.call(request)
         const ctx = environmentById(db, params.environment)
-        requireLevel(call.principal, ctx.target, 'read')
         const refs = csv(query.service)
         const rows = refs?.length
           ? db
@@ -139,6 +137,7 @@ export const networkRoutes = (kit: Kit) => {
         return sse.response
       },
       {
+        operation: { id: 'stream_connections', level: 'read', mcp: false },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ service: t.Optional(t.String({ minLength: 1 })), direction }),
         detail: { summary: 'SSE: one connections sample per watched service every 5 s, as event network with { at, samples }', tags }
@@ -146,18 +145,17 @@ export const networkRoutes = (kit: Kit) => {
     )
     .get(
       '/environments/:environment/network/explain',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         return explainNetwork(explainSources, ctx.environment, { from: query.from, to: query.to, port: query.port, protocol: query.protocol ?? 'tcp' })
       },
       {
+        operation: { id: 'explain_network', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({
           from: t.String({ minLength: 1, description: 'A service of the environment (id or name), or internet' }),
           to: t.String({ minLength: 1, maxLength: 260, description: 'A service, service:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port' }),
-          port: t.Optional(t.Numeric({ minimum: 1, maximum: 65535 })),
+          port: t.Optional(t.Numeric(portRange)),
           protocol: t.Optional(t.Union([t.Literal('tcp'), t.Literal('udp')]))
         }),
         response: replies({ 200: NetworkExplanation }),
@@ -169,7 +167,6 @@ export const networkRoutes = (kit: Kit) => {
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         kit.probeLimit(ctx.service.id, ctx.environment.id)
         const kind = body.kind ?? 'tcp'
         const target = probeTarget(db, ctx.environment, body.to, body.port, kind)
@@ -183,11 +180,12 @@ export const networkRoutes = (kit: Kit) => {
         return sendProbe(kit.deps, call, ctx.service, probe)
       },
       {
+        operation: { id: 'probe_network', level: 'deploy' },
         params: t.Object({ service: t.String() }),
         body: t.Object(
           {
             to: t.String({ minLength: 1, maxLength: 260 }),
-            port: t.Optional(t.Integer({ minimum: 1, maximum: 65535 })),
+            port: t.Optional(t.Integer(portRange)),
             kind: t.Optional(t.Union([t.Literal('tcp'), t.Literal('dns')])),
             timeout_s: t.Optional(t.Integer({ minimum: probeTimeout.minS, maximum: probeTimeout.maxS }))
           },
@@ -202,7 +200,6 @@ export const networkRoutes = (kit: Kit) => {
       async ({ request, params, query }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'read')
         const reply = await stations
           .ask(ctx.service.station_id, 'dns.log', { service_id: ctx.service.id, tail: query.tail ?? dnsLogTail.default, ...(query.name ? { name: query.name } : {}), ...(query.rcode ? { rcode: query.rcode } : {}) }, { capability: 'network.v1', timeoutMs: 10_000 })
           .catch(stationError)
@@ -212,6 +209,7 @@ export const networkRoutes = (kit: Kit) => {
         return { untrusted: { source: 'resolver log' as const, entries: entries.map(e => ({ ...e, name: redact(e.name) })) } }
       },
       {
+        operation: { id: 'get_dns_log', level: 'read' },
         params: t.Object({ service: t.String() }),
         query: t.Object({
           tail: t.Optional(t.Numeric({ minimum: 1, maximum: dnsLogTail.max })),

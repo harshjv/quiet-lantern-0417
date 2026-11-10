@@ -1,0 +1,41 @@
+{
+  "registry_namespace": "ghcr.io/harshjv/stationly",
+  "repositories": {
+    "release": "release",
+    "signatures": "signatures",
+    "dispatch": "dispatch",
+    "sandbox_toolchain": "sandbox-toolchain"
+  },
+  "installer_url": "https://stationly.netlify.app",
+  "signing_identity": {
+    "source_repository": "https://github.com/harshjv/quiet-lantern-0417",
+    "source_repository_id": "1451760752",
+    "source_repository_owner_id": "2311316",
+    "workflow": ".github/workflows/release.yml",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "runner_environment": "github-hosted"
+  },
+  "tuf_mirror": "https://tuf-repo-cdn.sigstore.dev",
+  "media_types": {
+    "release_artifact": "application/vnd.stationly.release.v1",
+    "sigstore_bundle": "application/vnd.dev.sigstore.bundle.v0.3+json"
+  },
+  "components": {
+    "gateway": { "version": "3.7.17", "source": "docker.io/library/traefik", "digest": "sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a" },
+    "buildkit": { "version": "0.34.1", "source": "docker.io/moby/buildkit", "digest": "sha256:f68752a5a94acfcdad2d07867b7075601a421638e17fc5f28efc1c814d0c4f89", "variant": "rootless" },
+    "depot": { "version": "3.1.2", "source": "docker.io/library/registry", "digest": "sha256:38907510915c3f1604c7e83d6ab602ab3020d092f73bdaed8696773693ff768c" },
+    "coupler_image": { "version": "3.10.2", "source": "registry.k8s.io/pause", "digest": "sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4" },
+    "railpack_frontend": { "version": "0.43.0", "source": "ghcr.io/railwayapp/railpack-frontend", "digest": "sha256:355ef61fae6f2551103cd8b10c710cb07167dd353d561f15c69b8d7ac1c676cc" },
+    "syft_scanner": { "version": "1.12.1", "source": "docker.io/docker/buildkit-syft-scanner", "digest": "sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315" },
+    "litestream": { "version": "0.5.17", "source": "docker.io/litestream/litestream", "digest": "sha256:4b02b9859a6b6b4087d8b8944e15f7e984bd7957cba322bbeee38b0e27b9656a" }
+  },
+  "acceptance_images": {
+    "busybox": "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    "nginx": "public.ecr.aws/nginx/nginx@sha256:df80ece7fa07f8ed4f3b70e883fe322732954d0287e562f1fdc790018f7d2c66",
+    "curl": "quay.io/curl/curl@sha256:2db4e6a8fd6a0e4d0db5828b2722cf6db15c3005178a4c65588b903e4784ba11",
+    "curlimages": "mirror.gcr.io/curlimages/curl@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17",
+    "python": "public.ecr.aws/docker/library/python@sha256:1e1f6334529d1fb26a2ef619d7cffb30a7c7d7cc1cc7338ebee283a58d1aeaca",
+    "node": "public.ecr.aws/docker/library/node@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202",
+    "whoami": "traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+  }
+}

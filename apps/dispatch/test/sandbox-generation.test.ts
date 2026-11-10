@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { Generation } from '@stationly/protocol'
+import { releaseRepositories } from '@stationly/protocol/release-config'
 import { Value } from '@sinclair/typebox/value'
 import { eq } from 'drizzle-orm'
 import { sandbox } from '../src/db/schema.ts'
@@ -86,12 +87,12 @@ describe('what a generation holds for sandboxes', () => {
         reach: []
       }
     )
-    assert.deepEqual(entry.image, { ref: null, digest: toolchainImageDigest, image_ref: `ghcr.io/harshjv/stationly/sandbox-toolchain@${toolchainImageDigest}` })
+    assert.deepEqual(entry.image, { ref: null, digest: toolchainImageDigest, image_ref: `${releaseRepositories.sandbox_toolchain}@${toolchainImageDigest}` })
     assert.match(entry.env_digest, /^sha256:[0-9a-f]{64}$/)
     const left = Date.parse(entry.stop_at) - Date.now()
     assert.ok(left > 7190_000 && left <= 7200_000)
     const net = doc.station.sandbox_network!
-    assert.equal(net.bridge_name, 'stationly-sandbox')
+    assert.equal(net.bridge_name, 'sly-sandbox')
     assert.match(net.subnet, /^10\.200\.\d+\.0\/24$/)
     assert.equal(net.gateway, net.subnet.replace('.0/24', '.1'))
     const taken = new Set([...Object.values(doc.environments).map(e => e.network.subnet)])

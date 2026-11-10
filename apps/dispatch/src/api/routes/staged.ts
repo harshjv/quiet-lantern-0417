@@ -10,7 +10,7 @@ import { environmentById, serviceById, stagedById } from '../lookup.ts'
 import { ApiError } from '../errors.ts'
 import { sendProbe } from '../../net/probe.ts'
 import { before, collect, getQuery, listQuery } from '../pagination.ts'
-import { readSetting } from '../settings.ts'
+import { readSetting } from '../../db/settings.ts'
 import { BackupError, restoreBackup, startBackup, type BackupActor } from '../../volumes/backups.ts'
 import { growStorage } from '../../sandboxes/storage.ts'
 import { stationError } from './runs.ts'
@@ -62,23 +62,20 @@ export const stagedRoutes = (kit: Kit) => {
 
   const authorizeDecision = (principal: Principal, ctx: ReturnType<typeof stagedById>) => {
     if (ctx.environment) {
-      if (ctx.environment.environment.protected) {
-        requireLevel(principal, ctx.target, 'admin')
-        requireHuman(principal, 'Accepting or rejecting a staged change in a protected environment', { ...ctx.target, level: 'admin' })
-      } else requireLevel(principal, ctx.target, 'deploy')
+      if (!ctx.environment.environment.protected) return
+      requireLevel(principal, ctx.target, 'admin')
+      requireHuman(principal, 'Accepting or rejecting a staged change in a protected environment', { ...ctx.target, level: 'admin' })
       return
     }
     requireInstance(principal, 'admin')
-    if (readSetting<boolean>(db, 'platform.protected')) requireHuman(principal, 'Accepting or rejecting an instance staged change while platform.protected is true', { level: 'admin' })
+    if (readSetting(db, 'platform.protected')) requireHuman(principal, 'Accepting or rejecting an instance staged change while platform.protected is true', { level: 'admin' })
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/environments/:environment/staged-changes',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const page = collect(
           (cursor, size) =>
             db
@@ -100,6 +97,7 @@ export const stagedRoutes = (kit: Kit) => {
         return { items: page.rows.map(row => select(kit.views.staged, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_staged_changes', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ ...listQuery, status: t.Optional(t.String()), source: t.Optional(t.String()) }),
         response: replies({ 200: Page(StagedChange) }),
@@ -108,8 +106,7 @@ export const stagedRoutes = (kit: Kit) => {
     )
     .get(
       '/staged-changes',
-      async ({ request, query }) => {
-        requireInstance(await kit.principal(request), 'read')
+      async ({ query }) => {
         const page = collect(
           (cursor, size) =>
             db
@@ -129,18 +126,15 @@ export const stagedRoutes = (kit: Kit) => {
         )
         return { items: page.rows.map(row => select(kit.views.staged, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
-      { query: t.Object({ ...listQuery, status: t.Optional(t.String()), scope: t.Optional(t.Literal('instance')) }), response: replies({ 200: Page(StagedChange) }), detail: { summary: 'List staged changes across the instance', tags } }
+      { operation: { id: 'list_instance_staged_changes', level: 'instance read' }, query: t.Object({ ...listQuery, status: t.Optional(t.String()), scope: t.Optional(t.Literal('instance')) }), response: replies({ 200: Page(StagedChange) }), detail: { summary: 'List staged changes across the instance', tags } }
     )
     .get(
       '/staged-changes/:id',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = stagedById(db, params.id)
-        if (ctx.environment) requireLevel(principal, ctx.target, 'read')
-        else requireInstance(principal, 'read')
         return select(kit.views.staged, ctx.staged, kit.fields(query.fields) ?? full)
       },
-      { params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: StagedChange }), detail: { summary: 'Get a staged change with its diff', tags } }
+      { operation: { id: 'get_staged_change', level: 'read' }, params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: StagedChange }), detail: { summary: 'Get a staged change with its diff', tags } }
     )
     .post(
       '/staged-changes/:id/accept',
@@ -185,7 +179,7 @@ export const stagedRoutes = (kit: Kit) => {
         )
         return { ...decided(result.staged), deployments, ...(grows.length ? { grows } : {}), ...(backups.length ? { backups } : {}), ...(restores.length ? { restores } : {}), ...(probes.length ? { probes } : {}) }
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: Accepted }), detail: { summary: 'Accept a staged change and apply its diff', tags } }
+      { operation: { id: 'accept_staged_change', level: 'deploy' }, params: t.Object({ id: t.String() }), response: replies({ 200: Accepted }), detail: { summary: 'Accept a staged change and apply its diff', tags } }
     )
     .post(
       '/staged-changes/:id/reject',
@@ -195,6 +189,6 @@ export const stagedRoutes = (kit: Kit) => {
         authorizeDecision(call.principal, ctx)
         return decided(rejectStaged(kit.deps, call, ctx.staged, body?.reason ?? null))
       },
-      { params: t.Object({ id: t.String() }), body: t.Optional(t.Object({ reason: t.Optional(t.String()) }, { additionalProperties: false })), response: replies({ 200: Staged }), detail: { summary: 'Reject a staged change', tags } }
+      { operation: { id: 'reject_staged_change', level: 'deploy' }, params: t.Object({ id: t.String() }), body: t.Optional(t.Object({ reason: t.Optional(t.String()) }, { additionalProperties: false })), response: replies({ 200: Staged }), detail: { summary: 'Reject a staged change', tags } }
     )
 }

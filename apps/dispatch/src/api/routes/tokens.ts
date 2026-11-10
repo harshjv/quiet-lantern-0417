@@ -51,7 +51,7 @@ export const tokenRoutes = (kit: Kit) => {
     if (issues.length) invalid(issues)
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/tokens',
       async ({ request, query }) => {
@@ -70,7 +70,7 @@ export const tokenRoutes = (kit: Kit) => {
         )
         return { items: page.rows.map(row => select(kit.views.token, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
-      { query: t.Object({ ...listQuery, kind: t.Optional(t.String()) }), response: replies({ 200: Page(Token) }), detail: { summary: 'List tokens the caller manages; never key material', tags } }
+      { operation: { id: 'list_tokens', level: 'any' }, query: t.Object({ ...listQuery, kind: t.Optional(t.String()) }), response: replies({ 200: Page(Token) }), detail: { summary: 'List tokens the caller manages; never key material', tags } }
     )
     .post(
       '/tokens',
@@ -120,6 +120,7 @@ export const tokenRoutes = (kit: Kit) => {
         return { ...view(row), key: created.key }
       },
       {
+        operation: { id: 'create_token', level: 'any' },
         body: t.Object(
           {
             name: t.String({ minLength: 1, maxLength: 128 }),
@@ -150,6 +151,7 @@ export const tokenRoutes = (kit: Kit) => {
         return view(db.select().from(token).where(eq(token.id, row.id)).get()!)
       },
       {
+        operation: { id: 'renew_token', level: 'any', mcp: false },
         params: t.Object({ id: t.String() }),
         body: t.Optional(t.Object({ expires_in_s: t.Optional(t.Integer({ minimum: 1 })) }, { additionalProperties: false })),
         response: replies({ 200: Token }),
@@ -175,6 +177,6 @@ export const tokenRoutes = (kit: Kit) => {
         audit(db, call, 'token.revoke', { entity: 'token', id: row.id }, { before: { name: row.name, kind: row.kind } })
         return { revoked: true as const }
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: Revoked }), detail: { summary: 'Revoke a token', tags } }
+      { operation: { id: 'revoke_token', level: 'any' }, params: t.Object({ id: t.String() }), response: replies({ 200: Revoked }), detail: { summary: 'Revoke a token', tags } }
     )
 }

@@ -95,7 +95,7 @@ func main() {
 func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	stateDir := fs.String("state-dir", deploy.DefaultStateDir, "stationd state directory")
-	socket := fs.String("socket", rootsocket.DefaultPath, "root socket path")
+	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
 	debug := fs.Bool("debug", false, "log every Docker event")
 	trustPath := fs.String("trust", "", "signing identity and Sigstore trust file (default: the Stationly release identity)")
 	fetch := fs.String("sigstore-fetch", deploy.FetchDirect, "where signature bundles and TUF metadata come from: direct or dispatch")
@@ -297,9 +297,9 @@ func dispatchEnv(args []string) error {
 
 func connection(args []string) error {
 	fs := flag.NewFlagSet("connection", flag.ExitOnError)
-	socket := fs.String("socket", rootsocket.DefaultPath, "root socket path")
+	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
 	fs.Parse(args)
-	return call(*socket, "status", map[string]any{})
+	return call(*socket, protocol.RootSocketOpStatus, protocol.RootSocketNoParams{})
 }
 
 func status(args []string) error {
@@ -312,10 +312,10 @@ func status(args []string) error {
 
 func doctor(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
-	socket := fs.String("socket", rootsocket.DefaultPath, "root socket path")
+	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	fs.Parse(args)
-	result, failure, err := rootsocket.Call(*socket, "doctor", map[string]any{}, func(rootsocket.ProgressBody) {})
+	result, failure, err := rootsocket.Call(*socket, protocol.RootSocketOpDoctor, protocol.RootSocketNoParams{}, func(protocol.RootSocketProgress) {})
 	if err != nil {
 		return err
 	}
@@ -351,7 +351,7 @@ func doctor(args []string) error {
 
 func call(socket, op string, params any) error {
 	start := time.Now()
-	result, failure, err := rootsocket.Call(socket, op, params, func(p rootsocket.ProgressBody) {
+	result, failure, err := rootsocket.Call(socket, op, params, func(p protocol.RootSocketProgress) {
 		fmt.Fprintf(os.Stderr, "%7.2fs  %-20s %s\n", time.Since(start).Seconds(), p.Step, p.Detail)
 	})
 	if err != nil {
@@ -378,26 +378,26 @@ func registry(args []string) error {
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("registry "+args[0], flag.ExitOnError)
-	socket := fs.String("socket", rootsocket.DefaultPath, "root socket path")
+	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
 	switch args[0] {
 	case "token":
 		var scopes multi
 		fs.Var(&scopes, "scope", "repository:<name>:<actions>")
 		ttl := fs.Int("ttl", 60, "lifetime in seconds, at most 60")
 		fs.Parse(args[1:])
-		return call(*socket, "registry.token", map[string]any{"scopes": []string(scopes), "ttl_s": *ttl})
+		return call(*socket, protocol.RootSocketOpRegistryToken, protocol.RootSocketTokenParams{Scopes: scopes, TtlS: ttl})
 	case "retain":
 		project := fs.String("project", "", "project id")
 		fs.Parse(args[1:])
-		return call(*socket, "registry.retain", map[string]string{"project_id": *project})
+		return call(*socket, protocol.RootSocketOpRegistryRetain, protocol.RootSocketRetainParams{ProjectId: *project})
 	case "delete":
 		repo := fs.String("repository", "", "repository")
 		digest := fs.String("digest", "", "manifest digest")
 		fs.Parse(args[1:])
-		return call(*socket, "registry.delete", protocol.RegistryDeleteBody{Items: []protocol.RegistryDeleteItem{{Repository: *repo, Digest: *digest, Reason: "manual"}}})
+		return call(*socket, protocol.RootSocketOpRegistryDelete, protocol.RegistryDeleteBody{Items: []protocol.RegistryDeleteItem{{Repository: *repo, Digest: *digest, Reason: "manual"}}})
 	case "gc":
 		fs.Parse(args[1:])
-		return call(*socket, "registry.gc", map[string]string{"reason": "schedule"})
+		return call(*socket, protocol.RootSocketOpRegistryGc, protocol.RegistryGcBody{Reason: protocol.RegistryGcReasonSchedule})
 	}
 	fmt.Fprint(os.Stderr, usage)
 	os.Exit(2)
@@ -410,11 +410,11 @@ func secretsCmd(args []string) error {
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("secrets "+args[0], flag.ExitOnError)
-	socket := fs.String("socket", rootsocket.DefaultPath, "root socket path")
+	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
 	fs.Parse(args[1:])
 	switch args[0] {
 	case "status":
-		return call(*socket, "secrets.status", map[string]any{})
+		return call(*socket, protocol.RootSocketOpSecretsStatus, protocol.RootSocketNoParams{})
 	}
 	fmt.Fprint(os.Stderr, usage)
 	os.Exit(2)
@@ -423,11 +423,11 @@ func secretsCmd(args []string) error {
 
 func logs(args []string) error {
 	fs := flag.NewFlagSet("logs", flag.ExitOnError)
-	socket := fs.String("socket", rootsocket.DefaultPath, "root socket path")
+	socket := fs.String("socket", protocol.RootSocketPath, "root socket path")
 	deployment := fs.String("deployment", "", "deployment id")
 	tail := fs.Int("tail", 200, "lines")
 	fs.Parse(args)
-	return call(*socket, "logs", map[string]any{"deployment_id": *deployment, "tail": *tail})
+	return call(*socket, protocol.RootSocketOpLogs, protocol.RootSocketLogsParams{DeploymentId: *deployment, Tail: tail})
 }
 
 func newVerifier(log *slog.Logger, trustPath, stateDir string) (*verify.Verifier, error) {
@@ -453,7 +453,7 @@ func install(args []string) error {
 	etcDir := fs.String("etc-dir", hostconfig.DefaultEtcDir, "directory for host.toml and platform.lock.json")
 	daemonJSON := fs.String("daemon-json", deploy.DefaultDaemonJSON, "Docker daemon configuration the installer writes")
 	sysctlFile := fs.String("sysctl-file", deploy.DefaultSysctlFile, "sysctl drop-in the installer writes")
-	dispatchURL := fs.String("dispatch-url", deploy.DefaultDispatchURL, "dispatch.url written into host.toml")
+	dispatchURL := fs.String("dispatch-url", fmt.Sprintf("http://%s:%d", protocol.NetworkDispatchHostAddress, protocol.NetworkDispatchPort), "dispatch.url written into host.toml")
 	noHost := fs.Bool("no-host", false, "skip the host steps (git check, ipam.pool, host.toml, bootstrap token, sysctl, daemon.json)")
 	noUnit := fs.Bool("no-unit", false, "skip placing the binary, the symlink and the systemd unit")
 	binDir := fs.String("bin-dir", deploy.DefaultBinDir, "directory for stationd-<version> binaries")

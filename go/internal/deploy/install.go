@@ -19,16 +19,16 @@ import (
 
 	"github.com/harshjv/stationly/go/internal/depot"
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/release"
-	"github.com/harshjv/stationly/go/internal/rootsocket"
 	"github.com/harshjv/stationly/go/internal/verify"
 	"github.com/harshjv/stationly/go/internal/workshop"
 )
 
 var ComponentSources = map[string]string{
-	"dispatch":          docker.DispatchSource,
+	"dispatch":          protocol.DispatchRepository,
 	"gateway":           docker.GatewaySource,
 	"buildkit":          workshop.BuildkitSource,
 	"depot":             depot.ImageSource,
@@ -36,10 +36,8 @@ var ComponentSources = map[string]string{
 	"railpack_frontend": workshop.RailpackSource,
 	"syft_scanner":      workshop.SyftScannerSource,
 	"litestream":        docker.LitestreamSource,
-	"sandbox_toolchain": SandboxToolchainSource,
+	"sandbox_toolchain": protocol.SandboxToolchainRepository,
 }
-
-const SandboxToolchainSource = "ghcr.io/harshjv/stationly/sandbox-toolchain"
 
 var RequiredComponents = []string{"stationd", "dispatch", "gateway", "buildkit", "depot", "coupler_image", "railpack_frontend", "syft_scanner", "litestream"}
 
@@ -427,7 +425,7 @@ func socketArg(args []string) string {
 			return v
 		}
 	}
-	return rootsocket.DefaultPath
+	return protocol.RootSocketPath
 }
 
 func writeTestTrust(etcDir string, t verify.Trust) (string, error) {
@@ -439,18 +437,7 @@ func writeTestTrust(etcDir string, t verify.Trust) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(etcDir, TestTrustFile)
-	return path, writeAtomicMode(path, append(b, '\n'), 0o644)
-}
-
-func writeAtomicMode(path string, b []byte, mode os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, mode); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return path, fsx.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 func SlyWrapper(socket string) string {
@@ -458,7 +445,7 @@ func SlyWrapper(socket string) string {
 		"#!/bin/sh",
 		"set -eu",
 		"image=$(docker inspect --format '{{.Config.Image}}' " + docker.DispatchName + " 2>/dev/null) || {",
-		"  echo 'sly: the Dispatch container " + docker.DispatchName + " is not on this host; start stationd (systemctl start " + UnitName + ") and wait for Dispatch' >&2",
+		"  echo 'sly: the Dispatch container " + docker.DispatchName + " is not on this host; start stationd (systemctl start " + protocol.StationdUnit + ") and wait for Dispatch' >&2",
 		"  exit 5",
 		"}",
 		"tty=",
@@ -474,7 +461,7 @@ func writeSlyWrapper(path, socket string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return writeAtomicMode(path, []byte(SlyWrapper(socket)), 0o755)
+	return fsx.WriteFile(path, []byte(SlyWrapper(socket)), 0o755)
 }
 
 func installUnit(opts InstallOptions, binary string, runArgs []string) (string, error) {

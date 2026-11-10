@@ -33,8 +33,8 @@ fail() { printf '%s\n' "stationly: error: $*" >&2; exit 1; }
 
 usage() {
 	cat >&2 <<EOF
-usage: curl -fsSL https://stationly.netlify.app/install.sh | sudo sh
-       curl -fsSL https://stationly.netlify.app/install.sh | sudo sh -s -- [options]
+usage: curl -fsSL @INSTALLER_URL@/install.sh | sudo sh
+       curl -fsSL @INSTALLER_URL@/install.sh | sudo sh -s -- [options]
 
 Installs Stationly release ${STATIONLY_RELEASE} on this Ubuntu 22.04, Ubuntu 24.04 or Debian 12 host
 (amd64 or arm64): host prerequisites, Docker Engine ${DOCKER_MAJOR}.x, then stationd, which verifies and

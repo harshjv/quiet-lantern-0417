@@ -108,6 +108,12 @@ export const ingressValues = ['direct', 'tunnel'] as const
 
 export const Ingress = StringEnum(ingressValues, { title: 'Ingress' })
 
+export const scheduleConcurrencyValues = ['skip', 'allow'] as const
+
+export const volumeOwnerValues = ['service', 'station'] as const
+
+export const doctorStatusValues = ['ok', 'warn', 'fail'] as const
+
 export const actorTypeValues = ['user', 'token', 'oauth_client', 'station', 'system'] as const
 
 export const ActorType = StringEnum(actorTypeValues, { title: 'ActorType' })
@@ -305,7 +311,7 @@ export const Schedule = Type.Object(
   {
     cron: Type.String(),
     timezone: Type.String(),
-    concurrency: StringEnum(['skip', 'allow'], { title: 'ScheduleConcurrency' })
+    concurrency: StringEnum(scheduleConcurrencyValues, { title: 'ScheduleConcurrency' })
   },
   { title: 'Schedule' }
 )

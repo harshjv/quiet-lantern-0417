@@ -1,10 +1,11 @@
+import { variableKeyPattern } from '@stationly/protocol'
 import { isIPv4, isIPv6 } from 'node:net'
 
 export type S3Target = { type: 's3'; endpoint: string; bucket: string; prefix: string; credentials_variable: string }
 
 const bucketPattern = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/
 const prefixPattern = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/
-const variablePattern = /^[A-Z_][A-Z0-9_]*$/
+const variablePattern = new RegExp(variableKeyPattern)
 
 const privateIPv4 = (host: string) => {
   const [a, b] = host.split('.').map(Number) as [number, number]

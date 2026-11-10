@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"maps"
 	"net/netip"
 	"os"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
@@ -747,7 +749,7 @@ func (s *Station) allocateOn(ctx context.Context, p sbxPlacement) (netip.Addr, e
 	if !cursor.IsValid() {
 		cursor = p.net.gateway
 	}
-	first, last := p.net.subnet.Masked().Addr(), lastAddr(p.net.subnet)
+	first, last := p.net.subnet.Masked().Addr(), cidr.Last(p.net.subnet)
 	a := cursor
 	for range 1 << (32 - p.net.subnet.Bits()) {
 		a = a.Next()
@@ -940,11 +942,11 @@ func (j startJob) run(ctx context.Context) startResult {
 		return fail("create", "build config.json: %v", err)
 	}
 	for name, body := range runsc.HostFiles(spec, j.resolver, j.name) {
-		if err := writeAtomicMode(filepath.Join(bundle, name), body, 0o644); err != nil {
+		if err := fsx.WriteFile(filepath.Join(bundle, name), body, 0o644); err != nil {
 			return fail("create", "write %s: %v", name, err)
 		}
 	}
-	if err := writeAtomicMode(filepath.Join(bundle, "config.json"), config, 0o600); err != nil {
+	if err := fsx.WriteFile(filepath.Join(bundle, "config.json"), config, 0o600); err != nil {
 		return fail("create", "write config.json: %v", err)
 	}
 	defer os.Remove(filepath.Join(bundle, "config.json"))

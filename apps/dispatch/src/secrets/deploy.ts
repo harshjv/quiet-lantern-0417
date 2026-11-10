@@ -1,10 +1,10 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { EnvEntry, messages, type Actor, type MessageBody } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
-import canonicalize from 'canonicalize'
 import { asc, desc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
+import { sha256Digest } from '../generation/hash.ts'
 import { audit_event, deployment, service, service_port } from '../db/schema.ts'
 import { newId } from '../db/ids.ts'
 import { SecretsError } from './errors.ts'
@@ -102,7 +102,7 @@ export const refsOf = (node: SourceNode) =>
 
 export const envDigest = (env: EnvEntryValue[]) => {
   const stripped = env.map(({ value: _value, ...rest }) => rest)
-  return `sha256:${createHash('sha256').update(canonicalize(stripped)!, 'utf8').digest('hex')}`
+  return sha256Digest(stripped)
 }
 
 export const envOf = (db: Db, ids: { service_id: string; environment_id: string; deployment_id: string }, entries: Pick<SnapshotEntry, 'key' | 'injection' | 'node'>[]): EnvEntryValue[] => {

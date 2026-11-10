@@ -18,12 +18,12 @@ const (
 	RoleSandboxCoupler = "sandbox_coupler"
 	RoleSandboxExport  = "sandbox_export"
 	RoleSandboxNetwork = "sandbox_network"
-	SandboxBridge      = "stationly-sandbox"
-	SandboxIface       = "or-sandbox"
+	SandboxBridge      = protocol.SandboxNetworkName
+	SandboxIface       = SandboxBridge
 )
 
 func SandboxCouplerName(sandboxID string) string {
-	return "or-sbx-coupler-" + sandboxID
+	return protocol.ResourcePrefix + "sbx-coupler-" + sandboxID
 }
 
 func SandboxNetwork(stationID string, n protocol.DesiredStationSandboxNetwork) (NetworkSpec, error) {
@@ -87,7 +87,7 @@ func SandboxCoupler(stationID, envID, sandboxID, image, networkName string) Cont
 				Resources: container.Resources{
 					Memory:     couplerMemoryBytes,
 					MemorySwap: couplerMemoryBytes,
-					NanoCPUs:   couplerNanoCPUs,
+					NanoCPUs:   HostNanoCPUs(couplerNanoCPUs),
 				},
 			},
 			NetworkingConfig: &network.NetworkingConfig{

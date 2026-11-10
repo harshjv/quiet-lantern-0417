@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"strconv"
 
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -17,9 +18,9 @@ const (
 	RoleGatewayCoupler = "gateway-coupler"
 	RoleGateway        = "gateway"
 
-	IngressNetworkName = "stationly-ingress"
-	IngressBridgeName  = "or-ingress"
-	GatewayVolume      = "or-gateway-data"
+	IngressNetworkName = protocol.ResourcePrefix + "ingress"
+	IngressBridgeName  = IngressNetworkName
+	GatewayVolume      = protocol.ResourcePrefix + "gateway-data"
 	GatewaySource      = "docker.io/library/traefik"
 
 	gatewayMemoryBytes = 512 << 20
@@ -52,11 +53,11 @@ func IngressNetwork(stationID string, subnet, ipRange netip.Prefix, gateway neti
 }
 
 func GatewayCouplerName(slot string) string {
-	return "or-gateway-coupler-" + slot
+	return protocol.ResourcePrefix + "gateway-coupler-" + slot
 }
 
 func GatewayName(slot string) string {
-	return "or-gateway-" + slot
+	return protocol.ResourcePrefix + "gateway-" + slot
 }
 
 func gatewayLabels(stationID, role string) map[string]string {
@@ -121,8 +122,8 @@ func Gateway(stationID, slot, image string, f GatewayFiles) ContainerSpec {
 
 const (
 	RoleSystemNetwork = "system-network"
-	SystemNetworkName = "stationly-system"
-	SystemBridgeName  = "or-system"
+	SystemNetworkName = protocol.ResourcePrefix + "system"
+	SystemBridgeName  = SystemNetworkName
 )
 
 func SystemNetwork(stationID string, subnet, ipRange netip.Prefix, gateway netip.Addr) NetworkSpec {

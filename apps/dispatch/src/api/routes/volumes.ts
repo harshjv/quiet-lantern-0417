@@ -1,7 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
+import type { TargetInput } from '../route-meta.ts'
 import { volume } from '../../db/schema.ts'
-import { can, requireHuman, requireInstance, requireLevel } from '../access.ts'
+import { can, requireHuman } from '../access.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { configDeployTrigger, requireStationReady } from '../deployments.ts'
 import { fail } from '../errors.ts'
@@ -42,24 +43,9 @@ export const volumeRoutes = (kit: Kit) => {
       return backupError(error)
     }
   }
-  const requireVolumeAdmin = async (request: Request, id: string) => {
-    const call = await kit.call(request)
-    const ctx = volumeById(db, id)
-    if (ctx.owner) requireLevel(call.principal, ctx.owner.target, 'admin')
-    else if (ctx.volume.project_id) requireLevel(call.principal, { project_id: ctx.volume.project_id, environment_id: '*' }, 'admin')
-    else requireInstance(call.principal, 'admin')
-    return { call, ctx }
-  }
-  const requireVolumeRead = async (request: Request, id: string) => {
-    const principal = await kit.principal(request)
-    const ctx = volumeById(db, id)
-    if (ctx.owner) requireLevel(principal, ctx.owner.target, 'read')
-    else if (ctx.volume.project_id) requireLevel(principal, { project_id: ctx.volume.project_id, environment_id: '*' }, 'read')
-    else requireInstance(principal, 'read')
-    return ctx
-  }
+  const callAndVolume = async (request: Request, id: string) => ({ call: await kit.call(request), ctx: volumeById(db, id) })
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/volumes',
       async ({ request, query }) => {
@@ -92,6 +78,7 @@ export const volumeRoutes = (kit: Kit) => {
         return { items: page.rows.map(row => select(kit.views.volume, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_volumes', level: 'any' },
         query: t.Object({ ...listQuery, status: t.Optional(t.String()), station: t.Optional(t.String()), service: t.Optional(t.String()), owner: t.Optional(t.String()) }),
         response: replies({ 200: Page(Volume) }),
         detail: { summary: 'List volumes visible to the caller', tags }
@@ -99,32 +86,22 @@ export const volumeRoutes = (kit: Kit) => {
     )
     .get(
       '/services/:service/volumes',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = serviceById(db, params.service)
-        requireLevel(principal, ctx.target, 'read')
         return { items: projectAll(kit.views.volume, db.select().from(volume).where(eq(volume.service_id, ctx.service.id)).orderBy(desc(volume.id)).all(), kit.fields(query.fields)), next_cursor: null }
       },
-      { params: t.Object({ service: t.String() }), query: t.Object(getQuery), response: replies({ 200: Page(Volume) }), detail: { summary: 'List the volumes of a service', tags } }
+      { operation: { id: 'list_service_volumes', level: 'read' }, params: t.Object({ service: t.String() }), query: t.Object(getQuery), response: replies({ 200: Page(Volume) }), detail: { summary: 'List the volumes of a service', tags } }
     )
     .get(
       '/volumes/:id',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
-        const ctx = volumeById(db, params.id)
-        if (ctx.owner) requireLevel(principal, ctx.owner.target, 'read')
-        else if (ctx.volume.project_id) requireLevel(principal, { project_id: ctx.volume.project_id, environment_id: '*' }, 'read')
-        else requireInstance(principal, 'read')
-        return select(kit.views.volume, ctx.volume, kit.fields(query.fields))
-      },
-      { params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: Volume }), detail: { summary: 'Get a volume', tags } }
+      async ({ params, query }) => select(kit.views.volume, volumeById(db, params.id).volume, kit.fields(query.fields)),
+      { operation: { id: 'get_volume', level: 'read', mcp: false }, params: t.Object({ id: t.String() }), query: t.Object(getQuery), response: replies({ 200: Volume }), detail: { summary: 'Get a volume', tags } }
     )
     .post(
       '/services/:service/volumes',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         if (ctx.service.strategy === 'overlap' && !ctx.service.multi_writer_safe) {
           fail('STRATEGY_VOLUME_CONFLICT', `${ctx.service.name} uses strategy overlap, which is unsafe with a volume.`, 'Set strategy = replace, or multi_writer_safe = true, before adding a volume.')
         }
@@ -140,7 +117,7 @@ export const volumeRoutes = (kit: Kit) => {
         if (result.applied) set.status = 201
         return respond(kit, set, result, () => view(result.applied ? result.refs['new:volume:1']! : ''))
       },
-      { params: t.Object({ service: t.String() }), body: t.Object({ mount_path: t.String({ pattern: '^/' }) }, { additionalProperties: false }), response: replies({ 201: VolumeWritten, 202: Staged }), detail: { summary: 'Add a volume; deploys', tags } }
+      { operation: { id: 'add_volume', level: 'deploy' }, params: t.Object({ service: t.String() }), body: t.Object({ mount_path: t.String({ pattern: '^/' }) }, { additionalProperties: false }), response: replies({ 201: VolumeWritten, 202: Staged }), detail: { summary: 'Add a volume; deploys', tags } }
     )
     .delete(
       '/volumes/:id',
@@ -148,7 +125,6 @@ export const volumeRoutes = (kit: Kit) => {
         const call = await kit.call(request)
         const ctx = volumeById(db, params.id)
         if (!ctx.owner) fail('VALIDATION_FAILED', 'Only a volume mounted by a service can be released here.', undefined, { issues: [{ path: '/id', message: `volume is ${ctx.volume.status}` }] })
-        requireLevel(call.principal, ctx.owner!.target, 'admin')
         if (query.destroy_now) requireHuman(call.principal, 'Destroying a volume before its retention ends', { destroy_now: true })
         const changes = new ChangeSet()
         const until = new Date(Date.now() + (query.destroy_now ? 0 : retentionMs)).toISOString()
@@ -159,7 +135,7 @@ export const volumeRoutes = (kit: Kit) => {
         if (!result.applied) return kit.stagedBody(result, set)
         return view(ctx.volume.id)
       },
-      { params: t.Object({ id: t.String() }), query: t.Object({ destroy_now: t.Optional(t.BooleanString()) }), response: replies({ 200: Volume, 202: Staged }), detail: { summary: 'Release a volume into retention', tags } }
+      { operation: { id: 'remove_volume', level: 'admin' }, params: t.Object({ id: t.String() }), query: t.Object({ destroy_now: t.Optional(t.BooleanString()) }), response: replies({ 200: Volume, 202: Staged }), detail: { summary: 'Release a volume into retention', tags } }
     )
     .post(
       '/volumes/:id/adopt',
@@ -167,7 +143,6 @@ export const volumeRoutes = (kit: Kit) => {
         const call = await kit.call(request)
         const ctx = volumeById(db, params.id)
         const target = serviceById(db, body.service_id)
-        requireLevel(call.principal, target.target, 'admin')
         const reason =
           ctx.volume.status !== 'retained'
             ? `it is ${ctx.volume.status}, not retained`
@@ -191,6 +166,7 @@ export const volumeRoutes = (kit: Kit) => {
       {
         params: t.Object({ id: t.String() }),
         body: t.Object({ service_id: t.String(), mount_path: t.String({ pattern: '^/' }) }, { additionalProperties: false }),
+        operation: { id: 'adopt_volume', level: 'admin', target: ({ body }: TargetInput) => serviceById(db, (body as { service_id: string }).service_id).target },
         response: replies({ 200: VolumeWritten, 202: Staged }),
         detail: { summary: 'Adopt a retained volume into a service', tags }
       }
@@ -198,7 +174,7 @@ export const volumeRoutes = (kit: Kit) => {
     .post(
       '/volumes/:id/backups',
       async ({ request, params, body, set }) => {
-        const { call, ctx } = await requireVolumeAdmin(request, params.id)
+        const { call, ctx } = await callAndVolume(request, params.id)
         const quiesce = body.quiesce ?? true
         const environment = ctx.owner?.environment
         if (environment?.protected && !call.principal.human) {
@@ -221,14 +197,14 @@ export const volumeRoutes = (kit: Kit) => {
           },
           { additionalProperties: false }
         ),
+        operation: { id: 'backup_volume', level: 'admin' },
         response: replies({ 201: BackupStarted, 202: Staged }),
         detail: { summary: 'Write a tar.zst of the volume to volume_backup.target or the given target; completion arrives as volume.backup_done', tags }
       }
     )
     .get(
       '/volumes/:id/backups',
-      async ({ request, params, query }) => {
-        await requireVolumeRead(request, params.id)
+      async ({ params, query }) => {
         const rows = db
           .select()
           .from(volume_snapshot)
@@ -237,12 +213,12 @@ export const volumeRoutes = (kit: Kit) => {
           .all()
         return { items: rows.map(snapshotView), next_cursor: null }
       },
-      { params: t.Object({ id: t.String() }), query: t.Object({ status: t.Optional(t.String()) }), response: replies({ 200: Page(VolumeSnapshot) }), detail: { summary: 'Backups of a volume, newest first', tags } }
+      { operation: { id: 'list_volume_backups', level: 'read' }, params: t.Object({ id: t.String() }), query: t.Object({ status: t.Optional(t.String()) }), response: replies({ 200: Page(VolumeSnapshot) }), detail: { summary: 'Backups of a volume, newest first', tags } }
     )
     .post(
       '/volumes/:id/restore',
       async ({ request, params, body, set }) => {
-        const { call, ctx } = await requireVolumeAdmin(request, params.id)
+        const { call, ctx } = await callAndVolume(request, params.id)
         const environment = ctx.owner?.environment
         if (environment?.protected && !call.principal.human) {
           const plan = guarded(() => restorePlan(db, params.id, body.backup, body.station))
@@ -258,6 +234,7 @@ export const volumeRoutes = (kit: Kit) => {
       {
         params: t.Object({ id: t.String() }),
         body: t.Object({ backup: t.String(), station: t.Optional(t.String()) }, { additionalProperties: false }),
+        operation: { id: 'restore_volume', level: 'admin', mcp: { destructive: true } },
         response: replies({ 201: RestoreStarted, 202: Staged }),
         detail: { summary: 'Restore a complete backup into a new retained volume of the same project; completion arrives as volume.restore_done; staged for a non-human actor in a protected environment', tags }
       }

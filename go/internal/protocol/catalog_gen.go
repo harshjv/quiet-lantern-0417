@@ -11,6 +11,14 @@ const StationConnectPath = "/v1/stations/connect"
 const HandshakeInvalidMessageClose = 4001
 
 const (
+	ResourcePrefix         = "sly-"
+	NftTableName           = "sly"
+	NftTablePrefix         = "sly_"
+	InterfaceNameMaxLength = 15
+	SandboxNetworkName     = "sly-sandbox"
+)
+
+const (
 	CloseNormal              = 1000
 	CloseGoingAway           = 1001
 	CloseMessageTooBig       = 1009
@@ -258,4 +266,83 @@ var MessageBodies = map[string]func() any{
 	MessageStreamCredit:             func() any { return new(StreamCreditBody) },
 	MessageStreamEnd:                func() any { return new(StreamEndBody) },
 	MessageStreamCancel:             func() any { return new(StreamRefBody) },
+}
+
+var MessageCapabilities = map[string]Capability{
+	MessageGeneration:               CapabilityGenerationV1,
+	MessageGenerationAvailable:      CapabilityGenerationV1,
+	MessageGenerationAck:            CapabilityGenerationV1,
+	MessageGuardAck:                 CapabilityGuardV1,
+	MessageFlowRollup:               CapabilityGuardV1,
+	MessageScanResult:               CapabilityScanV1,
+	MessageVolumeBackupResult:       CapabilityVolumesV1,
+	MessageVolumeRestoreResult:      CapabilityVolumesV1,
+	MessageSandboxStatus:            CapabilitySandboxV1,
+	MessageSandboxSnapshotStatus:    CapabilitySandboxV1,
+	MessageLogsFollow:               CapabilityLogsFollow,
+	MessageMetricsSubscribe:         CapabilityMetricsV1,
+	MessageMetricsSample:            CapabilityMetricsV1,
+	MessageMetricsSampleResult:      CapabilityMetricsV1,
+	MessageNetworkSubscribe:         CapabilityNetworkV1,
+	MessageNetworkSample:            CapabilityNetworkV1,
+	MessageNetworkSampleResult:      CapabilityNetworkV1,
+	MessageNetworkInspect:           CapabilityNetworkV1,
+	MessageNetworkInspectResult:     CapabilityNetworkV1,
+	MessageNetworkProbe:             CapabilityNetworkV1,
+	MessageNetworkProbeResult:       CapabilityNetworkV1,
+	MessageDnsLog:                   CapabilityNetworkV1,
+	MessageDnsLogResult:             CapabilityNetworkV1,
+	MessageExecResize:               CapabilityExecTty,
+	MessageExecResized:              CapabilityExecTty,
+	MessageForwardOpen:              CapabilityForwardTcp,
+	MessageSecretsDeliver:           CapabilitySecretsV1,
+	MessageSecretsAck:               CapabilitySecretsV1,
+	MessageSecretsRequest:           CapabilitySecretsV1,
+	MessageRegistryDelete:           CapabilityRegistryV1,
+	MessageRegistryDeleteResult:     CapabilityRegistryV1,
+	MessageRegistryGc:               CapabilityRegistryV1,
+	MessageRegistryGcAccepted:       CapabilityRegistryV1,
+	MessageScanStart:                CapabilityScanV1,
+	MessageScanAccepted:             CapabilityScanV1,
+	MessagePlatformVerify:           CapabilityPlatformV1,
+	MessagePlatformVerifyResult:     CapabilityPlatformV1,
+	MessageDoctorRun:                CapabilityDoctorV1,
+	MessageDoctorReport:             CapabilityDoctorV1,
+	MessageVolumeBackup:             CapabilityVolumesV1,
+	MessageVolumeBackupAccepted:     CapabilityVolumesV1,
+	MessageVolumeRestore:            CapabilityVolumesV1,
+	MessageVolumeRestoreAccepted:    CapabilityVolumesV1,
+	MessageVolumeBackupDelete:       CapabilityVolumesV1,
+	MessageVolumeBackupDeleteResult: CapabilityVolumesV1,
+	MessageSandboxStorageGrow:       CapabilitySandboxV1,
+	MessageSandboxStorageGrown:      CapabilitySandboxV1,
+}
+
+const (
+	RedactMinLength              = 8
+	RedactExcludedPattern        = "^[0-9]+$"
+	RedactTokenPattern           = "sly_[A-Za-z0-9_-]{8,}|sly-rk-[A-Za-z2-7]{8,}"
+	RedactTokenReplacement       = "[redacted]"
+	RedactKeyedReplacementPrefix = "[redacted:"
+	RedactKeyedReplacementSuffix = "]"
+)
+
+type Base64Encoding string
+
+const (
+	Base64EncodingBase64    Base64Encoding = "base64"
+	Base64EncodingBase64url Base64Encoding = "base64url"
+)
+
+var RedactBase64Encodings = []Base64Encoding{Base64EncodingBase64, Base64EncodingBase64url}
+
+type URLEncoding struct {
+	Unescaped string
+	Space     string
+}
+
+var RedactURLEncodings = []URLEncoding{
+	{Unescaped: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~", Space: "%20"},
+	{Unescaped: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~", Space: "+"},
+	{Unescaped: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!'()*", Space: "%20"},
 }

@@ -1,3 +1,4 @@
+import { slugPattern } from '@stationly/protocol'
 import { createHash, randomBytes } from 'node:crypto'
 import { isIPv4 } from 'node:net'
 import { and, desc, eq, isNull } from 'drizzle-orm'
@@ -6,16 +7,15 @@ import { Elysia, t } from 'elysia'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
 import { sandbox, service, station, token } from '../../db/schema.ts'
-import { requireInstance } from '../access.ts'
 import { audit } from '../context.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail, invalid } from '../errors.ts'
 import { project as select } from '../fields.ts'
-import { slugPattern, type Kit } from '../kit.ts'
+import type { Kit } from '../kit.ts'
 import { stationByRef } from '../lookup.ts'
 import { drainRefusal, stationFields } from '../station-fields.ts'
 import { before, collect, getQuery, listQuery } from '../pagination.ts'
-import { readSetting } from '../settings.ts'
+import { readSetting } from '../../db/settings.ts'
 import { models, Page, replies, Staged, Station } from '../shapes.ts'
 
 const Removed = Type.Object({ deleted: Type.Literal(true), revoked_at: Type.String(), disconnected: Type.Optional(Type.Boolean()) }, { additionalProperties: false })
@@ -35,11 +35,10 @@ export const stationRoutes = (kit: Kit) => {
   const { db } = kit.deps
   const tags = ['stations']
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/stations',
-      async ({ request, query }) => {
-        requireInstance(await kit.principal(request), 'read')
+      async ({ query }) => {
         const page = collect(
           (cursor, size) =>
             db
@@ -53,21 +52,19 @@ export const stationRoutes = (kit: Kit) => {
         )
         return { items: page.rows.map(row => select(kit.views.station, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
-      { query: t.Object({ ...listQuery, status: t.Optional(t.String()), revoked: t.Optional(t.BooleanString()) }), response: replies({ 200: Page(Station) }), detail: { summary: 'List stations; removed stations only with revoked = true', tags } }
+      { operation: { id: 'list_stations', level: 'instance read' }, query: t.Object({ ...listQuery, status: t.Optional(t.String()), revoked: t.Optional(t.BooleanString()) }), response: replies({ 200: Page(Station) }), detail: { summary: 'List stations; removed stations only with revoked = true', tags } }
     )
     .get(
       '/stations/:station',
-      async ({ request, params, query }) => {
-        requireInstance(await kit.principal(request), 'read')
+      async ({ params, query }) => {
         return select(kit.views.station, stationByRef(db, params.station), kit.fields(query.fields))
       },
-      { params: t.Object({ station: t.String() }), query: t.Object(getQuery), response: replies({ 200: Station }), detail: { summary: 'Get a station by id or name', tags } }
+      { operation: { id: 'get_station', level: 'instance read' }, params: t.Object({ station: t.String() }), query: t.Object(getQuery), response: replies({ 200: Station }), detail: { summary: 'Get a station by id or name', tags } }
     )
     .patch(
       '/stations/:station',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        requireInstance(call.principal, 'admin')
         const row = stationByRef(db, params.station)
         if (row.revoked_at) fail('VALIDATION_FAILED', `Station ${row.name} was removed.`, undefined, { issues: [{ path: '/station', message: 'station is revoked' }] })
         const issues: { path: string; message: string }[] = []
@@ -91,7 +88,7 @@ export const stationRoutes = (kit: Kit) => {
         }
         const shown = kit.fields('public_address,intermittent,sandbox_limits')
         if (changes.empty) return select(kit.views.station, row, shown)
-        const protect = Boolean(readSetting<boolean>(db, 'platform.protected')) && !call.principal.human
+        const protect = Boolean(readSetting(db, 'platform.protected')) && !call.principal.human
         const result = commit(kit.deps, call, { environment: null, protect }, changes)
         if (!result.applied) return kit.stagedBody(result, set)
         audit(db, call, 'station.update', { entity: 'station', id: row.id }, { before, after })
@@ -99,6 +96,7 @@ export const stationRoutes = (kit: Kit) => {
         return select(kit.views.station, db.select().from(station).where(eq(station.id, row.id)).get()!, shown)
       },
       {
+        operation: { id: 'update_station', level: 'instance admin' },
         params: t.Object({ station: t.String() }),
         body: t.Object(
           {
@@ -132,7 +130,6 @@ export const stationRoutes = (kit: Kit) => {
       '/stations/:station',
       async ({ request, params }) => {
         const call = await kit.call(request)
-        requireInstance(call.principal, 'admin')
         const row = stationByRef(db, params.station)
         if (row.revoked_at) return { deleted: true as const, revoked_at: row.revoked_at.toISOString() }
         const services = db.select({ id: service.id, name: service.name }).from(service).where(eq(service.station_id, row.id)).all()
@@ -148,13 +145,12 @@ export const stationRoutes = (kit: Kit) => {
         const disconnected = kit.deps.stations.revoke(row.id, revokedAt)
         return { deleted: true as const, revoked_at: revokedAt.toISOString(), disconnected }
       },
-      { params: t.Object({ station: t.String() }), response: replies({ 200: Removed }), detail: { summary: 'Remove a station: its key is revoked and kept, so it is told STATION_REVOKED', tags } }
+      { operation: { id: 'remove_station', level: 'instance admin' }, params: t.Object({ station: t.String() }), response: replies({ 200: Removed }), detail: { summary: 'Remove a station: its key is revoked and kept, so it is told STATION_REVOKED', tags } }
     )
     .post(
       '/stations',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
-        requireInstance(call.principal, 'admin')
         if (db.select({ id: station.id }).from(station).where(eq(station.name, body.name)).get()) fail('NAME_TAKEN', `A station named ${body.name} exists.`, undefined, { name: body.name })
         const secret = `${enrollTokenPrefix}${randomBytes(32).toString('base64url')}`
         const expiresAt = new Date(Date.now() + enrollTokenSeconds * 1000)
@@ -187,6 +183,7 @@ export const stationRoutes = (kit: Kit) => {
         }
       },
       {
+        operation: { id: 'enroll_station', level: 'instance admin' },
         body: t.Object({ name: t.String({ pattern: slugPattern }), intermittent: t.Optional(t.Boolean()) }, { additionalProperties: false }),
         response: replies({ 201: Enrollment }),
         detail: { summary: 'Create a station in enrolling state and a one-time enrollment token (15 minutes)', tags }

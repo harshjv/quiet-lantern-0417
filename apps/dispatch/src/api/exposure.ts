@@ -3,12 +3,12 @@ import type { Db } from '../db/client.ts'
 import { port_allocation, station } from '../db/schema.ts'
 import { effectivePins, readLockfile } from '../platform/lockfile.ts'
 import { fail } from './errors.ts'
-import { readSetting } from './settings.ts'
+import { readSetting } from '../db/settings.ts'
 
 const sslipHost = (address: string) => (address.includes(':') ? address.replaceAll(':', '-') : address.replaceAll('.', '-'))
 
 export const generatedHostname = (db: Db, serviceName: string, environmentName: string, stationId: string) => {
-  const zone = readSetting<string>(db, 'domains.zone')
+  const zone = readSetting(db, 'domains.zone')
   const label = `${serviceName}-${environmentName}`
   if (zone) return `${label}.${zone}`
   const address = db.select({ public_address: station.public_address }).from(station).where(eq(station.id, stationId)).get()?.public_address
@@ -16,7 +16,7 @@ export const generatedHostname = (db: Db, serviceName: string, environmentName: 
 }
 
 export const hostPortPicker = (db: Db, stationId: string) => {
-  const [low, high] = (readSetting<string>(db, 'exposure.port_range') ?? '30000-32767').split('-').map(Number) as [number, number]
+  const [low, high] = readSetting(db, 'exposure.port_range').split('-').map(Number) as [number, number]
   const used = new Set(
     db
       .select({ host_port: port_allocation.host_port })

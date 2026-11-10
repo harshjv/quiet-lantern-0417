@@ -5,6 +5,7 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
 	"github.com/moby/moby/api/types/container"
 )
@@ -57,8 +59,8 @@ func Bootstrap(ctx context.Context, o BootstrapOptions) (func(), error) {
 	if err != nil {
 		return noop, err
 	}
-	gateway := hostAt(subnet, 1)
-	spec := docker.SystemNetwork(o.Install.StationID, subnet, upperHalf(subnet), gateway)
+	gateway := cidr.Offset(subnet, protocol.NetworkGatewayHost)
+	spec := docker.SystemNetwork(o.Install.StationID, subnet, cidr.UpperHalf(subnet), gateway)
 	_, labels, exists, err := dc.NetworkByName(ctx, spec.Name)
 	switch {
 	case err != nil:
@@ -94,7 +96,7 @@ func Bootstrap(ctx context.Context, o BootstrapOptions) (func(), error) {
 	}
 	digest := pinOf(c)
 	trust := o.Verifier.Trust()
-	side := &dispatchSide{componentPin: componentPin{Version: c.Version, Digest: digest}, Image: trust.Source("dispatch", docker.DispatchSource) + "@" + digest, Since: *stamp(time.Now())}
+	side := &dispatchSide{componentPin: componentPin{Version: c.Version, Digest: digest}, Image: trust.Source("dispatch", protocol.DispatchRepository) + "@" + digest, Since: *stamp(time.Now())}
 	l := dispatchLaunch{stationID: o.Install.StationID, stateDir: o.StateDir, etcDir: o.EtcDir, subnet: subnet, trust: trust, log: o.Log}
 	want, err := l.spec(side)
 	if err != nil {

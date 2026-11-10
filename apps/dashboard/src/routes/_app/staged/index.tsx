@@ -1,13 +1,17 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Empty, ErrorState, Mono, PageHeader, Rows } from '@/components/page'
+import { Empty, Mono, PageHeader } from '@/components/page'
+import { noItems, QueryState } from '@/components/query-state'
+import { TableFrame } from '@/components/table-frame'
 import { StagedStatusBadge } from '@/components/status'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ago } from '@/lib/format'
 import { environmentQuery, stagedQuery } from '@/lib/queries'
+import { toneText } from '@/lib/tone'
+import { stagedChangeStatusValues } from '@stationly/protocol/domain'
 
-const statuses = ['staged', 'accepted', 'rejected', 'superseded'] as const
+const statuses = stagedChangeStatusValues
 type Status = (typeof statuses)[number]
 
 export const Route = createFileRoute('/_app/staged/')({
@@ -34,53 +38,52 @@ function StagedPage() {
           ))}
         </TabsList>
         <TabsContent value={status} className="mt-4">
-      {staged.isPending ? (
-        <Rows count={4} />
-      ) : staged.isError ? (
-        <ErrorState error={staged.error} />
-      ) : staged.data.items.length === 0 ? (
-        <Empty title={status === 'staged' ? 'Nothing is waiting for review' : `No ${status} changes`}>Agents and tokens stage changes when they touch a protected environment.</Empty>
-      ) : (
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Change</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead>Diff</TableHead>
-                <TableHead className="hidden md:table-cell">Requested by</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {staged.data.items.map(change => (
-                <TableRow key={change.id} className="relative">
-                  <TableCell>
-                    <Link to="/staged/$change" params={{ change: change.id }} className="font-mono text-[0.8125rem] font-medium after:absolute after:inset-0">
-                      {change.id}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{change.environment_id ? (names.get(change.environment_id) ?? <Mono className="text-muted-foreground">{change.environment_id}</Mono>) : 'platform'}</TableCell>
-                  <TableCell className="tabular-nums">
-                    <span className="text-emerald-700 dark:text-emerald-400">+{change.summary.add}</span> <span className="text-amber-700 dark:text-amber-400">~{change.summary.update}</span>{' '}
-                    <span className="text-red-700 dark:text-red-400">−{change.summary.remove}</span>
-                    {change.summary.deployments > 0 && <span className="text-muted-foreground"> · {change.summary.deployments} deploy</span>}
-                  </TableCell>
-                  <TableCell className="hidden text-muted-foreground md:table-cell">
-                    {change.actor.type}
-                    {change.actor.client && <span> · {change.actor.client}</span>} · {change.source}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{ago(change.created_at)}</TableCell>
-                  <TableCell>
-                    <StagedStatusBadge status={change.status} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+          <QueryState
+            query={staged}
+            rows={4}
+            isEmpty={noItems}
+            empty={<Empty title={status === 'staged' ? 'Nothing is waiting for review' : `No ${status} changes`}>Agents and tokens stage changes when they touch a protected environment.</Empty>}
+          >
+            {data => (
+              <TableFrame>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Change</TableHead>
+                    <TableHead>Scope</TableHead>
+                    <TableHead>Diff</TableHead>
+                    <TableHead className="hidden md:table-cell">Requested by</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.items.map(change => (
+                    <TableRow key={change.id} className="relative">
+                      <TableCell>
+                        <Link to="/staged/$change" params={{ change: change.id }} className="font-medium after:absolute after:inset-0">
+                          <Mono>{change.id}</Mono>
+                        </Link>
+                      </TableCell>
+                      <TableCell>{change.environment_id ? (names.get(change.environment_id) ?? <Mono className="text-muted-foreground">{change.environment_id}</Mono>) : 'platform'}</TableCell>
+                      <TableCell className="tabular-nums">
+                        <span className={toneText.success}>+{change.summary.add}</span> <span className={toneText.warning}>~{change.summary.update}</span>{' '}
+                        <span className={toneText.danger}>−{change.summary.remove}</span>
+                        {change.summary.deployments > 0 && <span className="text-muted-foreground"> · {change.summary.deployments} deploy</span>}
+                      </TableCell>
+                      <TableCell className="hidden text-muted-foreground md:table-cell">
+                        {change.actor.type}
+                        {change.actor.client && <span> · {change.actor.client}</span>} · {change.source}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{ago(change.created_at)}</TableCell>
+                      <TableCell>
+                        <StagedStatusBadge status={change.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </TableFrame>
+            )}
+          </QueryState>
         </TabsContent>
       </Tabs>
     </div>

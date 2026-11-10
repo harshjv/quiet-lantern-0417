@@ -107,7 +107,7 @@ func expectRejected(t *testing.T, code protocol.ErrorCode, contains string, edit
 
 func TestPlanCreatesOneNetworkPerEnvironmentAndOneContainerSetPerRunningService(t *testing.T) {
 	p := mustBuild(t, nil)
-	if len(p.Networks) != 2 || p.Networks[alphaEnv].Name != "or-aaaaaaaaaaaa" || p.Networks[betaEnv].Name != "or-bbbbbbbbbbbb" {
+	if len(p.Networks) != 2 || p.Networks[alphaEnv].Name != "sly-aaaaaaaaaaa" || p.Networks[betaEnv].Name != "sly-bbbbbbbbbbb" {
 		t.Fatalf("networks %v", p.Networks)
 	}
 	if got := p.ServiceIDs(); len(got) != 3 || got[0] > got[1] || got[1] > got[2] {
@@ -123,7 +123,7 @@ func TestPlanCreatesOneNetworkPerEnvironmentAndOneContainerSetPerRunningService(
 		}
 	}
 	sp := p.Services[alphaWhoami]
-	if sp.NetworkName != "or-aaaaaaaaaaaa" || sp.EnvID != alphaEnv || sp.Kind != protocol.ServiceKindWeb {
+	if sp.NetworkName != "sly-aaaaaaaaaaa" || sp.EnvID != alphaEnv || sp.Kind != protocol.ServiceKindWeb {
 		t.Fatalf("whoami plan %+v", sp)
 	}
 }
@@ -152,7 +152,7 @@ func TestPlanIsDeterministic(t *testing.T) {
 func TestServiceWithoutACurrentDeploymentIsCreatedIdleWithNoContainers(t *testing.T) {
 	p := mustBuild(t, func(d doc) { at(d, "services", alphaClient)["current"] = nil })
 	sp := p.Services[alphaClient]
-	if sp.Run || sp.DeploymentID != "" || sp.Coupler.Name != "" || sp.Service.Name != "" || sp.NetworkName != "or-aaaaaaaaaaaa" {
+	if sp.Run || sp.DeploymentID != "" || sp.Coupler.Name != "" || sp.Service.Name != "" || sp.NetworkName != "sly-aaaaaaaaaaa" {
 		t.Fatalf("got %+v", sp)
 	}
 	if !p.Services[alphaWhoami].Run {
@@ -255,7 +255,7 @@ func TestHealthCheckOfTypeImageIsReportedAsAMissingCapability(t *testing.T) {
 func TestEnvironmentNetworkSpecCarriesTheDeclaredSubnetGatewayAndBridge(t *testing.T) {
 	p := mustBuild(t, nil)
 	n := p.Networks[alphaEnv]
-	if n.Options.Options["com.docker.network.bridge.name"] != "or-aaaaaaaaaaaa" || n.Options.Options["com.docker.network.bridge.gateway_mode_ipv4"] != "nat" {
+	if n.Options.Options["com.docker.network.bridge.name"] != "sly-aaaaaaaaaaa" || n.Options.Options["com.docker.network.bridge.gateway_mode_ipv4"] != "nat" {
 		t.Fatalf("options %v", n.Options.Options)
 	}
 	cfg := n.Options.IPAM.Config[0]
@@ -337,13 +337,13 @@ func TestEnvironmentGatewayOutsideItsSubnetIsRefused(t *testing.T) {
 
 func TestTwoEnvironmentsSharingABridgeNameAreRefused(t *testing.T) {
 	expectRejected(t, protocol.ErrorCodeGenerationInvalid, "share bridge_name", func(d doc) {
-		at(d, "environments", betaEnv, "network")["bridge_name"] = "or-aaaaaaaaaaaa"
+		at(d, "environments", betaEnv, "network")["bridge_name"] = "sly-aaaaaaaaaaa"
 	})
 }
 
 func TestBridgeNameLongerThanTheKernelLimitIsRefused(t *testing.T) {
 	expectRejected(t, protocol.ErrorCodeGenerationInvalid, "bridge_name", func(d doc) {
-		at(d, "environments", alphaEnv, "network")["bridge_name"] = "or-0123456789abcdef"
+		at(d, "environments", alphaEnv, "network")["bridge_name"] = "sly-0123456789abcdef"
 	})
 }
 
@@ -496,11 +496,11 @@ func mountVolume(d doc, serviceID, volumeID, path string) {
 
 func TestActiveVolumeMountedByItsOwnerIsPlannedAsAMount(t *testing.T) {
 	p := mustBuild(t, func(d doc) {
-		d["volumes"].(map[string]any)["vol_01JCGGGGGGGGGGGGGGGGGGGGGG"] = volumeDoc("or-vol-data", "active", "service", alphaWhoami)
+		d["volumes"].(map[string]any)["vol_01JCGGGGGGGGGGGGGGGGGGGGGG"] = volumeDoc("sly-vol-data", "active", "service", alphaWhoami)
 		mountVolume(d, alphaWhoami, "vol_01JCGGGGGGGGGGGGGGGGGGGGGG", "/var/lib/data")
 	})
 	sp := p.Services[alphaWhoami]
-	if len(sp.Mounts) != 1 || sp.Mounts[0].Source != "or-vol-data" || sp.Mounts[0].Target != "/var/lib/data" {
+	if len(sp.Mounts) != 1 || sp.Mounts[0].Source != "sly-vol-data" || sp.Mounts[0].Target != "/var/lib/data" {
 		t.Fatalf("mounts %+v", sp.Mounts)
 	}
 }
@@ -515,40 +515,40 @@ func TestVolumeProblemsAreRefused(t *testing.T) {
 			d["volumes"].(map[string]any)[vol] = volumeDoc("-bad name", "active", "service", alphaWhoami)
 		}},
 		"duplicate docker name": {"share docker_name", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "active", "service", alphaWhoami)
-			d["volumes"].(map[string]any)["vol_01JCGGGGGGGGGGGGGGGGGGGGGH"] = volumeDoc("or-vol-data", "active", "service", alphaClient)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "active", "service", alphaWhoami)
+			d["volumes"].(map[string]any)["vol_01JCGGGGGGGGGGGGGGGGGGGGGH"] = volumeDoc("sly-vol-data", "active", "service", alphaClient)
 		}},
 		"mount of a missing volume": {"does not contain", func(d doc) { mountVolume(d, alphaWhoami, vol, "/data") }},
 		"mount of a retained volume": {"only active volumes", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "retained", "service", nil)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "retained", "service", nil)
 			mountVolume(d, alphaWhoami, vol, "/data")
 		}},
 		"mount of another service's volume": {"belongs to service", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "active", "service", alphaClient)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "active", "service", alphaClient)
 			mountVolume(d, alphaWhoami, vol, "/data")
 		}},
 		"relative mount path": {"absolute path", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "active", "service", alphaWhoami)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "active", "service", alphaWhoami)
 			mountVolume(d, alphaWhoami, vol, "data")
 		}},
 		"mount at the root": {"absolute path", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "active", "service", alphaWhoami)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "active", "service", alphaWhoami)
 			mountVolume(d, alphaWhoami, vol, "/")
 		}},
 		"two volumes at one path": {"two volumes", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-a", "active", "service", alphaWhoami)
-			d["volumes"].(map[string]any)["vol_01JCGGGGGGGGGGGGGGGGGGGGGH"] = volumeDoc("or-vol-b", "active", "service", alphaWhoami)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-a", "active", "service", alphaWhoami)
+			d["volumes"].(map[string]any)["vol_01JCGGGGGGGGGGGGGGGGGGGGGH"] = volumeDoc("sly-vol-b", "active", "service", alphaWhoami)
 			mountVolume(d, alphaWhoami, vol, "/data")
 			mountVolume(d, alphaWhoami, "vol_01JCGGGGGGGGGGGGGGGGGGGGGH", "/data/")
 		}},
 		"retained volume still naming a service": {"retained volume", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "retained", "service", alphaWhoami)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "retained", "service", alphaWhoami)
 		}},
 		"active service volume without a service": {"names no service", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "active", "service", nil)
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "active", "service", nil)
 		}},
 		"volume naming an unknown service": {"does not contain", func(d doc) {
-			d["volumes"].(map[string]any)[vol] = volumeDoc("or-vol-data", "active", "service", "svc_01JCZZZZZZZZZZZZZZZZZZZZZZ")
+			d["volumes"].(map[string]any)[vol] = volumeDoc("sly-vol-data", "active", "service", "svc_01JCZZZZZZZZZZZZZZZZZZZZZZ")
 		}},
 	}
 	for name, c := range cases {

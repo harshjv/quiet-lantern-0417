@@ -264,8 +264,8 @@ func checkGeneration(g *protocol.Generation, applied *protocol.Generation) *Reje
 			}
 		}
 		taken["environment "+envID] = subnet
-		if env.Network.BridgeName == "" || len(env.Network.BridgeName) > 15 {
-			return invalid("environment %s bridge_name %q must be 1 to 15 characters", envID, env.Network.BridgeName)
+		if env.Network.BridgeName == "" || len(env.Network.BridgeName) > protocol.InterfaceNameMaxLength {
+			return invalid("environment %s bridge_name %q must be 1 to %d characters", envID, env.Network.BridgeName, protocol.InterfaceNameMaxLength)
 		}
 		if other, ok := bridges[env.Network.BridgeName]; ok {
 			return invalid("environments %s and %s share bridge_name %s", other, envID, env.Network.BridgeName)
@@ -293,8 +293,8 @@ func checkGeneration(g *protocol.Generation, applied *protocol.Generation) *Reje
 		if !g.Station.HostsDispatch {
 			return invalid("system target %s is on a station whose hosts_dispatch is false", name)
 		}
-		if st.Port != docker.DispatchPort {
-			return invalid("system target %s port %d is not Dispatch's port %d", name, st.Port, docker.DispatchPort)
+		if st.Port != protocol.NetworkDispatchPort {
+			return invalid("system target %s port %d is not Dispatch's port %d", name, st.Port, protocol.NetworkDispatchPort)
 		}
 		vip, err := netip.ParseAddr(st.VirtualIp)
 		if err != nil || !vip.Is4() || !virtualPrefix.Contains(vip) {

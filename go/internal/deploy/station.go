@@ -483,17 +483,11 @@ func (s *Station) awaitGeneration(ctx context.Context) error {
 			return ctx.Err()
 		case m := <-s.link.Inbound():
 			switch {
-			case m.Connected:
-				s.onConnected()
-			case m.Type == protocol.MessageGeneration:
-				s.applyGeneration(ctx, m)
+			case m.Connected, m.Type == protocol.MessageGeneration, m.Type == protocol.MessageGenerationAvailable, m.Type == protocol.MessageError:
+				s.handle(ctx, m)
 				if s.plan != nil {
 					return nil
 				}
-			case m.Type == protocol.MessageGenerationAvailable:
-				s.generationAvailable(ctx, m)
-			case m.Type == protocol.MessageError:
-				s.handle(ctx, m)
 			default:
 				s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a generation first.", "stationd holds no generation yet and cannot handle %s", m.Type))
 			}

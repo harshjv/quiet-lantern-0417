@@ -1,7 +1,9 @@
 import { isIPv4 } from 'node:net'
 import { and, eq, isNull } from 'drizzle-orm'
 import { newId } from '../db/ids.ts'
-import { audit_event, component, setting, station } from '../db/schema.ts'
+import { cidrPattern, networkLayout, type SettingKey } from '@stationly/protocol'
+import { audit_event, component, station } from '../db/schema.ts'
+import { readSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { hostArch, lockfileFor, parseManifest, resolvePins, sha256Of, storeRelease } from '../platform/lockfile.ts'
 import type { Db } from '../db/client.ts'
 import type { Keyring } from '../secrets/keyring.ts'
@@ -32,17 +34,13 @@ export class SetupError extends Error {
   }
 }
 
-const poolPattern = /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/
+const poolPattern = new RegExp(cidrPattern)
 
-const writeSetting = (db: Db, key: string, value: unknown, actor: SetupActor) => {
-  const existing = db.select().from(setting).where(eq(setting.key, key)).get()
-  if (existing) db.update(setting).set({ value, updated_by: actor }).where(eq(setting.key, key)).run()
-  else db.insert(setting).values({ key, value, updated_by: actor }).run()
-}
+const { dispatchHostAddress, dispatchPort } = networkLayout
 
 export const ensureInstanceId = (db: Db) => {
-  if (db.select().from(setting).where(eq(setting.key, 'instance.id')).get()) return
-  db.insert(setting).values({ key: 'instance.id', value: newId('instance'), updated_by: { type: 'system', id: null, client: 'dispatch' } }).run()
+  if (storedSetting(db, 'instance.id') !== undefined) return
+  writeSetting(db, 'instance.id', newId('instance'), { type: 'system', id: null, client: 'dispatch' })
 }
 
 export const setupInstance = async (deps: { db: Db; keyring: Keyring; auth: AuthService }, input: SetupInput, actor: SetupActor) => {
@@ -50,7 +48,7 @@ export const setupInstance = async (deps: { db: Db; keyring: Keyring; auth: Auth
   if (userExists(db)) throw new SetupError('SETUP_DONE', 'An admin already exists; sly setup runs once.')
   if (typeof input.email !== 'string' || !input.email.includes('@')) throw new SetupError('VALIDATION_FAILED', 'The admin email is not an email address.')
   if (typeof input.password !== 'string' || input.password.length < minPasswordLength) throw new SetupError('VALIDATION_FAILED', `The password needs at least ${minPasswordLength} characters.`)
-  const settings: Record<string, unknown> = {}
+  const settings: Partial<Record<SettingKey, unknown>> = {}
   if (input.hostnames) {
     const check = checkHostnamePair(input.hostnames.dashboard, input.hostnames.api)
     if (!check.ok) throw new SetupError('HOSTNAME_DOMAIN_MISMATCH', check.reason)
@@ -65,7 +63,7 @@ export const setupInstance = async (deps: { db: Db; keyring: Keyring; auth: Auth
   const pool = input['ipam.pool']
   if (pool !== undefined) {
     if (!poolPattern.test(pool)) throw new SetupError('VALIDATION_FAILED', `ipam.pool ${pool} is not a CIDR.`)
-    const stored = db.select().from(setting).where(eq(setting.key, 'ipam.pool')).get()?.value
+    const stored = storedSetting(db, 'ipam.pool')
     if (stored === undefined) settings['ipam.pool'] = pool
     else if (stored !== pool) throw new SetupError('VALIDATION_FAILED', `ipam.pool is ${String(stored)} in Dispatch but the installer chose ${pool}.`)
   }
@@ -89,7 +87,7 @@ export const setupInstance = async (deps: { db: Db; keyring: Keyring; auth: Auth
   db.transaction(tx => {
     keyring.wrapForPassword(userId, input.password)
     if (input.public_address !== undefined) tx.update(station).set({ public_address: input.public_address }).where(eq(station.id, actor.id!)).run()
-    for (const [key, value] of Object.entries(settings)) writeSetting(tx as unknown as Db, key, value, actor)
+    for (const [key, value] of Object.entries(settings)) writeSetting(tx as unknown as Db, key as SettingKey, value, actor)
     if (release && manifest) {
       storeRelease(tx as unknown as Db, { manifestRaw: release.manifest, bundle: release.bundle, source: release.source, verifiedBy: 'stationd install' })
       for (const [name, pin] of Object.entries(resolvePins(manifest, null, hostArch()))) {
@@ -113,7 +111,7 @@ export const setupInstance = async (deps: { db: Db; keyring: Keyring; auth: Auth
   await auth.current.api.signInMagicLink({ body: { email: input.email, callbackURL: `${surface.dashboardOrigin}/` }, headers: new Headers() })
   const minted = takeLoginLink(input.email)
   const loginLink = minted ? `${surface.dashboardOrigin}${new URL(minted).pathname}${new URL(minted).search}` : null
-  const instanceId = db.select().from(setting).where(eq(setting.key, 'instance.id')).get()?.value as string
+  const instanceId = readSetting(db, 'instance.id')!
   return {
     admin_user_id: userId,
     email: created.user.email,
@@ -124,8 +122,6 @@ export const setupInstance = async (deps: { db: Db; keyring: Keyring; auth: Auth
     login_link_expires_at: new Date(Date.now() + loginLinkSeconds * 1000).toISOString(),
     public_address: input.public_address ?? null,
     hostnames: input.hostnames ? { ...input.hostnames, status: 'pending' } : null,
-    reach: input.hostnames
-      ? [`https://${input.hostnames.dashboard} once its DNS resolves and its certificate is issued`, `ssh -L 7900:127.0.0.1:7900 <station>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`]
-      : [`ssh -L 7900:127.0.0.1:7900 <station>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`]
+    reach: [...(input.hostnames ? [`https://${input.hostnames.dashboard} once its DNS resolves and its certificate is issued`] : []), `ssh -L ${dispatchPort}:${dispatchHostAddress}:${dispatchPort} <station>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`]
   }
 }

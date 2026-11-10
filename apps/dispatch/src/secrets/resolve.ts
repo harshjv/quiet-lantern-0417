@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
-import { environment, grant, project, sandbox, secret_value, service, service_port, variable } from '../db/schema.ts'
+import { environment, grant, project, sandbox, service, service_port, variable } from '../db/schema.ts'
 import { SecretsError } from './errors.ts'
 import { parseValue, type Segment } from './reference.ts'
+import { headValue, type SecretValueRow } from './values.ts'
 
 export const maxHops = 8
 
@@ -126,7 +127,7 @@ export class Resolver {
         })
       return { kind: 'template', variable_id: v.id, template: v.reference, parts }
     }
-    const row = this.head(v.id, null)
+    const row = headValue(this.db, v.id, null)
     if (!row) throw new SecretsError('VARIABLE_UNRESOLVED', `${box.name}.${v.key} has no value`, { key: v.key, sandbox_id: box.id })
     return this.valueNode(v, row, 'sandbox', null)
   }
@@ -135,25 +136,7 @@ export class Resolver {
     return `${owner.name}.${v.key}`
   }
 
-  private head(variableId: string, environmentId: string | null) {
-    const row = this.db
-      .select()
-      .from(secret_value)
-      .where(
-        and(
-          eq(secret_value.variable_id, variableId),
-          environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId),
-          isNull(secret_value.revoked_at)
-        )
-      )
-      .orderBy(desc(secret_value.version))
-      .limit(1)
-      .get()
-    if (row?.needs_reentry) throw new SecretsError('SECRETS_NEED_REENTRY', `secret_value ${row.id} must be re-entered after a restore`, { secret_value_id: row.id })
-    return row
-  }
-
-  private valueNode(v: VariableRow, row: typeof secret_value.$inferSelect, from: string, serviceId: string | null, fallback = false): ValueNode {
+  private valueNode(v: VariableRow, row: SecretValueRow, from: string, serviceId: string | null, fallback = false): ValueNode {
     return {
       kind: 'value',
       from,
@@ -184,7 +167,7 @@ export class Resolver {
         })
       return { kind: 'template', variable_id: v.id, template: v.reference, parts }
     }
-    const row = this.head(v.id, null)
+    const row = headValue(this.db, v.id, null)
     if (!row) throw new SecretsError('VARIABLE_UNRESOLVED', `${this.label(v, owner)} has no value`, { key: v.key, service_id: owner.id })
     return this.valueNode(v, row, 'service', owner.id)
   }
@@ -246,7 +229,7 @@ export class Resolver {
       .where(and(eq(variable.scope, 'project'), eq(variable.project_id, this.projectId), eq(variable.key, key)))
       .get()
     if (!v) throw new SecretsError('VARIABLE_UNRESOLVED', `project variable ${key} does not exist`, {})
-    const own = this.head(v.id, this.env.id)
+    const own = headValue(this.db, v.id, this.env.id)
     if (own) return this.valueNode(v, own, `project:${this.env.name}`, null)
     const protectedValues = this.env.protected
       ? []
@@ -255,8 +238,8 @@ export class Resolver {
           .from(environment)
           .where(and(eq(environment.project_id, this.projectId), eq(environment.protected, true)))
           .all()
-          .filter(e => this.head(v.id, e.id) !== undefined)
-    const fallback = this.head(v.id, null)
+          .filter(e => headValue(this.db, v.id, e.id) !== undefined)
+    const fallback = headValue(this.db, v.id, null)
     if (fallback) return this.valueNode(v, fallback, 'project:default', null, protectedValues.length > 0)
     if (protectedValues.length > 0) {
       throw new SecretsError('VARIABLE_PROTECTED_SOURCE', `project variable ${key} has values only in protected environments and no default`, {
@@ -283,7 +266,7 @@ export class Resolver {
       if (exists) throw new SecretsError('VARIABLE_NOT_GRANTED', `global variable ${key} exists but project ${this.projectId} holds no grant for it`, {})
       throw new SecretsError('VARIABLE_UNRESOLVED', `global variable ${key} does not exist`, {})
     }
-    const row = this.head(granted.v.id, null)
+    const row = headValue(this.db, granted.v.id, null)
     if (!row) throw new SecretsError('VARIABLE_UNRESOLVED', `global variable ${key} has no value`, {})
     return this.valueNode(granted.v, row, 'global', null)
   }

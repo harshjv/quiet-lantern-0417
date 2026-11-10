@@ -1,6 +1,7 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import type { Event as EventRow } from './api'
+import { invalidateGroups, stagedDecided, type Group } from './invalidate'
 
 export type LiveState = 'connecting' | 'live' | 'offline'
 
@@ -31,23 +32,21 @@ const listened = [
   'sandbox.deleted'
 ]
 
-const keysFor = (event: EventRow): string[][] => {
-  const { subject } = event
-  if (event.type.startsWith('deployment.') || event.type.startsWith('build.') || event.type.startsWith('run.')) {
-    return [['deployments'], ['services'], ['projects'], ['environments']]
-  }
-  if (event.type.startsWith('sandbox.')) return [['sandboxes'], ['sandbox-snapshots']]
-  if (event.type === 'health.changed') return [['services'], ['projects']]
-  if (event.type === 'domain.changed') return [['domains'], ['network']]
-  if (event.type.startsWith('staged_change.')) return [['staged'], ['environments'], ['services'], ['variables'], ['domains'], ['deployments'], ['projects']]
-  if (event.type.startsWith('environment.')) return [['environments'], ['projects']]
-  if (event.type === 'secret.changed') return [['variables'], ['services']]
-  if (event.type.startsWith('station.')) return [['services']]
-  return subject.entity ? [[subject.entity]] : []
+const groupsFor = (event: EventRow): Group[] => {
+  if (event.type.startsWith('deployment.') || event.type.startsWith('build.') || event.type.startsWith('run.')) return ['deployments']
+  if (event.type.startsWith('sandbox.')) return ['sandboxes']
+  if (event.type === 'health.changed' || event.type.startsWith('station.')) return ['health']
+  if (event.type === 'domain.changed') return ['domains']
+  if (event.type.startsWith('staged_change.')) return stagedDecided
+  if (event.type.startsWith('environment.')) return ['environments']
+  if (event.type === 'secret.changed') return ['variables']
+  return []
 }
 
 const apply = (client: QueryClient, event: EventRow) => {
-  for (const queryKey of keysFor(event)) void client.invalidateQueries({ queryKey })
+  const names = groupsFor(event)
+  if (names.length) invalidateGroups(client, names)
+  else if (event.subject.entity) void client.invalidateQueries({ queryKey: [event.subject.entity] })
 }
 
 export const useLiveEvents = () => {

@@ -4,7 +4,9 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 status=0
 
-normalize() { sed -E "s/^([A-Z0-9_]+)='[^']*'$/\1=''/" "$1"; }
+installer_url=$(jq -r .installer_url "$root/release.config.json")
+
+normalize() { sed -E -e "s/^([A-Z0-9_]+)='[^']*'$/\1=''/" -e "s|$installer_url|@INSTALLER_URL@|" "$1"; }
 
 functions() { awk -v want="$2" '$0 ~ "^" want "\\(\\) \\{" {p = 1} p {print} p && (/^}$/ || /; }$/) {p = 0}' "$1"; }
 

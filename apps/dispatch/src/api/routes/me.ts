@@ -6,7 +6,7 @@ import type { Kit } from '../kit.ts'
 const Me = Type.Object({ actor: Actor, human: Type.Boolean(), token_kind: Type.String(), scopes: Type.Array(Scope), expires_at: Type.String() }, { additionalProperties: false })
 
 export const meRoutes = (kit: Kit) =>
-  new Elysia({ prefix: '/v1', normalize: false }).use(models()).get(
+  new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations).get(
     '/me',
     async ({ request }) => {
       const principal = await kit.principal(request)
@@ -18,5 +18,5 @@ export const meRoutes = (kit: Kit) =>
         expires_at: principal.expires_at.toISOString()
       }
     },
-    { response: replies({ 200: Me }), detail: { summary: 'The caller: actor, human flag, token kind, scopes and expiry', tags: ['identity'] } }
+    { operation: { id: 'whoami', level: 'any', mcp: { always_load: true } }, response: replies({ 200: Me }), detail: { summary: 'The caller: actor, human flag, token kind, scopes and expiry', tags: ['identity'] } }
   )

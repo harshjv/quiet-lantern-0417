@@ -206,28 +206,12 @@ func (s *Station) collect(ctx context.Context, svcID string, c *collector) {
 	}
 }
 
-func (s *Station) sampleMetrics(m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityMetricsV1) {
-		return
-	}
-	var b protocol.MetricsSampleBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a metrics.sample body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) sampleMetrics(_ context.Context, m dispatch.Message, b protocol.MetricsSampleBody) {
 	ref := m.ID
 	s.send(protocol.MessageMetricsSampleResult, &ref, protocol.MetricsSampleResultBody{Samples: s.metrics.samples(append(append([]string{}, b.ServiceIds...), b.SandboxIds...))})
 }
 
-func (s *Station) subscribeMetrics(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityMetricsV1) {
-		return
-	}
-	var b protocol.MetricsSubscribeBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a metrics.subscribe body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) subscribeMetrics(ctx context.Context, m dispatch.Message, b protocol.MetricsSubscribeBody) {
 	st, err := s.link.OpenStream(protocol.LimitStreamWindowBytes, nil, nil)
 	if err != nil {
 		s.replyError(m, streamFailure(err))

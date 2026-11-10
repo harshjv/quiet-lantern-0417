@@ -2,19 +2,20 @@ import { createHash, randomBytes } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { Elysia, t } from 'elysia'
 import { surfaceOf } from '../../auth/principal.ts'
-import { github_app, github_connect_state, github_delivery, github_installation, setting } from '../../db/schema.ts'
+import { github_app, github_connect_state, github_delivery, github_installation } from '../../db/schema.ts'
+import { readSetting } from '../../db/settings.ts'
 import { newId } from '../../db/ids.ts'
 import { gh, GitHubError, githubWeb } from '../../github/client.ts'
-import { requireHuman, requireInstance } from '../access.ts'
+import { requireHuman } from '../access.ts'
 import { audit } from '../context.ts'
 import { fail } from '../errors.ts'
 import type { Kit } from '../kit.ts'
-import { Nullable, StringEnum } from '@stationly/protocol'
+import { githubRepositorySelectionValues, Nullable, StringEnum } from '@stationly/protocol'
 import { Type } from '@sinclair/typebox'
 import { models, replies } from '../shapes.ts'
 
 const Installation = Type.Object(
-  { id: Type.String(), installation_id: Type.Integer(), account: Type.String(), repository_selection: StringEnum(['all', 'selected']), suspended_at: Nullable(Type.String()) },
+  { id: Type.String(), installation_id: Type.Integer(), account: Type.String(), repository_selection: StringEnum(githubRepositorySelectionValues), suspended_at: Nullable(Type.String()) },
   { additionalProperties: false }
 )
 
@@ -58,16 +59,15 @@ export const githubRoutes = (kit: Kit) => {
   const human = async (request: Request, what: string) => {
     const principal = await kit.principal(request)
     requireHuman(principal, what)
-    requireInstance(principal, 'admin')
     return principal
   }
 
   const instanceSuffix = () => {
-    const id = db.select().from(setting).where(eq(setting.key, 'instance.id')).get()?.value as string | undefined
+    const id = readSetting(db, 'instance.id')
     return (id ?? 'ins_local').slice(-6).toLowerCase()
   }
 
-  return new Elysia({ normalize: false }).use(models())
+  return new Elysia({ normalize: false }).use(models()).use(kit.operations)
     .get(
       '/github/connect',
       async ({ request, query, set }) => {
@@ -94,7 +94,7 @@ export const githubRoutes = (kit: Kit) => {
         set.headers['cache-control'] = 'no-store'
         return `<!doctype html><html><head><meta charset="utf-8"><title>Connect GitHub</title></head><body><form id="f" method="post" action="${escapeHtml(action)}"><input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}"><button type="submit">Create the GitHub App</button></form><script>document.getElementById('f').submit()</script></body></html>`
       },
-      { query: t.Object({ org: t.Optional(t.String({ pattern: '^[A-Za-z0-9-]{1,39}$' })) }), detail: { hide: true } }
+      { operation: { id: 'connect_github', level: 'instance admin', mcp: false }, query: t.Object({ org: t.Optional(t.String({ pattern: '^[A-Za-z0-9-]{1,39}$' })) }), detail: { hide: true } }
     )
     .get(
       '/github/manifest/callback',
@@ -133,7 +133,7 @@ export const githubRoutes = (kit: Kit) => {
         set.headers.location = github.installUrl(app)
         return ''
       },
-      { query: t.Object({ code: t.String({ minLength: 1 }), state: t.String({ minLength: 1 }) }), detail: { hide: true } }
+      { operation: { id: 'finish_github_connect', level: 'instance admin', mcp: false }, query: t.Object({ code: t.String({ minLength: 1 }), state: t.String({ minLength: 1 }) }), detail: { hide: true } }
     )
     .get(
       '/github/setup',
@@ -155,33 +155,28 @@ export const githubRoutes = (kit: Kit) => {
         }
         return fail('NOT_FOUND', `No connected GitHub App owns installation ${query.installation_id}.`, 'Install the App from its install_url in GET /v1/github.')
       },
-      { query: t.Object({ installation_id: t.String({ pattern: '^[0-9]+$' }), setup_action: t.Optional(t.String()) }), detail: { hide: true } }
+      { operation: { id: 'verify_github_installation', level: 'instance admin', mcp: false }, query: t.Object({ installation_id: t.String({ pattern: '^[0-9]+$' }), setup_action: t.Optional(t.String()) }), detail: { hide: true } }
     )
-    .post('/github/webhook/:app', ({ params, request }) => github.receive(params.app, request), { parse: 'none', params: t.Object({ app: t.String() }), detail: { hide: true } })
+    .post('/github/webhook/:app', ({ params, request }) => github.receive(params.app, request), { operation: { id: 'receive_github_webhook', level: 'public', mcp: false }, parse: 'none', params: t.Object({ app: t.String() }), detail: { hide: true } })
     .get(
       '/v1/github',
-      async ({ request }) => {
-        requireInstance(await kit.principal(request), 'read')
-        return github.connection()
-      },
-      { response: replies({ 200: Connection }), detail: { summary: 'GitHub Apps, their installations, and the links a human opens to connect or install', tags } }
+      () => github.connection(),
+      { operation: { id: 'get_github_connection', level: 'instance read' }, response: replies({ 200: Connection }), detail: { summary: 'GitHub Apps, their installations, and the links a human opens to connect or install', tags } }
     )
     .post(
       '/v1/github/installations/sync',
-      async ({ request }) => {
-        requireInstance(await kit.principal(request), 'admin')
+      async () => {
         const apps = db.select().from(github_app).all()
         if (!apps.length) fail('GITHUB_NOT_CONNECTED', 'No GitHub App is connected.', `A human opens ${github.connectUrl()} to connect one.`)
         const items = []
         for (const app of apps) items.push(...(await github.syncInstallations(app)))
         return { items: items.map(i => ({ id: i.id, installation_id: i.installation_id, account: i.account, repository_selection: i.repository_selection, suspended_at: i.suspended_at?.toISOString() ?? null })) }
       },
-      { response: replies({ 200: Installations }), detail: { summary: 'Re-read every installation from GitHub', tags } }
+      { operation: { id: 'sync_github_installations', level: 'instance admin' }, response: replies({ 200: Installations }), detail: { summary: 'Re-read every installation from GitHub', tags } }
     )
     .get(
       '/v1/github/installations/:id/repositories',
-      async ({ request, params }) => {
-        requireInstance(await kit.principal(request), 'read')
+      async ({ params }) => {
         const row = db.select().from(github_installation).where(eq(github_installation.id, params.id)).get()
         if (!row) fail('GITHUB_NOT_CONNECTED', `Installation ${params.id} is not connected.`)
         const app = db.select().from(github_app).where(eq(github_app.id, row!.github_app_id)).get()!
@@ -189,7 +184,7 @@ export const githubRoutes = (kit: Kit) => {
         const data = (await gh<{ repositories: { full_name: string; private: boolean; default_branch: string }[] }>('/installation/repositories?per_page=100', { token })).data
         return { items: data.repositories.map(r => ({ full_name: r.full_name, private: r.private, default_branch: r.default_branch })) }
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: Repositories }), detail: { summary: 'Repositories an installation covers', tags } }
+      { operation: { id: 'list_github_repositories', level: 'instance read' }, params: t.Object({ id: t.String() }), response: replies({ 200: Repositories }), detail: { summary: 'Repositories an installation covers', tags } }
     )
     .delete(
       '/v1/github/apps/:id',
@@ -204,6 +199,6 @@ export const githubRoutes = (kit: Kit) => {
         audit(db, { principal, request_id: `github_${app.app_id}`, idempotency_key: null }, 'github.app.disconnect', { entity: 'github_app', id: app.id }, { before: { app_id: app.app_id, owner: app.owner } })
         return { disconnected: true as const }
       },
-      { params: t.Object({ id: t.String() }), response: replies({ 200: Disconnected }), detail: { summary: 'Disconnect a GitHub App (human only)', tags } }
+      { operation: { id: 'disconnect_github_app', level: 'instance admin', mcp: false }, params: t.Object({ id: t.String() }), response: replies({ 200: Disconnected }), detail: { summary: 'Disconnect a GitHub App (human only)', tags } }
     )
 }

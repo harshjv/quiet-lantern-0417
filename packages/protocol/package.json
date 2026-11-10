@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./domain": "./src/domain.ts",
+    "./release-config": "./src/release-config.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",

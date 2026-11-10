@@ -3,8 +3,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
-artifact_type=application/vnd.stationly.release.v1
-bundle_type=application/vnd.dev.sigstore.bundle.v0.3+json
+release_config=$root/release.config.json
 images=(dispatch sandbox-toolchain)
 required=(stationd dispatch gateway buildkit depot coupler_image railpack_frontend syft_scanner litestream runsc sandbox_toolchain)
 
@@ -198,8 +197,8 @@ cmd_manifest() {
 		mv "$manifest.tmp" "$manifest"
 	fi
 	jq -r '.[] | .source + "@" + .index' "$build/images.json" >"$build/images.txt"
-	for name in $(jq -r 'keys[]' "$here/components.json"); do
-		entry=$(jq -c --arg n "$name" '.[$n]' "$here/components.json")
+	for name in $(jq -r '.components | keys[]' "$release_config"); do
+		entry=$(jq -c --arg n "$name" '.components[$n]' "$release_config")
 		ref=$(jq -r '.source + "@" + .digest' <<<"$entry")
 		say "resolving $name $ref"
 		p=$(third_party_platforms "$ref") || die "$name: cannot read the index $ref"
@@ -223,18 +222,16 @@ cmd_render() {
 	local manifest=$files/release-manifest.json sd
 	[ -f "$manifest" ] || die "run manifest first"
 	sd=$(jq '.components.stationd' "$manifest")
-	sed -e "s|@RELEASE@|$version|" -e "s|@RELEASES@|$releases|" \
-		-e "s|@STATIOND_SHA256_AMD64@|$(digest_hex <(echo "$sd") linux/amd64)|" -e "s|@STATIOND_SHA256_ARM64@|$(digest_hex <(echo "$sd") linux/arm64)|" \
-		-e "s|@TEST_TRUST_URL@|${test_trust_url:-@TEST_TRUST_URL@}|" -e "s|@TEST_TRUST_SHA256@|${test_trust_sha256:-@TEST_TRUST_SHA256@}|" \
-		"$root/installer/install.sh" >"$files/install.sh"
+	"$here/render.sh" "$root/installer/install.sh" "RELEASE=$version" "RELEASES=$releases" \
+		"STATIOND_SHA256_AMD64=$(digest_hex <(echo "$sd") linux/amd64)" "STATIOND_SHA256_ARM64=$(digest_hex <(echo "$sd") linux/arm64)" \
+		"TEST_TRUST_URL=${test_trust_url:-@TEST_TRUST_URL@}" "TEST_TRUST_SHA256=${test_trust_sha256:-@TEST_TRUST_SHA256@}" >"$files/install.sh"
 	rm -f "$files/install-sly.sh"
 	if jq -e '.clients.sly' "$manifest" >/dev/null; then
 		local s
 		s=$(jq '.clients.sly' "$manifest")
-		sed -e "s|@RELEASE@|$version|" -e "s|@RELEASES@|$releases|" \
-			-e "s|@SLY_SHA256_LINUX_AMD64@|$(digest_hex <(echo "$s") linux/amd64)|" -e "s|@SLY_SHA256_LINUX_ARM64@|$(digest_hex <(echo "$s") linux/arm64)|" \
-			-e "s|@SLY_SHA256_DARWIN_ARM64@|$(digest_hex <(echo "$s") darwin/arm64)|" -e "s|@SLY_SHA256_DARWIN_AMD64@|$(digest_hex <(echo "$s") darwin/amd64)|" \
-			"$root/installer/install-sly.sh" >"$files/install-sly.sh"
+		"$here/render.sh" "$root/installer/install-sly.sh" "RELEASE=$version" "RELEASES=$releases" \
+			"SLY_SHA256_LINUX_AMD64=$(digest_hex <(echo "$s") linux/amd64)" "SLY_SHA256_LINUX_ARM64=$(digest_hex <(echo "$s") linux/arm64)" \
+			"SLY_SHA256_DARWIN_ARM64=$(digest_hex <(echo "$s") darwin/arm64)" "SLY_SHA256_DARWIN_AMD64=$(digest_hex <(echo "$s") darwin/amd64)" >"$files/install-sly.sh"
 	fi
 	chmod 0644 "$files"/install*.sh
 	say "rendered the installers for $version from $releases"
@@ -252,7 +249,7 @@ cmd_files() { signed_files; }
 
 media_type() {
 	case "$1" in
-	*.sigstore.json) echo "$bundle_type" ;;
+	*.sigstore.json) jq -r .media_types.sigstore_bundle "$release_config" ;;
 	*.json) echo application/json ;;
 	*.sh) echo text/x-shellscript ;;
 	SHA256SUMS) echo text/plain ;;
@@ -271,8 +268,8 @@ cmd_push_release() {
 	if [ "$plain_http" = true ]; then flags=(--plain-http); fi
 	for f in "$files"/*; do f=${f##*/}; args+=("$f:$(media_type "$f")"); done
 	say "pushing ${#args[@]} files to $releases:$tag"
-	(cd "$files" && oras push ${flags[@]+"${flags[@]}"} --artifact-type "$artifact_type" \
-		--annotation "org.opencontainers.image.version=$version" --annotation "org.opencontainers.image.source=https://github.com/harshjv/quiet-lantern-0417" \
+	(cd "$files" && oras push ${flags[@]+"${flags[@]}"} --artifact-type "$(jq -r .media_types.release_artifact "$release_config")" \
+		--annotation "org.opencontainers.image.version=$version" --annotation "org.opencontainers.image.source=$(jq -r .signing_identity.source_repository "$release_config")" \
 		--format json "$releases:$tag" "${args[@]}") >"$build/release.json"
 	jq -r .digest "$build/release.json"
 }

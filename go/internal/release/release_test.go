@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
 
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/release"
 	"github.com/harshjv/stationly/go/internal/verify"
 )
@@ -165,7 +166,7 @@ func open(t *testing.T, r *testRegistry, version string) *release.Remote {
 func TestOpenReadsTheArtifactTaggedWithTheVersion(t *testing.T) {
 	r := newRegistry(t)
 	files := fixtureFiles(t)
-	digest := r.publish(t, "0.1.0-test.1", release.ArtifactType, files)
+	digest := r.publish(t, "0.1.0-test.1", protocol.MediaTypeReleaseArtifact, files)
 	src := open(t, r, "0.1.0-test.1")
 	if src.Digest() != digest {
 		t.Errorf("digest %s, want %s", src.Digest(), digest)
@@ -194,7 +195,7 @@ func TestOpenAnUnknownVersionIsNotFound(t *testing.T) {
 
 func TestReadAFileTheArtifactLacksIsNotFound(t *testing.T) {
 	r := newRegistry(t)
-	r.publish(t, "0.1.0", release.ArtifactType, map[string][]byte{"release-manifest.json": []byte("{}")})
+	r.publish(t, "0.1.0", protocol.MediaTypeReleaseArtifact, map[string][]byte{"release-manifest.json": []byte("{}")})
 	_, err := open(t, r, "0.1.0").Read(context.Background(), "stationd-linux-amd64", 1<<20)
 	if !errors.Is(err, release.ErrNotFound) {
 		t.Fatalf("err %v, want ErrNotFound", err)
@@ -225,7 +226,7 @@ func TestOpenRefusesAnImageIndexUnderTheTag(t *testing.T) {
 func TestReadRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
 	r := newRegistry(t)
 	body := []byte("stationd")
-	r.publish(t, "0.1.0", release.ArtifactType, map[string][]byte{"stationd-linux-amd64": body})
+	r.publish(t, "0.1.0", protocol.MediaTypeReleaseArtifact, map[string][]byte{"stationd-linux-amd64": body})
 	r.tamper[digestOf(body)] = true
 	got, err := open(t, r, "0.1.0").Read(context.Background(), "stationd-linux-amd64", 1<<20)
 	if err == nil {
@@ -235,7 +236,7 @@ func TestReadRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
 
 func TestReadRefusesAFileAboveTheLimitBeforeFetchingIt(t *testing.T) {
 	r := newRegistry(t)
-	r.publish(t, "0.1.0", release.ArtifactType, map[string][]byte{"stationd-linux-amd64": bytes.Repeat([]byte("a"), 64)})
+	r.publish(t, "0.1.0", protocol.MediaTypeReleaseArtifact, map[string][]byte{"stationd-linux-amd64": bytes.Repeat([]byte("a"), 64)})
 	_, err := open(t, r, "0.1.0").Read(context.Background(), "stationd-linux-amd64", 32)
 	if err == nil || !strings.Contains(err.Error(), "above 32") {
 		t.Fatalf("err %v, want a size refusal", err)
@@ -244,7 +245,7 @@ func TestReadRefusesAFileAboveTheLimitBeforeFetchingIt(t *testing.T) {
 
 func TestTheFetchedManifestAndBinaryVerifyAgainstTheIdentity(t *testing.T) {
 	r := newRegistry(t)
-	r.publish(t, "0.1.0-test.1", release.ArtifactType, fixtureFiles(t))
+	r.publish(t, "0.1.0-test.1", protocol.MediaTypeReleaseArtifact, fixtureFiles(t))
 	src := open(t, r, "0.1.0-test.1")
 	v := testVerifier(t)
 	for _, f := range []string{"release-manifest.json", "stationd-linux-amd64"} {
@@ -270,7 +271,7 @@ func TestAManifestSignedByAnotherIdentityIsRefused(t *testing.T) {
 	r := newRegistry(t)
 	files := fixtureFiles(t)
 	files["release-manifest.json.sigstore.json"] = fixture(t, "release-manifest.json.wrong.sigstore.json")
-	r.publish(t, "0.1.0-test.1", release.ArtifactType, files)
+	r.publish(t, "0.1.0-test.1", protocol.MediaTypeReleaseArtifact, files)
 	src := open(t, r, "0.1.0-test.1")
 	data, _ := src.Read(context.Background(), "release-manifest.json", release.MaxManifest)
 	bundle, _ := src.Read(context.Background(), "release-manifest.json.sigstore.json", release.MaxBundle)
@@ -283,7 +284,7 @@ func TestAManifestChangedAfterSigningIsRefused(t *testing.T) {
 	r := newRegistry(t)
 	files := fixtureFiles(t)
 	files["release-manifest.json"] = bytes.Replace(files["release-manifest.json"], []byte(`"edge"`), []byte(`"stable"`), 1)
-	r.publish(t, "0.1.0-test.1", release.ArtifactType, files)
+	r.publish(t, "0.1.0-test.1", protocol.MediaTypeReleaseArtifact, files)
 	src := open(t, r, "0.1.0-test.1")
 	data, _ := src.Read(context.Background(), "release-manifest.json", release.MaxManifest)
 	bundle, _ := src.Read(context.Background(), "release-manifest.json.sigstore.json", release.MaxBundle)

@@ -1,3 +1,5 @@
+import { releaseConfig } from '@stationly/protocol/release-config'
+import { env } from '../env.ts'
 import { parseManifest, sha256Of } from './lockfile.ts'
 import { parseReference, registryRequest, type Reference } from './registry.ts'
 
@@ -5,11 +7,8 @@ const maxManifestBytes = 4 << 20
 const maxBundleBytes = 1 << 20
 const maxArtifactBytes = 1 << 20
 
-export const releaseArtifactType = 'application/vnd.stationly.release.v1'
 const titleAnnotation = 'org.opencontainers.image.title'
 const ociManifest = 'application/vnd.oci.image.manifest.v1+json'
-
-export const releasesRepository = () => process.env.STATIONLY_RELEASES_REPOSITORY ?? 'ghcr.io/harshjv/stationly/release'
 
 export class ReleaseFetchError extends Error {
   readonly code: 'RELEASE_NOT_FOUND' | 'SOURCE_UNREACHABLE'
@@ -33,7 +32,7 @@ const readArtifact = async (ref: Reference, tag: string, where: string) => {
   if (res.status === 404) throw new ReleaseFetchError('RELEASE_NOT_FOUND', where, `${where} does not exist`)
   if (res.status !== 200 || !res.body) throw unreachable(where, `GET ${where} answered ${res.status}${res.error ? `: ${res.error}` : ''}`)
   const doc = JSON.parse(res.body.toString('utf8')) as ArtifactManifest
-  if (doc.mediaType !== ociManifest || (doc.artifactType !== releaseArtifactType && doc.config?.mediaType !== releaseArtifactType)) {
+  if (doc.mediaType !== ociManifest || (doc.artifactType !== releaseConfig.media_types.release_artifact && doc.config?.mediaType !== releaseConfig.media_types.release_artifact)) {
     throw unreachable(where, `${where} is not a Stationly release artifact (artifact type ${doc.artifactType ?? 'none'})`)
   }
   const files = new Map<string, Layer>()
@@ -57,8 +56,8 @@ const readFile = async (ref: Reference, files: Map<string, Layer>, file: string,
 export const fetchRelease = async (version: string) => {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/.test(version)) throw new ReleaseFetchError('RELEASE_NOT_FOUND', version, `${version} is not a release version`)
   const tag = `v${version}`
-  const ref = parseReference(`${releasesRepository()}:${tag}`)
-  const where = `${releasesRepository()}:${tag}`
+  const where = `${env().STATIONLY_RELEASES_REPOSITORY}:${tag}`
+  const ref = parseReference(where)
   const artifact = await readArtifact(ref, tag, where)
   const manifestRaw = await readFile(ref, artifact.files, 'release-manifest.json', maxManifestBytes, where)
   const bundle = await readFile(ref, artifact.files, 'release-manifest.json.sigstore.json', maxBundleBytes, where)

@@ -48,11 +48,11 @@ type ContainerSpec struct {
 }
 
 func CouplerName(deploymentID string) string {
-	return "or-coupler-" + deploymentID
+	return protocol.ResourcePrefix + "coupler-" + deploymentID
 }
 
 func ServiceName(deploymentID string) string {
-	return "or-service-" + deploymentID
+	return protocol.ResourcePrefix + "service-" + deploymentID
 }
 
 func EnvironmentNetwork(stationID, envID string, n protocol.EnvironmentNetwork) (NetworkSpec, error) {
@@ -111,7 +111,7 @@ func Coupler(stationID, envID, serviceID, deploymentID, image, networkName strin
 				Resources: container.Resources{
 					Memory:     couplerMemoryBytes,
 					MemorySwap: couplerMemoryBytes,
-					NanoCPUs:   couplerNanoCPUs,
+					NanoCPUs:   HostNanoCPUs(couplerNanoCPUs),
 				},
 			},
 			NetworkingConfig: &network.NetworkingConfig{
@@ -125,7 +125,7 @@ func Coupler(stationID, envID, serviceID, deploymentID, image, networkName strin
 }
 
 func RunName(runID string) string {
-	return "or-run-" + runID
+	return protocol.ResourcePrefix + "run-" + runID
 }
 
 func Service(stationID, envID, serviceID string, current protocol.DesiredServiceCurrent, mounts []mount.Mount) ContainerSpec {
@@ -190,7 +190,7 @@ func appContainer(name, role, coupler, deploymentID string, labels map[string]st
 				Resources: container.Resources{
 					Memory:     memory,
 					MemorySwap: memory,
-					NanoCPUs:   int64(s.Limits.CpuMillis) * 1_000_000,
+					NanoCPUs:   HostNanoCPUs(int64(s.Limits.CpuMillis) * 1_000_000),
 				},
 			},
 		},

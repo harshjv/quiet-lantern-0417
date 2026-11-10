@@ -4,7 +4,6 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"strings"
 	"sync"
@@ -192,15 +191,7 @@ func (s *Station) finishAttachment(rr *runRecord) {
 	}()
 }
 
-func (s *Station) resizeExec(m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityExecTty) {
-		return
-	}
-	var b protocol.ExecResizeBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send an exec.resize body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) resizeExec(_ context.Context, m dispatch.Message, b protocol.ExecResizeBody) {
 	runID, ok := s.attachByStream[b.Stream]
 	if !ok {
 		s.replyError(m, protocolError(protocol.ErrorCodeStreamNotFound, "Resize a stream of an attached run.", "no attached run is on stream %d", b.Stream))

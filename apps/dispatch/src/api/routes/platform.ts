@@ -7,18 +7,16 @@ import { doctorFor, runDoctor } from '../../platform/doctor.ts'
 import { currentRelease, effectivePins, lockfileFor, readLockfile, resolvePins, storeRelease } from '../../platform/lockfile.ts'
 import { fetchRelease, ReleaseFetchError } from '../../platform/releases.ts'
 import { activeUpgrade, latestUpgrade, overlayPins, planUpgrade, procedureNotes } from '../../platform/upgrade.ts'
-import { requireInstance } from '../access.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { audit } from '../context.ts'
 import { fail } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import { stationByRef } from '../lookup.ts'
-import { readSetting } from '../settings.ts'
+import { readSetting } from '../../db/settings.ts'
 import { stationError } from './runs.ts'
 import { models, replies, Staged } from '../shapes.ts'
-import { componentNameValues, ErrorBody, JsonObject, Lockfile, Nullable, PlatformVerifyReleaseResult, PlatformVerifyResult, PlatformVerifyResultBody, releaseChannelValues, signatureStateValues, StringEnum, componentStatusValues } from '@stationly/protocol'
+import { baseImageCheckValues, componentNameValues, componentStatusValues, doctorStatusValues, ErrorBody, JsonObject, Lockfile, Nullable, platformUpgradeStatusValues, PlatformVerifyReleaseResult, PlatformVerifyResult, PlatformVerifyResultBody, releaseChannelValues, signatureStateValues, StringEnum } from '@stationly/protocol'
 import { Type, type Static } from '@sinclair/typebox'
-import { baseImageCheckValues } from '../../db/schema.ts'
 
 const Str = Type.String()
 const NStr = Nullable(Type.String())
@@ -46,7 +44,7 @@ const UpgradePin = Type.Object({ version: Str, digest: NStr })
 const UpgradeView = Type.Object(
   {
     id: Str,
-    status: StringEnum(['running', 'reverting', 'done', 'failed', 'reverted']),
+    status: StringEnum(platformUpgradeStatusValues),
     release: Type.Object({ from: Str, to: Str }, { additionalProperties: false }),
     station: NStr,
     staged_change: NStr,
@@ -111,7 +109,7 @@ const Inventory = Type.Object(
   { additionalProperties: false }
 )
 
-const DoctorStatus = StringEnum(['ok', 'warn', 'fail'])
+const DoctorStatus = StringEnum(doctorStatusValues)
 
 const Doctor = Type.Object(
   {
@@ -225,7 +223,7 @@ export const platformRoutes = (kit: Kit) => {
       fail('UNSIGNED_ARTIFACT', `release-manifest.json for ${version} has no valid signature from the release signing identity: ${releaseCheck?.failure?.explanation ?? 'no station verified it'}`, 'Upgrade to a release signed by the release signing identity.', { version, manifest_digest: fetched.manifestDigest })
     }
     const refused = verification.flatMap(v => v.items.filter(i => i.signature === 'refused').map(i => ({ ...i, station_id: v.station_id })))
-    if (refused.length && !readSetting<boolean>(db, 'platform.allow_unsigned')) {
+    if (refused.length && !readSetting(db, 'platform.allow_unsigned')) {
       audit(db, call, 'platform.upgrade_refused', { entity: 'lockfile', id: 'platform.lockfile' }, { after: { release: version, refused: refused.map(r => ({ component: r.component, digest: r.digest, reason: r.failure?.explanation ?? null })) } })
       fail('UNSIGNED_ARTIFACT', refused.map(r => r.failure?.explanation ?? `${r.component} ${r.digest} is unsigned`).join(' '), 'Every digest a release pins must carry the release signature; nothing was changed.', { release: version, items: refused, verification })
     }
@@ -237,7 +235,7 @@ export const platformRoutes = (kit: Kit) => {
     if (!changes.length && lockfile.manifest_digest === fetched.manifestDigest) return { id: null, status: 'accepted', release: releaseView, changes, verification }
     const set_ = new ChangeSet()
     set_.update('lockfile', 'platform.lockfile', '/', lockfile, after)
-    const protect = Boolean(readSetting<boolean>(db, 'platform.protected')) && !call.principal.human
+    const protect = Boolean(readSetting(db, 'platform.protected')) && !call.principal.human
     const result = commit(kit.deps, call, { environment: null, protect, station: stationId }, set_)
     if (!result.applied) return kit.stagedBody(result, set)
     audit(db, call, 'platform.lockfile_update', { entity: 'lockfile', id: 'platform.lockfile' }, { after: { release: { from: lockfile.release, to: version }, changes: changes.length, upgrade: result.upgrade } })
@@ -246,11 +244,10 @@ export const platformRoutes = (kit: Kit) => {
     return { id: result.staged.id, status: 'accepted', upgrade: result.upgrade, release: releaseView, changes, verification }
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/inventory',
-      async ({ request, query }) => {
-        requireInstance(await kit.principal(request), 'read')
+      async ({ query }) => {
         const stationId = query.station ? stationByRef(db, query.station).id : undefined
         const rows = db
           .select()
@@ -278,18 +275,18 @@ export const platformRoutes = (kit: Kit) => {
           next_cursor: null
         }
       },
-      { query: t.Object({ station: t.Optional(t.String()), status: t.Optional(t.String()) }), response: replies({ 200: Inventory }), detail: { summary: 'Components with versions, digests, signatures and lockfile drift; the pinned release; base images with their last check', tags } }
+      { operation: { id: 'platform_inventory', level: 'instance read' }, query: t.Object({ station: t.Optional(t.String()), status: t.Optional(t.String()) }), response: replies({ 200: Inventory }), detail: { summary: 'Components with versions, digests, signatures and lockfile drift; the pinned release; base images with their last check', tags } }
     )
     .get(
       '/doctor',
-      async ({ request, query }) => {
-        requireInstance(await kit.principal(request), 'read')
+      async ({ query }) => {
         const stationId = query.station ? stationByRef(db, query.station).id : undefined
         const report = await runDoctor({ db, stations }, { station: stationId })
         const names = query.checks?.split(',').map(s => s.trim()).filter(Boolean)
         return { ...report, checks: doctorFor(report.checks, names) }
       },
       {
+        operation: { id: 'platform_doctor', level: 'instance read' },
         query: t.Object({ station: t.Optional(t.String()), checks: t.Optional(t.String()) }),
         response: replies({ 200: Doctor }),
         detail: { summary: 'Health report: each check ok, warn or fail with a finding, a code and a fix; a row that changes status emits doctor.finding', tags }
@@ -297,18 +294,16 @@ export const platformRoutes = (kit: Kit) => {
     )
     .get(
       '/platform/releases',
-      async ({ request }) => {
-        requireInstance(await kit.principal(request), 'read')
+      () => {
         const release = currentRelease(db)
-        return { enabled: Boolean(readSetting<boolean>(db, 'platform.release_check')), current: release?.release ?? null, available: [] }
+        return { enabled: Boolean(readSetting(db, 'platform.release_check')), current: release?.release ?? null, available: [] }
       },
-      { response: replies({ 200: Releases }), detail: { summary: 'Releases newer than the pinned one; enabled = false while platform.release_check is false', tags } }
+      { operation: { id: 'platform_check', level: 'instance read' }, response: replies({ 200: Releases }), detail: { summary: 'Releases newer than the pinned one; enabled = false while platform.release_check is false', tags } }
     )
     .post(
       '/platform/upgrade',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
-        requireInstance(call.principal, 'admin')
         const lockfile = readLockfile(db) ?? fail('VALIDATION_FAILED', 'platform.lockfile is not set; install a release first.', 'Run stationd install and sly setup.')
         const running = activeUpgrade(db)
         if (running && running.status !== 'failed' && !(body.plan ?? true))
@@ -339,7 +334,7 @@ export const platformRoutes = (kit: Kit) => {
           entries.push({ component: name, before: pins[name] ?? null, after })
         }
         const verification = verifyItems.length ? await verifyOn(stationId, verifyItems) : null
-        const allowUnsigned = Boolean(readSetting<boolean>(db, 'platform.allow_unsigned'))
+        const allowUnsigned = Boolean(readSetting(db, 'platform.allow_unsigned'))
         const refused = verification?.items.filter(i => i.signature === 'refused') ?? []
         if (refused.length && !allowUnsigned) {
           audit(db, call, 'platform.upgrade_refused', { entity: 'lockfile', id: 'platform.lockfile' }, { after: { refused: refused.map(r => ({ component: r.component, digest: r.digest, reason: r.failure?.explanation ?? null })) } })
@@ -347,7 +342,7 @@ export const platformRoutes = (kit: Kit) => {
         }
         if (body.plan ?? true) return { id: null, status: 'plan', release: lockfile.release, changes: entries, verification }
         if (set_.empty) return { id: null, status: 'accepted', release: lockfile.release, changes: [], verification }
-        const protect = Boolean(readSetting<boolean>(db, 'platform.protected')) && !call.principal.human
+        const protect = Boolean(readSetting(db, 'platform.protected')) && !call.principal.human
         const result = commit(kit.deps, call, { environment: null, protect, station: stationId }, set_)
         if (!result.applied) return kit.stagedBody(result, set)
         audit(db, call, 'platform.lockfile_update', { entity: 'lockfile', id: 'platform.lockfile' }, { after: { changes: entries } })
@@ -356,6 +351,7 @@ export const platformRoutes = (kit: Kit) => {
         return { id: result.staged.id, status: 'accepted', upgrade: result.upgrade, release: lockfile.release, changes: entries, verification }
       },
       {
+        operation: { id: 'platform_upgrade', level: 'instance admin' },
         body: t.Object({
           version: t.Optional(t.String()),
           overrides: t.Optional(t.Record(t.String(), t.Union([t.Object({ version: t.String(), digest: t.String(), reason: t.Optional(t.String()) }), t.Object({ reset: t.Literal(true) })]))),

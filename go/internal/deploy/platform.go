@@ -129,17 +129,17 @@ func invalidParams(err error) *protocol.ErrorBody {
 
 func (s *Station) handlers() map[string]rootsocket.Handler {
 	return map[string]rootsocket.Handler{
-		"status":                s.opStatus,
-		"registry.token":        s.opToken,
-		"registry.delete":       s.opDelete,
-		"registry.retain":       s.opRetain,
-		"registry.gc":           s.opGC,
-		"secrets.status":        s.opSecretsStatus,
-		"logs":                  s.opLogs,
-		"setup":                 s.opSetup,
-		"public_address.detect": s.opDetectPublicAddress,
-		"admin.recovery_key":    s.opRecoveryKey,
-		"doctor":                s.opDoctor,
+		protocol.RootSocketOpStatus:              s.opStatus,
+		protocol.RootSocketOpRegistryToken:       s.opToken,
+		protocol.RootSocketOpRegistryDelete:      s.opDelete,
+		protocol.RootSocketOpRegistryRetain:      s.opRetain,
+		protocol.RootSocketOpRegistryGc:          s.opGC,
+		protocol.RootSocketOpSecretsStatus:       s.opSecretsStatus,
+		protocol.RootSocketOpLogs:                s.opLogs,
+		protocol.RootSocketOpSetup:               s.opSetup,
+		protocol.RootSocketOpPublicAddressDetect: s.opDetectPublicAddress,
+		protocol.RootSocketOpAdminRecoveryKey:    s.opRecoveryKey,
+		protocol.RootSocketOpDoctor:              s.opDoctor,
 	}
 }
 
@@ -171,14 +171,14 @@ func (s *Station) registryAddresses() (string, string) {
 }
 
 func (s *Station) opToken(ctx context.Context, params json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
-	var p struct {
-		Scopes []string `json:"scopes"`
-		TTLS   int      `json:"ttl_s"`
-	}
+	var p protocol.RootSocketTokenParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalidParams(err)
 	}
-	ttl := time.Duration(p.TTLS) * time.Second
+	var ttl time.Duration
+	if p.TtlS != nil {
+		ttl = time.Duration(*p.TtlS) * time.Second
+	}
 	if ttl <= 0 || ttl > depot.PullTokenTTL {
 		ttl = depot.PullTokenTTL
 	}
@@ -237,16 +237,14 @@ func inUseDigests(g *protocol.Generation) map[string]bool {
 }
 
 func (s *Station) opRetain(ctx context.Context, params json.RawMessage, progress func(string, string)) (any, *protocol.ErrorBody) {
-	var p struct {
-		ProjectID string `json:"project_id"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil || p.ProjectID == "" {
+	var p protocol.RootSocketRetainParams
+	if err := json.Unmarshal(params, &p); err != nil || p.ProjectId == "" {
 		return nil, invalidParams(errors.New("project_id is required"))
 	}
 	g := s.workshops.Generation()
-	ws, ok := g.Workshops[p.ProjectID]
+	ws, ok := g.Workshops[p.ProjectId]
 	if !ok {
-		return nil, invalidParams(fmt.Errorf("project %s has no Workshop entry in the generation", p.ProjectID))
+		return nil, invalidParams(fmt.Errorf("project %s has no Workshop entry in the generation", p.ProjectId))
 	}
 	records, err := workshop.Records(s.opts.StateDir)
 	if err != nil {
@@ -255,7 +253,7 @@ func (s *Station) opRetain(ctx context.Context, params json.RawMessage, progress
 	used := inUseDigests(g)
 	byService := map[string][]workshop.Record{}
 	for _, r := range records {
-		if r.ProjectID == p.ProjectID && r.Result.Status == protocol.BuildStatusSucceeded && !r.Pruned && r.Result.IndexDigest != nil {
+		if r.ProjectID == p.ProjectId && r.Result.Status == protocol.BuildStatusSucceeded && !r.Pruned && r.Result.IndexDigest != nil {
 			byService[r.ServiceID] = append(byService[r.ServiceID], r)
 		}
 	}
@@ -275,7 +273,7 @@ func (s *Station) opRetain(ctx context.Context, params json.RawMessage, progress
 				kept[svc] = append(kept[svc], digest)
 				continue
 			}
-			items = append(items, protocol.RegistryDeleteItem{Repository: depot.RepositoryFor(p.ProjectID, svc), Digest: digest, Reason: fmt.Sprintf("retention: older than the newest %d", ws.ImageRetentionCount)})
+			items = append(items, protocol.RegistryDeleteItem{Repository: depot.RepositoryFor(p.ProjectId, svc), Digest: digest, Reason: fmt.Sprintf("retention: older than the newest %d", ws.ImageRetentionCount)})
 			prune[digest] = r
 		}
 	}

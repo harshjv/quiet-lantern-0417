@@ -1,16 +1,26 @@
-import { Type, type SchemaOptions, type Static, type TLiteral, type TSchema, type TUnion } from '@sinclair/typebox'
-
-const Enum = <const T extends string>(values: readonly T[], options?: SchemaOptions): TUnion<TLiteral<T>[]> => Type.Union(values.map(value => Type.Literal(value)), options)
+import { Type, type Static, type TSchema } from '@sinclair/typebox'
+import {
+  desiredStateValues,
+  firewallModeValues,
+  ingressValues,
+  injectionValues,
+  portProtocolValues,
+  portRange,
+  scheduleConcurrencyValues,
+  serviceKindValues,
+  slugPattern,
+  strategyValues,
+  StringEnum,
+  variableKeyPattern
+} from '@stationly/protocol'
 
 const strict = { additionalProperties: false } as const
 
-export const slugPattern = '^[a-z0-9][a-z0-9-]{0,62}$'
-export const keyPattern = '^[A-Z_][A-Z0-9_]*$'
 export const repoPattern = '^github\\.com/[a-z0-9][a-z0-9-]*/[a-z0-9._-]+$'
 const hostnamePattern = '^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,62}$'
 
 const SlugMap = <T extends TSchema>(value: T, description: string) => Type.Record(Type.String({ pattern: slugPattern }), value, { description, ...strict })
-const KeyMap = <T extends TSchema>(value: T, description: string) => Type.Record(Type.String({ pattern: keyPattern }), value, { description, ...strict })
+const KeyMap = <T extends TSchema>(value: T, description: string) => Type.Record(Type.String({ pattern: variableKeyPattern }), value, { description, ...strict })
 const Optional = Type.Optional
 
 const ImageSource = Type.Object(
@@ -65,10 +75,10 @@ const TemplateSource = Type.Object(
 
 export const Source = Type.Union([ImageSource, DockerfileSource, RailpackSource, LocalSource, TemplateSource], { description: 'How the image is produced' })
 
-const Port = Type.Object(
+const ServicePort = Type.Object(
   {
-    port: Type.Integer({ minimum: 1, maximum: 65535, description: 'The container port, unique per service' }),
-    protocol: Optional(Enum(['http', 'tcp'], { default: 'http', description: 'http is routed by the Gateway, tcp only by exposure' })),
+    port: Type.Integer({ ...portRange, description: 'The container port, unique per service' }),
+    protocol: Optional(StringEnum(portProtocolValues, { default: 'http', description: 'http is routed by the Gateway, tcp only by exposure' })),
     grpc: Optional(Type.Boolean({ default: false, description: 'The http port speaks gRPC' }))
   },
   { description: 'A port the service listens on', ...strict }
@@ -76,10 +86,10 @@ const Port = Type.Object(
 
 export const Health = Type.Object(
   {
-    type: Optional(Enum(['http', 'tcp', 'image', 'alive'], { description: 'http on the first http port for web, tcp for a web service with only tcp ports, alive for worker' })),
+    type: Optional(StringEnum(['http', 'tcp', 'image', 'alive'], { description: 'http on the first http port for web, tcp for a web service with only tcp ports, alive for worker' })),
     path: Optional(Type.String({ pattern: '^/', default: '/', description: 'The http check path' })),
     host: Optional(Type.String({ pattern: '^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$', description: "http only: the Host header the check sends; the service's first domain, else <service>.internal" })),
-    port: Optional(Type.Integer({ minimum: 1, maximum: 65535, description: 'A declared port; the first http port for http, the first port for tcp' })),
+    port: Optional(Type.Integer({ ...portRange, description: 'A declared port; the first http port for http, the first port for tcp' })),
     interval_s: Optional(Type.Integer({ minimum: 1, maximum: 300, default: 5, description: 'Seconds between checks' })),
     timeout_s: Optional(Type.Integer({ minimum: 1, maximum: 300, default: 3, description: 'Seconds per check, at most interval_s' })),
     startup_timeout_s: Optional(Type.Integer({ minimum: 5, maximum: 3600, description: '120 for http and image, 60 for tcp' })),
@@ -102,7 +112,7 @@ export const Schedule = Type.Object(
   {
     cron: Type.String({ minLength: 1, description: 'A five-field cron expression' }),
     timezone: Optional(Type.String({ minLength: 1, default: 'UTC', description: 'An IANA time zone name' })),
-    concurrency: Optional(Enum(['skip', 'allow'], { default: 'skip', description: 'What to do when the previous run is still going' }))
+    concurrency: Optional(StringEnum(scheduleConcurrencyValues, { default: 'skip', description: 'What to do when the previous run is still going' }))
   },
   { description: 'The Timetable for a cron service', ...strict }
 )
@@ -119,8 +129,8 @@ export const Domain = Type.Object(
   {
     generated: Optional(Type.Literal(true, { description: 'A generated hostname; exactly one of generated and hostname' })),
     hostname: Optional(Type.String({ pattern: hostnamePattern, description: 'A hostname under a configured zone, or any name for direct ingress' })),
-    port: Optional(Type.Integer({ minimum: 1, maximum: 65535, description: "A declared http port; the service's first http port by default" })),
-    ingress: Optional(Enum(['direct', 'tunnel'], { description: 'direct in 1a; tunnel from 1b' }))
+    port: Optional(Type.Integer({ ...portRange, description: "A declared http port; the service's first http port by default" })),
+    ingress: Optional(StringEnum(ingressValues, { description: 'direct in 1a; tunnel from 1b' }))
   },
   { description: 'A domain routed to an http port', ...strict }
 )
@@ -132,7 +142,7 @@ const VariableObject = Type.Object(
     value: Optional(Type.String({ description: 'A literal, never evaluated' })),
     reference: Optional(Type.String({ description: 'A reference expression, or ${{secret(N)}} with sealed' })),
     sealed: Optional(Type.Literal(true, { description: 'Declares a sealed key whose value is set out of band' })),
-    injection: Optional(Enum(['env', 'file'], { default: 'env', description: 'file writes /run/secrets/<KEY> and sets <KEY>_FILE' })),
+    injection: Optional(StringEnum(injectionValues, { default: 'env', description: 'file writes /run/secrets/<KEY> and sets <KEY>_FILE' })),
     build: Optional(Type.Boolean({ default: false, description: 'Also a BuildKit secret during builds' }))
   },
   { description: 'The object form of a service variable', ...strict }
@@ -144,7 +154,7 @@ const ProjectVariableObject = Type.Object(
   {
     default: Optional(Scalar),
     environments: Optional(SlugMap(Scalar, 'Literal values per environment name')),
-    sealed: Optional(Type.Literal(true, { description: 'Declared; values are set per environment with set_variables' })),
+    sealed: Optional(Type.Literal(true, { description: 'Declared; values are set per environment with set_project_variables' })),
     reference: Optional(Type.String({ description: '${{secret(N)}} with sealed: each environment gets its own generated value' }))
   },
   { description: 'The object form of a project variable', ...strict }
@@ -159,14 +169,14 @@ const FirewallRule = Type.Object(
     cidr: Optional(Type.String()),
     service: Optional(Type.String()),
     preset: Optional(Type.String()),
-    ports: Optional(Type.Array(Type.Object({ port: Type.Integer({ minimum: 1, maximum: 65535 }), protocol: Optional(Enum(['tcp', 'udp'])) }, strict)))
+    ports: Optional(Type.Array(Type.Object({ port: Type.Integer(portRange), protocol: Optional(StringEnum(['tcp', 'udp'])) }, strict)))
   },
   strict
 )
 
 const Firewall = Type.Object(
   {
-    mode: Optional(Enum(['learn', 'enforce'], { default: 'learn' })),
+    mode: Optional(StringEnum(firewallModeValues, { default: 'learn' })),
     includes: Optional(Type.Array(Type.String())),
     allow: Optional(Type.Array(FirewallRule))
   },
@@ -175,15 +185,15 @@ const Firewall = Type.Object(
 
 export const Service = Type.Object(
   {
-    kind: Enum(['web', 'worker', 'cron', 'one_off'], { description: 'Immutable after creation' }),
+    kind: StringEnum(serviceKindValues, { description: 'Immutable after creation' }),
     source: Source,
     station: Optional(Type.String({ minLength: 1, description: 'An enrolled station name; the only online station by default' })),
     command: Optional(Type.Union([Type.Array(Type.String()), Type.Null()], { default: null, description: 'Overrides the image CMD' })),
     build_args: Optional(KeyMap(Type.String(), 'Non-secret Dockerfile build arguments')),
-    ports: Optional(Type.Array(Port, { default: [], description: 'At least one for web, none for other kinds' })),
+    ports: Optional(Type.Array(ServicePort, { default: [], description: 'At least one for web, none for other kinds' })),
     health: Optional(Health),
     limits: Optional(Limits),
-    strategy: Optional(Enum(['overlap', 'replace'], { description: 'replace when volumes is non-empty, else overlap; not for cron and one_off' })),
+    strategy: Optional(StringEnum(strategyValues, { description: 'replace when volumes is non-empty, else overlap; not for cron and one_off' })),
     multi_writer_safe: Optional(Type.Boolean({ default: false, description: 'Allows overlap with a volume' })),
     drain_timeout_s: Optional(Type.Integer({ minimum: 0, maximum: 3600, default: 30, description: 'Seconds to drain the old container' })),
     readonly_rootfs: Optional(Type.Boolean({ default: false, description: 'Mount the root filesystem read-only' })),
@@ -197,9 +207,9 @@ export const Service = Type.Object(
     schedule: Optional(Schedule),
     volumes: Optional(Type.Array(Volume, { description: 'Absent: not managed by the Manifest' })),
     domains: Optional(Type.Array(Domain, { description: 'Absent: not managed by the Manifest' })),
-    expose_tcp: Optional(Type.Array(Type.Integer({ minimum: 1, maximum: 65535 }), { description: 'Declared tcp ports exposed on a host port' })),
+    expose_tcp: Optional(Type.Array(Type.Integer(portRange), { description: 'Declared tcp ports exposed on a host port' })),
     variables: Optional(KeyMap(ServiceVariable, 'Service variables; absent: not managed by the Manifest')),
-    desired_state: Optional(Enum(['running', 'stopped'], { default: 'running', description: 'running or stopped' })),
+    desired_state: Optional(StringEnum(desiredStateValues, { default: 'running', description: 'running or stopped' })),
     firewall: Optional(Firewall),
     gpu: Optional(Type.Object({ count: Type.Integer({ minimum: 1, description: 'GPUs (phase 2)' }) }, strict))
   },
@@ -212,8 +222,8 @@ export const ServiceOverride = Type.Object(
     station: Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
     limits: Optional(Type.Union([Limits, Type.Null()])),
     domains: Optional(Type.Union([Type.Array(Domain), Type.Null()])),
-    expose_tcp: Optional(Type.Union([Type.Array(Type.Integer({ minimum: 1, maximum: 65535 })), Type.Null()])),
-    desired_state: Optional(Type.Union([Enum(['running', 'stopped']), Type.Null()])),
+    expose_tcp: Optional(Type.Union([Type.Array(Type.Integer(portRange)), Type.Null()])),
+    desired_state: Optional(Type.Union([StringEnum(desiredStateValues), Type.Null()])),
     schedule: Optional(Type.Union([Schedule, Type.Null()])),
     variables: Optional(Type.Union([KeyMap(ServiceVariable, 'Variables merged key by key'), Type.Null()]))
   },
@@ -222,7 +232,7 @@ export const ServiceOverride = Type.Object(
 
 const EnvironmentOverride = Type.Object({ services: Optional(SlugMap(ServiceOverride, 'Per-service overrides')) }, { description: 'Overrides for one environment', ...strict })
 
-const Attachment = Type.Object({ service: Type.String({ pattern: '^shared/[a-z0-9][a-z0-9-]{0,62}$', description: 'shared/<service name>' }) }, { description: 'An attachment (phase 1b)', ...strict })
+const Attachment = Type.Object({ service: Type.String({ pattern: slugPattern.replace('^', '^shared/'), description: 'shared/<service name>' }) }, { description: 'An attachment (phase 1b)', ...strict })
 
 export const Manifest = Type.Object(
   {

@@ -10,10 +10,11 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/userdata"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
-	TableName     = "stationly"
+	TableName     = protocol.NftTableName
 	layoutVersion = "1a.3"
 	commentPrefix = "stationly baseline "
 )

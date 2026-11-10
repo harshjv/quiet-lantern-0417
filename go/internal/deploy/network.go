@@ -5,6 +5,7 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"net"
 	"net/netip"
 	"slices"
@@ -136,7 +137,7 @@ func (s *Station) allocate(ctx context.Context, envID string) (netip.Addr, error
 		cursor = n.gateway
 	}
 	first := n.subnet.Masked().Addr()
-	last := lastAddr(n.subnet)
+	last := cidr.Last(n.subnet)
 	a := cursor
 	for range 1 << (32 - n.subnet.Bits()) {
 		a = a.Next()
@@ -151,17 +152,6 @@ func (s *Station) allocate(ctx context.Context, envID string) (netip.Addr, error
 		return a, nil
 	}
 	return netip.Addr{}, fmt.Errorf("no free address in %s", n.subnet)
-}
-
-func lastAddr(p netip.Prefix) netip.Addr {
-	b := p.Masked().Addr().As4()
-	host := 32 - p.Bits()
-	for i := 3; i >= 0 && host > 0; i-- {
-		bits := min(host, 8)
-		b[i] |= byte(1<<bits - 1)
-		host -= bits
-	}
-	return netip.AddrFrom4(b)
 }
 
 func (s *Station) startCoupler(ctx context.Context, sp *ServicePlan, st *serviceState) (string, *protocol.ErrorBody) {

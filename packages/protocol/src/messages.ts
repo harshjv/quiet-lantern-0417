@@ -10,6 +10,7 @@ import {
   Builder,
   BuildStatus,
   CancelReason,
+  doctorStatusValues,
   ComponentStatus,
   DeploymentOutcome,
   DeploymentStepName,
@@ -32,7 +33,8 @@ import {
   StationOs,
   StationRoutes,
   StatusHint,
-  VersionSkew
+  VersionSkew,
+  volumeOwnerValues
 } from './model.ts'
 import { Observed, ObservedUpdate } from './observed-state.ts'
 import { PlatformVerifyBody, PlatformVerifyResultBody, SignatureState } from './release.ts'
@@ -920,7 +922,7 @@ const BlobGrantRequestBody = Type.Object(
 const DoctorCheck = Type.Object(
   {
     name: Type.String(),
-    status: StringEnum(['ok', 'warn', 'fail'], { title: 'DoctorStatus' }),
+    status: StringEnum(doctorStatusValues, { title: 'DoctorStatus' }),
     code: Nullable(Type.String()),
     finding: Type.String(),
     fix: Nullable(Type.String()),
@@ -987,7 +989,7 @@ const VolumeRestoreBody = Type.Object(
     snapshot_id: Id('volume_snapshot'),
     volume_id: Id('volume'),
     docker_name: Type.String(),
-    owner: StringEnum(['service', 'station'], { title: 'VolumeOwner' }),
+    owner: StringEnum(volumeOwnerValues, { title: 'VolumeOwner' }),
     target: BackupTarget,
     objects: BackupObjects,
     sha256: Type.String({ pattern: '^[0-9a-f]{64}$' })

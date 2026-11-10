@@ -1,7 +1,7 @@
 import { eq, inArray, isNotNull } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { deployment, service, type BaseImageRecord } from '../db/schema.ts'
-import { readSetting } from '../api/settings.ts'
+import { readSetting } from '../db/settings.ts'
 import { emitEvent } from '../station/events.ts'
 import { displayRef, manifestAccept, parseReference, registryRequest, type Hop, type Reference } from './registry.ts'
 
@@ -19,12 +19,7 @@ export type CheckResult = {
   duration_ms: number
 }
 
-export const defaultIntervalS = 21600
-
-export const intervalS = (db: Db) => {
-  const v = readSetting<number>(db, 'base_images.check_interval_s')
-  return typeof v === 'number' && v >= 0 ? v : defaultIntervalS
-}
+export const intervalS = (db: Db) => readSetting(db, 'base_images.check_interval_s')
 
 export const keyOf = (r: Reference) => `${r.apiHost}/${r.repository}:${r.tag ?? ''}`
 

@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"strconv"
 
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -15,14 +16,11 @@ const (
 	RoleDispatchCheck = "dispatch-check"
 	RoleDispatchData  = "dispatch-data"
 
-	DispatchSource      = "ghcr.io/harshjv/stationly/dispatch"
-	DispatchName        = "or-dispatch"
-	DispatchCheckName   = "or-dispatch-check"
-	DispatchVolume      = "or-dispatch-data"
-	DispatchDataTarget  = "/data"
-	DispatchDatabase    = "/data/dispatch.sqlite"
-	DispatchPort        = 7900
-	DispatchHostAddress = "127.0.0.1"
+	DispatchName       = protocol.ResourcePrefix + "dispatch"
+	DispatchCheckName  = protocol.ResourcePrefix + "dispatch-check"
+	DispatchVolume     = protocol.ResourcePrefix + "dispatch-data"
+	DispatchDataTarget = "/data"
+	DispatchDatabase   = "/data/dispatch.sqlite"
 
 	dispatchMemoryBytes = 1 << 30
 	dispatchNanoCPUs    = 2_000_000_000
@@ -38,8 +36,8 @@ func dispatchHost(networkMode container.NetworkMode) *container.HostConfig {
 
 func DispatchContainer(stationID, image string, addr netip.Addr, env []string, replicated bool) ContainerSpec {
 	hc := dispatchHost(container.NetworkMode(SystemNetworkName))
-	port := network.MustParsePort(strconv.Itoa(DispatchPort) + "/tcp")
-	hc.PortBindings = network.PortMap{port: []network.PortBinding{{HostIP: netip.MustParseAddr(DispatchHostAddress), HostPort: strconv.Itoa(DispatchPort)}}}
+	port := network.MustParsePort(strconv.Itoa(protocol.NetworkDispatchPort) + "/tcp")
+	hc.PortBindings = network.PortMap{port: []network.PortBinding{{HostIP: netip.MustParseAddr(protocol.NetworkDispatchHostAddress), HostPort: strconv.Itoa(protocol.NetworkDispatchPort)}}}
 	hc.Mounts = []mount.Mount{namedVolume(DispatchVolume, DispatchDataTarget, false)}
 	stop := dispatchStopS
 	spec := ContainerSpec{
@@ -88,8 +86,8 @@ const (
 	RoleLitestreamTask = "litestream-task"
 
 	LitestreamSource      = "docker.io/litestream/litestream"
-	LitestreamName        = "or-litestream"
-	LitestreamTaskName    = "or-litestream-task"
+	LitestreamName        = protocol.ResourcePrefix + "litestream"
+	LitestreamTaskName    = protocol.ResourcePrefix + "litestream-task"
 	LitestreamConfigHash  = "STATIONLY_LITESTREAM_CONFIG_SHA256"
 	LabelReplicated       = "stationly.replicated"
 	DispatchUser          = "1000:1000"

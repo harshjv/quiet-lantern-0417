@@ -1,45 +1,42 @@
+import { base64Encodings, redaction, urlEncodings, type UrlEncoding } from '@stationly/protocol'
 import type { ActorValue } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
 import { redactionKnown } from '../secrets/deploy.ts'
 import { sandboxEnv, sandboxKnown } from '../secrets/sandbox.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 
-const minLength = 8
 const cacheMs = 60_000
-const tokenPatterns = /sly_[A-Za-z0-9_-]{8,}|sly-rk-[A-Za-z2-7]{8,}/g
+const excluded = new RegExp(redaction.excludedPattern)
+const tokenPattern = new RegExp(redaction.tokenPattern, 'g')
 
 export type Redactor = (text: string) => string
 
-const redactable = (value: string) => value.length >= minLength && !/^[0-9]+$/.test(value)
+const redactable = (value: string) => [...value].length >= redaction.minLength && !excluded.test(value)
 
-const forms = (value: string) => {
+const hex = (byte: number) => `%${byte.toString(16).toUpperCase().padStart(2, '0')}`
+
+const urlEncode = (bytes: Buffer, { unescaped, space }: UrlEncoding) =>
+  Array.from(bytes, byte => (byte === 0x20 ? space : byte < 0x80 && unescaped.includes(String.fromCharCode(byte)) ? String.fromCharCode(byte) : hex(byte))).join('')
+
+export const encodedForms = (value: string) => {
   const bytes = Buffer.from(value, 'utf8')
-  return [
-    value,
-    bytes.toString('base64').replace(/=+$/, ''),
-    bytes.toString('base64url'),
-    encodeURIComponent(value),
-    encodeURIComponent(value).replace(/%20/g, '+')
-  ]
+  return [value, ...base64Encodings.map(encoding => bytes.toString(encoding).replace(/=+$/, '')), ...urlEncodings.map(encoding => urlEncode(bytes, encoding))]
 }
 
 export const buildRedactor = (known: { key: string; value: string }[]): Redactor => {
   const pairs = new Map<string, string>()
   for (const { key, value } of known) {
     if (!redactable(value)) continue
-    const candidates = forms(value)
+    const candidates = encodedForms(value)
     for (const line of value.split('\n')) {
       const trimmed = line.replace(/\r$/, '')
       if (trimmed !== value && redactable(trimmed)) candidates.push(trimmed)
     }
-    for (const form of candidates) if (form && !pairs.has(form)) pairs.set(form, `[redacted:${key}]`)
+    for (const form of candidates) if (form && !pairs.has(form)) pairs.set(form, `${redaction.keyedReplacementPrefix}${key}${redaction.keyedReplacementSuffix}`)
   }
-  const ordered = [...pairs.entries()].sort((a, b) => b[0].length - a[0].length)
-  return text => {
-    let out = text
-    for (const [from, to] of ordered) if (out.includes(from)) out = out.split(from).join(to)
-    return out.replace(tokenPatterns, '[redacted]')
-  }
+  const ordered = [...pairs.keys()].sort((a, b) => Buffer.byteLength(b) - Buffer.byteLength(a))
+  const matcher = ordered.length ? new RegExp(ordered.map(form => RegExp.escape(form)).join('|'), 'g') : null
+  return text => (matcher ? text.replace(matcher, form => pairs.get(form)!) : text).replace(tokenPattern, redaction.tokenReplacement)
 }
 
 export const createRedaction = (db: Db, keyring: Keyring) => {

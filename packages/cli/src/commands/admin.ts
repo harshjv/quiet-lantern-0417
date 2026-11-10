@@ -1,18 +1,17 @@
 import type { Command } from 'commander'
 import { action, collect, integer, seconds } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
-import { connect, environmentId, send, type Sent } from '../kit.ts'
+import { actorTypeValues } from '@stationly/protocol'
+import { connect, environmentId, isLevel, send, type Sent } from '../kit.ts'
 import { acrossOutage } from '../outage.ts'
 import { print } from '../output.ts'
 
-const levels = new Set(['read', 'deploy', 'admin'])
-
-const actorTypes = new Set(['user', 'token', 'oauth_client', 'station', 'system'])
+const actorTypes = new Set<string>(actorTypeValues)
 
 export const parseScope = (spec: string) => {
   const [project_id, environment_id, level] = spec.split(':')
-  if (!project_id || !environment_id || !level || !levels.has(level)) throw usage(`${spec} is not a scope.`, 'Write project:environment:level with ids or *, such as prj_1:*:deploy.')
-  return { project_id, environment_id, level: level as 'read' | 'deploy' | 'admin' }
+  if (!project_id || !environment_id || !level || !isLevel(level)) throw usage(`${spec} is not a scope.`, 'Write project:environment:level with ids or *, such as prj_1:*:deploy.')
+  return { project_id, environment_id, level }
 }
 
 export const adminCommands = (program: Command) => {
@@ -256,7 +255,7 @@ export const adminCommands = (program: Command) => {
     .option('--station <station>')
     .option('--plan', 'print the diff and the signature checks without staging')
     .option('--wait', 'wait until the upgrade is done, failed or reverted')
-    .option('--timeout <seconds>', 'with --wait, give up after this many seconds', '900')
+    .option('--timeout <duration>', 'with --wait, give up after this long', seconds, 900)
     .action(
       action(async (options, component) => {
         const run = await connect(options)
@@ -266,7 +265,7 @@ export const adminCommands = (program: Command) => {
           const code = print(options, sent, renderUpgrade)
           const upgradeId = (sent.data as { upgrade?: string | null }).upgrade
           if (!options.wait || !upgradeId) return code
-          return waitUpgrade(options, () => send(run.api.v1.inventory.get({ query: {} })), upgradeId, Number(options.timeout) * 1000)
+          return waitUpgrade(options, () => send(run.api.v1.inventory.get({ query: {} })), upgradeId, (options.timeout as number) * 1000)
         }
         const override = options.reset
           ? { reset: true as const }

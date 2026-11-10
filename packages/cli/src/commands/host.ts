@@ -1,17 +1,13 @@
 import { execFile } from 'node:child_process'
 import { createConnection } from 'node:net'
 import { createInterface } from 'node:readline'
+import { networkLayout, rootSocketPath, rootSocketVersion, stationdUnit, type RootSocketLineDoc, type RootSocketOp, type RootSocketParams, type RootSocketRequestDoc, type RootSocketResult } from '@stationly/protocol'
 import type { Command } from 'commander'
 import { action } from '../command.ts'
-import { Exit, exitCodes, usage } from '../errors.ts'
+import { env } from '../env.ts'
+import { Exit, exitCodes, usage, type EnvelopeCode } from '../errors.ts'
 import { bucketName, checkPair, endpointProblem, ipv4Problem, siblingSuggestion } from '../hostnames.ts'
 import { ask, askSecret, confirm, interactive, need, readStdin } from '../prompt.ts'
-
-export const defaultSocket = '/run/stationly/stationd.sock'
-
-type Line = { v: number; id: string; progress?: { step: string; detail?: string }; ok?: boolean; result?: unknown; error?: { code: string; explanation: string; fix?: string; details?: unknown } }
-
-const stationdUnit = 'stationly-stationd'
 
 const stationdRefusal = () =>
   new Promise<string | null>(resolve =>
@@ -30,47 +26,32 @@ const unreachable = async (path: string, reason: string) => {
   return new Exit(exitCodes.connection, { error: { code: 'CONNECTION_FAILED', explanation, fix } })
 }
 
-export const rootSocketCall = (path: string, op: string, params: Record<string, unknown>, onProgress: (step: string, detail: string) => void) =>
-  new Promise<unknown>((resolve, reject) => {
+export const rootSocketCall = <Op extends RootSocketOp>(path: string, op: Op, params: RootSocketParams<Op>, onProgress: (step: string, detail: string) => void) =>
+  new Promise<RootSocketResult<Op>>((resolve, reject) => {
     const id = `r${Date.now()}`
     const socket = createConnection(path)
     socket.once('error', error => void unreachable(path, error.message).then(reject))
-    socket.once('connect', () => socket.write(`${JSON.stringify({ v: 1, id, op, params })}\n`))
+    const request: RootSocketRequestDoc = { v: rootSocketVersion, id, op, params }
+    socket.once('connect', () => socket.write(`${JSON.stringify(request)}\n`))
     const lines = createInterface({ input: socket })
     lines.on('error', () => {})
     lines.on('line', text => {
-      const line = JSON.parse(text) as Line
+      const line = JSON.parse(text) as RootSocketLineDoc
       if (line.id !== id) return
       if (line.progress) return onProgress(line.progress.step, line.progress.detail ?? '')
       if (line.ok === undefined) return
       socket.end()
-      if (line.ok) resolve(line.result)
-      else reject(new Exit(exitCodes.api, { error: { code: line.error?.code ?? 'INTERNAL_ERROR', explanation: line.error?.explanation ?? 'stationd refused the operation', fix: line.error?.fix } }))
+      if (line.ok) resolve(line.result as RootSocketResult<Op>)
+      else reject(new Exit(exitCodes.api, { error: { code: (line.error?.code as EnvelopeCode | undefined) ?? 'INTERNAL_ERROR', explanation: line.error?.explanation ?? 'stationd refused the operation', fix: line.error?.fix } }))
     })
     lines.once('close', () => reject(new Exit(exitCodes.connection, { error: { code: 'CONNECTION_FAILED', explanation: 'stationd closed the root socket before answering', fix: 'Check the stationd log.' } })))
   })
 
-type SetupResult = {
-  admin_user_id: string
-  email: string
-  instance_id: string
-  login_link: string | null
-  login_link_expires_at: string
-  recovery_key?: string
-  lockfile: { release: string | null; manifest_digest: string | null } | null
-  hostnames: { api: string; dashboard: string; status: string } | null
-  public_address?: string | null
-  litestream?: { bucket: string; endpoint: string | null; active: boolean; note: string } | null
-  reach: string[]
-}
-
-type DetectedAddress = { address: string | null; interface: string | null; public: boolean; reason?: string }
-
-type Litestream = { bucket: string; endpoint: string; access_key: string; secret_key: string }
+type Litestream = NonNullable<RootSocketParams<'setup'>['litestream']>
 
 const minPassword = 12
 
-const render = (r: SetupResult) =>
+const render = (r: RootSocketResult<'setup'>) =>
   [
     `admin ${r.email} created (${r.admin_user_id}) in instance ${r.instance_id}`,
     r.lockfile ? `lockfile pins release ${r.lockfile.release} (${r.lockfile.manifest_digest?.slice(0, 19)})` : 'no lockfile written',
@@ -134,12 +115,12 @@ const litestreamFrom = async (options: Record<string, unknown>, tty: boolean): P
   const endpoint = (options.litestreamEndpoint as string | undefined) ?? (tty ? await askUntil('S3 endpoint URL (Enter for AWS S3; R2 is https://<account>.r2.cloudflarestorage.com)', endpointProblem) : '')
   const bad = endpointProblem(endpoint)
   if (bad) throw usage(`${endpoint} is not a usable endpoint: ${bad}.`, 'Pass --litestream-endpoint https://... (or http:// on a private address).')
-  const access_key = (options.litestreamAccessKey as string | undefined) ?? process.env.LITESTREAM_ACCESS_KEY_ID ?? (await need(undefined, { what: 'bucket access key id', flag: '--litestream-access-key or LITESTREAM_ACCESS_KEY_ID' }))
-  const secret_key = process.env.LITESTREAM_SECRET_ACCESS_KEY ?? (await need(undefined, { what: 'bucket secret access key', flag: 'LITESTREAM_SECRET_ACCESS_KEY', secret: true }))
+  const access_key = (options.litestreamAccessKey as string | undefined) ?? env.LITESTREAM_ACCESS_KEY_ID ?? (await need(undefined, { what: 'bucket access key id', flag: '--litestream-access-key or LITESTREAM_ACCESS_KEY_ID' }))
+  const secret_key = env.LITESTREAM_SECRET_ACCESS_KEY ?? (await need(undefined, { what: 'bucket secret access key', flag: 'LITESTREAM_SECRET_ACCESS_KEY', secret: true }))
   return { bucket, endpoint, access_key, secret_key }
 }
 
-const publicAddressFrom = async (options: Record<string, unknown>, tty: boolean, detect: () => Promise<DetectedAddress>) => {
+const publicAddressFrom = async (options: Record<string, unknown>, tty: boolean, detect: () => Promise<RootSocketResult<'public_address.detect'>>) => {
   const given = options.publicAddress as string | undefined
   if (given && options.detectPublicAddress) throw usage('--public-address and --detect-public-address exclude each other.', 'Pass one of them.')
   if (given) {
@@ -165,7 +146,7 @@ export const hostCommands = (program: Command) => {
   program
     .command('setup')
     .description('First-admin bootstrap on the station host, as root, through stationd\'s root socket')
-    .option('--socket <path>', 'stationd root socket', defaultSocket)
+    .option('--socket <path>', 'stationd root socket', rootSocketPath)
     .option('--email <email>', 'admin email')
     .option('--password-stdin', 'read the admin password from stdin')
     .option('--acme-email <email>', 'ACME account email (acme.email)')
@@ -192,7 +173,7 @@ export const hostCommands = (program: Command) => {
         const domain = options.domain === false ? false : options.apiHost || options.dashboardHost || !tty ? true : await confirm('Serve the dashboard and API on hostnames of your own domain? (No: domainless, reached through an SSH forward)')
         const pair = domain ? await hostnamePair(options.apiHost as string | undefined, options.dashboardHost as string | undefined, tty) : null
         const acme = (options.acmeEmail as string | undefined) ?? (tty ? await askUntil(pair ? 'ACME email for Let\'s Encrypt' : 'ACME email for Let\'s Encrypt (optional, Enter to skip)', v => (!v && !pair) || !emailProblem(v) ? null : 'that is not an email address', pair ? email : '') : pair ? await need(undefined, { what: 'ACME email for Let\'s Encrypt', flag: '--acme-email' }) : undefined)
-        const detect = async () => (await rootSocketCall(options.socket as string, 'public_address.detect', {}, () => {})) as DetectedAddress
+        const detect = () => rootSocketCall(options.socket as string, 'public_address.detect', {}, () => {})
         const publicAddress = await publicAddressFrom(options, tty, detect)
         const litestream = await litestreamFrom(options, tty)
         if (prompted) {
@@ -200,7 +181,7 @@ export const hostCommands = (program: Command) => {
             [
               '',
               `  admin          ${email}`,
-              pair ? `  API host       ${pair.api}` : '  hostnames      none (domainless; SSH forward to 127.0.0.1:7900)',
+              pair ? `  API host       ${pair.api}` : `  hostnames      none (domainless; SSH forward to ${networkLayout.dispatchHostAddress}:${networkLayout.dispatchPort})`,
               pair ? `  dashboard host ${pair.dashboard} (passkey RP ID ${pair.parent})` : null,
               `  ACME email     ${acme || 'none'}`,
               `  public address ${publicAddress ?? 'none (set it later with sly stations update)'}`,
@@ -212,7 +193,7 @@ export const hostCommands = (program: Command) => {
           )
           if (!(await confirm('Create the admin and apply these settings?'))) throw cancelled()
         }
-        const params: Record<string, unknown> = {
+        const params: RootSocketParams<'setup'> = {
           email,
           password,
           ...(acme ? { acme_email: acme } : {}),
@@ -220,9 +201,9 @@ export const hostCommands = (program: Command) => {
           ...(publicAddress ? { public_address: publicAddress } : {}),
           ...(litestream ? { litestream } : {})
         }
-        const result = (await rootSocketCall(options.socket as string, 'setup', params, (step, detail) => {
+        const result = await rootSocketCall(options.socket as string, 'setup', params, (step, detail) => {
           if (!options.json) process.stderr.write(`${step}: ${detail}\n`)
-        })) as SetupResult
+        })
         process.stdout.write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${render(result)}\n`)
         if (!options.json && interactive()) {
           const stored = await need(undefined, { what: 'type "stored" once the recovery key is saved', flag: '--json' })
@@ -238,10 +219,10 @@ export const adminHostCommands = (program: Command) => {
   admin
     .command('recovery-key')
     .description('Print the recovery key again; the display is audited')
-    .option('--socket <path>', 'stationd root socket', defaultSocket)
+    .option('--socket <path>', 'stationd root socket', rootSocketPath)
     .action(
       action(async options => {
-        const { recovery_key } = (await rootSocketCall(options.socket as string, 'admin.recovery_key', {}, () => {})) as { recovery_key: string }
+        const { recovery_key } = await rootSocketCall(options.socket as string, 'admin.recovery_key', {}, () => {})
         process.stdout.write(options.json ? `${JSON.stringify({ recovery_key }, null, 2)}\n` : `${recovery_key}\n`)
         if (!options.json) process.stderr.write('this display was recorded in the audit log; store the key offline\n')
         return exitCodes.ok

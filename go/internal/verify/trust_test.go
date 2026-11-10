@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 func testTrustJSON(t *testing.T, edit func(map[string]any)) []byte {
@@ -46,7 +48,7 @@ func TestReleaseTrustNamesTheProductionIdentity(t *testing.T) {
 	if !tr.Production {
 		t.Error("release trust must be marked production")
 	}
-	if tr.ReleasesRepository != DefaultReleasesRepository || tr.TUFMirror != DefaultTUFMirror || tr.SignaturesRepository != DefaultSignaturesRepository {
+	if tr.ReleasesRepository != protocol.ReleaseRepository || tr.TUFMirror != protocol.TUFMirror || tr.SignaturesRepository != protocol.SignaturesRepository {
 		t.Errorf("release locations: %+v", tr)
 	}
 	if tr.Identity.Issuer != "https://token.actions.githubusercontent.com" {
@@ -165,9 +167,9 @@ func TestTestTrustDefaultsToTheACMEStagingDirectory(t *testing.T) {
 
 func TestTestTrustRejectsEveryProductionLocation(t *testing.T) {
 	cases := map[string]string{
-		"releases_repository":   DefaultReleasesRepository,
-		"tuf_mirror":            DefaultTUFMirror,
-		"signatures_repository": DefaultSignaturesRepository,
+		"releases_repository":   protocol.ReleaseRepository,
+		"tuf_mirror":            protocol.TUFMirror,
+		"signatures_repository": protocol.SignaturesRepository,
 	}
 	for field, value := range cases {
 		t.Run(field, func(t *testing.T) {
@@ -332,7 +334,7 @@ func TestInsecureAppliesOnlyToListedHosts(t *testing.T) {
 }
 
 func TestSignaturesHostIsTheRepositoryHost(t *testing.T) {
-	if got := (Trust{SignaturesRepository: "ghcr.io/harshjv/stationly/signatures"}).signaturesHost(); got != "ghcr.io" {
+	if got := (Trust{SignaturesRepository: protocol.SignaturesRepository}).signaturesHost(); got != "ghcr.io" {
 		t.Errorf("host %q", got)
 	}
 }

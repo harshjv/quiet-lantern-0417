@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, before, beforeEach, describe, test } from 'node:test'
-import { fetchRelease, ReleaseFetchError, releaseArtifactType } from '../src/platform/releases.ts'
+import { releaseConfig } from '@stationly/protocol/release-config'
+import { fetchRelease, ReleaseFetchError } from '../src/platform/releases.ts'
 
 const sha = (b: string | Buffer) => `sha256:${createHash('sha256').update(b).digest('hex')}`
 
@@ -35,7 +36,7 @@ let blobHost: Server
 let state: Served
 let host: string
 
-const publish = (version: string, files: Record<string, string>, artifactType = releaseArtifactType) => {
+const publish = (version: string, files: Record<string, string>, artifactType = releaseConfig.media_types.release_artifact) => {
   const layers = Object.entries(files).map(([title, body]) => {
     const b = Buffer.from(body)
     state.blobs.set(sha(b), b)

@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { authClient, sessionQuery } from '@/lib/auth'
 import { useLiveEvents, type LiveState } from '@/lib/live'
 import { stagedQuery } from '@/lib/queries'
+import { countPill, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const liveText: Record<LiveState, string> = { live: 'Live', connecting: 'Connecting', offline: 'Offline' }
@@ -28,7 +29,7 @@ function LiveIndicator({ state }: { state: LiveState }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground" role="status" aria-label={`Event stream ${liveText[state].toLowerCase()}`} tabIndex={0}>
-          <span className={cn('size-1.5 rounded-full', state === 'live' ? 'bg-emerald-500' : state === 'connecting' ? 'bg-amber-500' : 'bg-red-500')} aria-hidden />
+          <span className={cn('size-1.5 rounded-full', toneDot[state === 'live' ? 'success' : state === 'connecting' ? 'warning' : 'danger'])} aria-hidden />
           {liveText[state]}
         </span>
       </TooltipTrigger>
@@ -124,7 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link to="/staged" className={navLink}>
               Staged changes
               {pending > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[0.6875rem] font-semibold text-amber-950" aria-label={`${pending} waiting`}>
+                <span className={cn('ml-1.5', countPill)} aria-label={`${pending} waiting`}>
                   {pending}
                 </span>
               )}

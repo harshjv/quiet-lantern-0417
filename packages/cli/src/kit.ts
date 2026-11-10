@@ -1,12 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createApiClient, type ApiClient } from '@stationly/api-client'
+import { idPrefixes, tokenLevelValues, type IdEntity } from '@stationly/protocol'
 import { currentInstance, normalizeInstance, readCredentials, type Credentials } from './config.ts'
+import { apiUrlEnv, env, tokenEnv, version } from './env.ts'
 import { DryRun, Exit, apiFailure, exitCodes, notLoggedIn, unreachable } from './errors.ts'
 import { acrossOutageOnce } from './outage.ts'
 import { proofFor } from './proof.ts'
 import { need } from './prompt.ts'
-import { version } from './version.ts'
 
 export type Globals = {
   json?: boolean
@@ -20,9 +21,6 @@ export type Globals = {
 export type Context = { instance?: string; project?: string; environment?: string; service?: string }
 
 export const userAgent = `sly/${version}`
-
-export const tokenEnv = 'STATIONLY_TOKEN'
-export const apiUrlEnv = 'STATIONLY_API_URL'
 
 const contextPath = () => join(process.cwd(), '.stationly', 'context.json')
 
@@ -64,6 +62,7 @@ export type Run = {
   globals: Globals
   selection: Selection
   credentials: Credentials
+  userAgent: string
   api: ApiClient
   get: <T = Record<string, unknown>>(path: string) => Promise<T>
   raw: (path: string, init?: RequestInit) => Promise<Response>
@@ -71,18 +70,18 @@ export type Run = {
 
 export const resolveInstance = async (globals: Globals) => {
   const context = await readContext()
-  const chosen = globals.instance ?? (process.env[apiUrlEnv] || undefined) ?? context.instance ?? (await currentInstance())
+  const chosen = globals.instance ?? env[apiUrlEnv] ?? context.instance ?? (await currentInstance())
   return { instance: chosen ? normalizeInstance(chosen) : null, context }
 }
 
-const envCredentials = (instance: string, token: string): Credentials => ({ instance, kind: 'token', token, token_id: null, expires_at: null, proof_key: null, mcp: {} })
+export const tokenCredentials = (instance: string, token: string): Credentials => ({ instance, kind: 'token', token, token_id: null, expires_at: null, proof_key: null, mcp: {} })
 
 export const connect = async (globals: Globals): Promise<Run> => {
   const { instance, context } = await resolveInstance(globals)
-  const envToken = process.env[tokenEnv]
+  const envToken = env[tokenEnv]
   if (envToken) {
     if (!instance) throw notLoggedIn(null, `Set ${apiUrlEnv} or pass --instance with ${tokenEnv}.`)
-    return connectWith(globals, envCredentials(instance, envToken), context)
+    return connectWith(globals, tokenCredentials(instance, envToken), context)
   }
   if (!instance) throw notLoggedIn(null)
   const credentials = await readCredentials(instance)
@@ -100,7 +99,7 @@ export const credentialHeaders = (credentials: Credentials, method: string, url:
 
 const mutating = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-export const connectWith = (globals: Globals, credentials: Credentials, context: Context = {}): Run => {
+export const connectWith = (globals: Globals, credentials: Credentials, context: Context = {}, agent = userAgent): Run => {
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input)
     const method = (init?.method ?? 'GET').toUpperCase()
@@ -117,18 +116,19 @@ export const connectWith = (globals: Globals, credentials: Credentials, context:
     }
     return mutating.has(method) ? acrossOutageOnce(attempt) : attempt()
   }) as typeof fetch
-  const api = createApiClient(credentials.instance, { token: credentials.token, userAgent, fetcher })
+  const api = createApiClient(credentials.instance, { token: credentials.token, userAgent: agent, fetcher })
   const get = async <T,>(path: string) => {
-    const response = await fetcher(`${credentials.instance}${path}`, { headers: { authorization: `Bearer ${credentials.token}`, 'user-agent': userAgent } })
+    const response = await fetcher(`${credentials.instance}${path}`, { headers: { authorization: `Bearer ${credentials.token}`, 'user-agent': agent } })
     if (!response.ok) throw apiFailure(response.status, await response.json().catch(() => null))
     return (await response.json()) as T
   }
   const raw = (path: string, init: RequestInit = {}) =>
-    fetcher(`${credentials.instance}${path}`, { ...init, headers: { authorization: `Bearer ${credentials.token}`, 'user-agent': userAgent, ...(init.headers as Record<string, string> | undefined) } })
+    fetcher(`${credentials.instance}${path}`, { ...init, headers: { authorization: `Bearer ${credentials.token}`, 'user-agent': agent, ...(init.headers as Record<string, string> | undefined) } })
   return {
     globals,
     selection: { project: globals.project ?? context.project, environment: globals.environment ?? context.environment, service: globals.service ?? context.service },
     credentials,
+    userAgent: agent,
     api,
     get,
     raw
@@ -151,10 +151,14 @@ export const body = async <T = Record<string, unknown>>(call: Promise<EdenResult
 
 const seg = encodeURIComponent
 
+export const isId = (entity: IdEntity, ref: string) => ref.startsWith(`${idPrefixes[entity]}_`)
+
+export const isLevel = (value: string): value is (typeof tokenLevelValues)[number] => (tokenLevelValues as readonly string[]).includes(value)
+
 export const projectRef = async (run: Run) => need(run.selection.project, { what: 'Project', flag: '--project <id or name>' })
 
 export const environmentId = async (run: Run, ref = run.selection.environment): Promise<string> => {
-  if (ref?.startsWith('env_')) return ref
+  if (ref && isId('environment', ref)) return ref
   const project = await projectRef(run)
   if (!ref) return (await run.get<{ default_environment_id: string }>(`/v1/projects/${seg(project)}`)).default_environment_id
   return (await run.get<{ id: string }>(`/v1/projects/${seg(project)}/environments/${seg(ref)}`)).id
@@ -162,7 +166,7 @@ export const environmentId = async (run: Run, ref = run.selection.environment): 
 
 export const serviceId = async (run: Run): Promise<string> => {
   const ref = await need(run.selection.service, { what: 'Service', flag: '--service <id or name>' })
-  if (ref.startsWith('svc_')) return ref
+  if (isId('service', ref)) return ref
   const project = await projectRef(run)
   const environment = await environmentId(run)
   return (await run.get<{ id: string }>(`/v1/projects/${seg(project)}/environments/${environment}/services/${seg(ref)}`)).id

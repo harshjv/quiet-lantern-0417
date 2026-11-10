@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
+import { env } from '../env.ts'
 
 type Journal = { entries: { idx: number; when: number; tag: string }[] }
 
 const folder = fileURLToPath(new URL('../../drizzle', import.meta.url))
 const journal = JSON.parse(readFileSync(`${folder}/meta/_journal.json`, 'utf8')) as Journal
-const databasePath = process.env.STATIONLY_DATABASE
+const databasePath = env().STATIONLY_DATABASE
 if (!databasePath) throw new Error('STATIONLY_DATABASE must name the SQLite file to check')
 if (!process.argv.includes('--check')) {
   console.error('usage: dispatch migrate --check')

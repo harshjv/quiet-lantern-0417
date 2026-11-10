@@ -58,6 +58,12 @@ export const sourceText = (service: Pick<Service, 'source'>) => {
   return 'template'
 }
 
+export const actorText = (actor: { type: string; client?: string | null }) => `${actor.type}${actor.client ? ` (${actor.client})` : ''}`
+
+export const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
+
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+
 export const slugPattern = '[a-z0-9][a-z0-9\\-]{0,62}'
 
 export const slugTitle = 'Lower case letters, digits and hyphens, starting with a letter or digit'

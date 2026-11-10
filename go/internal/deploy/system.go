@@ -5,6 +5,8 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"net/netip"
 
 	"github.com/harshjv/stationly/go/internal/docker"
@@ -29,7 +31,7 @@ func (s *Station) systemLayout() (netip.Prefix, netip.AddrPort, error) {
 	if err != nil {
 		return netip.Prefix{}, netip.AddrPort{}, fmt.Errorf("no system subnet known yet (install.json or a generation): %v", err)
 	}
-	host := netip.AddrPortFrom(hostAt(subnet, 1), resolverPort)
+	host := netip.AddrPortFrom(cidr.Offset(subnet, protocol.NetworkGatewayHost), resolverPort)
 	if s.opts.Host != nil && s.opts.Host.Stationd.ResolverHostAddress != "" {
 		ap, err := netip.ParseAddrPort(s.opts.Host.Stationd.ResolverHostAddress)
 		if err != nil {
@@ -46,8 +48,8 @@ func (s *Station) ensureSystemNetwork(ctx context.Context) {
 		s.system.failure = err.Error()
 		return
 	}
-	gateway := hostAt(subnet, 1)
-	spec := docker.SystemNetwork(s.opts.Identity.StationID, subnet, upperHalf(subnet), gateway)
+	gateway := cidr.Offset(subnet, protocol.NetworkGatewayHost)
+	spec := docker.SystemNetwork(s.opts.Identity.StationID, subnet, cidr.UpperHalf(subnet), gateway)
 	id, labels, ok, err := s.docker.NetworkByName(ctx, spec.Name)
 	switch {
 	case err != nil:

@@ -1,15 +1,14 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import type { CallToolResult } from '@modelcontextprotocol/server'
-import { sandboxTools, serveBridge, type LocalTool } from '@stationly/mcp'
-import { uploadAndDeploy } from '../push.ts'
+import { serveBridge } from '@stationly/mcp'
+import { localTools } from '../mcp-local.ts'
 import type { Command } from 'commander'
 import { action, seconds } from '../command.ts'
 import { readCredentials, updateCredentials } from '../config.ts'
 import { Exit, exitCodes, inputRequired, notLoggedIn, usage } from '../errors.ts'
-import { connect, environmentId, resolveInstance, send } from '../kit.ts'
+import { connect, environmentId, isLevel, resolveInstance, send } from '../kit.ts'
 import { print, progress } from '../output.ts'
-import { version } from '../version.ts'
+import { version } from '../env.ts'
 
 const clients = ['claude-code', 'cursor', 'codex', 'windsurf', 'generic'] as const
 
@@ -36,48 +35,6 @@ const writeClaudeCode = async (server: { command: string; args: string[] }) => {
 
 const expired = (expiresAt: string) => new Date(expiresAt).getTime() <= Date.now()
 
-const result = (body: unknown, isError = false): CallToolResult => ({
-  ...(isError ? { isError: true } : { structuredContent: body as Record<string, unknown> }),
-  content: [{ type: 'text', text: JSON.stringify(body, null, 2) }]
-})
-
-const pushLocalSource = (instance: string, token: string, client: string): LocalTool => {
-  const raw = (path: string, init: RequestInit = {}) =>
-    fetch(`${instance}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, 'user-agent': `mcp/${client} sly/${version}`, ...(init.headers as Record<string, string> | undefined) } })
-  return {
-    name: 'push_local_source',
-    title: 'Push local source',
-    description:
-      'Upload a local directory on this machine (honoring .dockerignore) as the source of a service with a local source, build it on the station and deploy it. Returns the deployment; follow with wait_for_deployment.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        service: { type: 'string', minLength: 1, description: 'Service id (svc_...) or project/environment/service by name' },
-        path: { type: 'string', minLength: 1, description: 'Directory to upload; absolute, or relative to where sly mcp runs' },
-        idempotency_key: { type: 'string', minLength: 1, maxLength: 128 }
-      },
-      required: ['service', 'path'],
-      additionalProperties: false
-    },
-    annotations: { title: 'Push local source', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    run: async (args, progress) => {
-      const ref = args.service as string
-      let service = ref
-      if (!ref.startsWith('svc_')) {
-        const parts = ref.split('/')
-        if (parts.length !== 3) return result({ error: { code: 'VALIDATION_FAILED', explanation: '/service: expected svc_... or project/environment/service', fix: 'Pass the service id.' } }, true)
-        const [project, environment, name] = parts.map(encodeURIComponent)
-        const found = await raw(`/v1/projects/${project}/environments/${environment}/services/${name}`)
-        const body = (await found.json()) as { id?: string }
-        if (!found.ok || !body.id) return result(body, true)
-        service = body.id
-      }
-      const pushed = await uploadAndDeploy({ raw }, service, args.path as string, message => void progress(message))
-      return result(pushed.body, pushed.status >= 400)
-    }
-  }
-}
-
 export const mcpCommands = (program: Command) => {
   const mcp = program
     .command('mcp')
@@ -103,7 +60,7 @@ export const mcpCommands = (program: Command) => {
           })
         }
         const log = (event: string, data: Record<string, unknown> = {}) => process.stderr.write(`${JSON.stringify({ event, ...data })}\n`)
-        serveBridge({ url: new URL('/mcp', instance), token: stored.token, client, version, log, local: [pushLocalSource(instance, stored.token, client), ...sandboxTools({ instance, token: stored.token, userAgent: `mcp/${client} sly/${version}` })] })
+        serveBridge({ url: new URL('/mcp', instance), token: stored.token, client, version, log, local: localTools(instance, stored.token, `mcp/${client} sly/${version}`) })
         return new Promise<number>(() => {})
       })
     )
@@ -116,13 +73,13 @@ export const mcpCommands = (program: Command) => {
     .action(
       action(async (options, client) => {
         if (!clients.includes(client as (typeof clients)[number])) throw usage(`${client} is not a supported client.`, `Pass one of ${clients.join(', ')}.`)
-        if (!['read', 'deploy', 'admin'].includes(options.level as string)) throw usage(`--level ${options.level} is not read, deploy or admin.`, 'Pass --level read, deploy or admin.')
+        const level = options.level as string
+        if (!isLevel(level)) throw usage(`--level ${options.level} is not read, deploy or admin.`, 'Pass --level read, deploy or admin.')
         const run = await connect(options)
         const projectRef = run.selection.project
         if (!projectRef) throw inputRequired('The project the token covers', "--project <id or name>, or --project '*'")
         const project = projectRef === '*' ? '*' : (await run.get<{ id: string }>(`/v1/projects/${encodeURIComponent(projectRef)}`)).id
         const environment = !run.selection.environment || run.selection.environment === '*' ? '*' : await environmentId(run)
-        const level = options.level as 'read' | 'deploy' | 'admin'
         const sent = await send(run.api.v1.tokens.post({ name: `mcp/${client}`, kind: 'scoped', scopes: [{ project_id: project, environment_id: environment, level }], expires_in_s: options.ttl as number }))
         const minted = sent.data as { id: string; key: string; expires_at: string }
         const previous = run.credentials.mcp[client!]

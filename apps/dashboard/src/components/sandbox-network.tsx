@@ -1,43 +1,37 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
 import { CopyButton } from '@/components/copy'
+import { Field } from '@/components/field'
+import { FormError } from '@/components/form-dialog'
 import { Mono, Section } from '@/components/page'
 import { EgressFields } from '@/components/sandboxes-panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { api, failureText, idempotency, unwrap } from '@/lib/api'
+import { api, idempotency, send } from '@/lib/api'
 import type { Sandbox } from '@/lib/api'
-import { allowlistText, forwardCommand, parseAllowlist } from '@/lib/sandbox'
+import { useApiMutation } from '@/lib/mutation'
+import { allowlistText, egressBody, forwardCommand, type Egress } from '@/lib/sandbox'
 
 function EgressEditor({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'egress'> }) {
-  const client = useQueryClient()
   const [mode, setMode] = useState(sandbox.egress.mode)
   const [domains, setDomains] = useState(allowlistText(sandbox.egress.domains ?? []))
-  const [error, setError] = useState<string | null>(null)
-  const mutation = useMutation({
-    mutationFn: (egress: { mode: 'open' } | { mode: 'allowlist'; domains: { domain: string; wildcard: boolean; ports: number[] }[] }) => unwrap(api.v1.sandboxes({ sandbox: sandbox.id }).patch({ egress }, idempotency())),
-    onSuccess: () => {
-      toast.success(`Egress of ${sandbox.name} saved`, { description: 'It applies to running connections at once.' })
-      void client.invalidateQueries({ queryKey: ['sandboxes'] })
-    },
-    onError: failure => setError(failureText(failure))
+  const [problem, setProblem] = useState<string | null>(null)
+  const mutation = useApiMutation({
+    mutationFn: (egress: Egress) => send(api.v1.sandboxes({ sandbox: sandbox.id }).patch({ egress }, idempotency())),
+    invalidate: ['sandboxes'],
+    success: () => ({ title: `Egress of ${sandbox.name} saved`, description: 'It applies to running connections at once.' })
   })
   return (
     <form
       className="max-w-xl space-y-3 rounded-lg border bg-card p-4"
       onSubmit={event => {
         event.preventDefault()
-        setError(null)
-        const parsed = parseAllowlist(domains)
-        if (parsed.problem) return setError(parsed.problem)
-        if (mode === 'allowlist' && parsed.entries.length === 0) return setError('An allowlist needs at least one domain.')
-        mutation.mutate(mode === 'open' ? { mode } : { mode, domains: parsed.entries })
+        const body = egressBody(mode, domains)
+        setProblem(body.problem)
+        if (body.egress) mutation.mutate(body.egress)
       }}
     >
-      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      <FormError>{problem ?? mutation.errorText}</FormError>
       <EgressFields mode={mode} onMode={setMode} domains={domains} onDomains={setDomains} idPrefix="egress" />
       <Button type="submit" size="sm" disabled={mutation.isPending}>
         {mutation.isPending && <Loader2 className="animate-spin" />}
@@ -53,10 +47,9 @@ function ForwardCommand({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'status'> }
   const command = forwardCommand(sandbox.id, valid ? Number(port) : 3000)
   return (
     <div className="max-w-xl space-y-3 rounded-lg border bg-card p-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="forward-port">Port inside the sandbox</Label>
+      <Field id="forward-port" label="Port inside the sandbox">
         <Input id="forward-port" type="number" min={1} max={65535} value={port} onChange={e => setPort(e.target.value)} className="w-32" aria-invalid={!valid} />
-      </div>
+      </Field>
       <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
         <span className="min-w-0 flex-1" data-testid="forward-command">
           <Mono className="break-all">{command}</Mono>

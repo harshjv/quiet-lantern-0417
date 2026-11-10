@@ -1,6 +1,6 @@
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server'
-import { toolInput } from './schema.ts'
-import { annotationsOf, visibleTo, type Caller, type Outcome, type ToolDef } from './tools.ts'
+import { internalEnvelope, invoke, type Send } from './invoke.ts'
+import { visibleTo, type Caller, type Outcome, type ToolDef } from './tools.ts'
 
 export const alwaysLoadKey = 'anthropic/alwaysLoad'
 
@@ -14,24 +14,16 @@ export const toResult = (outcome: Outcome): CallToolResult =>
     ? { content: [{ type: 'text', text: text(outcome.body) }], structuredContent: asObject(outcome.body) }
     : { isError: true, content: [{ type: 'text', text: text(outcome.envelope) }] }
 
-export const internalEnvelope = (error: unknown) => ({
-  error: {
-    code: 'INTERNAL_ERROR',
-    explanation: error instanceof Error ? error.message : String(error),
-    fix: 'Retry; if it keeps failing, report the explanation.'
-  }
-})
-
-export type ServerSpec<C> = {
+export type ServerSpec = {
   name: string
   version: string
   instructions: string
-  tools: ToolDef<C>[]
+  tools: ToolDef[]
   caller: Caller
-  context: C
+  send: Send
 }
 
-export const buildServer = <C>(spec: ServerSpec<C>) => {
+export const buildServer = (spec: ServerSpec) => {
   const server = new McpServer({ name: spec.name, version: spec.version }, { capabilities: { tools: { listChanged: false } }, instructions: spec.instructions })
   for (const tool of spec.tools.filter(t => visibleTo(spec.caller, t))) {
     server.registerTool(
@@ -39,13 +31,14 @@ export const buildServer = <C>(spec: ServerSpec<C>) => {
       {
         title: tool.title,
         description: tool.description,
-        inputSchema: toolInput(tool.input),
-        annotations: annotationsOf(tool.family, tool.title),
+        inputSchema: tool.inputSchema,
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+        annotations: tool.annotations,
         ...(tool.alwaysLoad ? { _meta: { [alwaysLoadKey]: true } } : {})
       },
       async (input, request) => {
         try {
-          return toResult(await tool.run(spec.context, input as Record<string, unknown>, request))
+          return toResult(await invoke(tool, input, spec.send, request))
         } catch (error) {
           return toResult({ ok: false, envelope: internalEnvelope(error) })
         }

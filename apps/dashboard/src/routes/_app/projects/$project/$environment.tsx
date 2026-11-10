@@ -1,13 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Box, Clock, Plus, ShieldCheck } from 'lucide-react'
 import { lazy, Suspense, useState } from 'react'
-import { toast } from 'sonner'
 import { Crumbs } from '@/components/crumbs'
 import { NewEnvironment } from '@/components/new-environment'
 import { NewService } from '@/components/new-service'
 import { SandboxesPanel } from '@/components/sandboxes-panel'
 import { Empty, ErrorState, Mono, PageHeader, Rows } from '@/components/page'
+import { noItems, QueryState } from '@/components/query-state'
+import { TableFrame } from '@/components/table-frame'
 import { DeploymentStatusBadge, ServiceStatus, StagedStatusBadge } from '@/components/status'
 import { VariablesPanel } from '@/components/variables-panel'
 import { Badge } from '@/components/ui/badge'
@@ -15,12 +16,15 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiFailure, idempotency, unwrap } from '@/lib/api'
-import { ago, shortSha, sourceText } from '@/lib/format'
+import { api, idempotency, send } from '@/lib/api'
+import { actorText, ago, byName, plural, shortSha, sourceText } from '@/lib/format'
+import { useApiMutation } from '@/lib/mutation'
 import { environmentStagedQuery, environmentsQuery, servicesQuery } from '@/lib/queries'
 import type { Environment } from '@/lib/api'
+import { countPill, toneOutline, toneText } from '@/lib/tone'
+import { cn } from '@/lib/utils'
 
 const NetworkPanel = lazy(() => import('@/components/network-panel').then(m => ({ default: m.NetworkPanel })))
 
@@ -37,7 +41,9 @@ function Services({ environment }: { environment: Environment }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">{environment.protected ? 'A new service in this protected environment is staged until a human accepts it.' : 'Services and their current deployments.'}</p>
+        <p className="text-sm text-muted-foreground">
+          {environment.protected ? 'A new service in this protected environment is staged until a human accepts it.' : 'Services and their current deployments.'}
+        </p>
         <Button size="sm" onClick={() => setCreating(true)}>
           <Plus /> New service
         </Button>
@@ -50,42 +56,47 @@ function Services({ environment }: { environment: Environment }) {
 
 function ServicesTable({ environment }: { environment: Environment }) {
   const services = useQuery(servicesQuery(environment.id))
-  if (services.isPending) return <Rows count={4} />
-  if (services.isError) return <ErrorState error={services.error} />
-  if (services.data.items.length === 0)
-    return (
-      <Empty title="No services in this environment">
-        Create one with New service, <Mono>sly services create</Mono> or <Mono>sly apply</Mono> from a Manifest.
-      </Empty>
-    )
   return (
-    <div className="overflow-hidden rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Service</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Deployment</TableHead>
-            <TableHead className="hidden lg:table-cell">Source</TableHead>
-            <TableHead className="hidden md:table-cell">Domain</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {[...services.data.items]
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(service => {
+    <QueryState
+      query={services}
+      rows={4}
+      isEmpty={noItems}
+      empty={
+        <Empty title="No services in this environment">
+          Create one with New service, <Mono>sly services create</Mono> or <Mono>sly apply</Mono> from a Manifest.
+        </Empty>
+      }
+    >
+      {data => (
+        <TableFrame>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Service</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Deployment</TableHead>
+              <TableHead className="hidden lg:table-cell">Source</TableHead>
+              <TableHead className="hidden md:table-cell">Domain</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {[...data.items].sort(byName).map(service => {
               const current = service.current_deployment
               return (
                 <TableRow key={service.id} className="relative">
                   <TableCell>
-                    <Link to="/services/$service" params={{ service: service.id }} className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none" data-testid="service-link">
+                    <Link
+                      to="/services/$service"
+                      params={{ service: service.id }}
+                      className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
+                      data-testid="service-link"
+                    >
                       <Box className="size-4 text-muted-foreground" aria-hidden />
                       {service.name}
                       <Badge variant="outline" className="font-normal">
                         {service.kind}
                       </Badge>
                       {service.stale && (
-                        <Badge variant="outline" className="border-amber-300 font-normal text-amber-800 dark:border-amber-800 dark:text-amber-300" title={(service.stale_reasons ?? []).map(r => r.explanation).join(' ')}>
+                        <Badge variant="outline" className={cn('font-normal', toneOutline.warning)} title={(service.stale_reasons ?? []).map(r => r.explanation).join(' ')}>
                           {(service.stale_reasons ?? []).some(r => r.code === 'VARIABLES_CHANGED') ? 'variables changed' : 'stale'}
                         </Badge>
                       )}
@@ -116,47 +127,53 @@ function ServicesTable({ environment }: { environment: Environment }) {
                 </TableRow>
               )
             })}
-        </TableBody>
-      </Table>
-    </div>
+          </TableBody>
+        </TableFrame>
+      )}
+    </QueryState>
   )
 }
 
 function StagedList({ environment }: { environment: Environment }) {
   const staged = useQuery(environmentStagedQuery(environment.id))
-  if (staged.isPending) return <Rows />
-  if (staged.isError) return <ErrorState error={staged.error} />
-  if (staged.data.items.length === 0) return <Empty title="Nothing is waiting for review">{environment.protected ? 'Changes to this protected environment appear here until a human accepts them.' : 'This environment applies changes directly.'}</Empty>
   return (
-    <ul className="divide-y overflow-hidden rounded-lg border">
-      {staged.data.items.map(change => (
-        <li key={change.id} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 bg-card px-4 py-3 hover:bg-muted/40">
-          <Link to="/staged/$change" params={{ change: change.id }} className="font-mono text-sm font-medium after:absolute after:inset-0">
-            {change.id}
-          </Link>
-          <StagedStatusBadge status={change.status} />
-          <span className="text-sm text-muted-foreground">
-            +{change.summary.add} ~{change.summary.update} −{change.summary.remove} · {change.summary.deployments} deployments
-          </span>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {change.actor.type}
-            {change.actor.client ? ` (${change.actor.client})` : ''} · {ago(change.created_at)}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <QueryState
+      query={staged}
+      isEmpty={noItems}
+      empty={
+        <Empty title="Nothing is waiting for review">
+          {environment.protected ? 'Changes to this protected environment appear here until a human accepts them.' : 'This environment applies changes directly.'}
+        </Empty>
+      }
+    >
+      {data => (
+        <ul className="divide-y overflow-hidden rounded-lg border">
+          {data.items.map(change => (
+            <li key={change.id} className="relative flex flex-wrap items-center gap-x-4 gap-y-1 bg-card px-4 py-3 hover:bg-muted/40">
+              <Link to="/staged/$change" params={{ change: change.id }} className="font-mono text-sm font-medium after:absolute after:inset-0">
+                {change.id}
+              </Link>
+              <StagedStatusBadge status={change.status} />
+              <span className="text-sm text-muted-foreground">
+                +{change.summary.add} ~{change.summary.update} −{change.summary.remove} · {plural(change.summary.deployments, 'deployment')}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {actorText(change.actor)} · {ago(change.created_at)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </QueryState>
   )
 }
 
 function Settings({ environment }: { environment: Environment }) {
-  const client = useQueryClient()
-  const mutation = useMutation({
-    mutationFn: (value: boolean) => unwrap(api.v1.environments({ environment: environment.id }).patch({ protected: value }, idempotency())),
-    onSuccess: env => {
-      void client.invalidateQueries({ queryKey: ['environments'] })
-      toast.success(env.protected ? `${env.name} is protected` : `${env.name} is no longer protected`)
-    },
-    onError: failure => toast.error('Protection was not changed', { description: failure instanceof ApiFailure ? `${failure.code}: ${failure.message}` : String(failure) })
+  const mutation = useApiMutation({
+    mutationFn: (value: boolean) => send(api.v1.environments({ environment: environment.id }).patch({ protected: value }, idempotency())),
+    invalidate: ['environments'],
+    success: env => (env.protected ? `${env.name} is protected` : `${env.name} is no longer protected`),
+    failure: () => 'Protection was not changed'
   })
   return (
     <div className="max-w-2xl rounded-lg border bg-card p-4">
@@ -175,14 +192,21 @@ function Settings({ environment }: { environment: Environment }) {
 
 function EnvironmentPage() {
   const { project, environment: name } = Route.useParams()
+  const environments = useQuery(environmentsQuery(project))
+  return (
+    <QueryState query={environments} rows={5} errorTitle="The project could not be loaded">
+      {data => {
+        const environment = data.items.find(e => e.name === name)
+        if (!environment) return <ErrorState error={new Error(`There is no environment ${name} in ${project}.`)} title="Not found" />
+        return <EnvironmentView project={project} environments={data.items} environment={environment} />
+      }}
+    </QueryState>
+  )
+}
+
+function EnvironmentView({ project, environments, environment }: { project: string; environments: Environment[]; environment: Environment }) {
   const { tab = 'services' } = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
-  const environments = useQuery(environmentsQuery(project))
-  const environment = environments.data?.items.find(e => e.name === name)
-
-  if (environments.isPending) return <Rows count={5} />
-  if (environments.isError) return <ErrorState error={environments.error} title="The project could not be loaded" />
-  if (!environment) return <ErrorState error={new Error(`There is no environment ${name} in ${project}.`)} title="Not found" />
 
   return (
     <div className="space-y-6">
@@ -198,7 +222,7 @@ function EnvironmentPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {environments.data.items.map(e => (
+                  {environments.map(e => (
                     <SelectItem key={e.id} value={e.name}>
                       {e.name}
                     </SelectItem>
@@ -221,13 +245,13 @@ function EnvironmentPage() {
                 </span>
               )}
               {environment.pending_staged_changes > 0 && (
-                <Link to="." search={{ tab: 'staged' }} className="text-amber-700 underline-offset-4 hover:underline dark:text-amber-400">
+                <Link to="." search={{ tab: 'staged' }} className={cn('underline-offset-4 hover:underline', toneText.warning)}>
                   {environment.pending_staged_changes} staged {environment.pending_staged_changes === 1 ? 'change' : 'changes'} waiting
                 </Link>
               )}
             </>
           }
-          actions={<NewEnvironment project={project} environments={environments.data.items} current={environment} />}
+          actions={<NewEnvironment project={project} environments={environments} current={environment} />}
         />
       </div>
       <Tabs value={tab} onValueChange={value => void navigate({ search: { tab: value as Tab }, replace: true })}>
@@ -241,7 +265,7 @@ function EnvironmentPage() {
           </TabsTrigger>
           <TabsTrigger value="staged">
             Staged
-            {environment.pending_staged_changes > 0 && <span className="ml-1 rounded-full bg-amber-500 px-1.5 text-[0.6875rem] font-semibold text-amber-950">{environment.pending_staged_changes}</span>}
+            {environment.pending_staged_changes > 0 && <span className={cn('ml-1', countPill)}>{environment.pending_staged_changes}</span>}
           </TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>

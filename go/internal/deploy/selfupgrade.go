@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/dispatch"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/ids"
 	"github.com/harshjv/stationly/go/internal/outbox"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/release"
 	"github.com/harshjv/stationly/go/internal/upgrade"
 	"github.com/harshjv/stationly/go/internal/verify"
@@ -22,8 +24,7 @@ import (
 const (
 	DefaultBinDir   = "/usr/local/lib/stationly"
 	DefaultLink     = "/usr/local/bin/stationd"
-	UnitName        = "stationly-stationd"
-	DefaultUnitPath = "/etc/systemd/system/" + UnitName + ".service"
+	DefaultUnitPath = "/etc/systemd/system/" + protocol.StationdUnit + ".service"
 	handoverTimeout = 60 * time.Second
 	maxBinary       = 256 << 20
 )
@@ -90,11 +91,7 @@ func fetchStationd(ctx context.Context, v *verify.Verifier, binDir, version, dig
 			if path == out.Path {
 				mode = 0o755
 			}
-			tmp := path + ".tmp"
-			if err := os.WriteFile(tmp, body, mode); err != nil {
-				return out, err
-			}
-			if err := os.Rename(tmp, path); err != nil {
+			if err := fsx.WriteFile(path, body, mode); err != nil {
 				return out, err
 			}
 		}

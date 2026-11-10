@@ -87,8 +87,8 @@ export function Mono({ children, className }: { children: ReactNode; className?:
   return <span className={cn('font-mono text-[0.8125rem]', className)}>{children}</span>
 }
 
-export function KeyValue({ items }: { items: [string, ReactNode][] }) {
-  return (
+export function KeyValue({ items, framed, children }: { items: [string, ReactNode][]; framed?: boolean; children?: ReactNode }) {
+  const list = (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
       {items.map(([label, value]) => (
         <div key={label} className="min-w-0">
@@ -97,5 +97,12 @@ export function KeyValue({ items }: { items: [string, ReactNode][] }) {
         </div>
       ))}
     </dl>
+  )
+  if (!framed) return list
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      {list}
+      {children}
+    </div>
   )
 }

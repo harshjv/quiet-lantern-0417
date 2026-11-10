@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { data_key, master_key_wrap } from '../db/schema.ts'
 import { newId } from '../db/ids.ts'
+import { env } from '../env.ts'
 import { SecretsError } from './errors.ts'
 
 const keyBytes = 32
@@ -20,7 +21,7 @@ export const parseMasterKey = (encoded: string | undefined) => {
   return key
 }
 
-export const masterKeyFromEnv = () => parseMasterKey(process.env[masterKeyEnv])
+export const masterKeyFromEnv = () => parseMasterKey(env()[masterKeyEnv])
 
 export const seal = (key: Buffer, plaintext: Buffer, aad: string) => {
   const nonce = randomBytes(nonceBytes)

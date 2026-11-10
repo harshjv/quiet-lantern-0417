@@ -1,3 +1,4 @@
+import { slugPattern, variableKeyPattern } from '@stationly/protocol'
 import { SecretsError } from './errors.ts'
 
 export type Target =
@@ -9,8 +10,8 @@ export type Target =
 
 export type Segment = { type: 'text'; text: string } | { type: 'reference'; offset: number; raw: string; target: Target }
 
-export const keyPattern = /^[A-Z_][A-Z0-9_]*$/
-const slugPattern = /^[a-z0-9][a-z0-9-]{0,62}$/
+export const keyPattern = new RegExp(variableKeyPattern)
+const slug = new RegExp(slugPattern)
 const generatorPattern = /^secret\((\d{1,3})\)$/
 
 const invalid = (value: string, offset: number, reason: string) =>
@@ -32,11 +33,11 @@ const parseTarget = (value: string, text: string, offset: number): Target => {
   if (parts.length === 2 && parts[0] === 'project') return { type: 'project', key: checkKey(parts[1], keyOffset) }
   if (parts.length === 2 && parts[0] === 'global') return { type: 'global', key: checkKey(parts[1], keyOffset) }
   if (parts.length === 3 && parts[0] === 'shared') {
-    if (!slugPattern.test(parts[1]!)) throw invalid(value, offset + 'shared.'.length, `"${parts[1]}" is not an attachment alias`)
+    if (!slug.test(parts[1]!)) throw invalid(value, offset + 'shared.'.length, `"${parts[1]}" is not an attachment alias`)
     return { type: 'shared', alias: parts[1]!, key: checkKey(parts[2], keyOffset) }
   }
   if (parts.length === 2) {
-    if (!slugPattern.test(parts[0]!)) throw invalid(value, offset, `"${parts[0]}" is not a service name`)
+    if (!slug.test(parts[0]!)) throw invalid(value, offset, `"${parts[0]}" is not a service name`)
     return { type: 'service', service: parts[0]!, key: checkKey(parts[1], keyOffset) }
   }
   throw invalid(value, offset, `"${text}" is not a known reference target`)

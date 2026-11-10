@@ -14,9 +14,6 @@ concurrency:
 env:
   PLATFORMS: ${{ vars.STATIONLY_RELEASE_PLATFORMS || 'linux/amd64' }}
   SLY_TARGETS: linux-amd64,linux-arm64,darwin-arm64,darwin-amd64
-  IMAGES: ghcr.io/harshjv/stationly
-  RELEASES: ghcr.io/harshjv/stationly/release
-  COSIGN_REPOSITORY: ghcr.io/harshjv/stationly/signatures
 
 jobs:
   version:
@@ -119,6 +116,17 @@ jobs:
         with:
           version: 2026.10.19
 
+      - name: Read the release locations and signing identity
+        run: |
+          {
+            echo "IMAGES=$(jq -r .registry_namespace release.config.json)"
+            echo "RELEASES=$(jq -r '.registry_namespace + "/" + .repositories.release' release.config.json)"
+            echo "COSIGN_REPOSITORY=$(jq -r '.registry_namespace + "/" + .repositories.signatures' release.config.json)"
+            echo "RELEASE_WORKFLOW=$(jq -r '.signing_identity.source_repository + "/" + .signing_identity.workflow' release.config.json)"
+            echo "RELEASE_ISSUER=$(jq -r .signing_identity.issuer release.config.json)"
+            echo "INSTALLER_HOST=$(jq -r '.installer_url | sub("^https://"; "")' release.config.json)"
+          } >>"$GITHUB_ENV"
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: build
@@ -166,8 +174,8 @@ jobs:
         run: |
           cosign verify-blob \
             --bundle out/files/release-manifest.json.sigstore.json \
-            --certificate-identity "https://github.com/harshjv/quiet-lantern-0417/.github/workflows/release.yml@refs/tags/v$VERSION" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$RELEASE_WORKFLOW@refs/tags/v$VERSION" \
+            --certificate-oidc-issuer "$RELEASE_ISSUER" \
             out/files/release-manifest.json
 
       - name: Push the release artifact
@@ -180,7 +188,7 @@ jobs:
             echo
             echo "Release manifest: \`sha256:$(sha256sum out/files/release-manifest.json | cut -d' ' -f1)\`"
             echo
-            echo "Publish the installers on stationly.netlify.app: download the \`public\` artifact of this run into \`public/\` and commit it:"
+            echo "Publish the installers on $INSTALLER_HOST: download the \`public\` artifact of this run into \`public/\` and commit it:"
             echo
             echo "\`gh run download $GITHUB_RUN_ID --repo $GITHUB_REPOSITORY --name public --dir public\`"
           } >>"$GITHUB_STEP_SUMMARY"

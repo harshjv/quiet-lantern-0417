@@ -1,8 +1,8 @@
 import type { Db } from '../db/client.ts'
+import { releaseConfig } from '@stationly/protocol/release-config'
+import { env } from '../env.ts'
 import { storeBlob } from '../station/blobs.ts'
 import { parseReference, registryRequest } from './registry.ts'
-
-export const bundleArtifactType = 'application/vnd.dev.sigstore.bundle.v0.3+json'
 
 const indexAccept = 'application/vnd.oci.image.index.v1+json'
 const manifestAccept = 'application/vnd.oci.image.manifest.v1+json'
@@ -10,11 +10,6 @@ const maxTufBytes = 16 << 20
 const maxBundleBytes = 1 << 20
 const maxBundles = 16
 const blobTtlMs = 60 * 60 * 1000
-
-export const sigstoreConfig = () => ({
-  tufMirror: (process.env.STATIONLY_SIGSTORE_TUF_MIRROR ?? 'https://tuf-repo-cdn.sigstore.dev').replace(/\/$/, ''),
-  signaturesRepository: process.env.STATIONLY_SIGNATURES_REPOSITORY ?? 'ghcr.io/harshjv/stationly/signatures'
-})
 
 export class UpstreamError extends Error {
   readonly code: 'NOT_FOUND' | 'SOURCE_UNREACHABLE' | 'PROTOCOL_INVALID_MESSAGE'
@@ -29,7 +24,7 @@ const tufPath = /^(?:[0-9]+\.)?(?:root|timestamp|snapshot|targets)\.json$|^targe
 
 export const fetchTuf = async (path: string) => {
   if (!tufPath.test(path)) throw new UpstreamError('PROTOCOL_INVALID_MESSAGE', `${path} is not a TUF metadata or target path`)
-  const url = `${sigstoreConfig().tufMirror}/${path}`
+  const url = `${env().STATIONLY_SIGSTORE_TUF_MIRROR}/${path}`
   let res: Response
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: 'follow' })
@@ -47,13 +42,13 @@ type Descriptor = { mediaType?: string; digest: string; size?: number; artifactT
 
 export const fetchBundles = async (digest: string) => {
   if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new UpstreamError('PROTOCOL_INVALID_MESSAGE', `${digest} is not a sha256 digest`)
-  const repo = parseReference(sigstoreConfig().signaturesRepository)
+  const repo = parseReference(env().STATIONLY_SIGNATURES_REPOSITORY)
   const get = (path: string, accept: string, maxBytes: number) => registryRequest(repo, path, { method: 'GET', accept, maxBytes, timeoutMs: 20_000 })
-  let index = await get(`referrers/${digest}?artifactType=${encodeURIComponent(bundleArtifactType)}`, indexAccept, maxBundleBytes)
+  let index = await get(`referrers/${digest}?artifactType=${encodeURIComponent(releaseConfig.media_types.sigstore_bundle)}`, indexAccept, maxBundleBytes)
   if (index.status === 404) index = await get(`manifests/sha256-${digest.slice(7)}`, indexAccept, maxBundleBytes)
   if (index.status === 404 || (index.status === 401 && !index.body)) return { bundles: [] as unknown[], hosts: index.hops.map(h => h.host) }
   if (index.status !== 200 || !index.body) throw new UpstreamError('SOURCE_UNREACHABLE', `referrers of ${digest} in ${repo.registry}/${repo.repository}: ${index.status} ${index.error ?? ''}`.trim())
-  const manifests = ((JSON.parse(index.body.toString('utf8')) as { manifests?: Descriptor[] }).manifests ?? []).filter(m => m.artifactType === bundleArtifactType).slice(0, maxBundles)
+  const manifests = ((JSON.parse(index.body.toString('utf8')) as { manifests?: Descriptor[] }).manifests ?? []).filter(m => m.artifactType === releaseConfig.media_types.sigstore_bundle).slice(0, maxBundles)
   const bundles: unknown[] = []
   const hosts = new Set(index.hops.map(h => h.host))
   for (const m of manifests) {

@@ -116,87 +116,107 @@ func (s *Station) replyError(m dispatch.Message, e *protocol.ErrorBody) {
 	s.send(protocol.MessageError, &ref, e)
 }
 
+type handler func(s *Station, ctx context.Context, m dispatch.Message)
+
+func typed[T any](fn func(*Station, context.Context, dispatch.Message, T)) handler {
+	return func(s *Station, ctx context.Context, m dispatch.Message) {
+		var b T
+		if err := json.Unmarshal(m.Body, &b); err != nil {
+			s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a "+m.Type+" body that matches its schema.", "%v", err))
+			return
+		}
+		fn(s, ctx, m, b)
+	}
+}
+
+func ignore(*Station, context.Context, dispatch.Message) {}
+
+var handlers = map[string]handler{
+	protocol.MessageGeneration:          (*Station).applyGeneration,
+	protocol.MessageGenerationAvailable: (*Station).generationAvailable,
+	protocol.MessageSecretsDeliver:      typed((*Station).secretsDeliver),
+	protocol.MessageBuildStart:          typed((*Station).startBuild),
+	protocol.MessageBuildCancel:         typed((*Station).cancelBuild),
+	protocol.MessageRunStart:            typed((*Station).startRequestedRun),
+	protocol.MessageRunCancel:           typed((*Station).cancelRequestedRun),
+	protocol.MessageLogsQuery:           typed((*Station).queryLogs),
+	protocol.MessageLogsFollow:          typed((*Station).followLogs),
+	protocol.MessageMetricsSample:       typed((*Station).sampleMetrics),
+	protocol.MessageMetricsSubscribe:    typed((*Station).subscribeMetrics),
+	protocol.MessageNetworkSample:       typed((*Station).sampleNetwork),
+	protocol.MessageNetworkSubscribe:    typed((*Station).subscribeNetwork),
+	protocol.MessageNetworkInspect:      typed((*Station).inspectNetwork),
+	protocol.MessageNetworkProbe:        typed((*Station).probeNetwork),
+	protocol.MessageDnsLog:              typed((*Station).dnsLog),
+	protocol.MessageExecResize:          typed((*Station).resizeExec),
+	protocol.MessageRegistryDelete:      typed((*Station).registryDelete),
+	protocol.MessageRegistryGc:          typed((*Station).registryGC),
+	protocol.MessagePlatformVerify:      typed((*Station).platformVerify),
+	protocol.MessageVolumeBackup:        typed((*Station).volumeBackup),
+	protocol.MessageVolumeRestore:       typed((*Station).volumeRestore),
+	protocol.MessageVolumeBackupDelete:  typed((*Station).volumeBackupDelete),
+	protocol.MessageDoctorRun:           typed((*Station).doctorRun),
+	protocol.MessageForwardOpen:         typed((*Station).openForward),
+	protocol.MessageSandboxStorageGrow:  typed((*Station).growSandboxStorage),
+	protocol.MessageError:               (*Station).dispatchError,
+	protocol.MessageWelcome:             ignore,
+	protocol.MessageChallenge:           ignore,
+	protocol.MessageEnrolled:            ignore,
+}
+
+func capabilityMissing(typ string, capability protocol.Capability) *protocol.ErrorBody {
+	return protocolError(protocol.ErrorCodeProtocolCapabilityMissing, "Negotiate the capability in welcome first.", "%s needs the %s capability, which welcome did not grant", typ, capability)
+}
+
+func route(typ string, negotiated func(protocol.Capability) bool) (handler, *protocol.ErrorBody) {
+	if _, known := protocol.MessageBodies[typ]; !known {
+		return nil, protocolError(protocol.ErrorCodeProtocolUnknownType, "Send a type from the station protocol catalog.", "unknown message type %s", typ)
+	}
+	if capability, gated := protocol.MessageCapabilities[typ]; gated && !negotiated(capability) {
+		return nil, capabilityMissing(typ, capability)
+	}
+	h, ok := handlers[typ]
+	if !ok {
+		return nil, protocolError(protocol.ErrorCodeProtocolCapabilityMissing, "Send only messages whose capability was negotiated in welcome.", "this stationd does not handle %s", typ)
+	}
+	return h, nil
+}
+
 func (s *Station) handle(ctx context.Context, m dispatch.Message) {
 	if m.Connected {
 		s.onConnected()
 		return
 	}
-	ref := m.ID
-	switch m.Type {
-	case protocol.MessageGeneration:
-		s.applyGeneration(ctx, m)
-	case protocol.MessageGenerationAvailable:
-		s.generationAvailable(ctx, m)
-	case protocol.MessageSecretsDeliver:
-		var body protocol.SecretsDeliverBody
-		if err := json.Unmarshal(m.Body, &body); err != nil {
-			s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a secrets.deliver body that matches its schema.", "%v", err))
-			return
-		}
-		ack, failure := s.deliverSecrets(ctx, body)
-		if failure != nil {
-			s.replyError(m, failure)
-			return
-		}
-		s.send(protocol.MessageSecretsAck, &ref, ack)
-	case protocol.MessageBuildStart:
-		s.startBuild(ctx, m)
-	case protocol.MessageBuildCancel:
-		s.cancelBuild(m)
-	case protocol.MessageRunStart:
-		s.startRequestedRun(ctx, m)
-	case protocol.MessageRunCancel:
-		s.cancelRequestedRun(ctx, m)
-	case protocol.MessageLogsQuery:
-		s.queryLogs(m)
-	case protocol.MessageLogsFollow:
-		s.followLogs(ctx, m)
-	case protocol.MessageMetricsSample:
-		s.sampleMetrics(m)
-	case protocol.MessageMetricsSubscribe:
-		s.subscribeMetrics(ctx, m)
-	case protocol.MessageNetworkSample:
-		s.sampleNetwork(m)
-	case protocol.MessageNetworkSubscribe:
-		s.subscribeNetwork(ctx, m)
-	case protocol.MessageNetworkInspect:
-		s.inspectNetwork(ctx, m)
-	case protocol.MessageNetworkProbe:
-		s.probeNetwork(ctx, m)
-	case protocol.MessageDnsLog:
-		s.dnsLog(m)
-	case protocol.MessageExecResize:
-		s.resizeExec(m)
-	case protocol.MessageRegistryDelete:
-		s.registryDelete(m)
-	case protocol.MessageRegistryGc:
-		s.registryGC(m)
-	case protocol.MessagePlatformVerify:
-		s.platformVerify(ctx, m)
-	case protocol.MessageVolumeBackup:
-		s.volumeBackup(ctx, m)
-	case protocol.MessageVolumeRestore:
-		s.volumeRestore(ctx, m)
-	case protocol.MessageVolumeBackupDelete:
-		s.volumeBackupDelete(m)
-	case protocol.MessageDoctorRun:
-		s.doctorRun(ctx, m)
-	case protocol.MessageForwardOpen:
-		s.openForward(ctx, m)
-	case protocol.MessageSandboxStorageGrow:
-		s.growSandboxStorage(ctx, m)
-	case protocol.MessageError:
-		var e protocol.ErrorBody
-		json.Unmarshal(m.Body, &e)
-		s.log.Warn("Dispatch answered with an error", "ref", deref(m.Ref), "code", e.Code, "explanation", e.Explanation)
-	case protocol.MessageWelcome, protocol.MessageChallenge, protocol.MessageEnrolled:
-	default:
-		if _, known := protocol.MessageBodies[m.Type]; !known {
-			s.replyError(m, protocolError(protocol.ErrorCodeProtocolUnknownType, "Send a type from the station protocol catalog.", "unknown message type %s", m.Type))
-			return
-		}
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolCapabilityMissing, "Send only messages whose capability was negotiated in welcome.", "this stationd does not handle %s", m.Type))
+	h, failure := route(m.Type, s.link.Negotiated)
+	if failure != nil {
+		s.replyError(m, failure)
+		return
 	}
+	h(s, ctx, m)
+}
+
+func (s *Station) requireCapability(m dispatch.Message, capability protocol.Capability) bool {
+	if s.link.Negotiated(capability) {
+		return true
+	}
+	s.replyError(m, capabilityMissing(m.Type, capability))
+	return false
+}
+
+func (s *Station) dispatchError(_ context.Context, m dispatch.Message) {
+	var e protocol.ErrorBody
+	json.Unmarshal(m.Body, &e)
+	s.log.Warn("Dispatch answered with an error", "ref", deref(m.Ref), "code", e.Code, "explanation", e.Explanation)
+}
+
+func (s *Station) secretsDeliver(ctx context.Context, m dispatch.Message, b protocol.SecretsDeliverBody) {
+	ack, failure := s.deliverSecrets(ctx, b)
+	if failure != nil {
+		s.replyError(m, failure)
+		return
+	}
+	ref := m.ID
+	s.send(protocol.MessageSecretsAck, &ref, ack)
 }
 
 func (s *Station) onConnected() {

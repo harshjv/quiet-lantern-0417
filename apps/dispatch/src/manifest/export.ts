@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { stringify } from 'yaml'
 import type { Db } from '../db/client.ts'
-import { domain, environment, port_allocation, secret_value, service, service_port, station, variable, volume } from '../db/schema.ts'
+import { domain, environment, port_allocation, service, service_port, station, variable, volume } from '../db/schema.ts'
 import type { EnvironmentRow, ProjectRow, ServiceRow, VariableRow } from '../api/lookup.ts'
 import type { Keyring } from '../secrets/keyring.ts'
+import { decryptValue, headValue } from '../secrets/values.ts'
 import { normalizeHealth } from '../generation/health.ts'
 import { defaultLimits } from './plan.ts'
 
@@ -12,19 +13,8 @@ type Json = Record<string, unknown>
 const sorted = <T>(entries: [string, T][]) => Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)))
 
 const latest = (db: Db, keyring: Keyring, row: VariableRow, environmentId: string | null) => {
-  const value = db
-    .select()
-    .from(secret_value)
-    .where(
-      and(
-        eq(secret_value.variable_id, row.id),
-        environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId),
-        isNull(secret_value.revoked_at)
-      )
-    )
-    .orderBy(desc(secret_value.version))
-    .get()
-  return value ? keyring.decrypt(value.id, value.data_key_id, value.ciphertext) : null
+  const value = headValue(db, row.id, environmentId)
+  return value ? decryptValue(keyring, value) : null
 }
 
 const withFlags = (base: Json, row: VariableRow) => ({ ...base, ...(row.injection !== 'env' ? { injection: row.injection } : {}), ...(row.build ? { build: true } : {}) })

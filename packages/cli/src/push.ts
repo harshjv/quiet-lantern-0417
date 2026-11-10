@@ -48,7 +48,7 @@ export const packDirectory = async (path: string) => {
 
 export type PushApi = { raw: (path: string, init?: RequestInit) => Promise<Response> }
 
-export const uploadAndDeploy = async (api: PushApi, serviceId: string, path: string, onProgress: (message: string) => void = () => {}) => {
+export const uploadSource = async (api: PushApi, serviceId: string, path: string, onProgress: (message: string) => void = () => {}) => {
   const started = Date.now()
   const packed = await packDirectory(path)
   onProgress(`packed ${packed.entries} entries of ${packed.dir} into ${packed.bytes.length} bytes in ${Date.now() - started} ms`)
@@ -57,9 +57,14 @@ export const uploadAndDeploy = async (api: PushApi, serviceId: string, path: str
     headers: { 'content-type': 'application/gzip', 'content-length': String(packed.bytes.length), 'x-stationly-service': serviceId },
     body: packed.bytes
   })
-  const blob = (await upload.json()) as { blob_id?: string; size_bytes?: number }
-  if (!upload.ok) return { status: upload.status, body: blob as unknown, step: 'upload' as const }
-  onProgress(`uploaded ${blob.size_bytes} bytes as ${blob.blob_id} in ${Date.now() - started} ms`)
-  const deploy = await api.raw(`/v1/services/${serviceId}/deployments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ blob_id: blob.blob_id }) })
-  return { status: deploy.status, body: (await deploy.json()) as unknown, step: 'deploy' as const, blob }
+  const blob = (await upload.json()) as { blob_id: string; size_bytes: number }
+  if (upload.ok) onProgress(`uploaded ${blob.size_bytes} bytes as ${blob.blob_id} in ${Date.now() - started} ms`)
+  return { status: upload.status, body: blob as unknown, blob: upload.ok ? blob : null }
+}
+
+export const uploadAndDeploy = async (api: PushApi, serviceId: string, path: string, onProgress: (message: string) => void = () => {}) => {
+  const uploaded = await uploadSource(api, serviceId, path, onProgress)
+  if (!uploaded.blob) return { status: uploaded.status, body: uploaded.body }
+  const deploy = await api.raw(`/v1/services/${serviceId}/deployments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ blob_id: uploaded.blob.blob_id }) })
+  return { status: deploy.status, body: (await deploy.json()) as unknown }
 }

@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/dispatch"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
@@ -179,12 +179,7 @@ func (s *Station) verifyComponents(ctx context.Context, g *protocol.Generation) 
 	return nil
 }
 
-func (s *Station) platformVerify(ctx context.Context, m dispatch.Message) {
-	var body protocol.PlatformVerifyBody
-	if err := json.Unmarshal(m.Body, &body); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a platform.verify body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) platformVerify(ctx context.Context, m dispatch.Message, body protocol.PlatformVerifyBody) {
 	if s.verifier == nil {
 		s.replyError(m, protocolError(protocol.ErrorCodeUnsignedArtifact, "Start stationd with a signature verifier.", "this stationd has no verifier"))
 		return
@@ -442,16 +437,11 @@ func (s *Station) writeLockMirror(g *protocol.Generation) {
 		s.log.Warn("mirror the lockfile", "error", err)
 		return
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o444); err == nil {
-		os.Chmod(tmp, 0o444)
-		err = os.Rename(tmp, path)
-		if err == nil {
-			s.log.Info("lockfile mirrored", "path", path, "components", len(g.Components))
-			return
-		}
+	if err := fsx.WriteFile(path, append(b, '\n'), 0o444); err != nil {
+		s.log.Warn("mirror the lockfile", "path", path, "error", err)
+		return
 	}
-	s.log.Warn("mirror the lockfile", "path", path, "error", errors.New("write failed"))
+	s.log.Info("lockfile mirrored", "path", path, "components", len(g.Components))
 }
 
 func sameMirror(a, b []byte) bool {

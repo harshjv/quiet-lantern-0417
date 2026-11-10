@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { MessageBody } from '@stationly/protocol'
+import { volumeDockerName, type MessageBody } from '@stationly/protocol'
 import { Cron } from 'croner'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { audit_event, deployment, service, setting, station, volume, volume_snapshot, type StoredBackupTarget } from '../db/schema.ts'
+import { audit_event, deployment, service, station, volume, volume_snapshot, type StoredBackupTarget } from '../db/schema.ts'
+import { readSetting, storedSetting } from '../db/settings.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { sealedGlobalExists, sealedGlobalValue } from '../secrets/variables.ts'
@@ -30,10 +31,6 @@ export class BackupError extends Error {
     this.fix = fix
   }
 }
-
-export const defaultKeep = 7
-
-const settingValue = <T>(db: Db, key: string) => db.select().from(setting).where(eq(setting.key, key)).get()?.value as T | undefined
 
 export const snapshotView = (s: typeof volume_snapshot.$inferSelect) => ({
   id: s.id,
@@ -118,7 +115,7 @@ export const backupPlan = (db: Db, volumeId: string, target: BackupTarget | unde
   const vol = db.select().from(volume).where(eq(volume.id, volumeId)).get()
   if (!vol) throw new BackupError('NOT_FOUND', `volume ${volumeId} does not exist`, 'List volumes with sly volumes list.')
   if (vol.status === 'destroyed') throw new BackupError('VALIDATION_FAILED', `volume ${volumeId} is destroyed`, 'Back up a volume that exists.')
-  return { vol, target: checkedTarget(db, target ?? settingValue<BackupTarget>(db, 'volume_backup.target')) }
+  return { vol, target: checkedTarget(db, target ?? storedSetting(db, 'volume_backup.target')) }
 }
 
 export const startBackup = async (deps: BackupDeps, volumeId: string, options: { target?: BackupTarget; quiesce: boolean; trigger: 'manual' | 'schedule'; actor: BackupActor }) => {
@@ -191,7 +188,7 @@ export const restoreBackup = async (deps: BackupDeps, volumeId: string, snapshot
   const { snap, source, station_id } = restorePlan(db, volumeId, snapshotId, stationId)
   if (!stations.isConnected(station_id)) throw new BackupError('STATION_OFFLINE', `station ${station_id} is not connected`, 'Bring the station online, then restore again.')
   const id = newId('volume')
-  const dockerName = `or-vol-${id.slice(4).toLowerCase()}`
+  const dockerName = volumeDockerName(id)
   db.insert(volume)
     .values({ id, owner: 'service', service_id: null, project_id: source.project_id, mount_path: source.mount_path, station_id, docker_name: dockerName, size_bytes: 0, status: 'retained', retain_until: new Date(Date.now() + 7 * 24 * 3600 * 1000) })
     .run()
@@ -208,10 +205,7 @@ export const restoreBackup = async (deps: BackupDeps, volumeId: string, snapshot
   return { volume_id: id, docker_name: dockerName, snapshot_id: snap.id, station_id, status: 'running' as const, adopt: `sly volumes adopt ${id} <service> --mount-path ${source.mount_path}` }
 }
 
-export const keepCount = (db: Db) => {
-  const v = settingValue<number>(db, 'volume_backup.keep')
-  return typeof v === 'number' && v >= 1 ? v : defaultKeep
-}
+export const keepCount = (db: Db) => readSetting(db, 'volume_backup.keep')
 
 export const pruneBackups = async (deps: BackupDeps, volumeId: string) => {
   const { db, stations } = deps
@@ -297,7 +291,7 @@ export const startBackupScheduler = (deps: BackupDeps, log: (event: string, fiel
   let pattern: { text: string; cron: Cron } | null = null
   let checkedAt = new Date()
   const tick = () => {
-    const text = settingValue<string>(db, 'volume_backup.schedule')
+    const text = readSetting(db, 'volume_backup.schedule')
     if (!text) {
       pattern = null
       return
@@ -317,7 +311,7 @@ export const startBackupScheduler = (deps: BackupDeps, log: (event: string, fiel
     const due = pattern.cron.nextRun(checkedAt)
     checkedAt = now
     if (!due || due > now) return
-    const quiesce = settingValue<boolean>(db, 'volume_backup.schedule_quiesce') ?? true
+    const quiesce = readSetting(db, 'volume_backup.schedule_quiesce')
     for (const v of db.select().from(volume).where(and(eq(volume.status, 'active'), eq(volume.owner, 'service'))).all()) {
       if (!stations.isConnected(v.station_id)) {
         log('volume_backup.skipped', { volume_id: v.id, reason: 'station offline' })

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
@@ -57,12 +58,7 @@ func SaveRecord(stateDir string, r Record) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(recordsDir(stateDir), r.BuildID+".json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsx.WriteFile(filepath.Join(recordsDir(stateDir), r.BuildID+".json"), append(b, '\n'), 0o600)
 }
 
 func Records(stateDir string) ([]Record, error) {

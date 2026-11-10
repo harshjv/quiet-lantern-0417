@@ -1,3 +1,4 @@
+import { releaseRepositories } from '@stationly/protocol/release-config'
 import { setting } from '../../src/db/schema.ts'
 import { eq } from 'drizzle-orm'
 import { lockfileFor, parseManifest, sha256Of, storeRelease } from '../../src/platform/lockfile.ts'
@@ -59,8 +60,8 @@ const releaseManifest = (release: string, gateway: boolean, sandboxes: boolean) 
     published_at: '2026-11-01T00:00:00Z',
     changelog: '',
     components: {
-      dispatch: { kind: 'binary', version: '0.0.0', source: 'ghcr.io/harshjv/stationly/dispatch', digest: digestOf('d'), platforms: null },
-      ...(sandboxes ? { sandbox_toolchain: { kind: 'image', version: '0.1.0', source: 'ghcr.io/harshjv/stationly/sandbox-toolchain', digest: toolchainDigest, platforms: { 'linux/amd64': digestOf('f'), 'linux/arm64': digestOf('1') } } } : {}),
+      dispatch: { kind: 'binary', version: '0.0.0', source: releaseRepositories.dispatch, digest: digestOf('d'), platforms: null },
+      ...(sandboxes ? { sandbox_toolchain: { kind: 'image', version: '0.1.0', source: releaseRepositories.sandbox_toolchain, digest: toolchainDigest, platforms: { 'linux/amd64': digestOf('f'), 'linux/arm64': digestOf('1') } } } : {}),
       ...(gateway ? { gateway: { kind: 'image', version: '3.7.18', source: 'docker.io/library/traefik', digest: digestOf('a'), platforms: { 'linux/amd64': digestOf('b'), 'linux/arm64': digestOf('c') } } } : {})
     }
   })

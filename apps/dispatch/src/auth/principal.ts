@@ -1,4 +1,4 @@
-import type { Actor } from '@stationly/protocol'
+import { tokenLevelValues, type Actor } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 import { createLocalJWKSet, jwtVerify, type JSONWebKeySet, type JWTPayload } from 'jose'
@@ -8,7 +8,7 @@ import { token } from '../db/schema.ts'
 import { apiKeyFromHeaders, apiKeyPrefix, canonicalOrigin, v1Permission, type AuthService } from './auth.ts'
 import { liveGrant } from './grants.ts'
 import { ProofError, proofHeader, publicUrl, verifyProof } from './proof.ts'
-import { fullAdmin, levels, type Scope } from './scopes.ts'
+import { fullAdmin, type Scope } from './scopes.ts'
 
 export type ActorValue = Static<typeof Actor>
 
@@ -80,7 +80,7 @@ const isScopeList = (value: unknown): value is Scope[] =>
       typeof item === 'object' &&
       typeof (item as Scope).project_id === 'string' &&
       typeof (item as Scope).environment_id === 'string' &&
-      levels.includes((item as Scope).level)
+      tokenLevelValues.includes((item as Scope).level)
   )
 
 const oauthPrincipal = async (db: Db, auth: AuthService, request: Request, value: string): Promise<Principal> => {

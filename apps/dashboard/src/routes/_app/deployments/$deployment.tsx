@@ -1,25 +1,26 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { Check, CircleDashed, Loader2, Square, X } from 'lucide-react'
-import { toast } from 'sonner'
 import { Crumbs } from '@/components/crumbs'
 import { DiagnosisPanel } from '@/components/diagnosis'
 import { LogViewer } from '@/components/log-viewer'
-import { ErrorState, KeyValue, Mono, PageHeader, Rows, Section } from '@/components/page'
+import { KeyValue, Mono, PageHeader, Section } from '@/components/page'
+import { QueryState } from '@/components/query-state'
 import { DeploymentStatusBadge } from '@/components/status'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiFailure, idempotency, unwrap } from '@/lib/api'
+import { api, idempotency, send } from '@/lib/api'
 import { ago, clock, duration, shortDigest, shortSha, stamp } from '@/lib/format'
-import { deploymentQuery, diagnosisQuery, environmentQuery, isTerminal, projectQuery, serviceQuery } from '@/lib/queries'
-import type { DeploymentStep } from '@/lib/api'
+import { useApiMutation } from '@/lib/mutation'
+import { deploymentQuery, diagnosisQuery, serviceQuery } from '@/lib/queries'
+import { isCancellable, isTerminal } from '@/lib/status'
+import { useEnvironmentTrail } from '@/lib/use-trail'
+import type { Deployment, DeploymentStep } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_app/deployments/$deployment')({
   component: DeploymentPage
 })
-
-const cancellable = new Set(['queued', 'building', 'pre_deploy', 'starting', 'waiting_health'])
 
 function StepIcon({ status }: { status: string }) {
   if (status === 'done' || status === 'succeeded' || status === 'passed') return <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -51,43 +52,31 @@ function Steps({ steps }: { steps: DeploymentStep[] }) {
 
 function DeploymentPage() {
   const { deployment: id } = Route.useParams()
-  const client = useQueryClient()
   const deployment = useQuery(deploymentQuery(id))
-  const failed = deployment.data?.status === 'failed'
-  const diagnosis = useQuery({ ...diagnosisQuery(id), enabled: failed })
-  const service = useQuery({ ...serviceQuery(deployment.data?.service_id ?? ''), enabled: Boolean(deployment.data) })
-  const environment = useQuery({ ...environmentQuery(service.data?.environment_id ?? ''), enabled: Boolean(service.data) })
-  const project = useQuery({ ...projectQuery(environment.data?.project_id ?? ''), enabled: Boolean(environment.data) })
-  const cancel = useMutation({
-    mutationFn: () => unwrap(api.v1.deployments({ id }).cancel.post(undefined, idempotency())),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['deployments'] })
-      toast.success('Deployment cancelled')
-    },
-    onError: failure => toast.error('Cancel was refused', { description: failure instanceof ApiFailure ? `${failure.code}: ${failure.message}` : String(failure) })
-  })
+  return (
+    <QueryState query={deployment} rows={6} errorTitle="The deployment could not be loaded">
+      {d => <DeploymentView d={d} />}
+    </QueryState>
+  )
+}
 
-  if (deployment.isPending) return <Rows count={6} />
-  if (deployment.isError) return <ErrorState error={deployment.error} title="The deployment could not be loaded" />
-  const d = deployment.data
+function DeploymentView({ d }: { d: Deployment }) {
+  const failed = d.status === 'failed'
+  const diagnosis = useQuery({ ...diagnosisQuery(d.id), enabled: failed })
+  const service = useQuery(serviceQuery(d.service_id))
+  const trail = useEnvironmentTrail(service.data?.environment_id)
+  const cancel = useApiMutation({
+    mutationFn: () => send(api.v1.deployments({ id: d.id }).cancel.post(undefined, idempotency())),
+    invalidate: ['deployments'],
+    success: () => 'Deployment cancelled',
+    failure: () => 'Cancel was refused'
+  })
   const live = !isTerminal(d.status)
 
   return (
     <div className="space-y-6">
       <div>
-        <Crumbs
-          items={[
-            { label: 'Projects', to: '/' },
-            ...(project.data && environment.data
-              ? [
-                  { label: project.data.name, to: '/projects/$project', params: { project: project.data.name } },
-                  { label: environment.data.name, to: '/projects/$project/$environment', params: { project: project.data.name, environment: environment.data.name } }
-                ]
-              : []),
-            ...(service.data ? [{ label: service.data.name, to: '/services/$service', params: { service: service.data.id } }] : []),
-            { label: `#${d.number}` }
-          ]}
-        />
+        <Crumbs items={[...trail.crumbs, ...(service.data ? [{ label: service.data.name, to: '/services/$service', params: { service: service.data.id } }] : []), { label: `#${d.number}` }]} />
         <PageHeader
           title={
             <span className="flex items-center gap-3">
@@ -107,7 +96,7 @@ function DeploymentPage() {
             </>
           }
           actions={
-            cancellable.has(d.status) && (
+            isCancellable(d.status) && (
               <Button size="sm" variant="outline" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
                 {cancel.isPending ? <Loader2 className="animate-spin" /> : <X />}
                 Cancel deployment
@@ -116,22 +105,26 @@ function DeploymentPage() {
           }
         />
       </div>
-      <div className="rounded-lg border bg-card p-4">
-        <KeyValue
-          items={[
-            ['Trigger', d.trigger.type],
-            ['Commit', d.trigger.source_sha ? <Mono key="sha">{shortSha(d.trigger.source_sha)}</Mono> : '—'],
-            ['Strategy', d.strategy],
-            ['Duration', duration(d.started_at, d.finished_at)],
-            ['Started', stamp(d.started_at)],
-            ['Finished', stamp(d.finished_at)],
-            ['Image', d.image_ref ? <Mono key="img">{shortDigest(d.image_ref)}</Mono> : '—'],
-            ['Build', d.build ? `${d.build.builder} · ${d.build.status}${d.build.duration_s ? ` · ${d.build.duration_s}s` : ''}` : 'none']
-          ]}
-        />
+      <KeyValue
+        framed
+        items={[
+          ['Trigger', d.trigger.type],
+          ['Commit', d.trigger.source_sha ? <Mono key="sha">{shortSha(d.trigger.source_sha)}</Mono> : '—'],
+          ['Strategy', d.strategy],
+          ['Duration', duration(d.started_at, d.finished_at)],
+          ['Started', stamp(d.started_at)],
+          ['Finished', stamp(d.finished_at)],
+          ['Image', d.image_ref ? <Mono key="img">{shortDigest(d.image_ref)}</Mono> : '—'],
+          ['Build', d.build ? `${d.build.builder} · ${d.build.status}${d.build.duration_s ? ` · ${d.build.duration_s}s` : ''}` : 'none']
+        ]}
+      >
         {d.cancel_reason && <p className="mt-3 text-sm text-muted-foreground">Cancelled: {d.cancel_reason}</p>}
-      </div>
-      {failed && (diagnosis.isPending ? <Rows count={3} /> : diagnosis.isError ? <ErrorState error={diagnosis.error} title="The diagnosis could not be loaded" /> : <DiagnosisPanel diagnosis={diagnosis.data} />)}
+      </KeyValue>
+      {failed && (
+        <QueryState query={diagnosis} errorTitle="The diagnosis could not be loaded">
+          {data => <DiagnosisPanel diagnosis={data} />}
+        </QueryState>
+      )}
       <Section title="Steps">
         <Steps steps={d.steps ?? []} />
       </Section>

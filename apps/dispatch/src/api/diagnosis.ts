@@ -84,7 +84,7 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
   if (d.code === 'EXIT_NONZERO' && !has('READ_LOGS')) fixes.push({ code: 'READ_LOGS', text: 'The container exited before it was healthy. Read the log excerpt; get_logs with the cursor shows more.' })
   if (d.code === 'BUILD_FAILED' && !has('READ_BUILD_LOGS')) fixes.push({ code: 'READ_BUILD_LOGS', text: 'Read the build log with get_logs and fix the Dockerfile or source, then deploy again.' })
   if (d.diff_from_last_good && !has('ROLLBACK')) {
-    fixes.push({ code: 'ROLLBACK', text: `Deployment ${d.diff_from_last_good.deployment_id} was the last good one; rolling back restores it while you fix this.`, action: { tool: 'rollback', input: { service: dep.service_id, deployment: d.diff_from_last_good.deployment_id } } })
+    fixes.push({ code: 'ROLLBACK', text: `Deployment ${d.diff_from_last_good.deployment_id} was the last good one; rolling back restores it while you fix this.`, action: { tool: 'rollback', input: { service: dep.service_id, deployment_id: d.diff_from_last_good.deployment_id } } })
   }
   return fixes
 }

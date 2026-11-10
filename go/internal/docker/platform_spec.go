@@ -2,8 +2,10 @@ package docker
 
 import (
 	"net/netip"
+	"runtime"
 	"strconv"
 
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -20,11 +22,11 @@ const (
 	RoleWorkshop        = "workshop"
 	RolePrepare         = "railpack-prepare"
 
-	DepotNetworkName = "stationly-depot"
-	DepotBridgeName  = "or-depot"
-	DepotName        = "or-depot"
-	DepotGCName      = "or-depot-gc"
-	DepotVolume      = "or-depot-data"
+	DepotNetworkName = protocol.ResourcePrefix + "depot"
+	DepotBridgeName  = DepotNetworkName
+	DepotName        = protocol.ResourcePrefix + "depot"
+	DepotGCName      = protocol.ResourcePrefix + "depot-gc"
+	DepotVolume      = protocol.ResourcePrefix + "depot-data"
 
 	WorkshopAppArmorProfile = "stationly-workshop"
 	WorkshopSocketDir       = "/run/buildkit"
@@ -49,6 +51,10 @@ func platformLabels(stationID, role, projectID string) map[string]string {
 	return l
 }
 
+func HostNanoCPUs(requested int64) int64 {
+	return min(requested, int64(runtime.NumCPU())*1_000_000_000)
+}
+
 func baseHost(network container.NetworkMode, memory, nanoCPUs int64) *container.HostConfig {
 	return &container.HostConfig{
 		NetworkMode:   network,
@@ -56,7 +62,7 @@ func baseHost(network container.NetworkMode, memory, nanoCPUs int64) *container.
 		SecurityOpt:   []string{"no-new-privileges"},
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 		LogConfig:     logConfig,
-		Resources:     container.Resources{Memory: memory, MemorySwap: memory, NanoCPUs: nanoCPUs},
+		Resources:     container.Resources{Memory: memory, MemorySwap: memory, NanoCPUs: HostNanoCPUs(nanoCPUs)},
 	}
 }
 
@@ -146,11 +152,15 @@ func DepotGC(stationID, image string, f DepotFiles) ContainerSpec {
 }
 
 func WorkshopCouplerName(projectID string) string {
-	return "or-workshop-coupler-" + projectID
+	return protocol.ResourcePrefix + "workshop-coupler-" + projectID
+}
+
+func PrepareName(buildID string) string {
+	return protocol.ResourcePrefix + "prepare-" + buildID
 }
 
 func WorkshopName(projectID string) string {
-	return "or-workshop-" + projectID
+	return protocol.ResourcePrefix + "workshop-" + projectID
 }
 
 func WorkshopCoupler(stationID, projectID, image string) ContainerSpec {
@@ -232,7 +242,7 @@ func Prepare(stationID, projectID, buildID, image string, args []string, vols Pr
 		namedVolume(vols.Plan, "/plan", false),
 		namedVolume(vols.Cache, "/tmp/railpack", false),
 	}
-	name := "or-prepare-" + buildID
+	name := PrepareName(buildID)
 	labels := platformLabels(stationID, RolePrepare, projectID)
 	spec := ContainerSpec{
 		Name:    name,

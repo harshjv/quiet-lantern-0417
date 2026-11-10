@@ -1,20 +1,24 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { KeyRound, Loader2, ShieldCheck, Smartphone, Trash2 } from 'lucide-react'
+import { KeyRound, Loader2, ShieldCheck, Smartphone } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/copy'
+import { RemoveButton } from '@/components/confirm'
+import { Field } from '@/components/field'
 import { ErrorState, Mono, PageHeader, Rows } from '@/components/page'
+import { QueryState } from '@/components/query-state'
+import { SixDigitCode } from '@/components/six-digit-code'
 import { QrCode } from '@/components/qr'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { Label } from '@/components/ui/label'
 import { authClient, authMessage, passkeysAvailable, passkeysQuery, sessionQuery } from '@/lib/auth'
 import { ago } from '@/lib/format'
+import { done, useApiMutation } from '@/lib/mutation'
+import { toneOutline } from '@/lib/tone'
 
 export const Route = createFileRoute('/_app/account')({
   validateSearch: (search: Record<string, unknown>): { enroll?: boolean } => (search.enroll === true || search.enroll === 'true' ? { enroll: true } : {}),
@@ -22,32 +26,29 @@ export const Route = createFileRoute('/_app/account')({
 })
 
 function Passkeys() {
-  const client = useQueryClient()
   const available = passkeysAvailable()
   const list = useQuery({ ...passkeysQuery, enabled: available })
   const [name, setName] = useState('')
-  const add = useMutation({
+  const add = useApiMutation({
     mutationFn: async () => {
       const result = await authClient.passkey.addPasskey({ name: name.trim() || undefined })
       if (result.error) throw new Error(authMessage(result.error, 'The passkey was not registered.'))
+      return done(null)
     },
-    onSuccess: () => {
-      setName('')
-      void client.invalidateQueries({ queryKey: ['auth'] })
-      toast.success('Passkey added', { description: 'It signs you in on its own, without the password.' })
-    },
-    onError: failure => toast.error('The passkey was not added', { description: failure.message })
+    invalidate: ['auth'],
+    success: () => ({ title: 'Passkey added', description: 'It signs you in on its own, without the password.' }),
+    onSuccess: () => setName(''),
+    failure: () => 'The passkey was not added'
   })
-  const remove = useMutation({
+  const remove = useApiMutation({
     mutationFn: async (id: string) => {
       const result = await authClient.passkey.deletePasskey({ id })
       if (result.error) throw new Error(authMessage(result.error, 'The passkey was not removed.'))
+      return done(null)
     },
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['auth'] })
-      toast.success('Passkey removed')
-    },
-    onError: failure => toast.error('The passkey was not removed', { description: failure.message })
+    invalidate: ['auth'],
+    success: () => 'Passkey removed',
+    failure: () => 'The passkey was not removed'
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -66,32 +67,25 @@ function Passkeys() {
           <p className="text-sm text-muted-foreground">Passkeys work only on the dashboard hostname over HTTPS. Open the dashboard there to add one; on this address use TOTP.</p>
         ) : (
           <>
-            {list.isPending ? (
-              <Rows count={1} />
-            ) : list.isError ? (
-              <ErrorState error={list.error} />
-            ) : list.data.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No passkey is registered.</p>
-            ) : (
-              <ul className="divide-y rounded-md border">
-                {list.data.map(p => (
-                  <li key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                    <KeyRound className="size-4 text-muted-foreground" aria-hidden />
-                    <span className="font-medium">{p.name ?? 'Unnamed passkey'}</span>
-                    <Badge variant="outline">{p.deviceType === 'multiDevice' ? 'synced' : 'device-bound'}</Badge>
-                    <span className="text-muted-foreground">added {ago(p.createdAt)}</span>
-                    <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={`Remove passkey ${p.name ?? ''}`} onClick={() => remove.mutate(p.id)} disabled={remove.isPending}>
-                      <Trash2 />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <QueryState query={list} rows={1} isEmpty={data => data.length === 0} empty={<p className="text-sm text-muted-foreground">No passkey is registered.</p>}>
+              {data => (
+                <ul className="divide-y rounded-md border">
+                  {data.map(p => (
+                    <li key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                      <KeyRound className="size-4 text-muted-foreground" aria-hidden />
+                      <span className="font-medium">{p.name ?? 'Unnamed passkey'}</span>
+                      <Badge variant="outline">{p.deviceType === 'multiDevice' ? 'synced' : 'device-bound'}</Badge>
+                      <span className="text-muted-foreground">added {ago(p.createdAt)}</span>
+                      <RemoveButton className="ml-auto" label={`Remove passkey ${p.name ?? ''}`} onClick={() => remove.mutate(p.id)} disabled={remove.isPending} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </QueryState>
             <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="flex-1 space-y-1.5">
-                <Label htmlFor="passkey-name">Name</Label>
+              <Field id="passkey-name" label="Name" className="flex-1">
                 <Input id="passkey-name" placeholder="Laptop" value={name} onChange={e => setName(e.target.value)} />
-              </div>
+              </Field>
               <Button type="submit" disabled={add.isPending}>
                 {add.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />}
                 Add a passkey
@@ -169,7 +163,7 @@ function Totp({ enabled }: { enabled: boolean }) {
         <CardTitle className="flex items-center gap-2">
           <Smartphone className="size-4" aria-hidden /> Authenticator app (TOTP)
           {enabled && (
-            <Badge variant="outline" className="border-emerald-300 text-emerald-800 dark:border-emerald-800 dark:text-emerald-300">
+            <Badge variant="outline" className={toneOutline.success}>
               on
             </Badge>
           )}
@@ -204,16 +198,9 @@ function Totp({ enabled }: { enabled: boolean }) {
               </div>
             </div>
             <form onSubmit={e => void confirm(e)} className="flex flex-wrap items-end gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="totp-code">Code from the app</Label>
-                <InputOTP id="totp-code" maxLength={6} value={code} onChange={setCode} inputMode="numeric" pattern="^[0-9]+$" aria-label="Six-digit code" autoComplete="one-time-code">
-                  <InputOTPGroup>
-                    {Array.from({ length: 6 }, (_, i) => (
-                      <InputOTPSlot key={i} index={i} />
-                    ))}
-                  </InputOTPGroup>
-                </InputOTP>
-              </div>
+              <Field id="totp-code" label="Code from the app">
+                <SixDigitCode id="totp-code" value={code} onChange={setCode} />
+              </Field>
               <Button type="submit" disabled={busy || code.length < 6}>
                 {busy && <Loader2 className="animate-spin" />}
                 Turn on TOTP
@@ -222,10 +209,9 @@ function Totp({ enabled }: { enabled: boolean }) {
           </div>
         ) : (
           <form onSubmit={e => void (enabled ? disable(e) : begin(e))} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="totp-password">Password</Label>
+            <Field id="totp-password" label="Password" className="flex-1">
               <Input id="totp-password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} />
-            </div>
+            </Field>
             <Button type="submit" variant={enabled ? 'outline' : 'default'} disabled={busy}>
               {busy && <Loader2 className="animate-spin" />}
               {enabled ? 'Turn off TOTP' : 'Set up TOTP'}

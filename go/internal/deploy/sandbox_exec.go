@@ -5,7 +5,6 @@ package deploy
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -463,17 +462,12 @@ func (s *Station) resizeSandboxRun(runID string, rows, cols int) (bool, error) {
 	return true, se.exec.Resize(rows, cols)
 }
 
-func (s *Station) openForward(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilitySandboxV1) {
-		return
-	}
-	var b protocol.ForwardOpenBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a forward.open body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) openForward(ctx context.Context, m dispatch.Message, b protocol.ForwardOpenBody) {
 	if b.SandboxId == nil {
 		s.replyError(m, protocolError(protocol.ErrorCodeProtocolCapabilityMissing, "Forward to a sandbox port.", "this stationd forwards only to sandboxes"))
+		return
+	}
+	if !s.requireCapability(m, protocol.CapabilitySandboxV1) {
 		return
 	}
 	if b.Port < 1 || b.Port > 65535 {
@@ -586,15 +580,7 @@ func (s *Station) openForward(ctx context.Context, m dispatch.Message) {
 	}()
 }
 
-func (s *Station) growSandboxStorage(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilitySandboxV1) {
-		return
-	}
-	var b protocol.SandboxStorageGrowBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a sandbox.storage.grow body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) growSandboxStorage(ctx context.Context, m dispatch.Message, b protocol.SandboxStorageGrowBody) {
 	if !s.sandboxStorageReady() {
 		s.replyError(m, protocolError(protocol.ErrorCodeStationCapabilityMissing, "Provision the sandbox filesystem with stationd install --sandbox-size or --sandbox-device.", "%s", s.sandboxUnavailable()))
 		return

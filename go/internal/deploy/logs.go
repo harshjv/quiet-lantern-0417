@@ -458,12 +458,7 @@ func wireLine(e logstore.Entry) protocol.LogLine {
 	return l
 }
 
-func (s *Station) queryLogs(m dispatch.Message) {
-	var sel protocol.LogSelector
-	if err := json.Unmarshal(m.Body, &sel); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a logs.query body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) queryLogs(_ context.Context, m dispatch.Message, sel protocol.LogSelector) {
 	target, failure := s.logTarget(sel)
 	if failure != nil {
 		s.replyError(m, failure)
@@ -507,14 +502,6 @@ func (s *Station) queryLogs(m dispatch.Message) {
 	}()
 }
 
-func (s *Station) requireCapability(m dispatch.Message, capability protocol.Capability) bool {
-	if s.link.Negotiated(capability) {
-		return true
-	}
-	s.replyError(m, protocolError(protocol.ErrorCodeProtocolCapabilityMissing, "Negotiate the capability in welcome first.", "%s needs the %s capability, which welcome did not grant", m.Type, capability))
-	return false
-}
-
 func streamFailure(err error) *protocol.ErrorBody {
 	var se *dispatch.StreamError
 	if errors.As(err, &se) {
@@ -523,15 +510,7 @@ func streamFailure(err error) *protocol.ErrorBody {
 	return protocolError(protocol.ErrorCodeProtocolLimit, "Retry.", "%v", err)
 }
 
-func (s *Station) followLogs(ctx context.Context, m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityLogsFollow) {
-		return
-	}
-	var sel protocol.LogSelector
-	if err := json.Unmarshal(m.Body, &sel); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a logs.follow body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) followLogs(ctx context.Context, m dispatch.Message, sel protocol.LogSelector) {
 	target, failure := s.logTarget(sel)
 	if failure != nil {
 		s.replyError(m, failure)

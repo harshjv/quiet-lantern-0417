@@ -1,34 +1,26 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from '@tanstack/react-router'
-import { Cable, CircleAlert, Globe, Loader2, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { toast } from 'sonner'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { Cable, CircleAlert, Globe, Pencil, Plus, TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
+import { ChoiceCards } from '@/components/choice-cards'
+import { Confirm, RemoveButton } from '@/components/confirm'
 import { CopyButton } from '@/components/copy'
 import { DomainsPanel } from '@/components/domains-panel'
+import { CheckboxField, Field } from '@/components/field'
+import { dialogScroll, DialogForm, FormDialog, FormError } from '@/components/form-dialog'
 import { Empty, ErrorState, Mono, Rows, Subsection } from '@/components/page'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger
-} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { api, ApiFailure, failureText, idempotency, send } from '@/lib/api'
+import { api, ApiFailure, idempotency, send } from '@/lib/api'
 import type { Domain, PortAllocation, Service, ServicePort } from '@/lib/api'
+import { useInvalidate } from '@/lib/invalidate'
+import { useApiMutation } from '@/lib/mutation'
 import { allocationsQuery, domainsQuery, portsQuery, stationQuery } from '@/lib/queries'
-import { toastStaged } from '@/lib/staged'
+import { toneText, warningAlert } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 type Protocol = ServicePort['protocol']
@@ -44,27 +36,16 @@ const protocolHelp: Record<Protocol, string> = {
   tcp: 'Reached on a host port of the station, byte for byte.'
 }
 
-function useInvalidateNetworking() {
-  const client = useQueryClient()
-  return () => {
-    for (const key of ['ports', 'domains', 'port-allocations', 'services', 'deployments', 'network', 'staged']) void client.invalidateQueries({ queryKey: [key] })
-  }
-}
+type PortsChange = { ports: PortSpec[]; done: string; staged: string }
 
 function usePortsChange(service: Service) {
-  const navigate = useNavigate()
-  const invalidate = useInvalidateNetworking()
-  return useMutation({
-    mutationFn: (input: { ports: PortSpec[]; done: string; staged: string }) => send(api.v1.services({ service: service.id }).patch({ ports: input.ports }, idempotency())),
-    onSuccess: (result, input) => {
-      invalidate()
-      if (result.staged) {
-        toastStaged(navigate, input.staged, result.body.id)
-        return
-      }
-      const started = result.body.deployments[0]
-      toast.success(input.done, { description: started ? `Deployment #${started.number} started to apply it.` : 'Saved.' })
-      for (const warning of result.body.warnings) toast.warning(warning.code, { description: warning.explanation })
+  return useApiMutation({
+    mutationFn: (input: PortsChange) => send(api.v1.services({ service: service.id }).patch({ ports: input.ports }, idempotency())),
+    invalidate: ['networking'],
+    staged: input => input.staged,
+    success: (body, input) => {
+      const started = body.deployments[0]
+      return { title: input.done, description: started ? `Deployment #${started.number} started to apply it.` : 'Saved.' }
     }
   })
 }
@@ -98,42 +79,14 @@ function FailureNotice({ error, allocations }: { error: unknown; allocations: Po
   )
 }
 
+const protocolOptions = (['http', 'tcp'] as const).map(protocol => ({ value: protocol, title: protocol, hint: protocolHelp[protocol] }))
+
 function ProtocolChoice({ value, onChange, name }: { value: Protocol; onChange: (value: Protocol) => void; name: string }) {
-  return (
-    <fieldset className="space-y-2">
-      <legend className="text-sm font-medium">Protocol</legend>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {(['http', 'tcp'] as const).map(protocol => (
-          <label
-            key={protocol}
-            className="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm has-[:checked]:border-foreground/40 has-[:checked]:bg-muted/50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
-          >
-            <input type="radio" name={name} value={protocol} checked={value === protocol} onChange={() => onChange(protocol)} className="mt-0.5 accent-foreground" />
-            <span>
-              <span className="block font-medium">{protocol}</span>
-              <span className="block text-xs text-muted-foreground">{protocolHelp[protocol]}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  )
+  return <ChoiceCards name={name} legend="Protocol" value={value} onChange={onChange} options={protocolOptions} className="grid-cols-1 sm:grid-cols-2" />
 }
 
 function GrpcChoice({ id, checked, onChange }: { id: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <div className="flex items-start gap-2">
-      <Checkbox id={id} checked={checked} onCheckedChange={v => onChange(v === true)} className="mt-0.5" aria-describedby={`${id}-hint`} />
-      <div className="space-y-0.5">
-        <Label htmlFor={id} className="font-normal">
-          gRPC
-        </Label>
-        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-          The port speaks HTTP/2 gRPC. It takes a direct domain or a TCP exposure, never a Tunnel.
-        </p>
-      </div>
-    </div>
-  )
+  return <CheckboxField id={id} checked={checked} onCheckedChange={onChange} label="gRPC" hint="The port speaks HTTP/2 gRPC. It takes a direct domain or a TCP exposure, never a Tunnel." />
 }
 
 function AddPort({ service, ports, allocations, open, onOpenChange }: { service: Service; ports: ServicePort[]; allocations: PortAllocation[]; open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -142,8 +95,7 @@ function AddPort({ service, ports, allocations, open, onOpenChange }: { service:
   const [protocol, setProtocol] = useState<Protocol>('http')
   const [grpc, setGrpc] = useState(false)
   const [taken, setTaken] = useState(false)
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
+  const submit = () => {
     const number = Number(port)
     if (ports.some(p => p.port === number)) {
       setTaken(true)
@@ -156,48 +108,39 @@ function AddPort({ service, ports, allocations, open, onOpenChange }: { service:
     )
   }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <form onSubmit={submit} className="space-y-4">
-          <DialogHeader>
-            <DialogTitle>Add a port</DialogTitle>
-            <DialogDescription>Sends the full port set to PATCH /v1/services/{'{service}'} and deploys {service.name}. sly and the update_service tool do the same.</DialogDescription>
-          </DialogHeader>
-          {change.isError && <FailureNotice error={change.error} allocations={allocations} />}
-          <div className="space-y-1.5">
-            <Label htmlFor="port-number">Port the container listens on</Label>
-            <Input
-              id="port-number"
-              type="number"
-              required
-              min={1}
-              max={65535}
-              value={port}
-              onChange={e => setPort(e.target.value)}
-              className="w-32 font-mono"
-              aria-invalid={taken || undefined}
-              aria-describedby={taken ? 'port-number-taken' : undefined}
-            />
-            {taken && (
-              <p id="port-number-taken" className="text-sm text-destructive" role="alert">
-                {service.name} already has port {port}. Edit that port instead.
-              </p>
-            )}
-          </div>
-          <ProtocolChoice value={protocol} onChange={setProtocol} name="add-port-protocol" />
-          <GrpcChoice id="add-port-grpc" checked={grpc} onChange={setGrpc} />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={change.isPending || !port}>
-              {change.isPending && <Loader2 className="animate-spin" />}
-              Add port
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Add a port"
+      description={`Sends the full port set to PATCH /v1/services/{service} and deploys ${service.name}. sly and the update_service tool do the same.`}
+      error={change.isError && <FailureNotice error={change.error} allocations={allocations} />}
+      submitLabel="Add port"
+      pending={change.isPending}
+      submitDisabled={!port}
+      onSubmit={submit}
+    >
+      <Field id="port-number" label="Port the container listens on">
+        <Input
+          id="port-number"
+          type="number"
+          required
+          min={1}
+          max={65535}
+          value={port}
+          onChange={e => setPort(e.target.value)}
+          className="w-32 font-mono"
+          aria-invalid={taken || undefined}
+          aria-describedby={taken ? 'port-number-taken' : undefined}
+        />
+        {taken && (
+          <FormError id="port-number-taken">
+            {service.name} already has port {port}. Edit that port instead.
+          </FormError>
+        )}
+      </Field>
+      <ProtocolChoice value={protocol} onChange={setProtocol} name="add-port-protocol" />
+      <GrpcChoice id="add-port-grpc" checked={grpc} onChange={setGrpc} />
+    </FormDialog>
   )
 }
 
@@ -220,79 +163,50 @@ function EditPort({
   const [protocol, setProtocol] = useState<Protocol>(initial)
   const [grpc, setGrpc] = useState(target.grpc)
   const unchanged = protocol === target.protocol && grpc === target.grpc
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
+  const submit = () => {
     const what = protocol !== target.protocol ? `Port ${target.port} is now ${protocol}` : `Port ${target.port} ${grpc ? 'is marked gRPC' : 'is no longer gRPC'}`
-    change.mutate({ ports: ports.map(p => (p.id === target.id ? { port: p.port, protocol, grpc } : specOf(p))), done: what, staged: `Changing port ${target.port} was staged for review` }, { onSuccess: onClose })
+    change.mutate(
+      { ports: ports.map(p => (p.id === target.id ? { port: p.port, protocol, grpc } : specOf(p))), done: what, staged: `Changing port ${target.port} was staged for review` },
+      { onSuccess: onClose }
+    )
   }
   return (
-    <Dialog open onOpenChange={next => !next && onClose()}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <form onSubmit={submit} className="space-y-4">
-          <DialogHeader>
-            <DialogTitle>Edit port {target.port}</DialogTitle>
-            <DialogDescription>The port keeps its id; the change deploys {service.name}. A protocol change is refused while a domain or TCP exposure uses the port.</DialogDescription>
-          </DialogHeader>
-          {change.isError && <FailureNotice error={change.error} allocations={allocations} />}
-          <ProtocolChoice value={protocol} onChange={setProtocol} name="edit-port-protocol" />
-          <GrpcChoice id="edit-port-grpc" checked={grpc} onChange={setGrpc} />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={change.isPending || unchanged}>
-              {change.isPending && <Loader2 className="animate-spin" />}
-              Save and deploy
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <FormDialog
+      open
+      onOpenChange={next => !next && onClose()}
+      title={`Edit port ${target.port}`}
+      description={`The port keeps its id; the change deploys ${service.name}. A protocol change is refused while a domain or TCP exposure uses the port.`}
+      error={change.isError && <FailureNotice error={change.error} allocations={allocations} />}
+      submitLabel="Save and deploy"
+      pending={change.isPending}
+      submitDisabled={unchanged}
+      onSubmit={submit}
+    >
+      <ProtocolChoice value={protocol} onChange={setProtocol} name="edit-port-protocol" />
+      <GrpcChoice id="edit-port-grpc" checked={grpc} onChange={setGrpc} />
+    </FormDialog>
   )
 }
 
 function RemovePort({ service, ports, allocations, target }: { service: Service; ports: ServicePort[]; allocations: PortAllocation[]; target: ServicePort }) {
   const change = usePortsChange(service)
-  const [open, setOpen] = useState(false)
   const last = ports.length === 1
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={next => {
-        if (!next) change.reset()
-        setOpen(next)
-      }}
-    >
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={last ? `Port ${target.port} is the only port and cannot be removed` : `Remove port ${target.port}`} disabled={last} title={last ? 'A web service needs at least one port' : undefined}>
-          <Trash2 />
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove port {target.port}?</AlertDialogTitle>
-          <AlertDialogDescription>{service.name} deploys without it. Other services that reference this port stop reaching it.</AlertDialogDescription>
-        </AlertDialogHeader>
-        {change.isError && <FailureNotice error={change.error} allocations={allocations} />}
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep it</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={change.isPending}
-            onClick={event => {
-              event.preventDefault()
-              change.mutate(
-                { ports: ports.filter(p => p.id !== target.id).map(specOf), done: `Port ${target.port} removed`, staged: `Removing port ${target.port} was staged for review` },
-                { onSuccess: () => setOpen(false) }
-              )
-            }}
-          >
-            {change.isPending && <Loader2 className="animate-spin" />}
-            Remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <Confirm
+      title={`Remove port ${target.port}?`}
+      description={`${service.name} deploys without it. Other services that reference this port stop reaching it.`}
+      renderError={failure => <FailureNotice error={failure} allocations={allocations} />}
+      onConfirm={() =>
+        change.mutateAsync({ ports: ports.filter(p => p.id !== target.id).map(specOf), done: `Port ${target.port} removed`, staged: `Removing port ${target.port} was staged for review` })
+      }
+      trigger={
+        <RemoveButton
+          label={last ? `Port ${target.port} is the only port and cannot be removed` : `Remove port ${target.port}`}
+          disabled={last}
+          title={last ? 'A web service needs at least one port' : undefined}
+        />
+      }
+    />
   )
 }
 
@@ -343,7 +257,7 @@ function PortsPart({ service, ports, domains, allocations, onEdit }: { service: 
 function NoPublicAddress({ station }: { station: { id: string; name: string } }) {
   const command = `sly stations update ${station.name} --public-address <ipv4>`
   return (
-    <Alert data-testid="no-public-address" className="border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-50">
+    <Alert data-testid="no-public-address" className={warningAlert}>
       <TriangleAlert />
       <AlertTitle>NO_PUBLIC_ADDRESS: station {station.name} has no public address</AlertTitle>
       <AlertDescription className="space-y-2 text-current">
@@ -352,9 +266,7 @@ function NoPublicAddress({ station }: { station: { id: string; name: string } })
           Set it with <Mono className="rounded bg-background/60 px-1.5 py-0.5">{command}</Mono>
           <CopyButton value={command} label="command" />
         </p>
-        <p className="text-xs opacity-80">
-          The update_station tool and PATCH /v1/stations/{station.id} with public_address do the same; it reaches the station in the next generation.
-        </p>
+        <p className="text-xs opacity-80">The update_station tool and PATCH /v1/stations/{station.id} with public_address do the same; it reaches the station in the next generation.</p>
       </AlertDescription>
     </Alert>
   )
@@ -370,27 +282,25 @@ function AddressLine({ address }: { address: string }) {
 }
 
 function Expose({ candidates, open, onOpenChange }: { candidates: ServicePort[]; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const invalidate = useInvalidateNetworking()
+  const invalidate = useInvalidate()
   const [port, setPort] = useState(candidates[0]?.id ?? '')
   const chosen = candidates.find(p => p.id === port) ?? candidates[0]
   const mutation = useMutation({
     mutationFn: (id: string) => send(api.v1.ports({ id })['port-allocations'].post(undefined, idempotency())),
-    onSuccess: () => invalidate()
+    onSuccess: () => invalidate('networking', 'staged')
   })
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (chosen) mutation.mutate(chosen.id)
-  }
   const result = mutation.data
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className={dialogScroll}>
         {result ? (
           <div className="space-y-4" aria-live="polite">
             <DialogHeader>
               <DialogTitle>{result.staged ? 'The exposure was staged for review' : `Port ${chosen?.port} is exposed`}</DialogTitle>
               <DialogDescription>
-                {result.staged ? 'This environment is protected; Dispatch allocates the host port when a human accepts the change.' : 'Clients on the internet connect to this address; the station forwards it to the container.'}
+                {result.staged
+                  ? 'This environment is protected; Dispatch allocates the host port when a human accepts the change.'
+                  : 'Clients on the internet connect to this address; the station forwards it to the container.'}
               </DialogDescription>
             </DialogHeader>
             {result.staged ? (
@@ -423,14 +333,17 @@ function Expose({ candidates, open, onOpenChange }: { candidates: ServicePort[];
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
-            <DialogHeader>
-              <DialogTitle>Expose a tcp port</DialogTitle>
-              <DialogDescription>Dispatch allocates a host port from exposure.port_range on the station. sly expose tcp and the expose_tcp tool do the same.</DialogDescription>
-            </DialogHeader>
-            {mutation.isError && <ErrorState error={mutation.error} title="The port was not exposed" />}
-            <div className="space-y-1.5">
-              <Label htmlFor="expose-port">Port</Label>
+          <DialogForm
+            title="Expose a tcp port"
+            description="Dispatch allocates a host port from exposure.port_range on the station. sly expose tcp and the expose_tcp tool do the same."
+            error={mutation.isError && <ErrorState error={mutation.error} title="The port was not exposed" />}
+            submitLabel="Expose"
+            pending={mutation.isPending}
+            submitDisabled={!chosen}
+            onSubmit={() => chosen && mutation.mutate(chosen.id)}
+            onCancel={() => onOpenChange(false)}
+          >
+            <Field id="expose-port" label="Port">
               <Select value={chosen?.id ?? ''} onValueChange={setPort}>
                 <SelectTrigger id="expose-port" className="w-full">
                   <SelectValue placeholder="Choose a tcp port" />
@@ -443,17 +356,8 @@ function Expose({ candidates, open, onOpenChange }: { candidates: ServicePort[];
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!chosen || mutation.isPending}>
-                {mutation.isPending && <Loader2 className="animate-spin" />}
-                Expose
-              </Button>
-            </DialogFooter>
-          </form>
+            </Field>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>
@@ -461,38 +365,20 @@ function Expose({ candidates, open, onOpenChange }: { candidates: ServicePort[];
 }
 
 function RemoveExposure({ allocation, port }: { allocation: PortAllocation; port: number | undefined }) {
-  const navigate = useNavigate()
-  const invalidate = useInvalidateNetworking()
   const label = allocation.address ?? `host port ${allocation.host_port}`
-  const mutation = useMutation({
+  const mutation = useApiMutation({
     mutationFn: () => send(api.v1['port-allocations']({ id: allocation.id }).delete(undefined, idempotency())),
-    onSuccess: result => {
-      invalidate()
-      if (result.staged) toastStaged(navigate, `Removing ${label} was staged for review`, result.body.id)
-      else toast.success(`${label} removed`, { description: 'The station stops forwarding it in the next generation.' })
-    },
-    onError: failure => toast.error('The exposure was not removed', { description: failureText(failure) })
+    invalidate: ['networking'],
+    staged: () => `Removing ${label} was staged for review`,
+    success: () => ({ title: `${label} removed`, description: 'The station stops forwarding it in the next generation.' })
   })
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={`Remove exposure ${label}`}>
-          <Trash2 />
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove {label}?</AlertDialogTitle>
-          <AlertDialogDescription>Clients connected through it are cut off{port ? ` and port ${port} is reachable only inside the environment` : ''}. Exposing the port again may allocate a different host port.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep it</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={() => mutation.mutate()}>
-            Remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <Confirm
+      title={`Remove ${label}?`}
+      description={`Clients connected through it are cut off${port ? ` and port ${port} is reachable only inside the environment` : ''}. Exposing the port again may allocate a different host port.`}
+      onConfirm={() => mutation.mutateAsync()}
+      trigger={<RemoveButton label={`Remove exposure ${label}`} />}
+    />
   )
 }
 
@@ -516,7 +402,11 @@ function ExposuresPart({
   return (
     <Subsection
       title="TCP exposures"
-      description={publicAddress ? `Raw TCP from the internet on a host port of ${publicAddress}, for databases and other non-HTTP protocols.` : 'Raw TCP from the internet on a host port of the station, for databases and other non-HTTP protocols.'}
+      description={
+        publicAddress
+          ? `Raw TCP from the internet on a host port of ${publicAddress}, for databases and other non-HTTP protocols.`
+          : 'Raw TCP from the internet on a host port of the station, for databases and other non-HTTP protocols.'
+      }
       actions={
         tcp.length > 0 && (
           <Button size="sm" onClick={() => setExposing(true)} disabled={candidates.length === 0} title={candidates.length === 0 ? 'Every tcp port is exposed' : undefined}>
@@ -528,7 +418,8 @@ function ExposuresPart({
       {tcp.length === 0 ? (
         <div className="space-y-3 rounded-lg border border-dashed px-4 py-4 text-sm" data-testid="http-only">
           <p>
-            {http.length === 1 ? `Port ${http[0]!.port} is http` : 'Every port is http'}, and http ports are reached through a domain. A TCP exposure needs a tcp port: switch one if clients speak something other than HTTP, such as a database protocol.
+            {http.length === 1 ? `Port ${http[0]!.port} is http` : 'Every port is http'}, and http ports are reached through a domain. A TCP exposure needs a tcp port: switch one if clients speak
+            something other than HTTP, such as a database protocol.
           </p>
           <div className="flex flex-wrap gap-2">
             {http.map(p => (
@@ -547,9 +438,15 @@ function ExposuresPart({
             return (
               <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-card px-4 py-3" data-testid="exposure">
                 <Cable className="size-4 text-muted-foreground" aria-hidden />
-                {a.address ? <AddressLine address={a.address} /> : <span className="text-sm">host port <Mono>{a.host_port}</Mono>, no public address</span>}
+                {a.address ? (
+                  <AddressLine address={a.address} />
+                ) : (
+                  <span className="text-sm">
+                    host port <Mono>{a.host_port}</Mono>, no public address
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground">→ port {port?.port ?? '?'}</span>
-                <span className={cn('text-sm font-medium', a.status === 'active' ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground')}>{a.status}</span>
+                <span className={cn('text-sm font-medium', a.status === 'active' ? toneText.success : toneText.neutral)}>{a.status}</span>
                 <span className="ml-auto">
                   <RemoveExposure allocation={a} port={port?.port} />
                 </span>
@@ -598,7 +495,17 @@ export function PublicNetworking({ service, protectedEnvironment }: { service: S
           <ExposuresPart ports={portList} allocations={allocationList} publicAddress={station.data?.public_address} onEdit={setEditing} />
         </>
       )}
-      {editing && <EditPort key={`${editing.port.id}:${editing.protocol}`} service={service} ports={portList} allocations={allocationList} target={editing.port} initial={editing.protocol} onClose={() => setEditing(null)} />}
+      {editing && (
+        <EditPort
+          key={`${editing.port.id}:${editing.protocol}`}
+          service={service}
+          ports={portList}
+          allocations={allocationList}
+          target={editing.port}
+          initial={editing.protocol}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </section>
   )
 }

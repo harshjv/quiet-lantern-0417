@@ -46,7 +46,7 @@ func TestRecoveryKeyReturnsTheKeyAndRecordsAnAuditEvent(t *testing.T) {
 	if perr != nil {
 		t.Fatal(perr.Explanation)
 	}
-	if got.(map[string]any)["recovery_key"] != want {
+	if got.(protocol.RootSocketRecoveryKey).RecoveryKey != want {
 		t.Fatalf("got %v, want %s", got, want)
 	}
 	records := ob.After(0, 10)

@@ -2,14 +2,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { CheckboxField, Field } from '@/components/field'
 import { Logo } from '@/components/logo'
+import { SixDigitCode } from '@/components/six-digit-code'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { Label } from '@/components/ui/label'
 import { authClient, authMessage, passkeysAvailable, safeNext, serverPage, sessionQuery } from '@/lib/auth'
 
 type Search = { next?: string }
@@ -140,14 +139,12 @@ function Login() {
                 </>
               )}
               <form className="space-y-3" onSubmit={e => void withPassword(e)}>
-                <div className="space-y-1.5">
-                  <Label htmlFor="email">Email</Label>
+                <Field id="email" label="Email">
                   <Input id="email" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">Password</Label>
+                </Field>
+                <Field id="password" label="Password">
                   <Input id="password" type="password" autoComplete="current-password" required minLength={12} value={password} onChange={e => setPassword(e.target.value)} />
-                </div>
+                </Field>
                 <Button type="submit" variant={passkeys ? 'outline' : 'default'} className="w-full" size="lg" disabled={busy !== null}>
                   {busy === 'password' && <Loader2 className="animate-spin" />}
                   Continue
@@ -158,37 +155,15 @@ function Login() {
           ) : (
             <form className="space-y-4" onSubmit={e => void withCode(e)}>
               {backup ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor="backup">Backup code</Label>
+                <Field id="backup" label="Backup code">
                   <Input id="backup" autoComplete="one-time-code" required value={code} onChange={e => setCode(e.target.value)} className="font-mono" />
-                </div>
+                </Field>
               ) : (
                 <div className="flex justify-center">
-                  <InputOTP
-                    maxLength={6}
-                    value={code}
-                    onChange={setCode}
-                    onComplete={() => void withCode()}
-                    autoFocus
-                    inputMode="numeric"
-                    pattern="^[0-9]+$"
-                    aria-label="Six-digit code"
-                    autoComplete="one-time-code"
-                  >
-                    <InputOTPGroup>
-                      {Array.from({ length: 6 }, (_, i) => (
-                        <InputOTPSlot key={i} index={i} />
-                      ))}
-                    </InputOTPGroup>
-                  </InputOTP>
+                  <SixDigitCode value={code} onChange={setCode} onComplete={() => void withCode()} autoFocus />
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <Checkbox id="trust" checked={trust} onCheckedChange={v => setTrust(v === true)} />
-                <Label htmlFor="trust" className="font-normal">
-                  Trust this browser for 30 days
-                </Label>
-              </div>
+              <CheckboxField id="trust" checked={trust} onCheckedChange={setTrust} label="Trust this browser for 30 days" />
               <Button type="submit" className="w-full" size="lg" disabled={busy !== null || (!backup && code.length < 6)}>
                 {busy === 'totp' && <Loader2 className="animate-spin" />}
                 Verify

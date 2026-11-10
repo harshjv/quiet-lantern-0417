@@ -9,11 +9,11 @@ import {
   type ServiceVariableDoc
 } from '@stationly/manifest-schema'
 import { Cron } from 'croner'
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { Principal } from '../auth/principal.ts'
 import type { Level, Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
-import { domain, port_allocation, secret_value, service, service_port, station, variable, volume } from '../db/schema.ts'
+import { domain, port_allocation, service, service_port, station, variable, volume } from '../db/schema.ts'
 import { can } from '../api/access.ts'
 import { ChangeSet, leafDiff, type Change } from '../api/changes.ts'
 import { configDeployTrigger } from '../api/deployments.ts'
@@ -23,6 +23,7 @@ import { ApiError, fail } from '../api/errors.ts'
 import { generatedHostname, hostPortPicker, requireGatewayPin } from '../api/exposure.ts'
 import type { EnvironmentRow, ProjectRow, ServiceRow, VariableRow } from '../api/lookup.ts'
 import type { Keyring } from '../secrets/keyring.ts'
+import { decryptValue, headValue, nextValueVersion } from '../secrets/values.ts'
 import { parseValue, type Segment } from '../secrets/reference.ts'
 
 export type Issue = { path: string; code: string; message: string }
@@ -144,7 +145,7 @@ const desiredProjectVariable = (raw: ProjectVariableDoc, environmentName: string
     return { sealed: false, reference: null, default: text, value: null }
   }
   if (raw.sealed) {
-    if (raw.default !== undefined || raw.environments !== undefined) issues.push({ path, code: 'REFERENCE_SYNTAX', message: 'A sealed project variable never carries values in the file; set them with set_variables.' })
+    if (raw.default !== undefined || raw.environments !== undefined) issues.push({ path, code: 'REFERENCE_SYNTAX', message: 'A sealed project variable never carries values in the file; set them with set_project_variables.' })
     if (raw.reference !== undefined) {
       const segments = parseReference(raw.reference, `${path}/reference`, issues)
       if (segments && !isGenerator(segments)) issues.push({ path: `${path}/reference`, code: 'PROJECT_REFERENCE', message: 'A sealed project variable takes only ${{secret(N)}}.' })
@@ -169,32 +170,10 @@ const desiredProjectVariable = (raw: ProjectVariableDoc, environmentName: string
   }
 }
 
-const latestValue = (db: Db, row: VariableRow, environmentId: string | null) =>
-  db
-    .select()
-    .from(secret_value)
-    .where(
-      and(
-        eq(secret_value.variable_id, row.id),
-        environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId),
-        isNull(secret_value.revoked_at)
-      )
-    )
-    .orderBy(desc(secret_value.version))
-    .get()
-
 const currentValue = (db: Db, keyring: Keyring, row: VariableRow, environmentId: string | null) => {
-  const value = latestValue(db, row, environmentId)
-  return value ? { version: value.version, plaintext: keyring.decrypt(value.id, value.data_key_id, value.ciphertext) } : null
+  const value = headValue(db, row.id, environmentId, 'unset')
+  return value ? { version: value.version, plaintext: decryptValue(keyring, value) } : null
 }
-
-const nextVersion = (db: Db, variableId: string, environmentId: string | null) =>
-  (db
-    .select({ version: secret_value.version })
-    .from(secret_value)
-    .where(and(eq(secret_value.variable_id, variableId), environmentId === null ? isNull(secret_value.environment_id) : eq(secret_value.environment_id, environmentId)))
-    .orderBy(desc(secret_value.version))
-    .get()?.version ?? 0) + 1
 
 export type PlanInput = {
   db: Db
@@ -458,7 +437,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       if (want.kind === 'sealed') {
         if (!prior) {
           if (want.reference === null) {
-            warnings.push({ code: 'SEALED_VALUE_MISSING', explanation: `${key} is declared sealed and has no value in ${environment.name}; set it with set_variables.`, path: `${servicePath}/variables/${key}` })
+            warnings.push({ code: 'SEALED_VALUE_MISSING', explanation: `${key} is declared sealed and has no value in ${environment.name}; set it with set_service_variables.`, path: `${servicePath}/variables/${key}` })
             continue
           }
           set.add('variable', parent, { ...base, kind: 'sealed', reference: want.reference, value_length: null, version: 1 })
@@ -472,7 +451,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           kind: 'sealed',
           reference: referenceChanged ? want.reference : null,
           value_length: null,
-          version: referenceChanged ? nextVersion(db, prior.id, null) : null
+          version: referenceChanged ? nextValueVersion(db, prior.id, null) : null
         })
         changed = true
         continue
@@ -485,7 +464,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           kind: 'literal',
           reference: null,
           value_length: Buffer.byteLength(want.value, 'utf8'),
-          version: prior ? nextVersion(db, prior.id, null) : 1,
+          version: prior ? nextValueVersion(db, prior.id, null) : 1,
           value_id: set.secret(escapeLiteral(want.value))
         }
         if (prior) set.update('variable', prior.id, '', { key, kind: prior.kind, reference: prior.reference, injection: prior.injection, build: prior.build }, after)
@@ -495,7 +474,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       }
       const kind = want.kind === 'literal-generator' ? 'literal' : 'reference'
       if (prior && prior.kind === kind && prior.reference === want.reference && prior.injection === want.injection && prior.build === want.build) continue
-      const after = { ...base, kind, reference: want.reference, value_length: null, version: kind === 'literal' ? (prior ? nextVersion(db, prior.id, null) : 1) : null }
+      const after = { ...base, kind, reference: want.reference, value_length: null, version: kind === 'literal' ? (prior ? nextValueVersion(db, prior.id, null) : 1) : null }
       if (prior) set.update('variable', prior.id, '', { key, kind: prior.kind, reference: prior.reference, injection: prior.injection, build: prior.build }, after)
       else set.add('variable', parent, after)
       changed = true
@@ -747,7 +726,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           injection: prior?.injection ?? 'env',
           build: prior?.build ?? false,
           value_length: plaintext === null ? null : Buffer.byteLength(plaintext, 'utf8'),
-          version: targetRef && !targetRef.startsWith('new:') ? nextVersion(db, targetRef, environmentId) : 1,
+          version: targetRef && !targetRef.startsWith('new:') ? nextValueVersion(db, targetRef, environmentId) : 1,
           allow_unresolved: true,
           ...(environmentId ? { environment_id: environmentId } : {}),
           ...(plaintext === null ? {} : { value_id: set.secret(escapeLiteral(plaintext)) })
@@ -756,14 +735,14 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         else targetRef = set.add('variable', project.id, after)
       }
       if (want.sealed) {
-        const hasValue = prior ? (latestValue(db, prior, environment.id) ?? latestValue(db, prior, null)) : null
+        const hasValue = prior ? (headValue(db, prior.id, environment.id, 'unset') ?? headValue(db, prior.id, null, 'unset')) : null
         if (hasValue && (!want.reference || prior!.reference === want.reference)) continue
         if (want.reference) write(environment.id, null, want.reference)
-        else warnings.push({ code: 'SEALED_VALUE_MISSING', explanation: `${key} is declared sealed and has no value in ${environment.name}; set it with set_variables.`, path })
+        else warnings.push({ code: 'SEALED_VALUE_MISSING', explanation: `${key} is declared sealed and has no value in ${environment.name}; set it with set_project_variables.`, path })
         continue
       }
       if (want.reference) {
-        if (prior && prior.reference === want.reference && latestValue(db, prior, null)) continue
+        if (prior && prior.reference === want.reference && headValue(db, prior.id, null)) continue
         write(null, null, want.reference)
         continue
       }

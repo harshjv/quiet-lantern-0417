@@ -17,9 +17,12 @@
     "@stationly/api-client": "workspace:*",
     "@stationly/manifest-schema": "workspace:*",
     "@stationly/mcp": "workspace:*",
+    "@stationly/protocol": "workspace:*",
+    "@t3-oss/env-core": "^0.13.11",
     "commander": "^15.0.0",
     "tar": "7.5.22",
-    "tldts": "7.4.19"
+    "tldts": "7.4.19",
+    "zod": "^4.6.7"
   },
   "bin": {
     "sly": "./src/index.ts"

@@ -19,10 +19,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
-	ArtifactType    = "application/vnd.stationly.release.v1"
 	TitleAnnotation = "org.opencontainers.image.title"
 	ManifestFile    = "release-manifest.json"
 	BundleSuffix    = ".sigstore.json"
@@ -108,8 +108,8 @@ func Open(ctx context.Context, repository string, insecure bool, version string)
 	if err != nil {
 		return nil, fmt.Errorf("release %s: artifact manifest: %w", version, err)
 	}
-	if m.ArtifactType != ArtifactType && string(m.Config.MediaType) != ArtifactType {
-		return nil, fmt.Errorf("release %s: %s has artifact type %q, not %s", version, tag, m.ArtifactType, ArtifactType)
+	if m.ArtifactType != protocol.MediaTypeReleaseArtifact && string(m.Config.MediaType) != protocol.MediaTypeReleaseArtifact {
+		return nil, fmt.Errorf("release %s: %s has artifact type %q, not %s", version, tag, m.ArtifactType, protocol.MediaTypeReleaseArtifact)
 	}
 	for _, l := range m.Layers {
 		title := l.Annotations[TitleAnnotation]

@@ -134,10 +134,11 @@ export const eventRoutes = (kit: Kit) => {
     return sse.response
   }
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).get(
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations).get(
     '/events',
     async ({ request, query }) => ((request.headers.get('accept') ?? '').includes('text/event-stream') ? ((await stream(request, query)) as never) : list(request, query)),
     {
+      operation: { id: 'get_events', level: 'any' },
       query: eventQuery,
       response: replies({ 200: EventPage }),
       detail: { summary: 'Events visible to the caller; Accept: text/event-stream streams them, resuming after since or Last-Event-ID', tags: ['events'] }

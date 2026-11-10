@@ -235,13 +235,11 @@ export const serviceRoutes = (kit: Kit) => {
   const tags = ['services']
   const view = (id: string, fields?: string) => select(kit.views.service, db.select().from(service).where(eq(service.id, id)).get()!, kit.fields(fields))
 
-  return new Elysia({ prefix: '/v1', normalize: false }).use(models())
+  return new Elysia({ prefix: '/v1', normalize: false }).use(models()).use(kit.operations)
     .get(
       '/environments/:environment/services',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
+      async ({ params, query }) => {
         const ctx = environmentById(db, params.environment)
-        requireLevel(principal, ctx.target, 'read')
         const page = collect(
           (cursor, size) =>
             db
@@ -265,6 +263,7 @@ export const serviceRoutes = (kit: Kit) => {
         return { items: page.rows.map(row => select(kit.views.service, row, kit.fields(query.fields))), next_cursor: page.next_cursor }
       },
       {
+        operation: { id: 'list_services', level: 'read' },
         params: t.Object({ environment: t.String() }),
         query: t.Object({ ...listQuery, status: t.Optional(t.String()), kind: t.Optional(t.String()), station: t.Optional(t.String()), stale: t.Optional(t.BooleanString()) }),
         response: replies({ 200: Page(Service) }),
@@ -273,48 +272,40 @@ export const serviceRoutes = (kit: Kit) => {
     )
     .get(
       '/services/:service',
-      async ({ request, params, query }) => {
-        const principal = await kit.principal(request)
-        const ctx = serviceById(db, params.service)
-        requireLevel(principal, ctx.target, 'read')
-        return select(kit.views.service, ctx.service, kit.fields(query.fields))
-      },
-      { params: t.Object({ service: t.String() }), query: t.Object(getQuery), response: replies({ 200: Service }), detail: { summary: 'Get a service', tags } }
+      async ({ params, query }) => select(kit.views.service, serviceById(db, params.service).service, kit.fields(query.fields)),
+      { operation: { id: 'describe_service', level: 'read' }, params: t.Object({ service: t.String() }), query: t.Object(getQuery), response: replies({ 200: Service }), detail: { summary: 'Get a service', tags } }
     )
     .post(
       '/environments/:environment/services',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = environmentById(db, params.environment)
-        requireLevel(call.principal, ctx.target, 'admin')
         const sourceWarnings = await authorizeSource(kit, body)
         const changes = planCreate(kit, call.principal, ctx.environment, body)
         const result = commit(kit.deps, call, { environment: ctx.environment, protect: ctx.environment.protected }, changes)
         if (result.applied) set.status = 201
         return respond(kit, set, result, () => view(result.applied ? result.refs['new:service:1']! : '', 'ports,volumes'), sourceWarnings)
       },
-      { params: t.Object({ environment: t.String() }), body: ServiceCreate, response: replies({ 201: ServiceWritten, 202: Staged }), detail: { summary: 'Create a service', tags } }
+      { operation: { id: 'create_service', level: 'admin' }, params: t.Object({ environment: t.String() }), body: ServiceCreate, response: replies({ 201: ServiceWritten, 202: Staged }), detail: { summary: 'Create a service', tags } }
     )
     .patch(
       '/services/:service',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         const sourceWarnings = await authorizeSource(kit, body, ctx.service)
         const changes = planPatch(kit, call.principal, ctx, body)
         if (changes.empty) return { ...view(ctx.service.id), deployments: [], warnings: [] }
         const result = commit(kit.deps, call, { environment: ctx.environment, protect: ctx.environment.protected }, changes)
         return respond(kit, set, result, () => view(ctx.service.id, 'ports,volumes'), sourceWarnings)
       },
-      { params: t.Object({ service: t.String() }), body: ServicePatch, response: replies({ 200: ServiceWritten, 202: Staged }), detail: { summary: 'Update a service; deploys when deploy = true and the configuration changed', tags } }
+      { operation: { id: 'update_service', level: 'deploy' }, params: t.Object({ service: t.String() }), body: ServicePatch, response: replies({ 200: ServiceWritten, 202: Staged }), detail: { summary: 'Update a service; deploys when deploy = true and the configuration changed', tags } }
     )
     .delete(
       '/services/:service',
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'admin')
         const dependents = dependentsOfService(kit, ctx.service)
         if (dependents.length) fail('DELETE_HAS_DEPENDENTS', `${ctx.service.name} is referenced by other services' variables.`, 'Remove those references first.', { dependents })
         const changes = new ChangeSet()
@@ -323,14 +314,13 @@ export const serviceRoutes = (kit: Kit) => {
         if (!result.applied) return kit.stagedBody(result, set)
         return { deleted: true as const, volumes_retained_until: result.retained_until?.toISOString() ?? null }
       },
-      { params: t.Object({ service: t.String() }), response: replies({ 200: DeletedRetaining, 202: Staged }), detail: { summary: 'Delete a service; volumes are retained', tags } }
+      { operation: { id: 'delete_service', level: 'admin' }, params: t.Object({ service: t.String() }), response: replies({ 200: DeletedRetaining, 202: Staged }), detail: { summary: 'Delete a service; volumes are retained', tags } }
     )
     .post(
       '/services/:service/restart',
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         if (!ctx.service.current_deployment_id) fail('NO_CURRENT_DEPLOYMENT', `${ctx.service.name} has no current deployment to restart.`, 'Call deploy (POST /v1/services/{service}/deployments) first.')
         const changes = new ChangeSet()
         changes.deploy(ctx.service.id, 'redeploy', { reason: 'restart' })
@@ -338,14 +328,13 @@ export const serviceRoutes = (kit: Kit) => {
         if (!result.applied) return kit.stagedBody(result, set)
         return select(kit.views.deployment, db.select().from(deployment).where(eq(deployment.id, result.deployments[0]!)).get()!, undefined)
       },
-      { params: t.Object({ service: t.String() }), response: replies({ 200: Deployment, 202: Staged }), detail: { summary: 'Restart: a redeploy of the current deployment', tags } }
+      { operation: { id: 'restart_service', level: 'deploy' }, params: t.Object({ service: t.String() }), response: replies({ 200: Deployment, 202: Staged }), detail: { summary: 'Restart: a redeploy of the current deployment', tags } }
     )
     .post(
       '/services/:service/stop',
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         const changes = new ChangeSet()
         if (ctx.service.desired_state !== 'stopped') changes.update('service', ctx.service.id, '/desired_state', ctx.service.desired_state, 'stopped')
         if (changes.empty) return view(ctx.service.id)
@@ -353,14 +342,13 @@ export const serviceRoutes = (kit: Kit) => {
         if (!result.applied) return kit.stagedBody(result, set)
         return view(ctx.service.id)
       },
-      { params: t.Object({ service: t.String() }), response: replies({ 200: Service, 202: Staged }), detail: { summary: 'Stop: desired_state = stopped', tags } }
+      { operation: { id: 'stop_service', level: 'deploy' }, params: t.Object({ service: t.String() }), response: replies({ 200: Service, 202: Staged }), detail: { summary: 'Stop: desired_state = stopped', tags } }
     )
     .post(
       '/services/:service/start',
       async ({ request, params, set }) => {
         const call = await kit.call(request)
         const ctx = serviceById(db, params.service)
-        requireLevel(call.principal, ctx.target, 'deploy')
         if (!ctx.service.current_deployment_id) fail('NO_CURRENT_DEPLOYMENT', `${ctx.service.name} has no current deployment to start.`, 'Call deploy (POST /v1/services/{service}/deployments) first.')
         const changes = new ChangeSet()
         if (ctx.service.desired_state !== 'running') changes.update('service', ctx.service.id, '/desired_state', ctx.service.desired_state, 'running')
@@ -369,7 +357,7 @@ export const serviceRoutes = (kit: Kit) => {
         if (!result.applied) return kit.stagedBody(result, set)
         return { ...view(ctx.service.id), deployments: [] }
       },
-      { params: t.Object({ service: t.String() }), response: replies({ 200: ServiceStarted, 202: Staged }), detail: { summary: 'Start: desired_state = running', tags } }
+      { operation: { id: 'start_service', level: 'deploy' }, params: t.Object({ service: t.String() }), response: replies({ 200: ServiceStarted, 202: Staged }), detail: { summary: 'Start: desired_state = running', tags } }
     )
 }
 

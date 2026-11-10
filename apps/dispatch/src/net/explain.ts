@@ -1,4 +1,4 @@
-import type { MessageBody } from '@stationly/protocol'
+import { slugPattern, type MessageBody } from '@stationly/protocol'
 import type { Static } from '@sinclair/typebox'
 import { eq, inArray } from 'drizzle-orm'
 import { isIPv4 } from 'node:net'
@@ -46,13 +46,15 @@ const splitPort = (to: string): [string, number | undefined] => {
 }
 
 const hostnamePattern = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/i
-const slug = /^[a-z0-9][a-z0-9-]{0,62}$/
+const slug = new RegExp(slugPattern)
 
 const loopback = (a: string) => a.startsWith('127.') || a === '::1'
 const wildcard = (a: string) => a === '0.0.0.0' || a === '::'
 
 const serverHint = (port: number) =>
   port === 5432 ? " (for Postgres, listen_addresses = '*')" : port === 3306 ? ' (for MySQL, bind-address = 0.0.0.0)' : port === 6379 ? ' (for Redis, bind 0.0.0.0)' : ''
+
+const probeTool = { service: 'probe_network', sandbox: 'probe_sandbox_network' } as const
 
 type ServiceTarget = { kind: 'service'; svc: ServiceRow; vip: string; name: string | null; viaAddress: boolean; port: number }
 type ContainerTarget = { kind: 'container'; svc: ServiceRow; address: string; port: number }
@@ -298,12 +300,12 @@ export const explainNetwork = async (src: ExplainSources, env: EnvironmentRow, i
   if (target.kind === 'public' || target.kind === 'address') {
     if (verdict?.verdict === 'accept' && verdict.path === 'public_internet') {
       hops.push(hop('probe_required', 'unknown', { reason: 'whether a remote host answers is a live fact' }))
-      fixes.push(fix('RUN_PROBE', `Probe ${target.kind === 'public' ? target.host : target.address}:${port} from ${source.name} to see whether it answers.`, { tool: 'probe_network', input: { [source.kind]: source.id, to: target.kind === 'public' ? target.host : target.address, port } }))
+      fixes.push(fix('RUN_PROBE', `Probe ${target.kind === 'public' ? target.host : target.address}:${port} from ${source.name} to see whether it answers.`, { tool: probeTool[source.kind], input: { [source.kind]: source.id, to: target.kind === 'public' ? target.host : target.address, port } }))
     } else if (verdict?.verdict === 'accept') {
       hops.push(hop('target', 'fail', { address: verdictAddress, reason: 'no container of this environment holds the address' }, 'TARGET_NOT_RUNNING'))
     } else if (!verdict) {
       hops.push(hop('probe_required', 'unknown', { reason: 'the DNS log has no answer to judge' }))
-      fixes.push(fix('RUN_PROBE', `Probe ${toText.split('/')[0]} from ${source.name}; it resolves the name and connects under the service's own rules.`, { tool: 'probe_network', input: { [source.kind]: source.id, to: target.kind === 'public' ? target.host : verdictAddress, port } }))
+      fixes.push(fix('RUN_PROBE', `Probe ${toText.split('/')[0]} from ${source.name}; it resolves the name and connects under the service's own rules.`, { tool: probeTool[source.kind], input: { [source.kind]: source.id, to: target.kind === 'public' ? target.host : verdictAddress, port } }))
     }
     const summary = blockedPath ? blockedSummary(source.name, verdictAddress!, port, blockedPath, verdict!.rule ?? '') : !verdict ? `${source.name} has not resolved ${target.kind === 'public' ? target.host : toText} yet, so the path cannot be judged without a probe.` : `The rules let ${source.name} reach ${verdictAddress}:${port}; only a probe shows whether it answers.`
     return finish(entity, hops, fixes, notChecked, observedAt, summary, blockedPath ? { path: blockedPath } : {})
@@ -363,7 +365,7 @@ export const explainNetwork = async (src: ExplainSources, env: EnvironmentRow, i
   }
 
   const failed = hops.find(h => h.status === 'fail' || h.status === 'unknown')
-  if (!failed) fixes.unshift(fix('RUN_PROBE', `Probe ${toText.split('/')[0]} from ${source.name} to see whether the server answers.`, { tool: 'probe_network', input: { [source.kind]: source.id, to: target.kind === 'service' ? (target.name ?? (target.viaAddress ? target.vip : `${svc.name}.internal`)) : target.address, port } }))
+  if (!failed) fixes.unshift(fix('RUN_PROBE', `Probe ${toText.split('/')[0]} from ${source.name} to see whether the server answers.`, { tool: probeTool[source.kind], input: { [source.kind]: source.id, to: target.kind === 'service' ? (target.name ?? (target.viaAddress ? target.vip : `${svc.name}.internal`)) : target.address, port } }))
   const summary = (() => {
     if (!failed) return `${source.name} can reach ${svc.name} on ${port}/${protocol}: every hop passed. Only a probe shows whether the server answers.`
     switch (failed.code) {

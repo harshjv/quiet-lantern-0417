@@ -1,4 +1,9 @@
-export type Envelope = { error: { code: string; explanation: string; fix?: string; details?: Record<string, unknown>; request_id?: string } }
+import type { ErrorCode } from '@stationly/protocol'
+import { apiUrlEnv, tokenEnv } from './env.ts'
+
+export type EnvelopeCode = ErrorCode | 'CONNECTION_FAILED'
+
+export type Envelope = { error: { code: EnvelopeCode; explanation: string; fix?: string; details?: Record<string, unknown>; request_id?: string } }
 
 export const exitCodes = { ok: 0, api: 1, usage: 2, staged: 3, deployFailed: 4, connection: 5, brokenPipe: 141 } as const
 
@@ -22,7 +27,7 @@ export class DryRun extends Error {
   }
 }
 
-const envelopeOf = (code: string, explanation: string, fix: string): Envelope => ({ error: { code, explanation, fix } })
+const envelopeOf = (code: EnvelopeCode, explanation: string, fix: string): Envelope => ({ error: { code, explanation, fix } })
 
 export const inputRequired = (what: string, flag: string) =>
   new Exit(exitCodes.usage, envelopeOf('INPUT_REQUIRED', `${what} is required and there is no TTY to prompt for it.`, `Pass ${flag}.`))
@@ -35,7 +40,7 @@ export const notLoggedIn = (instance: string | null, fix?: string) =>
     envelopeOf(
       'UNAUTHENTICATED',
       instance ? `No credential is stored for ${instance}.` : 'No instance is selected and none is logged in.',
-      fix ?? (instance ? `Run sly login --instance ${instance}, or set STATIONLY_TOKEN.` : 'Run sly login --instance <https://api host>, or set STATIONLY_TOKEN and STATIONLY_API_URL.')
+      fix ?? (instance ? `Run sly login --instance ${instance}, or set ${tokenEnv}.` : `Run sly login --instance <https://api host>, or set ${tokenEnv} and ${apiUrlEnv}.`)
     )
   )
 

@@ -13,9 +13,10 @@ import {
   SandboxSize,
   Schedule,
   ServiceKind,
-  Strategy
+  Strategy,
+  volumeOwnerValues
 } from './model.ts'
-import { Bytes, Count, Digest, Id, IdMap, Json, Nullable, Port, Seconds, StringEnum, Timestamp } from './primitives.ts'
+import { Bytes, Count, Digest, Id, IdMap, Json, Nullable, Port, sandboxNetworkName, Seconds, StringEnum, Timestamp } from './primitives.ts'
 
 export const StationSettings = Type.Object(
   {
@@ -86,7 +87,7 @@ export const DesiredStation = Type.Object(
       Nullable(
         Type.Object(
           {
-            bridge_name: Type.Literal('stationly-sandbox'),
+            bridge_name: Type.Literal(sandboxNetworkName),
             subnet: Type.String(),
             gateway: Type.String()
           },
@@ -270,7 +271,7 @@ export const DesiredDeployment = Type.Object(
 export const DesiredVolume = Type.Object(
   {
     hash: Digest,
-    owner: StringEnum(['service', 'station'], { title: 'VolumeOwner' }),
+    owner: StringEnum(volumeOwnerValues, { title: 'VolumeOwner' }),
     service_id: Nullable(Id('service')),
     docker_name: Type.String(),
     status: StringEnum(['active', 'retained', 'destroy'], { title: 'DesiredVolumeStatus' }),

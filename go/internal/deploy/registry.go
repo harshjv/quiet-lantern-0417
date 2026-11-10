@@ -4,7 +4,6 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/depot"
@@ -47,15 +46,7 @@ func (s *Station) markPruned(res protocol.RegistryDeleteResultBody) {
 	}
 }
 
-func (s *Station) registryDelete(m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityRegistryV1) {
-		return
-	}
-	var b protocol.RegistryDeleteBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a registry.delete body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) registryDelete(_ context.Context, m dispatch.Message, b protocol.RegistryDeleteBody) {
 	ref := m.ID
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), registryDeleteTimeout)
@@ -93,15 +84,7 @@ func (s *Station) maintenance(ctx context.Context, reason string, progress func(
 	return res, nil
 }
 
-func (s *Station) registryGC(m dispatch.Message) {
-	if !s.requireCapability(m, protocol.CapabilityRegistryV1) {
-		return
-	}
-	var b protocol.RegistryGcBody
-	if err := json.Unmarshal(m.Body, &b); err != nil {
-		s.replyError(m, protocolError(protocol.ErrorCodeProtocolInvalidMessage, "Send a registry.gc body that matches its schema.", "%v", err))
-		return
-	}
+func (s *Station) registryGC(_ context.Context, m dispatch.Message, b protocol.RegistryGcBody) {
 	ref := m.ID
 	s.send(protocol.MessageRegistryGcAccepted, &ref, map[string]any{})
 	go s.maintenance(context.Background(), string(b.Reason), func(string, string) {})

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/harshjv/stationly/go/internal/fsx"
 )
 
 func Provision(ctx context.Context, o InstallOptions, rootFree uint64, kernel string, unitDir string) (Installed, error) {
@@ -171,13 +173,5 @@ func removeIfExists(path string) error {
 }
 
 func writeUnit(unitDir, text string) error {
-	path := filepath.Join(unitDir, MountUnit)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(text), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return errors.Join(err, os.Remove(tmp))
-	}
-	return nil
+	return fsx.WriteFile(filepath.Join(unitDir, MountUnit), []byte(text), 0o644)
 }

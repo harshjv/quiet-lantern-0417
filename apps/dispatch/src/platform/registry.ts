@@ -1,17 +1,11 @@
+import { env } from '../env.ts'
+
 export const manifestAccept =
   'application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, */*'
 
 export type Reference = { registry: string; apiHost: string; repository: string; tag: string | null; digest: string | null }
 
-const insecureRegistries = () =>
-  new Set(
-    (process.env.STATIONLY_INSECURE_REGISTRIES ?? '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-  )
-
-export const schemeFor = (host: string) => (insecureRegistries().has(host) ? 'http' : 'https')
+export const schemeFor = (host: string) => (env().STATIONLY_INSECURE_REGISTRIES.has(host) ? 'http' : 'https')
 
 export const parseReference = (input: string): Reference => {
   let rest = decodeURIComponent(input.replace(/^pkg:docker\//, '').replace(/\?.*$/, ''))

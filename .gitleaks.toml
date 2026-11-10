@@ -34,6 +34,7 @@ paths = [
   '''_test\.go$''',
   '''(^|/)test/.*\.test\.ts$''',
   '''^installer/acceptance/''',
+  '''(^|/)packages/protocol/testdata/''',
 ]
 
 [[allowlists]]

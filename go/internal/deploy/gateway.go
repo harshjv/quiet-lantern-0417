@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/gateway"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
@@ -216,7 +217,7 @@ func (s *Station) writeACMERoots() error {
 		}
 		return nil
 	}
-	changed, err := gateway.WriteFile(s.gw.volumeDir, gateway.CAFileName, roots)
+	changed, err := fsx.WriteIfChanged(filepath.Join(s.gw.volumeDir, gateway.CAFileName), roots, 0o644)
 	if changed {
 		s.log.Info("wrote the test trust's ACME CA certificates for the Gateway", "file", path, "bytes", len(roots))
 	}
@@ -255,7 +256,7 @@ func (s *Station) writeRoutes() {
 	}
 	probe, err := gateway.ProbeConfig(gp.Bridge)
 	if err == nil {
-		_, err = gateway.WriteFile(dir, gateway.ProbeFile, probe)
+		_, err = fsx.WriteIfChanged(filepath.Join(dir, gateway.ProbeFile), probe, 0o644)
 	}
 	if err != nil {
 		s.gw.failure = gatewayFailure("write %s: %v", gateway.ProbeFile, err)
@@ -276,7 +277,7 @@ func (s *Station) writeRoutes() {
 			continue
 		}
 		keep[name] = true
-		changed, err := gateway.WriteFile(dir, name, rp.Config)
+		changed, err := fsx.WriteIfChanged(filepath.Join(dir, name), rp.Config, 0o644)
 		if err != nil {
 			routes[rp.ID] = objectStatus{result: protocol.ObjectResultFailed, failure: gatewayFailure("write %s: %v", name, err)}
 			continue
@@ -504,7 +505,7 @@ func (s *Station) gatewayStart(ctx context.Context, t *gatewayTransition) {
 	static.Store = t.To.Store
 	body, err := gateway.StaticConfig(static, gp.ClassicHours)
 	if err == nil {
-		_, err = gateway.WriteFile(s.gatewayDir(), filepath.Base(s.staticPath(slot)), body)
+		_, err = fsx.WriteIfChanged(filepath.Join(s.gatewayDir(), filepath.Base(s.staticPath(slot))), body, 0o644)
 	}
 	if err != nil {
 		s.gatewayFail(ctx, t, "write %s: %v", s.staticPath(slot), err)

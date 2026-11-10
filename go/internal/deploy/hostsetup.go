@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/harshjv/stationly/go/internal/cidr"
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"net"
 	"net/netip"
 	"os"
@@ -19,21 +21,17 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
 	"github.com/harshjv/stationly/go/internal/identity"
 	"github.com/harshjv/stationly/go/internal/ids"
 )
 
 const (
-	DefaultPool         = "10.200.0.0/16"
-	DefaultDispatchURL  = "http://127.0.0.1:7900"
 	DefaultDaemonJSON   = "/etc/docker/daemon.json"
 	DefaultSysctlFile   = "/etc/sysctl.d/90-stationly.conf"
 	installStateFile    = "install.json"
 	bootstrapTokenFile  = "bootstrap.token"
-	registryIndex       = 3
-	registryHost        = 2
-	registryPort        = 5000
 	resolverPort        = 53
 	bootstrapTokenLabel = "sly-enroll-"
 )
@@ -65,18 +63,6 @@ func LoadInstallState(stateDir string) (*InstallState, error) {
 	return &st, nil
 }
 
-func slash24(pool netip.Prefix, index int) netip.Prefix {
-	b := pool.Masked().Addr().As4()
-	b[2] += byte(index)
-	return netip.PrefixFrom(netip.AddrFrom4(b), 24)
-}
-
-func hostAt(p netip.Prefix, n int) netip.Addr {
-	b := p.Masked().Addr().As4()
-	b[3] = byte(n)
-	return netip.AddrFrom4(b)
-}
-
 func hostPrefixesInUse() ([]netip.Prefix, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -103,8 +89,10 @@ func hostPrefixesInUse() ([]netip.Prefix, error) {
 }
 
 func ChoosePool(inUse []netip.Prefix) (netip.Prefix, error) {
-	for second := 200; second < 256; second++ {
-		candidate := netip.PrefixFrom(netip.AddrFrom4([4]byte{10, byte(second), 0, 0}), 16)
+	first := netip.MustParsePrefix(protocol.NetworkDefaultPool)
+	base := first.Addr().As4()
+	for second := int(base[1]); second < 256; second++ {
+		candidate := netip.PrefixFrom(netip.AddrFrom4([4]byte{base[0], byte(second), 0, 0}), first.Bits())
 		clash := false
 		for _, p := range inUse {
 			if candidate.Overlaps(p) {
@@ -120,25 +108,17 @@ func ChoosePool(inUse []netip.Prefix) (netip.Prefix, error) {
 }
 
 func NewInstallState(pool netip.Prefix) InstallState {
-	system, ingress, registry := slash24(pool, 0), slash24(pool, 1), slash24(pool, registryIndex)
+	system, ingress, registry := cidr.Slash24(pool, protocol.NetworkSystemIndex), cidr.Slash24(pool, protocol.NetworkIngressIndex), cidr.Slash24(pool, protocol.NetworkRegistryFirstIndex)
 	return InstallState{
 		StationID:           ids.New("stn"),
 		IpamPool:            pool.String(),
 		SystemSubnet:        system.String(),
 		IngressSubnet:       ingress.String(),
 		RegistrySubnet:      registry.String(),
-		RegistryAddress:     netip.AddrPortFrom(hostAt(registry, registryHost), registryPort).String(),
-		ResolverHostAddress: netip.AddrPortFrom(hostAt(system, 1), resolverPort).String(),
+		RegistryAddress:     netip.AddrPortFrom(cidr.Offset(registry, protocol.NetworkRegistryHost), protocol.NetworkRegistryPort).String(),
+		ResolverHostAddress: netip.AddrPortFrom(cidr.Offset(system, protocol.NetworkGatewayHost), resolverPort).String(),
 		InstalledAt:         time.Now().UTC().Format(time.RFC3339),
 	}
-}
-
-func writePrivate(path string, b []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 func newBootstrapToken() (string, error) {
@@ -182,7 +162,7 @@ func prepareHost(ctx context.Context, opts InstallOptions, insecure []string, st
 		}
 		hs.state = NewInstallState(pool)
 		b, _ := json.MarshalIndent(hs.state, "", "  ")
-		if err := writePrivate(installStatePath(opts.StateDir), append(b, '\n')); err != nil {
+		if err := fsx.WriteFile(installStatePath(opts.StateDir), append(b, '\n'), 0o600); err != nil {
 			return nil, err
 		}
 		step("ipam", fmt.Sprintf("pool %s, registry %s, resolver host listener %s (%d host prefixes checked)", hs.state.IpamPool, hs.state.RegistryAddress, hs.state.ResolverHostAddress, len(inUse)), "ok", t)
@@ -237,7 +217,7 @@ func prepareHost(ctx context.Context, opts InstallOptions, insecure []string, st
 		if err != nil {
 			return nil, err
 		}
-		if err := writePrivate(BootstrapTokenPath(opts.StateDir), []byte(tok+"\n")); err != nil {
+		if err := fsx.WriteFile(BootstrapTokenPath(opts.StateDir), []byte(tok+"\n"), 0o600); err != nil {
 			return nil, err
 		}
 		hs.tokenNew = true
@@ -319,11 +299,10 @@ func writeDaemonJSON(path string, st InstallState, insecure []string) (bool, err
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+	if err := fsx.WriteFile(path, append(b, '\n'), 0o644); err != nil {
 		return false, err
 	}
-	return true, os.Rename(tmp, path)
+	return true, nil
 }
 
 func restartDocker(ctx context.Context) error {

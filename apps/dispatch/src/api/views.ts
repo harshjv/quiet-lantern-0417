@@ -1,3 +1,4 @@
+import { serviceStatusValues } from '@stationly/protocol'
 import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import {
@@ -53,8 +54,6 @@ import type {
 export const iso = (value: Date | null | undefined) => (value ? value.toISOString() : null)
 
 const stamps = (row: { id: string; created_at: Date; updated_at: Date }) => ({ id: row.id, created_at: iso(row.created_at), updated_at: iso(row.updated_at) })
-
-const statusKeys = ['green', 'amber', 'red', 'stopped', 'asleep'] as const
 
 type TokenRow = typeof token.$inferSelect
 type AuditRow = typeof audit_event.$inferSelect
@@ -433,7 +432,7 @@ export const createViews = (db: Db) => {
     full: row => {
       const envIds = db.select({ id: environment.id }).from(environment).where(eq(environment.project_id, row.id)).all().map(e => e.id)
       const services = envIds.length ? db.select({ status: service.status }).from(service).where(inArray(service.environment_id, envIds)).all() : []
-      const status_counts = Object.fromEntries(statusKeys.map(key => [key, services.filter(s => s.status === key).length]))
+      const status_counts = Object.fromEntries(serviceStatusValues.map(key => [key, services.filter(s => s.status === key).length]))
       return {
         ...stamps(row),
         name: row.name,

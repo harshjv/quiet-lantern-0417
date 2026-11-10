@@ -184,6 +184,9 @@ importers:
       '@stationly/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@stationly/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -290,9 +293,6 @@ importers:
       '@better-auth/passkey':
         specifier: 1.7.18
         version: 1.7.18(@better-auth/core@1.7.18(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5(zod@4.6.7))(jose@6.2.15)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-auth@1.7.18(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3)(kysely@0.29.8))(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(better-call@1.4.5(zod@4.6.7))(nanostores@1.5.5)
-      '@elysia/eden':
-        specifier: 1.4.10
-        version: 1.4.10(elysia@1.4.30(@sinclair/typebox@0.34.52)(exact-mirror@1.2.6)(file-type@22.3.0)(openapi-types@12.1.3)(typescript@7.0.2))
       '@elysia/node':
         specifier: 1.4.6
         version: 1.4.6(elysia@1.4.30(@sinclair/typebox@0.34.52)(exact-mirror@1.2.6)(file-type@22.3.0)(openapi-types@12.1.3)(typescript@7.0.2))
@@ -317,6 +317,9 @@ importers:
       '@stationly/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@t3-oss/env-core':
+        specifier: ^0.13.11
+        version: 0.13.11(typescript@7.0.2)(zod@4.6.7)
       better-auth:
         specifier: 1.7.18
         version: 1.7.18(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@types/better-sqlite3@9.6.0)(better-sqlite3@13.0.3)(kysely@0.29.8))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -335,6 +338,9 @@ importers:
       elysia:
         specifier: 1.4.30
         version: 1.4.30(@sinclair/typebox@0.34.52)(exact-mirror@1.2.6)(file-type@22.3.0)(openapi-types@12.1.3)(typescript@7.0.2)
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
       jose:
         specifier: 6.2.15
         version: 6.2.15
@@ -359,6 +365,9 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^9.6.0
@@ -402,6 +411,12 @@ importers:
       '@stationly/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@stationly/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@t3-oss/env-core':
+        specifier: ^0.13.11
+        version: 0.13.11(typescript@7.0.2)(zod@4.6.7)
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -411,6 +426,9 @@ importers:
       tldts:
         specifier: 7.4.19
         version: 7.4.19
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       rolldown:
         specifier: 1.2.16
@@ -421,6 +439,9 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.52
         version: 0.34.52
+      '@stationly/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -2123,6 +2144,23 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
+  '@t3-oss/env-core@0.13.11':
+    resolution: {integrity: sha512-sM7GYY+KL7H/Hl0BE0inWfk3nRHZOLhmVn7sHGxaZt9FAR6KqREXAE+6TqKfiavfXmpRxO/OZ2QgKRd+oiBYRQ==}
+    peerDependencies:
+      arktype: ^2.1.0
+      typescript: '>=5.0.0'
+      valibot: ^1.0.0-beta.7 || ^1.0.0
+      zod: ^3.24.0 || ^4.0.0
+    peerDependenciesMeta:
+      arktype:
+        optional: true
+      typescript:
+        optional: true
+      valibot:
+        optional: true
+      zod:
+        optional: true
+
   '@tailwindcss/node@4.3.3':
     resolution: {integrity: sha512-/T8IKEsf9VTU6tLjgC7+sv2mOPtQxzE2jMw7u4Tt40Tx+QSZxpzh95/H6cMKoja9XuW7iMdLJYBB0o9G1CaAgg==}
 
@@ -3138,6 +3176,10 @@ packages:
   ip-address@10.7.5:
     resolution: {integrity: sha512-t2v0rkILYv9WXmSL7TpAaU3HXgaFYOPUcH3QHgwQ++gpJuH3bqyMy4Fvt/DJCTKwzH3Cf+bAp5W/mFL39KPLzA==}
     engines: {node: '>= 12'}
+
+  ipaddr.js@2.5.0:
+    resolution: {integrity: sha512-aq+t5NAc+cS6rZQQVWC2x98CPqGtKKTMDd4Gaodv0wShnItdKg/51djkGJ1hqH+Oy0ivDftCbSLCQob8zso01w==}
+    engines: {node: '>= 10'}
 
   is-docker@2.2.1:
     resolution: {integrity: sha512-F+i2BKsFrH66iaUFc0woD8sLy8getkwTwtOBjvs56Cx4CgJDeKQeqfz8wAYiSb8JOprWhHH5p77PbmYCvvUuXQ==}
@@ -5721,6 +5763,11 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
+  '@t3-oss/env-core@0.13.11(typescript@7.0.2)(zod@4.6.7)':
+    optionalDependencies:
+      typescript: 7.0.2
+      zod: 4.6.7
+
   '@tailwindcss/node@4.3.3':
     dependencies:
       '@jridgewell/remapping': 2.3.5
@@ -6546,6 +6593,8 @@ snapshots:
       react-dom: 19.3.1(react@19.3.1)
 
   ip-address@10.7.5: {}
+
+  ipaddr.js@2.5.0: {}
 
   is-docker@2.2.1: {}
 

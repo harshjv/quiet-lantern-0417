@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { ChevronRight, FolderGit2 } from 'lucide-react'
 import { NewProject } from '@/components/new-project'
-import { Empty, ErrorState, PageHeader, Rows } from '@/components/page'
+import { Empty, PageHeader } from '@/components/page'
+import { noItems, QueryState } from '@/components/query-state'
 import { ServiceStatusDot } from '@/components/status'
+import { byName, plural } from '@/lib/format'
 import { projectsQuery } from '@/lib/queries'
 import type { ServiceStatus } from '@/lib/api'
 
@@ -18,19 +20,19 @@ function Projects() {
   return (
     <div className="space-y-6">
       <PageHeader title="Projects" meta={projects.data && <span>{projects.data.items.length} projects</span>} actions={<NewProject />} />
-      {projects.isPending ? (
-        <Rows count={4} />
-      ) : projects.isError ? (
-        <ErrorState error={projects.error} />
-      ) : projects.data.items.length === 0 ? (
-        <Empty title="No projects yet">
-          Create one with New project, <code className="font-mono">sly projects create &lt;name&gt;</code> or the <code className="font-mono">create_project</code> MCP tool.
-        </Empty>
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[...projects.data.items]
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(project => (
+      <QueryState
+        query={projects}
+        rows={4}
+        isEmpty={noItems}
+        empty={
+          <Empty title="No projects yet">
+            Create one with New project, <code className="font-mono">sly projects create &lt;name&gt;</code> or the <code className="font-mono">create_project</code> MCP tool.
+          </Empty>
+        }
+      >
+        {data => (
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[...data.items].sort(byName).map(project => (
               <li key={project.id}>
                 <Link
                   to="/projects/$project"
@@ -46,7 +48,7 @@ function Projects() {
                   </div>
                   <div className="mt-auto flex items-center justify-between text-sm text-muted-foreground">
                     <span>
-                      {project.environment_count} {project.environment_count === 1 ? 'environment' : 'environments'} · {project.service_count} {project.service_count === 1 ? 'service' : 'services'}
+                      {plural(project.environment_count, 'environment')} · {plural(project.service_count, 'service')}
                     </span>
                     <span className="flex items-center gap-2" aria-label="Service status counts">
                       {order
@@ -63,8 +65,9 @@ function Projects() {
                 </Link>
               </li>
             ))}
-        </ul>
-      )}
+          </ul>
+        )}
+      </QueryState>
     </div>
   )
 }

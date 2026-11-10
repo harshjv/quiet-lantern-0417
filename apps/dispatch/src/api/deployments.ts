@@ -1,3 +1,4 @@
+import { deploymentInFlightStatuses, deploymentOpenStatuses, deploymentPastCutoverStatuses, type deploymentTriggerValues } from '@stationly/protocol'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
@@ -8,14 +9,7 @@ import { fail } from './errors.ts'
 import { isPinned, pinnedRef } from '../platform/image-source.ts'
 import { targetIssue } from '../generation/build.ts'
 
-export type TriggerType = 'push' | 'manual' | 'rollback' | 'variable_change' | 'redeploy' | 'base_image' | 'agent'
-
-export const queuedStatuses = ['queued'] as const
-export const inFlightStatuses = ['building', 'pre_deploy', 'starting', 'waiting_health'] as const
-export const pastCutoverStatuses = ['cutover', 'draining'] as const
-export const cancellableStatuses = [...queuedStatuses, ...inFlightStatuses] as const
-export const terminalStatuses = ['active', 'failed', 'cancelled', 'superseded'] as const
-const openStatuses = [...cancellableStatuses, ...pastCutoverStatuses]
+export type TriggerType = (typeof deploymentTriggerValues)[number]
 
 export const deployableStationStatuses = new Set(['online', 'asleep'])
 
@@ -134,9 +128,9 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   const open = db
     .select()
     .from(deployment)
-    .where(and(eq(deployment.service_id, svc.id), inArray(deployment.status, openStatuses)))
+    .where(and(eq(deployment.service_id, svc.id), inArray(deployment.status, [...deploymentOpenStatuses])))
     .all()
-  const blocking = open.find(d => (pastCutoverStatuses as readonly string[]).includes(d.status) || (!input.supersede && (inFlightStatuses as readonly string[]).includes(d.status)))
+  const blocking = open.find(d => (deploymentPastCutoverStatuses as readonly string[]).includes(d.status) || (!input.supersede && (deploymentInFlightStatuses as readonly string[]).includes(d.status)))
   if (blocking) {
     fail('DEPLOY_IN_PROGRESS', `Deployment ${blocking.number} of ${svc.name} is ${blocking.status}.`, 'Wait for it to finish, or send supersede = true while it is before cutover.', {
       deployment_id: blocking.id
