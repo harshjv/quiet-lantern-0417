@@ -70,6 +70,7 @@ const built: Record<keyof typeof commands, string[]> = {
   addDomain: [commands.addDomain('spt_01'), commands.addDomain(null)],
   exposeTcp: [commands.exposeTcp('spt_01'), commands.exposeTcp(null)],
   setPublicAddress: [commands.setPublicAddress('home')],
+  setSandboxRuntime: [commands.setSandboxRuntime('home')],
   startSandbox: [commands.startSandbox(scope, 'web-sbx')],
   createSandbox: [commands.createSandbox(scope)],
   snapshotSandbox: [commands.snapshotSandbox(scope, 'web-sbx')],
@@ -96,36 +97,62 @@ const problems = (program: CommandUnknownOpts, args: string[]) => {
   const seen = new Set<string>()
   const operands: string[] = []
   let command = program
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
+
     if (arg.startsWith('-')) {
       const name = arg.split('=')[0]
       const option = [command, program]
         .flatMap((c) => c.options)
         .find((o) => o.long === name || o.short === name)
+
       if (!option) {
         found.push(`${command.name()} has no option ${name}`)
         continue
       }
+
       seen.add(option.attributeName())
-      if (takesValue(option) && !arg.includes('=')) i += 1
+
+      if (takesValue(option) && !arg.includes('=')) {
+        i += 1
+      }
+
       continue
     }
+
     const sub = operands.length
       ? undefined
       : command.commands.find((c) => c.name() === arg || c.aliases().includes(arg))
-    if (sub) command = sub
-    else operands.push(arg)
+
+    if (sub) {
+      command = sub
+    } else {
+      operands.push(arg)
+    }
   }
-  if (command.commands.length > 0) found.push(`${command.name()} needs a subcommand`)
+
+  if (command.commands.length > 0) {
+    found.push(`${command.name()} needs a subcommand`)
+  }
+
   const params = command.registeredArguments
   const required = params.filter((a) => a.required).length
-  if (operands.length < required) found.push(`${command.name()} needs ${required} arguments`)
-  if (!params.some((a) => a.variadic) && operands.length > params.length)
+
+  if (operands.length < required) {
+    found.push(`${command.name()} needs ${required} arguments`)
+  }
+
+  if (!params.some((a) => a.variadic) && operands.length > params.length) {
     found.push(`${command.name()} takes ${params.length} arguments, got ${operands.length}`)
-  for (const option of command.options)
-    if (option.mandatory && !seen.has(option.attributeName()))
+  }
+
+  for (const option of command.options) {
+    if (option.mandatory && !seen.has(option.attributeName())) {
       found.push(`${command.name()} needs ${option.long}`)
+    }
+  }
+
   return found
 }
 
@@ -135,11 +162,13 @@ test('every command builder is covered by this test', () => {
 
 test('every command the dashboard shows parses with the sly program', () => {
   const program = buildProgram() as unknown as CommandUnknownOpts
-  for (const list of Object.values(built))
+
+  for (const list of Object.values(built)) {
     for (const command of list) {
       assert.ok(command.startsWith('sly '), command)
       assert.deepEqual(problems(program, argv(command)), [], command)
     }
+  }
 })
 
 test('the agent page offers exactly the clients sly mcp install accepts', () => {
@@ -171,6 +200,7 @@ test('the install command leaves out the defaults and fills the rest', () => {
 
 test('placeholders are the angle-bracket segments', () => {
   assert.deepEqual(placeholders(commands.setPublicAddress('home')), ['ipv4'])
+  assert.deepEqual(placeholders(commands.setSandboxRuntime('home')), ['runtime'])
   assert.deepEqual(placeholders(commands.deploy(service)), [])
 })
 
@@ -197,6 +227,7 @@ test('every agent tool the dashboard names is an OpenAPI operationId', async () 
     ),
   )
   const hinted = Object.values(agentHints).flatMap((hint) => hint.tools)
+
   assert.deepEqual(
     [...tools, ...hinted].filter((tool) => !ids.has(tool)),
     [],

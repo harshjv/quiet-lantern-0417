@@ -64,6 +64,7 @@ describe('the shared delivery builder', () => {
       purpose: 'sandbox',
       actor,
     })
+
     assert.deepEqual(body, {
       target: {
         sandbox_id: sandboxId,
@@ -88,6 +89,7 @@ describe('the shared delivery builder', () => {
       redaction: [],
     })
     const [audit] = auditsOf(sandboxId)
+
     assert.deepEqual(
       [audit!.action, audit!.purpose, audit!.after],
       [
@@ -103,6 +105,7 @@ describe('the shared delivery builder', () => {
 
   test('refuses a body that does not match secrets.deliver and audits nothing', () => {
     const sandboxId = newId('sandbox')
+
     assert.throws(
       () =>
         renderedDelivery(h.db, h.deps.keyring, entries, {
@@ -124,6 +127,7 @@ describe('the shared delivery builder', () => {
 
   test('an ephemeral delivery carries its values without refs or redaction', () => {
     const runId = newId('run')
+
     assert.deepEqual(
       ephemeralDelivery(
         {
@@ -158,14 +162,18 @@ describe('audit request ids', () => {
       entity: 'project',
       id: newId('project'),
     }
-    for (const requestId of ['req_given', undefined, undefined])
+
+    for (const requestId of ['req_given', undefined, undefined]) {
       recordAudit(h.db, {
         actor,
         action: 'test.audit',
         target,
         requestId,
       })
+    }
+
     const [given, first, second] = auditsOf(target.id).map((row) => row.request_id)
+
     assert.equal(given, 'req_given')
     assert.match(first!, mintedId)
     assert.match(second!, mintedId)
@@ -186,11 +194,18 @@ describe('audit request ids', () => {
           name,
         },
       })
+
       assert.equal(reply.status, 201, reply.text)
       const answered = reply.headers.get('x-request-id')!
-      if (name === 'audited-sent') assert.equal(answered, sent)
-      else assert.match(answered, mintedId)
+
+      if (name === 'audited-sent') {
+        assert.equal(answered, sent)
+      } else {
+        assert.match(answered, mintedId)
+      }
+
       const [audit] = auditsOf(reply.body.id).filter((row) => row.action === 'project.create')
+
       assert.equal(audit!.request_id, answered)
     }
   })

@@ -88,9 +88,9 @@ func (s *Station) observeDisk(found []diskFS) {
 		return
 	}
 	s.log.Warn("disk pressure", "threshold", string(level), "path", worst.path, "used_pct", int(worst.pct+0.5), "free_bytes", worst.free)
-	s.emit(protocol.MessageDiskPressure, map[string]any{
-		"free_bytes":        worst.free,
-		"threshold":         string(level),
-		"largest_consumers": largestConsumers(s.diskBreakdown()),
+	s.emit(protocol.MessageDiskPressure, protocol.DiskPressureBody{
+		FreeBytes:        int(worst.free),
+		Threshold:        level,
+		LargestConsumers: largestConsumers(s.diskBreakdown()),
 	})
 }

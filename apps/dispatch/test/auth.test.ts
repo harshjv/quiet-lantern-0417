@@ -89,11 +89,13 @@ describe('levels and scopes', () => {
     const list = await h.call('GET', `/v1/environments/${envA.id}/services`, {
       token,
     })
+
     assert.equal(list.status, 200)
     const create = await h.call('POST', `/v1/environments/${envA.id}/services`, {
       token,
       body: serviceBody('web'),
     })
+
     assert.equal(create.status, 403)
     assert.equal(create.body.error.code, 'FORBIDDEN_SCOPE')
     assert.deepEqual(create.body.error.details.required, {
@@ -118,6 +120,7 @@ describe('levels and scopes', () => {
       token,
       body: serviceBody('other'),
     })
+
     assert.equal(create.status, 403)
     assert.equal(create.body.error.details.required.level, 'admin')
     const patch = await h.call('PATCH', `/v1/services/${svc.id}`, {
@@ -127,14 +130,17 @@ describe('levels and scopes', () => {
         deploy: false,
       },
     })
+
     assert.equal(patch.status, 200)
     const read = await h.call('GET', `/v1/services/${svc.id}?fields=drain_timeout_s`, {
       token,
     })
+
     assert.equal(read.body.drain_timeout_s, 12)
     const del = await h.call('DELETE', `/v1/services/${svc.id}`, {
       token,
     })
+
     assert.equal(del.status, 403)
   })
 
@@ -144,6 +150,7 @@ describe('levels and scopes', () => {
       token,
       body: serviceBody('made-by-scoped-admin'),
     })
+
     assert.equal(create.status, 201)
   })
 
@@ -158,6 +165,7 @@ describe('levels and scopes', () => {
       ],
     })
     const token = await tokenFor(envA, projectA, 'admin')
+
     for (const [method, path] of [
       ['GET', `/v1/environments/${envB.id}/services`],
       ['GET', `/v1/services/${svcB.id}`],
@@ -173,6 +181,7 @@ describe('levels and scopes', () => {
               }
             : undefined,
       })
+
       assert.equal(reply.status, 403, `${method} ${path}`)
       assert.equal(reply.body.error.code, 'FORBIDDEN_SCOPE')
     }
@@ -183,6 +192,7 @@ describe('levels and scopes', () => {
     const reply = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
       token,
     })
+
     assert.equal(reply.status, 403)
   })
 
@@ -197,6 +207,7 @@ describe('levels and scopes', () => {
     const reply = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
       token,
     })
+
     assert.equal(reply.status, 200)
   })
 
@@ -208,6 +219,7 @@ describe('levels and scopes', () => {
         name: 'gamma',
       },
     })
+
     assert.equal(reply.status, 403)
     assert.equal(reply.body.error.code, 'FORBIDDEN_SCOPE')
     assert.deepEqual(reply.body.error.details.required, {
@@ -218,6 +230,7 @@ describe('levels and scopes', () => {
     const stations = await h.call('GET', '/v1/staged-changes', {
       token,
     })
+
     assert.equal(stations.status, 403)
     assert.equal(stations.body.error.code, 'INSTANCE_SCOPE_REQUIRED')
   })
@@ -237,6 +250,7 @@ describe('levels and scopes', () => {
         ],
       },
     })
+
     assert.equal(within.status, 201)
     const beyond = await h.call('POST', '/v1/tokens', {
       token,
@@ -251,6 +265,7 @@ describe('levels and scopes', () => {
         ],
       },
     })
+
     assert.equal(beyond.status, 403)
     assert.equal(beyond.body.error.code, 'FORBIDDEN_SCOPE')
     assert.equal(beyond.body.error.details.required.level, 'admin')
@@ -268,6 +283,7 @@ describe('levels and scopes', () => {
         ],
       },
     })
+
     assert.equal(lower.status, 403)
   })
 
@@ -279,6 +295,7 @@ describe('levels and scopes', () => {
         kind: 'personal',
       },
     })
+
     assert.equal(byToken.status, 403)
     assert.equal(byToken.body.error.code, 'PROTECTED_ENVIRONMENT')
     assert.equal(byToken.body.error.details.reason, 'human_required')
@@ -290,6 +307,7 @@ describe('levels and scopes', () => {
         kind: 'personal',
       },
     })
+
     assert.equal(byHuman.status, 201)
     assert.match(byHuman.body.key, /^sly_/)
   })
@@ -310,6 +328,7 @@ describe('levels and scopes', () => {
         expires_in_s: 60,
       },
     })
+
     assert.equal(tooShort.status, 400)
     assert.equal(tooShort.body.error.code, 'VALIDATION_FAILED')
     const scopedTooLong = await h.call('POST', '/v1/tokens', {
@@ -320,6 +339,7 @@ describe('levels and scopes', () => {
         expires_in_s: 31 * 24 * 3600,
       },
     })
+
     assert.equal(scopedTooLong.status, 400)
     const personalTooLong = await h.call('POST', '/v1/tokens', {
       cookie: h.admin.cookie,
@@ -330,6 +350,7 @@ describe('levels and scopes', () => {
         expires_in_s: 366 * 24 * 3600,
       },
     })
+
     assert.equal(personalTooLong.status, 400)
     const ok = await h.call('POST', '/v1/tokens', {
       token: h.admin.token,
@@ -339,8 +360,10 @@ describe('levels and scopes', () => {
         expires_in_s: 7200,
       },
     })
+
     assert.equal(ok.status, 201)
     const expires = new Date(ok.body.expires_at).getTime() - Date.now()
+
     assert.ok(expires > 7100_000 && expires <= 7200_000)
   })
 
@@ -352,6 +375,7 @@ describe('levels and scopes', () => {
         kind: 'scoped',
       },
     })
+
     assert.equal(reply.status, 400)
     assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
   })
@@ -373,17 +397,20 @@ describe('levels and scopes', () => {
     const before = await h.call('GET', '/v1/me', {
       token: created.body.key,
     })
+
     assert.equal(before.status, 200)
     assert.equal(before.body.token_kind, 'scoped')
     const revoked = await h.call('DELETE', `/v1/tokens/${created.body.id}`, {
       token: h.admin.token,
     })
+
     assert.deepEqual(revoked.body, {
       revoked: true,
     })
     const after = await h.call('GET', '/v1/me', {
       token: created.body.key,
     })
+
     assert.equal(after.status, 401)
     assert.equal(after.body.error.code, 'UNAUTHENTICATED')
   })
@@ -418,11 +445,13 @@ describe('levels and scopes', () => {
     const refused = await h.call('DELETE', `/v1/tokens/${wide.body.id}`, {
       token: narrow.body.key,
     })
+
     assert.equal(refused.status, 403)
     assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
     const self = await h.call('DELETE', `/v1/tokens/${narrow.body.id}`, {
       token: narrow.body.key,
     })
+
     assert.equal(self.status, 200)
   })
 
@@ -430,6 +459,7 @@ describe('levels and scopes', () => {
     const me = await h.call('GET', '/v1/me', {
       token: h.admin.token,
     })
+
     assert.equal(me.body.human, false)
     assert.deepEqual(me.body.scopes, [
       {
@@ -447,38 +477,46 @@ describe('protected environments', () => {
       token: h.admin.token,
       body: serviceBody(name),
     })
+
     return reply
   }
 
   test('a token mutation is staged and nothing applies', async () => {
     const reply = await stage('staged-one')
+
     assert.equal(reply.status, 202)
     assert.equal(reply.body.status, 'staged')
     assert.equal(reply.body.environment_id, protectedEnv.id)
     const services = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
       token: h.admin.token,
     })
+
     assert.deepEqual(services.body.items, [])
     const listed = await h.call('GET', `/v1/environments/${protectedEnv.id}/staged-changes`, {
       token: h.admin.token,
     })
+
     assert.ok(listed.body.items.some((s: any) => s.id === reply.body.id))
   })
 
   test('a token cannot accept or reject, even a personal one', async () => {
     const staged = await stage('staged-two')
+
     for (const action of ['accept', 'reject']) {
       const reply = await h.call('POST', `/v1/staged-changes/${staged.body.id}/${action}`, {
         token: h.admin.token,
       })
+
       assert.equal(reply.status, 403, action)
       assert.equal(reply.body.error.code, 'PROTECTED_ENVIRONMENT')
       assert.equal(reply.body.error.details.reason, 'human_required')
     }
+
     const scoped = await tokenFor(protectedEnv, projectA, 'admin')
     const reply = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, {
       token: scoped,
     })
+
     assert.equal(reply.body.error.code, 'PROTECTED_ENVIRONMENT')
   })
 
@@ -488,12 +526,14 @@ describe('protected environments', () => {
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
+
     assert.equal(accepted.status, 200)
     assert.equal(accepted.body.status, 'accepted')
     assert.equal(accepted.body.accepted_by.type, 'user')
     const services = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
       token: h.admin.token,
     })
+
     assert.deepEqual(
       services.body.items.map((s: any) => s.name),
       ['staged-three'],
@@ -509,16 +549,19 @@ describe('protected environments', () => {
         reason: 'not now',
       },
     })
+
     assert.equal(rejected.status, 200)
     assert.equal(rejected.body.status, 'rejected')
     const again = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, {
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
+
     assert.ok(again.status >= 400)
     const services = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
       token: h.admin.token,
     })
+
     assert.ok(!services.body.items.some((s: any) => s.name === 'staged-four'))
   })
 
@@ -528,6 +571,7 @@ describe('protected environments', () => {
       origin: localOrigin,
       body: serviceBody('human-staged'),
     })
+
     assert.equal(reply.status, 202)
     assert.equal(reply.body.status, 'staged')
     assert.equal(reply.body.actor.type, 'user')
@@ -541,6 +585,7 @@ describe('protected environments', () => {
         protected: true,
       },
     })
+
     assert.equal(create.status, 403)
     assert.equal(create.body.error.code, 'PROTECTED_ENVIRONMENT')
     const lift = await h.call('PATCH', `/v1/environments/${protectedEnv.id}`, {
@@ -549,6 +594,7 @@ describe('protected environments', () => {
         protected: false,
       },
     })
+
     assert.equal(lift.status, 403)
     assert.equal(lift.body.error.code, 'PROTECTED_ENVIRONMENT')
   })
@@ -558,6 +604,7 @@ describe('protected environments', () => {
       token: h.admin.token,
       body: serviceBody('direct'),
     })
+
     assert.equal(reply.status, 201)
   })
 })
@@ -568,6 +615,7 @@ describe('origin checks and hosts', () => {
       cookie: h.admin.cookie,
       body: serviceBody('no-origin'),
     })
+
     assert.equal(reply.status, 401)
     assert.equal(reply.body.error.code, 'UNAUTHENTICATED')
   })
@@ -578,6 +626,7 @@ describe('origin checks and hosts', () => {
       origin: 'https://evil.example',
       body: serviceBody('evil-origin'),
     })
+
     assert.equal(reply.status, 401)
     assert.equal(reply.body.error.code, 'UNAUTHENTICATED')
   })
@@ -588,6 +637,7 @@ describe('origin checks and hosts', () => {
       origin: localOrigin,
       body: serviceBody('good-origin'),
     })
+
     assert.equal(reply.status, 201)
   })
 
@@ -595,6 +645,7 @@ describe('origin checks and hosts', () => {
     const me = await h.call('GET', '/v1/me', {
       cookie: h.admin.cookie,
     })
+
     assert.equal(me.status, 200)
     assert.equal(me.body.human, true)
     assert.equal(me.body.actor.type, 'user')
@@ -608,6 +659,7 @@ describe('origin checks and hosts', () => {
         host: 'unknown.example',
       },
     })
+
     assert.equal(reply.status, 404)
     assert.equal(reply.body.error.code, 'WRONG_HOST')
   })
@@ -618,6 +670,7 @@ describe('origin checks and hosts', () => {
         host: 'unknown.example',
       },
     })
+
     assert.equal(reply.status, 200)
     assert.deepEqual(reply.body, {
       status: 'ok',
@@ -635,18 +688,21 @@ describe('sign-in', () => {
         name: 'x',
       },
     })
+
     assert.ok(reply.status >= 400 && reply.status < 500)
     assert.equal(h.db.select().from(userTable).all().length, 1)
   })
 
   test('a wrong password does not sign in', async () => {
     const { reply, cookie } = await signIn(h, 'admin@example.com', 'definitely-not-it')
+
     assert.equal(reply.status, 401)
     assert.equal(cookie, '')
   })
 
   test('the right password signs in and sets a session cookie', async () => {
     const { reply, cookie } = await signIn(h)
+
     assert.equal(reply.status, 200)
     assert.match(cookie, /session_token/)
   })
@@ -656,6 +712,7 @@ describe('sign-in', () => {
     const refused = await h.call('GET', '/v1/me', {
       token: sessionToken,
     })
+
     assert.equal(refused.status, 401)
     assert.equal(refused.body.error.code, 'UNAUTHENTICATED')
   })
@@ -664,6 +721,7 @@ describe('sign-in', () => {
     const refused = await h.call('GET', '/auth/get-session', {
       token: sessionBearer(h.admin.cookie),
     })
+
     assert.equal(refused.status, 401)
     assert.equal(refused.body.error.code, 'UNAUTHENTICATED')
   })
@@ -675,6 +733,7 @@ describe('sign-in', () => {
         origin: localOrigin,
         body: {},
       })
+
       assert.equal(reply.status, 404, path)
       assert.equal(reply.body.error.code, 'NOT_FOUND')
     }
@@ -684,6 +743,7 @@ describe('sign-in', () => {
 describe('unauthenticated requests', () => {
   test('no credential answers the error envelope', async () => {
     const reply = await h.call('GET', '/v1/projects')
+
     assert.equal(reply.status, 401)
     assert.equal(reply.body.error.code, 'UNAUTHENTICATED')
     assert.equal(typeof reply.body.error.explanation, 'string')
@@ -696,6 +756,7 @@ describe('unauthenticated requests', () => {
     const reply = await h.call('GET', '/v1/projects', {
       token: 'sly_notarealkey',
     })
+
     assert.equal(reply.status, 401)
     assert.equal(reply.body.error.code, 'UNAUTHENTICATED')
   })
@@ -706,6 +767,7 @@ describe('unauthenticated requests', () => {
         'x-request-id': 'trace-123',
       },
     })
+
     assert.equal(reply.body.error.request_id, 'trace-123')
   })
 
@@ -714,10 +776,13 @@ describe('unauthenticated requests', () => {
       'x-forwarded-for': '203.0.113.77',
     }
     let last: any
-    for (let i = 0; i < 31; i++)
+
+    for (let i = 0; i < 31; i++) {
       last = await h.call('GET', '/v1/projects', {
         headers,
       })
+    }
+
     assert.equal(last.status, 429)
     assert.equal(last.body.error.code, 'RATE_LIMITED')
     assert.ok(Number(last.headers.get('retry-after')) > 0)
@@ -726,6 +791,7 @@ describe('unauthenticated requests', () => {
         'x-forwarded-for': '203.0.113.78',
       },
     })
+
     assert.equal(other.status, 401)
   })
 })

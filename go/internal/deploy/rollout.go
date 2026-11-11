@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/docker"
@@ -140,40 +139,20 @@ func rolloutPath(stateDir, id string) string {
 }
 
 func loadRollouts(stateDir string) (map[string]*rollout, error) {
-	dir := filepath.Join(stateDir, rolloutDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(dir)
+	loaded, err := readJSONDir[rollout](filepath.Join(stateDir, rolloutDir))
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]*rollout{}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			return nil, err
-		}
-		var r rollout
-		if err := json.Unmarshal(b, &r); err != nil {
-			return nil, err
-		}
+	for _, r := range loaded {
 		r.rt.loaded = true
-		out[r.ID] = &r
+		out[r.ID] = r
 	}
 	return out, nil
 }
 
 func (s *Station) saveRollout(r *rollout) {
-	b, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		s.log.Error("encode deployment state", "deployment", r.ID, "error", err)
-		return
-	}
-	if err := writeAtomic(rolloutPath(s.opts.StateDir, r.ID), b); err != nil {
+	if err := writeJSON(rolloutPath(s.opts.StateDir, r.ID), r); err != nil {
 		s.log.Error("persist deployment state", "deployment", r.ID, "error", err)
 	}
 }
@@ -276,9 +255,9 @@ func (s *Station) reportStep(r *rollout, row *stepRow) {
 	if detail == nil {
 		detail = map[string]any{}
 	}
-	s.emit(protocol.MessageDeploymentStep, map[string]any{
-		"deployment_id": r.ID, "step": row.Step, "status": row.Status, "attempt": max(row.Attempt, 1),
-		"detail": detail, "started_at": row.StartedAt, "finished_at": row.FinishedAt,
+	s.emit(protocol.MessageDeploymentStep, protocol.DeploymentStepBody{
+		DeploymentId: r.ID, Step: row.Step, Status: row.Status, Attempt: max(row.Attempt, 1),
+		Detail: detail, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
 	})
 }
 

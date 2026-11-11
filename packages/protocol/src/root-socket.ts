@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
 
 import { messages } from './messages.ts'
-import { ErrorBody } from './model.ts'
+import { ErrorBody, HostProbe, SandboxRuntime } from './model.ts'
 import { JsonObject, Nullable } from './primitives.ts'
 
 export const rootSocketVersion = 1
@@ -80,6 +80,7 @@ const SetupParams = Type.Object(
       }),
     ),
     public_address: Type.Optional(Type.String()),
+    sandbox_runtime: Type.Optional(SandboxRuntime),
     litestream: Type.Optional(
       Type.Object({
         bucket: Type.String(),
@@ -159,6 +160,16 @@ const DetectedAddress = Type.Object(
   },
 )
 
+const HostProbeResult = Type.Object(
+  {
+    host: HostProbe,
+    runtimes: Type.Array(SandboxRuntime),
+  },
+  {
+    title: 'RootSocketHostProbe',
+  },
+)
+
 const RecoveryKey = Type.Object(
   {
     recovery_key: Type.String(),
@@ -212,6 +223,7 @@ export const rootSocketOps = {
   logs: op(LogsParams, JsonObject),
   setup: op(SetupParams, SetupResult),
   'public_address.detect': op(NoParams, DetectedAddress),
+  'host.probe': op(NoParams, HostProbeResult),
   'admin.recovery_key': op(NoParams, RecoveryKey),
   doctor: op(NoParams, messages['doctor.report'].body),
 }

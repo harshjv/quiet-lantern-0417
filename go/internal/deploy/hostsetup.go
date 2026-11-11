@@ -160,8 +160,7 @@ func prepareHost(ctx context.Context, opts InstallOptions, insecure []string, st
 			return nil, err
 		}
 		hs.state = NewInstallState(pool)
-		b, _ := json.MarshalIndent(hs.state, "", "  ")
-		if err := fsx.WriteFile(installStatePath(opts.StateDir), append(b, '\n'), 0o600); err != nil {
+		if err := writeJSON(installStatePath(opts.StateDir), hs.state); err != nil {
 			return nil, err
 		}
 		step("ipam", fmt.Sprintf("pool %s, registry %s, resolver host listener %s (%d host prefixes checked)", hs.state.IpamPool, hs.state.RegistryAddress, hs.state.ResolverHostAddress, len(inUse)), "ok", t)

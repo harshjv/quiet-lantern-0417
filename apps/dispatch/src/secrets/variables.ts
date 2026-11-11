@@ -8,15 +8,7 @@ import { variableKeyPattern, type Actor } from '@stationly/protocol'
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import {
-  deployment,
-  environment,
-  grant,
-  sandbox,
-  secret_value,
-  service,
-  variable,
-} from '../db/schema.ts'
+import { deployment, environment, sandbox, secret_value, service, variable } from '../db/schema.ts'
 
 import type { EnvSnapshot } from './deploy.ts'
 import { SecretsError } from './errors.ts'
@@ -61,9 +53,13 @@ export type VariableWrite = {
 }
 
 const generatorOf = (value: string) => {
-  if (!value.startsWith('${{')) return null
+  if (!value.startsWith('${{')) {
+    return null
+  }
+
   try {
     const segments = parseValue(value)
+
     return segments.length === 1 &&
       segments[0]!.type === 'reference' &&
       segments[0]!.target.type === 'generator'
@@ -90,6 +86,7 @@ const findVariable = (db: Db, input: VariableInput) => {
         : input.scope === 'project'
           ? eq(variable.project_id, input.project_id!)
           : isNull(variable.service_id)
+
   return db
     .select()
     .from(variable)
@@ -98,7 +95,7 @@ const findVariable = (db: Db, input: VariableInput) => {
 }
 
 export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
-  if (!keyPattern.test(input.key))
+  if (!keyPattern.test(input.key)) {
     throw new SecretsError(
       'VALIDATION_FAILED',
       `key ${input.key} must match ${variableKeyPattern}`,
@@ -106,6 +103,8 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
         key: input.key,
       },
     )
+  }
+
   if (input.scope !== 'project' && input.environment_id) {
     throw new SecretsError(
       'VALIDATION_FAILED',
@@ -115,8 +114,10 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
       },
     )
   }
+
   const environmentId = input.scope === 'project' ? (input.environment_id ?? null) : null
   let projectId = input.project_id ?? null
+
   if (input.scope === 'service') {
     const svc = db
       .select({
@@ -126,9 +127,14 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
       .innerJoin(environment, eq(environment.id, service.environment_id))
       .where(eq(service.id, input.service_id!))
       .get()
-    if (!svc) throw new SecretsError('NOT_FOUND', `service ${input.service_id} does not exist`)
+
+    if (!svc) {
+      throw new SecretsError('NOT_FOUND', `service ${input.service_id} does not exist`)
+    }
+
     projectId = svc.project_id
   }
+
   if (input.scope === 'sandbox') {
     const box = db
       .select({
@@ -137,7 +143,11 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
       .from(sandbox)
       .where(eq(sandbox.id, input.sandbox_id!))
       .get()
-    if (!box) throw new SecretsError('NOT_FOUND', `sandbox ${input.sandbox_id} does not exist`)
+
+    if (!box) {
+      throw new SecretsError('NOT_FOUND', `sandbox ${input.sandbox_id} does not exist`)
+    }
+
     projectId = box.project_id
   }
 
@@ -145,6 +155,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
   let reference: string | null = null
   let plaintext: string | null
   const sealedGenerator = input.sealed ? generatorOf(input.value) : null
+
   if (sealedGenerator) {
     kind = 'sealed'
     reference = input.value
@@ -158,6 +169,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
       segments[0]?.type === 'reference' && segments[0].target.type === 'generator'
         ? segments[0].target
         : null
+
     if (
       hasReference(segments) &&
       !generator &&
@@ -172,6 +184,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
         },
       )
     }
+
     if (generator) {
       kind = 'literal'
       reference = input.value
@@ -188,6 +201,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
 
   return db.transaction((tx) => {
     const existing = findVariable(tx, input)
+
     if (existing?.kind === 'sealed' && kind !== 'sealed') {
       throw new SecretsError(
         'VALIDATION_FAILED',
@@ -197,6 +211,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
         },
       )
     }
+
     const variableId = existing?.id ?? newId('variable')
     const fields = {
       kind,
@@ -204,8 +219,10 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
       injection: input.injection ?? existing?.injection ?? 'env',
       build: input.build ?? existing?.build ?? false,
     }
-    if (existing) tx.update(variable).set(fields).where(eq(variable.id, variableId)).run()
-    else
+
+    if (existing) {
+      tx.update(variable).set(fields).where(eq(variable.id, variableId)).run()
+    } else {
       tx.insert(variable)
         .values({
           id: variableId,
@@ -217,12 +234,15 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
           ...fields,
         })
         .run()
+    }
 
     let written: { secret_value_id: string; version: number } | null = null
+
     if (plaintext !== null) {
       const id = newId('secret_value')
       const version = nextValueVersion(tx, variableId, environmentId)
       const sealedValue = keyring.encrypt(id, plaintext)
+
       tx.insert(secret_value)
         .values({
           id,
@@ -238,6 +258,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
         version,
       }
     }
+
     tx.update(variable)
       .set({
         current_value_id: written?.secret_value_id ?? null,
@@ -247,21 +268,35 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
 
     const row = tx.select().from(variable).where(eq(variable.id, variableId)).get()!
     let unresolved: SecretsError | null = null
+
     if (input.scope === 'service') {
       try {
         Resolver.forService(tx, input.service_id!).resolve(row)
       } catch (error) {
-        if (!(error instanceof SecretsError)) throw error
-        if (!deferrable.has(error.code) || !input.allow_unresolved) throw error
+        if (!(error instanceof SecretsError)) {
+          throw error
+        }
+
+        if (!deferrable.has(error.code) || !input.allow_unresolved) {
+          throw error
+        }
+
         unresolved = error
       }
     }
+
     if (input.scope === 'sandbox') {
       try {
         Resolver.forSandbox(tx, input.sandbox_id!).resolveSandbox(row)
       } catch (error) {
-        if (!(error instanceof SecretsError)) throw error
-        if (!deferrable.has(error.code) || !input.allow_unresolved) throw error
+        if (!(error instanceof SecretsError)) {
+          throw error
+        }
+
+        if (!deferrable.has(error.code) || !input.allow_unresolved) {
+          throw error
+        }
+
         unresolved = error
       }
     }
@@ -292,6 +327,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
           ...written,
         }
       : null
+
     return {
       variable_id: variableId,
       kind,
@@ -302,7 +338,10 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
 }
 
 const deployedVersions = (db: Db, svc: typeof service.$inferSelect) => {
-  if (!svc.current_deployment_id) return new Map<string, number>()
+  if (!svc.current_deployment_id) {
+    return new Map<string, number>()
+  }
+
   const dep = db
     .select({
       env_snapshot: deployment.env_snapshot,
@@ -312,11 +351,15 @@ const deployedVersions = (db: Db, svc: typeof service.$inferSelect) => {
     .get()
   const snapshot = dep?.env_snapshot as EnvSnapshot | undefined
   const versions = new Map<string, number>()
+
   for (const entry of snapshot?.entries ?? []) {
-    for (const leaf of leaves(entry.node))
-      if (leaf.kind === 'value')
+    for (const leaf of leaves(entry.node)) {
+      if (leaf.kind === 'value') {
         versions.set(`${leaf.variable_id}:${leaf.environment_id}`, leaf.version)
+      }
+    }
   }
+
   return versions
 }
 
@@ -329,6 +372,7 @@ export const resolvedView = (
   const resolver = Resolver.forService(db, serviceId)
   const svc = db.select().from(service).where(eq(service.id, serviceId)).get()!
   const deployed = deployedVersions(db, svc)
+
   return resolver.serviceVariables().map((v) => {
     const base = {
       key: v.key,
@@ -338,10 +382,14 @@ export const resolvedView = (
       build: v.build,
     }
     let node: SourceNode
+
     try {
       node = resolver.resolve(v)
     } catch (error) {
-      if (!(error instanceof SecretsError)) throw error
+      if (!(error instanceof SecretsError)) {
+        throw error
+      }
+
       return {
         ...base,
         sources: [],
@@ -351,6 +399,7 @@ export const resolvedView = (
         error: error.toJSON(),
       }
     }
+
     const templateSegments = v.reference
       ? parseValue(v.reference).filter((s) => s.type === 'reference')
       : []
@@ -359,13 +408,16 @@ export const resolvedView = (
       leaves(part).map((leaf) => {
         const reference =
           node.kind === 'template' ? (templateSegments[i] as { raw: string }).raw : null
-        if (leaf.kind === 'export')
+
+        if (leaf.kind === 'export') {
           return {
             reference,
             from: leaf.from,
             service_id: leaf.service_id,
             key: leaf.key,
           }
+        }
+
         return {
           reference,
           from: leaf.from,
@@ -384,6 +436,7 @@ export const resolvedView = (
       sources.some((s) => 'version' in s && s.version !== s.deployed_version)
     const value =
       options.admin && !sealed ? render(node, (leaf) => decryptLeaf(db, keyring, leaf)) : undefined
+
     return {
       ...base,
       sources,
@@ -401,12 +454,15 @@ export const resolvedView = (
 
 export const decryptLeaf = (db: Db, keyring: Keyring, leaf: ValueNode) => {
   const row = db.select().from(secret_value).where(eq(secret_value.id, leaf.secret_value_id)).get()
-  if (!row || row.version !== leaf.version)
+
+  if (!row || row.version !== leaf.version) {
     throw new SecretsError(
       'SECRETS_UNAVAILABLE',
       `secret_value ${leaf.secret_value_id} version ${leaf.version} is gone`,
     )
-  if (row.revoked_at)
+  }
+
+  if (row.revoked_at) {
     throw new SecretsError(
       'ROLLBACK_SECRET_REVOKED',
       `${leaf.key} version ${leaf.version} is revoked`,
@@ -414,6 +470,8 @@ export const decryptLeaf = (db: Db, keyring: Keyring, leaf: ValueNode) => {
         keys: [leaf.key],
       },
     )
+  }
+
   return decryptValue(keyring, row)
 }
 
@@ -425,43 +483,8 @@ export const storedBytes = (db: Db, secretValueId: string) => {
     .from(secret_value)
     .where(eq(secret_value.id, secretValueId))
     .get()
+
   return row ? valueBytes(row.ciphertext) : null
-}
-
-export const readValue = (db: Db, keyring: Keyring, serviceId: string, key: string) => {
-  const resolver = Resolver.forService(db, serviceId)
-  const v = resolver.serviceVariables().find((row) => row.key === key)
-  if (!v)
-    throw new SecretsError('NOT_FOUND', `variable ${key} does not exist on service ${serviceId}`)
-  const node = resolver.resolve(v)
-  if (isSealed(node))
-    throw new SecretsError(
-      'SEALED_VALUE_UNREADABLE',
-      `${key} is sealed or built from a sealed value; no endpoint returns it`,
-      {
-        key,
-      },
-    )
-  return render(node, (leaf) => decryptLeaf(db, keyring, leaf))
-}
-
-export const grantGlobal = (
-  db: Db,
-  variableId: string,
-  projectId: string,
-  alias: string | null,
-) => {
-  const id = newId('grant')
-  db.insert(grant)
-    .values({
-      id,
-      variable_id: variableId,
-      project_id: projectId,
-      alias,
-      source: 'manual',
-    })
-    .run()
-  return id
 }
 
 export const sealedGlobalValue = (db: Db, keyring: Keyring, key: string) => {
@@ -470,19 +493,27 @@ export const sealedGlobalValue = (db: Db, keyring: Keyring, key: string) => {
     .from(variable)
     .where(and(eq(variable.scope, 'global'), eq(variable.key, key)))
     .get()
-  if (!row)
+
+  if (!row) {
     throw new SecretsError('NOT_FOUND', `global variable ${key} does not exist`, {
       key,
     })
-  if (row.kind !== 'sealed')
+  }
+
+  if (row.kind !== 'sealed') {
     throw new SecretsError('VALIDATION_FAILED', `global variable ${key} is not sealed`, {
       key,
     })
+  }
+
   const value = headValue(db, row.id, null)
-  if (!value)
+
+  if (!value) {
     throw new SecretsError('SECRETS_UNAVAILABLE', `global variable ${key} has no value`, {
       key,
     })
+  }
+
   return {
     secret_value_id: value.id,
     value: decryptValue(keyring, value),
@@ -497,6 +528,7 @@ export const sealedGlobalExists = (db: Db, key: string) => {
     .from(variable)
     .where(and(eq(variable.scope, 'global'), eq(variable.key, key)))
     .get()
+
   return row
     ? {
         sealed: row.kind === 'sealed',

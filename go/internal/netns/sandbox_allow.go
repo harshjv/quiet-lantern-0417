@@ -5,7 +5,6 @@ package netns
 import (
 	"fmt"
 	"net/netip"
-	"time"
 
 	"github.com/google/nftables"
 	"github.com/mdlayher/netlink"
@@ -63,22 +62,6 @@ func (n *Namespace) updateAllow(port uint16, stale []netip.Addr, add []nftables.
 	}
 	_, err = applySetOps(c, false, setOp{s, del, true}, setOp{s, add, false})
 	return err
-}
-
-func (n *Namespace) AllowElements(port uint16) (map[netip.Addr]time.Duration, error) {
-	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
-	if err != nil {
-		return nil, err
-	}
-	els, err := c.GetSetElements(allowSet(port))
-	if err != nil {
-		return nil, err
-	}
-	out := map[netip.Addr]time.Duration{}
-	for _, el := range els {
-		out[addrOf(el.Key)] = el.Expires
-	}
-	return out, nil
 }
 
 func sandboxFlowTo(addrs []netip.Addr) func(conntrack.Flow) bool {

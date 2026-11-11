@@ -1,8 +1,12 @@
 import { Type } from '@sinclair/typebox'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
-import { deploymentPastCutoverStatuses, deploymentTerminalStatuses } from '@stationly/protocol'
+import {
+  buildStatusValues,
+  deploymentPastCutoverStatuses,
+  deploymentTerminalStatuses,
+} from '@stationly/protocol'
 
 import { build, deployment, deployment_step, secret_value } from '../../db/schema.ts'
 import { snapshotOf, type EnvSnapshot } from '../../secrets/deploy.ts'
@@ -13,14 +17,9 @@ import { buildDiagnosis, deploymentDiagnosis } from '../diagnosis.ts'
 import { ApiError, fail, notFound } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { warning, type Kit } from '../kit.ts'
-import {
-  buildById,
-  deploymentById,
-  serviceById,
-  type DeploymentRow,
-  type ServiceContext,
-} from '../lookup.ts'
-import { before, collect, getQuery, listQuery } from '../pagination.ts'
+import { type DeploymentRow, type ServiceContext } from '../lookup.ts'
+import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
+import { supersede } from '../schemas.ts'
 import {
   Build,
   Deployment,
@@ -28,7 +27,6 @@ import {
   DeploymentStep,
   Diagnosis,
   extend,
-  models,
   Page,
   replies,
   Staged,
@@ -51,6 +49,7 @@ const cutoverReached = new Set<string>([
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, ms)
+
     signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), {
       once: true,
     })
@@ -58,22 +57,24 @@ const sleep = (ms: number, signal: AbortSignal) =>
 
 const leafVersions = (snapshot: EnvSnapshot) => {
   const out = new Map<string, { key: string; secret_value_id: string; version: number }>()
+
   for (const entry of snapshot.entries) {
     for (const leaf of leaves(entry.node)) {
-      if (leaf.kind === 'value')
+      if (leaf.kind === 'value') {
         out.set(`${leaf.variable_id}|${leaf.environment_id ?? ''}`, {
           key: entry.key,
           secret_value_id: leaf.secret_value_id,
           version: leaf.version,
         })
+      }
     }
   }
+
   return out
 }
 
 export const deployActionRoutes = (kit: Kit) => {
   const { db } = kit.deps
-  const tags = ['deployments']
   const view = (id: string, fields?: string) =>
     select(
       kit.views.deployment,
@@ -97,6 +98,7 @@ export const deployActionRoutes = (kit: Kit) => {
   ) => {
     requireStationReady(db, ctx.service.station_id)
     const changes = new ChangeSet()
+
     changes.deploy(ctx.service.id, trigger, extra)
     const result = commit(
       kit.deps,
@@ -107,7 +109,11 @@ export const deployActionRoutes = (kit: Kit) => {
       },
       changes,
     )
-    if (!result.applied) return kit.stagedBody(result, set)
+
+    if (!result.applied) {
+      return kit.stagedBody(result, set)
+    }
+
     set.status = 201
     const created = view(result.deployments[0]!)
     const downtime =
@@ -119,6 +125,7 @@ export const deployActionRoutes = (kit: Kit) => {
             ),
           ]
         : []
+
     return {
       ...created,
       warnings: [...warnings, ...downtime],
@@ -142,8 +149,10 @@ export const deployActionRoutes = (kit: Kit) => {
               )
               .get()
           : undefined
+
       return byId ?? notFound('deployment', ref)
     }
+
     return (
       db
         .select()
@@ -161,7 +170,7 @@ export const deployActionRoutes = (kit: Kit) => {
   }
 
   const checkRollback = (ctx: ServiceContext, target: DeploymentRow, confirm: boolean) => {
-    if (target.id === ctx.service.current_deployment_id)
+    if (target.id === ctx.service.current_deployment_id) {
       fail(
         'VALIDATION_FAILED',
         `Deployment ${target.number} is already current.`,
@@ -175,7 +184,9 @@ export const deployActionRoutes = (kit: Kit) => {
           ],
         },
       )
-    if (!target.image_ref || !['active', 'superseded'].includes(target.status))
+    }
+
+    if (!target.image_ref || !['active', 'superseded'].includes(target.status)) {
       fail(
         'VALIDATION_FAILED',
         `Deployment ${target.number} is ${target.status} and never ran an image.`,
@@ -189,7 +200,9 @@ export const deployActionRoutes = (kit: Kit) => {
           ],
         },
       )
-    if (target.image_pruned_at)
+    }
+
+    if (target.image_pruned_at) {
       fail(
         'IMAGE_PRUNED',
         `The image of deployment ${target.number} was pruned from Depot at ${target.image_pruned_at.toISOString()}.`,
@@ -199,6 +212,8 @@ export const deployActionRoutes = (kit: Kit) => {
           image_ref: target.image_ref,
         },
       )
+    }
+
     const pinned = leafVersions(target.env_snapshot as EnvSnapshot)
     const ids = [...pinned.values()].map((p) => p.secret_value_id)
     const rows = ids.length
@@ -217,7 +232,8 @@ export const deployActionRoutes = (kit: Kit) => {
         [...pinned.values()].filter((p) => !usable.has(p.secret_value_id)).map((p) => p.key),
       ),
     ]
-    if (revokedKeys.length)
+
+    if (revokedKeys.length) {
       fail(
         'ROLLBACK_SECRET_REVOKED',
         `Deployment ${target.number} pins secret versions that were revoked or swept: ${revokedKeys.join(', ')}.`,
@@ -226,12 +242,16 @@ export const deployActionRoutes = (kit: Kit) => {
           keys: revokedKeys,
         },
       )
+    }
+
     let heads: ReturnType<typeof leafVersions>
+
     try {
       heads = leafVersions(snapshotOf(db, ctx.service.id))
     } catch {
       heads = new Map()
     }
+
     const stale = [
       ...new Set(
         [...pinned.entries()]
@@ -241,6 +261,7 @@ export const deployActionRoutes = (kit: Kit) => {
           .map(([, v]) => v.key),
       ),
     ]
+
     if (stale.length && !confirm) {
       fail(
         'STALE_SECRETS_CONFIRM_REQUIRED',
@@ -251,6 +272,7 @@ export const deployActionRoutes = (kit: Kit) => {
         },
       )
     }
+
     return stale.length
       ? [
           {
@@ -266,16 +288,11 @@ export const deployActionRoutes = (kit: Kit) => {
       : []
   }
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('deployments', '/v1')
     .get(
       '/deployments/:id/wait',
-      async ({ request, params, query }) => {
-        const ctx = deploymentById(db, params.id)
+      async ({ ctx, request, query }) => {
         const timeoutMs = Math.min(query.timeout_s ?? 10, 10) * 1000
         const until = query.until ?? 'terminal'
         const reached = (status: string) =>
@@ -284,30 +301,31 @@ export const deployActionRoutes = (kit: Kit) => {
             : (deploymentTerminalStatuses as readonly string[]).includes(status)
         const deadline = Date.now() + timeoutMs
         let row = ctx.deployment
+
         while (!reached(row.status) && Date.now() < deadline && !request.signal.aborted) {
           await sleep(Math.min(waitPollMs, deadline - Date.now()), request.signal)
           row = db.select().from(deployment).where(eq(deployment.id, row.id)).get()!
         }
+
         return {
           ...select(kit.views.deployment, row, kit.fields(query.fields)),
           done: reached(row.status),
         }
       },
       {
-        operation: {
+        deployment: {
           id: 'wait_for_deployment',
+          summary: 'Wait up to 10 s for a deployment to reach a terminal state or cutover',
           level: 'read',
           mcp: {
             always_load: true,
             poll: true,
           },
           cli: {
+            path: ['deployments', 'wait'],
             render: 'deployment',
           },
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         query: t.Object({
           timeout_s: t.Optional(
             t.Numeric({
@@ -315,22 +333,21 @@ export const deployActionRoutes = (kit: Kit) => {
               maximum: 10,
             }),
           ),
-          until: t.Optional(t.Union([t.Literal('terminal'), t.Literal('cutover')])),
-          fields: t.Optional(t.String()),
+          until: t.Optional(
+            t.Union([t.Literal('terminal'), t.Literal('cutover')], {
+              description: 'Wait for a terminal state (default) or for cutover',
+            }),
+          ),
+          ...getQuery,
         }),
         response: replies({
           200: Waited,
         }),
-        detail: {
-          summary: 'Wait up to 10 s for a deployment to reach a terminal state or cutover',
-          tags,
-        },
       },
     )
     .get(
       '/deployments/:id/steps',
-      ({ params }) => {
-        const ctx = deploymentById(db, params.id)
+      ({ ctx }) => {
         const items = db
           .select()
           .from(deployment_step)
@@ -346,34 +363,29 @@ export const deployActionRoutes = (kit: Kit) => {
             started_at: s.started_at?.toISOString() ?? null,
             finished_at: s.finished_at?.toISOString() ?? null,
           }))
+
         return {
           items,
           next_cursor: null,
         }
       },
       {
-        operation: {
+        deployment: {
           id: 'list_deployment_steps',
+          summary: 'Deployment steps in step order',
           level: 'read',
           mcp: false,
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Page(DeploymentStep),
         }),
-        detail: {
-          summary: 'Deployment steps in step order',
-          tags,
-        },
       },
     )
     .get(
       '/deployments/:id/diagnosis',
-      async ({ request, params }) => {
+      async ({ ctx, request }) => {
         const call = await kit.call(request)
-        const ctx = deploymentById(db, params.id)
+
         return (
           deploymentDiagnosis(
             db,
@@ -391,55 +403,52 @@ export const deployActionRoutes = (kit: Kit) => {
         )
       },
       {
-        operation: {
+        deployment: {
           id: 'get_deployment_diagnosis',
+          summary: 'The diagnosis object of a failed deployment',
           level: 'read',
           mcp: {
             always_load: true,
           },
+          cli: {
+            path: ['deployments', 'diagnosis'],
+          },
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Diagnosis,
         }),
-        detail: {
-          summary: 'The diagnosis object of a failed deployment',
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/redeploy',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
-        if (!ctx.service.current_deployment_id)
+
+        if (!ctx.service.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
             `${ctx.service.name} has no current deployment to redeploy.`,
             'Call deploy (POST /v1/services/{service}/deployments) first.',
           )
+        }
+
         return deployOne(call, ctx, set, 'redeploy', {
           supersede: body?.supersede ?? false,
         })
       },
       {
-        operation: {
+        service: {
           id: 'redeploy',
+          summary: 'Redeploy the current image with current variables',
           level: 'deploy',
           cli: {
             wait: 'wait_for_deployment',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: t.Optional(
           t.Object(
             {
-              supersede: t.Optional(t.Boolean()),
+              supersede,
             },
             {
               additionalProperties: false,
@@ -447,50 +456,48 @@ export const deployActionRoutes = (kit: Kit) => {
           ),
         ),
         response: deployReplies,
-        detail: {
-          summary: 'Redeploy the current image with current variables',
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/rebuild',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
-        if (!ctx.service.current_deployment_id)
+
+        if (!ctx.service.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
             `${ctx.service.name} has no current deployment to rebuild.`,
             'Call deploy (POST /v1/services/{service}/deployments) first.',
           )
-        if ((ctx.service.source as { type: string }).type === 'image')
+        }
+
+        if ((ctx.service.source as { type: string }).type === 'image') {
           fail(
             'SOURCE_UNREACHABLE',
             `${ctx.service.name} deploys an image and has no source to rebuild.`,
             'Use redeploy, or deploy a new image.',
           )
+        }
+
         return deployOne(call, ctx, set, 'base_image', {
           supersede: body?.supersede ?? false,
           reason: 'rebuild',
         })
       },
       {
-        operation: {
+        service: {
           id: 'rebuild_service',
+          summary: 'Rebuild from the same source and deploy',
           level: 'deploy',
           cli: {
             path: ['services', 'rebuild'],
             wait: 'wait_for_deployment',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: t.Optional(
           t.Object(
             {
-              supersede: t.Optional(t.Boolean()),
+              supersede,
             },
             {
               additionalProperties: false,
@@ -498,19 +505,15 @@ export const deployActionRoutes = (kit: Kit) => {
           ),
         ),
         response: deployReplies,
-        detail: {
-          summary: 'Rebuild from the same source and deploy',
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/rollback',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
         const target = rollbackTarget(ctx, body?.deployment_id)
         const warnings = checkRollback(ctx, target, body?.confirm_stale_secrets ?? false)
+
         return deployOne(
           call,
           ctx,
@@ -524,8 +527,9 @@ export const deployActionRoutes = (kit: Kit) => {
         )
       },
       {
-        operation: {
+        service: {
           id: 'rollback',
+          summary: 'Roll back to a previous deployment',
           level: 'deploy',
           mcp: {
             destructive: true,
@@ -534,14 +538,21 @@ export const deployActionRoutes = (kit: Kit) => {
             wait: 'wait_for_deployment',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: t.Optional(
           t.Object(
             {
-              deployment_id: t.Optional(t.String()),
-              confirm_stale_secrets: t.Optional(t.Boolean()),
+              deployment_id: t.Optional(
+                t.String({
+                  description:
+                    'The deployment to roll back to; the one before the current by default',
+                }),
+              ),
+              confirm_stale_secrets: t.Optional(
+                t.Boolean({
+                  description:
+                    'Deploy secret versions older than the current ones, instead of STALE_SECRETS_CONFIRM_REQUIRED',
+                }),
+              ),
             },
             {
               additionalProperties: false,
@@ -549,16 +560,11 @@ export const deployActionRoutes = (kit: Kit) => {
           ),
         ),
         response: deployReplies,
-        detail: {
-          summary: 'Roll back to a previous deployment',
-          tags,
-        },
       },
     )
     .get(
       '/services/:service/builds',
-      ({ params, query }) => {
-        const ctx = serviceById(db, params.service)
+      ({ ctx, query }) => {
         const deploymentIds = db
           .select({
             id: deployment.id,
@@ -589,43 +595,40 @@ export const deployActionRoutes = (kit: Kit) => {
               rows: [],
               next_cursor: null,
             }
+
         return {
           items: page.rows.map((row) => select(kit.views.build, row, kit.fields(query.fields))),
           next_cursor: page.next_cursor,
         }
       },
       {
-        operation: {
+        service: {
           id: 'list_builds',
+          summary: 'List the builds of a service',
           level: 'read',
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         query: t.Object({
           ...listQuery,
-          status: t.Optional(t.String()),
+          status: filterOne(buildStatusValues),
         }),
         response: replies({
           200: Page(Build),
         }),
-        detail: {
-          summary: 'List the builds of a service',
-          tags,
-        },
       },
     )
     .get(
       '/builds/:id',
-      async ({ request, params, query }) => {
+      async ({ ctx, request, query }) => {
         const call = await kit.call(request)
-        const b = buildById(db, params.id).build
+        const b = ctx.build
         const shown = select(kit.views.build, b, kit.fields(query.fields))
+
         if (b.status === 'failed') {
           const diagnosis = buildDiagnosis(
             b,
             redactorFor([b.deployment_id], call.principal, call.request_id),
           )
+
           throw new ApiError(
             'BUILD_FAILED',
             `Build ${b.id} failed: ${b.failure?.summary ?? 'no summary'}.`,
@@ -636,32 +639,28 @@ export const deployActionRoutes = (kit: Kit) => {
             },
           )
         }
+
         return shown
       },
       {
-        operation: {
+        build: {
           id: 'get_build',
+          summary: 'Get a build; a failed build answers BUILD_FAILED with its diagnosis',
           level: 'read',
           mcp: false,
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         query: t.Object(getQuery),
         response: replies({
           200: Build,
         }),
-        detail: {
-          summary: 'Get a build; a failed build answers BUILD_FAILED with its diagnosis',
-          tags,
-        },
       },
     )
     .get(
       '/builds/:id/diagnosis',
-      async ({ request, params }) => {
+      async ({ ctx, request }) => {
         const call = await kit.call(request)
-        const b = buildById(db, params.id).build
+        const b = ctx.build
+
         return (
           buildDiagnosis(b, redactorFor([b.deployment_id], call.principal, call.request_id)) ??
           fail(
@@ -675,20 +674,17 @@ export const deployActionRoutes = (kit: Kit) => {
         )
       },
       {
-        operation: {
+        build: {
           id: 'get_build_diagnosis',
+          summary: 'The diagnosis object of a failed build',
           level: 'read',
+          cli: {
+            path: ['deployments', 'build-diagnosis'],
+          },
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Diagnosis,
         }),
-        detail: {
-          summary: 'The diagnosis object of a failed build',
-          tags,
-        },
       },
     )
 }

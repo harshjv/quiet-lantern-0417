@@ -21,6 +21,7 @@ let dir: string
 let socketPath: string
 let server: Server
 let detected: Detected
+let probe: { host: Record<string, unknown>; runtimes: string[] }
 let setups: Record<string, unknown>[]
 let recoveryOps: Record<string, unknown>[]
 
@@ -60,12 +61,15 @@ before(async () => {
       const result =
         request.op === 'public_address.detect'
           ? detected
-          : request.op === 'admin.recovery_key'
-            ? (recoveryOps.push(request.params),
-              {
-                recovery_key: 'sly-rk-TEST',
-              })
-            : (setups.push(request.params), setupResult(request.params))
+          : request.op === 'host.probe'
+            ? probe
+            : request.op === 'admin.recovery_key'
+              ? (recoveryOps.push(request.params),
+                {
+                  recovery_key: 'sly-rk-TEST',
+                })
+              : (setups.push(request.params), setupResult(request.params))
+
       socket.write(
         `${JSON.stringify({
           v: 1,
@@ -86,6 +90,18 @@ beforeEach(() => {
     address: '203.0.113.7',
     interface: 'eth0',
     public: true,
+  }
+  probe = {
+    host: {
+      kvm_present: false,
+      kvm_usable: false,
+      cpu_virtualization: null,
+      hypervisor: null,
+      cpu_cores: 4,
+      memory_bytes: 8 * 1024 ** 3,
+      sandbox_free_bytes: 40 * 1024 ** 3,
+    },
+    runtimes: ['gvisor'],
   }
 })
 
@@ -120,6 +136,7 @@ const sly = (args: string[], env: Record<string, string> = {}) =>
           stderr,
         }),
     )
+
     child.stdin!.end('correct-horse-battery')
   })
 
@@ -138,6 +155,7 @@ const terminal = (args: string[], steps: Step[]) =>
       (error: Error | null, stdout: string) =>
         error ? reject(error) : resolve(JSON.parse(stdout)),
     )
+
     child.stdin!.end(
       JSON.stringify({
         argv: [process.execPath, entry, 'setup', '--socket', socketPath, ...args],
@@ -155,23 +173,23 @@ const terminal = (args: string[], steps: Step[]) =>
 
 const domainless: Step[] = [
   {
-    expect: 'admin email: ',
+    expect: '◆  admin email',
     send: 'admin@example.com\r',
   },
   {
-    expect: 'admin password \\([^)]*\\): ',
+    expect: '◆  admin password \\([^)]*\\)',
     send: 'correct-horse-battery\r',
   },
   {
-    expect: 'repeat the password: ',
+    expect: '◆  repeat the password',
     send: 'correct-horse-battery\r',
   },
   {
-    expect: 'Serve the dashboard and API on hostnames of your own domain\\? [^:]*: ',
-    send: 'n\r',
+    expect: '◆  Serve the dashboard and API on hostnames of your own domain\\?',
+    send: 'n',
   },
   {
-    expect: 'ACME email[^:]*: ',
+    expect: '◆  ACME email',
     send: '\r',
   },
 ]
@@ -179,12 +197,14 @@ const domainless: Step[] = [
 describe('sly setup public address, flag form', () => {
   test('--public-address goes to stationd as public_address', async () => {
     const run = await sly([...flags, '--public-address', '203.0.113.9'])
+
     assert.equal(run.code, 0, run.stderr)
     assert.equal(setups[0]!.public_address, '203.0.113.9')
   })
 
   test('a malformed --public-address exits 2 before anything is sent', async () => {
     const run = await sly([...flags, '--public-address', '999.1.1.1'])
+
     assert.equal(run.code, 2)
     assert.match(run.stderr, /not an IPv4 address/)
     assert.equal(setups.length, 0)
@@ -192,6 +212,7 @@ describe('sly setup public address, flag form', () => {
 
   test('--detect-public-address uses the default-route address when it is public', async () => {
     const run = await sly([...flags, '--detect-public-address'])
+
     assert.equal(run.code, 0, run.stderr)
     assert.equal(setups[0]!.public_address, '203.0.113.7')
   })
@@ -203,6 +224,7 @@ describe('sly setup public address, flag form', () => {
       public: false,
     }
     const run = await sly([...flags, '--detect-public-address'])
+
     assert.equal(run.code, 2)
     assert.match(run.stderr, /eth0 has 10\.0\.0\.5, which is not a public address/)
     assert.equal(setups.length, 0)
@@ -216,18 +238,21 @@ describe('sly setup public address, flag form', () => {
       reason: 'the host has no IPv4 default route',
     }
     const run = await sly([...flags, '--detect-public-address'])
+
     assert.equal(run.code, 2)
     assert.match(run.stderr, /no IPv4 default route/)
   })
 
   test('the two address flags exclude each other', async () => {
     const run = await sly([...flags, '--public-address', '203.0.113.9', '--detect-public-address'])
+
     assert.equal(run.code, 2)
-    assert.match(run.stderr, /exclude each other/)
+    assert.match(run.stderr, /cannot be used with option '--public-address/)
   })
 
   test('without either flag and without a terminal no address is sent', async () => {
     const run = await sly(flags)
+
     assert.equal(run.code, 0, run.stderr)
     assert.equal('public_address' in setups[0]!, false)
     assert.match(run.stdout, /no public address set/)
@@ -246,6 +271,7 @@ describe('sly setup Litestream bucket, flag form', () => {
       [...flags, ...bucket, '--litestream-endpoint', 'http://10.0.0.5:9000'],
       keys,
     )
+
     assert.equal(run.code, 0, run.stderr)
     assert.deepEqual(setups[0]!.litestream, {
       bucket: 'sly-dispatch',
@@ -261,6 +287,7 @@ describe('sly setup Litestream bucket, flag form', () => {
       [...flags, ...bucket, '--litestream-endpoint', 'http://8.8.8.8:9000'],
       keys,
     )
+
     assert.equal(run.code, 2)
     assert.match(run.stderr, /private or loopback/)
     assert.equal(setups.length, 0)
@@ -271,7 +298,50 @@ describe('sly setup Litestream bucket, flag form', () => {
       [...flags, ...bucket, '--litestream-endpoint', 'https://abc.r2.cloudflarestorage.com'],
       keys,
     )
+
     assert.equal(run.code, 0, run.stderr)
+  })
+})
+
+describe('sly setup sandbox runtime', () => {
+  test('without KVM it says why in one line, asks nothing and sends no runtime', async () => {
+    const run = await sly(flags)
+
+    assert.equal(run.code, 0, run.stderr)
+    assert.match(run.stderr, /^No KVM on this host, so sandboxes run on gVisor$/m)
+    assert.equal('sandbox_runtime' in setups[0]!, false)
+  })
+
+  test('--sandbox-runtime gvisor goes to stationd as sandbox_runtime', async () => {
+    const run = await sly([...flags, '--sandbox-runtime', 'gvisor'])
+
+    assert.equal(run.code, 0, run.stderr)
+    assert.equal(setups[0]!.sandbox_runtime, 'gvisor')
+  })
+
+  test('a runtime the host does not offer exits 2 before anything is sent', async () => {
+    const run = await sly([...flags, '--sandbox-runtime', 'microvm'])
+
+    assert.equal(run.code, 2)
+    assert.match(run.stderr, /does not offer the sandbox runtime microvm/)
+    assert.equal(setups.length, 0)
+  })
+
+  test('on bare metal with KVM it shows the trade-offs and marks micro-VMs as not installed', async () => {
+    probe.host = {
+      ...probe.host,
+      kvm_present: true,
+      kvm_usable: true,
+      cpu_virtualization: 'vmx',
+      memory_bytes: 64 * 1024 ** 3,
+    }
+    const run = await sly(flags)
+
+    assert.equal(run.code, 0, run.stderr)
+    assert.match(run.stderr, /bare metal with KVM and 64 GiB of memory, which suits micro-VMs/)
+    assert.match(run.stderr, /Micro-VM, recommended for this host, not installed in this release/)
+    assert.match(run.stderr, /\+ Full Linux compatibility, with native Docker and databases/)
+    assert.equal('sandbox_runtime' in setups[0]!, false)
   })
 })
 
@@ -287,11 +357,11 @@ describe('sly setup on a terminal', () => {
         },
         {
           expect:
-            'station public IPv4 address \\(Enter to accept, or type another\\) \\[203\\.0\\.113\\.7\\]: ',
+            '◆  station public IPv4 address \\(Enter to accept, or type another\\)\n│  203\\.0\\.113\\.7',
           send: '\r',
         },
         {
-          expect: 'Litestream bucket[^:]*: ',
+          expect: '◆  Litestream bucket',
           send: '\r',
         },
         {
@@ -299,15 +369,16 @@ describe('sly setup on a terminal', () => {
           send: '',
         },
         {
-          expect: 'Create the admin and apply these settings\\? [^:]*: ',
-          send: 'y\r',
+          expect: '◆  Create the admin and apply these settings\\?',
+          send: 'y',
         },
         {
-          expect: 'type "stored"[^:]*: ',
+          expect: '◆  type "stored"',
           send: 'stored\r',
         },
       ],
     )
+
     assert.equal(run.failure, null, run.output)
     assert.equal(run.code, 0, run.output)
     assert.equal(setups[0]!.public_address, '203.0.113.7')
@@ -320,31 +391,28 @@ describe('sly setup on a terminal', () => {
       [
         ...domainless,
         {
-          expect: 'station public IPv4 address[^:]*: ',
+          expect: '◆  station public IPv4 address',
           send: 'not-an-ip\r',
         },
         {
           expect: 'that is not an IPv4 address in dotted-quad form',
-          send: '',
+          send: '\u0015198.51.100.20\r',
         },
         {
-          expect: 'station public IPv4 address[^:]*: ',
-          send: '198.51.100.20\r',
-        },
-        {
-          expect: 'Litestream bucket[^:]*: ',
+          expect: '◆  Litestream bucket',
           send: '\r',
         },
         {
-          expect: 'Create the admin[^:]*: ',
-          send: 'y\r',
+          expect: '◆  Create the admin',
+          send: 'y',
         },
         {
-          expect: 'type "stored"[^:]*: ',
+          expect: '◆  type "stored"',
           send: 'stored\r',
         },
       ],
     )
+
     assert.equal(run.failure, null, run.output)
     assert.equal(run.code, 0, run.output)
     assert.equal(setups[0]!.public_address, '198.51.100.20')
@@ -365,11 +433,11 @@ describe('sly setup on a terminal', () => {
           send: '',
         },
         {
-          expect: 'station public IPv4 address \\(Enter to skip\\): ',
+          expect: '◆  station public IPv4 address \\(Enter to skip\\)',
           send: '\r',
         },
         {
-          expect: 'Litestream bucket[^:]*: ',
+          expect: '◆  Litestream bucket',
           send: '\r',
         },
         {
@@ -377,15 +445,16 @@ describe('sly setup on a terminal', () => {
           send: '',
         },
         {
-          expect: 'Create the admin[^:]*: ',
-          send: 'y\r',
+          expect: '◆  Create the admin',
+          send: 'y',
         },
         {
-          expect: 'type "stored"[^:]*: ',
+          expect: '◆  type "stored"',
           send: 'stored\r',
         },
       ],
     )
+
     assert.equal(run.failure, null, run.output)
     assert.equal('public_address' in setups[0]!, false)
   })
@@ -396,31 +465,27 @@ describe('sly setup on a terminal', () => {
       [
         ...domainless,
         {
-          expect: 'station public IPv4 address[^:]*: ',
+          expect: '◆  station public IPv4 address',
           send: '\r',
         },
         {
-          expect: 'Litestream bucket[^:]*: ',
+          expect: '◆  Litestream bucket',
           send: 'sly-dispatch\r',
         },
         {
-          expect: 'S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\): ',
+          expect: '◆  S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\)',
           send: 'http://8.8.8.8:9000\r',
         },
         {
           expect: 'private or loopback address',
-          send: '',
+          send: '\u0015http://10.0.0.5:9000\r',
         },
         {
-          expect: 'S3 endpoint URL \\(Enter for AWS S3; R2 is [^)]*\\): ',
-          send: 'http://10.0.0.5:9000\r',
-        },
-        {
-          expect: 'bucket access key id: ',
+          expect: '◆  bucket access key id',
           send: 'AKID\r',
         },
         {
-          expect: 'bucket secret access key: ',
+          expect: '◆  bucket secret access key',
           send: 'SECRETVALUE\r',
         },
         {
@@ -428,15 +493,16 @@ describe('sly setup on a terminal', () => {
           send: '',
         },
         {
-          expect: 'Create the admin[^:]*: ',
-          send: 'y\r',
+          expect: '◆  Create the admin',
+          send: 'y',
         },
         {
-          expect: 'type "stored"[^:]*: ',
+          expect: '◆  type "stored"',
           send: 'stored\r',
         },
       ],
     )
+
     assert.equal(run.failure, null, run.output)
     assert.deepEqual(setups[0]!.litestream, {
       bucket: 'sly-dispatch',
@@ -471,6 +537,7 @@ const recoveryKey = (args: string[]) =>
 describe('sly admin recovery-key', () => {
   test('asks stationd for the key and prints it alone on stdout', async () => {
     const run = await recoveryKey(['admin', 'recovery-key', '--socket', ''])
+
     assert.equal(run.code, 0, run.stderr)
     assert.equal(run.stdout, 'sly-rk-TEST\n')
     assert.match(run.stderr, /audit/)
@@ -479,6 +546,7 @@ describe('sly admin recovery-key', () => {
 
   test('prints a JSON document with --json', async () => {
     const run = await recoveryKey(['--json', 'admin', 'recovery-key', '--socket', ''])
+
     assert.equal(run.code, 0, run.stderr)
     assert.deepEqual(JSON.parse(run.stdout), {
       recovery_key: 'sly-rk-TEST',
@@ -488,6 +556,7 @@ describe('sly admin recovery-key', () => {
 
   test('exits 5 with CONNECTION_FAILED when stationd is not listening', async () => {
     const run = await recoveryKey(['admin', 'recovery-key', '--socket', join(dir, 'missing.sock')])
+
     assert.equal(run.code, 5)
     assert.match(run.stderr, /CONNECTION_FAILED/)
   })

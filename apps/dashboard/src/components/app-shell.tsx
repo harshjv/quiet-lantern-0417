@@ -1,10 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ListChecks, LogOut, Monitor, Moon, Sun, UserRound } from 'lucide-react'
+import { Keyboard, ListChecks, LogOut, Monitor, Moon, Search, Sun, UserRound } from 'lucide-react'
 import { useTheme } from 'next-themes'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
+import { CommandPalette } from '@/components/command-palette'
 import { Logo } from '@/components/logo'
+import { ShortcutKeys } from '@/components/shortcut-keys'
+import { ShortcutsHelp } from '@/components/shortcuts-help'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -14,23 +17,26 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { authClient, sessionQuery } from '@/lib/auth'
+import type { StreamState } from '@/lib/event-stream'
 import { setGuideHidden, useGuideHidden } from '@/lib/first-run'
-import { useLiveEvents, type LiveState } from '@/lib/live'
+import { useLiveEvents } from '@/lib/live'
 import { stagedQuery } from '@/lib/queries'
+import { useShortcut } from '@/lib/shortcuts'
 import { countPill, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
-const liveText: Record<LiveState, string> = {
+const liveText: Record<StreamState, string> = {
   live: 'Updates on',
   connecting: 'Reconnecting',
   offline: 'Updates paused',
 }
 
-function LiveIndicator({ state }: { state: LiveState }) {
+function LiveIndicator({ state }: { state: StreamState }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -59,6 +65,7 @@ function LiveIndicator({ state }: { state: LiveState }) {
 
 function ThemeMenu() {
   const { theme, setTheme } = useTheme()
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -85,7 +92,7 @@ function ThemeMenu() {
   )
 }
 
-function UserMenu() {
+function UserMenu({ onHelp }: { onHelp: () => void }) {
   const session = useQuery(sessionQuery)
   const guideHidden = useGuideHidden()
   const client = useQueryClient()
@@ -97,6 +104,7 @@ function UserMenu() {
       to: '/login',
     })
   }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -122,6 +130,12 @@ function UserMenu() {
             </Link>
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onSelect={onHelp}>
+          <Keyboard /> Keyboard shortcuts
+          <DropdownMenuShortcut>
+            <ShortcutKeys id="help" />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut /> Sign out
         </DropdownMenuItem>
@@ -137,6 +151,34 @@ export function AppShell({ children }: { children: ReactNode }) {
   const live = useLiveEvents()
   const staged = useQuery(stagedQuery('staged'))
   const pending = staged.data?.items.length ?? 0
+  const navigate = useNavigate()
+  const [palette, setPalette] = useState(false)
+  const [help, setHelp] = useState(false)
+
+  useShortcut('palette', () => setPalette((open) => !open))
+  useShortcut('help', () => setHelp(true))
+  useShortcut(
+    'projects',
+    () =>
+      void navigate({
+        to: '/',
+      }),
+  )
+  useShortcut(
+    'staged',
+    () =>
+      void navigate({
+        to: '/staged',
+      }),
+  )
+  useShortcut(
+    'agents',
+    () =>
+      void navigate({
+        to: '/agents',
+      }),
+  )
+
   return (
     <div className="min-h-svh bg-background">
       <a
@@ -176,17 +218,34 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link to="/agents" className={navLink}>
               Agents
             </Link>
+            <Link to="/stations" className={navLink}>
+              Stations
+            </Link>
           </nav>
           <div className="ml-auto flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => setPalette(true)}
+              aria-haspopup="dialog"
+            >
+              <Search aria-hidden />
+              <span className="hidden md:inline">Search or run a command</span>
+              <span className="sr-only md:hidden">Search or run a command</span>
+              <ShortcutKeys id="palette" className="hidden md:inline-flex" />
+            </Button>
             <LiveIndicator state={live} />
             <ThemeMenu />
-            <UserMenu />
+            <UserMenu onHelp={() => setHelp(true)} />
           </div>
         </div>
       </header>
       <main id="main" className="mx-auto max-w-7xl px-4 py-6" tabIndex={-1}>
         {children}
       </main>
+      <CommandPalette open={palette} onOpenChange={setPalette} onHelp={() => setHelp(true)} />
+      <ShortcutsHelp open={help} onOpenChange={setHelp} />
     </div>
   )
 }

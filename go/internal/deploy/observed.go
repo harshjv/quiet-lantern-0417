@@ -82,6 +82,8 @@ func (s *Station) observed() protocol.Observed {
 		o.Unknown = []protocol.UnknownObject{}
 	}
 	o.Station.Capabilities.Sandboxes = s.sandboxCapability()
+	host := s.hostCapability()
+	o.Station.Capabilities.Host = &host
 	s.sandboxResources(&o.Station.Resources)
 	if s.applied != nil {
 		o.StationId = s.applied.StationId
@@ -288,11 +290,7 @@ func (s *Station) writeObserved() {
 		return
 	}
 	o.ObservedAt = time.Now().UTC().Format(timestampLayout)
-	out, err := json.MarshalIndent(o, "", "  ")
-	if err != nil {
-		return
-	}
-	if err := writeAtomic(filepath.Join(s.opts.StateDir, ObservedFile), out); err != nil {
+	if err := writeJSON(filepath.Join(s.opts.StateDir, ObservedFile), o); err != nil {
 		s.log.Error("write observed state", "error", err)
 		return
 	}

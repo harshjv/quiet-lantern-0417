@@ -268,3 +268,22 @@ func TestListeningDumpParsesRunscExecOutputFromGVisor(t *testing.T) {
 		t.Fatalf("got %+v", socks)
 	}
 }
+
+func TestListeningSkipsDockersEmbeddedResolver(t *testing.T) {
+	dir := t.TempDir()
+	resolver := tcpRow(0, "0B00007F:894B", "0A")
+	app := tcpRow(1, "00000000:0BB8", "0A")
+	for name, body := range map[string]string{"tcp": tcpHeader + resolver + app, "tcp6": tcpHeader, "udp": tcpHeader + tcpRow(0, "0B00007F:A1B2", "07"), "udp6": tcpHeader} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	socks, err := listeningIn(dir+"/", 80, "tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Socket{{Address: netip.MustParseAddr("0.0.0.0"), Port: 3000, Proto: "tcp"}}
+	if !slices.Equal(socks, want) {
+		t.Fatalf("got %+v", socks)
+	}
+}

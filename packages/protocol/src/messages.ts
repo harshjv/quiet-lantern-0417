@@ -22,6 +22,8 @@ import {
   FlowRollupRow,
   Injection,
   ListeningSocket,
+  networkDirectionValues,
+  networkProtocolValues,
   Resources,
   RunKind,
   RunRow,
@@ -757,6 +759,8 @@ const RunRefBody = Type.Object(
   },
 )
 
+export const logRoleValues = ['service', 'guard', 'coupler', 'init', 'runtime'] as const
+
 const LogSelector = Type.Object(
   {
     source: StringEnum(['runtime', 'build', 'run', 'system', 'sandbox'], {
@@ -769,7 +773,7 @@ const LogSelector = Type.Object(
     run_id: Type.Optional(Id('run')),
     component: Type.Optional(Type.String()),
     role: Type.Optional(
-      StringEnum(['service', 'guard', 'coupler', 'init', 'runtime'], {
+      StringEnum(logRoleValues, {
         title: 'LogRole',
       }),
     ),
@@ -901,7 +905,7 @@ const PortNumber = Type.Integer({
   maximum: 65535,
 })
 
-const NetworkProtocolEnum = StringEnum(['tcp', 'udp'], {
+const NetworkProtocolEnum = StringEnum(networkProtocolValues, {
   title: 'NetworkProtocol',
 })
 
@@ -934,7 +938,7 @@ const NetworkPeer = Type.Object(
 
 const NetworkConnection = Type.Object(
   {
-    direction: StringEnum(['in', 'out'], {
+    direction: StringEnum(networkDirectionValues, {
       title: 'NetworkDirection',
     }),
     peer: NetworkPeer,
@@ -1829,17 +1833,21 @@ const message = <Body extends TSchema>(
   from: Sender,
   body: Body,
   capability: Capability | null = null,
-  outboxed = false,
 ) =>
   ({
     from,
     body,
     capability,
-    outboxed,
+    outboxed: false,
   }) satisfies MessageDefinition
 
 const outboxed = <Body extends TSchema>(body: Body, capability: Capability | null = null) =>
-  message('station', body, capability, true)
+  ({
+    from: 'station',
+    body,
+    capability,
+    outboxed: true,
+  }) satisfies MessageDefinition
 
 export const messages = {
   challenge: message('dispatch', ChallengeBody),
@@ -1950,6 +1958,36 @@ export const messages = {
 } as const
 
 export type MessageType = keyof typeof messages
+
+export type OutboxedMessageType = {
+  [T in MessageType]: (typeof messages)[T]['outboxed'] extends true ? T : never
+}[MessageType]
+
+export const outboxedMessageTypes = new Set<string>(
+  Object.entries(messages).flatMap(([type, definition]) => (definition.outboxed ? [type] : [])),
+)
+
+export const messageReplies = {
+  'logs.query': 'logs.page',
+  'metrics.sample': 'metrics.sample.result',
+  'network.sample': 'network.sample.result',
+  'network.inspect': 'network.inspect.result',
+  'network.probe': 'network.probe.result',
+  'dns.log': 'dns.log.result',
+  'run.cancel': 'run.cancelled',
+  'secrets.deliver': 'secrets.ack',
+  'registry.gc': 'registry.gc.accepted',
+  'platform.verify': 'platform.verify.result',
+  'doctor.run': 'doctor.report',
+  'volume.backup': 'volume.backup.accepted',
+  'volume.restore': 'volume.restore.accepted',
+  'volume.backup.delete': 'volume.backup.delete.result',
+  'sandbox.storage.grow': 'sandbox.storage.grown',
+} as const satisfies Partial<Record<MessageType, MessageType>>
+
+export type RequestType = keyof typeof messageReplies
+
+export type ReplyOf<T extends RequestType> = (typeof messageReplies)[T]
 
 export type MessageBody<T extends MessageType> = Static<(typeof messages)[T]['body']>
 

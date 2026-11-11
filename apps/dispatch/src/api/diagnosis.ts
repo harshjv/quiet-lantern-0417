@@ -33,7 +33,10 @@ const configPaths = [
 ]
 
 const shapeLogs = (logs: DiagnosisValue['logs'], redact: Redactor): DiagnosisValue['logs'] => {
-  if (!logs) return undefined
+  if (!logs) {
+    return undefined
+  }
+
   const lines = logs.untrusted.text.split('\n')
   const tail = lines.slice(-40)
   const matches = lines
@@ -41,6 +44,7 @@ const shapeLogs = (logs: DiagnosisValue['logs'], redact: Redactor): DiagnosisVal
     .filter((l) => errorPattern.test(l))
     .slice(-40)
   const picked = [...matches, ...tail].slice(-maxLines).map((l) => redact(l).slice(0, maxLineChars))
+
   return {
     ...logs,
     untrusted: {
@@ -53,11 +57,15 @@ const shapeLogs = (logs: DiagnosisValue['logs'], redact: Redactor): DiagnosisVal
 
 const versionsOf = (snapshot: EnvSnapshot | undefined) => {
   const out = new Map<string, number>()
+
   for (const entry of snapshot?.entries ?? []) {
-    for (const leaf of leaves(entry.node))
-      if (leaf.kind === 'value')
+    for (const leaf of leaves(entry.node)) {
+      if (leaf.kind === 'value') {
         out.set(entry.key === leaf.key ? entry.key : `${entry.key}<-${leaf.key}`, leaf.version)
+      }
+    }
   }
+
   return out
 }
 
@@ -75,7 +83,11 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
     .orderBy(desc(deployment.id))
     .limit(1)
     .get()
-  if (!good) return undefined
+
+  if (!good) {
+    return undefined
+  }
+
   const from = versionsOf(good.env_snapshot as EnvSnapshot)
   const to = versionsOf(dep.env_snapshot as EnvSnapshot)
   const variables = [...new Set([...from.keys(), ...to.keys()])]
@@ -106,6 +118,7 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
       from: goodImages.get(b.ref)!,
       to: b.digest,
     }))
+
   return {
     deployment_id: good.id,
     ...(fromSha && toSha && fromSha !== toSha
@@ -140,6 +153,7 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
   const has = (code: RemedyCode) => fixes.some((f) => f.code === code)
   const limits = dep.config_snapshot.limits as
     { memory_bytes: number; cpu_millis: number } | undefined
+
   if (d.code === 'OOM_KILLED' && limits) {
     const memory = limits.memory_bytes * 2
     const raise = remedy(
@@ -157,11 +171,17 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
       },
     )
     const at = fixes.findIndex((f) => f.code === 'RAISE_MEMORY')
-    if (at >= 0) fixes[at] = raise
-    else fixes.unshift(raise)
+
+    if (at >= 0) {
+      fixes[at] = raise
+    } else {
+      fixes.unshift(raise)
+    }
   }
+
   if (d.code === 'HEALTH_TIMEOUT' && !has('CHECK_HEALTH_PATH')) {
     const health = dep.config_snapshot.health as { path?: string; port?: number } | null
+
     fixes.push(
       remedy(
         'CHECK_HEALTH_PATH',
@@ -169,20 +189,25 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
       ),
     )
   }
-  if (d.code === 'EXIT_NONZERO' && !has('READ_LOGS'))
+
+  if (d.code === 'EXIT_NONZERO' && !has('READ_LOGS')) {
     fixes.push(
       remedy(
         'READ_LOGS',
         'The container exited before it was healthy. Read the log excerpt; get_logs with the cursor shows more.',
       ),
     )
-  if (d.code === 'BUILD_FAILED' && !has('READ_BUILD_LOGS'))
+  }
+
+  if (d.code === 'BUILD_FAILED' && !has('READ_BUILD_LOGS')) {
     fixes.push(
       remedy(
         'READ_BUILD_LOGS',
         'Read the build log with get_logs and fix the Dockerfile or source, then deploy again.',
       ),
     )
+  }
+
   if (d.diff_from_last_good && !has('ROLLBACK')) {
     fixes.push(
       remedy(
@@ -198,13 +223,16 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
       ),
     )
   }
+
   return fixes
 }
 
 const bound = (d: DiagnosisValue) => {
   let out = d
+
   while (Buffer.byteLength(JSON.stringify(out)) > maxBytes && out.logs) {
     const lines = out.logs.untrusted.text.split('\n')
+
     if (lines.length <= 1) {
       out = {
         ...out,
@@ -212,6 +240,7 @@ const bound = (d: DiagnosisValue) => {
       }
       break
     }
+
     out = {
       ...out,
       logs: {
@@ -224,6 +253,7 @@ const bound = (d: DiagnosisValue) => {
       },
     }
   }
+
   return out
 }
 
@@ -232,7 +262,10 @@ export const deploymentDiagnosis = (
   dep: DeploymentRow,
   redact: Redactor,
 ): DiagnosisValue | null => {
-  if (dep.status !== 'failed') return null
+  if (dep.status !== 'failed') {
+    return null
+  }
+
   const svc = db
     .select({
       name: service.name,
@@ -276,14 +309,25 @@ export const deploymentDiagnosis = (
       : {}),
   }
   const diff = diffFrom(db, dep)
-  if (diff) d.diff_from_last_good = diff
+
+  if (diff) {
+    d.diff_from_last_good = diff
+  }
+
   d.fixes = remedies(dep, d, svc?.name ?? dep.service_id)
-  if (!d.logs) delete d.logs
+
+  if (!d.logs) {
+    delete d.logs
+  }
+
   return bound(d)
 }
 
 export const buildDiagnosis = (b: BuildRow, redact: Redactor): DiagnosisValue | null => {
-  if (b.status !== 'failed') return null
+  if (b.status !== 'failed') {
+    return null
+  }
+
   const base: DiagnosisValue = b.failure ?? {
     phase: 'build',
     code: 'BUILD_FAILED',
@@ -297,7 +341,11 @@ export const buildDiagnosis = (b: BuildRow, redact: Redactor): DiagnosisValue | 
     },
     logs: shapeLogs(base.logs, redact),
   }
-  if (!d.logs) delete d.logs
+
+  if (!d.logs) {
+    delete d.logs
+  }
+
   d.fixes = d.fixes?.length
     ? d.fixes
     : [
@@ -306,11 +354,15 @@ export const buildDiagnosis = (b: BuildRow, redact: Redactor): DiagnosisValue | 
           'Read the build log with get_logs (build) and fix the Dockerfile or source, then deploy again.',
         ),
       ]
+
   return bound(d)
 }
 
 export const runDiagnosis = (r: RunRow, redact: Redactor): DiagnosisValue | null => {
-  if (r.status !== 'failed') return null
+  if (r.status !== 'failed') {
+    return null
+  }
+
   const base: DiagnosisValue = r.failure ?? {
     phase: 'run',
     code: 'EXIT_NONZERO',
@@ -325,6 +377,10 @@ export const runDiagnosis = (r: RunRow, redact: Redactor): DiagnosisValue | null
     exit_code: r.exit_code,
     logs: shapeLogs(base.logs, redact),
   }
-  if (!d.logs) delete d.logs
+
+  if (!d.logs) {
+    delete d.logs
+  }
+
   return bound(d)
 }

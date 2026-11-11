@@ -55,6 +55,7 @@ for (const key of ['ipam.pool', 'ipam.virtual_prefix']) {
         [key]: unmasked,
       },
     })
+
     assert.equal(reply.status, 400, reply.text)
     assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
     assert.deepEqual(reply.body.error.details.issues, [

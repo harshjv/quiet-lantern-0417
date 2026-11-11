@@ -22,6 +22,7 @@ import { stagedDecided } from '@/lib/invalidate'
 import { stagedSource } from '@/lib/labels'
 import { done, useApiMutation } from '@/lib/mutation'
 import { load, meQuery, seedDeployment, stagedChangeQuery } from '@/lib/queries'
+import { loaderTitle } from '@/lib/title'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 
 export const Route = createFileRoute('/_app/staged/$change')({
@@ -30,14 +31,22 @@ export const Route = createFileRoute('/_app/staged/$change')({
       load(context.queryClient, stagedChangeQuery(params.change)),
       load(context.queryClient, meQuery),
     ])
-    if (change.environment_id) await loadTrail(context.queryClient, change.environment_id)
+
+    return {
+      title: [
+        'Staged change',
+        change.environment_id ? await loadTrail(context.queryClient, change.environment_id) : '',
+      ],
+    }
   },
+  head: loaderTitle,
   errorComponent: failurePage('Couldn’t load this staged change'),
   component: StagedChangePage,
 })
 
 function Scope({ environmentId }: { environmentId: string }) {
   const { project, environment } = useEnvironmentTrail(environmentId)
+
   return (
     <Link
       to="/projects/$project/$environment"

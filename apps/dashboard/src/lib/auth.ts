@@ -19,7 +19,11 @@ export const sessionQuery = queryOptions({
   queryKey: ['auth', 'session'],
   queryFn: async () => {
     const { data, error } = await authClient.getSession()
-    if (error) throw new Error(error.message ?? 'Stationly couldn’t read your session.')
+
+    if (error) {
+      throw new Error(error.message ?? 'Stationly couldn’t read your session.')
+    }
+
     return data
       ? {
           user: data.user,
@@ -34,7 +38,11 @@ export const passkeysQuery = queryOptions({
   queryKey: ['auth', 'passkeys'],
   queryFn: async () => {
     const { data, error } = await authClient.passkey.listUserPasskeys()
-    if (error) throw new Error(error.message ?? 'Stationly couldn’t list your passkeys.')
+
+    if (error) {
+      throw new Error(error.message ?? 'Stationly couldn’t list your passkeys.')
+    }
+
     return (data ?? []).map((p) => ({
       id: p.id,
       name: p.name ?? null,

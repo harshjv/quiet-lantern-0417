@@ -51,6 +51,7 @@ const keywordBreaks = (base: Node, head: Node): string[] => {
   const headTypes = typesOf(head)
   const baseValues = valuesOf(base)
   const headValues = valuesOf(head)
+
   return [
     ...(headTypes === undefined
       ? []
@@ -103,13 +104,23 @@ export const schemaBreaks = (
     const baseNode = baseRef === undefined ? base : baseDefs[baseRef]!
     const headNode = headRef === undefined ? head : headDefs[headRef]!
     const nodeAt = baseRef === undefined ? at : defPath(baseRef)
-    if (baseRef === undefined || headRef === undefined) return diff(baseNode, headNode, nodeAt)
+
+    if (baseRef === undefined || headRef === undefined) {
+      return diff(baseNode, headNode, nodeAt)
+    }
+
     const key = `${baseRef}>${headRef}`
     const cached = memo.get(key)
-    if (cached) return cached
+
+    if (cached) {
+      return cached
+    }
+
     memo.set(key, [])
     const result = diff(baseNode, headNode, nodeAt)
+
     memo.set(key, result)
+
     return result
   }
 
@@ -135,12 +146,15 @@ export const schemaBreaks = (
   const diff = (base: Node, head: Node, at: string): Break[] => {
     const baseMembers = Array.isArray(base.anyOf) ? (base.anyOf as Node[]) : undefined
     const headMembers = Array.isArray(head.anyOf) ? (head.anyOf as Node[]) : undefined
-    if (baseMembers || headMembers)
+
+    if (baseMembers || headMembers) {
       return (baseMembers ?? [base]).flatMap((member, index) => {
         const memberAt = baseMembers ? `${at}/anyOf/${index}` : at
         const candidates = (headMembers ?? [head]).map((h) => diffRef(member, h, memberAt))
+
         return candidates.reduce((best, next) => (next.length < best.length ? next : best))
       })
+    }
 
     const baseProperties = (isNode(base.properties) ? base.properties : {}) as Record<string, Node>
     const headProperties = (isNode(head.properties) ? head.properties : {}) as Record<string, Node>
@@ -155,6 +169,7 @@ export const schemaBreaks = (
       })),
       ...Object.entries(baseProperties).flatMap(([name, schema]) => {
         const next = headProperties[name]
+
         return next
           ? diffRef(schema, next, `${at}/properties/${name}`)
           : [
@@ -206,13 +221,16 @@ export const breakingChanges = (base: Snapshot, head: Snapshot): Break[] => {
     ...Object.entries(base.messages).flatMap(([type, entry]): Break[] => {
       const at = `messages.json#/${type}`
       const next = head.messages[type]
-      if (!next)
+
+      if (!next) {
         return [
           {
             at,
             change: 'message type removed',
           },
         ]
+      }
+
       return [
         ...(['from', 'capability', 'outboxed'] as const)
           .filter((key) => entry[key] !== next[key])
@@ -238,13 +256,16 @@ export const breakingChanges = (base: Snapshot, head: Snapshot): Break[] => {
     ...base.errors.errors.flatMap((entry): Break[] => {
       const at = `errors.json#/errors/${entry.code}`
       const next = headErrors.get(entry.code)
-      if (!next)
+
+      if (!next) {
         return [
           {
             at,
             change: 'error code removed',
           },
         ]
+      }
+
       return (['http', 'area', 'close'] as const)
         .filter((key) => entry[key] !== next[key])
         .map((key) => ({
@@ -261,10 +282,16 @@ export const breakingChanges = (base: Snapshot, head: Snapshot): Break[] => {
   ]
 
   const seen = new Set<string>()
+
   return breaks.filter((item) => {
     const key = `${item.at} ${item.change}`
-    if (seen.has(key)) return false
+
+    if (seen.has(key)) {
+      return false
+    }
+
     seen.add(key)
+
     return true
   })
 }

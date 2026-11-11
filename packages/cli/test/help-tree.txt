@@ -6,20 +6,24 @@ sly apply
   Plan or apply a Manifest (alias of sly manifest apply)
 sly audit
   Audit events; rows outside the caller scopes are omitted
+sly complete [args...]
+  Generate completion suggestions
+sly completion <shell>
+  Generate shell completion scripts
 sly deploy
   Create a deployment record (queued); execution belongs to the station
 sly deployments
   Deployments, builds, redeploys and rollbacks of a service
+sly deployments build-diagnosis <id>
+  The diagnosis object of a failed build
 sly deployments cancel <id>
   Cancel a deployment before cutover; never staged
+sly deployments diagnosis <id>
+  The diagnosis object of a failed deployment
 sly deployments get <id>
   Get a deployment
 sly deployments get-build <id>
   Get a build; a failed build answers BUILD_FAILED with its diagnosis
-sly deployments get-build-diagnosis <id>
-  The diagnosis object of a failed build
-sly deployments get-diagnosis <id>
-  The diagnosis object of a failed deployment
 sly deployments list
   List the deployments of a service
 sly deployments list-builds
@@ -28,7 +32,7 @@ sly deployments list-environment
   List the deployments of an environment
 sly deployments list-steps <id>
   Deployment steps in step order
-sly deployments wait-for <id>
+sly deployments wait <id>
   Wait up to 10 s for a deployment to reach a terminal state or cutover
 sly domains
   Domains and TCP exposures of a service
@@ -168,12 +172,12 @@ sly runs
   One-off runs of a service
 sly runs cancel <id>
   Cancel a queued or running run; never staged
-sly runs get-diagnosis <id>
+sly runs diagnosis <id>
   The diagnosis of a failed run
+sly runs get <id>
+  Get a run with done; wait_s keeps waiting up to 10 s for it to finish
 sly runs list
   List the runs of a service
-sly runs wait-for <id>
-  Get a run with done; wait_s keeps waiting up to 10 s for it to finish
 sly sandboxes
   Persistent Linux machines for agents, isolated with gVisor
 sly sandboxes create [name]
@@ -262,7 +266,7 @@ sly staged-changes get <id>
   Get a staged change with its diff
 sly staged-changes list
   List staged changes of an environment (default status staged; status=all for every row)
-sly staged-changes list-instance
+sly staged-changes list-all
   List staged changes across the instance
 sly staged-changes reject <id>
   Reject a staged change
@@ -277,7 +281,7 @@ sly stations list
 sly stations remove <station>
   Remove a station: its key is revoked and kept, so it is told STATION_REVOKED
 sly stations update <station>
-  Change a station: public_address, concurrency_cap, draining (no new deployments are placed on it) and intermittent; sleep_schedule is phase 2
+  Change a station: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, sandbox_limits and default_sandbox_runtime; sleep_schedule is phase 2
 sly tokens
   Personal and scoped tokens
 sly tokens create <name>
@@ -290,7 +294,7 @@ sly tokens revoke <id>
   Revoke a token
 sly variables
   Variables, secret values and grants; sealed values are never shown
-sly variables apply-changes <id>
+sly variables apply <id>
   Redeploy every stale dependent of a variable
 sly variables delete <id>
   Delete a variable

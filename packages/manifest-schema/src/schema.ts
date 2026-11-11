@@ -2,17 +2,21 @@ import { Optional, Type, type Static, type TSchema } from '@sinclair/typebox'
 
 import {
   desiredStateValues,
+  domainFieldText,
   firewallModeValues,
   ingressValues,
   injectionValues,
+  portFieldText,
   portProtocolValues,
   portRange,
   scheduleConcurrencyValues,
+  serviceFieldText,
   serviceKindValues,
   slugPattern,
   strategyValues,
   StringEnum,
   variableKeyPattern,
+  volumeFieldText,
 } from '@stationly/protocol'
 
 const strict = {
@@ -165,18 +169,18 @@ const ServicePort = Type.Object(
   {
     port: Type.Integer({
       ...portRange,
-      description: 'The container port, unique per service',
+      description: portFieldText.port,
     }),
     protocol: Optional(
       StringEnum(portProtocolValues, {
         default: 'http',
-        description: 'http is routed by the Gateway, tcp only by exposure',
+        description: portFieldText.protocol,
       }),
     ),
     grpc: Optional(
       Type.Boolean({
         default: false,
-        description: 'The http port speaks gRPC',
+        description: portFieldText.grpc,
       }),
     ),
   },
@@ -263,7 +267,7 @@ export const Health = Type.Object(
     ),
   },
   {
-    description: 'The Signal health check',
+    description: serviceFieldText.health,
     ...strict,
   },
 )
@@ -286,7 +290,7 @@ export const Limits = Type.Object(
     ),
   },
   {
-    description: 'Resource limits',
+    description: serviceFieldText.limits,
     ...strict,
   },
 )
@@ -312,7 +316,7 @@ export const Schedule = Type.Object(
     ),
   },
   {
-    description: 'The Timetable for a cron service',
+    description: serviceFieldText.schedule,
     ...strict,
   },
 )
@@ -321,7 +325,7 @@ const Volume = Type.Object(
   {
     mount_path: Type.String({
       pattern: '^/',
-      description: 'Absolute, unique per service, not /run/secrets',
+      description: volumeFieldText.mount_path,
     }),
     station_volume: Optional(
       Type.String({
@@ -340,13 +344,13 @@ export const Domain = Type.Object(
   {
     generated: Optional(
       Type.Literal(true, {
-        description: 'A generated hostname; exactly one of generated and hostname',
+        description: domainFieldText.generated,
       }),
     ),
     hostname: Optional(
       Type.String({
         pattern: hostnamePattern,
-        description: 'A hostname under a configured zone, or any name for direct ingress',
+        description: domainFieldText.hostname,
       }),
     ),
     port: Optional(
@@ -357,7 +361,7 @@ export const Domain = Type.Object(
     ),
     ingress: Optional(
       StringEnum(ingressValues, {
-        description: 'direct in 1a; tunnel from 1b',
+        description: domainFieldText.ingress,
       }),
     ),
   },
@@ -475,7 +479,7 @@ const Firewall = Type.Object(
 export const Service = Type.Object(
   {
     kind: StringEnum(serviceKindValues, {
-      description: 'Immutable after creation',
+      description: serviceFieldText.kind,
     }),
     source: Source,
     station: Optional(
@@ -487,27 +491,27 @@ export const Service = Type.Object(
     command: Optional(
       Type.Union([Type.Array(Type.String()), Type.Null()], {
         default: null,
-        description: 'Overrides the image CMD',
+        description: serviceFieldText.command,
       }),
     ),
-    build_args: Optional(KeyMap(Type.String(), 'Non-secret Dockerfile build arguments')),
+    build_args: Optional(KeyMap(Type.String(), serviceFieldText.build_args)),
     ports: Optional(
       Type.Array(ServicePort, {
         default: [],
-        description: 'At least one for web, none for other kinds',
+        description: serviceFieldText.ports,
       }),
     ),
     health: Optional(Health),
     limits: Optional(Limits),
     strategy: Optional(
       StringEnum(strategyValues, {
-        description: 'replace when volumes is non-empty, else overlap; not for cron and one_off',
+        description: serviceFieldText.strategy,
       }),
     ),
     multi_writer_safe: Optional(
       Type.Boolean({
         default: false,
-        description: 'Allows overlap with a volume',
+        description: serviceFieldText.multi_writer_safe,
       }),
     ),
     drain_timeout_s: Optional(
@@ -515,13 +519,13 @@ export const Service = Type.Object(
         minimum: 0,
         maximum: 3600,
         default: 30,
-        description: 'Seconds to drain the old container',
+        description: serviceFieldText.drain_timeout_s,
       }),
     ),
     readonly_rootfs: Optional(
       Type.Boolean({
         default: false,
-        description: 'Mount the root filesystem read-only',
+        description: serviceFieldText.readonly_rootfs,
       }),
     ),
     secrets_owner: Optional(
@@ -542,14 +546,14 @@ export const Service = Type.Object(
         ],
         {
           default: null,
-          description: 'Owner of file-injected secrets; the image user by default',
+          description: serviceFieldText.secrets_owner,
         },
       ),
     ),
     pre_deploy: Optional(
       Type.Union([Type.Array(Type.String()), Type.Null()], {
         default: null,
-        description: 'A command run once before green starts',
+        description: serviceFieldText.pre_deploy,
       }),
     ),
     schedule: Optional(Schedule),

@@ -37,7 +37,7 @@ export const beginIdempotent = (
   request: Request,
   body: unknown,
 ): Replay | null => {
-  if (!/^[\x21-\x7e]{1,255}$/.test(key))
+  if (!/^[\x21-\x7e]{1,255}$/.test(key)) {
     fail(
       'VALIDATION_FAILED',
       'Idempotency-Key must be 1 to 255 visible ASCII characters.',
@@ -51,7 +51,10 @@ export const beginIdempotent = (
         ],
       },
     )
+  }
+
   const now = new Date()
+
   db.delete(idempotency_record).where(lt(idempotency_record.expires_at, now)).run()
   const url = new URL(request.url)
   const hash = fingerprint(request.method, url, body)
@@ -61,6 +64,7 @@ export const beginIdempotent = (
     .from(idempotency_record)
     .where(and(eq(idempotency_record.actor, actor), eq(idempotency_record.key, key)))
     .get()
+
   if (existing) {
     if (existing.request_sha256 !== hash) {
       fail(
@@ -73,17 +77,21 @@ export const beginIdempotent = (
         },
       )
     }
-    if (existing.status === null)
+
+    if (existing.status === null) {
       fail(
         'IDEMPOTENCY_MISMATCH',
         `A request with Idempotency-Key ${key} is still running.`,
         'Retry after the first request finishes.',
       )
+    }
+
     return {
       status: existing.status!,
       response: existing.response,
     }
   }
+
   db.insert(idempotency_record)
     .values({
       actor,
@@ -95,6 +103,7 @@ export const beginIdempotent = (
       expires_at: new Date(now.getTime() + retentionMs),
     })
     .run()
+
   return null
 }
 

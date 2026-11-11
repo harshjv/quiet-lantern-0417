@@ -19,7 +19,6 @@ export const env = createEnv({
     [apiUrlEnv]: blankAsUnset,
     APPDATA: z.string().default(join(homedir(), 'AppData', 'Roaming')),
     XDG_CONFIG_HOME: optional.transform((v) => v || join(homedir(), '.config')),
-    LITESTREAM_ACCESS_KEY_ID: optional,
     LITESTREAM_SECRET_ACCESS_KEY: optional,
   },
   runtimeEnvStrict: {
@@ -28,7 +27,6 @@ export const env = createEnv({
     [apiUrlEnv]: process.env[apiUrlEnv],
     APPDATA: process.env.APPDATA,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
-    LITESTREAM_ACCESS_KEY_ID: process.env.LITESTREAM_ACCESS_KEY_ID,
     LITESTREAM_SECRET_ACCESS_KEY: process.env.LITESTREAM_SECRET_ACCESS_KEY,
   },
 })

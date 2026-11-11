@@ -1,16 +1,18 @@
 import { Link } from '@tanstack/react-router'
-import { Bot, Terminal } from 'lucide-react'
+import { Terminal } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 
 import { CopyButton } from '@/components/copy'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { placeholders, type Tool } from '@/lib/commands'
+import { entityIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
 const chip = 'rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem] text-foreground'
 
 const replaceHint = (command: string) => {
   const names = placeholders(command)
+
   return names.length ? `Replace ${names.join(' and ')} before you run it.` : undefined
 }
 
@@ -35,7 +37,10 @@ export function Code({
   copy?: string
   className?: string
 }) {
-  if (!copy) return <code className={cn(chip, 'break-all', className)}>{children}</code>
+  if (!copy) {
+    return <code className={cn(chip, 'break-all', className)}>{children}</code>
+  }
+
   return (
     <span className="group/code inline-flex max-w-full items-center gap-0.5 align-middle">
       <code className={cn(chip, 'truncate', className)}>{children}</code>
@@ -108,6 +113,7 @@ export function CommandBlock({
 }) {
   const lines = typeof commands === 'string' ? [commands] : commands
   const text = lines.join('\n')
+
   return (
     <Frame
       copy={
@@ -178,7 +184,7 @@ export function AlsoWith({
               to="/agents"
               className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground"
             >
-              <Bot className="size-3.5 shrink-0" aria-label="Your agent" />
+              <entityIcon.agent className="size-3.5 shrink-0" aria-label="Your agent" />
               <Code className="text-xs">{tool}</Code>
             </Link>
           </TooltipTrigger>

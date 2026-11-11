@@ -16,6 +16,7 @@ import {
   type Service,
 } from './api'
 import { merge, mergeItem, on, seed, seedItem, type Edit } from './cache'
+import { logTail, type LogSelector } from './logs'
 import { isTerminal, isTransient, snapshotsBusy } from './status'
 
 export const load = <TQueryFnData, TError, TData, TQueryKey extends QueryKey>(
@@ -326,6 +327,7 @@ export const sandboxStationQuery = queryOptions({
         },
       }),
     )
+
     return page.items.length === 1 ? page.items[0]! : null
   },
 })
@@ -379,6 +381,37 @@ export const dnsLogQuery = (service: string) =>
     staleTime: Infinity,
     retry: false,
   })
+
+export const logsQuery = (selector: LogSelector) =>
+  queryOptions({
+    queryKey: ['logs', selector],
+    queryFn: () =>
+      unwrap(
+        api.v1.logs.get({
+          query: {
+            ...selector,
+            tail: logTail,
+          },
+        }),
+      ),
+    select: (page) => page.untrusted.lines,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  })
+
+export const stationsQuery = queryOptions({
+  queryKey: ['stations', 'list'],
+  queryFn: () =>
+    unwrap(
+      api.v1.stations.get({
+        query: {
+          limit: 200,
+          fields: 'id,name,status,arch,capabilities,default_sandbox_runtime,sandbox_runtime_advice',
+        },
+      }),
+    ),
+})
 
 export const stationQuery = (station: string) =>
   queryOptions({
@@ -599,6 +632,7 @@ export const apiOriginQuery = queryOptions({
       }),
     )
     const host = page.items.find((setting) => setting.key === 'hostnames.api')?.value
+
     return typeof host === 'string' && host ? `https://${host}` : window.location.origin
   },
   staleTime: 'static',
@@ -615,6 +649,7 @@ export const agentTokensQuery = queryOptions({
         },
       }),
     )
+
     return page.items.filter((token) => token.name.startsWith('mcp/'))
   },
 })

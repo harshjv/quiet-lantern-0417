@@ -1,3 +1,5 @@
+import { isHTTPError, isNetworkError } from 'ky'
+
 import type { ErrorCode } from '@stationly/protocol'
 
 import { apiUrlEnv, tokenEnv } from './env.ts'
@@ -99,13 +101,13 @@ export const isEnvelope = (value: unknown): value is Envelope =>
   'error' in value &&
   typeof (value as Envelope).error?.code === 'string'
 
-const proxyStatuses = new Set([502, 503, 504])
+export const proxyStatuses = [502, 503, 504]
 
 export const isConnectionFailure = (error: unknown) =>
   error instanceof Exit && error.envelope?.error.code === 'CONNECTION_FAILED'
 
 export const apiFailure = (status: number, body: unknown) => {
-  if (!isEnvelope(body) && proxyStatuses.has(status))
+  if (!isEnvelope(body) && proxyStatuses.includes(status)) {
     return new Exit(
       exitCodes.connection,
       envelopeOf(
@@ -114,6 +116,8 @@ export const apiFailure = (status: number, body: unknown) => {
         'Check that Dispatch is running, then retry.',
       ),
     )
+  }
+
   const envelope = isEnvelope(body)
     ? body
     : envelopeOf(
@@ -122,5 +126,18 @@ export const apiFailure = (status: number, body: unknown) => {
         'Retry; if it keeps failing, report it.',
       )
   const auth = status === 401 || envelope.error.code === 'UNAUTHENTICATED'
+
   return new Exit(auth ? exitCodes.connection : exitCodes.api, envelope)
+}
+
+export const failureOf = (instance: string, error: Error) => {
+  if (isHTTPError(error)) {
+    return apiFailure(error.response.status, error.data)
+  }
+
+  if (isNetworkError(error)) {
+    return unreachable(instance, error.cause)
+  }
+
+  return error
 }

@@ -6,15 +6,18 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/harshjv/stationly/go/internal/sandbox"
 )
 
-func testSpec() Spec {
-	return Spec{
+func testSpec() sandbox.Spec {
+	return sandbox.Spec{
 		ID:          "sbx_01JCB4ABC",
 		Hostname:    "box",
 		DiskPath:    "/var/lib/stationly/sandboxes/disks/sbx_01JCB4ABC",
 		BundleDir:   "/run/stationly/sandboxes/sbx_01JCB4ABC",
 		NetNSPath:   "/run/stationly/netns/sbx_01JCB4ABC",
+		Resolver:    netip.MustParseAddr("10.77.0.53"),
 		Args:        []string{"/usr/local/bin/sandbox-init"},
 		Env:         []string{"PATH=/custom", "TOKEN=x", "HOSTNAME=override"},
 		ImageEnv:    []string{"PATH=/image", "HOME=/root", "TOKEN=image"},
@@ -23,7 +26,7 @@ func testSpec() Spec {
 	}
 }
 
-func decodeConfig(t *testing.T, s Spec) (ociSpec, map[string]any) {
+func decodeConfig(t *testing.T, s sandbox.Spec) (ociSpec, map[string]any) {
 	t.Helper()
 	b, err := Config(s)
 	if err != nil {
@@ -103,9 +106,8 @@ func TestConfigProcess(t *testing.T) {
 	s := testSpec()
 	s.Env = nil
 	s.Cwd = "/work"
-	s.UID, s.GID = 1000, 1001
 	spec, _ = decodeConfig(t, s)
-	if spec.Process.Cwd != "/work" || spec.Process.User != (ociUser{UID: 1000, GID: 1001}) {
+	if spec.Process.Cwd != "/work" || spec.Process.User != (ociUser{UID: 0, GID: 0}) {
 		t.Errorf("process %+v", spec.Process)
 	}
 	if !reflect.DeepEqual(spec.Process.Env, []string{"PATH=/image", "HOME=/root", "TOKEN=image", "HOSTNAME=box", "STATIONLY_SANDBOX_ID=sbx_01JCB4ABC"}) {
@@ -156,12 +158,12 @@ func TestConfigLinux(t *testing.T) {
 }
 
 func TestConfigRejectsIncompleteSpec(t *testing.T) {
-	for name, mutate := range map[string]func(*Spec){
-		"no id":     func(s *Spec) { s.ID = "" },
-		"no netns":  func(s *Spec) { s.NetNSPath = "" },
-		"no args":   func(s *Spec) { s.Args = nil },
-		"no memory": func(s *Spec) { s.MemoryBytes = 0 },
-		"no cpu":    func(s *Spec) { s.CPUMillis = 0 },
+	for name, mutate := range map[string]func(*sandbox.Spec){
+		"no id":     func(s *sandbox.Spec) { s.ID = "" },
+		"no netns":  func(s *sandbox.Spec) { s.NetNSPath = "" },
+		"no args":   func(s *sandbox.Spec) { s.Args = nil },
+		"no memory": func(s *sandbox.Spec) { s.MemoryBytes = 0 },
+		"no cpu":    func(s *sandbox.Spec) { s.CPUMillis = 0 },
 	} {
 		s := testSpec()
 		mutate(&s)
@@ -172,7 +174,7 @@ func TestConfigRejectsIncompleteSpec(t *testing.T) {
 }
 
 func TestHostFilesAndScope(t *testing.T) {
-	files := HostFiles(testSpec(), netip.MustParseAddr("10.77.0.53"), "box")
+	files := HostFiles(testSpec())
 	want := map[string]string{
 		"resolv.conf": "nameserver 10.77.0.53\n",
 		"hosts":       "127.0.0.1 localhost\n169.254.1.2 box\n",

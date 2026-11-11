@@ -18,6 +18,7 @@ const read = () => {
 const subscribe = (notify: () => void) => {
   window.addEventListener('storage', notify)
   window.addEventListener(changed, notify)
+
   return () => {
     window.removeEventListener('storage', notify)
     window.removeEventListener(changed, notify)
@@ -26,8 +27,11 @@ const subscribe = (notify: () => void) => {
 
 const store = (hidden: boolean) => {
   try {
-    if (hidden) window.localStorage.setItem(key, '1')
-    else window.localStorage.removeItem(key)
+    if (hidden) {
+      window.localStorage.setItem(key, '1')
+    } else {
+      window.localStorage.removeItem(key)
+    }
   } catch {
     return
   }
@@ -66,6 +70,7 @@ export const guideProgress = <T extends GuideToken>(input: GuideInput<T>) => {
       : input.totp === false && input.passkeysSettled
         ? false
         : undefined
+
   return {
     healthy,
     starting: total(input.projects, (p) => p.status_counts.amber),

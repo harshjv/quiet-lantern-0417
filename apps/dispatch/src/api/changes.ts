@@ -90,12 +90,15 @@ export class ChangeSet {
 
   private nextRef(entity: Entity) {
     const n = (this.counters.get(entity) ?? 0) + 1
+
     this.counters.set(entity, n)
+
     return `new:${entity}:${n}`
   }
 
   add(entity: Exclude<Entity, 'deployment'>, parent: string | null, after: Json) {
     const ref = this.nextRef(entity)
+
     this.adds.push({
       op: 'add',
       entity,
@@ -104,6 +107,7 @@ export class ChangeSet {
       after,
       before: null,
     })
+
     return ref
   }
 
@@ -129,7 +133,10 @@ export class ChangeSet {
   }
 
   deploy(parent: string, trigger: TriggerType, extra: Json = {}) {
-    if (this.deploys.some((d) => d.parent === parent)) return
+    if (this.deploys.some((d) => d.parent === parent)) {
+      return
+    }
+
     this.deploys.push({
       op: 'add',
       entity: 'deployment',
@@ -151,7 +158,9 @@ export class ChangeSet {
 
   secret(plaintext: string) {
     const id = newId('secret_value')
+
     this.values.set(id, plaintext)
+
     return id
   }
 
@@ -181,7 +190,8 @@ export const leafDiff = (
     !Array.isArray(after)
   ) {
     const keys = new Set([...Object.keys(before), ...Object.keys(after)])
-    for (const key of keys)
+
+    for (const key of keys) {
       leafDiff(
         set,
         entity,
@@ -190,22 +200,30 @@ export const leafDiff = (
         (before as Json)[key] ?? null,
         (after as Json)[key] ?? null,
       )
+    }
+
     return
   }
-  if (JSON.stringify(before ?? null) !== JSON.stringify(after ?? null))
+
+  if (JSON.stringify(before ?? null) !== JSON.stringify(after ?? null)) {
     set.update(entity, id, path, before ?? null, after ?? null)
+  }
 }
 
 const setPointer = (target: Json, path: string, value: unknown) => {
   const parts = path.split('/').slice(1)
+
   if (parts.length === 1) {
     target[parts[0]!] = value
+
     return
   }
+
   const [head, ...rest] = parts
   const inner = {
     ...(target[head!] as Json | null),
   }
+
   setPointer(inner, `/${rest.join('/')}`, value)
   target[head!] = inner
 }
@@ -255,7 +273,11 @@ const portNumber = (db: Db, portId: string) =>
 
 export const requireNoPortDependents = (db: Db, portId: string) => {
   const { domains, allocations } = portDependents(db, portId)
-  if (!domains.length && !allocations.length) return
+
+  if (!domains.length && !allocations.length) {
+    return
+  }
+
   fail(
     'DELETE_HAS_DEPENDENTS',
     `Port ${portNumber(db, portId)} is used by a domain or a TCP exposure.`,
@@ -269,8 +291,13 @@ export const requireNoPortDependents = (db: Db, portId: string) => {
 export const requireProtocolChangeAllowed = (db: Db, portId: string, protocol: 'http' | 'tcp') => {
   const { domains, allocations } = portDependents(db, portId)
   const blocking = protocol === 'tcp' ? domains : allocations
-  if (!blocking.length) return
+
+  if (!blocking.length) {
+    return
+  }
+
   const port = portNumber(db, portId)
+
   if (protocol === 'tcp') {
     fail(
       'DELETE_HAS_DEPENDENTS',
@@ -281,6 +308,7 @@ export const requireProtocolChangeAllowed = (db: Db, portId: string, protocol: '
       },
     )
   }
+
   fail(
     'DELETE_HAS_DEPENDENTS',
     `Port ${port} cannot become http while a TCP exposure publishes it.`,
@@ -301,7 +329,11 @@ const removePort = (db: Db, portId: string) => {
 
 const removeService = (db: Db, serviceId: string) => {
   const svc = db.select().from(service).where(eq(service.id, serviceId)).get()
-  if (!svc) return fail('NOT_FOUND', `service ${serviceId} does not exist.`)
+
+  if (!svc) {
+    return fail('NOT_FOUND', `service ${serviceId} does not exist.`)
+  }
+
   const env = db.select().from(environment).where(eq(environment.id, svc.environment_id)).get()
   const ports = db
     .select({
@@ -311,12 +343,15 @@ const removeService = (db: Db, serviceId: string) => {
     .where(eq(service_port.service_id, svc.id))
     .all()
     .map((p) => p.id)
+
   if (ports.length) {
     db.delete(domain).where(inArray(domain.service_port_id, ports)).run()
     db.delete(port_allocation).where(inArray(port_allocation.service_port_id, ports)).run()
     db.delete(service_port).where(eq(service_port.service_id, svc.id)).run()
   }
+
   const retainUntil = retention(env)
+
   db.update(volume)
     .set({
       status: 'retained',
@@ -333,12 +368,15 @@ const removeService = (db: Db, serviceId: string) => {
     .where(eq(variable.service_id, svc.id))
     .all()
     .map((v) => v.id)
+
   if (vars.length) {
     db.delete(secret_value).where(inArray(secret_value.variable_id, vars)).run()
     db.delete(variable).where(inArray(variable.id, vars)).run()
   }
+
   db.delete(virtual_ip).where(eq(virtual_ip.service_id, svc.id)).run()
   db.delete(service).where(eq(service.id, svc.id)).run()
+
   return retainUntil
 }
 
@@ -354,6 +392,7 @@ export const requireNoSandboxes = (
     .from(sandbox)
     .where(and(eq(sandbox.environment_id, env.id), ne(sandbox.status, 'deleting')))
     .all()
+
   if (boxes.length && !env.ephemeral) {
     fail(
       'DELETE_HAS_DEPENDENTS',
@@ -371,13 +410,20 @@ export const requireNoSandboxes = (
 
 export const removeEnvironment = (db: Db, environmentId: string) => {
   const env = db.select().from(environment).where(eq(environment.id, environmentId)).get()
-  if (!env) return fail('NOT_FOUND', `environment ${environmentId} does not exist.`)
+
+  if (!env) {
+    return fail('NOT_FOUND', `environment ${environmentId} does not exist.`)
+  }
+
   requireNoSandboxes(db, env)
-  for (const box of db.select().from(sandbox).where(eq(sandbox.environment_id, env.id)).all())
+
+  for (const box of db.select().from(sandbox).where(eq(sandbox.environment_id, env.id)).all()) {
     requestDeletion(db, box, {
       actor: systemActor,
       reason: 'environment',
     })
+  }
+
   db.update(sandbox_snapshot)
     .set({
       status: 'deleting',
@@ -388,18 +434,22 @@ export const removeEnvironment = (db: Db, environmentId: string) => {
     .where(and(eq(sandbox_snapshot.environment_id, env.id), eq(sandbox_snapshot.status, 'failed')))
     .run()
   let retainUntil: Date | null = null
+
   for (const svc of db
     .select({
       id: service.id,
     })
     .from(service)
     .where(eq(service.environment_id, env.id))
-    .all())
+    .all()) {
     retainUntil = removeService(db, svc.id)
+  }
+
   db.delete(ipam_allocation).where(eq(ipam_allocation.environment_id, env.id)).run()
   db.delete(virtual_ip).where(eq(virtual_ip.environment_id, env.id)).run()
   db.delete(secret_value).where(eq(secret_value.environment_id, env.id)).run()
   db.delete(environment).where(eq(environment.id, env.id)).run()
+
   return retainUntil
 }
 
@@ -458,6 +508,7 @@ const applyChanges = (
     if (change.op === 'add') {
       const parent = change.parent === null ? null : resolve(change.parent)
       const after = resolveAll(change.after)
+
       switch (change.entity) {
         case 'service': {
           refs[change.ref] = createService(db, {
@@ -486,6 +537,7 @@ const applyChanges = (
           })
           break
         }
+
         case 'service_port': {
           refs[change.ref] = createServicePort(db, parent!, {
             port: after.port as number,
@@ -494,6 +546,7 @@ const applyChanges = (
           })
           break
         }
+
         case 'volume': {
           const owner =
             db.select().from(service).where(eq(service.id, parent!)).get() ??
@@ -503,6 +556,7 @@ const applyChanges = (
             .from(environment)
             .where(eq(environment.id, owner.environment_id))
             .get()!
+
           refs[change.ref] = createVolume(
             db,
             {
@@ -514,8 +568,10 @@ const applyChanges = (
           )
           break
         }
+
         case 'domain': {
           const id = newId('domain')
+
           db.insert(domain)
             .values({
               id,
@@ -534,8 +590,10 @@ const applyChanges = (
           refs[change.ref] = id
           break
         }
+
         case 'port_allocation': {
           const id = newId('port_allocation')
+
           db.insert(port_allocation)
             .values({
               id,
@@ -547,6 +605,7 @@ const applyChanges = (
           refs[change.ref] = id
           break
         }
+
         case 'variable': {
           const scope = after.scope as 'global' | 'project' | 'service' | 'sandbox'
           const kind = after.kind as 'literal' | 'reference' | 'sealed'
@@ -569,11 +628,17 @@ const applyChanges = (
             actor: call.principal.actor,
             request_id: call.request_id,
           })
+
           refs[change.ref] = result.variable_id
-          if (result.write) writes.push(result.write)
+
+          if (result.write) {
+            writes.push(result.write)
+          }
+
           variablesChanged = true
           break
         }
+
         case 'deployment': {
           const created = createDeploymentRecord(db, {
             service_id: parent!,
@@ -587,22 +652,28 @@ const applyChanges = (
             pin_env: after.reason === 'restart',
             rollback_of: (after.rollback_of as string | undefined) ?? null,
           })
+
           refs[change.ref] = created.id
           deployments.push(created.id)
           touched.add(parent!)
           break
         }
+
         case 'run': {
           const owner =
             db.select().from(service).where(eq(service.id, parent!)).get() ??
             fail('NOT_FOUND', `service ${parent} does not exist.`)
-          if (!owner.current_deployment_id)
+
+          if (!owner.current_deployment_id) {
             fail(
               'NO_CURRENT_DEPLOYMENT',
               `${owner.name} has no current deployment to run the command in.`,
               'Deploy the service first.',
             )
+          }
+
           const id = newId('run')
+
           db.insert(run)
             .values({
               id,
@@ -619,6 +690,7 @@ const applyChanges = (
           refs[change.ref] = id
           break
         }
+
         case 'network_probe': {
           const owner =
             db
@@ -628,6 +700,7 @@ const applyChanges = (
               .from(service)
               .where(eq(service.id, parent!))
               .get() ?? fail('NOT_FOUND', `service ${parent} does not exist.`)
+
           probes.push({
             service_id: owner.id,
             kind: after.kind === 'dns' ? 'dns' : 'tcp',
@@ -637,16 +710,19 @@ const applyChanges = (
           })
           break
         }
+
         case 'sandbox_storage':
           grows.push({
             station_id: parent!,
             size_bytes: Number(after.size_bytes),
           })
           break
+
         case 'volume_snapshot': {
           const vol =
             db.select().from(volume).where(eq(volume.id, parent!)).get() ??
             fail('NOT_FOUND', `volume ${parent} does not exist.`)
+
           backups.push({
             volume_id: vol.id,
             target: after.target as StagedBackup['target'],
@@ -654,10 +730,12 @@ const applyChanges = (
           })
           break
         }
+
         case 'volume_restore': {
           const vol =
             db.select().from(volume).where(eq(volume.id, parent!)).get() ??
             fail('NOT_FOUND', `volume ${parent} does not exist.`)
+
           restores.push({
             volume_id: vol.id,
             snapshot_id: after.snapshot_id as string,
@@ -669,16 +747,19 @@ const applyChanges = (
           })
           break
         }
+
         default:
           fail(
             'VALIDATION_FAILED',
             `adding ${change.entity} through a staged change is not supported.`,
           )
       }
+
       continue
     }
 
     const id = resolve(change.id)
+
     if (change.op === 'update') {
       switch (change.entity) {
         case 'service': {
@@ -686,35 +767,48 @@ const applyChanges = (
             db.select().from(service).where(eq(service.id, id)).get() ??
             fail('NOT_FOUND', `service ${id} does not exist.`)
           const column = change.path.split('/')[1]!
-          if (!serviceColumns.has(column))
+
+          if (!serviceColumns.has(column)) {
             fail(
               'VALIDATION_FAILED',
               `service field ${column} cannot change through a staged change.`,
             )
+          }
+
           const holder: Json = {
             [column]: (row as Json)[column],
           }
+
           setPointer(holder, change.path, change.after)
           const update: Json = {
             [column]: holder[column],
           }
-          if (column === 'desired_state')
+
+          if (column === 'desired_state') {
             update.status = change.after === 'stopped' ? 'stopped' : 'amber'
+          }
+
           db.update(service).set(update).where(eq(service.id, id)).run()
           touched.add(id)
-          if (column === 'station_id') ensureNetwork(db, row.environment_id, change.after as string)
+
+          if (column === 'station_id') {
+            ensureNetwork(db, row.environment_id, change.after as string)
+          }
+
           break
         }
+
         case 'service_port':
-          if (change.path === '/grpc')
+          if (change.path === '/grpc') {
             db.update(service_port)
               .set({
                 grpc: Boolean(change.after),
               })
               .where(eq(service_port.id, id))
               .run()
-          else if (change.path === '/protocol') {
+          } else if (change.path === '/protocol') {
             const protocol = change.after === 'tcp' ? 'tcp' : 'http'
+
             requireProtocolChangeAllowed(db, id, protocol)
             db.update(service_port)
               .set({
@@ -722,7 +816,7 @@ const applyChanges = (
               })
               .where(eq(service_port.id, id))
               .run()
-          } else
+          } else {
             fail(
               'VALIDATION_FAILED',
               `service_port field ${change.path.slice(1)} cannot change in place.`,
@@ -736,7 +830,10 @@ const applyChanges = (
                 ],
               },
             )
+          }
+
           break
+
         case 'volume': {
           const column = change.path.slice(1)
           const value =
@@ -745,6 +842,7 @@ const applyChanges = (
               : isRef(change.after)
                 ? resolve(change.after)
                 : change.after
+
           db.update(volume)
             .set({
               [column]: value,
@@ -753,6 +851,7 @@ const applyChanges = (
             .run()
           break
         }
+
         case 'port_allocation':
           db.update(port_allocation)
             .set({
@@ -761,12 +860,14 @@ const applyChanges = (
             .where(eq(port_allocation.id, id))
             .run()
           break
+
         case 'variable': {
           const row =
             db.select().from(variable).where(eq(variable.id, id)).get() ??
             fail('NOT_FOUND', `variable ${id} does not exist.`)
           const after = change.after as Json
           const kind = after.kind as 'literal' | 'reference' | 'sealed'
+
           if (kind === 'sealed' && typeof after.value_id !== 'string' && !after.reference) {
             db.update(variable)
               .set({
@@ -778,6 +879,7 @@ const applyChanges = (
             variablesChanged = true
             break
           }
+
           const value =
             typeof after.value_id === 'string'
               ? plaintext(after.value_id)
@@ -797,38 +899,60 @@ const applyChanges = (
             actor: call.principal.actor,
             request_id: call.request_id,
           })
-          if (result.write) writes.push(result.write)
+
+          if (result.write) {
+            writes.push(result.write)
+          }
+
           variablesChanged = true
           break
         }
+
         case 'setting': {
-          if (change.after === null) deleteSetting(db, id as SettingKey)
-          else writeSetting(db, id as SettingKey, change.after, call.principal.actor)
+          if (change.after === null) {
+            deleteSetting(db, id as SettingKey)
+          } else {
+            writeSetting(db, id as SettingKey, change.after, call.principal.actor)
+          }
+
           break
         }
+
         case 'lockfile': {
           const stored = storedSetting(db, 'platform.lockfile')
-          if (stored === undefined)
+
+          if (stored === undefined) {
             fail(
               'VALIDATION_FAILED',
               'There is no platform.lockfile to change; install a release first.',
             )
+          }
+
           lockfileBefore ??= structuredClone(stored!)
           let value = structuredClone(stored!) as Json
-          if (change.path === '/') value = structuredClone(change.after) as Json
-          else {
+
+          if (change.path === '/') {
+            value = structuredClone(change.after) as Json
+          } else {
             const overrides = {
               ...(value.overrides as Json | undefined),
             }
             const name = change.path.replace(/^\/overrides\//, '')
-            if (change.after === null) delete overrides[name]
-            else overrides[name] = change.after
+
+            if (change.after === null) {
+              delete overrides[name]
+            } else {
+              overrides[name] = change.after
+            }
+
             value.overrides = overrides
           }
+
           value.updated_at = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
           writeSetting(db, 'platform.lockfile', value, call.principal.actor)
           break
         }
+
         case 'environment':
           db.update(environment)
             .set({
@@ -837,22 +961,28 @@ const applyChanges = (
             .where(eq(environment.id, id))
             .run()
           break
+
         case 'station': {
           const field = change.path.slice(1)
-          if (!(stationFields as readonly string[]).includes(field))
+
+          if (!(stationFields as readonly string[]).includes(field)) {
             fail(
               'VALIDATION_FAILED',
               `station field ${field} cannot change through a staged change.`,
             )
+          }
+
           applyStationField(db, id, field as StationField, change.after)
           break
         }
+
         default:
           fail(
             'VALIDATION_FAILED',
             `updating ${change.entity} through a staged change is not supported.`,
           )
       }
+
       continue
     }
 
@@ -881,14 +1011,20 @@ const applyChanges = (
         )
     }
   }
-  if (variablesChanged) settleVariableWrites(db, writes)
-  else refreshStale(db, [...touched])
+
+  if (variablesChanged) {
+    settleVariableWrites(db, writes)
+  } else {
+    refreshStale(db, [...touched])
+  }
+
   const lockfile = lockfileBefore
     ? {
         before: lockfileBefore,
         after: storedSetting(db, 'platform.lockfile')!,
       }
     : null
+
   return {
     refs,
     deployments,
@@ -903,8 +1039,12 @@ const applyChanges = (
 
 export const stripValues = (changes: Change[]) =>
   changes.map((change) => {
-    if (change.entity !== 'variable' || change.op === 'remove') return change
+    if (change.entity !== 'variable' || change.op === 'remove') {
+      return change
+    }
+
     const { value_id: _v, allow_unresolved: _a, ...after } = (change.after ?? {}) as Json
+
     return {
       ...change,
       after,
@@ -914,15 +1054,24 @@ export const stripValues = (changes: Change[]) =>
 const overlapKeys = (changes: Change[]) =>
   new Set(
     changes.flatMap((change) => {
-      if (change.op !== 'add') return [`id:${change.id}`]
-      if (change.entity === 'network_probe') return []
-      if (change.entity === 'deployment')
+      if (change.op !== 'add') {
+        return [`id:${change.id}`]
+      }
+
+      if (change.entity === 'network_probe') {
+        return []
+      }
+
+      if (change.entity === 'deployment') {
         return isRef(change.parent) ? [] : [`deploy:${change.parent}`]
+      }
+
       const name = (change.after.name ??
         change.after.key ??
         change.after.hostname ??
         change.after.port ??
         change.after.mount_path) as string | undefined
+
       return isRef(change.parent) || name === undefined
         ? []
         : [`add:${change.entity}:${change.parent}:${name}`]
@@ -957,10 +1106,12 @@ export const commit = (
   const changes = set.changes
   const source = options.source ?? (call.principal.human ? 'ui' : 'api')
   const environmentId = options.environment?.id ?? null
+
   if (options.protect) {
     return db.transaction((tx) => {
       const tdb = tx as unknown as Db
       const id = newId('staged_change')
+
       tdb
         .insert(staged_change)
         .values({
@@ -978,6 +1129,7 @@ export const commit = (
           deployments: [],
         })
         .run()
+
       for (const [valueId, plaintext] of set.values) {
         tdb
           .insert(staged_value)
@@ -988,6 +1140,7 @@ export const commit = (
           })
           .run()
       }
+
       const mine = overlapKeys(changes)
       const older = tdb
         .select()
@@ -1005,6 +1158,7 @@ export const commit = (
           (row) =>
             row.id !== id && [...overlapKeys(row.changes as Change[])].some((key) => mine.has(key)),
         )
+
       for (const row of older) {
         tdb
           .update(staged_change)
@@ -1015,6 +1169,7 @@ export const commit = (
           .run()
         tdb.delete(staged_value).where(eq(staged_value.staged_change_id, row.id)).run()
       }
+
       audit(
         tdb,
         call,
@@ -1043,12 +1198,14 @@ export const commit = (
           superseded: older.map((o) => o.id),
         },
       )
+
       return {
         applied: false as const,
         staged: tdb.select().from(staged_change).where(eq(staged_change.id, id)).get()!,
       }
     })
   }
+
   return db.transaction((tx) => {
     const tdb = tx as unknown as Db
     const result = applyChanges(
@@ -1062,6 +1219,7 @@ export const commit = (
         set.values.get(valueId) ?? fail('VALIDATION_FAILED', `value ${valueId} is missing.`),
     )
     const id = newId('staged_change')
+
     tdb
       .insert(staged_change)
       .values({
@@ -1085,6 +1243,7 @@ export const commit = (
           station: options.station ?? null,
         })
       : null
+
     return {
       applied: true as const,
       upgrade,
@@ -1096,13 +1255,16 @@ export const commit = (
 
 export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
   const { db, keyring } = deps
-  if (row.status === 'superseded')
+
+  if (row.status === 'superseded') {
     fail(
       'STAGED_CHANGE_SUPERSEDED',
       `Staged change ${row.id} was replaced by a newer one.`,
       'Read the newer staged change and accept that one.',
     )
-  if (row.status !== 'staged')
+  }
+
+  if (row.status !== 'staged') {
     fail('VALIDATION_FAILED', `Staged change ${row.id} is ${row.status}, not staged.`, undefined, {
       issues: [
         {
@@ -1111,6 +1273,8 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
         },
       ],
     })
+  }
+
   return db.transaction((tx) => {
     const tdb = tx as unknown as Db
     const values = new Map(
@@ -1124,6 +1288,7 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
     const plaintext = (valueId: string) => {
       const stored =
         values.get(valueId) ?? fail('VALIDATION_FAILED', `staged value ${valueId} is missing.`)
+
       return keyring.decrypt(stored.id, stored.data_key_id, stored.ciphertext)
     }
     const result = applyChanges(
@@ -1135,6 +1300,7 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
       row.changes as Change[],
       plaintext,
     )
+
     tdb.delete(staged_value).where(eq(staged_value.staged_change_id, row.id)).run()
     tdb
       .update(staged_change)
@@ -1156,6 +1322,7 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
           station: (row.refs as Record<string, string> | null)?.['platform.station'] ?? null,
         })
       : null
+
     audit(
       tdb,
       call,
@@ -1184,6 +1351,7 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
         deployments: result.deployments,
       },
     )
+
     return {
       staged: tdb.select().from(staged_change).where(eq(staged_change.id, row.id)).get()!,
       ...result,
@@ -1194,12 +1362,18 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
 
 export const rejectStaged = (deps: Store, call: Call, row: StagedRow, reason: string | null) => {
   const { db } = deps
-  if (row.status === 'superseded')
+
+  if (row.status === 'superseded') {
     fail('STAGED_CHANGE_SUPERSEDED', `Staged change ${row.id} was replaced by a newer one.`)
-  if (row.status !== 'staged')
+  }
+
+  if (row.status !== 'staged') {
     fail('VALIDATION_FAILED', `Staged change ${row.id} is ${row.status}, not staged.`)
+  }
+
   return db.transaction((tx) => {
     const tdb = tx as unknown as Db
+
     tdb.delete(staged_value).where(eq(staged_value.staged_change_id, row.id)).run()
     tdb
       .update(staged_change)
@@ -1235,6 +1409,7 @@ export const rejectStaged = (deps: Store, call: Call, row: StagedRow, reason: st
         reason,
       },
     )
+
     return tdb.select().from(staged_change).where(eq(staged_change.id, row.id)).get()!
   })
 }

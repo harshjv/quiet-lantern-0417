@@ -120,24 +120,6 @@ func SyncHost(l HostLayout, e HostElements) (Result, error) {
 	return elementsResult(syncHostElements(c, e))
 }
 
-func RemoveHost() error {
-	c, err := nftables.New()
-	if err != nil {
-		return err
-	}
-	tables, err := c.ListTablesOfFamily(nftables.TableFamilyINet)
-	if err != nil {
-		return err
-	}
-	for _, t := range tables {
-		if t.Name == HostTableName {
-			c.DelTable(hostTable)
-			return c.Flush()
-		}
-	}
-	return nil
-}
-
 func portElements(ports map[uint16]netip.AddrPort) []nftables.SetElement {
 	keys := make([]uint16, 0, len(ports))
 	for k := range ports {

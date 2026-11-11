@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 
+import type { Cron } from 'croner'
 import { and, asc, desc, eq, isNull, lt } from 'drizzle-orm'
 
 import { ChangeSet, commit } from '../api/changes.ts'
@@ -24,6 +25,7 @@ import {
 import { readSetting } from '../db/settings.ts'
 import { env } from '../env.ts'
 import { log } from '../log.ts'
+import { every } from '../schedule.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { eventBus } from '../station/events.ts'
 
@@ -65,6 +67,7 @@ export const repoServices = (db: Db) =>
     .all()
     .filter(({ svc }) => {
       const source = svc.source
+
       return (
         (source.type === 'dockerfile' || source.type === 'railpack') &&
         typeof source.repo === 'string'
@@ -109,7 +112,7 @@ const infraCodes = new Set([
 
 export const createGitHub = (deps: GitHubDeps) => {
   const { db, keyring } = deps
-  const timers: NodeJS.Timeout[] = []
+  const jobs: Cron[] = []
   let stopped = false
 
   const secretsOf = (app: AppRow) => ({
@@ -141,7 +144,11 @@ export const createGitHub = (deps: GitHubDeps) => {
     const body: Json = {
       permissions,
     }
-    if (repositories) body.repositories = repositories
+
+    if (repositories) {
+      body.repositories = repositories
+    }
+
     const response = await gh<{ token: string; expires_at: string }>(
       `/app/installations/${installationId}/access_tokens`,
       {
@@ -150,6 +157,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         body,
       },
     )
+
     return response.data.token
   }
 
@@ -179,7 +187,11 @@ export const createGitHub = (deps: GitHubDeps) => {
   const repoToken = async (repo: string, permission: Record<string, string>) => {
     const { owner, name } = splitRepo(repo)
     const found = installationFor(owner)
-    if (!found) return null
+
+    if (!found) {
+      return null
+    }
+
     try {
       return {
         token: await installationToken(
@@ -191,8 +203,10 @@ export const createGitHub = (deps: GitHubDeps) => {
         app: found.app,
       }
     } catch (error) {
-      if (error instanceof GitHubError && (error.status === 422 || error.status === 404))
+      if (error instanceof GitHubError && (error.status === 422 || error.status === 404)) {
         return null
+      }
+
       throw error
     }
   }
@@ -202,18 +216,22 @@ export const createGitHub = (deps: GitHubDeps) => {
     const scoped = await repoToken(repo, {
       contents: 'read',
     })
+
     if (scoped) {
       const meta = await gh<{ default_branch: string }>(`/repos/${owner}/${name}`, {
         token: scoped.token,
       })
+
       return {
         auth: 'app' as const,
         default_branch: meta.data.default_branch,
       }
     }
+
     try {
       const result = await advertisement(repo, null)
       const head = result.advertisement?.head
+
       return {
         auth: 'public' as const,
         default_branch: head?.startsWith('refs/heads/') ? head.slice('refs/heads/'.length) : 'main',
@@ -221,6 +239,7 @@ export const createGitHub = (deps: GitHubDeps) => {
     } catch (error) {
       const app = appForOwner(owner)
       const install_url = app ? installUrl(app) : connectUrl()
+
       throw new ApiError(
         'SOURCE_UNREACHABLE',
         `${full_name} is not covered by a GitHub App installation and cannot be read anonymously (${(error as Error).message}).`,
@@ -241,6 +260,7 @@ export const createGitHub = (deps: GitHubDeps) => {
     const scoped = await repoToken(repo, {
       contents: 'read',
     })
+
     if (scoped) {
       const response = await gh<{ commit: { sha: string } }>(
         `/repos/${owner}/${name}/branches/${encodeURIComponent(branch)}`,
@@ -250,6 +270,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         },
       )
       const interval = Number(response.headers.get('x-poll-interval') ?? '') || null
+
       return {
         auth: 'app' as const,
         sha: response.status === 304 ? null : response.data.commit.sha,
@@ -257,16 +278,24 @@ export const createGitHub = (deps: GitHubDeps) => {
         interval,
       }
     }
+
     const result = await advertisement(repo, null, etag)
-    if (result.status === 304)
+
+    if (result.status === 304) {
       return {
         auth: 'public' as const,
         sha: null,
         etag,
         interval: null,
       }
+    }
+
     const sha = result.advertisement.refs.get(`refs/heads/${branch}`)
-    if (!sha) throw new GitHubError(404, `${repo} has no branch ${branch}`, null)
+
+    if (!sha) {
+      throw new GitHubError(404, `${repo} has no branch ${branch}`, null)
+    }
+
     return {
       auth: 'public' as const,
       sha,
@@ -276,10 +305,14 @@ export const createGitHub = (deps: GitHubDeps) => {
   }
 
   const cloneCredential = async (repo: string, auth: string | undefined) => {
-    if (auth !== 'app') return null
+    if (auth !== 'app') {
+      return null
+    }
+
     const scoped = await repoToken(repo, {
       contents: 'read',
     })
+
     return scoped?.token ?? null
   }
 
@@ -292,7 +325,11 @@ export const createGitHub = (deps: GitHubDeps) => {
     target: string | null,
   ) => {
     const { owner } = splitRepo(repo)
-    if (!installationFor(owner)) return
+
+    if (!installationFor(owner)) {
+      return
+    }
+
     db.insert(github_status)
       .values({
         repo,
@@ -309,6 +346,7 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const contexts = (svc: ServiceRow) => {
     const env = db.select().from(environment).where(eq(environment.id, svc.environment_id)).get()!
+
     return {
       build: `stationly/build/${svc.name}`,
       deploy: `stationly/deploy/${env.name}/${svc.name}`,
@@ -317,8 +355,13 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const buildStarted = (buildRow: typeof build.$inferSelect, svc: ServiceRow, sha: string) => {
     const source = svc.source as RepoSource
-    if (source.auth !== 'app') return
+
+    if (source.auth !== 'app') {
+      return
+    }
+
     const ctx = contexts(svc)
+
     enqueueStatus(
       source.repo,
       sha,
@@ -340,16 +383,29 @@ export const createGitHub = (deps: GitHubDeps) => {
   const onDeploymentEvent = (row: typeof event.$inferSelect) => {
     const depId = (row.payload.deployment ?? row.subject.id) as string
     const dep = db.select().from(deployment).where(eq(deployment.id, depId)).get()
-    if (!dep?.build_id) return
+
+    if (!dep?.build_id) {
+      return
+    }
+
     const b = db.select().from(build).where(eq(build.id, dep.build_id)).get()
     const svc = db.select().from(service).where(eq(service.id, dep.service_id)).get()
     const sha = (b?.source as { sha?: string } | undefined)?.sha
-    if (!b || !svc || !sha) return
+
+    if (!b || !svc || !sha) {
+      return
+    }
+
     const source = svc.source as RepoSource
-    if (source.auth !== 'app') return
+
+    if (source.auth !== 'app') {
+      return
+    }
+
     const ctx = contexts(svc)
     const buildLink = dashboardLink(`/builds/${b.id}`)
     const depLink = dashboardLink(`/deployments/${dep.id}`)
+
     if (row.type === 'deployment.started') {
       enqueueStatus(
         source.repo,
@@ -380,6 +436,7 @@ export const createGitHub = (deps: GitHubDeps) => {
       const failure = (dep.failure ?? {}) as { phase?: string; code?: string; summary?: string }
       const state = infraCodes.has(failure.code ?? '') ? 'error' : 'failure'
       const text = `${failure.code ?? 'FAILED'}: ${failure.summary ?? 'the deployment failed'}`
+
       if (failure.phase === 'build') {
         enqueueStatus(source.repo, sha, ctx.build, state, text, buildLink)
         enqueueStatus(
@@ -390,7 +447,9 @@ export const createGitHub = (deps: GitHubDeps) => {
           'The build failed; nothing was deployed',
           depLink,
         )
-      } else enqueueStatus(source.repo, sha, ctx.deploy, state, text, depLink)
+      } else {
+        enqueueStatus(source.repo, sha, ctx.deploy, state, text, depLink)
+      }
     } else if (row.type === 'deployment.cancelled') {
       enqueueStatus(
         source.repo,
@@ -406,23 +465,39 @@ export const createGitHub = (deps: GitHubDeps) => {
   const statusTimes: number[] = []
   const postStatuses = async () => {
     const now = Date.now()
-    while (statusTimes.length && statusTimes[0]! < now - 3600_000) statusTimes.shift()
-    if (statusTimes.length >= 450 || statusTimes.filter((t) => t > now - 60_000).length >= 70)
+
+    while (statusTimes.length && statusTimes[0]! < now - 3600_000) {
+      statusTimes.shift()
+    }
+
+    if (statusTimes.length >= 450 || statusTimes.filter((t) => t > now - 60_000).length >= 70) {
       return
+    }
+
     const next = db
       .select()
       .from(github_status)
       .where(and(isNull(github_status.posted_at), lt(github_status.attempts, 5)))
       .orderBy(asc(github_status.id))
       .get()
-    if (!next) return
+
+    if (!next) {
+      return
+    }
+
     const { owner, name } = splitRepo(next.repo)
+
     statusTimes.push(now)
+
     try {
       const scoped = await repoToken(next.repo, {
         statuses: 'write',
       })
-      if (!scoped) throw new Error('no installation covers the repository')
+
+      if (!scoped) {
+        throw new Error('no installation covers the repository')
+      }
+
       await gh(`/repos/${owner}/${name}/statuses/${next.sha}`, {
         method: 'POST',
         token: scoped.token,
@@ -501,13 +576,19 @@ export const createGitHub = (deps: GitHubDeps) => {
         (svc.source as RepoSource).branch === branch,
     )
     const created: string[] = []
+
     for (const { svc, env } of targets) {
-      if (alreadyDeployed(svc.id, sha) || svc.desired_state !== 'running') continue
+      if (alreadyDeployed(svc.id, sha) || svc.desired_state !== 'running') {
+        continue
+      }
+
       const set = new ChangeSet()
+
       set.deploy(svc.id, 'push', {
         source_sha: sha,
         reason: `push to ${branch} (${via})`,
       })
+
       try {
         const result = commit(
           deps,
@@ -519,8 +600,10 @@ export const createGitHub = (deps: GitHubDeps) => {
           },
           set,
         )
-        if (result.applied) created.push(...result.deployments)
-        else if ((svc.source as RepoSource).auth === 'app') {
+
+        if (result.applied) {
+          created.push(...result.deployments)
+        } else if ((svc.source as RepoSource).auth === 'app') {
           enqueueStatus(
             repo,
             sha,
@@ -530,6 +613,7 @@ export const createGitHub = (deps: GitHubDeps) => {
             dashboardLink(`/staged-changes/${result.staged.id}`),
           )
         }
+
         log('github.push_deploy', {
           repo,
           branch,
@@ -551,6 +635,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         })
       }
     }
+
     return created
   }
 
@@ -575,18 +660,21 @@ export const createGitHub = (deps: GitHubDeps) => {
       .from(github_installation)
       .where(eq(github_installation.installation_id, data.id))
       .get()
-    if (existing)
+
+    if (existing) {
       db.update(github_installation)
         .set(values)
         .where(eq(github_installation.id, existing.id))
         .run()
-    else
+    } else {
       db.insert(github_installation)
         .values({
           id: newId('github_installation'),
           ...values,
         })
         .run()
+    }
+
     return db
       .select()
       .from(github_installation)
@@ -597,9 +685,14 @@ export const createGitHub = (deps: GitHubDeps) => {
   const refreshAuth = async (owner: string) => {
     for (const { svc } of repoServices(db)) {
       const source = svc.source as RepoSource
-      if (splitRepo(source.repo).owner !== owner.toLowerCase()) continue
+
+      if (splitRepo(source.repo).owner !== owner.toLowerCase()) {
+        continue
+      }
+
       try {
         const resolved = await resolveRepo(source.repo)
+
         if (resolved.auth !== source.auth) {
           db.update(service)
             .set({
@@ -629,6 +722,7 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const syncInstallations = async (app: AppRow) => {
     const found: InstallationRow[] = []
+
     for (let page = 1; page < 20; page++) {
       const response = await gh<
         {
@@ -640,19 +734,30 @@ export const createGitHub = (deps: GitHubDeps) => {
       >(`/app/installations?per_page=100&page=${page}`, {
         token: jwtFor(app),
       })
-      for (const item of response.data) found.push(upsertInstallation(app, item))
-      if (response.data.length < 100) break
+
+      for (const item of response.data) {
+        found.push(upsertInstallation(app, item))
+      }
+
+      if (response.data.length < 100) {
+        break
+      }
     }
+
     const keep = new Set(found.map((f) => f.installation_id))
+
     for (const row of db
       .select()
       .from(github_installation)
       .where(eq(github_installation.github_app_id, app.id))
       .all()) {
-      if (!keep.has(row.installation_id))
+      if (!keep.has(row.installation_id)) {
         db.delete(github_installation).where(eq(github_installation.id, row.id)).run()
+      }
     }
+
     await refreshAuth(app.owner)
+
     return found
   }
 
@@ -670,18 +775,30 @@ export const createGitHub = (deps: GitHubDeps) => {
       !pr.head.repo || pr.head.repo.full_name.toLowerCase() !== pr.base.repo.full_name.toLowerCase()
     const { cloneInto } = await import('../api/routes/environments.ts')
     const results: Json[] = []
+
     for (const proj of db.select().from(project).all()) {
-      if (!proj.pr_environments?.enabled) continue
+      if (!proj.pr_environments?.enabled) {
+        continue
+      }
+
       const sourceEnvId = proj.pr_environments.source_environment_id ?? proj.default_environment_id
       const sourceEnv = db.select().from(environment).where(eq(environment.id, sourceEnvId)).get()
-      if (!sourceEnv) continue
+
+      if (!sourceEnv) {
+        continue
+      }
+
       const tracked = db
         .select()
         .from(service)
         .where(eq(service.environment_id, sourceEnv.id))
         .all()
         .some((s) => (s.source as RepoSource).repo === base)
-      if (!tracked) continue
+
+      if (!tracked) {
+        continue
+      }
+
       const name = prEnvironmentName(pr.number)
       const existing = db
         .select()
@@ -689,9 +806,14 @@ export const createGitHub = (deps: GitHubDeps) => {
         .where(and(eq(environment.project_id, proj.id), eq(environment.name, name)))
         .get()
       const call = systemCall(`github/${app.slug}`, `gh_${guid}`)
+
       if (action === 'closed') {
-        if (!existing) continue
+        if (!existing) {
+          continue
+        }
+
         const set = new ChangeSet()
+
         set.remove('environment', existing.id, {
           name,
         })
@@ -712,7 +834,11 @@ export const createGitHub = (deps: GitHubDeps) => {
         })
         continue
       }
-      if (!['opened', 'reopened', 'synchronize'].includes(action)) continue
+
+      if (!['opened', 'reopened', 'synchronize'].includes(action)) {
+        continue
+      }
+
       const pullRequest = {
         repo: base,
         number: pr.number,
@@ -720,8 +846,10 @@ export const createGitHub = (deps: GitHubDeps) => {
         fork,
       }
       let env = existing
+
       if (!env) {
         const id = newId('environment')
+
         db.insert(environment)
           .values({
             id,
@@ -745,13 +873,15 @@ export const createGitHub = (deps: GitHubDeps) => {
           env,
           false,
         )
+
         for (const svc of db
           .select()
           .from(service)
           .where(eq(service.environment_id, env.id))
           .all()) {
           const source = svc.source as RepoSource
-          if (source.repo === base && !fork)
+
+          if (source.repo === base && !fork) {
             db.update(service)
               .set({
                 source: {
@@ -761,6 +891,7 @@ export const createGitHub = (deps: GitHubDeps) => {
               })
               .where(eq(service.id, svc.id))
               .run()
+          }
         }
       } else {
         db.update(environment)
@@ -771,6 +902,7 @@ export const createGitHub = (deps: GitHubDeps) => {
           .run()
         env = db.select().from(environment).where(eq(environment.id, env.id)).get()!
       }
+
       if (fork) {
         results.push({
           project: proj.name,
@@ -787,20 +919,26 @@ export const createGitHub = (deps: GitHubDeps) => {
         })
         continue
       }
+
       const set = new ChangeSet()
+
       for (const svc of db.select().from(service).where(eq(service.environment_id, env.id)).all()) {
         const source = svc.source as RepoSource
+
         if (source.repo === base) {
-          if (!alreadyDeployed(svc.id, pr.head.sha))
+          if (!alreadyDeployed(svc.id, pr.head.sha)) {
             set.deploy(svc.id, 'push', {
               source_sha: pr.head.sha,
               reason: `pull request #${pr.number} ${action}`,
             })
-        } else if (!existing)
+          }
+        } else if (!existing) {
           set.deploy(svc.id, 'manual', {
             reason: `pull request #${pr.number} environment created`,
           })
+        }
       }
+
       const result = set.empty
         ? null
         : commit(
@@ -813,6 +951,7 @@ export const createGitHub = (deps: GitHubDeps) => {
             },
             set,
           )
+
       results.push({
         project: proj.name,
         environment: name,
@@ -821,24 +960,37 @@ export const createGitHub = (deps: GitHubDeps) => {
         deployments: result?.applied ? result.deployments : [],
       })
     }
+
     return results
   }
 
   const processDelivery = async (guid: string) => {
     const row = db.select().from(github_delivery).where(eq(github_delivery.guid, guid)).get()
-    if (!row || row.status !== 'queued') return
+
+    if (!row || row.status !== 'queued') {
+      return
+    }
+
     const app = db.select().from(github_app).where(eq(github_app.id, row.github_app_id)).get()
-    if (!app) return
+
+    if (!app) {
+      return
+    }
+
     const payload = JSON.parse(row.payload) as Json
     let detail: Json = {}
     let status: 'processed' | 'ignored' | 'failed' = 'processed'
+
     try {
       if (row.event === 'push') {
         const ref = payload.ref as string
-        if (payload.deleted || !ref.startsWith('refs/heads/')) status = 'ignored'
-        else {
+
+        if (payload.deleted || !ref.startsWith('refs/heads/')) {
+          status = 'ignored'
+        } else {
           const repo = repoOf((payload.repository as { full_name: string }).full_name)
           const branch = ref.slice('refs/heads/'.length)
+
           detail = {
             repo,
             branch,
@@ -863,11 +1015,15 @@ export const createGitHub = (deps: GitHubDeps) => {
           repository_selection: 'all' | 'selected'
           suspended_at: string | null
         }
-        if (payload.action === 'deleted')
+
+        if (payload.action === 'deleted') {
           db.delete(github_installation)
             .where(eq(github_installation.installation_id, installation.id))
             .run()
-        else upsertInstallation(app, installation)
+        } else {
+          upsertInstallation(app, installation)
+        }
+
         await refreshAuth(installation.account.login)
         detail = {
           installation_id: installation.id,
@@ -880,6 +1036,7 @@ export const createGitHub = (deps: GitHubDeps) => {
           repository_selection: 'all' | 'selected'
           suspended_at: string | null
         }
+
         upsertInstallation(app, {
           ...installation,
           repository_selection:
@@ -891,13 +1048,16 @@ export const createGitHub = (deps: GitHubDeps) => {
           installation_id: installation.id,
           action: payload.action,
         }
-      } else status = 'ignored'
+      } else {
+        status = 'ignored'
+      }
     } catch (error) {
       status = 'failed'
       detail = {
         explanation: (error as Error).message,
       }
     }
+
     db.update(github_delivery)
       .set({
         status,
@@ -922,30 +1082,40 @@ export const createGitHub = (deps: GitHubDeps) => {
       ? db.select().from(github_app).where(eq(github_app.app_id, appId)).get()
       : undefined
     const length = Number(request.headers.get('content-length') ?? '0')
-    if (length > 25 * 1024 * 1024)
+
+    if (length > 25 * 1024 * 1024) {
       return new Response(null, {
         status: 413,
       })
+    }
+
     const body = Buffer.from(await request.arrayBuffer())
-    if (!app)
+
+    if (!app) {
       return new Response(null, {
         status: 404,
       })
+    }
+
     const secret = secretsOf(app).webhookSecret
+
     if (!secret || !signatureValid(secret, body, request.headers.get('x-hub-signature-256'))) {
       log('github.webhook_refused', {
         app_id: appId,
         delivery: request.headers.get('x-github-delivery'),
         reason: secret ? 'bad_signature' : 'no_webhook_secret',
       })
+
       return new Response(null, {
         status: 401,
       })
     }
+
     const guid =
       request.headers.get('x-github-delivery') ?? createHash('sha256').update(body).digest('hex')
     const eventName = request.headers.get('x-github-event') ?? 'unknown'
     let action: string | null = null
+
     try {
       action = ((JSON.parse(body.toString('utf8')) as Json).action as string | undefined) ?? null
     } catch {
@@ -953,6 +1123,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         status: 400,
       })
     }
+
     const inserted = db
       .insert(github_delivery)
       .values({
@@ -965,15 +1136,18 @@ export const createGitHub = (deps: GitHubDeps) => {
       })
       .onConflictDoNothing()
       .run()
+
     if (inserted.changes === 0) {
       log('github.delivery_duplicate', {
         guid,
         github_event: eventName,
       })
+
       return new Response(null, {
         status: 204,
       })
     }
+
     log('github.delivery_received', {
       guid,
       github_event: eventName,
@@ -981,6 +1155,7 @@ export const createGitHub = (deps: GitHubDeps) => {
       app_id: appId,
     })
     setImmediate(() => void processDelivery(guid))
+
     return new Response(null, {
       status: 204,
     })
@@ -988,10 +1163,12 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const sweepDeliveries = async () => {
     const results: Json[] = []
+
     for (const app of db.select().from(github_app).where(eq(github_app.webhooks, true)).all()) {
       const since = Date.now() - 3 * 24 * 3600_000
       const attempts = new Map<string, { id: number; ok: boolean; delivered_at: number }[]>()
       let cursor: string | null = null
+
       for (let page = 0; page < 30; page++) {
         const path: string = `/app/hook/deliveries?per_page=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
         const response: GitHubResponse<
@@ -1000,10 +1177,16 @@ export const createGitHub = (deps: GitHubDeps) => {
           token: jwtFor(app),
         })
         let older = false
+
         for (const d of response.data) {
           const at = Date.parse(d.delivered_at)
-          if (at < since) older = true
+
+          if (at < since) {
+            older = true
+          }
+
           const list = attempts.get(d.guid) ?? []
+
           list.push({
             id: d.id,
             ok: d.status_code >= 200 && d.status_code < 300,
@@ -1011,14 +1194,23 @@ export const createGitHub = (deps: GitHubDeps) => {
           })
           attempts.set(d.guid, list)
         }
+
         const next: string | undefined = /<([^>]+)>;\s*rel="next"/.exec(
           response.headers.get('link') ?? '',
         )?.[1]
+
         cursor = next ? new URL(next).searchParams.get('cursor') : null
-        if (!cursor || older) break
+
+        if (!cursor || older) {
+          break
+        }
       }
+
       for (const [guid, list] of attempts) {
-        if (list.some((a) => a.ok)) continue
+        if (list.some((a) => a.ok)) {
+          continue
+        }
+
         if (
           db
             .select({
@@ -1027,10 +1219,16 @@ export const createGitHub = (deps: GitHubDeps) => {
             .from(github_delivery)
             .where(eq(github_delivery.guid, guid))
             .get()
-        )
+        ) {
           continue
+        }
+
         const latest = list.sort((a, b) => b.delivered_at - a.delivered_at)[0]!
-        if (latest.delivered_at < since) continue
+
+        if (latest.delivered_at < since) {
+          continue
+        }
+
         try {
           await gh(`/app/hook/deliveries/${latest.id}/attempts`, {
             method: 'POST',
@@ -1058,6 +1256,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         }
       }
     }
+
     return results
   }
 
@@ -1067,9 +1266,14 @@ export const createGitHub = (deps: GitHubDeps) => {
     const results: Json[] = []
     const intervalS = Math.max(10, readSetting(db, 'github.poll_interval_s'))
     const pollingApps = db.select().from(github_app).where(eq(github_app.webhooks, false)).all()
+
     for (const app of pollingApps) {
-      if (Date.now() - (lastSync.get(app.id) ?? 0) < intervalS * 1000) continue
+      if (Date.now() - (lastSync.get(app.id) ?? 0) < intervalS * 1000) {
+        continue
+      }
+
       lastSync.set(app.id, Date.now())
+
       try {
         await syncInstallations(app)
       } catch (error) {
@@ -1079,33 +1283,49 @@ export const createGitHub = (deps: GitHubDeps) => {
         })
       }
     }
+
     const pollingOwners = new Set(pollingApps.map((a) => a.owner))
     const tracked = new Map<string, { repo: string; branch: string; auth: string }>()
+
     for (const { svc, env } of repoServices(db)) {
-      if (env.ephemeral) continue
+      if (env.ephemeral) {
+        continue
+      }
+
       const source = svc.source as RepoSource
       const polled =
         source.auth === 'public' ||
         (source.auth === 'app' && pollingOwners.has(splitRepo(source.repo).owner))
-      if (polled && source.branch)
+
+      if (polled && source.branch) {
         tracked.set(`${source.repo}#${source.branch}`, {
           repo: source.repo,
           branch: source.branch,
           auth: source.auth!,
         })
+      }
     }
+
     for (const { repo, branch } of tracked.values()) {
-      if (stopped) break
+      if (stopped) {
+        break
+      }
+
       const state = db
         .select()
         .from(source_poll)
         .where(and(eq(source_poll.repo, repo), eq(source_poll.branch, branch)))
         .get()
       const wait = Math.max(intervalS, state?.interval_s ?? 0) * 1000
-      if (state?.checked_at && Date.now() - state.checked_at.getTime() < wait) continue
+
+      if (state?.checked_at && Date.now() - state.checked_at.getTime() < wait) {
+        continue
+      }
+
       try {
         const head = await branchHead(repo, branch, state?.etag ?? null)
         const sha = head.sha ?? state?.sha ?? null
+
         db.insert(source_poll)
           .values({
             repo,
@@ -1133,6 +1353,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         const deployments = changed
           ? triggerPush(repo, branch, head.sha!, 'poll', `poll_${Date.now()}`)
           : []
+
         results.push({
           repo,
           branch,
@@ -1142,7 +1363,8 @@ export const createGitHub = (deps: GitHubDeps) => {
           changed: Boolean(changed),
           deployments,
         })
-        if (changed)
+
+        if (changed) {
           log('github.poll_changed', {
             repo,
             branch,
@@ -1151,6 +1373,7 @@ export const createGitHub = (deps: GitHubDeps) => {
             auth: head.auth,
             deployments,
           })
+        }
       } catch (error) {
         db.insert(source_poll)
           .values({
@@ -1175,12 +1398,17 @@ export const createGitHub = (deps: GitHubDeps) => {
         })
       }
     }
+
     return results
   }
 
   const onEvent = (id: string) => {
     const row = db.select().from(event).where(eq(event.id, id)).get()
-    if (!row || !row.type.startsWith('deployment.')) return
+
+    if (!row || !row.type.startsWith('deployment.')) {
+      return
+    }
+
     try {
       onDeploymentEvent(row)
     } catch (error) {
@@ -1191,52 +1419,38 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
   }
 
-  const guarded = (name: string, fn: () => Promise<unknown>) => async () => {
-    try {
-      await fn()
-    } catch (error) {
-      log(`github.${name}_failed`, {
-        explanation: (error as Error).message,
-      })
-    }
-  }
-
   const start = () => {
     eventBus.on('event', onEvent)
+
     for (const row of db
       .select({
         guid: github_delivery.guid,
       })
       .from(github_delivery)
       .where(eq(github_delivery.status, 'queued'))
-      .all())
+      .all()) {
       setImmediate(() => void processDelivery(row.guid))
-    const sweep = guarded('sweep', sweepDeliveries)
-    const poll = guarded('poll', pollOnce)
-    const statuses = guarded('statuses', postStatuses)
-    setTimeout(() => void sweep(), 2_000)
-    timers.push(setInterval(() => void sweep(), env().STATIONLY_GITHUB_SWEEP_MS))
-    let polling = false
-    timers.push(
-      setInterval(() => {
-        if (polling) return
-        polling = true
-        void poll().finally(() => {
-          polling = false
-        })
-      }, 5_000),
+    }
+
+    jobs.push(
+      every(env().STATIONLY_GITHUB_SWEEP_MS / 1000, 'github.sweep_failed', log, sweepDeliveries),
+      every(5, 'github.poll_failed', log, pollOnce),
+      every(1, 'github.statuses_failed', log, postStatuses),
     )
-    timers.push(setInterval(() => void statuses(), 1_000))
   }
 
   const stop = () => {
     stopped = true
     eventBus.off('event', onEvent)
-    for (const t of timers) clearInterval(t)
+
+    for (const job of jobs) {
+      job.stop()
+    }
   }
 
   const connection = () => {
     const apps = db.select().from(github_app).orderBy(asc(github_app.created_at)).all()
+
     return {
       apps: apps.map((app) => {
         const installation = db
@@ -1244,6 +1458,7 @@ export const createGitHub = (deps: GitHubDeps) => {
           .from(github_installation)
           .where(eq(github_installation.github_app_id, app.id))
           .get()
+
         return {
           id: app.id,
           app_id: app.app_id,

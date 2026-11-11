@@ -26,20 +26,30 @@ export const createApp = (deps: Deps) => {
     try {
       await gateAuthRequest(deps.auth, request)
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error
-      if (error.code === 'UNAUTHENTICATED') recordUnauthenticated(request)
+      if (!(error instanceof ApiError)) {
+        throw error
+      }
+
+      if (error.code === 'UNAUTHENTICATED') {
+        recordUnauthenticated(request)
+      }
+
       return refusal(request, error, deps.version)
     }
+
     return stamped(request, await deps.auth.current.handler(request), deps.version)
   }
   const metadata = async (request: Request) => {
     const surface = surfaceOf(request, deps.auth)
-    if (surface !== 'api' && surface !== 'local')
+
+    if (surface !== 'api' && surface !== 'local') {
       return refusal(
         request,
         new ApiError('WRONG_HOST', 'OAuth metadata is served on the API host only.'),
         deps.version,
       )
+    }
+
     return stamped(request, await deps.auth.current.handler(request), deps.version)
   }
   const app = new Elysia({
@@ -118,7 +128,9 @@ export const createApp = (deps: Deps) => {
       },
     })
     .use(createApi(deps))
+
   mcp.connect((request) => createFetch(deps, app)(request))
+
   return app
 }
 
@@ -130,7 +142,11 @@ type Missing = { entity: string; ref: string }
 
 const flatPath = (db: Db, pathname: string): string | Missing | null => {
   const parts = pathname.split('/').slice(2)
-  if (parts[0] !== 'projects' || parts.length < 4 || parts[2] !== 'environments') return null
+
+  if (parts[0] !== 'projects' || parts.length < 4 || parts[2] !== 'environments') {
+    return null
+  }
+
   const [, projectRef, , environmentRef, ...rest] = parts.map(decodeURIComponent) as [
     string,
     string,
@@ -145,11 +161,14 @@ const flatPath = (db: Db, pathname: string): string | Missing | null => {
     .from(project)
     .where(byRef(projectRef, 'prj') ? eq(project.id, projectRef) : eq(project.name, projectRef))
     .get()
-  if (!proj)
+
+  if (!proj) {
     return {
       entity: 'project',
       ref: projectRef,
     }
+  }
+
   const env = db
     .select({
       id: environment.id,
@@ -164,11 +183,14 @@ const flatPath = (db: Db, pathname: string): string | Missing | null => {
       ),
     )
     .get()
-  if (!env)
+
+  if (!env) {
     return {
       entity: 'environment',
       ref: environmentRef,
     }
+  }
+
   if (rest[0] === 'services' && rest.length >= 2) {
     const svc = db
       .select({
@@ -182,13 +204,17 @@ const flatPath = (db: Db, pathname: string): string | Missing | null => {
         ),
       )
       .get()
-    if (!svc)
+
+    if (!svc) {
       return {
         entity: 'service',
         ref: rest[1]!,
       }
+    }
+
     return ['/v1/services', svc.id, ...rest.slice(2)].join('/')
   }
+
   if (rest[0] === 'sandboxes' && rest.length >= 2) {
     const box = db
       .select({
@@ -202,13 +228,17 @@ const flatPath = (db: Db, pathname: string): string | Missing | null => {
         ),
       )
       .get()
-    if (!box)
+
+    if (!box) {
       return {
         entity: 'sandbox',
         ref: rest[1]!,
       }
+    }
+
     return ['/v1/sandboxes', box.id, ...rest.slice(2)].join('/')
   }
+
   return ['/v1/environments', env.id, ...rest].join('/')
 }
 
@@ -216,19 +246,34 @@ const missingTarget = async (deps: Deps, request: Request, missing: Missing) => 
   try {
     await authenticate(deps.db, deps.auth, request)
   } catch (error) {
-    if (error instanceof ApiError) return refusal(request, error, deps.version)
+    if (error instanceof ApiError) {
+      return refusal(request, error, deps.version)
+    }
+
     throw error
   }
+
   return refusal(request, notFoundError(missing.entity, missing.ref), deps.version)
 }
 
 export const createFetch = (deps: Deps, app: App, dashboard?: Dashboard) => (request: Request) => {
   const page = dashboard?.handle(request, surfaceOf(request, deps.auth))
-  if (page) return page
+
+  if (page) {
+    return page
+  }
+
   const url = new URL(request.url)
   const flat = url.pathname.startsWith('/v1/projects/') ? flatPath(deps.db, url.pathname) : null
-  if (!flat) return app.fetch(request)
-  if (typeof flat !== 'string') return missingTarget(deps, request, flat)
+
+  if (!flat) {
+    return app.fetch(request)
+  }
+
+  if (typeof flat !== 'string') {
+    return missingTarget(deps, request, flat)
+  }
+
   url.pathname = flat
   const init: RequestInit & { duplex: 'half' } = {
     method: request.method,
@@ -238,6 +283,8 @@ export const createFetch = (deps: Deps, app: App, dashboard?: Dashboard) => (req
     signal: request.signal,
   }
   const rewritten = new Request(url, init)
+
   rememberSentUrl(rewritten, request.url)
+
   return app.fetch(rewritten)
 }

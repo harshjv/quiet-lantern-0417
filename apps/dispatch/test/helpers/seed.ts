@@ -10,8 +10,10 @@ import type { Dispatch } from './dispatch.ts'
 type Api = Pick<Dispatch, 'call' | 'admin'>
 
 const must = <T>(reply: { status: number; body: T; text: string }, ...ok: number[]) => {
-  if (!ok.includes(reply.status))
+  if (!ok.includes(reply.status)) {
     throw new Error(`seed call answered ${reply.status}: ${reply.text}`)
+  }
+
   return reply.body
 }
 
@@ -100,6 +102,7 @@ export const listServices = async (h: Api, environmentId: string) =>
 
 export const waitForActive = async (h: Api, serviceId: string, timeoutMs = 8000) => {
   const deadline = Date.now() + timeoutMs
+
   for (;;) {
     const svc = must<any>(
       await h.call('GET', `/v1/services/${serviceId}?fields=current_deployment_id`, {
@@ -107,8 +110,15 @@ export const waitForActive = async (h: Api, serviceId: string, timeoutMs = 8000)
       }),
       200,
     )
-    if (svc.current_deployment_id) return svc
-    if (Date.now() > deadline) throw new Error(`service ${serviceId} never became current`)
+
+    if (svc.current_deployment_id) {
+      return svc
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(`service ${serviceId} never became current`)
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }
@@ -124,6 +134,7 @@ export const seedLockfile = (h: Pick<Dispatch, 'db'>) => {
     grype_db: null,
     templates: {},
   }
+
   h.db
     .insert(setting)
     .values({
@@ -203,6 +214,7 @@ export const pinPlatform = (
     options.gateway ?? false,
     options.sandboxes ?? false,
   )
+
   storeRelease(h.db, {
     manifestRaw: raw,
     bundle: '{}',
@@ -216,7 +228,8 @@ export const pinPlatform = (
     client: 'test-harness',
   }
   const existing = h.db.select().from(setting).where(eq(setting.key, 'platform.lockfile')).get()
-  if (existing)
+
+  if (existing) {
     h.db
       .update(setting)
       .set({
@@ -225,7 +238,7 @@ export const pinPlatform = (
       })
       .where(eq(setting.key, 'platform.lockfile'))
       .run()
-  else
+  } else {
     h.db
       .insert(setting)
       .values({
@@ -234,6 +247,7 @@ export const pinPlatform = (
         updated_by: actor as never,
       })
       .run()
+  }
 }
 
 export const waitForDeployment = async (
@@ -243,6 +257,7 @@ export const waitForDeployment = async (
   timeoutMs = 8000,
 ) => {
   const deadline = Date.now() + timeoutMs
+
   for (;;) {
     h.deps?.stations.reconcile()
     const dep = must<any>(
@@ -251,9 +266,15 @@ export const waitForDeployment = async (
       }),
       200,
     )
-    if (dep.status === status) return dep
-    if (Date.now() > deadline)
+
+    if (dep.status === status) {
+      return dep
+    }
+
+    if (Date.now() > deadline) {
       throw new Error(`deployment ${deploymentId} stayed ${dep.status}, wanted ${status}`)
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }
@@ -292,6 +313,7 @@ export const waitForSandbox = async (
   timeoutMs = 8000,
 ) => {
   const deadline = Date.now() + timeoutMs
+
   for (;;) {
     h.deps?.stations.reconcile()
     const box = must<any>(
@@ -300,9 +322,15 @@ export const waitForSandbox = async (
       }),
       200,
     )
-    if (box.status === status) return box
-    if (Date.now() > deadline)
+
+    if (box.status === status) {
+      return box
+    }
+
+    if (Date.now() > deadline) {
       throw new Error(`sandbox ${sandboxId} stayed ${box.status}, wanted ${status}`)
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }

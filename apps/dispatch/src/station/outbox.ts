@@ -1,6 +1,10 @@
 import { and, eq, isNull } from 'drizzle-orm'
 
-import { deploymentTerminalStatuses, type MessageBody, type MessageType } from '@stationly/protocol'
+import {
+  deploymentTerminalStatuses,
+  type MessageBody,
+  type OutboxedMessageType,
+} from '@stationly/protocol'
 
 import { refreshStale } from '../api/stale.ts'
 import { recordAudit } from '../db/audit.ts'
@@ -26,57 +30,6 @@ import { recordBackupResult, recordRestoreResult } from '../volumes/backups.ts'
 
 import { emitEvent, serviceSubject } from './events.ts'
 import { setServiceStatus } from './signal.ts'
-
-type Outboxed = Extract<
-  MessageType,
-  | 'deployment.step'
-  | 'deployment.finished'
-  | 'run.created'
-  | 'run.status'
-  | 'run.exited'
-  | 'build.status'
-  | 'build.result'
-  | 'health.result'
-  | 'container.exited'
-  | 'disk.pressure'
-  | 'registry.maintenance'
-  | 'component.status'
-  | 'log.gap'
-  | 'audit.record'
-  | 'outbox.gap'
-  | 'guard.ack'
-  | 'flow.rollup'
-  | 'scan.result'
-  | 'volume.backup.result'
-  | 'volume.restore.result'
-  | 'sandbox.status'
-  | 'sandbox.snapshot.status'
->
-
-export const outboxedTypes = new Set<string>([
-  'deployment.step',
-  'deployment.finished',
-  'run.created',
-  'run.status',
-  'run.exited',
-  'build.status',
-  'build.result',
-  'health.result',
-  'container.exited',
-  'disk.pressure',
-  'registry.maintenance',
-  'component.status',
-  'log.gap',
-  'audit.record',
-  'outbox.gap',
-  'guard.ack',
-  'flow.rollup',
-  'scan.result',
-  'volume.backup.result',
-  'volume.restore.result',
-  'sandbox.status',
-  'sandbox.snapshot.status',
-])
 
 export type IngestResult = { status: 'applied' | 'duplicate'; seq: number; reconcile: boolean }
 
@@ -120,6 +73,7 @@ export const deploymentSubject = (db: Db, deploymentId: string) => {
     .from(deployment)
     .where(eq(deployment.id, deploymentId))
     .get()
+
   return dep
     ? {
         ...serviceSubject(db, dep.service_id),
@@ -144,6 +98,7 @@ export const emitBuildFinished = (
   code: string | null,
 ) => {
   const subject = deploymentSubject(db, deploymentId)
+
   emitEvent(
     db,
     'build.finished',
@@ -164,7 +119,12 @@ export const emitBuildFinished = (
 }
 
 const effects: {
-  [T in Outboxed]?: (db: Db, keyring: Keyring, stationId: string, body: MessageBody<T>) => boolean
+  [T in OutboxedMessageType]?: (
+    db: Db,
+    keyring: Keyring,
+    stationId: string,
+    body: MessageBody<T>,
+  ) => boolean
 } = {
   'sandbox.status': (db, _k, stationId, body) => applyStatus(db, stationId, body),
   'sandbox.snapshot.status': (db, _k, stationId, body) => applySnapshotStatus(db, stationId, body),
@@ -172,13 +132,18 @@ const effects: {
   'volume.restore.result': (db, _k, stationId, body) => recordRestoreResult(db, stationId, body),
   'deployment.step': (db, _k, _s, body) => {
     const dep = db.select().from(deployment).where(eq(deployment.id, body.deployment_id)).get()
-    if (!dep) return false
+
+    if (!dep) {
+      return false
+    }
+
     const values = {
       status: body.status,
       detail: body.detail,
       started_at: date(body.started_at),
       finished_at: date(body.finished_at),
     }
+
     db.insert(deployment_step)
       .values({
         deployment_id: body.deployment_id,
@@ -191,9 +156,17 @@ const effects: {
         set: values,
       })
       .run()
-    if (body.status !== 'running' || terminalDeployment.has(dep.status)) return false
+
+    if (body.status !== 'running' || terminalDeployment.has(dep.status)) {
+      return false
+    }
+
     const next = stepStatus[body.step]
-    if (!next || next === dep.status) return false
+
+    if (!next || next === dep.status) {
+      return false
+    }
+
     db.update(deployment)
       .set({
         status: next,
@@ -201,9 +174,11 @@ const effects: {
       })
       .where(eq(deployment.id, dep.id))
       .run()
+
     if (dep.status === 'queued' || dep.status === 'building') {
       const subject: { entity: string; id: string; environment_id?: string; project_id?: string } =
         deploymentSubject(db, dep.id)
+
       emitEvent(db, 'deployment.started', subject, {
         deployment: dep.id,
         number: dep.number,
@@ -213,12 +188,18 @@ const effects: {
         project: subject.project_id ?? null,
       })
     }
+
     return false
   },
   'deployment.finished': (db, _k, _s, body) => {
     const dep = db.select().from(deployment).where(eq(deployment.id, body.deployment_id)).get()
-    if (!dep || terminalDeployment.has(dep.status)) return true
+
+    if (!dep || terminalDeployment.has(dep.status)) {
+      return true
+    }
+
     const subject = deploymentSubject(db, dep.id)
+
     if (body.status === 'active') {
       const previous = db
         .select({
@@ -227,24 +208,31 @@ const effects: {
         .from(service)
         .where(eq(service.id, dep.service_id))
         .get()?.current
+
       activateDeployment(db, dep.id)
-      if (previous && previous !== dep.id)
+
+      if (previous && previous !== dep.id) {
         db.update(deployment)
           .set({
             status: 'superseded',
           })
           .where(eq(deployment.id, previous))
           .run()
+      }
+
       refreshStale(db, [dep.service_id])
       const began = dep.started_at ?? dep.created_at
+
       emitEvent(db, 'deployment.active', subject, {
         deployment: dep.id,
         number: dep.number,
         duration_s: Math.round((Date.now() - began.getTime()) / 1000),
         previous_deployment: previous ?? null,
       })
+
       return true
     }
+
     db.update(deployment)
       .set({
         status: body.status,
@@ -254,19 +242,23 @@ const effects: {
       })
       .where(eq(deployment.id, dep.id))
       .run()
-    if (body.status === 'failed')
+
+    if (body.status === 'failed') {
       emitEvent(db, 'deployment.failed', subject, failedPayload(dep.id, dep.number, body.failure))
-    else
+    } else {
       emitEvent(db, 'deployment.cancelled', subject, {
         deployment: dep.id,
         number: dep.number,
         cancel_reason: body.cancel_reason,
         actor: null,
       })
+    }
+
     return true
   },
   'run.created': (db, _k, _s, body) => {
     const r = body.run
+
     db.insert(run)
       .values({
         id: r.id,
@@ -283,6 +275,7 @@ const effects: {
       })
       .onConflictDoNothing()
       .run()
+
     return false
   },
   'run.status': (db, _k, _s, body) => {
@@ -296,6 +289,7 @@ const effects: {
       })
       .where(eq(run.id, body.run_id))
       .run()
+
     return false
   },
   'run.exited': (db, _k, _s, body) => {
@@ -310,6 +304,7 @@ const effects: {
       .where(eq(run.id, body.run_id))
       .run()
     const full = db.select().from(run).where(eq(run.id, body.run_id)).get()
+
     if (body.status === 'failed' && full && full.sandbox_id === null) {
       emitEvent(
         db,
@@ -335,12 +330,16 @@ const effects: {
         },
       )
     }
+
     return false
   },
   'build.status': (db, _k, _s, body) => {
     const b = db.select().from(build).where(eq(build.id, body.build_id)).get()
-    if (!b || b.status === 'succeeded' || b.status === 'failed' || b.status === 'cancelled')
+
+    if (!b || b.status === 'succeeded' || b.status === 'failed' || b.status === 'cancelled') {
       return false
+    }
+
     db.update(build)
       .set({
         status: body.status,
@@ -351,11 +350,16 @@ const effects: {
       })
       .where(eq(build.id, b.id))
       .run()
+
     return false
   },
   'build.result': (db, _k, _s, body) => {
     const b = db.select().from(build).where(eq(build.id, body.build_id)).get()
-    if (!b) return false
+
+    if (!b) {
+      return false
+    }
+
     db.update(build)
       .set({
         status: body.status,
@@ -369,7 +373,8 @@ const effects: {
       .run()
     const finished =
       body.status === 'succeeded' || body.status === 'failed' || body.status === 'cancelled'
-    if (finished && !terminalBuild.has(b.status))
+
+    if (finished && !terminalBuild.has(b.status)) {
       emitBuildFinished(
         db,
         b.id,
@@ -380,6 +385,8 @@ const effects: {
           ? null
           : (body.failure?.code ?? (body.status === 'failed' ? 'BUILD_FAILED' : null)),
       )
+    }
+
     for (const a of body.attestations) {
       db.insert(attestation)
         .values({
@@ -392,8 +399,13 @@ const effects: {
         })
         .run()
     }
+
     const dep = db.select().from(deployment).where(eq(deployment.id, b.deployment_id)).get()
-    if (!dep || terminalDeployment.has(dep.status)) return true
+
+    if (!dep || terminalDeployment.has(dep.status)) {
+      return true
+    }
+
     if (body.status === 'succeeded' && body.image_ref && isPinned(body.image_ref)) {
       db.update(deployment)
         .set({
@@ -406,8 +418,10 @@ const effects: {
         })
         .where(eq(deployment.id, dep.id))
         .run()
+
       return true
     }
+
     const failure =
       body.status === 'succeeded'
         ? {
@@ -420,6 +434,7 @@ const effects: {
             code: 'BUILD_FAILED',
             summary: `build ${b.id} ended ${body.status}`,
           })
+
     db.update(deployment)
       .set({
         status: 'failed',
@@ -434,16 +449,19 @@ const effects: {
       deploymentSubject(db, dep.id),
       failedPayload(dep.id, dep.number, failure),
     )
+
     return true
   },
   'health.result': (db, _k, _s, body) => {
     const status = body.state === 'passing' ? 'green' : body.state === 'failed' ? 'red' : 'amber'
+
     setServiceStatus(db, body.service_id, status, {
       deployment_id: body.deployment_id,
       state: body.state,
       consecutive: body.consecutive,
       last_check: body.last_check,
     })
+
     return false
   },
   'disk.pressure': (db, _k, stationId, body) => {
@@ -456,6 +474,7 @@ const effects: {
       },
       body,
     )
+
     return false
   },
   'component.status': (db, _k, stationId, body) => {
@@ -486,8 +505,10 @@ const effects: {
       .from(component)
       .where(and(scope, eq(component.name, name)))
       .get()
-    if (row) db.update(component).set(values).where(eq(component.id, row.id)).run()
-    else
+
+    if (row) {
+      db.update(component).set(values).where(eq(component.id, row.id)).run()
+    } else {
       db.insert(component)
         .values({
           station_id: name === 'dispatch' ? null : stationId,
@@ -495,7 +516,9 @@ const effects: {
           ...values,
         })
         .run()
-    if (body.status === 'failed' && body.failure)
+    }
+
+    if (body.status === 'failed' && body.failure) {
       emitEvent(
         db,
         'doctor.finding',
@@ -510,6 +533,8 @@ const effects: {
           failure: body.failure,
         },
       )
+    }
+
     return upgradeOnComponent(db, stationId, body)
   },
   'registry.maintenance': (db, _k, stationId, body) => {
@@ -522,6 +547,7 @@ const effects: {
       },
       body,
     )
+
     return false
   },
   'audit.record': (db, _k, stationId, body) => {
@@ -536,6 +562,7 @@ const effects: {
       requestId: `station:${stationId}:${body.seq}`,
       purpose: body.purpose,
     })
+
     return false
   },
 }
@@ -555,23 +582,27 @@ export const ingest = (
       .where(and(eq(station_outbox.station_id, stationId), eq(station_outbox.epoch, epoch)))
       .get()
     const committed = row?.committed_seq ?? 0
-    if (body.seq <= committed)
+
+    if (body.seq <= committed) {
       return {
         status: 'duplicate' as const,
         seq: body.seq,
         reconcile: false,
       }
-    const effect = effects[type as Outboxed] as
+    }
+
+    const effect = effects[type as OutboxedMessageType] as
       ((db: Db, keyring: Keyring, stationId: string, body: unknown) => boolean) | undefined
     const reconcile = effect ? effect(db, keyring, stationId, body) : false
-    if (row)
+
+    if (row) {
       db.update(station_outbox)
         .set({
           committed_seq: body.seq,
         })
         .where(eq(station_outbox.id, row.id))
         .run()
-    else
+    } else {
       db.insert(station_outbox)
         .values({
           station_id: stationId,
@@ -579,6 +610,8 @@ export const ingest = (
           committed_seq: body.seq,
         })
         .run()
+    }
+
     return {
       status: 'applied' as const,
       seq: body.seq,

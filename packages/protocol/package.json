@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./domain": "./src/domain.ts",
     "./format": "./src/format.ts",
-    "./release-config": "./src/release-config.ts"
+    "./release-config": "./src/release-config.ts",
+    "./sandbox-runtime": "./src/sandbox-runtime.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",

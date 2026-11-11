@@ -11,6 +11,7 @@ import (
 
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/hostprobe"
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
@@ -34,6 +35,7 @@ func EnrollInfo(ctx context.Context) (dispatch.EnrollInfo, error) {
 		}
 		dc.Close()
 	}
+	host := hostprobe.Default().Probe(ctx, "")
 	return dispatch.EnrollInfo{
 		Os:   protocol.StationOsLinux,
 		Arch: protocol.StationArch(runtime.GOARCH),
@@ -41,6 +43,7 @@ func EnrollInfo(ctx context.Context) (dispatch.EnrollInfo, error) {
 			Kernel:          unix.ByteSliceToString(uts.Release[:]),
 			DockerVersion:   dockerVersion,
 			StationdVersion: stationdVersion(),
+			Host:            &host,
 		},
 		Routes: []any{},
 		Resources: protocol.Resources{

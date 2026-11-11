@@ -13,10 +13,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/harshjv/stationly/go/internal/sandbox"
 )
 
 const (
-	CgroupRoot     = "/sys/fs/cgroup"
 	scopeKillPoll  = 20 * time.Millisecond
 	ScopeKillLimit = 15 * time.Second
 )
@@ -46,11 +47,11 @@ func ScopeCgroup(ctx context.Context, id string) (string, error) {
 }
 
 func GroupOOM(cgroup string) error {
-	return writeCgroup(filepath.Join(CgroupRoot, cgroup), "memory.oom.group", "1")
+	return writeCgroup(filepath.Join(sandbox.CgroupRoot, cgroup), "memory.oom.group", "1")
 }
 
 func GroupsOOM(cgroup string) bool {
-	b, err := os.ReadFile(filepath.Join(CgroupRoot, cgroup, "memory.oom.group"))
+	b, err := os.ReadFile(filepath.Join(sandbox.CgroupRoot, cgroup, "memory.oom.group"))
 	return err == nil && strings.TrimSpace(string(b)) == "1"
 }
 
@@ -60,7 +61,7 @@ func KillScope(ctx context.Context, id string) error {
 		return err
 	}
 	if cg != "" {
-		if err := KillCgroup(ctx, filepath.Join(CgroupRoot, cg)); err != nil {
+		if err := KillCgroup(ctx, filepath.Join(sandbox.CgroupRoot, cg)); err != nil {
 			return fmt.Errorf("kill %s: %w", ScopeUnit(id), err)
 		}
 	}

@@ -53,6 +53,7 @@ describe('project deletion', () => {
       ],
       deploy: true,
     })
+
     await waitForDeployment(h, web.deployments[0].id, 'active')
     await h.call('PATCH', `/v1/projects/${project.id}/variables`, {
       token: token(),
@@ -69,13 +70,16 @@ describe('project deletion', () => {
     })
 
     const blocked = await del(`/v1/projects/${project.id}`)
+
     assert.equal(blocked.status, 409)
     assert.equal(blocked.body.error.code, 'DELETE_HAS_DEPENDENTS')
 
     const removedService = await del(`/v1/services/${web.id}`)
+
     assert.equal(removedService.status, 200, removedService.text)
 
     const removed = await del(`/v1/projects/${project.id}`)
+
     assert.equal(removed.status, 200, removed.text)
     assert.deepEqual(removed.body, {
       deleted: true,
@@ -112,6 +116,7 @@ describe('project deletion', () => {
         protected: true,
       },
     })
+
     assert.equal(protect.status, 200, protect.text)
     const pending = await createService(h, envId, {
       name: 'second',
@@ -129,17 +134,20 @@ describe('project deletion', () => {
         },
       ],
     })
+
     assert.equal(pending.status, 'staged')
     assert.equal(
       rows(h, 'select id from staged_value where staged_change_id = ?', pending.id).length > 0,
       true,
     )
     const stagedDelete = await del(`/v1/services/${applied.id}`)
+
     assert.equal(stagedDelete.status, 202, stagedDelete.text)
     const accepted = await h.call('POST', `/v1/staged-changes/${stagedDelete.body.id}/accept`, {
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
+
     assert.equal(accepted.status, 200, accepted.text)
     const lift = await h.call('PATCH', `/v1/environments/${envId}`, {
       cookie: h.admin.cookie,
@@ -148,6 +156,7 @@ describe('project deletion', () => {
         protected: false,
       },
     })
+
     assert.equal(lift.status, 200, lift.text)
 
     const kept = rows<{ id: string; status: string }>(
@@ -156,6 +165,7 @@ describe('project deletion', () => {
       envId,
     )
     const removed = await del(`/v1/projects/${project.id}`)
+
     assert.equal(removed.status, 200, removed.text)
 
     const after = rows<{ id: string; status: string }>(
@@ -163,6 +173,7 @@ describe('project deletion', () => {
       'select id, status from staged_change where environment_id = ?',
       envId,
     )
+
     assert.deepEqual(after.map((r) => r.id).sort(), kept.map((r) => r.id).sort())
     assert.equal(after.length >= 2, true)
     assert.equal(after.find((r) => r.id === pending.id)!.status, 'superseded')
@@ -180,14 +191,17 @@ describe('project deletion', () => {
       const read = await h.call('GET', `/v1/staged-changes/${row.id}?fields=changes`, {
         token: token(),
       })
+
       assert.equal(read.status, 200, read.text)
       assert.equal(read.body.environment_id, envId)
       assert.equal(read.body.status, row.status)
       assert.ok(read.body.changes.length > 0)
     }
+
     const listed = await h.call('GET', '/v1/staged-changes?status=superseded', {
       token: token(),
     })
+
     assert.equal(
       listed.body.items.some((i: any) => i.id === pending.id),
       true,
@@ -197,6 +211,7 @@ describe('project deletion', () => {
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
+
     assert.equal(accept.body.error.code, 'STAGED_CHANGE_SUPERSEDED')
     const other = await createProject(h, 'bystander')
     const scoped = await mintToken(
@@ -210,6 +225,7 @@ describe('project deletion', () => {
       ],
       'bystander-admin',
     )
+
     assert.equal(
       (
         await h.call('GET', `/v1/staged-changes/${pending.id}`, {

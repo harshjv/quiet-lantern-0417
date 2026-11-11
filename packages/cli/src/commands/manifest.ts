@@ -23,6 +23,7 @@ const readManifest = async (file: string) => {
 
 const projectOf = (text: string) => {
   const parsed = validateSchema(text)
+
   return parsed.value?.project ?? /^project:\s*["']?([a-z0-9-]+)/m.exec(text)?.[1]
 }
 
@@ -40,11 +41,14 @@ const apply = async (
   const text = await readManifest(options.file)
   const run = await connect(options)
   const project = run.selection.project ?? projectOf(text)
-  if (!project)
+
+  if (!project) {
     throw usage(
       'No project is selected and the Manifest names none.',
       'Pass --project, or set project in the Manifest.',
     )
+  }
+
   const sent = await send(
     run.api.v1
       .projects({
@@ -58,6 +62,7 @@ const apply = async (
         allow_unresolved: options.allowUnresolved,
       }),
   )
+
   return print(options, sent, renderPlan)
 }
 
@@ -74,6 +79,7 @@ export const manifestCommands = (program: Program) => {
     program.command('apply').description('Plan or apply a Manifest (alias of sly manifest apply)'),
   )
   const manifest = group(program, 'manifest')
+
   applyOptions(
     manifest.command('apply').description('Plan or apply a Manifest against one environment'),
   )
@@ -87,8 +93,12 @@ export const manifestCommands = (program: Program) => {
         const project =
           run.selection.project ??
           (await readFile('stationly.yaml', 'utf8').then(projectOf, () => undefined))
-        if (!project) throw usage('No project is selected.', 'Pass --project <id or name>.')
-        if (options.json)
+
+        if (!project) {
+          throw usage('No project is selected.', 'Pass --project <id or name>.')
+        }
+
+        if (options.json) {
           return print(
             options,
             await send(
@@ -106,6 +116,8 @@ export const manifestCommands = (program: Program) => {
                 }),
             ),
           )
+        }
+
         const text = await document(
           run.api.v1
             .projects({
@@ -120,10 +132,14 @@ export const manifestCommands = (program: Program) => {
               },
             }),
         )
+
         if (options.output) {
           await writeFile(options.output, text)
           progress(`wrote ${options.output}`)
-        } else process.stdout.write(text)
+        } else {
+          process.stdout.write(text)
+        }
+
         return exitCodes.ok
       }),
     )
@@ -136,21 +152,25 @@ export const manifestCommands = (program: Program) => {
       action(async (options) => {
         const text = await readManifest(options.file)
         const local = validateSchema(text)
+
         if (local.issues.length || options.offline) {
-          if (options.json)
+          if (options.json) {
             json({
               valid: local.issues.length === 0,
               issues: local.issues,
               warnings: [],
             })
-          else
+          } else {
             process.stdout.write(
               local.issues.length
                 ? `${renderIssues(local.issues)}\n${local.issues.length} problems\n`
                 : 'valid (schema pass)\n',
             )
+          }
+
           return local.issues.length ? exitCodes.api : exitCodes.ok
         }
+
         const run = await connect(options)
         const result = (
           await send(
@@ -160,13 +180,21 @@ export const manifestCommands = (program: Program) => {
             }),
           )
         ).data
-        if (options.json) json(result)
-        else {
-          if (result.issues.length) process.stdout.write(`${renderIssues(result.issues)}\n`)
-          for (const w of result.warnings)
+
+        if (options.json) {
+          json(result)
+        } else {
+          if (result.issues.length) {
+            process.stdout.write(`${renderIssues(result.issues)}\n`)
+          }
+
+          for (const w of result.warnings) {
             process.stdout.write(`warning ${w.code}: ${w.explanation}\n`)
+          }
+
           process.stdout.write(result.valid ? 'valid\n' : `${result.issues.length} problems\n`)
         }
+
         return result.valid ? exitCodes.ok : exitCodes.api
       }),
     )

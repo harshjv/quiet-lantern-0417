@@ -47,37 +47,56 @@ const serviceLayers = (map: NetworkMap) => {
   const names = map.services.map((s) => s.name)
   const out = new Map<string, string[]>(names.map((n) => [n, []]))
   const incoming = new Map<string, number>(names.map((n) => [n, 0]))
+
   for (const e of map.edges) {
     out.get(e.from)?.push(e.to)
     incoming.set(e.to, (incoming.get(e.to) ?? 0) + 1)
   }
+
   const layer = new Map<string, number>()
   const exposed = new Set(map.inbound.entries.map((e) => e.service))
   const walk = (starts: string[], base: number) => {
     const queue = starts.filter((n) => !layer.has(n)).map((n) => [n, base] as const)
-    for (const [n] of queue) layer.set(n, base)
+
+    for (const [n] of queue) {
+      layer.set(n, base)
+    }
+
     while (queue.length) {
       const [name, depth] = queue.shift()!
+
       for (const next of out.get(name) ?? []) {
-        if (layer.has(next)) continue
+        if (layer.has(next)) {
+          continue
+        }
+
         layer.set(next, depth + 1)
         queue.push([next, depth + 1])
       }
     }
   }
+
   walk(
     names.filter((n) => exposed.has(n)),
     0,
   )
   const rest = names.filter((n) => !layer.has(n))
   const roots = rest.filter((n) => !map.edges.some((e) => e.to === n && rest.includes(e.from)))
+
   walk(roots.length ? roots : rest.slice(0, 1), exposed.size ? 1 : 0)
-  for (const n of names) if (!layer.has(n)) walk([n], exposed.size ? 1 : 0)
+
+  for (const n of names) {
+    if (!layer.has(n)) {
+      walk([n], exposed.size ? 1 : 0)
+    }
+  }
+
   return layer
 }
 
 const column = <T>(items: T[], height: number, tallest: number) => {
   const offset = (tallest - items.length * height) / 2
+
   return items.map((item, i) => ({
     item,
     y: offset + i * height,
@@ -113,13 +132,17 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
       const domain = map.services
         .find((s) => s.name === entry.service)
         ?.domains.find((d) => d.hostname === entry.hostname)
+
       return domain ? domainState(domain) : null
     }
+
     const exposure = exposureOf(entry)
+
     return exposure?.result ? exposureState(exposure) : null
   }
   const tcpPlacement = (entry: MapEntry) => {
     const exposure = entry.kind === 'tcp' ? exposureOf(entry) : undefined
+
     return {
       hostPort: exposure?.host_port ?? null,
       station: exposure ? stationName(map, exposure.station_id) : null,
@@ -128,6 +151,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
   const hasInbound = entries.length > 0
   const firstServiceColumn = hasInbound ? 2 : 0
   const nodes: MapNode[] = []
+
   if (hasInbound) {
     nodes.push({
       id: 'internet',
@@ -140,7 +164,8 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
         label: peerKind.internet,
       },
     })
-    for (const { item, y } of column(entries, rowHeight.entry, tallest))
+
+    for (const { item, y } of column(entries, rowHeight.entry, tallest)) {
       nodes.push({
         id: entryKey(item),
         type: 'entry',
@@ -154,9 +179,11 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
           ...tcpPlacement(item),
         },
       })
+    }
   }
+
   byLayer.forEach((services, i) => {
-    for (const { item, y } of column(services, rowHeight.service, tallest))
+    for (const { item, y } of column(services, rowHeight.service, tallest)) {
       nodes.push({
         id: `svc:${item.name}`,
         type: 'service',
@@ -168,6 +195,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
           service: item,
         },
       })
+    }
   })
   const edges: Edge[] = [
     ...entries.flatMap((entry) => [
@@ -208,6 +236,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
                   sourceHandle: 'top-out',
                   targetHandle: 'bottom-in',
                 }
+
       return {
         id: `ref:${e.from}>${e.to}`,
         source: `svc:${e.from}`,
@@ -222,6 +251,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
       }
     }),
   ]
+
   return {
     nodes,
     edges,
@@ -278,6 +308,7 @@ export const overlayLive = (
     kind: (typeof inboundKinds)[number]
     groups: { service: string; groups: Group[] }[]
   }[] = []
+
   for (const kind of inboundKinds) {
     const groups = samples
       .map((s) => ({
@@ -285,14 +316,18 @@ export const overlayLive = (
         groups: s.connections.filter((c) => c.direction === 'in' && c.peer.kind === kind),
       }))
       .filter((g) => g.groups.length && serviceNode(g.service))
-    if (groups.length)
+
+    if (groups.length) {
       leftNodes.push({
         kind,
         groups,
       })
+    }
   }
+
   leftNodes.forEach(({ kind, groups }, i) => {
     const id = `live:in:${kind}`
+
     nodes.push({
       id,
       type: 'peer',
@@ -308,7 +343,8 @@ export const overlayLive = (
         lines: [],
       },
     })
-    for (const g of groups)
+
+    for (const g of groups) {
       edges.push({
         id: `${id}>${g.service}`,
         source: id,
@@ -321,17 +357,31 @@ export const overlayLive = (
           type: MarkerType.ArrowClosed,
         },
       })
+    }
   })
+
   for (const s of samples) {
     const from = serviceNode(s.service.name)
-    if (!from) continue
+
+    if (!from) {
+      continue
+    }
+
     const byPeer = new Map<string, Group[]>()
-    for (const c of s.connections)
-      if (c.direction === 'out' && c.peer.kind === 'service' && c.peer.service)
+
+    for (const c of s.connections) {
+      if (c.direction === 'out' && c.peer.kind === 'service' && c.peer.service) {
         byPeer.set(c.peer.service, [...(byPeer.get(c.peer.service) ?? []), c])
+      }
+    }
+
     for (const [peer, groups] of byPeer) {
       const to = serviceNode(peer)
-      if (!to || to === from) continue
+
+      if (!to || to === from) {
+        continue
+      }
+
       edges.push({
         id: `live:${s.service.name}>${peer}`,
         source: from.id,
@@ -346,6 +396,7 @@ export const overlayLive = (
       })
     }
   }
+
   const publics = samples.flatMap((s) =>
     s.connections
       .filter((c) => c.direction === 'out' && c.peer.kind === 'public')
@@ -356,6 +407,7 @@ export const overlayLive = (
       })),
   )
   let rightY = top
+
   if (publics.length) {
     const destinations = [
       ...new Map(
@@ -365,6 +417,7 @@ export const overlayLive = (
         ]),
       ).values(),
     ]
+
     nodes.push({
       id: 'live:public',
       type: 'peer',
@@ -383,8 +436,12 @@ export const overlayLive = (
       },
     })
     rightY += rowHeight.service
+
     for (const name of new Set(publics.map((p) => p.service))) {
-      if (!serviceNode(name)) continue
+      if (!serviceNode(name)) {
+        continue
+      }
+
       edges.push({
         id: `live:${name}>public`,
         source: `svc:${name}`,
@@ -399,6 +456,7 @@ export const overlayLive = (
       })
     }
   }
+
   const refused = samples.flatMap((s) =>
     s.refused.map((r) => ({
       service: s.service.name,
@@ -406,9 +464,11 @@ export const overlayLive = (
     })),
   )
   const paths = [...new Set(refused.map((x) => x.r.path))].sort()
+
   for (const path of paths) {
     const id = `live:blocked:${path}`
     const items = refused.filter((x) => x.r.path === path)
+
     nodes.push({
       id,
       type: 'peer',
@@ -425,9 +485,14 @@ export const overlayLive = (
       },
     })
     rightY += rowHeight.entry * 2
+
     for (const name of new Set(items.map((x) => x.service))) {
-      if (!serviceNode(name)) continue
+      if (!serviceNode(name)) {
+        continue
+      }
+
       const count = items.filter((x) => x.service === name).reduce((a, x) => a + x.r.count, 0)
+
       edges.push({
         id: `${id}<${name}`,
         source: `svc:${name}`,
@@ -441,6 +506,7 @@ export const overlayLive = (
       })
     }
   }
+
   return {
     nodes,
     edges,

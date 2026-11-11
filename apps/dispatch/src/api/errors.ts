@@ -82,6 +82,7 @@ export const apiErrorOf = (error: unknown) =>
 
 export const failureOf = (error: Error) => {
   const known = apiErrorOf(error)
+
   return {
     code: known?.code ?? 'INTERNAL_ERROR',
     explanation: error.message,
@@ -116,6 +117,7 @@ export const envelope = (error: ApiError, requestId: string) => ({
 export const stamped = (request: Request, response: Response, version: string) => {
   response.headers.set('x-request-id', requestIdOf(request))
   response.headers.set('x-stationly-version', version)
+
   return response
 }
 

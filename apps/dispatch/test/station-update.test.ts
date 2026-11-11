@@ -67,6 +67,7 @@ const issuePaths = (reply: { body: any }) =>
 describe('validation', () => {
   test('an empty body is refused', async () => {
     const reply = await patch({})
+
     assert.equal(reply.status, 400)
     assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
     assert.deepEqual(issuePaths(reply), ['/'])
@@ -76,6 +77,7 @@ describe('validation', () => {
     const reply = await patch({
       public_address: 'not-an-ip',
     })
+
     assert.equal(reply.status, 400)
     assert.deepEqual(issuePaths(reply), ['/public_address'])
   })
@@ -85,9 +87,11 @@ describe('validation', () => {
       const reply = await patch({
         concurrency_cap,
       })
+
       assert.equal(reply.status, 400, String(concurrency_cap))
       assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
     }
+
     assert.equal((await describeStation()).concurrency_cap, 2)
   })
 
@@ -118,6 +122,7 @@ describe('validation', () => {
         concurrency: 'skip',
       },
     })
+
     assert.equal(reply.status, 400)
     assert.deepEqual(issuePaths(reply), ['/sleep_schedule'])
   })
@@ -146,6 +151,7 @@ describe('validation', () => {
       },
       'pending',
     )
+
     assert.equal(reply.status, 400)
     assert.deepEqual(issuePaths(reply), ['/draining'])
     assert.equal(
@@ -165,6 +171,7 @@ describe('validation', () => {
         concurrency_cap: 3,
       },
     })
+
     assert.equal(reply.status, 403)
   })
 
@@ -175,6 +182,7 @@ describe('validation', () => {
       draining: false,
       intermittent: false,
     })
+
     assert.equal(reply.status, 200)
     assert.equal(
       rows(h, "select id from audit_event where action = 'station.update'").length,
@@ -198,6 +206,7 @@ const scopedReadToken = async () => {
       ],
     },
   })
+
   return minted.body.key as string
 }
 
@@ -206,10 +215,12 @@ describe('intermittent', () => {
     const reply = await patch({
       intermittent: true,
     })
+
     assert.equal(reply.status, 200, reply.text)
     assert.equal(reply.body.intermittent, true)
     assert.equal((await describeStation()).intermittent, true)
     const doc = await station.waitForGeneration((d) => d.station.intermittent === true)
+
     assert.equal(doc.station.intermittent, true)
   })
 
@@ -237,6 +248,7 @@ describe('intermittent', () => {
         intermittent: true,
       },
     })
+
     setStatus('asleep', added.body.station.id)
     const reply = await patch(
       {
@@ -244,6 +256,7 @@ describe('intermittent', () => {
       },
       'napper',
     )
+
     assert.equal(reply.status, 200, reply.text)
     assert.equal(reply.body.status, 'offline')
   })
@@ -254,6 +267,7 @@ describe('concurrency_cap', () => {
     const reply = await patch({
       concurrency_cap: 5,
     })
+
     assert.equal(reply.status, 200, reply.text)
     assert.equal(reply.body.concurrency_cap, 5)
     assert.equal(
@@ -288,14 +302,22 @@ describe('concurrency_cap', () => {
         }),
       ),
     )
-    for (const svc of created) await waitForDeployment(h, svc.deployments[0].id, 'active')
+
+    for (const svc of created) {
+      await waitForDeployment(h, svc.deployments[0].id, 'active')
+    }
+
     const seen = station.generations.slice(mark)
+
     assert.ok(seen.length > 0)
-    for (const doc of seen)
+
+    for (const doc of seen) {
       assert.ok(
         uncancelled(doc) <= 1,
         `a generation carried ${uncancelled(doc)} deployments without cancel`,
       )
+    }
+
     assert.ok(seen.some((d) => uncancelled(d) === 1))
   })
 
@@ -337,12 +359,15 @@ describe('draining', () => {
     const reply = await patch({
       draining: true,
     })
+
     assert.equal(reply.status, 200, reply.text)
     assert.equal(reply.body.draining, true)
     assert.equal(reply.body.status, 'online')
     const heartbeatsLater = Date.now() + 2500
+
     await station.waitFor(() => Date.now() > heartbeatsLater)
     const row = await describeStation()
+
     assert.deepEqual([row.status, row.draining], ['online', true])
     assert.equal(
       rows<{ draining: number }>(
@@ -357,6 +382,7 @@ describe('draining', () => {
         token: token(),
       })
     ).body.items.find((s: { id: string }) => s.id === station.stationId)
+
     assert.equal(listed.draining, true)
   })
 
@@ -365,6 +391,7 @@ describe('draining', () => {
       token: token(),
       body: {},
     })
+
     assert.equal(deploy.status, 503, deploy.text)
     assert.equal(deploy.body.error.code, 'STATION_OFFLINE')
     assert.equal(deploy.body.error.details.draining, true)
@@ -372,6 +399,7 @@ describe('draining', () => {
     const redeploy = await h.call('POST', `/v1/services/${svc.id}/redeploy`, {
       token: token(),
     })
+
     assert.equal(redeploy.body.error.code, 'STATION_OFFLINE')
     const created = await h.call('POST', `/v1/environments/${environmentId}/services`, {
       token: token(),
@@ -391,6 +419,7 @@ describe('draining', () => {
         deploy_on_create: true,
       },
     })
+
     assert.equal(created.status, 400, created.text)
     assert.deepEqual(issuePaths(created), ['/station_id'])
     assert.equal(rows(h, "select id from service where name = 'refused'").length, 0)
@@ -398,10 +427,12 @@ describe('draining', () => {
 
   test('services that are already running keep their current deployment and stay in the generation', async () => {
     const doc = station.generations.at(-1)!
+
     assert.ok(svc.id in doc.services)
     const fresh = await h.call('GET', `/v1/services/${svc.id}`, {
       token: token(),
     })
+
     assert.equal(fresh.body.desired_state, 'running')
   })
 
@@ -409,12 +440,14 @@ describe('draining', () => {
     const reply = await patch({
       draining: false,
     })
+
     assert.equal(reply.status, 200, reply.text)
     assert.deepEqual([reply.body.status, reply.body.draining], ['online', false])
     const deploy = await h.call('POST', `/v1/services/${svc.id}/deployments`, {
       token: token(),
       body: {},
     })
+
     assert.equal(deploy.status, 201, deploy.text)
   })
 })
@@ -427,6 +460,7 @@ describe('under platform.protected', () => {
         'platform.protected': true,
       },
     })
+
     assert.equal(set.status, 200, set.text)
   })
 
@@ -437,11 +471,13 @@ describe('under platform.protected', () => {
         'platform.protected': false,
       },
     })
+
     assert.equal(set.status, 200, set.text)
   })
 
   test('a token stages one entry per changed field and nothing applies', async () => {
     const before = await describeStation()
+
     assert.deepEqual(
       [before.concurrency_cap, before.intermittent, before.draining],
       [3, false, false],
@@ -451,6 +487,7 @@ describe('under platform.protected', () => {
       draining: true,
       intermittent: true,
     })
+
     assert.equal(reply.status, 202, reply.text)
     assert.equal(reply.body.status, 'staged')
     assert.equal(reply.body.environment_id, null)
@@ -459,6 +496,7 @@ describe('under platform.protected', () => {
         token: token(),
       })
     ).body
+
     assert.deepEqual(
       staged.changes.map((c: any) => [c.entity, c.path, c.before, c.after]),
       [
@@ -468,6 +506,7 @@ describe('under platform.protected', () => {
       ],
     )
     const after = await describeStation()
+
     assert.equal(after.concurrency_cap, before.concurrency_cap)
     assert.equal(after.draining, false)
   })
@@ -481,10 +520,13 @@ describe('under platform.protected', () => {
     const byToken = await h.call('POST', `/v1/staged-changes/${staged.id}/accept`, {
       token: token(),
     })
+
     assert.equal(byToken.body.error.code, 'PROTECTED_ENVIRONMENT')
     const accepted = await h.call('POST', `/v1/staged-changes/${staged.id}/accept`, human())
+
     assert.equal(accepted.status, 200, accepted.text)
     const row = await describeStation()
+
     assert.equal(row.concurrency_cap, 4)
     assert.equal(row.draining, true)
     assert.equal(row.intermittent, true)
@@ -503,6 +545,7 @@ describe('under platform.protected', () => {
       draining: false,
       concurrency_cap: 2,
     })
+
     assert.equal(reply.status, 202)
     const rejected = await h.call('POST', `/v1/staged-changes/${reply.body.id}/reject`, {
       ...human(),
@@ -510,8 +553,10 @@ describe('under platform.protected', () => {
         reason: 'no',
       },
     })
+
     assert.equal(rejected.status, 200)
     const row = await describeStation()
+
     assert.equal(row.draining, true)
     assert.equal(row.concurrency_cap, 4)
   })
@@ -526,8 +571,10 @@ describe('under platform.protected', () => {
       station.stationId,
       human(),
     )
+
     assert.equal(reply.status, 200, reply.text)
     const row = await describeStation()
+
     assert.deepEqual([row.draining, row.concurrency_cap, row.intermittent], [false, 2, false])
   })
 })
@@ -578,6 +625,7 @@ describe('a drain across a lost heartbeat', () => {
         name,
       },
     })
+
     keys = await enrollFakeStation(url, added.body.enroll_token as string)
     wanderer = await FakeStation.start(url, keys)
     h.fakeStations.push(wanderer)
@@ -591,6 +639,7 @@ describe('a drain across a lost heartbeat', () => {
       },
       name,
     )
+
     assert.equal(drained.status, 200, drained.text)
     await wanderer.close()
     backdate()
@@ -601,6 +650,7 @@ describe('a drain across a lost heartbeat', () => {
         token: token(),
       })
     ).body
+
     assert.deepEqual([whileOffline.status, whileOffline.draining], ['offline', true])
 
     wanderer = await FakeStation.start(url, keys)
@@ -611,11 +661,13 @@ describe('a drain across a lost heartbeat', () => {
         token: token(),
       })
     ).body
+
     assert.deepEqual([back.status, back.draining], ['online', true])
   })
 
   test('placement still refuses the station after it returns', async () => {
     const refused = await placeOnWanderer()
+
     assert.equal(refused.status, 400, refused.text)
     assert.deepEqual(issuePaths(refused), ['/station_id'])
     assert.match(refused.body.error.details.issues[0].message, /draining/)

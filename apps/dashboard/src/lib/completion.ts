@@ -13,7 +13,11 @@ const outcomes = new Map<string, Outcome>([
 export const completionOf = (event: Pick<Event, 'type' | 'subject' | 'payload'>) => {
   const outcome = outcomes.get(event.type)
   const number = event.payload.number
-  if (!outcome || event.subject.entity !== 'deployment' || typeof number !== 'number') return null
+
+  if (!outcome || event.subject.entity !== 'deployment' || typeof number !== 'number') {
+    return null
+  }
+
   return {
     deployment: event.subject.id,
     number,
@@ -24,8 +28,10 @@ export const completionOf = (event: Pick<Event, 'type' | 'subject' | 'payload'>)
 export const startedByAgent = (trigger: Deployment['trigger']) =>
   trigger.type === 'agent' || Boolean(trigger.actor && isAgent(trigger.actor))
 
+export const liveText = (service: string) => `${service} is live`
+
 export const completionText = ({ number, outcome }: Completion, service: string) => ({
-  title: outcome === 'active' ? `${service} is live` : `${service} failed to deploy`,
+  title: outcome === 'active' ? liveText(service) : `${service} failed to deploy`,
   description: `Deployment #${number}`,
   action: outcome === 'active' ? 'Open' : 'See why',
 })

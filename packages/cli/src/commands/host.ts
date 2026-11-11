@@ -2,16 +2,22 @@ import { execFile } from 'node:child_process'
 import { createConnection } from 'node:net'
 import { createInterface } from 'node:readline'
 
+import { Option } from '@commander-js/extra-typings'
+
 import {
+  adviseSandboxRuntime,
   dispatchAddress,
   rootSocketPath,
   rootSocketVersion,
+  sandboxRuntimeChoice,
+  sandboxRuntimeTradeoffs,
   stationdUnit,
   type RootSocketLineDoc,
   type RootSocketOp,
   type RootSocketParams,
   type RootSocketRequestDoc,
   type RootSocketResult,
+  type SandboxRuntimeAdviceDoc,
 } from '@stationly/protocol'
 
 import { action, type Program } from '../command.ts'
@@ -24,7 +30,7 @@ import {
   ipv4Problem,
   siblingSuggestion,
 } from '../hostnames.ts'
-import { ask, askSecret, confirm, interactive, need, readStdin } from '../prompt.ts'
+import { ask, askSecret, choose, confirm, interactive, need, readStdin } from '../prompt.ts'
 
 const stationdRefusal = () =>
   new Promise<string | null>((resolve) =>
@@ -35,7 +41,10 @@ const stationdRefusal = () =>
         timeout: 3000,
       },
       (error, stdout) => {
-        if (error) return resolve(null)
+        if (error) {
+          return resolve(null)
+        }
+
         resolve(
           stdout
             .split('\n')
@@ -54,6 +63,7 @@ const unreachable = async (path: string, reason: string) => {
   const fix = refusal
     ? `Fix the cause above and restart it: systemctl restart ${stationdUnit}; journalctl -u ${stationdUnit} has the full log.`
     : 'Run sly setup as root on the station host while stationd runs (or pass --socket).'
+
   return new Exit(exitCodes.connection, {
     error: {
       code: 'CONNECTION_FAILED',
@@ -72,6 +82,7 @@ export const rootSocketCall = <Op extends RootSocketOp>(
   new Promise<RootSocketResult<Op>>((resolve, reject) => {
     const id = `r${Date.now()}`
     const socket = createConnection(path)
+
     socket.once('error', (error) => void unreachable(path, error.message).then(reject))
     const request: RootSocketRequestDoc = {
       v: rootSocketVersion,
@@ -79,19 +90,33 @@ export const rootSocketCall = <Op extends RootSocketOp>(
       op,
       params,
     }
+
     socket.once('connect', () => socket.write(`${JSON.stringify(request)}\n`))
     const lines = createInterface({
       input: socket,
     })
+
     lines.on('error', () => {})
     lines.on('line', (text) => {
       const line = JSON.parse(text) as RootSocketLineDoc
-      if (line.id !== id) return
-      if (line.progress) return onProgress(line.progress.step, line.progress.detail ?? '')
-      if (line.ok === undefined) return
+
+      if (line.id !== id) {
+        return
+      }
+
+      if (line.progress) {
+        return onProgress(line.progress.step, line.progress.detail ?? '')
+      }
+
+      if (line.ok === undefined) {
+        return
+      }
+
       socket.end()
-      if (line.ok) resolve(line.result as RootSocketResult<Op>)
-      else
+
+      if (line.ok) {
+        resolve(line.result as RootSocketResult<Op>)
+      } else {
         reject(
           new Exit(exitCodes.api, {
             error: {
@@ -101,6 +126,7 @@ export const rootSocketCall = <Op extends RootSocketOp>(
             },
           }),
         )
+      }
     })
     lines.once('close', () =>
       reject(
@@ -148,32 +174,19 @@ const render = (r: RootSocketResult<'setup'>) =>
 
 const cancelled = () => usage('Setup was cancelled; nothing was created.', 'Run sly setup again.')
 
-const askUntil = async (
-  question: string,
-  valid: (value: string) => string | null,
-  fallback = '',
-) => {
-  for (;;) {
-    const value = (await ask(question, fallback)).trim()
-    const problem = valid(value)
-    if (!problem) return value
-    process.stderr.write(`  ${problem}\n`)
-  }
-}
-
 const emailProblem = (value: string) =>
   /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value) ? null : 'that is not an email address'
 
 const askPassword = async () => {
-  for (;;) {
-    const password = await askSecret(`admin password (${minPassword} characters or more)`)
-    if (password.length < minPassword) {
-      process.stderr.write(`  the password needs at least ${minPassword} characters\n`)
-      continue
-    }
-    if ((await askSecret('repeat the password')) === password) return password
-    process.stderr.write('  the two passwords differ\n')
-  }
+  const password = await askSecret(`admin password (${minPassword} characters or more)`, (v) =>
+    v.length < minPassword ? `the password needs at least ${minPassword} characters` : null,
+  )
+
+  await askSecret('repeat the password', (v) =>
+    v === password ? null : 'the two passwords differ',
+  )
+
+  return password
 }
 
 const hostnamePair = async (
@@ -185,9 +198,9 @@ const hostnamePair = async (
     const a = (
       api ??
       (tty
-        ? await askUntil('API hostname (for example api.example.com)', (v) =>
-            v ? null : 'an API hostname is required',
-          )
+        ? await ask('API hostname (for example api.example.com)', {
+            valid: (v) => (v ? null : 'an API hostname is required'),
+          })
         : await need(undefined, {
             what: 'API hostname',
             flag: '--api-host, or --no-domain',
@@ -196,24 +209,26 @@ const hostnamePair = async (
     const d = (
       dashboard ??
       (tty
-        ? await askUntil(
-            'dashboard hostname',
-            (v) => (v ? null : 'a dashboard hostname is required'),
-            siblingSuggestion(a, 'dash'),
-          )
+        ? await ask('dashboard hostname', {
+            valid: (v) => (v ? null : 'a dashboard hostname is required'),
+            fallback: siblingSuggestion(a, 'dash'),
+          })
         : await need(undefined, {
             what: 'dashboard hostname',
             flag: '--dashboard-host',
           }))
     ).toLowerCase()
     const check = checkPair(a, d)
-    if (check.ok)
+
+    if (check.ok) {
       return {
         api: a,
         dashboard: d,
         parent: check.parent,
       }
-    if (!tty || (api && dashboard))
+    }
+
+    if (!tty || (api && dashboard)) {
       throw new Exit(exitCodes.api, {
         error: {
           code: 'HOSTNAME_DOMAIN_MISMATCH',
@@ -221,6 +236,8 @@ const hostnamePair = async (
           fix: 'Pass an API and a dashboard hostname under one registrable domain, or --no-domain.',
         },
       })
+    }
+
     process.stderr.write(`  ${check.reason}\n`)
     api = undefined
     dashboard = undefined
@@ -234,37 +251,46 @@ const litestreamFrom = async (
   const bucket =
     options.litestreamBucket ??
     (tty
-      ? await askUntil(
-          'Litestream bucket for an off-host copy of Dispatch (optional, Enter to skip)',
-          (v) =>
+      ? await ask('Litestream bucket for an off-host copy of Dispatch (optional, Enter to skip)', {
+          valid: (v) =>
             !v || bucketName.test(v)
               ? null
               : 'a bucket name is 3 to 63 lowercase letters, digits, dots or dashes',
-        )
+        })
       : '')
-  if (!bucket) return null
-  if (!bucketName.test(bucket))
+
+  if (!bucket) {
+    return null
+  }
+
+  if (!bucketName.test(bucket)) {
     throw usage(
       `${bucket} is not a bucket name.`,
       'Pass a bucket name of 3 to 63 lowercase letters, digits, dots or dashes.',
     )
+  }
+
   const endpoint =
     options.litestreamEndpoint ??
     (tty
-      ? await askUntil(
+      ? await ask(
           'S3 endpoint URL (Enter for AWS S3; R2 is https://<account>.r2.cloudflarestorage.com)',
-          endpointProblem,
+          {
+            valid: endpointProblem,
+          },
         )
       : '')
   const bad = endpointProblem(endpoint)
-  if (bad)
+
+  if (bad) {
     throw usage(
       `${endpoint} is not a usable endpoint: ${bad}.`,
       'Pass --litestream-endpoint https://... (or http:// on a private address).',
     )
+  }
+
   const access_key =
     options.litestreamAccessKey ??
-    env.LITESTREAM_ACCESS_KEY_ID ??
     (await need(undefined, {
       what: 'bucket access key id',
       flag: '--litestream-access-key or LITESTREAM_ACCESS_KEY_ID',
@@ -276,6 +302,7 @@ const litestreamFrom = async (
       flag: 'LITESTREAM_SECRET_ACCESS_KEY',
       secret: true,
     }))
+
   return {
     bucket,
     endpoint,
@@ -290,49 +317,138 @@ const publicAddressFrom = async (
   detect: () => Promise<RootSocketResult<'public_address.detect'>>,
 ) => {
   const given = options.publicAddress
-  if (given && options.detectPublicAddress)
-    throw usage(
-      '--public-address and --detect-public-address exclude each other.',
-      'Pass one of them.',
-    )
+
   if (given) {
     const problem = ipv4Problem(given)
-    if (problem)
+
+    if (problem) {
       throw usage(
         `${given}: ${problem}.`,
         "Pass --public-address with the host's public IPv4 address.",
       )
+    }
+
     return given
   }
+
   if (options.detectPublicAddress) {
     const found = await detect()
-    if (!found.address || !found.public)
+
+    if (!found.address || !found.public) {
       throw usage(
         found.address
           ? `${found.interface} has ${found.address}, which is not a public address.`
           : `no address detected: ${found.reason ?? 'unknown reason'}.`,
         'Pass --public-address with the address the internet reaches this host on.',
       )
+    }
+
     return found.address
   }
-  if (!tty) return undefined
+
+  if (!tty) {
+    return undefined
+  }
+
   const found = await detect()
-  if (found.address && found.public)
+
+  if (found.address && found.public) {
     process.stderr.write(
       `  the default-route interface ${found.interface} has the public address ${found.address}\n`,
     )
-  else
+  } else {
     process.stderr.write(
       `  ${found.address ? `the default-route interface ${found.interface} has ${found.address}, which is not a public address (private, CGNAT or reserved)` : `no address detected (${found.reason ?? 'no reason given'})`}\n`,
     )
-  const entered = await askUntil(
+  }
+
+  const entered = await ask(
     found.address && found.public
       ? 'station public IPv4 address (Enter to accept, or type another)'
       : 'station public IPv4 address (Enter to skip)',
-    (v) => (!v ? null : ipv4Problem(v)),
-    found.address && found.public ? found.address : '',
+    {
+      valid: (v) => (!v ? null : ipv4Problem(v)),
+      fallback: found.address && found.public ? found.address : '',
+    },
   )
+
   return entered || undefined
+}
+
+type SandboxRuntime = NonNullable<RootSocketParams<'setup'>['sandbox_runtime']>
+
+const runtimeLabel = (runtime: keyof typeof sandboxRuntimeTradeoffs) =>
+  sandboxRuntimeTradeoffs[runtime].label
+
+const tradeoffText = (advice: SandboxRuntimeAdviceDoc) =>
+  [
+    '',
+    'Sandbox runtime',
+    ...advice.reasons.map((reason) => `  ${reason}`),
+    ...advice.options.flatMap((option) => [
+      '',
+      `  ${[
+        runtimeLabel(option.runtime),
+        option.recommended ? 'recommended for this host' : null,
+        option.installed ? null : 'not installed in this release',
+      ]
+        .filter((part) => part !== null)
+        .join(', ')}`,
+      ...option.pros.map((pro) => `    + ${pro}`),
+      ...option.cons.map((con) => `    - ${con}`),
+    ]),
+    '',
+  ].join('\n') + '\n'
+
+const sandboxRuntimeFrom = async (
+  given: string | undefined,
+  tty: boolean,
+  probe: RootSocketResult<'host.probe'>,
+): Promise<SandboxRuntime | undefined> => {
+  const offered = probe.runtimes
+
+  if (given !== undefined) {
+    if (!(offered as string[]).includes(given)) {
+      throw usage(
+        `This host does not offer the sandbox runtime ${given}.`,
+        offered.length
+          ? `Pass --sandbox-runtime with one of ${offered.join(', ')}.`
+          : 'Leave out --sandbox-runtime; this host runs no sandboxes.',
+      )
+    }
+
+    return given as SandboxRuntime
+  }
+
+  const advice = adviseSandboxRuntime(probe.host, offered)
+
+  if (!advice) {
+    return undefined
+  }
+
+  if (advice.options.length <= 1) {
+    process.stderr.write(`${advice.reasons[0]}\n`)
+
+    return undefined
+  }
+
+  process.stderr.write(tradeoffText(advice))
+
+  if (!tty || !sandboxRuntimeChoice(advice)) {
+    return undefined
+  }
+
+  return choose(
+    'Sandbox runtime',
+    advice.options
+      .filter((option) => option.installed)
+      .map((option) => ({
+        value: option.runtime as SandboxRuntime,
+        label: runtimeLabel(option.runtime),
+        hint: option.recommended ? 'recommended' : undefined,
+      })),
+    advice.default,
+  )
 }
 
 export const hostCommands = (program: Program) => {
@@ -349,9 +465,15 @@ export const hostCommands = (program: Program) => {
     .option('--dashboard-host <host>', 'dashboard hostname (hostnames.dashboard)')
     .option('--no-domain', 'skip the hostnames; Dispatch stays on the loopback publish')
     .option('--public-address <ipv4>', "the station's public IPv4 address (station.public_address)")
+    .addOption(
+      new Option(
+        '--detect-public-address',
+        'use the IPv4 address of the default-route interface when it is public; no lookup service is contacted',
+      ).conflicts('publicAddress'),
+    )
     .option(
-      '--detect-public-address',
-      'use the IPv4 address of the default-route interface when it is public; no lookup service is contacted',
+      '--sandbox-runtime <runtime>',
+      'the runtime sandboxes on this station use by default; asked only when the host offers more than one',
     )
     .option(
       '--litestream-bucket <bucket>',
@@ -361,9 +483,11 @@ export const hostCommands = (program: Program) => {
       '--litestream-endpoint <url>',
       'S3-compatible endpoint of the bucket: https, or http on a private address (default AWS S3)',
     )
-    .option(
-      '--litestream-access-key <id>',
-      'bucket access key id (or LITESTREAM_ACCESS_KEY_ID); the secret comes from LITESTREAM_SECRET_ACCESS_KEY',
+    .addOption(
+      new Option(
+        '--litestream-access-key <id>',
+        'bucket access key id; the secret comes from LITESTREAM_SECRET_ACCESS_KEY',
+      ).env('LITESTREAM_ACCESS_KEY_ID'),
     )
     .action(
       action(async (options) => {
@@ -376,35 +500,50 @@ export const hostCommands = (program: Program) => {
             (!options.domain || (options.apiHost && options.dashboardHost)) &&
             (options.publicAddress || options.detectPublicAddress)
           )
-        if (prompted)
+
+        if (prompted) {
           process.stderr.write(
             'Stationly setup: this creates the single admin and puts Dispatch on its hostnames. Ctrl-C cancels; nothing is created before the last question.\n\n',
           )
+        }
+
         const email = (
           options.email ??
           (tty
-            ? await askUntil('admin email', emailProblem)
+            ? await ask('admin email', {
+                valid: emailProblem,
+              })
             : await need(undefined, {
                 what: 'admin email',
                 flag: '--email',
               }))
         ).trim()
-        if (emailProblem(email))
+
+        if (emailProblem(email)) {
           throw usage(`${email} is not an email address.`, 'Pass --email with the admin address.')
+        }
+
         let password: string
-        if (options.passwordStdin) password = await readStdin()
-        else if (tty) password = await askPassword()
-        else
+
+        if (options.passwordStdin) {
+          password = await readStdin()
+        } else if (tty) {
+          password = await askPassword()
+        } else {
           password = await need(undefined, {
             what: 'admin password',
             flag: '--password-stdin',
             secret: true,
           })
-        if (password.length < minPassword)
+        }
+
+        if (password.length < minPassword) {
           throw usage(
             `The password needs at least ${minPassword} characters.`,
             'Choose a longer password.',
           )
+        }
+
         const domain = !options.domain
           ? false
           : options.apiHost || options.dashboardHost || !tty
@@ -416,12 +555,15 @@ export const hostCommands = (program: Program) => {
         const acme =
           options.acmeEmail ??
           (tty
-            ? await askUntil(
+            ? await ask(
                 pair
                   ? "ACME email for Let's Encrypt"
                   : "ACME email for Let's Encrypt (optional, Enter to skip)",
-                (v) => ((!v && !pair) || !emailProblem(v) ? null : 'that is not an email address'),
-                pair ? email : '',
+                {
+                  valid: (v) =>
+                    (!v && !pair) || !emailProblem(v) ? null : 'that is not an email address',
+                  fallback: pair ? email : '',
+                },
               )
             : pair
               ? await need(undefined, {
@@ -432,6 +574,11 @@ export const hostCommands = (program: Program) => {
         const detect = () => rootSocketCall(options.socket, 'public_address.detect', {}, () => {})
         const publicAddress = await publicAddressFrom(options, tty, detect)
         const litestream = await litestreamFrom(options, tty)
+        const probe = await rootSocketCall(options.socket, 'host.probe', {}, () => {})
+        const sandboxRuntime = await sandboxRuntimeFrom(options.sandboxRuntime, tty, probe)
+        const runtimeShown =
+          sandboxRuntime ?? adviseSandboxRuntime(probe.host, probe.runtimes)?.default
+
         if (prompted) {
           process.stderr.write(
             [
@@ -444,13 +591,18 @@ export const hostCommands = (program: Program) => {
               `  ACME email     ${acme || 'none'}`,
               `  public address ${publicAddress ?? 'none (set it later with sly stations update)'}`,
               `  Litestream     ${litestream ? `${litestream.bucket}${litestream.endpoint ? ` at ${litestream.endpoint}` : ''}` : 'none'}`,
+              `  sandboxes      ${runtimeShown ? runtimeLabel(runtimeShown) : 'none on this host'}`,
               '',
             ]
               .filter((line) => line !== null)
               .join('\n') + '\n',
           )
-          if (!(await confirm('Create the admin and apply these settings?'))) throw cancelled()
+
+          if (!(await confirm('Create the admin and apply these settings?'))) {
+            throw cancelled()
+          }
         }
+
         const params: RootSocketParams<'setup'> = {
           email,
           password,
@@ -472,6 +624,11 @@ export const hostCommands = (program: Program) => {
                 public_address: publicAddress,
               }
             : {}),
+          ...(sandboxRuntime
+            ? {
+                sandbox_runtime: sandboxRuntime,
+              }
+            : {}),
           ...(litestream
             ? {
                 litestream,
@@ -479,21 +636,28 @@ export const hostCommands = (program: Program) => {
             : {}),
         }
         const result = await rootSocketCall(options.socket, 'setup', params, (step, detail) => {
-          if (!options.json) process.stderr.write(`${step}: ${detail}\n`)
+          if (!options.json) {
+            process.stderr.write(`${step}: ${detail}\n`)
+          }
         })
+
         process.stdout.write(
           options.json ? `${JSON.stringify(result, null, 2)}\n` : `${render(result)}\n`,
         )
+
         if (!options.json && interactive()) {
           const stored = await need(undefined, {
             what: 'type "stored" once the recovery key is saved',
             flag: '--json',
           })
-          if (stored !== 'stored')
+
+          if (stored !== 'stored') {
             process.stderr.write(
               'store the recovery key before closing this terminal; without it a restore marks every secret needs_reentry\n',
             )
+          }
         }
+
         return exitCodes.ok
       }),
     )
@@ -505,6 +669,7 @@ export const adminHostCommands = (program: Program) => {
     .description(
       "Host-only administration, as root on the station host through stationd's root socket",
     )
+
   admin
     .command('recovery-key')
     .description('Print the recovery key again; the display is audited')
@@ -517,6 +682,7 @@ export const adminHostCommands = (program: Program) => {
           {},
           () => {},
         )
+
         process.stdout.write(
           options.json
             ? `${JSON.stringify(
@@ -528,10 +694,13 @@ export const adminHostCommands = (program: Program) => {
               )}\n`
             : `${recovery_key}\n`,
         )
-        if (!options.json)
+
+        if (!options.json) {
           process.stderr.write(
             'this display was recorded in the audit log; store the key offline\n',
           )
+        }
+
         return exitCodes.ok
       }),
     )

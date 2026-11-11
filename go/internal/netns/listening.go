@@ -17,6 +17,8 @@ import (
 
 const SocketsMax = 32
 
+var dockerResolver = netip.MustParseAddr("127.0.0.11")
+
 type Socket struct {
 	Address netip.Addr
 	Port    uint16
@@ -84,6 +86,9 @@ func listeningFrom(open func(name string) (io.ReadCloser, error), port uint16, p
 		}
 		read++
 		for _, s := range socks {
+			if s.Address == dockerResolver {
+				continue
+			}
 			if !seen[s] {
 				seen[s] = true
 				out = append(out, s)

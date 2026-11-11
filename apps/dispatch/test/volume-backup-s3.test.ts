@@ -60,8 +60,10 @@ describe('S3 volume backup targets', () => {
           type,
           body,
         })
+
         if (type === 'volume.backup.delete') {
           const items = (body as MessageBody<'volume.backup.delete'>).items
+
           return Promise.resolve({
             body: {
               items: items.map((i) => ({
@@ -78,6 +80,7 @@ describe('S3 volume backup targets', () => {
             },
           })
         }
+
         return Promise.resolve({
           body: {},
         })
@@ -116,10 +119,12 @@ describe('S3 volume backup targets', () => {
     seedLockfile(h)
     const first = await startFakeStation(h, 'one')
     const second = await startFakeStation(h, 'two')
+
     stationId = first.stationId
     otherStationId = second.stationId
     connected.add(stationId).add(otherStationId)
     const project = await createProject(h, 'shop')
+
     projectId = project.id
     const db = await createService(h, project.default_environment_id, {
       name: 'db',
@@ -135,6 +140,7 @@ describe('S3 volume backup targets', () => {
         station_id: stationId,
       },
     })
+
     volumeId = (
       h.db
         .select()
@@ -163,6 +169,7 @@ describe('S3 volume backup targets', () => {
     ]) {
       assert.equal(endpointIssue(ok), null, ok)
     }
+
     for (const bad of [
       'http://8.8.8.8:9000',
       'http://172.32.0.1',
@@ -188,6 +195,7 @@ describe('S3 volume backup targets', () => {
       }),
       [],
     )
+
     for (const bad of [
       {
         bucket: 'Upper',
@@ -235,9 +243,11 @@ describe('S3 volume backup targets', () => {
       ...target,
       endpoint: 'http://8.8.8.8:9000',
     })
+
     assert.equal(refused.status, 400, refused.text)
     assert.match(refused.text, /private or loopback/)
     const accepted = await patch(target)
+
     assert.ok(accepted.status === 200 || accepted.status === 202, accepted.text)
   })
 
@@ -246,6 +256,7 @@ describe('S3 volume backup targets', () => {
       ...target,
       credentials_variable: 'NOT_THERE',
     }
+
     assert.throws(
       () => backupPlan(h.db, volumeId, missing),
       (e: unknown) =>
@@ -279,11 +290,13 @@ describe('S3 volume backup targets', () => {
       trigger: 'manual',
       actor,
     })
+
     assert.deepEqual(
       sent.map((s) => s.type),
       ['secrets.deliver', 'volume.backup'],
     )
     const deliver = sent[0]!.body as MessageBody<'secrets.deliver'>
+
     assert.equal(deliver.purpose, 'backup')
     assert.deepEqual(deliver.target, {
       snapshot_id: started.snapshot.id,
@@ -291,11 +304,13 @@ describe('S3 volume backup targets', () => {
     const decoded = Object.fromEntries(
       deliver.values.map((v) => [v.key, Buffer.from(v.value, 'base64url').toString('utf8')]),
     )
+
     assert.deepEqual(decoded, {
       STATIONLY_S3_ACCESS_KEY_ID: accessKey,
       STATIONLY_S3_SECRET_ACCESS_KEY: secretKey,
     })
     const job = sent[1]!.body as MessageBody<'volume.backup'>
+
     assert.deepEqual(job.target, {
       type: 's3',
       path: null,
@@ -315,6 +330,7 @@ describe('S3 volume backup targets', () => {
       h.db.select().from(event).all(),
       started,
     ])
+
     assert.ok(!everything.includes(secretKey), 'the secret key reached a stored row or a response')
     assert.ok(
       !everything.includes(accessKey),
@@ -325,6 +341,7 @@ describe('S3 volume backup targets', () => {
       .from(audit_event)
       .all()
       .filter((a) => a.action === 'secret.decrypt' && a.purpose === 'backup')
+
     assert.equal(decrypt.length, 1)
     assert.equal((decrypt[0]!.target as { id: string }).id, started.snapshot.id)
   })
@@ -333,6 +350,7 @@ describe('S3 volume backup targets', () => {
     setCredentials('no-colon-here')
     sent.length = 0
     const before = h.db.select().from(volume_snapshot).all().length
+
     await assert.rejects(
       startBackup(deps(), volumeId, {
         quiesce: false,
@@ -351,6 +369,7 @@ describe('S3 volume backup targets', () => {
 
   test('a station that refuses the job marks nothing complete and the error never shows the credentials', async () => {
     const failing = deps()
+
     ;(failing.stations as unknown as { ask: unknown }).ask = (_s: string, type: string) =>
       type === 'volume.backup'
         ? Promise.reject(
@@ -373,6 +392,7 @@ describe('S3 volume backup targets', () => {
 
   const completeSnapshots = (count: number, stationFor: string) => {
     const ids: string[] = []
+
     h.db
       .update(volume_snapshot)
       .set({
@@ -380,10 +400,13 @@ describe('S3 volume backup targets', () => {
       })
       .where(eq(volume_snapshot.volume_id, volumeId))
       .run()
+
     for (let i = 0; i < count; i++) {
       const id = newId('volume_snapshot')
+
       ids.push(id)
       const name = `${volumeId}-2026110${i + 1}T000000Z`
+
       h.db
         .insert(volume_snapshot)
         .values({
@@ -406,23 +429,28 @@ describe('S3 volume backup targets', () => {
         })
         .run()
     }
+
     return ids
   }
 
   test("retention keeps the newest volume_backup.keep and asks the volume's station to delete the older objects with credentials for each", async () => {
     const ids = completeSnapshots(4, otherStationId)
+
     setSetting('volume_backup.keep', 2)
     sent.length = 0
     const result = await pruneBackups(deps(), volumeId)
+
     assert.deepEqual(result.expired.sort(), [ids[0]!, ids[1]!].sort())
     assert.equal(result.kept, 2)
     const types = sent.map((s) => s.type)
+
     assert.deepEqual(types, ['secrets.deliver', 'secrets.deliver', 'volume.backup.delete'])
     assert.ok(
       sent.every((s) => s.station === stationId),
       "an S3 object is deleted through the volume's own station, not the station that wrote it",
     )
     const del = sent[2]!.body as MessageBody<'volume.backup.delete'>
+
     assert.deepEqual(del.items.map((i) => i.snapshot_id).sort(), [ids[0]!, ids[1]!].sort())
     assert.ok(
       del.items.every(
@@ -433,6 +461,7 @@ describe('S3 volume backup targets', () => {
       ),
     )
     const delivered = sent.slice(0, 2).map((s) => (s.body as MessageBody<'secrets.deliver'>).target)
+
     assert.deepEqual(
       delivered.map((t) => (t as { snapshot_id: string }).snapshot_id).sort(),
       [ids[0]!, ids[1]!].sort(),
@@ -451,9 +480,11 @@ describe('S3 volume backup targets', () => {
 
   test('an object the bucket refuses to delete stays complete and is retried at the next backup', async () => {
     const ids = completeSnapshots(3, stationId)
+
     setSetting('volume_backup.keep', 1)
     failDelete = new Set([ids[0]!])
     const result = await pruneBackups(deps(), volumeId)
+
     assert.deepEqual(result.expired, [ids[1]!])
     assert.equal(
       h.db.select().from(volume_snapshot).where(eq(volume_snapshot.id, ids[0]!)).get()!.status,
@@ -461,17 +492,20 @@ describe('S3 volume backup targets', () => {
     )
     failDelete = new Set()
     const again = await pruneBackups(deps(), volumeId)
+
     assert.deepEqual(again.expired, [ids[0]!])
   })
 
   test('retention with a missing credentials variable expires nothing and sends no delete', async () => {
     const ids = completeSnapshots(3, stationId)
+
     setSetting('volume_backup.keep', 1)
     const original = h.db
       .select()
       .from(volume_snapshot)
       .where(eq(volume_snapshot.id, ids[0]!))
       .get()!
+
     h.db
       .update(volume_snapshot)
       .set({
@@ -494,14 +528,17 @@ describe('S3 volume backup targets', () => {
       .run()
     sent.length = 0
     const result = await pruneBackups(deps(), volumeId)
+
     assert.deepEqual(result.expired, [])
     assert.deepEqual(sent, [])
   })
 
   test('a restore from an S3 backup can name another station and delivers the credentials for that job', async () => {
     const ids = completeSnapshots(1, stationId)
+
     sent.length = 0
     const restored = await restoreBackup(deps(), volumeId, ids[0]!, actor, otherStationId)
+
     assert.equal(restored.station_id, otherStationId)
     assert.deepEqual(
       sent.map((s) => [s.station, s.type]),
@@ -511,9 +548,11 @@ describe('S3 volume backup targets', () => {
       ],
     )
     const job = sent[1]!.body as MessageBody<'volume.restore'>
+
     assert.equal(job.target.type, 's3')
     assert.equal(job.sha256, 'a'.repeat(64))
     const row = h.db.select().from(volume).where(eq(volume.id, restored.volume_id)).get()!
+
     assert.equal(row.station_id, otherStationId)
     assert.equal(row.status, 'retained')
     assert.equal(row.project_id, projectId)
@@ -521,6 +560,7 @@ describe('S3 volume backup targets', () => {
 
   test('a restore of a directory backup on another station is refused', async () => {
     const id = newId('volume_snapshot')
+
     h.db
       .insert(volume_snapshot)
       .values({
@@ -555,6 +595,7 @@ describe('S3 volume backup targets', () => {
 
   test('a restore on a revoked or unknown station is refused', async () => {
     const ids = completeSnapshots(1, stationId)
+
     await assert.rejects(
       restoreBackup(deps(), volumeId, ids[0]!, actor, 'stn_00000000000000000000000000'),
       (e: unknown) => e instanceof BackupError && e.code === 'NOT_FOUND',

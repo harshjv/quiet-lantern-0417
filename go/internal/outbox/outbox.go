@@ -30,7 +30,7 @@ type Record struct {
 	Seq        int             `json:"seq"`
 	Type       string          `json:"type"`
 	Generation int             `json:"generation"`
-	At         string          `json:"at"`
+	At         time.Time       `json:"at"`
 	Body       json.RawMessage `json:"body"`
 }
 
@@ -145,7 +145,8 @@ func (o *Outbox) Append(typ string, generation int, body any) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	r := Record{Seq: seq, Type: typ, Generation: generation, At: time.Now().UTC().Format(time.RFC3339Nano), Body: withSeq}
+	now := time.Now().UTC()
+	r := Record{Seq: seq, Type: typ, Generation: generation, At: now, Body: withSeq}
 	line, err := json.Marshal(r)
 	if err != nil {
 		return Record{}, err
@@ -160,7 +161,7 @@ func (o *Outbox) Append(typ string, generation int, body any) (Record, error) {
 	o.next++
 	o.pending = append(o.pending, r)
 	o.size += int64(len(line))
-	o.enforceBound()
+	o.enforceBound(now)
 	select {
 	case o.notify <- struct{}{}:
 	default:
@@ -168,16 +169,16 @@ func (o *Outbox) Append(typ string, generation int, body any) (Record, error) {
 	return r, nil
 }
 
-func (o *Outbox) enforceBound() {
-	cutoff := time.Now().Add(-boundAge).UTC().Format(time.RFC3339Nano)
-	if o.size <= boundBytes && (len(o.pending) == 0 || o.pending[0].At >= cutoff) {
+func (o *Outbox) enforceBound(now time.Time) {
+	cutoff := now.Add(-boundAge)
+	if o.size <= boundBytes && (len(o.pending) == 0 || !o.pending[0].At.Before(cutoff)) {
 		return
 	}
 	var dropped []Record
 	kept := o.pending[:0]
 	over := o.size
 	for _, r := range o.pending {
-		if (over > boundBytes || r.At < cutoff) && slices.Contains(droppable, r.Type) {
+		if (over > boundBytes || r.At.Before(cutoff)) && slices.Contains(droppable, r.Type) {
 			dropped = append(dropped, r)
 			over -= int64(len(r.Body))
 			continue
@@ -195,7 +196,7 @@ func (o *Outbox) enforceBound() {
 		}
 	}
 	gap, _ := json.Marshal(map[string]any{"seq": o.next, "from_seq": dropped[0].Seq, "to_seq": dropped[len(dropped)-1].Seq, "types": types})
-	r := Record{Seq: o.next, Type: "outbox.gap", At: time.Now().UTC().Format(time.RFC3339Nano), Body: gap}
+	r := Record{Seq: o.next, Type: "outbox.gap", At: now, Body: gap}
 	line, _ := json.Marshal(r)
 	if _, err := o.file.Write(append(line, '\n')); err == nil && o.file.Sync() == nil {
 		o.next++

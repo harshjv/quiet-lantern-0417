@@ -55,6 +55,7 @@ describe('creating a service from an image', () => {
       ],
       deploy_on_create: false,
     })
+
     assert.equal(reply.status, 201)
     assert.deepEqual(reply.body.source, {
       type: 'image',
@@ -62,6 +63,7 @@ describe('creating a service from an image', () => {
       digest,
     })
     const pinned = reply.body.warnings.find((w: { code: string }) => w.code === 'IMAGE_PINNED')
+
     assert.match(pinned.explanation, /linux\/arm64, linux\/amd64/)
     assert.match(pinned.explanation, new RegExp(`docker.io/library/nginx@${digest}`))
   })
@@ -82,6 +84,7 @@ describe('creating a service from an image', () => {
         },
       ],
     })
+
     assert.equal(reply.status, 201)
     assert.equal(reply.body.deployments[0].image_ref, `docker.io/library/redis@${digest}`)
   })
@@ -102,6 +105,7 @@ describe('creating a service from an image', () => {
       ],
       deploy_on_create: false,
     })
+
     assert.equal(reply.status, 201)
     assert.equal(reply.body.source.digest, digest)
   })
@@ -130,14 +134,20 @@ describe('a failed lookup answers at request time and creates nothing', () => {
       ],
       deploy_on_create: false,
     })
+
     assert.equal(reply.status, status)
     assert.equal(reply.body.error.code, code)
-    if (reason) assert.equal(reply.body.error.details.reason, reason)
+
+    if (reason) {
+      assert.equal(reply.body.error.details.reason, reason)
+    }
+
     assert.equal(servicesNamed().length, before)
     assert.equal(
       servicesNamed().some((s) => s.name === name),
       false,
     )
+
     return reply.body.error
   }
 
@@ -183,6 +193,7 @@ describe('a failed lookup answers at request time and creates nothing', () => {
       },
     )
     const error = await refuses('busy', 'busy:1', 'SOURCE_UNREACHABLE', 'rate_limited', 422)
+
     assert.equal(error.details.retry_after_s, 90)
   })
 
@@ -193,6 +204,7 @@ describe('a failed lookup answers at request time and creates nothing', () => {
 
   test('a manifest whose sha256 differs from the digest in ref is digest_mismatch', async () => {
     const claimed = `sha256:${'a'.repeat(64)}`
+
     registry.fail(`tampered@${claimed}`, 200, {
       schemaVersion: 2,
     })
@@ -217,6 +229,7 @@ describe('a failed lookup answers at request time and creates nothing', () => {
       'platform_missing',
       422,
     )
+
     assert.deepEqual(error.details.platforms, ['linux/amd64'])
   })
 
@@ -245,6 +258,7 @@ describe('keeping and refreshing the digest', () => {
         },
       ],
     })
+
     serviceId = created.body.id
     await waitForDeployment(h, created.body.deployments[0].id, 'active')
     second = registry.publish('app:stable')
@@ -256,6 +270,7 @@ describe('keeping and refreshing the digest', () => {
       token: token(),
       body: {},
     })
+
     assert.equal(reply.status, 201)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${first}`)
     assert.equal((await getService(serviceId)).source.digest, first)
@@ -266,6 +281,7 @@ describe('keeping and refreshing the digest', () => {
     const reply = await h.call('POST', `/v1/services/${serviceId}/restart`, {
       token: token(),
     })
+
     assert.equal(reply.status, 200)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${first}`)
     await waitForDeployment(h, reply.body.id, 'active')
@@ -283,6 +299,7 @@ describe('keeping and refreshing the digest', () => {
         deploy: false,
       },
     })
+
     assert.equal(reply.status, 200)
     assert.equal(reply.body.source.digest, first)
     assert.equal(registry.manifestRequests().length, seen)
@@ -293,6 +310,7 @@ describe('keeping and refreshing the digest', () => {
       token: token(),
       body: {},
     })
+
     assert.equal(reply.status, 201)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${second}`)
     assert.equal((await getService(serviceId)).source.digest, second)
@@ -306,6 +324,7 @@ describe('keeping and refreshing the digest', () => {
       token: token(),
       body: {},
     })
+
     assert.equal(reply.body.image_ref, `docker.io/library/app@${second}`)
     await waitForDeployment(h, reply.body.id, 'active')
   })
@@ -321,6 +340,7 @@ describe('keeping and refreshing the digest', () => {
         deployment_id: oldest.id,
       },
     })
+
     assert.equal(reply.status, 201)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${first}`)
     assert.equal((await getService(serviceId)).source.digest, first)

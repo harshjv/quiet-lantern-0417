@@ -40,7 +40,7 @@ func cutoverStation(t *testing.T) (*Station, *rollout) {
 		otherEnvSbx: joined(betaEnv),
 		stoppedSbx:  joined(alphaEnv),
 	}
-	s.sbx = newSandboxRuntime()
+	s.sbx = newSandboxSet(nil)
 	running := func(id string, pid int, b netns.SandboxBaseline, status protocol.SandboxReportStatus) {
 		s.sbx.states[id] = &sbxState{rec: &sbxRecord{ID: id, Status: status}, pid: pid, inode: uint64(pid) * 10, baseline: b}
 	}
@@ -82,7 +82,7 @@ func TestCutoverWritesJoinedSandboxNamespacesInTheSamePass(t *testing.T) {
 }
 
 func TestARefreshFailureKeepsTheSandboxCapability(t *testing.T) {
-	x := newSandboxRuntime()
+	x := newSandboxSet(nil)
 	x.kernelOK = true
 	good := store.Info{Mounted: true, Btrfs: true, SimpleQuota: true, Bytes: 16 << 30, FreeBytes: 8 << 30}
 	if kept := x.recordInfo(good, nil, time.Now()); kept != nil || !x.ready() {
@@ -98,7 +98,7 @@ func TestARefreshFailureKeepsTheSandboxCapability(t *testing.T) {
 	if kept := x.recordInfo(store.Info{Mounted: false}, nil, time.Now()); kept != nil || x.ready() {
 		t.Fatal("an inspection that finds the filesystem unmounted drops the capability")
 	}
-	fresh := newSandboxRuntime()
+	fresh := newSandboxSet(nil)
 	fresh.kernelOK = true
 	if fresh.recordInfo(store.Info{}, busy, time.Now()); fresh.ready() || fresh.infoErr == nil {
 		t.Fatal("a station whose first inspection failed reports no capability")

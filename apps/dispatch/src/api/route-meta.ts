@@ -7,7 +7,7 @@ import { anyTarget, type Level, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 
 import { authorize, requireInstance, requireLevel } from './access.ts'
-import { targets, type TargetEntity } from './lookup.ts'
+import { targets } from './lookup.ts'
 
 export type RouteLevel = 'public' | 'any' | Level | 'instance read' | 'instance admin'
 
@@ -22,6 +22,7 @@ export type TargetInput = {
 
 export type Operation = {
   id: string
+  summary: string
   level: RouteLevel
   mcp?: Mcp
   cli?: CliMeta
@@ -29,86 +30,119 @@ export type Operation = {
   target?: (input: TargetInput) => Target
 }
 
-const collections: Record<string, TargetEntity> = {
-  projects: 'project',
-  environments: 'environment',
-  services: 'service',
-  ports: 'service_port',
-  domains: 'domain',
-  'port-allocations': 'port_allocation',
-  deployments: 'deployment',
-  builds: 'build',
-  runs: 'run',
-  volumes: 'volume',
-  variables: 'variable',
-  'secret-values': 'secret_value',
-  'staged-changes': 'staged_change',
-  sandboxes: 'sandbox',
-  'sandbox-snapshots': 'sandbox_snapshot',
+type EntityOperation = Omit<Operation, 'level' | 'target'> & { level: Level }
+
+type RouteContext = {
+  request: Request
+  params: Record<string, string>
+  query: Record<string, string | undefined>
+  body: unknown
+  route: string
 }
 
-const instanceLevels: Partial<Record<RouteLevel, Level>> = {
-  'instance read': 'read',
-  'instance admin': 'admin',
+const documented = ({
+  id,
+  summary,
+  level,
+  mcp,
+  cli,
+  stream,
+}: Operation | EntityOperation): DocumentDecoration & { 'x-stationly': object } => ({
+  operationId: id,
+  summary,
+  'x-stationly': {
+    level,
+    mcp,
+    cli,
+    stream,
+  },
+})
+
+const entityParameter = (route: string) => {
+  const segment = route.split('/').find((part) => part.startsWith(':'))
+
+  if (!segment) {
+    throw new Error(`${route} has no entity parameter`)
+  }
+
+  return segment.slice(1)
 }
 
-const targetOf = (db: Db, route: string, params: Record<string, string>) => {
-  const segments = route.split('/')
-  const at = segments.findIndex((segment) => segment.startsWith(':'))
-  if (at < 0) return null
-  const entity = collections[segments[at - 1]!]
-  if (!entity) throw new Error(`No target lookup for the entity parameter of ${route}`)
-  return targets[entity](db, params[segments[at]!.slice(1)]!).target
-}
+export const routeMeta = (db: Db, principalOf: (request: Request) => Promise<Principal>) => {
+  const onEntity =
+    <Found extends { target: Target }>(lookup: (db: Db, id: string) => Found) =>
+    (operation: EntityOperation) => ({
+      detail: documented(operation),
+      resolve: async (context: RouteContext) => {
+        const principal = await principalOf(context.request)
+        const ctx = lookup(db, context.params[entityParameter(context.route)]!)
 
-export const routeMeta = (db: Db, principalOf: (request: Request) => Promise<Principal>) =>
-  new Elysia({
+        authorize(principal, ctx.target, operation.level)
+
+        return {
+          ctx,
+        }
+      },
+    })
+
+  return new Elysia({
     name: 'stationly.route-meta',
   }).macro({
-    operation: ({ id, level, mcp, cli, stream, target: targetFrom }: Operation) => ({
-      detail: {
-        operationId: id,
-        'x-stationly': {
-          level,
-          ...(mcp === undefined
-            ? {}
-            : {
-                mcp,
-              }),
-          ...(cli === undefined
-            ? {}
-            : {
-                cli,
-              }),
-          ...(stream
-            ? {
-                stream,
-              }
-            : {}),
-        },
-      } as DocumentDecoration,
-      beforeHandle: async (context: {
-        request: Request
-        params: Record<string, string>
-        query: Record<string, string | undefined>
-        body: unknown
-        route: string
-      }) => {
-        if (level === 'public') return
+    operation: (operation: Operation) => ({
+      detail: documented(operation),
+      beforeHandle: async (context: RouteContext) => {
+        const { level, target: targetFrom } = operation
+
+        if (level === 'public') {
+          return
+        }
+
         const principal = await principalOf(context.request)
-        if (level === 'any') return
-        const instance = instanceLevels[level]
-        if (instance) return requireInstance(principal, instance)
-        const target = targetFrom
-          ? targetFrom({
+
+        if (level === 'any') {
+          return
+        }
+
+        if (level === 'instance read' || level === 'instance admin') {
+          return requireInstance(principal, level === 'instance read' ? 'read' : 'admin')
+        }
+
+        if (targetFrom) {
+          return authorize(
+            principal,
+            targetFrom({
               params: context.params,
               query: context.query,
               body: context.body,
               headers: context.request.headers,
-            })
-          : targetOf(db, context.route, context.params)
-        if (target) authorize(principal, target, level as Level)
-        else requireLevel(principal, anyTarget, level as Level)
+            }),
+            level,
+          )
+        }
+
+        if (context.route.includes('/:')) {
+          throw new Error(
+            `${context.route} authorizes on its path entity; declare it with that entity's key`,
+          )
+        }
+
+        requireLevel(principal, anyTarget, level)
       },
     }),
+    project: onEntity(targets.project),
+    environment: onEntity(targets.environment),
+    service: onEntity(targets.service),
+    service_port: onEntity(targets.service_port),
+    domain: onEntity(targets.domain),
+    port_allocation: onEntity(targets.port_allocation),
+    deployment: onEntity(targets.deployment),
+    build: onEntity(targets.build),
+    run: onEntity(targets.run),
+    volume: onEntity(targets.volume),
+    variable: onEntity(targets.variable),
+    secret_value: onEntity(targets.secret_value),
+    staged_change: onEntity(targets.staged_change),
+    sandbox: onEntity(targets.sandbox),
+    sandbox_snapshot: onEntity(targets.sandbox_snapshot),
   })
+}

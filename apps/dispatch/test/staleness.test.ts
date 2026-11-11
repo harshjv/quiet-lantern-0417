@@ -37,7 +37,9 @@ const activeService = async (name: string, variables: unknown[] = []) => {
     variables,
     deploy: true,
   })
+
   await waitForDeployment(h, created.deployments[0].id, 'active')
+
   return created.id as string
 }
 
@@ -84,6 +86,7 @@ describe('variables', () => {
         value: 'a',
       },
     ])
+
     assert.deepEqual(await stateOf(id), {
       ...(await stateOf(id)),
       stale: false,
@@ -102,6 +105,7 @@ describe('variables', () => {
       ],
       deploy: false,
     })
+
     await setVariable(created.id, 'x')
     assert.equal((await stateOf(created.id)).stale, false)
   })
@@ -115,8 +119,10 @@ describe('variables', () => {
       },
     ])
     const reply = await setVariable(id, 'b')
+
     assert.equal(reply.status, 200)
     const state = await stateOf(id)
+
     assert.equal(state.stale, true)
     assert.equal(state.stale_reasons[0]!.code, 'VARIABLES_CHANGED')
     assert.deepEqual(state.stale_reasons[0]!.keys, ['FOO'])
@@ -131,6 +137,7 @@ describe('variables', () => {
       },
     ])
     const reply = await setVariable(id, 'a')
+
     assert.equal(reply.status, 200)
     assert.equal((await stateOf(id)).stale, false)
   })
@@ -143,6 +150,7 @@ describe('variables', () => {
         value: 'a',
       },
     ])
+
     await setVariable(id, 'b')
     await setVariable(id, 'a')
     assert.equal((await stateOf(id)).stale, true)
@@ -163,8 +171,10 @@ describe('variables', () => {
         apply: false,
       },
     })
+
     assert.equal(reply.status, 200)
     const state = await stateOf(id)
+
     assert.equal(state.stale, true)
     assert.deepEqual(state.stale_reasons[0]!.keys, ['FOO'])
   })
@@ -177,12 +187,14 @@ describe('variables', () => {
         value: 'a',
       },
     ])
+
     await setVariable(id, 'b')
     assert.equal((await stateOf(id)).stale, true)
     const deployed = await h.call('POST', `/v1/services/${id}/deployments`, {
       token: token(),
       body: {},
     })
+
     assert.equal(deployed.status, 201)
     await waitForDeployment(h, deployed.body.id, 'active')
     assert.deepEqual((await stateOf(id)).stale_reasons, [])
@@ -197,11 +209,13 @@ describe('variables', () => {
         value: 'a',
       },
     ])
+
     await setVariable(id, 'b')
     const redeployed = await h.call('POST', `/v1/services/${id}/redeploy`, {
       token: token(),
       body: {},
     })
+
     assert.equal(redeployed.status, 201)
     await waitForDeployment(h, redeployed.body.id, 'active')
     assert.equal((await stateOf(id)).stale, false)
@@ -215,10 +229,12 @@ describe('variables', () => {
         value: 'a',
       },
     ])
+
     await setVariable(id, 'b')
     const restarted = await h.call('POST', `/v1/services/${id}/restart`, {
       token: token(),
     })
+
     assert.equal(restarted.status, 200)
     await waitForDeployment(h, restarted.body.id, 'active')
     assert.equal((await stateOf(id)).stale, true)
@@ -233,8 +249,10 @@ describe('configuration', () => {
         memory_bytes: 268435456,
       },
     })
+
     assert.equal(reply.status, 200)
     const state = await stateOf(id)
+
     assert.equal(state.stale, true)
     assert.equal(state.stale_reasons[0]!.code, 'CONFIG_CHANGED')
     assert.deepEqual(state.stale_reasons[0]!.keys, ['limits'])
@@ -242,6 +260,7 @@ describe('configuration', () => {
 
   test('patching a field back to its snapshot value clears staleness', async () => {
     const id = await activeService('limits-back')
+
     await patchService(id, {
       limits: {
         memory_bytes: 268435456,
@@ -263,12 +282,14 @@ describe('configuration', () => {
         memory_bytes: 536870912,
       },
     })
+
     assert.equal(reply.status, 200)
     assert.equal((await stateOf(id)).stale, false)
   })
 
   test('deploying the changed configuration clears CONFIG_CHANGED on activation', async () => {
     const id = await activeService('limits-deploy')
+
     await patchService(id, {
       limits: {
         memory_bytes: 268435456,
@@ -278,6 +299,7 @@ describe('configuration', () => {
       token: token(),
       body: {},
     })
+
     await waitForDeployment(h, deployed.body.id, 'active')
     assert.equal((await stateOf(id)).stale, false)
   })
@@ -290,6 +312,7 @@ describe('configuration', () => {
         value: 'a',
       },
     ])
+
     await setVariable(id, 'b')
     await patchService(id, {
       limits: {
@@ -297,6 +320,7 @@ describe('configuration', () => {
       },
     })
     const codes = (await stateOf(id)).stale_reasons.map((r) => r.code).sort()
+
     assert.deepEqual(codes, ['CONFIG_CHANGED', 'VARIABLES_CHANGED'])
   })
 })

@@ -1,14 +1,17 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { createRootRouteWithContext, Link, Outlet } from '@tanstack/react-router'
+import { createRootRouteWithContext, HeadContent, Link, Outlet } from '@tanstack/react-router'
 import { MapPinOff } from 'lucide-react'
 
 import { EmptyState } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
+import { titled } from '@/lib/title'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  head: () => titled(),
   component: () => (
     <>
+      <HeadContent />
       <Outlet />
       <Toaster
         position="bottom-right"

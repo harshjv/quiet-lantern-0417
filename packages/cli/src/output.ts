@@ -1,3 +1,5 @@
+import { getBorderCharacters, table as layOut } from 'table'
+
 import { DryRun, Exit, exitCodes, type Envelope } from './errors.ts'
 import type { Globals, Sent } from './kit.ts'
 
@@ -13,10 +15,45 @@ const cell = (value: unknown) =>
 
 const present = (value: unknown) => value !== null && value !== undefined && value !== ''
 
+const controlCharacter = /\p{Cc}/u
+
+const printable = (text: string) => (controlCharacter.test(text) ? JSON.stringify(text) : text)
+
+const columnGap = 2
+
 const fitting = (widths: number[]) => {
   const limit = process.stdout.isTTY ? process.stdout.columns : Infinity
-  let used = -2
-  return widths.findIndex((width) => (used += width + 2) > limit)
+  let used = -columnGap
+  const cut = widths.findIndex((width) => (used += width + columnGap) > limit)
+
+  return cut < 1 ? widths.length : cut
+}
+
+const widthsOf = (rows: string[][], limit: number) =>
+  rows[0]!.map((_, i) => Math.min(limit, Math.max(...rows.map((row) => row[i]!.length))))
+
+const layout = (rows: string[][], widths: number[]) =>
+  layOut(rows, {
+    border: getBorderCharacters('void'),
+    columnDefault: {
+      paddingLeft: 0,
+      paddingRight: columnGap,
+    },
+    columns: widths.map((width) => ({
+      width,
+      truncate: width,
+    })),
+    drawHorizontalLine: () => false,
+  })
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trimEnd()
+
+export const aligned = (rows: string[][]) => {
+  const cells = rows.map((row) => row.map(printable))
+
+  return layout(cells, widthsOf(cells, Infinity))
 }
 
 export const table = (
@@ -26,36 +63,48 @@ export const table = (
     .filter((key) => rows.some((row) => scalar(row[key])))
     .slice(0, 7),
 ) => {
-  if (rows.length === 0) return '(none)'
   const shown = columns.filter((column) => rows.some((row) => present(row[column])))
-  const headers = shown.map((column) => column.replaceAll('_', ' ').toUpperCase())
-  const cells = rows.map((row) => shown.map((column) => cell(row[column]).slice(0, width)))
-  const widths = headers.map((header, i) =>
-    Math.max(header.length, ...cells.map((r) => r[i]!.length)),
+
+  if (rows.length === 0 || shown.length === 0) {
+    return '(none)'
+  }
+
+  const grid = [
+    shown.map((column) => column.replaceAll('_', ' ').toUpperCase()),
+    ...rows.map((row) => shown.map((column) => printable(cell(row[column])))),
+  ]
+  const widths = widthsOf(grid, width)
+  const fit = fitting(widths)
+
+  return layout(
+    grid.map((row) => row.slice(0, fit)),
+    widths.slice(0, fit),
   )
-  const cut = fitting(widths)
-  const line = (values: string[]) =>
-    values
-      .slice(0, cut < 1 ? undefined : cut)
-      .map((v, i) => v.padEnd(widths[i]!))
-      .join('  ')
-      .trimEnd()
-  return [line(headers), ...cells.map(line)].join('\n')
 }
 
 const tree = (value: unknown, indent = ''): string => {
   if (Array.isArray(value)) {
-    if (value.length === 0) return `${indent}(none)`
-    if (value.every((v) => v !== null && typeof v === 'object' && !Array.isArray(v)))
+    if (value.length === 0) {
+      return `${indent}(none)`
+    }
+
+    if (value.every((v) => v !== null && typeof v === 'object' && !Array.isArray(v))) {
       return table(value as Record<string, unknown>[])
         .split('\n')
         .map((l) => indent + l)
         .join('\n')
+    }
+
     return value.map((v) => `${indent}- ${cell(v)}`).join('\n')
   }
-  if (value === null || typeof value !== 'object') return `${indent}${cell(value)}`
+
+  if (value === null || typeof value !== 'object') {
+    return `${indent}${cell(value)}`
+  }
+
   const entries = Object.entries(value as Record<string, unknown>)
   const key = Math.max(0, ...entries.filter(([, v]) => scalar(v)).map(([k]) => k.length))
+
   return entries
     .map(([k, v]) =>
       scalar(v)
@@ -73,8 +122,10 @@ const isPage = (
 export const human = (data: unknown, columns?: string[]) => {
   if (isPage(data)) {
     const rows = table(data.items, 60, columns)
+
     return data.next_cursor ? `${rows}\n\nmore: --cursor ${data.next_cursor}` : rows
   }
+
   return tree(data)
 }
 
@@ -84,27 +135,43 @@ export const json = (value: unknown) => process.stdout.write(`${JSON.stringify(v
 
 export const staged = (sent: Sent, outcome: string) => {
   const id = (sent.data as { id?: string }).id
+
   progress(
     `staged: nothing was ${outcome}; ${id ?? 'the staged change'} waits for acceptance (sly staged accept ${id ?? '<id>'})`,
   )
+
   return exitCodes.staged
 }
 
 export const print = <T>(globals: Globals, sent: Sent<T>, render: (data: T) => string = human) => {
-  if (globals.json) json(sent.data)
-  else process.stdout.write(`${render(sent.data)}\n`)
+  if (globals.json) {
+    json(sent.data)
+  } else {
+    process.stdout.write(`${render(sent.data)}\n`)
+  }
+
   return sent.status === 202 ? staged(sent, 'applied') : exitCodes.ok
 }
 
 const printEnvelope = (globals: Globals, envelope: Envelope) => {
-  if (globals.json) json(envelope)
-  else {
+  if (globals.json) {
+    json(envelope)
+  } else {
     process.stderr.write(`error: ${envelope.error.explanation}\n`)
-    if (envelope.error.fix) process.stderr.write(`fix: ${envelope.error.fix}\n`)
-    if (envelope.error.details)
+
+    if (envelope.error.fix) {
+      process.stderr.write(`fix: ${envelope.error.fix}\n`)
+    }
+
+    if (envelope.error.details) {
       process.stderr.write(`details: ${JSON.stringify(envelope.error.details)}\n`)
-    if (envelope.error.request_id) process.stderr.write(`request: ${envelope.error.request_id}\n`)
+    }
+
+    if (envelope.error.request_id) {
+      process.stderr.write(`request: ${envelope.error.request_id}\n`)
+    }
   }
+
   process.stderr.write(`${envelope.error.code}\n`)
 }
 
@@ -112,12 +179,18 @@ export const fail = (globals: Globals, error: unknown) => {
   if (error instanceof DryRun) {
     json(error.request)
     progress('dry run: the request above was not sent')
+
     return exitCodes.ok
   }
+
   if (error instanceof Exit) {
-    if (error.envelope) printEnvelope(globals, error.envelope)
+    if (error.envelope) {
+      printEnvelope(globals, error.envelope)
+    }
+
     return error.code
   }
+
   printEnvelope(globals, {
     error: {
       code: 'INTERNAL_ERROR',
@@ -125,5 +198,6 @@ export const fail = (globals: Globals, error: unknown) => {
       fix: 'Report this sly failure with the command you ran.',
     },
   })
+
   return exitCodes.api
 }

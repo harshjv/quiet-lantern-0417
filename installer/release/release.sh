@@ -23,7 +23,8 @@ builder (installer/test-release/build.sh). Signing is the caller's: it signs eve
 (writing FILE.sigstore.json beside it) and every image in DIR/build/images.txt before push-release.
 
   build         stationd and the runsc archive per linux platform and the Dispatch and sandbox toolchain
-                images as OCI layouts, into DIR/files and DIR/build
+                images as OCI layouts, into DIR/files and DIR/build; the toolchain image carries the
+                linux sly of the same version
   sly           the sly single executable for each target into DIR/files (darwin targets only on macOS,
                 which signs them ad hoc)
   push-images   push both images to PREFIX/dispatch and PREFIX/sandbox-toolchain under tag v<version>
@@ -98,9 +99,10 @@ layout_summary() {
 
 build_image() {
 	local name=$1 reuse=$2 dockerfile=$3 context=$4 tar=$cache/$1-${platforms//[\/,]/_}.oci.tar
+	shift 4
 	if [ "$reuse" != true ] || [ ! -f "$tar" ]; then
 		say "building the $name image $version for $platforms (log: $build/$name.log)"
-		docker buildx build --platform "$platforms" --build-arg "VERSION=$version" --provenance=mode=min --sbom=true \
+		docker buildx build --platform "$platforms" --build-arg "VERSION=$version" --provenance=mode=min --sbom=true "$@" \
 			-f "$dockerfile" -o "type=oci,dest=$tar.partial" "$context" >"$build/$name.log" 2>&1 || { tail -n 40 "$build/$name.log" >&2; die "the $name image build failed"; }
 		mv "$tar.partial" "$tar"
 	fi
@@ -113,7 +115,7 @@ build_image() {
 }
 
 cmd_build() {
-	need go docker jq
+	need go docker jq node
 	cache=${cache:-$out/cache}
 	mkdir -p "$cache"
 	cache=$(cd "$cache" && pwd)
@@ -127,7 +129,12 @@ cmd_build() {
 			-o "$files/stationd-linux-$arch" ./cmd/stationd)
 	done
 	build_image dispatch "$reuse_dispatch" "$root/apps/dispatch/Dockerfile" "$root"
-	build_image sandbox-toolchain "$reuse_toolchain" "$root/images/sandbox-toolchain/Dockerfile" "$root/images/sandbox-toolchain"
+	say "building sly $version for the sandbox toolchain image"
+	rm -rf "$build/toolchain-sly"
+	(cd "$root/packages/cli" && node scripts/sea.ts --version "$version" --out "$build/toolchain-sly" --cache "$cache/sea" \
+		--targets "$(arches | sed 's#^#linux-#' | paste -sd, -)") >"$build/toolchain-sly.json"
+	build_image sandbox-toolchain "$reuse_toolchain" "$root/images/sandbox-toolchain/Dockerfile" "$root/images/sandbox-toolchain" \
+		--build-context "sly=$build/toolchain-sly"
 	local runsc_out=$cache/runsc-release
 	if [ "$reuse_runsc" != true ] || [ ! -f "$cache/runsc.json" ]; then
 		say "building the runsc archives from gVisor's signed apt repository"

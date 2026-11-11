@@ -11,6 +11,7 @@ import {
   PortProtocol,
   SandboxEgress,
   SandboxNetwork,
+  SandboxRuntime,
   SandboxSize,
   Schedule,
   ServiceKind,
@@ -551,6 +552,7 @@ export const DesiredSandbox = Type.Object(
     }),
     desired_state: DesiredState,
     stop_at: Nullable(Timestamp),
+    runtime: Type.Optional(SandboxRuntime),
     image: Type.Object(
       {
         ref: Nullable(Type.String()),
@@ -592,6 +594,7 @@ export const DesiredSandbox = Type.Object(
       },
     ),
     reach: Type.Array(Id('virtual_ip')),
+    api_relay: Type.Optional(Type.Literal(true)),
   },
   {
     title: 'DesiredSandbox',

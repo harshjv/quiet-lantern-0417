@@ -44,14 +44,20 @@ const loginLinks = new Map<string, string>()
 export const takeLoginLink = (email: string) => {
   const key = email.toLowerCase()
   const url = loginLinks.get(key) ?? null
+
   loginLinks.delete(key)
+
   return url
 }
 
 export const apiKeyFromHeaders = (headers: Headers | undefined) => {
   const authorization = headers?.get('authorization')
   const bearer = authorization?.match(/^Bearer\s+(\S+)$/i)?.[1]
-  if (bearer?.startsWith(tokenPrefix)) return bearer
+
+  if (bearer?.startsWith(tokenPrefix)) {
+    return bearer
+  }
+
   return headers?.get('x-api-key') ?? null
 }
 
@@ -69,6 +75,7 @@ export type AuthSurface = {
 export const canonicalOrigin = (surface: AuthSurface, request: Request) => {
   const host = request.headers.get('host') ?? new URL(request.url).host
   const origin = `https://${host}`
+
   return origin === surface.apiOrigin || origin === surface.dashboardOrigin ? origin : null
 }
 
@@ -78,12 +85,14 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
   const read = settingsSnapshot(db)
   const value = (key: (typeof surfaceKeys)[number]) => {
     const found = read(key)
+
     return typeof found === 'string' && found.length > 0 ? found : null
   }
   const dashboard = value('hostnames.dashboard')
   const api = value('hostnames.api')
   const local = new URL(localOrigin)
   const loopbackOrigins = [localOrigin, `http://localhost:${local.port}`]
+
   if (!dashboard || !api) {
     const address = db
       .select({
@@ -93,6 +102,7 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
       .where(eq(schema.station.hosts_dispatch, true))
       .get()?.public_address
     const addressOrigin = address ? `https://${address}` : null
+
     return {
       baseURL: `${localOrigin}/auth`,
       dashboardOrigin: localOrigin,
@@ -104,8 +114,10 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
       mcpResource: `${localOrigin}/mcp`,
     }
   }
+
   const dashboardOrigin = `https://${dashboard}`
   const apiOrigin = `https://${api}`
+
   return {
     baseURL: `${apiOrigin}/auth`,
     dashboardOrigin,
@@ -187,19 +199,26 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
       session: {
         create: {
           before: async (session, ctx) => {
-            if (ctx?.path !== '/device/token') return
+            if (ctx?.path !== '/device/token') {
+              return
+            }
+
             const request = ctx.request
-            if (!request)
+
+            if (!request) {
               throw new APIError('BAD_REQUEST', {
                 error: 'invalid_dpop_proof',
                 error_description: 'sly login must reach /auth/device/token over HTTP',
               })
+            }
+
             try {
               const proof = await verifyProof(ctx.context.internalAdapter, {
                 proof: request.headers.get(proofHeader),
                 method: 'POST',
                 url: publicUrl(request, canonicalOrigin(surface, request)),
               })
+
               return {
                 data: {
                   ...session,
@@ -208,11 +227,13 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
                 },
               }
             } catch (error) {
-              if (error instanceof ProofError)
+              if (error instanceof ProofError) {
                 throw new APIError('BAD_REQUEST', {
                   error: 'invalid_dpop_proof',
                   error_description: error.message,
                 })
+              }
+
               throw error
             }
           },
@@ -234,8 +255,9 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
         },
         authentication: {
           afterVerification: ({ verification }) => {
-            if (!verification.authenticationInfo.userVerified)
+            if (!verification.authenticationInfo.userVerified) {
               throw new Error('passkey assertion without user verification')
+            }
           },
         },
       }),

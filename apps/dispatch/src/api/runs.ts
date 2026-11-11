@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, type SQL } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { runTerminalStatuses, type MessageBody } from '@stationly/protocol'
+import { runKindValues, runStatusValues, runTerminalStatuses } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { run, sandbox } from '../db/schema.ts'
@@ -10,7 +10,7 @@ import type { Call } from './context.ts'
 import { notFound } from './errors.ts'
 import { project as select } from './fields.ts'
 import { csv, parseTime, type Kit } from './kit.ts'
-import { before, collect, listQuery } from './pagination.ts'
+import { before, collect, filterMany, listQuery, since } from './pagination.ts'
 
 type RunRow = typeof run.$inferSelect
 
@@ -29,28 +29,32 @@ export const pollUntil = async (
   everyMs = 100,
 ) => {
   const deadline = Date.now() + ms
-  while (!done() && Date.now() < deadline && !signal?.aborted)
+
+  while (!done() && Date.now() < deadline && !signal?.aborted) {
     await new Promise((resolve) =>
       setTimeout(resolve, Math.min(everyMs, Math.max(0, deadline - Date.now()))),
     )
+  }
 }
 
 export const waitForRun = async (db: Db, id: string, seconds: number, signal: AbortSignal) => {
   let row = runRow(db, id)
+
   await pollUntil(
     () => terminalRun.has((row = runRow(db, id)).status),
     Math.min(seconds, 10) * 1000,
     signal,
     200,
   )
+
   return row
 }
 
 export const runListQuery = t.Object({
   ...listQuery,
-  kind: t.Optional(t.String()),
-  status: t.Optional(t.String()),
-  since: t.Optional(t.String()),
+  kind: filterMany(runKindValues),
+  status: filterMany(runStatusValues),
+  since,
 })
 
 export const listRuns = (kit: Kit, owner: SQL, query: typeof runListQuery.static) => {
@@ -77,6 +81,7 @@ export const listRuns = (kit: Kit, owner: SQL, query: typeof runListQuery.static
         .all(),
     query,
   )
+
   return {
     items: page.rows.map((row) => select(kit.views.run, row, kit.fields(query.fields))),
     next_cursor: page.next_cursor,
@@ -92,7 +97,11 @@ export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
     .from(sandbox)
     .where(eq(sandbox.id, row.sandbox_id!))
     .get()
-  if (!box) return undefined
+
+  if (!box) {
+    return undefined
+  }
+
   try {
     const reply = await stations.ask(
       box.station_id,
@@ -106,13 +115,18 @@ export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
         timeoutMs: 10_000,
       },
     )
-    const page = reply.body as MessageBody<'logs.page'>
+    const page = reply.body
     const redact = kit.sandboxRedaction([row.sandbox_id!], call.principal.actor, call.request_id)
     const lines = page.lines.map((line) => `${line.stream}: ${redact(line.text)}`)
     let size = 0
     let kept = lines.length
-    while (kept > 0 && (size += Buffer.byteLength(lines[kept - 1]!) + 1) <= maxBytes) kept -= 1
+
+    while (kept > 0 && (size += Buffer.byteLength(lines[kept - 1]!) + 1) <= maxBytes) {
+      kept -= 1
+    }
+
     const shown = lines.slice(kept)
+
     return {
       untrusted: {
         source: 'sandbox exec output' as const,

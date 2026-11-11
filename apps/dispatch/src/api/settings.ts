@@ -31,6 +31,7 @@ const authKeys = new Set<string>([...surfaceKeys, 'oauth.dynamic_registration'])
 const httpsUrl = (value: string) => {
   try {
     const url = new URL(value)
+
     return url.protocol === 'https:' && url.hostname !== '' && !url.username && !url.password
   } catch {
     return false
@@ -39,8 +40,11 @@ const httpsUrl = (value: string) => {
 
 export const frozenReason = (db: Db, key: SettingKey): string | null => {
   const stored = storedSetting(db, key) !== undefined
-  if (key === 'ipam.pool' && stored)
+
+  if (key === 'ipam.pool' && stored) {
     return 'ipam.pool is frozen after install, because the Docker daemon configuration is written from it.'
+  }
+
   if (
     key === 'ipam.virtual_prefix' &&
     (db
@@ -49,11 +53,18 @@ export const frozenReason = (db: Db, key: SettingKey): string | null => {
       })
       .from(environment)
       .get()?.n ?? 0) > 0
-  )
+  ) {
     return 'ipam.virtual_prefix is frozen once the first environment exists.'
-  if (key === 'instance.id' && stored) return 'instance.id is fixed at setup.'
-  if (key === 'platform.lockfile')
+  }
+
+  if (key === 'instance.id' && stored) {
+    return 'instance.id is fixed at setup.'
+  }
+
+  if (key === 'platform.lockfile') {
     return 'platform.lockfile changes only through POST /v1/platform/upgrade.'
+  }
+
   return null
 }
 
@@ -65,10 +76,12 @@ export const listSettings = (db: Db, prefix: string | undefined) => {
       .all()
       .map((row) => [row.key, row]),
   )
+
   return settingKeys
     .filter((key) => !prefix || key.startsWith(prefix))
     .map((key) => {
       const row = rows.get(key)
+
       return {
         key,
         value: row?.value ?? settingDefault(key),
@@ -93,42 +106,45 @@ export const planSettings = (
   resetPasskeys: boolean,
 ): SettingsPlan => {
   const issues: { path: string; message: string }[] = []
+
   for (const [key, value] of Object.entries(body)) {
     const schema = isSettingKey(key) ? settings[key].schema : undefined
-    if (!schema)
+
+    if (!schema) {
       issues.push({
         path: `/${key}`,
         message: 'unknown setting',
       })
-    else if (value !== null && !Value.Check(schema, value))
+    } else if (value !== null && !Value.Check(schema, value)) {
       issues.push({
         path: `/${key}`,
         message: Value.Errors(schema, value).First()?.message ?? 'invalid value',
       })
-    else if (
+    } else if (
       (key === 'ipam.pool' || key === 'ipam.virtual_prefix') &&
       typeof value === 'string' &&
       cidrProblem(value)
-    )
+    ) {
       issues.push({
         path: `/${key}`,
         message: cidrProblem(value)!,
       })
-    else if (key === 'acme.ca_server' && typeof value === 'string' && !httpsUrl(value))
+    } else if (key === 'acme.ca_server' && typeof value === 'string' && !httpsUrl(value)) {
       issues.push({
         path: `/${key}`,
         message: 'must be an https URL with a host',
       })
-    else if (
+    } else if (
       key === 'volume_backup.target' &&
       value !== null &&
       (value as { type: string }).type === 's3'
     ) {
-      for (const message of s3TargetIssues(value as S3Target))
+      for (const message of s3TargetIssues(value as S3Target)) {
         issues.push({
           path: `/${key}`,
           message,
         })
+      }
     } else if (key === 'volume_backup.schedule' && typeof value === 'string') {
       try {
         new Cron(value, {
@@ -142,31 +158,43 @@ export const planSettings = (
       }
     }
   }
-  if (issues.length) invalid(issues)
+
+  if (issues.length) {
+    invalid(issues)
+  }
+
   for (const key of Object.keys(body) as SettingKey[]) {
     const reason = frozenReason(db, key)
-    if (reason)
+
+    if (reason) {
       fail('SETTING_FROZEN', reason, 'Leave this key unchanged.', {
         key,
       })
-    if (humanKeys.has(key))
+    }
+
+    if (humanKeys.has(key)) {
       requireHuman(principal, `Changing ${key}`, {
         key,
       })
+    }
   }
+
   const next = (key: 'hostnames.dashboard' | 'hostnames.api') =>
     (key in body ? body[key] : readSetting(db, key)) as string | null
   const updates: Record<string, unknown> = {
     ...body,
   }
   let passkeyReset = false
+
   if (Object.keys(body).some((key) => surfaceKeySet.has(key))) {
     const dashboard = next('hostnames.dashboard')
     const api = next('hostnames.api')
     const currentRp = readSetting(db, 'auth.passkey_rp_id')
+
     if (dashboard && api) {
       const check = checkHostnamePair(dashboard, api)
-      if (!check.ok)
+
+      if (!check.ok) {
         return fail(
           'HOSTNAME_DOMAIN_MISMATCH',
           check.reason,
@@ -176,6 +204,8 @@ export const planSettings = (
             api,
           },
         )
+      }
+
       const held = db
         .select({
           id: domain.id,
@@ -184,7 +214,8 @@ export const planSettings = (
         .from(domain)
         .where(inArray(domain.hostname, [dashboard, api]))
         .get()
-      if (held)
+
+      if (held) {
         fail(
           'NAME_TAKEN',
           `${held.hostname} is already routed to a service by domain ${held.id}.`,
@@ -194,8 +225,11 @@ export const planSettings = (
             domain_id: held.id,
           },
         )
+      }
+
       const askedRp =
         'auth.passkey_rp_id' in body ? (body['auth.passkey_rp_id'] as string | null) : null
+
       if (askedRp !== null && askedRp !== undefined && !validRpId(askedRp, dashboard, api)) {
         invalid([
           {
@@ -204,9 +238,11 @@ export const planSettings = (
           },
         ])
       }
+
       const wanted =
         askedRp ??
         (currentRp && validRpId(currentRp, dashboard, api) ? currentRp : check.commonParent)
+
       if (currentRp !== null && wanted !== currentRp) {
         if (!resetPasskeys) {
           fail(
@@ -219,27 +255,33 @@ export const planSettings = (
             },
           )
         }
+
         requireHuman(principal, 'A passkey reset', {
           reset_passkeys: true,
         })
         passkeyReset = true
       }
+
       updates['auth.passkey_rp_id'] = wanted
     } else {
-      if (dashboard || api)
+      if (dashboard || api) {
         invalid([
           {
             path: dashboard ? '/hostnames.api' : '/hostnames.dashboard',
             message: 'set both hostnames, or clear both for a domainless station',
           },
         ])
-      if ('auth.passkey_rp_id' in body && body['auth.passkey_rp_id'] !== null)
+      }
+
+      if ('auth.passkey_rp_id' in body && body['auth.passkey_rp_id'] !== null) {
         invalid([
           {
             path: '/auth.passkey_rp_id',
             message: 'set hostnames.dashboard and hostnames.api first',
           },
         ])
+      }
+
       if (currentRp !== null) {
         if (!resetPasskeys) {
           fail(
@@ -252,6 +294,7 @@ export const planSettings = (
             },
           )
         }
+
         requireHuman(principal, 'A passkey reset', {
           reset_passkeys: true,
         })
@@ -260,12 +303,17 @@ export const planSettings = (
       }
     }
   }
+
   const set = new ChangeSet()
+
   for (const [key, value] of Object.entries(updates)) {
     const before = storedSetting(db, key as SettingKey) ?? null
-    if (JSON.stringify(before) !== JSON.stringify(value))
+
+    if (JSON.stringify(before) !== JSON.stringify(value)) {
       set.update('setting', key, '/value', before, value)
+    }
   }
+
   return {
     set,
     keys: Object.keys(updates) as SettingKey[],

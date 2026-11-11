@@ -17,9 +17,14 @@ export const lineText = (line: LogLine) =>
   `${line.at} ${line.stream === 'stderr' ? 'E' : ' '} ${line.role && line.role !== 'service' ? `[${line.role}] ` : ''}${line.text}`
 
 export const logPageText = (page: LogPage) => {
-  if (page.next_cursor) progress(`next: --cursor ${page.next_cursor}`)
-  if (page.truncated)
+  if (page.next_cursor) {
+    progress(`next: --cursor ${page.next_cursor}`)
+  }
+
+  if (page.truncated) {
     progress('the cursor pointed at a deleted segment; reading started at the oldest line')
+  }
+
   return page.untrusted.lines.map(lineText).join('\n')
 }
 
@@ -32,7 +37,10 @@ export const metricsEventText = (sample: Sample, name: string) =>
     : null
 
 export const eventPageText = (page: EventPage) => {
-  if (page.next_since) progress(`resume: --since ${page.next_since}`)
+  if (page.next_since) {
+    progress(`resume: --since ${page.next_since}`)
+  }
+
   return human(page)
 }
 

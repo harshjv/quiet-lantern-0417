@@ -1,4 +1,5 @@
-import type { CommandUnknownOpts } from '@commander-js/extra-typings'
+import tab from '@bomb.sh/tab/commander'
+import type { Command } from 'commander'
 
 import { createProgram } from './command.ts'
 import { authCommands } from './commands/auth.ts'
@@ -47,16 +48,13 @@ export const handWrittenProgram = () => {
   return program
 }
 
-const sorted = (command: CommandUnknownOpts) => {
-  command.configureHelp({
-    sortSubcommands: true,
-  })
-  command.commands.forEach(sorted)
-}
-
 export const buildProgram = () => {
   const program = handWrittenProgram()
+
   registerGenerated(program)
-  sorted(program)
+  tab(program as unknown as Command, {
+    completionCommandName: 'completion',
+  })
+
   return program
 }

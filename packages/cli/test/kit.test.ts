@@ -4,10 +4,11 @@ import type { AddressInfo } from 'node:net'
 import { after, before, describe, test } from 'node:test'
 
 import { version } from '../src/env.ts'
-import { Exit, exitCodes, unreachable } from '../src/errors.ts'
-import { connectWith, found, tokenCredentials, type Run } from '../src/kit.ts'
+import { Exit, exitCodes } from '../src/errors.ts'
+import { createHttp, waitingHttp } from '../src/http.ts'
+import { connectWith, found, pollUntil, tokenCredentials, type Run } from '../src/kit.ts'
 import { showLine, streamLogs } from '../src/logs.ts'
-import { pollUntil } from '../src/outage.ts'
+import { runWaitDeadline } from '../src/runs.ts'
 import { attachRun } from '../src/sockets.ts'
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void
@@ -15,6 +16,7 @@ type Handler = (req: IncomingMessage, res: ServerResponse) => void
 let handle: Handler = (_req, res) => res.writeHead(404).end()
 const upgrades: IncomingMessage[] = []
 const server = createServer((req, res) => handle(req, res))
+
 server.on('upgrade', (req: IncomingMessage, socket) => {
   upgrades.push(req)
   socket.destroy()
@@ -36,6 +38,7 @@ after(async () => {
 
 const sink = () => {
   const written: string[] = []
+
   return {
     written,
     stream: {
@@ -70,6 +73,7 @@ describe('pollUntil', () => {
       () => Promise.resolve(++reads),
       (n) => n === 3,
     )
+
     assert.equal(value, 3)
     assert.equal(reads, 3)
   })
@@ -81,25 +85,81 @@ describe('pollUntil', () => {
       () => false,
       Date.now() - 1,
     )
+
     assert.equal(value, 1)
   })
+})
 
-  test('rides out a connection failure and rethrows any other error', async () => {
-    let reads = 0
-    const value = await pollUntil(
-      () =>
-        ++reads === 1
-          ? Promise.reject(unreachable('http://127.0.0.1:1', new Error('refused')))
-          : Promise.resolve(reads),
-      () => true,
-    )
-    assert.equal(value, 2)
-    await assert.rejects(
-      pollUntil(
-        () => Promise.reject(new Error('boom')),
-        () => true,
-      ),
-      /boom/,
+describe('waiting client', () => {
+  test('rides out a dropped connection, where a plain read fails with CONNECTION_FAILED', async () => {
+    let requests = 0
+
+    handle = (req, res) => {
+      if (++requests % 2 === 1) {
+        req.socket.destroy()
+
+        return
+      }
+
+      res
+        .writeHead(200, {
+          'content-type': 'application/json',
+        })
+        .end('{"ok":true}')
+    }
+
+    assert.deepEqual(await run.waiting().http.get('/v1/ping').json(), {
+      ok: true,
+    })
+    assert.equal(requests, 2)
+    await assert.rejects(run.http.get('/v1/ping'), (error: unknown) => {
+      assert.ok(error instanceof Exit)
+      assert.equal(error.code, exitCodes.connection)
+      assert.equal(error.envelope?.error.code, 'CONNECTION_FAILED')
+
+      return true
+    })
+    assert.equal(requests, 3)
+  })
+
+  test('a wait rides out an outage longer than the one-shot budget, up to its own deadline', async () => {
+    const outageEnds = Date.now() + 1500
+
+    handle = (req, res) => {
+      if (Date.now() < outageEnds) {
+        req.socket.destroy()
+
+        return
+      }
+
+      res
+        .writeHead(200, {
+          'content-type': 'application/json',
+        })
+        .end('{"ok":true}')
+    }
+
+    const http = createHttp({
+      instance: run.credentials.instance,
+      userAgent: run.userAgent,
+      credentials: run.credentials,
+      outageBudgetMs: 500,
+    })
+
+    await assert.rejects(http.post('/v1/ping'), (error: unknown) => {
+      assert.ok(error instanceof Exit)
+      assert.equal(error.envelope?.error.code, 'CONNECTION_FAILED')
+
+      return true
+    })
+    assert.ok(Date.now() < outageEnds, 'the one-shot request outlasted the outage')
+    assert.deepEqual(
+      await waitingHttp(http, Date.now() + 10_000)
+        .get('/v1/ping')
+        .json(),
+      {
+        ok: true,
+      },
     )
   })
 })
@@ -134,6 +194,7 @@ describe('found', () => {
             fix: 'Run sly services list.',
           },
         })
+
         return true
       },
     )
@@ -143,6 +204,7 @@ describe('found', () => {
 describe('showLine', () => {
   test('marks stderr with E and prefixes roles other than service', () => {
     const out = sink()
+
     showLine({}, line('ready'), out.stream)
     showLine(
       {},
@@ -160,6 +222,7 @@ describe('showLine', () => {
 
   test('writes the line as one JSON object under --json', () => {
     const out = sink()
+
     showLine(
       {
         json: true,
@@ -174,6 +237,7 @@ describe('showLine', () => {
 describe('streamLogs', () => {
   test('follows the stream, resumes after the last id on reconnect and ends with exit 0', async () => {
     const seen: IncomingMessage[] = []
+
     handle = (req, res) => {
       seen.push(req)
       sse(
@@ -186,6 +250,7 @@ describe('streamLogs', () => {
             ],
       )
     }
+
     const out = sink()
     const code = await streamLogs(
       run,
@@ -195,10 +260,12 @@ describe('streamLogs', () => {
       },
       out.stream,
     )
+
     assert.equal(code, exitCodes.ok)
     assert.deepEqual(out.written, ['2026-11-07T00:00:00Z   one\n', '2026-11-07T00:00:00Z   two\n'])
     assert.equal(seen.length, 2)
     const query = new URL(seen[0]!.url!, 'http://x').searchParams
+
     assert.equal(query.get('follow'), 'true')
     assert.equal(query.get('service'), 'svc_TEST')
     assert.equal(seen[0]!.headers['last-event-id'], undefined)
@@ -215,6 +282,7 @@ describe('streamLogs', () => {
       assert.equal(error.code, exitCodes.api)
       assert.equal(error.envelope?.error.code, 'STATION_OFFLINE')
       assert.equal(error.envelope?.error.explanation, 'station-1 is offline.')
+
       return true
     })
   })
@@ -234,10 +302,31 @@ describe('attach', () => {
         json: false,
       },
     )
+
     assert.equal(exit, null)
     assert.equal(upgrades.length, 1)
     assert.match(upgrades[0]!.url!, /^\/v1\/runs\/run_TEST\/attach\?/)
     assert.equal(upgrades[0]!.headers.authorization, 'Bearer tok_test')
     assert.equal(upgrades[0]!.headers['user-agent'], `sly/${version}`)
+  })
+})
+
+describe('run wait deadline', () => {
+  test('a run with a deadline is waited on until 30 s after it', () => {
+    assert.equal(
+      runWaitDeadline({
+        deadline_at: '2026-11-10T12:00:00.000Z',
+      }),
+      Date.parse('2026-11-10T12:00:30.000Z'),
+    )
+  })
+
+  test('a run without a deadline keeps the one-shot outage budget', () => {
+    assert.equal(
+      runWaitDeadline({
+        deadline_at: null,
+      }),
+      undefined,
+    )
   })
 })

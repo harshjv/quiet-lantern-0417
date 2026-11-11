@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "import", "node", "promise"],
-  "jsPlugins": ["./scripts/oxlint-plugin.ts"],
+  "jsPlugins": ["./scripts/oxlint-plugin.ts", "@stylistic/eslint-plugin"],
   "options": {
     "typeAware": true
   },
@@ -60,7 +60,9 @@
     "typescript/restrict-template-expressions": "error",
     "typescript/switch-exhaustiveness-check": [
       "error",
-      { "considerDefaultExhaustiveForUnions": true }
+      {
+        "considerDefaultExhaustiveForUnions": true
+      }
     ],
     "typescript/unbound-method": "error",
     "stationly/multiline-object-literal": "error",
@@ -80,7 +82,41 @@
     "promise/no-promise-in-callback": "off",
     "no-unexpected-multiline": "off",
     "typescript/no-unsafe-type-assertion": "off",
-    "typescript/consistent-return": "off"
+    "typescript/consistent-return": "off",
+    "curly": ["error", "all"],
+    "@stylistic/padding-line-between-statements": [
+      "error",
+      {
+        "blankLine": "always",
+        "prev": "*",
+        "next": ["return", "block-like"]
+      },
+      {
+        "blankLine": "always",
+        "prev": "block-like",
+        "next": "*"
+      },
+      {
+        "blankLine": "always",
+        "prev": ["const", "let", "var"],
+        "next": "*"
+      },
+      {
+        "blankLine": "any",
+        "prev": ["const", "let", "var"],
+        "next": ["const", "let", "var"]
+      },
+      {
+        "blankLine": "always",
+        "prev": "import",
+        "next": "*"
+      },
+      {
+        "blankLine": "any",
+        "prev": "import",
+        "next": "import"
+      }
+    ]
   },
   "overrides": [
     {
@@ -101,7 +137,13 @@
         "typescript/only-throw-error": [
           "error",
           {
-            "allow": [{ "from": "package", "package": "@tanstack/router-core", "name": "Redirect" }]
+            "allow": [
+              {
+                "from": "package",
+                "package": "@tanstack/router-core",
+                "name": "Redirect"
+              }
+            ]
           }
         ]
       }

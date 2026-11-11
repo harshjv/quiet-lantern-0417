@@ -28,6 +28,7 @@ require (
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
 	github.com/moby/sys/mountinfo v0.7.3
+	github.com/moby/sys/user v0.5.0
 	github.com/netresearch/go-cron v0.19.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/sigstore/sigstore-go v1.4.0

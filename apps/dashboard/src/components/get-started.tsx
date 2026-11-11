@@ -38,7 +38,7 @@ type Step = {
   action?: (next: boolean) => ReactNode
 }
 
-type Dialog = 'service' | 'sandbox' | null
+type Dialog = 'project' | 'service' | 'sandbox' | null
 
 const variant = (next: boolean) => (next ? 'default' : 'outline')
 
@@ -96,13 +96,9 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
           : first.name
         : 'A project groups services that deploy together.',
       action: (next) => (
-        <NewProject
-          trigger={
-            <Button size="sm" variant={variant(next)}>
-              Create project
-            </Button>
-          }
-        />
+        <Button size="sm" variant={variant(next)} onClick={() => open('project')}>
+          Create project
+        </Button>
       ),
     },
     {
@@ -183,6 +179,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
       ),
     },
   ]
+
   return {
     steps,
     first,
@@ -196,10 +193,17 @@ export function useGetStarted(projects: Project[]) {
   const known = steps.every((step) => step.done !== undefined)
   const complete = steps.every((step) => step.done === true)
   const [seenOpen, setSeenOpen] = useState(false)
-  if (known && !complete && !seenOpen) setSeenOpen(true)
+
+  if (known && !complete && !seenOpen) {
+    setSeenOpen(true)
+  }
+
   useEffect(() => {
-    if (complete && hidden) setGuideHidden(false)
+    if (complete && hidden) {
+      setGuideHidden(false)
+    }
   }, [complete, hidden])
+
   return {
     steps,
     first,
@@ -218,10 +222,12 @@ export function useGetStarted(projects: Project[]) {
 function StepMark({ done }: { done: boolean | undefined }) {
   const [was, setWas] = useState(done)
   const [fresh, setFresh] = useState(false)
+
   if (was !== done) {
     setWas(done)
     setFresh(was === false && done === true)
   }
+
   return done ? (
     <span
       className={cn(
@@ -244,10 +250,20 @@ function Dialogs({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
     ...environmentQuery(guide.first?.default_environment_id ?? ''),
     enabled: Boolean(guide.first),
   })
-  if (!guide.first || !guide.dialog || !environment.data) return null
   const close = (open: boolean) => {
-    if (!open) guide.setDialog(null)
+    if (!open) {
+      guide.setDialog(null)
+    }
   }
+
+  if (guide.dialog === 'project') {
+    return <NewProject open onOpenChange={close} />
+  }
+
+  if (!guide.first || !guide.dialog || !environment.data) {
+    return null
+  }
+
   return guide.dialog === 'service' ? (
     <NewService environment={environment.data} preset={hello} open onOpenChange={close} />
   ) : (
@@ -266,6 +282,7 @@ function Dialogs({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
 export function GetStarted({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
   const finished = guide.steps.filter((step) => step.done).length
   const next = guide.steps.find((step) => !step.done)
+
   return (
     <section
       aria-labelledby="get-started-title"

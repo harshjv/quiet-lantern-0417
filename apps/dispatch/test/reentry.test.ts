@@ -25,12 +25,15 @@ const setValues = async (projectId: string, set: Value[]) => {
     set,
     apply: false,
   })
+
   assert.equal(reply.status, 200, reply.text)
 }
 
 const projectWith = async (name: string, set: Value[]) => {
   const project = await createProject(h, name)
+
   await setValues(project.id, set)
+
   return project
 }
 
@@ -40,11 +43,13 @@ const versionsOf = (projectId: string, key: string) => {
     .from(variable)
     .where(and(eq(variable.project_id, projectId), eq(variable.key, key)))
     .get()!
+
   return h.db.select().from(secret_value).where(eq(secret_value.variable_id, row.id)).all()
 }
 
 const needReentry = (projectId: string, key: string) => {
   const [head] = versionsOf(projectId, key)
+
   h.db
     .update(secret_value)
     .set({
@@ -52,6 +57,7 @@ const needReentry = (projectId: string, key: string) => {
     })
     .where(eq(secret_value.variable_id, head!.variable_id))
     .run()
+
   return head!
 }
 
@@ -81,8 +87,10 @@ test('export refuses a value that needs re-entry with SECRETS_NEED_REENTRY', asy
     api('GET', `/v1/projects/${project.id}/manifest?environment=production`, undefined, {
       accept: 'application/json',
     })
+
   assert.equal((await exported()).status, 200)
   const head = needReentry(project.id, 'PLAIN')
+
   refusedForReentry(await exported(), head.id)
 })
 
@@ -99,8 +107,10 @@ test('a clone refuses a source value that needs re-entry and creates no environm
       name,
       source_environment_id: project.default_environment_id,
     })
+
   assert.equal((await clone('before')).status, 201)
   const head = needReentry(project.id, 'TOKEN')
+
   refusedForReentry(await clone('after'), head.id)
   assert.deepEqual(
     (await api('GET', `/v1/projects/${project.id}/environments`)).body.items
@@ -123,6 +133,7 @@ test('a plan treats a sealed value that needs re-entry as missing', async () => 
       value: 'sealed-lost-value',
     },
   ])
+
   needReentry(project.id, 'LOST')
   const plan = await api('POST', `/v1/projects/${project.id}/manifest/apply`, {
     environment: 'production',
@@ -140,6 +151,7 @@ test('a plan treats a sealed value that needs re-entry as missing', async () => 
       },
     },
   })
+
   assert.equal(plan.status, 200, plan.text)
   assert.deepEqual(
     plan.body.warnings
@@ -158,6 +170,7 @@ test('re-entering the same value writes a version because the no-op check treats
     },
   ]
   const project = await projectWith('noop-reentry', same)
+
   await setValues(project.id, same)
   assert.equal(versionsOf(project.id, 'PLAIN').length, 1)
   needReentry(project.id, 'PLAIN')

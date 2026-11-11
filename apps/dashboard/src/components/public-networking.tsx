@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useSuspenseQueries } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Cable, CircleAlert, Globe, Pencil, Plus, TriangleAlert } from 'lucide-react'
+import { Cable, CircleAlert, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
 import { ChoiceCards } from '@/components/choice-cards'
@@ -44,6 +44,7 @@ import {
 } from '@/lib/api'
 import { editItems } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
+import { entityIcon } from '@/lib/icons'
 import { useInvalidate } from '@/lib/invalidate'
 import { serviceKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
@@ -99,6 +100,7 @@ function usePortsChange(service: Service) {
       editItems(portsQuery(service.id), (ports) =>
         ports.map((p) => {
           const spec = input.ports.find((next) => next.port === p.port)
+
           return spec
             ? {
                 ...p,
@@ -114,6 +116,7 @@ function usePortsChange(service: Service) {
     staged: (input) => input.staged,
     success: (body, input) => {
       const started = body.deployments[0]
+
       return {
         title: input.done,
         description: started ? `Deployment #${started.number} is rolling it out.` : undefined,
@@ -131,13 +134,21 @@ function FailureNotice({
   allocations: PortAllocation[]
   title?: string
 }) {
-  if (!(error instanceof ApiFailure)) return <ErrorState error={error} title={title} />
+  if (!(error instanceof ApiFailure)) {
+    return <ErrorState error={error} title={title} />
+  }
+
   const dependents =
     error.code === 'DELETE_HAS_DEPENDENTS' && Array.isArray(error.details.dependents)
       ? (error.details.dependents as Dependent[])
       : []
-  if (dependents.length === 0) return <ErrorState error={error} title={title} />
+
+  if (dependents.length === 0) {
+    return <ErrorState error={error} title={title} />
+  }
+
   const addressOf = new Map(allocations.map((a) => [a.id, a.address]))
+
   return (
     <Alert variant="destructive" data-testid="change-refused">
       <CircleAlert />
@@ -149,7 +160,7 @@ function FailureNotice({
           {dependents.map((d) => (
             <li key={d.id} className="flex flex-wrap items-center gap-2">
               {d.entity === 'domain' ? (
-                <Globe className="size-4 text-muted-foreground" aria-hidden />
+                <entityIcon.domain className="size-4 text-muted-foreground" aria-hidden />
               ) : (
                 <Cable className="size-4 text-muted-foreground" aria-hidden />
               )}
@@ -237,10 +248,13 @@ function AddPort({
   const [taken, setTaken] = useState(false)
   const submit = () => {
     const number = Number(port)
+
     if (ports.some((p) => p.port === number)) {
       setTaken(true)
+
       return
     }
+
     setTaken(false)
     change.mutate(
       {
@@ -260,6 +274,7 @@ function AddPort({
       },
     )
   }
+
   return (
     <FormDialog
       open={open}
@@ -321,6 +336,7 @@ function EditPort({
       protocol !== target.protocol
         ? `Port ${target.port} is now ${protocol.toUpperCase()}`
         : `Port ${target.port} ${grpc ? 'now speaks gRPC' : 'no longer speaks gRPC'}`
+
     change.mutate(
       {
         ports: ports.map((p) =>
@@ -340,6 +356,7 @@ function EditPort({
       },
     )
   }
+
   return (
     <FormDialog
       open
@@ -372,6 +389,7 @@ function RemovePort({
 }) {
   const change = usePortsChange(service)
   const last = ports.length === 1
+
   return (
     <Confirm
       title={`Remove port ${target.port}?`}
@@ -418,13 +436,16 @@ function Reach({
 }) {
   if (port.protocol === 'http') {
     const mine = domains.filter((d) => d.service_port_id === port.id)
+
     return (
       <span className="text-xs text-muted-foreground">
         {mine.length ? mine.map((d) => d.hostname).join(', ') : 'No domain yet'}
       </span>
     )
   }
+
   const mine = allocations.filter((a) => a.service_port_id === port.id)
+
   return (
     <span className="text-xs text-muted-foreground">
       {mine.length ? mine.map((a) => a.address ?? `port ${a.host_port}`).join(', ') : 'Not public'}
@@ -448,6 +469,7 @@ function PortsPart({
   onEdit: (editing: Editing) => void
 }) {
   const [adding, setAdding] = useState(false)
+
   return (
     <Subsection
       title="Ports"
@@ -560,6 +582,7 @@ function Expose({
     onSuccess: () => invalidate('networking', 'staged'),
   })
   const result = mutation.data
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={dialogScroll}>
@@ -665,6 +688,7 @@ function RemoveExposure({
       description: 'The station stops forwarding it within a few seconds.',
     }),
   })
+
   return (
     <Confirm
       title={`Remove ${label}?`}
@@ -696,6 +720,7 @@ function ExposuresPart({
   const candidates = tcp.filter((p) => !exposed.has(p.id))
   const portOf = new Map(ports.map((p) => [p.id, p]))
   const http = ports.filter((p) => p.protocol === 'http')
+
   return (
     <Subsection
       title={<Term name="publicTcpPort">Public TCP ports</Term>}
@@ -759,6 +784,7 @@ function ExposuresPart({
         <ul className="divide-y overflow-hidden rounded-lg border" aria-label="Public TCP ports">
           {allocations.map((a) => {
             const port = portOf.get(a.service_port_id)
+
             return (
               <li
                 key={a.id}
@@ -814,6 +840,7 @@ function Exposure({
   const [editing, setEditing] = useState<Editing | null>(null)
   const portList = ports.data.items
   const allocationList = allocations.data.items
+
   return (
     <>
       <PortsPart
@@ -860,6 +887,7 @@ export function PublicNetworking({
     environment: trail.environment.name,
     service: service.name,
   }
+
   return (
     <section className="space-y-6" aria-labelledby="public-networking">
       <div className="space-y-1">
@@ -878,7 +906,7 @@ export function PublicNetworking({
       )}
       {service.kind !== 'web' ? (
         <EmptyState
-          icon={Globe}
+          icon={entityIcon.domain}
           title="No public networking"
           description={`${serviceKind[service.kind]} services have no ports, so they have no domains or public TCP ports.`}
         />

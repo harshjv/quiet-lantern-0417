@@ -16,14 +16,22 @@ export const mergeObserved = (
   current: Observed | undefined,
   update: MessageBody<'observed.update'>,
 ): Observed | undefined => {
-  if (!current) return undefined
+  if (!current) {
+    return undefined
+  }
+
   const next = {
     ...current,
     observed_at: update.observed_at,
   } as Record<string, unknown>
+
   for (const [key, value] of Object.entries(update)) {
-    if (key === 'observed_at' || value === undefined) continue
+    if (key === 'observed_at' || value === undefined) {
+      continue
+    }
+
     const base = next[key]
+
     next[key] =
       key === 'station' || key === 'gateway' || typeof base !== 'object' || base === null
         ? value
@@ -32,6 +40,7 @@ export const mergeObserved = (
             ...(value as object),
           }
   }
+
   return next as Observed
 }
 
@@ -48,8 +57,12 @@ const findings = (db: Db, stationId: string, observed: Observed, now: number): F
     .all()
     .sort((a, b) => b.generation - a.generation)[0]
   const out: Finding[] = []
+
   for (const u of observed.unknown) {
-    if (!Object.keys(u.labels ?? {}).some((label) => label.startsWith('stationly.'))) continue
+    if (!Object.keys(u.labels ?? {}).some((label) => label.startsWith('stationly.'))) {
+      continue
+    }
+
     out.push({
       key: `unknown/${u.kind}/${u.docker_id ?? u.id}`,
       desired: null,
@@ -57,58 +70,77 @@ const findings = (db: Db, stationId: string, observed: Observed, now: number): F
       reason: 'an object carrying Stationly labels that no desired key accounts for',
     })
   }
+
   if (
     !acked ||
     observed.applied.number !== acked.generation ||
     now - acked.updated_at.getTime() < settleMs
-  )
+  ) {
     return out
+  }
+
   const doc = acked.document
+
   for (const [id, env] of Object.entries(doc.environments)) {
     const o = observed.environments[id]
-    if (o && o.applied_hash !== env.hash)
+
+    if (o && o.applied_hash !== env.hash) {
       out.push({
         key: `environments/${id}`,
         desired: env.hash,
         observed: o.applied_hash,
         reason: 'applied_hash differs from the desired hash',
       })
+    }
   }
+
   for (const [id, box] of Object.entries(doc.sandboxes ?? {})) {
     const o = observed.sandboxes?.[id]
-    if (o && o.applied_hash !== null && o.applied_hash !== box.hash)
+
+    if (o && o.applied_hash !== null && o.applied_hash !== box.hash) {
       out.push({
         key: `sandboxes/${id}`,
         desired: box.hash,
         observed: o.applied_hash,
         reason: 'applied_hash differs from the desired hash',
       })
+    }
   }
+
   for (const [id, svc] of Object.entries(doc.services)) {
     const o = observed.services[id]
-    if (!o) continue
-    if (o.applied_hash !== null && o.applied_hash !== svc.hash)
+
+    if (!o) {
+      continue
+    }
+
+    if (o.applied_hash !== null && o.applied_hash !== svc.hash) {
       out.push({
         key: `services/${id}`,
         desired: svc.hash,
         observed: o.applied_hash,
         reason: 'applied_hash differs from the desired hash',
       })
+    }
+
     const longRunning = svc.kind === 'web' || svc.kind === 'worker'
+
     if (
       longRunning &&
       svc.desired_state === 'running' &&
       svc.current &&
       !o.containers.some((c) => c.state === 'running') &&
       !Object.values(doc.deployments).some((d) => d.service_id === id)
-    )
+    ) {
       out.push({
         key: `services/${id}/containers`,
         desired: 'running',
         observed: o.containers.map((c) => c.state),
         reason: 'a desired-running service has no running container set',
       })
+    }
   }
+
   return out
 }
 
@@ -123,8 +155,12 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
   const openKeys = new Map(open.map((d) => [d.object, d]))
   const foundKeys = new Set(found.map((f) => f.key))
   const opened: string[] = []
+
   for (const f of found) {
-    if (openKeys.has(f.key)) continue
+    if (openKeys.has(f.key)) {
+      continue
+    }
+
     const row = db
       .insert(drift)
       .values({
@@ -137,6 +173,7 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
         id: drift.id,
       })
       .get()
+
     emitEvent(
       db,
       'station.drift',
@@ -154,9 +191,14 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
     )
     opened.push(f.key)
   }
+
   const resolved: string[] = []
+
   for (const d of open) {
-    if (foundKeys.has(d.object)) continue
+    if (foundKeys.has(d.object)) {
+      continue
+    }
+
     db.update(drift)
       .set({
         status: 'resolved',
@@ -165,6 +207,7 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
       .run()
     resolved.push(d.object)
   }
+
   return {
     opened,
     resolved,

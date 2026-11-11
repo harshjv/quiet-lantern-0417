@@ -61,21 +61,3 @@ func EnsureFirewall(dist netip.AddrPort) (bool, error) {
 	})
 	return true, c.Flush()
 }
-
-func RemoveFirewall() error {
-	c, err := nftables.New()
-	if err != nil {
-		return err
-	}
-	tables, err := c.ListTablesOfFamily(nftables.TableFamilyBridge)
-	if err != nil {
-		return err
-	}
-	for _, t := range tables {
-		if t.Name == FirewallTable {
-			c.DelTable(bridgeTable)
-			return c.Flush()
-		}
-	}
-	return nil
-}

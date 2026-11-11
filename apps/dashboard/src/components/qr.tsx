@@ -16,12 +16,15 @@ export function QrCode({
       ecc: 'M',
     })
     const parts: string[] = []
+
     qr.data.forEach((row, y) => row.forEach((on, x) => on && parts.push(`M${x} ${y}h1v1h-1z`)))
+
     return {
       path: parts.join(''),
       cells: qr.size,
     }
   }, [value])
+
   return (
     <svg
       role="img"

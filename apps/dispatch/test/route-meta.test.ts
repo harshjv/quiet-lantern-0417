@@ -29,23 +29,41 @@ test('every /v1 operation declares an operationId and x-stationly.level, and no 
   ).body
   const owners = new Map<string, string>()
   const problems: string[] = []
+
   for (const [path, item] of Object.entries<
     Record<string, { operationId?: string; 'x-stationly'?: { level?: string } }>
   >(doc.paths)) {
     for (const method of methods) {
       const operation = item[method]
-      if (!operation) continue
+
+      if (!operation) {
+        continue
+      }
+
       const where = `${method.toUpperCase()} ${path}`
-      if (path.startsWith('/v1') && !operation.operationId)
+
+      if (path.startsWith('/v1') && !operation.operationId) {
         problems.push(`${where} has no operationId`)
-      if (path.startsWith('/v1') && !operation['x-stationly']?.level)
+      }
+
+      if (path.startsWith('/v1') && !operation['x-stationly']?.level) {
         problems.push(`${where} has no x-stationly.level`)
-      if (!operation.operationId) continue
+      }
+
+      if (!operation.operationId) {
+        continue
+      }
+
       const owner = owners.get(operation.operationId)
-      if (owner) problems.push(`${where} and ${owner} share operationId ${operation.operationId}`)
-      else owners.set(operation.operationId, where)
+
+      if (owner) {
+        problems.push(`${where} and ${owner} share operationId ${operation.operationId}`)
+      } else {
+        owners.set(operation.operationId, where)
+      }
     }
   }
+
   assert.ok(owners.size >= 100, `only ${owners.size} operations carry an operationId`)
   assert.deepEqual(problems, [])
 })
@@ -63,27 +81,42 @@ const docLevels: Record<string, string> = {
 const catalogRows = (file: string) => {
   const rows: { file: string; key: string; level: string | null; tool: string; sly: string }[] = []
   let columns: string[] | null = null
+
   for (const line of readDoc(file).split('\n')) {
     if (!line.startsWith('|')) {
       columns = null
       continue
     }
+
     const cells = line
       .slice(1, -1)
       .split(/(?<!\\)\|/)
       .map((cell) => cell.trim())
-    if (cells.every((cell) => /^-+$/.test(cell))) continue
+
+    if (cells.every((cell) => /^-+$/.test(cell))) {
+      continue
+    }
+
     if (!columns) {
       columns = ['Method', 'Path', 'Level', 'Tool', 'sly'].every((name) => cells.includes(name))
         ? cells
         : []
       continue
     }
-    if (!columns.length) continue
+
+    if (!columns.length) {
+      continue
+    }
+
     const at = (name: string) => cells[columns!.indexOf(name)] ?? ''
     const path = /`([^`]+)`/.exec(at('Path'))?.[1]
-    if (!path) continue
+
+    if (!path) {
+      continue
+    }
+
     const level = /^(?:`([^`]+)`|(any credential|public))/.exec(at('Level'))
+
     rows.push({
       file,
       key: `${at('Method')} ${path.replace(/\{[^}]+\}/g, '{}')}`,
@@ -92,6 +125,7 @@ const catalogRows = (file: string) => {
       sly: at('sly'),
     })
   }
+
   return rows
 }
 
@@ -120,6 +154,7 @@ test(
     )
     const written = new Set(handWritten(handWrittenProgram()))
     const problems: string[] = []
+
     for (const [path, item] of Object.entries<
       Record<
         string,
@@ -131,37 +166,52 @@ test(
     >(doc.paths)) {
       for (const method of methods) {
         const operation = item[method]
-        if (!operation?.operationId || !operation['x-stationly']) continue
+
+        if (!operation?.operationId || !operation['x-stationly']) {
+          continue
+        }
+
         const key = `${method.toUpperCase()} ${path.replace(/\{[^}]+\}/g, '{}')}`
         const matching = rows.filter((row) => row.key === key)
+
         if (matching.length !== 1) {
           problems.push(`${key} (${operation.operationId}) has ${matching.length} rows`)
           continue
         }
+
         const row = matching[0]!
         const meta = operation['x-stationly']
         const level = docLevels[meta.level]
-        if (row.level !== level)
+
+        if (row.level !== level) {
           problems.push(`${row.file} ${key}: Level ${row.level} but the route declares ${level}`)
+        }
+
         const tool =
           meta.mcp === false
             ? /^none\b/.test(row.tool)
             : row.tool === `\`${operation.operationId}\``
-        if (!tool)
+
+        if (!tool) {
           problems.push(
             `${row.file} ${key}: Tool ${row.tool} but the route is ${meta.mcp === false ? 'mcp false' : operation.operationId}`,
           )
+        }
+
         const command = /^`sly ([^`]+)`$/.exec(row.sly)?.[1]
         const sly =
           meta.cli === false
             ? command !== undefined && written.has(command)
             : command === commands.get(operation.operationId)
-        if (!sly)
+
+        if (!sly) {
           problems.push(
             `${row.file} ${key}: sly ${row.sly} but the route's command is ${meta.cli === false ? 'hand-written' : `sly ${commands.get(operation.operationId)}`}`,
           )
+        }
       }
     }
+
     assert.deepEqual(problems, [])
   },
 )

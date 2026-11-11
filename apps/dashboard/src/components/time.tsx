@@ -15,7 +15,11 @@ const clocks = new Map<number, Clock>()
 
 const clockOf = (every: number) => {
   const existing = clocks.get(every)
-  if (existing) return existing
+
+  if (existing) {
+    return existing
+  }
+
   const clock: Clock = {
     now: Date.now(),
     listeners: new Set(),
@@ -25,22 +29,33 @@ const clockOf = (every: number) => {
       clock.now = Date.now()
       clock.timer ??= window.setInterval(() => {
         clock.now = Date.now()
-        for (const notify of clock.listeners) notify()
+
+        for (const notify of clock.listeners) {
+          notify()
+        }
       }, every)
+
       return () => {
         clock.listeners.delete(listener)
-        if (clock.listeners.size > 0) return
+
+        if (clock.listeners.size > 0) {
+          return
+        }
+
         window.clearInterval(clock.timer)
         clock.timer = undefined
       }
     },
   }
+
   clocks.set(every, clock)
+
   return clock
 }
 
 export const useNow = (every: number) => {
   const clock = clockOf(every)
+
   return useSyncExternalStore(clock.subscribe, () => clock.now)
 }
 
@@ -57,7 +72,11 @@ export function Time({
 }) {
   const now = useNow(live ? 1000 : 15_000)
   const text = `${prefix ? `${prefix} ` : ''}${ago(value, new Date(now))}`
-  if (!value) return <span className={className}>{text}</span>
+
+  if (!value) {
+    return <span className={className}>{text}</span>
+  }
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>

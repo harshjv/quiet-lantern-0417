@@ -36,6 +36,7 @@ const pendingEnv = (db: Db, svc: ServiceRow) => {
   const resolver = Resolver.forService(db, svc.id)
   const entries = []
   const unresolved: string[] = []
+
   for (const v of resolver.serviceVariables()) {
     try {
       entries.push({
@@ -44,10 +45,14 @@ const pendingEnv = (db: Db, svc: ServiceRow) => {
         node: resolver.resolve(v),
       })
     } catch (error) {
-      if (!(error instanceof SecretsError)) throw error
+      if (!(error instanceof SecretsError)) {
+        throw error
+      }
+
       unresolved.push(v.key)
     }
   }
+
   const env = envOf(
     db,
     {
@@ -57,6 +62,7 @@ const pendingEnv = (db: Db, svc: ServiceRow) => {
     },
     entries,
   )
+
   return {
     env,
     unresolved,
@@ -73,8 +79,13 @@ const changedKeys = (
   const before = shape(deployed)
   const after = shape(pending)
   const keys = new Set(unresolved)
-  for (const key of new Set([...before.keys(), ...after.keys()]))
-    if (before.get(key) !== after.get(key)) keys.add(key)
+
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    if (before.get(key) !== after.get(key)) {
+      keys.add(key)
+    }
+  }
+
   return [...keys].sort()
 }
 
@@ -82,7 +93,10 @@ const deployedEnv = (db: Db, deploymentId: string) => {
   try {
     return generationEnv(db, deploymentId)
   } catch (error) {
-    if (!(error instanceof SecretsError)) throw error
+    if (!(error instanceof SecretsError)) {
+      throw error
+    }
+
     return {
       env: [] as ReturnType<typeof envOf>,
       env_digest: null,
@@ -95,11 +109,14 @@ export const staleness = (db: Db, svc: ServiceRow) => {
   const reads = pending.env.flatMap((entry) =>
     entry.refs.flatMap((ref) => ('secret_value_id' in ref ? [ref.secret_value_id] : [])),
   )
-  if (!svc.current_deployment_id)
+
+  if (!svc.current_deployment_id) {
     return {
       reasons: [] as StaleReasonValue[],
       reads,
     }
+  }
+
   const current = db
     .select({
       config_snapshot: deployment.config_snapshot,
@@ -107,36 +124,45 @@ export const staleness = (db: Db, svc: ServiceRow) => {
     .from(deployment)
     .where(eq(deployment.id, svc.current_deployment_id))
     .get()
-  if (!current)
+
+  if (!current) {
     return {
       reasons: [] as StaleReasonValue[],
       reads,
     }
+  }
+
   const reasons: StaleReasonValue[] = []
   const deployed = deployedEnv(db, svc.current_deployment_id)
   const digest = pending.unresolved.length ? null : envDigest(pending.env)
+
   if (digest === null || digest !== deployed.env_digest) {
     const keys = changedKeys(deployed.env, pending.env, pending.unresolved)
     const unresolved = pending.unresolved.length
       ? ` ${list(pending.unresolved)} does not resolve, so the next deploy fails until it does.`
       : ''
+
     reasons.push({
       code: 'VARIABLES_CHANGED',
       explanation: `Variables changed since the last deploy${keys.length ? `: ${list(keys)}` : ''}. Deploy to apply them.${unresolved}`,
       keys,
     })
   }
+
   const snapshot = current.config_snapshot as Record<string, unknown>
   const fields = configFields.filter(
     (field) =>
       canonicalOrNull((svc as Record<string, unknown>)[field]) !== canonicalOrNull(snapshot[field]),
   )
-  if (fields.length)
+
+  if (fields.length) {
     reasons.push({
       code: 'CONFIG_CHANGED',
       explanation: `Configuration changed since the last deploy: ${list(fields)}. Deploy to apply it.`,
       keys: [...fields],
     })
+  }
+
   return {
     reasons,
     reads,
@@ -145,20 +171,31 @@ export const staleness = (db: Db, svc: ServiceRow) => {
 
 export const refreshStale = (db: Db, serviceIds?: string[]) => {
   const readers = new Map<string, string[]>()
-  if (serviceIds && serviceIds.length === 0) return readers
+
+  if (serviceIds && serviceIds.length === 0) {
+    return readers
+  }
+
   const rows = db
     .select()
     .from(service)
     .where(serviceIds ? inArray(service.id, serviceIds) : undefined)
     .all()
+
   for (const svc of rows) {
     const { reasons, reads } = staleness(db, svc)
-    for (const id of new Set(reads)) readers.set(id, [...(readers.get(id) ?? []), svc.id])
+
+    for (const id of new Set(reads)) {
+      readers.set(id, [...(readers.get(id) ?? []), svc.id])
+    }
+
     if (
       svc.stale === reasons.length > 0 &&
       canonicalOrNull(svc.stale_reasons) === canonicalOrNull(reasons)
-    )
+    ) {
       continue
+    }
+
     db.update(service)
       .set({
         stale: reasons.length > 0,
@@ -167,6 +204,7 @@ export const refreshStale = (db: Db, serviceIds?: string[]) => {
       .where(eq(service.id, svc.id))
       .run()
   }
+
   return readers
 }
 
@@ -182,27 +220,35 @@ const sandboxReaders = (db: Db) => {
       .all()
       .map((v) => v.id),
   )
+
   for (const box of db
     .select({
       id: sandbox.id,
     })
     .from(sandbox)
     .all()) {
-    if (!owners.has(box.id)) continue
+    if (!owners.has(box.id)) {
+      continue
+    }
+
     for (const entry of sandboxEntries(db, box.id)) {
-      for (const leaf of leaves(entry.node))
-        if (leaf.kind === 'value')
+      for (const leaf of leaves(entry.node)) {
+        if (leaf.kind === 'value') {
           readers.set(leaf.secret_value_id, [
             ...new Set([...(readers.get(leaf.secret_value_id) ?? []), box.id]),
           ])
+        }
+      }
     }
   }
+
   return readers
 }
 
 export const settleVariableWrites = (db: Db, writes: VariableWrite[]) => {
   const readers = refreshStale(db)
   const boxes = sandboxReaders(db)
+
   for (const write of writes) {
     db.insert(event)
       .values({
@@ -246,8 +292,12 @@ export const staleDependents = (
     )
     .all()
     .flatMap(({ svc, env }) => {
-      if (serviceIds && !serviceIds.has(svc.id)) return []
+      if (serviceIds && !serviceIds.has(svc.id)) {
+        return []
+      }
+
       const reason = svc.stale_reasons.find((r) => r.code === 'VARIABLES_CHANGED')
+
       return reason
         ? [
             {

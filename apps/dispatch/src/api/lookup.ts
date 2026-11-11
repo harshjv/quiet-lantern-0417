@@ -50,11 +50,13 @@ export const projectByRef = (db: Db, ref: string) => {
     .from(project)
     .where(ref.startsWith('prj_') ? eq(project.id, ref) : eq(project.name, ref))
     .get()
+
   return row ?? notFound('project', ref)
 }
 
 export const projectContext = (db: Db, ref: string) => {
   const row = projectByRef(db, ref)
+
   return {
     project: row,
     target: {
@@ -68,6 +70,7 @@ export const environmentById = (db: Db, id: string) => {
   const row =
     db.select().from(environment).where(eq(environment.id, id)).get() ?? notFound('environment', id)
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
+
   return {
     environment: row,
     project: proj,
@@ -90,12 +93,14 @@ export const environmentInProject = (db: Db, proj: ProjectRow, ref: string) => {
         ),
       )
       .get() ?? notFound('environment', ref)
+
   return row
 }
 
 export const serviceById = (db: Db, id: string): ServiceContext => {
   const row = db.select().from(service).where(eq(service.id, id)).get() ?? notFound('service', id)
   const ctx = environmentById(db, row.environment_id)
+
   return {
     service: row,
     environment: ctx.environment,
@@ -119,6 +124,7 @@ export const serviceInEnvironment = (db: Db, environmentId: string, ref: string)
 export const portById = (db: Db, id: string) => {
   const row =
     db.select().from(service_port).where(eq(service_port.id, id)).get() ?? notFound('port', id)
+
   return {
     port: row,
     ...serviceById(db, row.service_id),
@@ -128,6 +134,7 @@ export const portById = (db: Db, id: string) => {
 export const volumeById = (db: Db, id: string) => {
   const row = db.select().from(volume).where(eq(volume.id, id)).get() ?? notFound('volume', id)
   const owner = row.service_id ? serviceById(db, row.service_id) : null
+
   return {
     volume: row,
     owner,
@@ -144,6 +151,7 @@ export const volumeById = (db: Db, id: string) => {
 
 export const domainById = (db: Db, id: string) => {
   const row = db.select().from(domain).where(eq(domain.id, id)).get() ?? notFound('domain', id)
+
   return {
     domain: row,
     ...portById(db, row.service_port_id),
@@ -154,6 +162,7 @@ export const allocationById = (db: Db, id: string) => {
   const row =
     db.select().from(port_allocation).where(eq(port_allocation.id, id)).get() ??
     notFound('port_allocation', id)
+
   return {
     allocation: row,
     ...portById(db, row.service_port_id),
@@ -163,6 +172,7 @@ export const allocationById = (db: Db, id: string) => {
 export const deploymentById = (db: Db, id: string) => {
   const row =
     db.select().from(deployment).where(eq(deployment.id, id)).get() ?? notFound('deployment', id)
+
   return {
     deployment: row,
     ...serviceById(db, row.service_id),
@@ -171,6 +181,7 @@ export const deploymentById = (db: Db, id: string) => {
 
 export const buildById = (db: Db, id: string) => {
   const row = db.select().from(build).where(eq(build.id, id)).get() ?? notFound('build', id)
+
   return {
     build: row,
     ...deploymentById(db, row.deployment_id),
@@ -193,8 +204,13 @@ export type SandboxContext = {
 
 const sandboxContext = (db: Db, row: SandboxRow): SandboxContext => {
   const env = db.select().from(environment).where(eq(environment.id, row.environment_id)).get()
-  if (!env) return notFound('sandbox', row.id)
+
+  if (!env) {
+    return notFound('sandbox', row.id)
+  }
+
   const proj = db.select().from(project).where(eq(project.id, env.project_id)).get()!
+
   return {
     sandbox: row,
     environment: env,
@@ -208,6 +224,7 @@ const sandboxContext = (db: Db, row: SandboxRow): SandboxContext => {
 
 export const sandboxById = (db: Db, id: string): SandboxContext => {
   const row = db.select().from(sandbox).where(eq(sandbox.id, id)).get() ?? notFound('sandbox', id)
+
   return sandboxContext(db, row)
 }
 
@@ -235,8 +252,13 @@ export const snapshotById = (db: Db, id: string): SnapshotContext => {
     db.select().from(sandbox_snapshot).where(eq(sandbox_snapshot.id, id)).get() ??
     notFound('sandbox_snapshot', id)
   const env = db.select().from(environment).where(eq(environment.id, row.environment_id)).get()
-  if (!env) return notFound('sandbox_snapshot', id)
+
+  if (!env) {
+    return notFound('sandbox_snapshot', id)
+  }
+
   const proj = db.select().from(project).where(eq(project.id, env.project_id)).get()!
+
   return {
     snapshot: row,
     environment: env,
@@ -256,13 +278,16 @@ export const runOwner = (
 ): RunOwner => {
   if (r.sandbox_id) {
     const ctx = sandboxById(db, r.sandbox_id)
+
     return {
       target: ctx.target,
       environment: ctx.environment,
       station_id: ctx.sandbox.station_id,
     }
   }
+
   const ctx = serviceById(db, r.service_id!)
+
   return {
     target: ctx.target,
     environment: ctx.environment,
@@ -272,6 +297,7 @@ export const runOwner = (
 
 export const runById = (db: Db, id: string) => {
   const row = db.select().from(run).where(eq(run.id, id)).get() ?? notFound('run', id)
+
   return {
     run: row,
     ...runOwner(db, row),
@@ -279,19 +305,28 @@ export const runById = (db: Db, id: string) => {
 }
 
 export const variableTarget = (db: Db, row: VariableRow): Target => {
-  if (row.scope === 'service') return serviceById(db, row.service_id!).target
-  if (row.scope === 'sandbox') return sandboxById(db, row.sandbox_id!).target
-  if (row.scope === 'project')
+  if (row.scope === 'service') {
+    return serviceById(db, row.service_id!).target
+  }
+
+  if (row.scope === 'sandbox') {
+    return sandboxById(db, row.sandbox_id!).target
+  }
+
+  if (row.scope === 'project') {
     return {
       project_id: row.project_id!,
       environment_id: '*',
     }
+  }
+
   return anyTarget
 }
 
 export const variableById = (db: Db, id: string) => {
   const row =
     db.select().from(variable).where(eq(variable.id, id)).get() ?? notFound('variable', id)
+
   return {
     variable: row,
     target: variableTarget(db, row),
@@ -310,6 +345,7 @@ export const secretValueById = (db: Db, id: string) => {
           environment_id: row.environment_id,
         }
       : owner.target
+
   return {
     secretValue: row,
     variable: owner.variable,
@@ -331,6 +367,7 @@ export const stagedById = (db: Db, id: string) => {
         .get()
     : undefined
   const env = live ? environmentById(db, live.id) : null
+
   return {
     staged: row,
     environment: env,

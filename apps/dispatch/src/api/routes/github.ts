@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import { Type } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
 import { githubRepositorySelectionValues, Nullable, StringEnum } from '@stationly/protocol'
 
@@ -20,7 +20,7 @@ import { requireHuman } from '../access.ts'
 import { audit } from '../context.ts'
 import { fail } from '../errors.ts'
 import type { Kit } from '../kit.ts'
-import { models, replies } from '../shapes.ts'
+import { replies } from '../shapes.ts'
 
 const Installation = Type.Object(
   {
@@ -128,7 +128,6 @@ type InstallationData = {
 
 export const githubRoutes = (kit: Kit) => {
   const { db, github, auth } = kit.deps
-  const tags = ['github']
 
   const dashboardOrigin = (request: Request) =>
     surfaceOf(request, auth) === 'local'
@@ -137,20 +136,20 @@ export const githubRoutes = (kit: Kit) => {
 
   const human = async (request: Request, what: string) => {
     const principal = await kit.principal(request)
+
     requireHuman(principal, what)
+
     return principal
   }
 
   const instanceSuffix = () => {
     const id = readSetting(db, 'instance.id')
+
     return (id ?? 'ins_local').slice(-6).toLowerCase()
   }
 
-  return new Elysia({
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('github', '')
     .get(
       '/github/connect',
       async ({ request, query, set }) => {
@@ -158,6 +157,7 @@ export const githubRoutes = (kit: Kit) => {
         const state = randomBytes(32).toString('base64url')
         const origin = dashboardOrigin(request)
         const webhooks = auth.surface.apiOrigin.startsWith('https://')
+
         db.insert(github_connect_state)
           .values({
             state_sha256: sha(state),
@@ -189,13 +189,16 @@ export const githubRoutes = (kit: Kit) => {
           default_events: ['push', 'pull_request'],
         }
         const action = `${githubWeb()}${query.org ? `/organizations/${encodeURIComponent(query.org)}` : ''}/settings/apps/new?state=${state}`
+
         set.headers['content-type'] = 'text/html; charset=utf-8'
         set.headers['cache-control'] = 'no-store'
+
         return `<!doctype html><html><head><meta charset="utf-8"><title>Connect GitHub</title></head><body><form id="f" method="post" action="${escapeHtml(action)}"><input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}"><button type="submit">Create the GitHub App</button></form><script>document.getElementById('f').submit()</script></body></html>`
       },
       {
         operation: {
           id: 'connect_github',
+          summary: 'Open the GitHub App manifest form that creates the App',
           level: 'instance admin',
           mcp: false,
         },
@@ -222,6 +225,7 @@ export const githubRoutes = (kit: Kit) => {
               .where(eq(github_connect_state.state_sha256, sha(query.state)))
               .get()
           : undefined
+
         if (
           !row ||
           row.used_at ||
@@ -234,6 +238,7 @@ export const githubRoutes = (kit: Kit) => {
             'Start again from /github/connect.',
           )
         }
+
         db.update(github_connect_state)
           .set({
             used_at: new Date(),
@@ -246,12 +251,15 @@ export const githubRoutes = (kit: Kit) => {
           })
         ).data
         const owner = conversion.owner.login.toLowerCase()
-        if (db.select().from(github_app).where(eq(github_app.owner, owner)).get())
+
+        if (db.select().from(github_app).where(eq(github_app.owner, owner)).get()) {
           fail(
             'NAME_TAKEN',
             `A GitHub App for ${owner} is already connected.`,
             'Disconnect it first, or install the existing App.',
           )
+        }
+
         const id = newId('github_app')
         const pem = github.seal(id, 'private_key', conversion.pem)
         const clientSecret = github.seal(id, 'client_secret', conversion.client_secret)
@@ -259,6 +267,7 @@ export const githubRoutes = (kit: Kit) => {
           row!.webhooks && conversion.webhook_secret
             ? github.seal(id, 'webhook_secret', conversion.webhook_secret)
             : null
+
         db.insert(github_app)
           .values({
             id,
@@ -274,7 +283,8 @@ export const githubRoutes = (kit: Kit) => {
           })
           .run()
         const app = db.select().from(github_app).where(eq(github_app.id, id)).get()!
-        if (app.webhooks)
+
+        if (app.webhooks) {
           await gh('/app/hook/config', {
             method: 'PATCH',
             token: github.jwtFor(app),
@@ -283,6 +293,8 @@ export const githubRoutes = (kit: Kit) => {
               content_type: 'json',
             },
           })
+        }
+
         audit(
           db,
           {
@@ -306,11 +318,13 @@ export const githubRoutes = (kit: Kit) => {
         )
         set.status = 302
         set.headers.location = github.installUrl(app)
+
         return ''
       },
       {
         operation: {
           id: 'finish_github_connect',
+          summary: 'Store the GitHub App created from the manifest',
           level: 'instance admin',
           mcp: false,
         },
@@ -332,6 +346,7 @@ export const githubRoutes = (kit: Kit) => {
       async ({ request, query, set }) => {
         const principal = await human(request, 'Installing a GitHub App')
         const installationId = Number(query.installation_id)
+
         for (const app of db.select().from(github_app).all()) {
           try {
             const data = (
@@ -340,6 +355,7 @@ export const githubRoutes = (kit: Kit) => {
               })
             ).data
             const row = github.upsertInstallation(app, data)
+
             audit(
               db,
               {
@@ -362,12 +378,17 @@ export const githubRoutes = (kit: Kit) => {
             )
             set.status = 302
             set.headers.location = `${dashboardOrigin(request)}/github?installation=${row.id}`
+
             return ''
           } catch (error) {
-            if (error instanceof GitHubError && error.status === 404) continue
+            if (error instanceof GitHubError && error.status === 404) {
+              continue
+            }
+
             throw error
           }
         }
+
         return fail(
           'NOT_FOUND',
           `No connected GitHub App owns installation ${query.installation_id}.`,
@@ -377,6 +398,7 @@ export const githubRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'verify_github_installation',
+          summary: 'Record a GitHub App installation after GitHub redirects back',
           level: 'instance admin',
           mcp: false,
         },
@@ -394,13 +416,11 @@ export const githubRoutes = (kit: Kit) => {
     .post('/github/webhook/:app', ({ params, request }) => github.receive(params.app, request), {
       operation: {
         id: 'receive_github_webhook',
+        summary: 'Receive a GitHub webhook delivery',
         level: 'public',
         mcp: false,
       },
       parse: 'none',
-      params: t.Object({
-        app: t.String(),
-      }),
       detail: {
         hide: true,
       },
@@ -408,29 +428,33 @@ export const githubRoutes = (kit: Kit) => {
     .get('/v1/github', () => github.connection(), {
       operation: {
         id: 'get_github_connection',
+        summary:
+          'GitHub Apps, their installations, and the links a human opens to connect or install',
         level: 'instance read',
       },
       response: replies({
         200: Connection,
       }),
-      detail: {
-        summary:
-          'GitHub Apps, their installations, and the links a human opens to connect or install',
-        tags,
-      },
     })
     .post(
       '/v1/github/installations/sync',
       async () => {
         const apps = db.select().from(github_app).all()
-        if (!apps.length)
+
+        if (!apps.length) {
           fail(
             'GITHUB_NOT_CONNECTED',
             'No GitHub App is connected.',
             `A human opens ${github.connectUrl()} to connect one.`,
           )
+        }
+
         const items = []
-        for (const app of apps) items.push(...(await github.syncInstallations(app)))
+
+        for (const app of apps) {
+          items.push(...(await github.syncInstallations(app)))
+        }
+
         return {
           items: items.map((i) => ({
             id: i.id,
@@ -444,15 +468,12 @@ export const githubRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'sync_github_installations',
+          summary: 'Re-read every installation from GitHub',
           level: 'instance admin',
         },
         response: replies({
           200: Installations,
         }),
-        detail: {
-          summary: 'Re-read every installation from GitHub',
-          tags,
-        },
       },
     )
     .get(
@@ -463,7 +484,11 @@ export const githubRoutes = (kit: Kit) => {
           .from(github_installation)
           .where(eq(github_installation.id, params.id))
           .get()
-        if (!row) fail('GITHUB_NOT_CONNECTED', `Installation ${params.id} is not connected.`)
+
+        if (!row) {
+          fail('GITHUB_NOT_CONNECTED', `Installation ${params.id} is not connected.`)
+        }
+
         const app = db.select().from(github_app).where(eq(github_app.id, row!.github_app_id)).get()!
         const token = await github.installationToken(app, row!.installation_id, null, {
           metadata: 'read',
@@ -475,6 +500,7 @@ export const githubRoutes = (kit: Kit) => {
             token,
           })
         ).data
+
         return {
           items: data.repositories.map((r) => ({
             full_name: r.full_name,
@@ -486,18 +512,12 @@ export const githubRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'list_github_repositories',
+          summary: 'Repositories an installation covers',
           level: 'instance read',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Repositories,
         }),
-        detail: {
-          summary: 'Repositories an installation covers',
-          tags,
-        },
       },
     )
     .delete(
@@ -507,6 +527,7 @@ export const githubRoutes = (kit: Kit) => {
         const app =
           db.select().from(github_app).where(eq(github_app.id, params.id)).get() ??
           fail('NOT_FOUND', `GitHub App ${params.id} is not connected.`)
+
         db.transaction((tx) => {
           tx.delete(github_installation).where(eq(github_installation.github_app_id, app.id)).run()
           tx.delete(github_delivery).where(eq(github_delivery.github_app_id, app.id)).run()
@@ -531,6 +552,7 @@ export const githubRoutes = (kit: Kit) => {
             },
           },
         )
+
         return {
           disconnected: true as const,
         }
@@ -538,19 +560,13 @@ export const githubRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'disconnect_github_app',
+          summary: 'Disconnect a GitHub App (human only)',
           level: 'instance admin',
           mcp: false,
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Disconnected,
         }),
-        detail: {
-          summary: 'Disconnect a GitHub App (human only)',
-          tags,
-        },
       },
     )
 }

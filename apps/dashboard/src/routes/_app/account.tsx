@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { KeyRound, Loader2, ShieldCheck, Smartphone } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
+import { z } from 'zod'
 
 import { Code } from '@/components/code'
 import { RemoveButton } from '@/components/confirm'
@@ -21,21 +22,20 @@ import { authClient, authMessage, passkeysAvailable, passkeysQuery, sessionQuery
 import { commands } from '@/lib/commands'
 import { done, useApiMutation } from '@/lib/mutation'
 import { load, warm } from '@/lib/queries'
+import { titled } from '@/lib/title'
 import { toneOutline } from '@/lib/tone'
 
 export const Route = createFileRoute('/_app/account')({
-  validateSearch: (search: Record<string, unknown>): { enroll?: boolean } =>
-    search.enroll === true || search.enroll === 'true'
-      ? {
-          enroll: true,
-        }
-      : {},
+  validateSearch: z.object({
+    enroll: z.boolean().optional().catch(undefined),
+  }),
   loader: async ({ context }) => {
     await Promise.all([
       load(context.queryClient, sessionQuery),
       passkeysAvailable() && warm(context.queryClient, passkeysQuery),
     ])
   },
+  head: () => titled('Account'),
   errorComponent: failurePage('Couldn’t load your account'),
   component: Account,
 })
@@ -48,7 +48,11 @@ function PasskeyList({
   removing: boolean
 }) {
   const { data } = useSuspenseQuery(passkeysQuery)
-  if (data.length === 0) return <p className="text-sm text-muted-foreground">No passkeys yet.</p>
+
+  if (data.length === 0) {
+    return <p className="text-sm text-muted-foreground">No passkeys yet.</p>
+  }
+
   return (
     <ul className="divide-y rounded-md border">
       {data.map((p) => (
@@ -79,8 +83,11 @@ function Passkeys() {
       const result = await authClient.passkey.addPasskey({
         name: name.trim() || undefined,
       })
-      if (result.error)
+
+      if (result.error) {
         throw new Error(authMessage(result.error, 'Your browser didn’t create the passkey.'))
+      }
+
       return done(null)
     },
     invalidate: ['auth'],
@@ -96,8 +103,11 @@ function Passkeys() {
       const result = await authClient.passkey.deletePasskey({
         id,
       })
-      if (result.error)
+
+      if (result.error) {
         throw new Error(authMessage(result.error, 'Stationly couldn’t remove the passkey.'))
+      }
+
       return done(null)
     },
     invalidate: ['auth'],
@@ -108,6 +118,7 @@ function Passkeys() {
     event.preventDefault()
     add.mutate()
   }
+
   return (
     <Card>
       <CardHeader>
@@ -168,17 +179,24 @@ function Totp({ enabled }: { enabled: boolean }) {
     const result = await authClient.twoFactor.enable({
       password,
     })
+
     setBusy(false)
     setPassword('')
+
     if (result.error) {
       setError(authMessage(result.error, 'Stationly didn’t accept that password.'))
+
       return
     }
+
     if (!('totpURI' in result.data)) {
       setError('Stationly didn’t return a TOTP secret. Try again.')
+
       return
     }
+
     const uri = result.data.totpURI
+
     setSetup({
       uri,
       secret: new URL(uri).searchParams.get('secret') ?? '',
@@ -193,12 +211,16 @@ function Totp({ enabled }: { enabled: boolean }) {
     const result = await authClient.twoFactor.verifyTotp({
       code,
     })
+
     setBusy(false)
+
     if (result.error) {
       setError(authMessage(result.error, 'That code didn’t match. Check the app and try again.'))
       setCode('')
+
       return
     }
+
     setSetup(null)
     setCode('')
     await client.invalidateQueries({
@@ -216,12 +238,16 @@ function Totp({ enabled }: { enabled: boolean }) {
     const result = await authClient.twoFactor.disable({
       password,
     })
+
     setBusy(false)
     setPassword('')
+
     if (result.error) {
       setError(authMessage(result.error, 'Stationly didn’t accept that password.'))
+
       return
     }
+
     await client.invalidateQueries({
       queryKey: ['auth'],
     })
@@ -314,7 +340,8 @@ function Totp({ enabled }: { enabled: boolean }) {
 function Account() {
   const { enroll } = Route.useSearch()
   const { data: session } = useSuspenseQuery(sessionQuery)
-  if (!session)
+
+  if (!session) {
     return (
       <ErrorState
         title="Your session ended"
@@ -326,7 +353,10 @@ function Account() {
         }
       />
     )
+  }
+
   const user = session.user
+
   return (
     <div className="max-w-3xl space-y-6">
       <PageHeader title="Account and sign-in" meta={<span>{user.email}</span>} />

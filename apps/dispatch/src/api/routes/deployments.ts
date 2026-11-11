@@ -1,7 +1,11 @@
 import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
-import { deploymentCancellableStatuses } from '@stationly/protocol'
+import {
+  deploymentCancellableStatuses,
+  deploymentStatusValues,
+  deploymentTriggerValues,
+} from '@stationly/protocol'
 
 import { deployment, service } from '../../db/schema.ts'
 import {
@@ -16,22 +20,21 @@ import { requireStationReady, usableBlob } from '../deployments.ts'
 import { fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { csv, parseTime, warning, type Kit } from '../kit.ts'
-import { deploymentById, environmentById, serviceById } from '../lookup.ts'
-import { before, collect, getQuery, listQuery } from '../pagination.ts'
-import { Deployment, DeploymentCreated, models, Page, replies, Staged } from '../shapes.ts'
+import { before, collect, filterMany, getQuery, listQuery, since, until } from '../pagination.ts'
+import { supersede } from '../schemas.ts'
+import { Deployment, DeploymentCreated, Page, replies, Staged } from '../shapes.ts'
 
 const filters = {
-  status: t.Optional(t.String()),
-  trigger: t.Optional(t.String()),
-  since: t.Optional(t.String()),
-  until: t.Optional(t.String()),
+  status: filterMany(deploymentStatusValues),
+  trigger: filterMany(deploymentTriggerValues),
+  since,
+  until,
 }
 
 type DeploymentStatus = (typeof deployment.$inferSelect)['status']
 
 export const deploymentRoutes = (kit: Kit) => {
   const { db } = kit.deps
-  const tags = ['deployments']
   const view = (id: string) =>
     select(
       kit.views.deployment,
@@ -49,6 +52,7 @@ export const deploymentRoutes = (kit: Kit) => {
     const until = parseTime(query.until, '/until')
     const statuses = csv(query.status)
     const triggers = csv(query.trigger)
+
     return [
       statuses ? inArray(deployment.status, statuses as DeploymentStatus[]) : undefined,
       triggers ? inArray(sql`json_extract(${deployment.trigger}, '$.type')`, triggers) : undefined,
@@ -57,16 +61,11 @@ export const deploymentRoutes = (kit: Kit) => {
     ]
   }
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('deployments', '/v1')
     .get(
       '/services/:service/deployments',
-      ({ params, query }) => {
-        const ctx = serviceById(db, params.service)
+      ({ ctx, query }) => {
         const where = conditions(query)
         const page = collect(
           (cursor, size) =>
@@ -85,6 +84,7 @@ export const deploymentRoutes = (kit: Kit) => {
               .all(),
           query,
         )
+
         return {
           items: page.rows.map((row) =>
             select(kit.views.deployment, row, kit.fields(query.fields)),
@@ -93,13 +93,11 @@ export const deploymentRoutes = (kit: Kit) => {
         }
       },
       {
-        operation: {
+        service: {
           id: 'list_deployments',
+          summary: 'List the deployments of a service',
           level: 'read',
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         query: t.Object({
           ...listQuery,
           ...filters,
@@ -107,16 +105,11 @@ export const deploymentRoutes = (kit: Kit) => {
         response: replies({
           200: Page(Deployment),
         }),
-        detail: {
-          summary: 'List the deployments of a service',
-          tags,
-        },
       },
     )
     .get(
       '/environments/:environment/deployments',
-      ({ params, query }) => {
-        const ctx = environmentById(db, params.environment)
+      ({ ctx, query }) => {
         const services = db
           .select({
             id: service.id,
@@ -149,6 +142,7 @@ export const deploymentRoutes = (kit: Kit) => {
               rows: [],
               next_cursor: null,
             }
+
         return {
           items: page.rows.map((row) =>
             select(kit.views.deployment, row, kit.fields(query.fields)),
@@ -157,13 +151,11 @@ export const deploymentRoutes = (kit: Kit) => {
         }
       },
       {
-        operation: {
+        environment: {
           id: 'list_environment_deployments',
+          summary: 'List the deployments of an environment',
           level: 'read',
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         query: t.Object({
           ...listQuery,
           ...filters,
@@ -172,43 +164,32 @@ export const deploymentRoutes = (kit: Kit) => {
         response: replies({
           200: Page(Deployment),
         }),
-        detail: {
-          summary: 'List the deployments of an environment',
-          tags,
-        },
       },
     )
     .get(
       '/deployments/:id',
-      ({ params, query }) => {
-        const ctx = deploymentById(db, params.id)
+      ({ ctx, query }) => {
         return select(kit.views.deployment, ctx.deployment, kit.fields(query.fields))
       },
       {
-        operation: {
+        deployment: {
           id: 'get_deployment',
+          summary: 'Get a deployment',
           level: 'read',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         query: t.Object(getQuery),
         response: replies({
           200: Deployment,
         }),
-        detail: {
-          summary: 'Get a deployment',
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/deployments',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
         const source = ctx.service.source as { type: string }
-        if (body.image !== undefined && source.type !== 'image')
+
+        if (body.image !== undefined && source.type !== 'image') {
           fail('VALIDATION_FAILED', 'image is accepted only for image sources.', undefined, {
             issues: [
               {
@@ -217,7 +198,12 @@ export const deploymentRoutes = (kit: Kit) => {
               },
             ],
           })
-        if (body.blob_id !== undefined) usableBlob(db, body.blob_id, ctx.service.id)
+        }
+
+        if (body.blob_id !== undefined) {
+          usableBlob(db, body.blob_id, ctx.service.id)
+        }
+
         requireStationReady(db, ctx.service.station_id)
         const changes = new ChangeSet()
         const imageWarnings: { code: string; explanation: string }[] = []
@@ -225,18 +211,21 @@ export const deploymentRoutes = (kit: Kit) => {
         const sameRef =
           source.type === 'image' &&
           body.image?.trim() === (ctx.service.source as { ref?: string }).ref
+
         if (body.image && !sameRef) {
           const resolution = await resolveImage(
             body.image,
             stationArch(db, ctx.service.station_id),
             '/image',
           )
+
           image = resolution.pinned
           imageWarnings.push(pinnedWarning(resolution))
         } else if (source.type === 'image') {
           const current = ctx.service.source as { type: 'image'; ref: string; digest?: string }
           const pinned = await pinImageSource(db, current, ctx.service.station_id, null)
-          if (pinned.source.digest !== current.digest)
+
+          if (pinned.source.digest !== current.digest) {
             changes.update(
               'service',
               ctx.service.id,
@@ -244,8 +233,13 @@ export const deploymentRoutes = (kit: Kit) => {
               current.digest ?? null,
               pinned.source.digest,
             )
-          if (pinned.resolution) imageWarnings.push(pinnedWarning(pinned.resolution))
+          }
+
+          if (pinned.resolution) {
+            imageWarnings.push(pinnedWarning(pinned.resolution))
+          }
         }
+
         changes.deploy(ctx.service.id, 'manual', {
           supersede: body.supersede ?? false,
           ...(body.source_ref
@@ -273,9 +267,14 @@ export const deploymentRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         set.status = 201
         const created = view(result.deployments[0]!)
+
         return {
           ...created,
           warnings: [
@@ -292,8 +291,9 @@ export const deploymentRoutes = (kit: Kit) => {
         }
       },
       {
-        operation: {
+        service: {
           id: 'deploy',
+          summary: 'Create a deployment record (queued); execution belongs to the station',
           level: 'deploy',
           mcp: {
             always_load: true,
@@ -302,23 +302,27 @@ export const deploymentRoutes = (kit: Kit) => {
             wait: 'wait_for_deployment',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: t.Object(
           {
             source_ref: t.Optional(
               t.String({
                 minLength: 1,
+                description: 'A commit sha, branch or tag of the repository source',
               }),
             ),
             image: t.Optional(
               t.String({
                 minLength: 1,
+                description:
+                  "An image reference for an image source, in place of the service's ref",
               }),
             ),
-            blob_id: t.Optional(t.String()),
-            supersede: t.Optional(t.Boolean()),
+            blob_id: t.Optional(
+              t.String({
+                description: 'An uploaded blob for a local source; sly push sets it',
+              }),
+            ),
+            supersede,
           },
           {
             additionalProperties: false,
@@ -328,17 +332,13 @@ export const deploymentRoutes = (kit: Kit) => {
           201: DeploymentCreated,
           202: Staged,
         }),
-        detail: {
-          summary: 'Create a deployment record (queued); execution belongs to the station',
-          tags,
-        },
       },
     )
     .post(
       '/deployments/:id/cancel',
-      async ({ request, params }) => {
+      async ({ ctx, request }) => {
         const call = await kit.call(request)
-        const ctx = deploymentById(db, params.id)
+
         if (!(deploymentCancellableStatuses as readonly string[]).includes(ctx.deployment.status)) {
           fail(
             'DEPLOYMENT_NOT_CANCELLABLE',
@@ -349,6 +349,7 @@ export const deploymentRoutes = (kit: Kit) => {
             },
           )
         }
+
         db.update(deployment)
           .set({
             status: 'cancelled',
@@ -390,23 +391,18 @@ export const deploymentRoutes = (kit: Kit) => {
             actor: call.principal.actor,
           },
         )
+
         return view(ctx.deployment.id)
       },
       {
-        operation: {
+        deployment: {
           id: 'cancel_deployment',
+          summary: 'Cancel a deployment before cutover; never staged',
           level: 'deploy',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Deployment,
         }),
-        detail: {
-          summary: 'Cancel a deployment before cutover; never staged',
-          tags,
-        },
       },
     )
 }

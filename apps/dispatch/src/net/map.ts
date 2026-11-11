@@ -168,12 +168,14 @@ export const networkMap = (
   const applied = new Map(
     stationIds.map((id) => {
       const number = stations.get(id)?.generation ?? 0
+
       return [id, number ? generationNumbered(db, id, number)?.document : undefined]
     }),
   )
   const staleStation = (id: string) => {
     const st = stations.get(id)
     const seen = st?.last_seen_at?.getTime() ?? 0
+
     return !sources.isConnected(id) || !observed.get(id) || now.getTime() - seen > staleAfterMs
   }
 
@@ -184,15 +186,19 @@ export const networkMap = (
     const current = svc.current_deployment_id
       ? deploymentById.get(svc.current_deployment_id)
       : undefined
-    if (!longRunning.has(svc.kind) || svc.desired_state !== 'running' || (!current && !green))
+
+    if (!longRunning.has(svc.kind) || svc.desired_state !== 'running' || (!current && !green)) {
       return {
         state: 'no_target',
         deployment: null,
         draining: null,
       }
+    }
+
     const report = observed.get(svc.station_id)
     const seen = report?.services[svc.id]
     const switchAddress = seen?.switch_address ?? null
+
     if (green) {
       const cutover = cutovers.get(green.id)
       const to = text(cutover?.detail.to) ?? null
@@ -215,18 +221,22 @@ export const networkMap = (
         !report ||
         !cutover?.finished_at ||
         Date.parse(report.observed_at) < cutover.finished_at.getTime()
-      if (!switchAddress || !to || reportedBeforeCutover)
+
+      if (!switchAddress || !to || reportedBeforeCutover) {
         return {
           state: 'pending',
           deployment: target,
           draining: blue,
         }
+      }
+
       return {
         state: switchAddress === to ? 'serving' : 'mismatch',
         deployment: target,
         draining: blue,
       }
     }
+
     const containers = (seen?.containers ?? []).filter(
       (c) => c.deployment_id === current!.id && c.address,
     )
@@ -239,12 +249,15 @@ export const networkMap = (
     }
     const named =
       applied.get(svc.station_id)?.services[svc.id]?.current?.deployment_id === current!.id
-    if (!report || !seen || !switchAddress || !named)
+
+    if (!report || !seen || !switchAddress || !named) {
       return {
         state: 'pending',
         deployment: target,
         draining: null,
       }
+    }
+
     return {
       state: containers.some((c) => c.address === switchAddress) ? 'serving' : 'mismatch',
       deployment: target,
@@ -257,7 +270,8 @@ export const networkMap = (
     const sw = switchOf(svc)
     const vip = vips.get(svc.id) ?? null
     const st = stations.get(svc.station_id)
-    if (sw.state === 'mismatch')
+
+    if (sw.state === 'mismatch') {
       warnings.push(
         finding(
           'SWITCH_MISMATCH',
@@ -269,7 +283,9 @@ export const networkMap = (
           },
         ),
       )
-    if (sw.state === 'pending')
+    }
+
+    if (sw.state === 'pending') {
       warnings.push(
         finding(
           'SWITCH_PENDING',
@@ -279,7 +295,9 @@ export const networkMap = (
           },
         ),
       )
-    if (sw.state === 'no_target' && longRunning.has(svc.kind))
+    }
+
+    if (sw.state === 'no_target' && longRunning.has(svc.kind)) {
       warnings.push(
         finding(
           'SWITCH_NO_TARGET',
@@ -289,6 +307,8 @@ export const networkMap = (
           },
         ),
       )
+    }
+
     const servicePorts = ports.filter((p) => p.service_id === svc.id)
     const serviceDomains = domains
       .filter((d) => portById.get(d.service_port_id)?.service_id === svc.id)
@@ -299,7 +319,8 @@ export const networkMap = (
           status: d.certificate?.status ?? 'pending',
           expires_at: d.certificate?.expires_at ?? null,
         }
-        if (d.status !== 'active')
+
+        if (d.status !== 'active') {
           warnings.push(
             finding('DOMAIN_NOT_ACTIVE', `${d.hostname} is ${d.status}.`, {
               service: svc.name,
@@ -309,7 +330,9 @@ export const networkMap = (
               error: d.error ?? null,
             }),
           )
-        if (d.ingress === 'direct' && certificate.status !== 'valid')
+        }
+
+        if (d.ingress === 'direct' && certificate.status !== 'valid') {
           warnings.push(
             finding(
               'CERTIFICATE_NOT_VALID',
@@ -322,7 +345,9 @@ export const networkMap = (
               },
             ),
           )
-        if (result === 'failed' || result === 'blocked')
+        }
+
+        if (result === 'failed' || result === 'blocked') {
           warnings.push(
             finding(
               'ROUTE_NOT_APPLIED',
@@ -335,6 +360,8 @@ export const networkMap = (
               },
             ),
           )
+        }
+
         return {
           id: d.id,
           service_port_id: d.service_port_id,
@@ -358,7 +385,8 @@ export const networkMap = (
         const publicAddress = stations.get(a.station_id)?.public_address ?? null
         const address = publicAddress ? `${publicAddress}:${a.host_port}` : null
         const result = observed.get(a.station_id)?.port_allocations[a.id]?.result ?? null
-        if (result === 'failed' || result === 'blocked')
+
+        if (result === 'failed' || result === 'blocked') {
           warnings.push(
             finding(
               'ROUTE_NOT_APPLIED',
@@ -371,6 +399,8 @@ export const networkMap = (
               },
             ),
           )
+        }
+
         return {
           id: a.id,
           service_port_id: a.service_port_id,
@@ -383,10 +413,11 @@ export const networkMap = (
           result,
         }
       })
+
     if (
       !st?.public_address &&
       (serviceExposures.length || serviceDomains.some((d) => d.ingress === 'direct'))
-    )
+    ) {
       warnings.push(
         finding(
           'NO_PUBLIC_ADDRESS',
@@ -397,6 +428,8 @@ export const networkMap = (
           },
         ),
       )
+    }
+
     return {
       id: svc.id,
       name: svc.name,
@@ -430,6 +463,7 @@ export const networkMap = (
   const subnets = allocations.map((a) => {
     const st = stations.get(a.station_id)
     const stale = staleStation(a.station_id)
+
     return {
       station: {
         id: a.station_id,
@@ -447,6 +481,7 @@ export const networkMap = (
       stale,
     }
   })
+
   for (const id of stationIds.filter(staleStation)) {
     const report = observed.get(id)
     const name = stations.get(id)?.name ?? id
@@ -455,6 +490,7 @@ export const networkMap = (
       : report
         ? 'has not reported for more than 60 s'
         : 'has sent no observed report since Dispatch started'
+
     warnings.push(
       finding(
         'STATION_STALE',
@@ -474,7 +510,8 @@ export const networkMap = (
   )
     ? ('open' as const)
     : ('closed' as const)
-  if (webPorts === 'closed' && entries.some((s) => s.domains.some((d) => d.ingress === 'direct')))
+
+  if (webPorts === 'closed' && entries.some((s) => s.domains.some((d) => d.ingress === 'direct'))) {
     warnings.push(
       finding(
         'WEB_PORTS_CLOSED',
@@ -484,6 +521,8 @@ export const networkMap = (
         },
       ),
     )
+  }
+
   const inbound = {
     web_ports: webPorts,
     public_address:
@@ -558,12 +597,17 @@ export const networkMap = (
     paths,
     warnings,
   }
-  if (!options.service) return map
+
+  if (!options.service) {
+    return map
+  }
+
   const focus =
     services.find((s) => s.id === options.service || s.name === options.service) ??
     notFound('service', options.service)
   const touching = edges.filter((e) => e.from === focus.name || e.to === focus.name)
   const kept = new Set([focus.name, ...touching.flatMap((e) => [e.from, e.to])])
+
   return {
     ...map,
     services: entries.filter((s) => kept.has(s.name)),

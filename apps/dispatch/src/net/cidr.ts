@@ -12,6 +12,7 @@ const fromNumber = (value: number) =>
 
 const readCidr = (text: string): Cidr | null => {
   const [address, bits, ...rest] = text.split('/')
+
   if (
     rest.length ||
     !address ||
@@ -19,8 +20,10 @@ const readCidr = (text: string): Cidr | null => {
     !/^\d{1,2}$/.test(bits) ||
     Number(bits) > 32 ||
     !ipaddr.IPv4.isValidFourPartDecimal(address)
-  )
+  ) {
     return null
+  }
+
   return {
     address: ipaddr.IPv4.parse(address),
     bits: Number(bits),
@@ -32,8 +35,13 @@ const networkOf = (cidr: Cidr) =>
 
 export const cidrProblem = (text: string) => {
   const cidr = readCidr(text)
-  if (!cidr) return `${text} is not an IPv4 CIDR`
+
+  if (!cidr) {
+    return `${text} is not an IPv4 CIDR`
+  }
+
   const network = networkOf(cidr)
+
   return network.toString() === cidr.address.toString()
     ? null
     : `${text} has host bits set; use ${network.toString()}/${cidr.bits}`
@@ -44,7 +52,11 @@ export const parseCidr = (text: string): Cidr | null =>
 
 const mustParse = (text: string) => {
   const cidr = parseCidr(text)
-  if (!cidr) throw new Error(`${text} is not an IPv4 CIDR`)
+
+  if (!cidr) {
+    throw new Error(`${text} is not an IPv4 CIDR`)
+  }
+
   return cidr
 }
 
@@ -60,6 +72,7 @@ export const slash24Index = (pool: Cidr, subnet: Cidr) =>
 export const slash24At = (pool: string, index: number) => {
   const [a, b, c] = mustParse(pool).address.octets
   const subnet = `${new ipaddr.IPv4([a!, b!, c! + index, 0]).toString()}/24`
+
   return {
     subnet,
     gateway: hostAt(subnet, networkLayout.gatewayHost),
@@ -68,7 +81,10 @@ export const slash24At = (pool: string, index: number) => {
 
 export function* slash24sFrom(pool: string, first: number) {
   const third = mustParse(pool).address.octets[2]!
-  for (let index = first; third + index < 256; index++) yield slash24At(pool, index)
+
+  for (let index = first; third + index < 256; index++) {
+    yield slash24At(pool, index)
+  }
 }
 
 export const registryAddress = (subnet: string) =>

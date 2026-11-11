@@ -83,6 +83,7 @@ export const serveBridge = (spec: BridgeSpec) => {
           },
         },
       )
+
       await client.connect(
         new StreamableHTTPClientTransport(spec.url, {
           authProvider: {
@@ -100,6 +101,7 @@ export const serveBridge = (spec: BridgeSpec) => {
         era: client.getProtocolEra(),
         version: client.getNegotiatedProtocolVersion(),
       })
+
       return client
     })().catch((error) => {
       remote = undefined
@@ -132,6 +134,7 @@ export const serveBridge = (spec: BridgeSpec) => {
       ): Promise<CallToolResult> => {
         const progressToken = request.mcpReq._meta?.progressToken
         const relayed: Promise<void>[] = []
+
         try {
           const result = await client.callTool(
             {
@@ -158,19 +161,24 @@ export const serveBridge = (spec: BridgeSpec) => {
                     },
             },
           )
+
           await Promise.allSettled(relayed)
+
           return result
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error)
+
           spec.log('remote.call_failed', {
             tool: name,
             error: detail,
           })
+
           return /401|unauthori[sz]ed/i.test(detail)
             ? unauthenticated(spec.client, detail)
             : unreachable(detail)
         }
       }
+
       for (const tool of tools) {
         server.registerTool(
           tool.name,
@@ -189,6 +197,7 @@ export const serveBridge = (spec: BridgeSpec) => {
           (args, request) => forward(tool.name, args, request, true),
         )
       }
+
       for (const local of spec.local ?? []) {
         server.registerTool(
           local.name,
@@ -202,7 +211,7 @@ export const serveBridge = (spec: BridgeSpec) => {
             const progressToken = request.mcpReq._meta?.progressToken
             let step = 0
             const progress = async (message: string) => {
-              if (progressToken !== undefined)
+              if (progressToken !== undefined) {
                 await request.mcpReq.notify({
                   method: 'notifications/progress',
                   params: {
@@ -211,7 +220,9 @@ export const serveBridge = (spec: BridgeSpec) => {
                     message,
                   },
                 })
+              }
             }
+
             try {
               return await local.run(args, {
                 progress,
@@ -237,10 +248,12 @@ export const serveBridge = (spec: BridgeSpec) => {
           },
         )
       }
+
       spec.log('factory', {
         tools: tools.length,
         local: spec.local?.length ?? 0,
       })
+
       return server
     },
     {

@@ -1,12 +1,12 @@
 import { action, group, seconds, type Program } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
-import { connect, send, type Api, type Data, type Globals, type Run } from '../kit.ts'
-import { pollUntil } from '../outage.ts'
+import { connect, pollUntil, send, type Api, type Data, type Globals, type Run } from '../kit.ts'
 import { json, print } from '../output.ts'
 import { renderUpgrade } from '../renderers/platform.ts'
 
 export const platformCommands = (program: Program) => {
   const platform = group(program, 'platform')
+
   platform
     .command('upgrade')
     .description(
@@ -24,12 +24,15 @@ export const platformCommands = (program: Program) => {
     .action(
       action(async (options, component) => {
         const run = await connect(options)
+
         if (!component) {
-          if (!options.version)
+          if (!options.version) {
             throw usage(
               'Name a component, or --version for a release.',
               'sly platform upgrade <component> --version <v> --digest <sha256:...>',
             )
+          }
+
           const sent = await send(
             run.api.v1.platform.upgrade.post({
               version: options.version,
@@ -39,25 +42,33 @@ export const platformCommands = (program: Program) => {
           )
           const code = print(options, sent, renderUpgrade)
           const upgradeId = 'upgrade' in sent.data ? sent.data.upgrade : undefined
-          if (!options.wait || !upgradeId) return code
+
+          if (!options.wait || !upgradeId) {
+            return code
+          }
+
           return waitUpgrade(run, options, upgradeId, options.timeout)
         }
+
         const override = options.reset
           ? {
               reset: true as const,
             }
           : (() => {
-              if (!options.version || !options.digest)
+              if (!options.version || !options.digest) {
                 throw usage(
                   'An override needs --version and --digest.',
                   'sly platform upgrade gateway --version 3.7.18 --digest sha256:...',
                 )
+              }
+
               return {
                 version: options.version,
                 digest: options.digest,
                 reason: options.reason,
               }
             })()
+
         return print(
           options,
           await send(
@@ -84,29 +95,48 @@ const waitUpgrade = async (run: Run, globals: Globals, id: string, timeoutS: num
     async () =>
       (
         await send(
-          run.api.v1.inventory.get({
+          run.waiting(deadline).api.v1.inventory.get({
             query: {},
           }),
         )
       ).data,
     (inv) => {
       const u = current(inv)
-      if (!u) return false
+
+      if (!u) {
+        return false
+      }
+
       const line = `${u.status}: ${u.steps.map((s) => `${s.component}=${s.status}`).join(' ')}`
-      if (line !== last) process.stderr.write(`${new Date().toISOString()} ${line}\n`)
+
+      if (line !== last) {
+        process.stderr.write(`${new Date().toISOString()} ${line}\n`)
+      }
+
       last = line
+
       return finished.includes(u.status)
     },
     deadline,
     1000,
   )
   const u = current(inventory)
-  if (u?.status === 'done') return exitCodes.ok
+
+  if (u?.status === 'done') {
+    return exitCodes.ok
+  }
+
   if (u && finished.includes(u.status)) {
     process.stderr.write(`upgrade ${u.status}: ${u.failure?.explanation ?? ''}\n`)
-    if (globals.json) json(u)
+
+    if (globals.json) {
+      json(u)
+    }
+
     return exitCodes.api
   }
+
   process.stderr.write(`upgrade ${id} did not finish within ${timeoutS} s\n`)
+
   return exitCodes.api
 }

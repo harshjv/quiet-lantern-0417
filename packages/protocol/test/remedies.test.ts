@@ -23,6 +23,7 @@ test('every fix code stationd writes is in the remedy catalog', () => {
     sources(join(root, 'go'), '.go', '_test.go'),
     /Code:\s*"([A-Z][A-Z0-9_]*)",\s*Text:/g,
   )
+
   assert.ok(written.length > 0)
   assert.deepEqual(
     written.filter((code) => !(remedyCatalog as readonly string[]).includes(code)),
@@ -35,5 +36,6 @@ test('Dispatch builds every fix through remedy()', () => {
     sources(join(root, 'apps', 'dispatch', 'src'), '.ts', '.gen.ts'),
     /code:\s*'([A-Z][A-Z0-9_]*)',\s*text:/g,
   )
+
   assert.deepEqual(literal, [])
 })

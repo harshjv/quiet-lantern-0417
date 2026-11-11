@@ -19,9 +19,14 @@ const destructive = (sql: string) => {
       ),
     ),
   )
+
   return statements.filter((s) => {
-    if (/\bDROP\s+COLUMN\b/i.test(s) || /^\s*DELETE\s+FROM\b/i.test(s)) return true
+    if (/\bDROP\s+COLUMN\b/i.test(s) || /^\s*DELETE\s+FROM\b/i.test(s)) {
+      return true
+    }
+
     const dropped = /^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?/i.exec(s)
+
     return dropped !== null && !rebuilt.has(dropped[1]!.toLowerCase())
   })
 }
@@ -29,12 +34,17 @@ const destructive = (sql: string) => {
 const migrateCheck = () => {
   const journal = JSON.parse(readFileSync(`${folder}/meta/_journal.json`, 'utf8')) as Journal
   const databasePath = env().STATIONLY_DATABASE
-  if (!databasePath) throw new Error('STATIONLY_DATABASE must name the SQLite file to check')
+
+  if (!databasePath) {
+    throw new Error('STATIONLY_DATABASE must name the SQLite file to check')
+  }
+
   const known = journal.entries.map((e) => ({
     tag: e.tag,
     when: e.when,
   }))
   let applied: { hash: string; created_at: number }[] = []
+
   if (existsSync(databasePath)) {
     const db = new Database(databasePath, {
       readonly: true,
@@ -45,12 +55,16 @@ const migrateCheck = () => {
         "select name from sqlite_master where type = 'table' and name = '__drizzle_migrations'",
       )
       .get()
-    if (table)
+
+    if (table) {
       applied = db
         .prepare('select hash, created_at from __drizzle_migrations order by created_at')
         .all() as typeof applied
+    }
+
     db.close()
   }
+
   const last = applied.reduce((max, a) => Math.max(max, a.created_at), 0)
   const whens = new Set(known.map((k) => k.when))
   const pending = known.filter((k) => k.when > last)
@@ -60,6 +74,7 @@ const migrateCheck = () => {
   const irreversible = pending
     .filter((p) => destructive(readFileSync(`${folder}/${p.tag}.sql`, 'utf8')).length > 0)
     .map((p) => p.tag)
+
   console.log(
     JSON.stringify({
       known: known.map((k) => k.tag),

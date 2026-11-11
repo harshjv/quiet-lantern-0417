@@ -60,8 +60,13 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
   const handler = createMcpHandler(
     (ctx: McpRequestContext) => {
       const grant = ctx.authInfo?.extra?.grant as Grant | undefined
-      if (!grant) throw new Error('the /mcp gate passed no grant')
+
+      if (!grant) {
+        throw new Error('the /mcp gate passed no grant')
+      }
+
       const scopes = grant.principal.scopes
+
       return buildServer({
         name: 'stationly',
         version: deps.version,
@@ -89,6 +94,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
 
   const handle = async (request: Request): Promise<Response> => {
     const surface = surfaceOf(request, deps.auth)
+
     if (surface === 'dashboard' || surface === null) {
       return json(
         404,
@@ -98,6 +104,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
         ),
       )
     }
+
     const surfaceOrigins = [
       hostOf(deps.auth.surface.apiOrigin),
       hostOf(deps.auth.surface.dashboardOrigin),
@@ -106,7 +113,11 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
       request,
       surface === 'local' ? [...surfaceOrigins, ...loopbackOrigins] : surfaceOrigins,
     )
-    if (rejected) return rejected
+
+    if (rejected) {
+      return rejected
+    }
+
     const host = request.headers.get('host') ?? new URL(request.url).host
     const origin =
       surface === 'api' ? deps.auth.surface.apiOrigin : `${new URL(request.url).protocol}//${host}`
@@ -117,6 +128,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
       verifier: {
         verifyAccessToken: async (token): Promise<AuthInfo> => {
           let principal: Principal
+
           try {
             principal = await authenticate(deps.db, deps.auth, request)
           } catch (error) {
@@ -125,12 +137,18 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
               error instanceof ApiError ? error.message : 'the token could not be verified',
             )
           }
-          if (principal.token_kind === 'session')
+
+          if (principal.token_kind === 'session') {
             throw new OAuthError(
               OAuthErrorCode.InvalidToken,
               'a sly session is never accepted on /mcp; use a scoped token or OAuth',
             )
-          if (!dispatch) throw new Error('the /mcp route is not connected to the API')
+          }
+
+          if (!dispatch) {
+            throw new Error('the /mcp route is not connected to the API')
+          }
+
           const session: Session = {
             origin,
             token,
@@ -142,6 +160,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
             session,
             tools: await toolsFor(session),
           }
+
           return {
             token,
             clientId: principal.token_id ?? principal.actor.id ?? principal.user_id,
@@ -156,7 +175,11 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
       },
     })
     const auth = await gate(request)
-    if (auth instanceof Response) return auth
+
+    if (auth instanceof Response) {
+      return auth
+    }
+
     return handler.fetch(request, {
       authInfo: auth,
     })

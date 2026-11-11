@@ -17,6 +17,7 @@ export const groups = {
     ['network'],
   ],
   sandboxes: [['sandboxes'], ['sandbox-snapshots'], ['projects']],
+  stations: [['stations']],
   staged: [['staged']],
   auth: [['auth']],
 } satisfies Record<string, QueryKey[]>
@@ -35,13 +36,16 @@ export const invalidateGroups = (client: QueryClient, names: Group[]) => {
   const keys = new Map<string, QueryKey>(
     names.flatMap((name) => groups[name]).map((key) => [JSON.stringify(key), key]),
   )
-  for (const queryKey of keys.values())
+
+  for (const queryKey of keys.values()) {
     void client.invalidateQueries({
       queryKey,
     })
+  }
 }
 
 export const useInvalidate = () => {
   const client = useQueryClient()
+
   return (...names: Group[]) => invalidateGroups(client, names)
 }

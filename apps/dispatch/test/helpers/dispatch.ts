@@ -37,11 +37,13 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
   const dir = mkdtempSync(join(tmpdir(), 'sly-dispatch-'))
   const databasePath = join(dir, 'dispatch.sqlite')
   const blobDir = join(dir, 'blobs')
+
   mkdirSync(blobDir, {
     recursive: true,
   })
   const masterKey = randomBytes(32)
   const db = openDb(databasePath)
+
   ensureInstanceId(db)
   const keyring = new Keyring(db, masterKey)
   const version = options.version ?? '0.0.0'
@@ -73,13 +75,20 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
 
   let listener: Server | null = null
   const stationUrl = async () => {
-    if (listener) return `http://127.0.0.1:${(listener.address() as AddressInfo).port}`
+    if (listener) {
+      return `http://127.0.0.1:${(listener.address() as AddressInfo).port}`
+    }
+
     const server = createServer((req, res) => {
-      if (!stations.handleRequest(req, res)) res.writeHead(404).end()
+      if (!stations.handleRequest(req, res)) {
+        res.writeHead(404).end()
+      }
     })
+
     server.on('upgrade', (req, socket, head) => stations.handleUpgrade(req, socket, head))
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     listener = server
+
     return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   }
 
@@ -94,14 +103,26 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
       'x-forwarded-for': '198.51.100.1',
       ...opts.headers,
     })
-    if (opts.token) headers.set('authorization', `Bearer ${opts.token}`)
-    if (opts.cookie) headers.set('cookie', opts.cookie)
-    if (opts.origin !== null && opts.origin !== undefined) headers.set('origin', opts.origin)
+
+    if (opts.token) {
+      headers.set('authorization', `Bearer ${opts.token}`)
+    }
+
+    if (opts.cookie) {
+      headers.set('cookie', opts.cookie)
+    }
+
+    if (opts.origin !== null && opts.origin !== undefined) {
+      headers.set('origin', opts.origin)
+    }
+
     let payload: string | undefined
+
     if (opts.body !== undefined) {
       headers.set('content-type', 'application/json')
       payload = JSON.stringify(opts.body)
     }
+
     const response = await fetchHandler(
       new Request(`${localOrigin}${path}`, {
         method,
@@ -111,11 +132,13 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
     )
     const text = await response.text()
     let body: unknown = text
+
     try {
       body = text ? JSON.parse(text) : null
     } catch {
       body = text
     }
+
     return {
       status: response.status,
       body: body as T,
@@ -127,10 +150,12 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
   const close = async () => {
     await Promise.all(fakeStations.map((s) => s.close()))
     await stations.close()
+
     if (listener) {
       listener.closeAllConnections()
       await new Promise<void>((resolve) => listener!.close(() => resolve()))
     }
+
     rmSync(dir, {
       recursive: true,
       force: true,
@@ -157,7 +182,10 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
     },
   }
 
-  if (options.setup !== false) await seedAdmin(harness)
+  if (options.setup !== false) {
+    await seedAdmin(harness)
+  }
+
   return harness
 }
 
@@ -176,6 +204,7 @@ export const signIn = async (
     },
   })
   const cookies = reply.headers.getSetCookie().map((c) => c.split(';')[0]!)
+
   return {
     reply,
     cookie: cookies.join('; '),
@@ -208,7 +237,11 @@ const seedAdmin = async (h: Booting) => {
       kind: 'personal',
     },
   })
-  if (minted.status !== 201) throw new Error(`could not mint the personal token: ${minted.text}`)
+
+  if (minted.status !== 201) {
+    throw new Error(`could not mint the personal token: ${minted.text}`)
+  }
+
   Object.assign(h.admin, {
     userId: created.admin_user_id,
     cookie,
@@ -229,7 +262,11 @@ export const mintToken = async (
       scopes,
     },
   })
-  if (reply.status !== 201) throw new Error(`could not mint a scoped token: ${reply.text}`)
+
+  if (reply.status !== 201) {
+    throw new Error(`could not mint a scoped token: ${reply.text}`)
+  }
+
   return reply.body.key as string
 }
 
@@ -245,11 +282,16 @@ export const startFakeStation = async (
       name,
     },
   })
-  if (added.status !== 201 && added.status !== 200)
+
+  if (added.status !== 201 && added.status !== 200) {
     throw new Error(`could not add a station: ${added.text}`)
+  }
+
   const station = await FakeStation.enrollAndStart(url, added.body.enroll_token as string, config)
+
   h.fakeStations.push(station)
   const deadline = Date.now() + 10_000
+
   while (
     (
       await h.call('GET', `/v1/stations/${name}`, {
@@ -257,9 +299,13 @@ export const startFakeStation = async (
       })
     ).body?.status !== 'online'
   ) {
-    if (Date.now() > deadline) throw new Error(`station ${name} did not come online within 10 s`)
+    if (Date.now() > deadline) {
+      throw new Error(`station ${name} did not come online within 10 s`)
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
+
   return station
 }
 
@@ -273,21 +319,27 @@ export const serveOverHttp = async (
   const requests: RecordedRequest[] = []
   const handler = toNodeHandler(async (request: Request) => {
     const url = new URL(request.url)
+
     requests.push({
       method: request.method,
       path: url.pathname + url.search,
       headers: new Headers(request.headers),
       body: await request.clone().text(),
     })
+
     return h.fetch(request)
   })
   const server = createServer(handler as Parameters<typeof createServer>[1])
   const attach = options.attach && h.deps ? createAttachServer(h.deps) : null
-  if (attach)
+
+  if (attach) {
     server.on('upgrade', (req, socket, head) =>
       attach.matches(req) ? attach.handleUpgrade(req, socket, head) : socket.destroy(),
     )
+  }
+
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     requests,

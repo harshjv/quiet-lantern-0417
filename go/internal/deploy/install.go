@@ -20,8 +20,11 @@ import (
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
+	"github.com/harshjv/stationly/go/internal/hostprobe"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/release"
+	"github.com/harshjv/stationly/go/internal/sandbox"
+	"github.com/harshjv/stationly/go/internal/sandbox/store"
 	"github.com/harshjv/stationly/go/internal/verify"
 )
 
@@ -68,6 +71,7 @@ type InstallOptions struct {
 	SandboxWipe   bool
 	SandboxSize   uint64
 	SandboxUnits  string
+	Sandbox       sandbox.Installer
 }
 
 type InstallStep struct {
@@ -87,6 +91,7 @@ type InstallReport struct {
 	Test           bool                `json:"test"`
 	Steps          []InstallStep       `json:"steps"`
 	Host           *InstallState       `json:"host,omitempty"`
+	HostProbe      *protocol.HostProbe `json:"host_probe,omitempty"`
 	HandoffDir     string              `json:"handoff_dir"`
 	DurationMs     int64               `json:"duration_ms"`
 	Failure        *protocol.ErrorBody `json:"failure,omitempty"`
@@ -162,6 +167,14 @@ func Install(ctx context.Context, v *verify.Verifier, opts InstallOptions) (Inst
 			return fail(protocol.ErrorCodeValidationFailed, "Fix the sandbox storage option or drop it; everything else installs without it.", "%v", err)
 		}
 		sandboxes = ready
+		t = time.Now()
+		sandboxDir := ""
+		if ready {
+			sandboxDir = store.Mount
+		}
+		probe := hostprobe.Default().Probe(ctx, sandboxDir)
+		rep.HostProbe = &probe
+		step("host_probe", "", "", "ok", hostProbeText(probe), t)
 	}
 
 	t := time.Now()
@@ -256,7 +269,7 @@ func Install(ctx context.Context, v *verify.Verifier, opts InstallOptions) (Inst
 	if sandboxes {
 		if c, ok := m.Components["runsc"]; ok {
 			t = time.Now()
-			check, err := InstallRunsc(ctx, v, src, c.Version, pinOf(c))
+			check, err := InstallRunsc(ctx, opts.Sandbox, v, src, c.Version, pinOf(c))
 			if err != nil {
 				step("runsc", "runsc", pinOf(c), "refused", err.Error(), t)
 				return fail(protocol.ErrorCodeUnsignedArtifact, "Install a release whose runsc archive for "+platformKey()+" matches its manifest and carries the release signature.", "%v", err)
@@ -351,6 +364,29 @@ func Install(ctx context.Context, v *verify.Verifier, opts InstallOptions) (Inst
 	step("handoff", "", rep.ManifestDigest, "ok", dir, t)
 	rep.DurationMs = time.Since(start).Milliseconds()
 	return rep, nil
+}
+
+func hostProbeText(p protocol.HostProbe) string {
+	kvm := "no KVM"
+	switch {
+	case p.KvmUsable:
+		kvm = "KVM usable"
+	case p.KvmPresent:
+		kvm = "/dev/kvm present but not openable"
+	}
+	cpu := "no CPU virtualization flag"
+	if p.CpuVirtualization != nil {
+		cpu = "CPU flag " + string(*p.CpuVirtualization)
+	}
+	machine := "bare metal"
+	if p.Hypervisor != nil {
+		machine = "virtual machine (" + *p.Hypervisor + ")"
+	}
+	text := fmt.Sprintf("%s, %s, %s, %d cores, %s memory", kvm, cpu, machine, p.CpuCores, human(uint64(p.MemoryBytes)))
+	if p.SandboxFreeBytes != nil {
+		text += ", " + human(uint64(*p.SandboxFreeBytes)) + " free for sandboxes"
+	}
+	return text
 }
 
 func firstNonEmpty(a, b string) string {

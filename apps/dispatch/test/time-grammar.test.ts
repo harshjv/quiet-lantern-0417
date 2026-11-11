@@ -27,6 +27,7 @@ before(async () => {
     ],
     deploy: true,
   })
+
   await waitForDeployment(h, created.deployments[0].id, 'active')
   serviceId = created.id
 })
@@ -47,6 +48,7 @@ describe('since and until grammar', () => {
   for (const form of forms) {
     test(`logs, deployments, runs and audit accept ${form}`, async () => {
       const encoded = encodeURIComponent(form)
+
       assert.equal(
         (
           await get(
@@ -71,6 +73,7 @@ describe('since and until grammar', () => {
   test('a bare relative duration means the same instant as its negative form', async () => {
     const bare = await get(`/v1/services/${serviceId}/deployments?since=10m`)
     const negative = await get(`/v1/services/${serviceId}/deployments?since=-10m`)
+
     assert.deepEqual(
       bare.body.items.map((d: { id: string }) => d.id),
       negative.body.items.map((d: { id: string }) => d.id),
@@ -81,6 +84,7 @@ describe('since and until grammar', () => {
   for (const bad of ['10', 'm10', '10x', 'yesterday', '--10m']) {
     test(`${bad} is VALIDATION_FAILED`, async () => {
       const reply = await get(`/v1/logs?service=${serviceId}&since=${encodeURIComponent(bad)}`)
+
       assert.equal(reply.status, 400)
       assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
     })

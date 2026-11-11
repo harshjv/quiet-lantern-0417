@@ -8,6 +8,8 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import type { SandboxSnapshot } from '@/lib/api'
 import { bytes } from '@/lib/format'
 import { snapshotStatus } from '@/lib/labels'
+import { highlight, useFresh } from '@/lib/use-fresh'
+import { cn } from '@/lib/utils'
 
 export function SnapshotsTable({
   snapshots,
@@ -24,7 +26,12 @@ export function SnapshotsTable({
   origin: (snapshot: SandboxSnapshot) => ReactNode
   empty: ReactNode
 }) {
-  if (snapshots.length === 0) return empty
+  const fresh = useFresh(snapshots)
+
+  if (snapshots.length === 0) {
+    return empty
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -39,7 +46,7 @@ export function SnapshotsTable({
       </TableHeader>
       <TableBody>
         {snapshots.map((snapshot) => (
-          <TableRow key={snapshot.id}>
+          <TableRow key={snapshot.id} className={cn(fresh.has(snapshot.id) && highlight)}>
             <TableCell>
               <span className="font-mono text-[0.8125rem] font-medium">
                 {snapshot.name ?? snapshot.id}

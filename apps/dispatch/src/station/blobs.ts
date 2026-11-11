@@ -29,11 +29,13 @@ export const storeBlob = (
   const id = newId('blob')
   const sha256 = createHash('sha256').update(input.bytes).digest('hex')
   const partial = `${blobFile(dir, id)}.partial`
+
   writeFileSync(partial, input.bytes, {
     mode: 0o600,
   })
   renameSync(partial, blobFile(dir, id))
   const expires_at = new Date(Date.now() + input.ttlMs)
+
   db.insert(blob)
     .values({
       id,
@@ -44,6 +46,7 @@ export const storeBlob = (
       service_id: input.service_id ?? null,
     })
     .run()
+
   return {
     id,
     size_bytes: input.bytes.length,
@@ -60,12 +63,14 @@ export const sweepBlobs = (db: Db, dir: string, now = new Date()) => {
     .from(blob)
     .where(lt(blob.expires_at, now))
     .all()
+
   for (const row of expired) {
     rmSync(blobFile(dir, row.id), {
       force: true,
     })
     db.delete(blob).where(eq(blob.id, row.id)).run()
   }
+
   return expired.length
 }
 
@@ -76,9 +81,14 @@ export const mintGrant = (
   now = new Date(),
 ): MessageBody<'blob.granted'> => {
   const row = db.select().from(blob).where(eq(blob.id, blobId)).get()
-  if (!row) throw new Error(`blob ${blobId} does not exist`)
+
+  if (!row) {
+    throw new Error(`blob ${blobId} does not exist`)
+  }
+
   const token = randomBytes(32).toString('base64url')
   const expires = new Date(now.getTime() + grantTtlMs)
+
   db.update(blob)
     .set({
       grant_sha256: digest(token),
@@ -87,6 +97,7 @@ export const mintGrant = (
     })
     .where(eq(blob.id, blobId))
     .run()
+
   return {
     blob_id: blobId,
     size: row.size_bytes,
@@ -105,6 +116,7 @@ const send = (res: ServerResponse, status: number, code: string, explanation: st
       details: {},
     },
   })
+
   res.writeHead(status, {
     'content-type': 'application/json',
     'content-length': Buffer.byteLength(body),
@@ -114,11 +126,17 @@ const send = (res: ServerResponse, status: number, code: string, explanation: st
 
 export const serveBlob = (db: Db, dir: string, req: IncomingMessage, res: ServerResponse) => {
   const match = blobPath.exec(new URL(req.url ?? '/', 'http://dispatch').pathname)
-  if (!match) return false
+
+  if (!match) {
+    return false
+  }
+
   if (req.method !== 'GET') {
     send(res, 405, 'NOT_FOUND', 'blob fetch is GET only')
+
     return true
   }
+
   const [, stationId, blobId] = match
   const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1]
   const row = db
@@ -133,23 +151,30 @@ export const serveBlob = (db: Db, dir: string, req: IncomingMessage, res: Server
     presented.length === row.grant_sha256.length &&
     timingSafeEqual(Buffer.from(presented), Buffer.from(row.grant_sha256)) &&
     Date.now() < row.grant_expires_at.getTime()
+
   if (!row || !valid) {
     send(res, 401, 'UNAUTHENTICATED', 'the blob grant is unknown, for another station, or expired')
+
     return true
   }
+
   const path = blobFile(dir, row.id)
   let size: number
+
   try {
     size = statSync(path).size
   } catch {
     send(res, 404, 'NOT_FOUND', `blob ${row.id} has no stored content`)
+
     return true
   }
+
   res.writeHead(200, {
     'content-type': 'application/octet-stream',
     'content-length': size,
     'x-content-sha256': row.sha256,
   })
   createReadStream(path).pipe(res)
+
   return true
 }

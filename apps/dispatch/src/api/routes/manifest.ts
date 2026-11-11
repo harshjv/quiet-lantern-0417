@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 
 import { Type, type Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
 import {
   validateSchema,
@@ -28,7 +28,7 @@ import {
   type ProjectRow,
 } from '../lookup.ts'
 import type { TargetInput } from '../route-meta.ts'
-import { Actor, Change, Deployment, extend, models, replies, Staged } from '../shapes.ts'
+import { Actor, Change, Deployment, extend, replies, Staged } from '../shapes.ts'
 
 import { respond } from './services.ts'
 
@@ -151,7 +151,6 @@ const validationError = (issues: LocatedIssue[]) =>
 
 export const manifestRoutes = (kit: Kit) => {
   const { db, keyring } = kit.deps
-  const tags = ['manifest']
 
   const evaluate = async (
     input: unknown,
@@ -160,7 +159,11 @@ export const manifestRoutes = (kit: Kit) => {
     options: { prune: boolean; allowUnresolved: boolean },
   ) => {
     const parsed = validateSchema(input)
-    if (parsed.issues.length) throw validationError(parsed.issues)
+
+    if (parsed.issues.length) {
+      throw validationError(parsed.issues)
+    }
+
     const doc = parsed.value as ManifestDoc
     const plan = await planManifest({
       db,
@@ -173,6 +176,7 @@ export const manifestRoutes = (kit: Kit) => {
       resolveRepo: (repo) => kit.deps.github.resolveRepo(repo),
     })
     const locate = (issue: { path: string; code: string; message: string }) => parsed.locate(issue)
+
     return {
       plan,
       locate,
@@ -182,6 +186,7 @@ export const manifestRoutes = (kit: Kit) => {
 
   const target = (proj: ProjectRow, ref: string | undefined) => {
     const env = environmentInProject(db, proj, ref ?? proj.default_environment_id)
+
     return {
       env,
       scope: {
@@ -191,11 +196,8 @@ export const manifestRoutes = (kit: Kit) => {
     }
   }
 
-  return new Elysia({
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('manifest', '')
     .get(
       '/schema/manifest.json',
       ({ request }) => {
@@ -203,11 +205,14 @@ export const manifestRoutes = (kit: Kit) => {
           'cache-control': 'max-age=3600',
           etag: schemaEtag,
         }
-        if (request.headers.get('if-none-match') === schemaEtag)
+
+        if (request.headers.get('if-none-match') === schemaEtag) {
           return new Response(null, {
             status: 304,
             headers,
           })
+        }
+
         return new Response(schemaText, {
           headers: {
             ...headers,
@@ -218,12 +223,9 @@ export const manifestRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'get_manifest_schema',
+          summary: 'The Manifest JSON Schema',
           level: 'public',
           mcp: false,
-        },
-        detail: {
-          summary: 'The Manifest JSON Schema',
-          tags,
         },
       },
     )
@@ -245,7 +247,11 @@ export const manifestRoutes = (kit: Kit) => {
           prune: body.prune ?? false,
           allowUnresolved: body.allow_unresolved ?? true,
         })
-        if (plan.issues.length) throw validationError(plan.issues.map((i) => locate(i)))
+
+        if (plan.issues.length) {
+          throw validationError(plan.issues.map((i) => locate(i)))
+        }
+
         const warnings = plan.warnings.map((w) => ({
           code: w.code,
           explanation: w.explanation,
@@ -256,10 +262,12 @@ export const manifestRoutes = (kit: Kit) => {
             : {}),
         }))
         const changes = plan.set.changes
+
         if (planOnly) {
           const downtime = changes.some(
             (c) => c.entity === 'deployment' && c.op === 'add' && isReplace(c.parent, changes, db),
           )
+
           return {
             id: null,
             environment_id: env.id,
@@ -282,7 +290,9 @@ export const manifestRoutes = (kit: Kit) => {
               : warnings,
           }
         }
+
         requireDiffLevel(call.principal, scope, changes)
+
         if (plan.set.empty) {
           return {
             id: null,
@@ -297,6 +307,7 @@ export const manifestRoutes = (kit: Kit) => {
             warnings,
           }
         }
+
         const result = commit(
           kit.deps,
           call,
@@ -307,12 +318,15 @@ export const manifestRoutes = (kit: Kit) => {
           },
           plan.set,
         )
-        if (!result.applied)
+
+        if (!result.applied) {
           return {
             ...kit.stagedBody(result, set),
             unmanaged: plan.unmanaged,
             warnings,
           }
+        }
+
         return respond(
           kit,
           set,
@@ -327,6 +341,7 @@ export const manifestRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'apply_manifest',
+          summary: 'Validate and plan or apply a Manifest against one environment',
           level: 'deploy',
           cli: false,
           target: ({ params, body }: TargetInput) =>
@@ -335,9 +350,6 @@ export const manifestRoutes = (kit: Kit) => {
               (body as { environment?: string }).environment,
             ).scope,
         },
-        params: t.Object({
-          project: t.String(),
-        }),
         body: t.Object(
           {
             manifest: ManifestInput,
@@ -370,10 +382,6 @@ export const manifestRoutes = (kit: Kit) => {
           200: Type.Union([ManifestPlan, ManifestApplied]),
           202: ManifestStaged,
         }),
-        detail: {
-          summary: 'Validate and plan or apply a Manifest against one environment',
-          tags,
-        },
       },
     )
     .post(
@@ -381,14 +389,18 @@ export const manifestRoutes = (kit: Kit) => {
       async ({ request, body }) => {
         const call = await kit.call(request)
         const parsed = validateSchema(body.manifest)
-        if (parsed.issues.length)
+
+        if (parsed.issues.length) {
           return {
             valid: false,
             issues: parsed.issues,
             warnings: [],
           }
+        }
+
         const doc = parsed.value as ManifestDoc
         const proj = db.select().from(project).where(eq(project.name, doc.project)).get()
+
         if (!proj || !seesProject(call.principal, proj.id)) {
           return {
             valid: true,
@@ -401,11 +413,13 @@ export const manifestRoutes = (kit: Kit) => {
             ],
           }
         }
+
         const { env } = target(proj, body.environment)
         const { plan, locate } = await evaluate(body.manifest, proj, env, {
           prune: false,
           allowUnresolved: true,
         })
+
         return {
           valid: plan.issues.length === 0,
           issues: plan.issues.map((i) => locate(i)),
@@ -415,6 +429,8 @@ export const manifestRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'validate_manifest',
+          summary:
+            'Validate a Manifest: the schema pass, then the semantic pass when its project is visible',
           level: 'any',
           cli: false,
         },
@@ -430,11 +446,6 @@ export const manifestRoutes = (kit: Kit) => {
         response: replies({
           200: Validation,
         }),
-        detail: {
-          summary:
-            'Validate a Manifest: the schema pass, then the semantic pass when its project is visible',
-          tags,
-        },
       },
     )
     .get(
@@ -443,19 +454,27 @@ export const manifestRoutes = (kit: Kit) => {
         const proj = projectByRef(db, params.project)
         const env = query.environment ? environmentInProject(db, proj, query.environment) : null
         const doc = exportManifest(db, keyring, proj, env)
-        if ((request.headers.get('accept') ?? '').includes('application/json')) return doc
+
+        if ((request.headers.get('accept') ?? '').includes('application/json')) {
+          return doc
+        }
+
         return manifestYaml(doc, `${kit.deps.auth.surface.apiOrigin}/schema/manifest.json`)
       },
       {
         operation: {
           id: 'export_manifest',
+          summary: 'Export the current configuration as a canonical Manifest',
           level: 'read',
           cli: false,
           target: ({ params, query }: TargetInput) =>
             target(projectByRef(db, params.project!), query.environment).scope,
         },
         mapResponse: ({ responseValue, set }) => {
-          if (typeof responseValue !== 'string') return
+          if (typeof responseValue !== 'string') {
+            return
+          }
+
           return new Response(responseValue, {
             status: typeof set.status === 'number' ? set.status : 200,
             headers: {
@@ -464,9 +483,6 @@ export const manifestRoutes = (kit: Kit) => {
             },
           })
         },
-        params: t.Object({
-          project: t.String(),
-        }),
         query: t.Object({
           environment: t.Optional(
             t.String({
@@ -478,10 +494,6 @@ export const manifestRoutes = (kit: Kit) => {
         response: replies({
           200: ManifestExport,
         }),
-        detail: {
-          summary: 'Export the current configuration as a canonical Manifest',
-          tags,
-        },
       },
     )
 }
@@ -498,13 +510,24 @@ const isReplace = (
   }[],
   db: Kit['deps']['db'],
 ) => {
-  if (!parent) return false
+  if (!parent) {
+    return false
+  }
+
   const added = changes.find((c) => c.op === 'add' && c.entity === 'service' && c.ref === parent)
-  if (added) return (added.after as { strategy?: string }).strategy === 'replace'
+
+  if (added) {
+    return (added.after as { strategy?: string }).strategy === 'replace'
+  }
+
   const changed = changes.find(
     (c) => c.op === 'update' && c.entity === 'service' && c.id === parent && c.path === '/strategy',
   )
-  if (changed) return changed.after === 'replace'
+
+  if (changed) {
+    return changed.after === 'replace'
+  }
+
   return (
     db
       .select({

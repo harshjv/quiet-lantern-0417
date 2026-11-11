@@ -57,6 +57,7 @@ const setRetention = async (value: number) => {
   const reply = await api('PATCH', '/v1/settings', {
     'sandbox.stopped_retention_s': value,
   })
+
   assert.equal(reply.status, 200, reply.text)
 }
 
@@ -93,8 +94,10 @@ after(async () => {
 describe('create, list, get', () => {
   test('a sandbox is created with the documented defaults, runs on the station and reports its state', async () => {
     const created = await api('POST', `/v1/environments/${envId}/sandboxes`, {})
+
     assert.equal(created.status, 201, created.text)
     const box = created.body
+
     assert.match(box.id, /^sbx_[0-9A-HJKMNP-TV-Z]{26}$/)
     assert.equal(box.name, `sandbox-${box.id.slice(-6).toLowerCase()}`)
     assert.equal(box.status, 'creating')
@@ -118,13 +121,16 @@ describe('create, list, get', () => {
     assert.equal(box.delete_at, null)
     assert.deepEqual(box.warnings, [])
     const left = Date.parse(box.stop_at) - Date.now()
+
     assert.ok(left > 3590_000 && left <= 3600_000, `stop_at is ${box.stop_at}`)
     const running = await waitForSandbox(h, box.id, 'running')
+
     assert.ok(running.address)
     assert.ok(running.started_at)
     assert.equal(running.status_reason, null)
     assert.equal(running.disk_used_bytes, 734003200)
     const started = (await events('sandbox.started')).find((e) => e.payload.sandbox === box.id)!
+
     assert.equal(started.payload.reason, 'create')
     assert.equal(started.subject.project_id, project.id)
     assert.equal(started.subject.environment_id, envId)
@@ -135,8 +141,10 @@ describe('create, list, get', () => {
       name: 'lister',
       network: 'isolated',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const all = (await api('GET', `/v1/environments/${envId}/sandboxes`)).body
+
     assert.ok(all.items.some((s: any) => s.id === box.id))
     assert.ok(all.items.every((s: any) => s.egress.domains === undefined))
     const running = (
@@ -145,6 +153,7 @@ describe('create, list, get', () => {
         `/v1/environments/${envId}/sandboxes?status=running&network=isolated&station=station-1`,
       )
     ).body.items
+
     assert.ok(running.some((s: any) => s.id === box.id))
     assert.deepEqual(
       (await api('GET', `/v1/environments/${envId}/sandboxes?status=failed`)).body.items,
@@ -157,6 +166,7 @@ describe('create, list, get', () => {
       [],
     )
     const full = (await api('GET', `/v1/sandboxes/${box.id}?fields=*`)).body
+
     assert.deepEqual(full.egress, {
       mode: 'open',
       domains: [],
@@ -167,6 +177,7 @@ describe('create, list, get', () => {
     assert.equal(full.command, null)
     assert.equal(full.failure, null)
     const flat = await api('GET', `/v1/projects/alpha/environments/production/sandboxes/lister`)
+
     assert.equal(flat.status, 200)
     assert.equal(flat.body.id, box.id)
   })
@@ -179,11 +190,13 @@ describe('create, list, get', () => {
     const again = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       name: 'unique-name',
     })
+
     assert.equal(again.status, 409)
     assert.equal(again.body.error.code, 'NAME_TAKEN')
     const bad = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       name: 'Not A Slug',
     })
+
     assert.equal(bad.status, 400)
     assert.equal(bad.body.error.code, 'VALIDATION_FAILED')
   })
@@ -193,6 +206,7 @@ describe('create, list, get', () => {
       name: 'cold',
       start: false,
     })
+
     assert.equal(box.status, 'stopped')
     assert.equal(box.status_reason, 'created_stopped')
     assert.equal(box.desired_state, 'stopped')
@@ -212,6 +226,7 @@ describe('create, list, get', () => {
       },
       start: false,
     })
+
     assert.equal(box.image.ref, 'alpine:3.20')
     assert.match(box.image.digest, /^sha256:[0-9a-f]{64}$/)
     const missing = await api('POST', `/v1/environments/${envId}/sandboxes`, {
@@ -220,6 +235,7 @@ describe('create, list, get', () => {
         ref: 'nowhere.invalid/none:1',
       },
     })
+
     assert.equal(missing.status, 422)
     assert.equal(missing.body.error.code, 'SOURCE_UNREACHABLE')
   })
@@ -242,8 +258,10 @@ describe('create, list, get', () => {
         ],
       },
     })
+
     assert.equal(box.egress.mode, 'allowlist')
     const full = (await api('GET', `/v1/sandboxes/${box.id}?fields=egress`)).body
+
     assert.deepEqual(full.egress.domains, [
       {
         domain: 'github.com',
@@ -266,6 +284,7 @@ describe('create, list, get', () => {
         ],
       },
     })
+
     assert.equal(bad.status, 400)
     assert.equal(bad.body.error.details.issues[0].path, '/egress/domains/0/domain')
     const tooMany = await api('POST', `/v1/environments/${envId}/sandboxes`, {
@@ -281,6 +300,7 @@ describe('create, list, get', () => {
         ),
       },
     })
+
     assert.equal(tooMany.status, 400)
     assert.equal(tooMany.body.error.details.issues[0].path, '/egress/domains')
     const ports = await api('POST', `/v1/environments/${envId}/sandboxes`, {
@@ -294,8 +314,171 @@ describe('create, list, get', () => {
         ],
       },
     })
+
     assert.equal(ports.status, 400)
     assert.equal(ports.body.error.details.issues[0].path, '/egress/domains')
+  })
+
+  test('a sandbox takes the station default runtime and a fork keeps its source runtime', async () => {
+    const box = await createSandbox(h, envId, {
+      name: 'runtime-default',
+      start: false,
+    })
+
+    assert.equal(box.runtime, 'gvisor')
+    const fork = await api('POST', `/v1/environments/${envId}/sandboxes`, {
+      name: 'runtime-fork',
+      from: {
+        sandbox: box.id,
+      },
+      start: false,
+    })
+
+    assert.equal(fork.status, 201, fork.text)
+    assert.equal(fork.body.runtime, 'gvisor')
+    assert.equal(sandboxRow(fork.body.id)!.runtime, 'gvisor')
+  })
+
+  test('a station that offers no sandbox runtime answers SANDBOX_RUNTIME_UNAVAILABLE', async () => {
+    const bare = await startFakeStation(h, 'station-no-runtime', {
+      sandboxes: {
+        runtimes: [],
+      },
+    })
+    const reply = await api('POST', `/v1/environments/${envId}/sandboxes`, {
+      station_id: 'station-no-runtime',
+      runtime: 'gvisor',
+    })
+
+    assert.equal(reply.status, 422, reply.text)
+    assert.equal(reply.body.error.code, 'SANDBOX_RUNTIME_UNAVAILABLE')
+    assert.equal(reply.body.error.details.runtime, 'gvisor')
+    assert.deepEqual(reply.body.error.details.offered, [])
+    const unnamed = await api('POST', `/v1/environments/${envId}/sandboxes`, {
+      station_id: 'station-no-runtime',
+    })
+
+    assert.equal(unnamed.status, 422, unnamed.text)
+    assert.equal(unnamed.body.error.code, 'SANDBOX_RUNTIME_UNAVAILABLE')
+    assert.equal(unnamed.body.error.details.runtime, null)
+    await bare.close()
+  })
+
+  test('a station reports its host probe and the runtime advice built from it', async () => {
+    const reply = await api(
+      'GET',
+      '/v1/stations/station-1?fields=capabilities,default_sandbox_runtime,sandbox_runtime_advice',
+    )
+
+    assert.equal(reply.status, 200, reply.text)
+    assert.equal(reply.body.capabilities.host.kvm_usable, false)
+    assert.equal(reply.body.default_sandbox_runtime, null)
+    assert.deepEqual(reply.body.sandbox_runtime_advice, {
+      default: 'gvisor',
+      reasons: [
+        'This host is a kvm virtual machine without nested virtualization, so sandboxes run on gVisor',
+      ],
+      options: [
+        {
+          runtime: 'gvisor',
+          installed: true,
+          recommended: true,
+          pros: reply.body.sandbox_runtime_advice.options[0].pros,
+          cons: reply.body.sandbox_runtime_advice.options[0].cons,
+        },
+      ],
+    })
+  })
+
+  test('a KVM host lists micro-VMs as recommended but not installed, and the default stays gVisor', async () => {
+    const metal = await startFakeStation(h, 'station-metal', {
+      sandboxes: {
+        host: {
+          kvm_present: true,
+          kvm_usable: true,
+          cpu_virtualization: 'svm',
+          hypervisor: null,
+        },
+      },
+    })
+    const reply = await api('GET', '/v1/stations/station-metal?fields=sandbox_runtime_advice')
+    const advice = reply.body.sandbox_runtime_advice
+
+    assert.equal(advice.default, 'gvisor')
+    assert.deepEqual(
+      advice.options.map((o: any) => [o.runtime, o.installed, o.recommended]),
+      [
+        ['gvisor', true, false],
+        ['microvm', false, true],
+      ],
+    )
+    await metal.close()
+    const removed = await api('DELETE', '/v1/stations/station-metal')
+
+    assert.equal(removed.status, 200, removed.text)
+  })
+
+  test('default_sandbox_runtime is stored for a station that offers it and refused elsewhere', async () => {
+    const set = await api('PATCH', '/v1/stations/station-1', {
+      default_sandbox_runtime: 'gvisor',
+    })
+
+    assert.equal(set.status, 200, set.text)
+    assert.equal(set.body.default_sandbox_runtime, 'gvisor')
+    const cleared = await api('PATCH', '/v1/stations/station-1', {
+      default_sandbox_runtime: null,
+    })
+
+    assert.equal(cleared.status, 200, cleared.text)
+    assert.equal(cleared.body.default_sandbox_runtime, null)
+    const unknown = await api('PATCH', '/v1/stations/station-1', {
+      default_sandbox_runtime: 'firecracker',
+    })
+
+    assert.equal(unknown.status, 400, unknown.text)
+    const plain = await startFakeStation(h, 'station-runtime-less')
+    const refused = await api('PATCH', '/v1/stations/station-runtime-less', {
+      default_sandbox_runtime: 'gvisor',
+    })
+
+    assert.equal(refused.status, 400, refused.text)
+    assert.equal(refused.body.error.code, 'VALIDATION_FAILED')
+    assert.deepEqual(
+      refused.body.error.details.issues.map((i: any) => i.path),
+      ['/default_sandbox_runtime'],
+    )
+    await plain.close()
+  })
+
+  test('under platform.protected a token stages default_sandbox_runtime and a human applies it', async () => {
+    const on = await human('PATCH', '/v1/settings', {
+      'platform.protected': true,
+    })
+
+    assert.equal(on.status, 200, on.text)
+    const staged = await api('PATCH', '/v1/stations/station-1', {
+      default_sandbox_runtime: 'gvisor',
+    })
+
+    assert.equal(staged.status, 202, staged.text)
+    assert.equal(
+      h.db.select().from(stationTable).where(eq(stationTable.name, 'station-1')).get()!
+        .default_sandbox_runtime,
+      null,
+    )
+    const accepted = await human('POST', `/v1/staged-changes/${staged.body.id}/accept`)
+
+    assert.equal(accepted.status, 200, accepted.text)
+    assert.equal(
+      h.db.select().from(stationTable).where(eq(stationTable.name, 'station-1')).get()!
+        .default_sandbox_runtime,
+      'gvisor',
+    )
+    const off = await human('PATCH', '/v1/settings', {
+      'platform.protected': false,
+    })
+
+    assert.equal(off.status, 200, off.text)
   })
 
   test('a station without the sandbox capability refuses a sandbox', async () => {
@@ -303,6 +486,7 @@ describe('create, list, get', () => {
     const reply = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       station_id: 'station-plain',
     })
+
     assert.equal(reply.status, 422)
     assert.equal(reply.body.error.code, 'STATION_CAPABILITY_MISSING')
     assert.equal(reply.body.error.details.missing, 'sandboxes')
@@ -314,32 +498,39 @@ describe('start, stop, delete', () => {
     const box = await createSandbox(h, envId, {
       name: 'cycle',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const stopping = await api('POST', `/v1/sandboxes/${box.id}/stop`)
+
     assert.equal(stopping.status, 200, stopping.text)
     assert.equal(stopping.body.status, 'stopping')
     assert.equal(stopping.body.stop_at, null)
     const stopped = await waitForSandbox(h, box.id, 'stopped')
+
     assert.equal(stopped.status_reason, 'user')
     assert.ok(stopped.stopped_at)
     assert.equal(Date.parse(stopped.delete_at) - Date.parse(stopped.stopped_at), 604800_000)
     assert.equal(stopped.address, null)
     const stopEvent = (await events('sandbox.stopped')).find((e) => e.payload.sandbox === box.id)!
+
     assert.equal(stopEvent.payload.reason, 'user')
     assert.ok(stopEvent.payload.ran_for_s >= 0)
     const restarted = await api('POST', `/v1/sandboxes/${box.id}/start`, {
       ttl_s: 120,
     })
+
     assert.equal(restarted.status, 200, restarted.text)
     assert.equal(restarted.body.status, 'starting')
     assert.equal(restarted.body.ttl_s, 120)
     assert.equal(restarted.body.delete_at, null)
     const left = Date.parse(restarted.body.stop_at) - Date.now()
+
     assert.ok(left > 110_000 && left <= 120_000)
     await waitForSandbox(h, box.id, 'running')
     const startEvents = (await events('sandbox.started')).filter(
       (e) => e.payload.sandbox === box.id,
     )
+
     assert.equal(startEvents.at(-1)!.payload.reason, 'user')
   })
 
@@ -347,12 +538,15 @@ describe('start, stop, delete', () => {
     const box = await createSandbox(h, envId, {
       name: 'doomed',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const snapshot = await api('POST', `/v1/sandboxes/${box.id}/snapshots`, {
       name: 'keep-me',
     })
+
     assert.equal(snapshot.status, 201)
     const removed = await api('DELETE', `/v1/sandboxes/${box.id}`)
+
     assert.equal(removed.status, 200, removed.text)
     assert.deepEqual(removed.body, {
       deleted: true,
@@ -365,10 +559,12 @@ describe('start, stop, delete', () => {
     await station.waitFor(() => !sandboxRow(box.id), 5000, 'the sandbox row to disappear')
     assert.equal((await api('GET', `/v1/sandboxes/${box.id}`)).status, 404)
     const gone = (await events('sandbox.deleted')).find((e) => e.payload.sandbox === box.id)!
+
     assert.equal(gone.payload.reason, 'user')
     assert.equal(gone.payload.snapshots_kept, 1)
     assert.equal(gone.payload.actor.type, 'token')
     const kept = (await api('GET', `/v1/environments/${envId}/sandbox-snapshots`)).body.items
+
     assert.ok(kept.some((s: any) => s.id === snapshot.body.id && s.sandbox_id === box.id))
   })
 
@@ -377,6 +573,7 @@ describe('start, stop, delete', () => {
       name: 'dying',
       start: false,
     })
+
     station.releaseSandboxes()
     h.db
       .update(sandbox)
@@ -386,6 +583,7 @@ describe('start, stop, delete', () => {
       .where(eq(sandbox.id, box.id))
       .run()
     const start = await api('POST', `/v1/sandboxes/${box.id}/start`)
+
     assert.equal(start.status, 409)
     assert.equal(start.body.error.code, 'SANDBOX_STATE_CONFLICT')
     assert.equal(start.body.error.details.status, 'deleting')
@@ -393,6 +591,7 @@ describe('start, stop, delete', () => {
     const patch = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       ttl_s: 600,
     })
+
     assert.equal(patch.status, 409)
     h.db
       .update(sandbox)
@@ -407,6 +606,7 @@ describe('start, stop, delete', () => {
     const box = await createSandbox(h, envId, {
       name: 'flaky',
     })
+
     await waitForSandbox(h, box.id, 'running')
     station.failSandbox(box.id, {
       phase: 'start',
@@ -418,11 +618,14 @@ describe('start, stop, delete', () => {
       },
     })
     const failed = await waitForSandbox(h, box.id, 'failed')
+
     assert.equal(failed.failure.code, 'SANDBOX_START_FAILED')
     assert.equal(failed.desired_state, 'stopped')
     const event = (await events('sandbox.failed')).find((e) => e.payload.sandbox === box.id)!
+
     assert.deepEqual([event.payload.phase, event.payload.code], ['start', 'SANDBOX_START_FAILED'])
     const again = await api('POST', `/v1/sandboxes/${box.id}/start`)
+
     assert.equal(again.status, 200)
     await waitForSandbox(h, box.id, 'running')
   })
@@ -434,12 +637,15 @@ describe('time to live', () => {
       name: 'extend',
       ttl_s: 600,
     })
+
     await waitForSandbox(h, box.id, 'running')
     const patched = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       ttl_s: 7200,
     })
+
     assert.equal(patched.status, 200, patched.text)
     const left = Date.parse(patched.body.stop_at) - Date.now()
+
     assert.ok(left > 7190_000 && left <= 7200_000)
     assert.deepEqual(patched.body.warnings, [])
     await api('POST', `/v1/sandboxes/${box.id}/stop`)
@@ -447,6 +653,7 @@ describe('time to live', () => {
     const stored = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       ttl_s: 900,
     })
+
     assert.equal(stored.body.ttl_s, 900)
     assert.equal(stored.body.stop_at, null)
   })
@@ -457,6 +664,7 @@ describe('time to live', () => {
         ttl_s,
         start: false,
       })
+
       assert.equal(reply.status, 400)
       assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
     }
@@ -467,17 +675,21 @@ describe('time to live', () => {
       name: 'expiring-ttl',
       ttl_s: 60,
     })
+
     await waitForSandbox(h, box.id, 'running')
     station.expireSandbox(box.id, 'ttl')
     const stopped = await waitForSandbox(h, box.id, 'stopped')
+
     assert.equal(stopped.status_reason, 'ttl')
     assert.equal(stopped.desired_state, 'stopped')
     assert.equal(stopped.stop_at, null)
     const event = (await events('sandbox.stopped')).find((e) => e.payload.sandbox === box.id)!
+
     assert.equal(event.payload.reason, 'ttl')
     const generation = await station.waitForGeneration(
       (doc) => doc.sandboxes?.[box.id]?.desired_state === 'stopped',
     )
+
     assert.equal(generation.sandboxes![box.id]!.stop_at, null)
   })
 
@@ -485,16 +697,20 @@ describe('time to live', () => {
     const exited = await createSandbox(h, envId, {
       name: 'exits',
     })
+
     await waitForSandbox(h, exited.id, 'running')
     station.expireSandbox(exited.id, 'exited', 3)
     const a = await waitForSandbox(h, exited.id, 'stopped')
+
     assert.deepEqual([a.status_reason, a.exit_code, a.desired_state], ['exited', 3, 'stopped'])
     const oom = await createSandbox(h, envId, {
       name: 'oom',
     })
+
     await waitForSandbox(h, oom.id, 'running')
     station.expireSandbox(oom.id, 'oom', 137)
     const b = await waitForSandbox(h, oom.id, 'stopped')
+
     assert.deepEqual([b.status_reason, b.exit_code], ['oom', 137])
   })
 })
@@ -503,13 +719,17 @@ describe('retention of stopped sandboxes', () => {
   test('sandbox.stopped_retention_s is 604800 by default, 0 or at least 86400 otherwise', async () => {
     const value = (await api('GET', '/v1/settings?prefix=sandbox.')).body
     const entry = (value.items ?? value).find((s: any) => s.key === 'sandbox.stopped_retention_s')
+
     assert.equal(entry.value, 604800)
+
     for (const bad of [86399, -1, 1.5]) {
       const reply = await api('PATCH', '/v1/settings', {
         'sandbox.stopped_retention_s': bad,
       })
+
       assert.equal(reply.status, 400, `${bad}`)
     }
+
     await setRetention(0)
     await setRetention(86400)
     await setRetention(604800)
@@ -519,16 +739,19 @@ describe('retention of stopped sandboxes', () => {
     const box = await createSandbox(h, envId, {
       name: 'retained',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const snapshot = (
       await api('POST', `/v1/sandboxes/${box.id}/snapshots`, {
         name: 'survivor',
       })
     ).body
+
     await api('POST', `/v1/sandboxes/${box.id}/stop`)
     await waitForSandbox(h, box.id, 'stopped')
     const stoppedAt = sandboxRow(box.id)!.stopped_at!
     const day = 86400_000
+
     assert.deepEqual(
       runRetention(
         {
@@ -546,6 +769,7 @@ describe('retention of stopped sandboxes', () => {
       },
       new Date(stoppedAt.getTime() + 6 * day + 1000),
     )
+
     assert.deepEqual(
       soon.expiring.filter((id) => id === box.id),
       [box.id],
@@ -561,6 +785,7 @@ describe('retention of stopped sandboxes', () => {
       [],
     )
     const expiring = (await events('sandbox.expiring')).filter((e) => e.payload.sandbox === box.id)
+
     assert.equal(expiring.length, 1)
     assert.equal(
       expiring[0]!.payload.delete_at,
@@ -574,6 +799,7 @@ describe('retention of stopped sandboxes', () => {
       },
       new Date(stoppedAt.getTime() + 7 * day),
     )
+
     assert.deepEqual(
       due.deleted.filter((id) => id === box.id),
       [box.id],
@@ -581,6 +807,7 @@ describe('retention of stopped sandboxes', () => {
     assert.equal(sandboxRow(box.id)?.deletion?.reason ?? 'removed', 'retention')
     await station.waitFor(() => !sandboxRow(box.id), 5000, 'retention deletion to finish')
     const deleted = (await events('sandbox.deleted')).find((e) => e.payload.sandbox === box.id)!
+
     assert.equal(deleted.payload.reason, 'retention')
     assert.equal(deleted.payload.actor.type, 'system')
     assert.equal(deleted.payload.snapshots_kept, 1)
@@ -591,10 +818,12 @@ describe('retention of stopped sandboxes', () => {
     const box = await createSandbox(h, envId, {
       name: 'reset-clock',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const failed = await createSandbox(h, envId, {
       name: 'failed-keeps',
     })
+
     await waitForSandbox(h, failed.id, 'running')
     station.failSandbox(failed.id, {
       phase: 'start',
@@ -605,6 +834,7 @@ describe('retention of stopped sandboxes', () => {
     await api('POST', `/v1/sandboxes/${box.id}/stop`)
     await waitForSandbox(h, box.id, 'stopped')
     const old = new Date(Date.now() - 30 * 86400_000)
+
     h.db
       .update(sandbox)
       .set({
@@ -634,6 +864,7 @@ describe('retention of stopped sandboxes', () => {
       db: h.db,
       stations: h.deps.stations,
     })
+
     assert.ok(!result.deleted.includes(box.id))
     assert.ok(!result.deleted.includes(failed.id))
     assert.ok(!result.expiring.includes(failed.id))
@@ -647,6 +878,7 @@ describe('retention of stopped sandboxes', () => {
         start: false,
       })
     ).body
+
     h.db
       .update(sandbox)
       .set({
@@ -658,6 +890,7 @@ describe('retention of stopped sandboxes', () => {
       db: h.db,
       stations: h.deps.stations,
     })
+
     assert.ok(result.deleted.includes(box.id))
   })
 })
@@ -667,8 +900,10 @@ describe('protected environments', () => {
     const created = await human('POST', `/v1/environments/${protectedId}/sandboxes`, {
       name: 'locked-box',
     })
+
     assert.equal(created.status, 201, created.text)
     const id = created.body.id
+
     await waitForSandbox(h, id, 'running')
     const attempts: [string, string, unknown][] = [
       [
@@ -711,23 +946,29 @@ describe('protected environments', () => {
       ],
       ['DELETE', `/v1/sandboxes/${id}`, undefined],
     ]
+
     for (const [method, path, body] of attempts) {
       const reply = await api(method, path, body)
+
       assert.equal(reply.status, 403, `${method} ${path}: ${reply.text}`)
       assert.equal(reply.body.error.code, 'PROTECTED_ENVIRONMENT')
       assert.equal(reply.body.error.details.reason, 'human_required')
     }
+
     assert.equal((await api('GET', `/v1/sandboxes/${id}`)).status, 200)
     assert.equal((await api('GET', `/v1/environments/${protectedId}/sandboxes`)).status, 200)
     assert.equal((await api('GET', `/v1/sandboxes/${id}/runs`)).status, 200)
     const exec = await human('POST', `/v1/sandboxes/${id}/exec`, {
       command: ['true'],
     })
+
     assert.equal(exec.status, 201, exec.text)
     const snapshot = await human('POST', `/v1/sandboxes/${id}/snapshots`, {})
+
     assert.equal(snapshot.status, 201)
     assert.equal((await api('DELETE', `/v1/sandbox-snapshots/${snapshot.body.id}`)).status, 403)
     const deleted = await human('DELETE', `/v1/sandbox-snapshots/${snapshot.body.id}`)
+
     assert.equal(deleted.status, 200)
     assert.equal(
       rows(
@@ -746,7 +987,9 @@ describe('station limits', () => {
       const reply = await api('PATCH', '/v1/stations/station-1', {
         sandbox_limits: body,
       })
+
       assert.equal(reply.status, 200, reply.text)
+
       return reply.body.sandbox_limits
     }
     const total = rows<{ n: number }>(h, 'select count(*) as n from sandbox')[0]!.n
@@ -754,6 +997,7 @@ describe('station limits', () => {
       h,
       "select count(*) as n from sandbox where desired_state = 'running'",
     )[0]!.n
+
     assert.deepEqual(
       await limits({
         max_sandboxes: total,
@@ -768,6 +1012,7 @@ describe('station limits', () => {
     const full = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       start: false,
     })
+
     assert.equal(full.status, 422)
     assert.equal(full.body.error.code, 'SANDBOX_QUOTA_EXCEEDED')
     assert.deepEqual(
@@ -783,12 +1028,14 @@ describe('station limits', () => {
       max_running: running,
     })
     const many = await api('POST', `/v1/environments/${envId}/sandboxes`, {})
+
     assert.equal(many.body.error.details.limit, 'max_running')
     const cold = await createSandbox(h, envId, {
       name: 'cold-quota',
       start: false,
     })
     const start = await api('POST', `/v1/sandboxes/${cold.id}/start`)
+
     assert.equal(start.status, 422)
     assert.equal(start.body.error.details.limit, 'max_running')
     await limits({
@@ -800,6 +1047,7 @@ describe('station limits', () => {
         memory_bytes: 2147483648,
       },
     })
+
     assert.equal(memory.body.error.details.limit, 'memory_bytes')
     assert.equal(memory.body.error.details.requested, 2147483648)
     assert.equal(
@@ -818,6 +1066,7 @@ describe('station limits', () => {
         memory_bytes: 2147483648,
       },
     })
+
     assert.equal(resize.status, 200)
     await limits({
       memory_bytes: null,
@@ -834,6 +1083,7 @@ describe('station limits', () => {
       (await api('GET', '/v1/stations/station-1?fields=sandbox_memory')).body.sandbox_memory
     const { used } = await memory()
     const limit = used + 3 * gibibyte + 100 * 1024 ** 2
+
     await api('PATCH', '/v1/stations/station-1', {
       sandbox_limits: {
         max_running: 100,
@@ -848,14 +1098,17 @@ describe('station limits', () => {
     const fitted = await createSandbox(h, envId, {
       name: 'fitted-memory',
     })
+
     assert.equal(fitted.size.memory_bytes, 3 * gibibyte)
     const busy = used + 3 * gibibyte
+
     assert.deepEqual(await memory(), {
       limit,
       used: busy,
       free: 100 * 1024 ** 2,
     })
     const refused = await api('POST', `/v1/environments/${envId}/sandboxes`, {})
+
     assert.equal(refused.status, 422)
     assert.equal(refused.body.error.code, 'SANDBOX_QUOTA_EXCEEDED')
     assert.equal(
@@ -893,6 +1146,7 @@ describe('station limits', () => {
       },
     }
     const memory = sandboxMemory(h.db, unreported)
+
     assert.equal(memory.limit, null)
     assert.equal(memory.free, null)
     assert.equal(fittingMemory(h.db, unreported), 4 * gibibyte)
@@ -921,6 +1175,7 @@ describe('station limits', () => {
         },
       },
     })
+
     assert.equal(reply.status, 403)
   })
 
@@ -933,6 +1188,7 @@ describe('station limits', () => {
     const reply = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       start: false,
     })
+
     assert.equal(reply.status, 422)
     assert.equal(reply.body.error.code, 'SANDBOX_DISK_FULL')
     assert.ok(reply.body.error.details.free_bytes < reply.body.error.details.min_free_bytes)
@@ -949,6 +1205,7 @@ describe('patch', () => {
     const box = await createSandbox(h, envId, {
       name: 'patching',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const egress = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       egress: {
@@ -963,6 +1220,7 @@ describe('patch', () => {
         disk_bytes: 32212254720,
       },
     })
+
     assert.equal(egress.status, 200, egress.text)
     assert.deepEqual(egress.body.warnings, [])
     assert.equal(egress.body.egress.mode, 'allowlist')
@@ -974,6 +1232,7 @@ describe('patch', () => {
       },
       command: ['sleep', 'infinity'],
     })
+
     assert.equal(restart.body.warnings.length, 1)
     assert.equal(restart.body.warnings[0].code, 'SANDBOX_RESTART_REQUIRED')
     assert.match(restart.body.warnings[0].explanation, /docker/)
@@ -981,6 +1240,7 @@ describe('patch', () => {
     const network = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       network: 'environment',
     })
+
     assert.equal(network.status, 409)
     assert.equal(network.body.error.code, 'SANDBOX_STATE_CONFLICT')
     assert.equal(network.body.error.details.status, 'running')
@@ -989,6 +1249,7 @@ describe('patch', () => {
     const joined = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       network: 'environment',
     })
+
     assert.equal(joined.status, 200)
     assert.equal(joined.body.network, 'environment')
     assert.equal((await api('PATCH', `/v1/sandboxes/${box.id}`, {})).status, 400)
@@ -998,6 +1259,7 @@ describe('patch', () => {
     const box = await createSandbox(h, envId, {
       name: 'shrinking',
     })
+
     await waitForSandbox(h, box.id, 'running')
     h.db
       .update(sandbox)
@@ -1011,6 +1273,7 @@ describe('patch', () => {
         disk_bytes: 1073741824,
       },
     })
+
     assert.equal(reply.status, 400)
     assert.equal(reply.body.error.details.issues[0].path, '/size/disk_bytes')
   })
@@ -1024,10 +1287,12 @@ describe('snapshots and forks', () => {
         cpu_millis: 1000,
       },
     })
+
     await waitForSandbox(h, source.id, 'running')
     const snapshot = await api('POST', `/v1/sandboxes/${source.id}/snapshots`, {
       name: 'base',
     })
+
     assert.equal(snapshot.status, 201, snapshot.text)
     assert.equal(snapshot.body.status, 'ready')
     assert.equal(snapshot.body.source_state, 'running')
@@ -1039,15 +1304,18 @@ describe('snapshots and forks', () => {
     const named = await api('POST', `/v1/sandboxes/${source.id}/snapshots`, {
       name: 'base',
     })
+
     assert.equal(named.body.error.code, 'NAME_TAKEN')
     const listed = (await api('GET', `/v1/sandboxes/${source.id}/snapshots?status=ready`)).body
       .items
+
     assert.deepEqual(
       listed.map((s: any) => s.id),
       [snapshot.body.id],
     )
     const detail = (await api('GET', `/v1/sandbox-snapshots/${snapshot.body.id}?fields=image,size`))
       .body
+
     assert.equal(detail.size.cpu_millis, 1000)
     const other = await createEnvironment(h, 'alpha', 'pr-12')
     const fork = await api('POST', `/v1/environments/${other.id}/sandboxes`, {
@@ -1057,6 +1325,7 @@ describe('snapshots and forks', () => {
       },
       start: false,
     })
+
     assert.equal(fork.status, 201, fork.text)
     assert.deepEqual(fork.body.forked_from, {
       sandbox_id: null,
@@ -1065,6 +1334,7 @@ describe('snapshots and forks', () => {
     assert.equal(fork.body.size.cpu_millis, 1000)
     assert.equal(fork.body.station_id, source.station_id)
     const doc = await station.waitForGeneration((d) => d.sandboxes?.[fork.body.id] !== undefined)
+
     assert.deepEqual((doc.sandboxes![fork.body.id]!.disk as any).from, {
       snapshot_id: snapshot.body.id,
     })
@@ -1076,6 +1346,7 @@ describe('snapshots and forks', () => {
       ttl_s: 300,
       start: false,
     })
+
     assert.equal(live.status, 201, live.text)
     assert.equal(live.body.ttl_s, 300)
     assert.deepEqual(live.body.forked_from, {
@@ -1093,6 +1364,7 @@ describe('snapshots and forks', () => {
       },
       start: false,
     })
+
     assert.equal(named2.status, 404)
     const wrongStation = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       from: {
@@ -1100,6 +1372,7 @@ describe('snapshots and forks', () => {
       },
       station_id: 'station-plain',
     })
+
     assert.equal(wrongStation.status, 400)
     assert.equal(wrongStation.body.error.details.issues[0].path, '/station_id')
   })
@@ -1132,6 +1405,7 @@ describe('snapshots and forks', () => {
         },
       ],
     })
+
     await waitForSandbox(h, source.id, 'running')
     const snapshot = (await api('POST', `/v1/sandboxes/${source.id}/snapshots`, {})).body
     const other = await createEnvironment(h, 'alpha', 'fork-inherit')
@@ -1157,6 +1431,7 @@ describe('snapshots and forks', () => {
       },
       start: false,
     })
+
     assert.equal(fromSnapshot.status, 201, fromSnapshot.text)
     expectInherited((await api('GET', `/v1/sandboxes/${fromSnapshot.body.id}?fields=*`)).body)
     const fromLive = await api('POST', `/v1/environments/${envId}/sandboxes`, {
@@ -1166,13 +1441,16 @@ describe('snapshots and forks', () => {
       },
       start: false,
     })
+
     assert.equal(fromLive.status, 201, fromLive.text)
     expectInherited((await api('GET', `/v1/sandboxes/${fromLive.body.id}?fields=*`)).body)
     const variables = (await api('GET', `/v1/sandboxes/${fromSnapshot.body.id}/variables`)).body
+
     assert.deepEqual(variables.items ?? variables, [])
     const doc = await station.waitForGeneration(
       (d) => d.sandboxes?.[fromSnapshot.body.id] !== undefined,
     )
+
     assert.equal((doc.sandboxes![fromSnapshot.body.id] as any).network, 'environment')
     const overridden = await api('POST', `/v1/environments/${other.id}/sandboxes`, {
       name: 'overridden',
@@ -1185,9 +1463,11 @@ describe('snapshots and forks', () => {
       },
       start: false,
     })
+
     assert.equal(overridden.body.network, 'isolated')
     assert.equal(overridden.body.egress.mode, 'open')
     const deletedSource = await api('DELETE', `/v1/sandboxes/${source.id}`)
+
     assert.equal(deletedSource.status, 200)
     const later = await api('POST', `/v1/environments/${other.id}/sandboxes`, {
       name: 'after-delete',
@@ -1196,6 +1476,7 @@ describe('snapshots and forks', () => {
       },
       start: false,
     })
+
     assert.equal(later.body.network, 'environment')
   })
 
@@ -1209,15 +1490,18 @@ describe('snapshots and forks', () => {
       name: 'creating-fork',
       station_id: 'station-hold',
     })
+
     assert.equal(box.status, 'creating')
     const fork = await api('POST', `/v1/environments/${envId}/sandboxes`, {
       from: {
         sandbox: box.id,
       },
     })
+
     assert.equal(fork.status, 409)
     assert.equal(fork.body.error.code, 'SANDBOX_STATE_CONFLICT')
     const snapshot = await api('POST', `/v1/sandboxes/${box.id}/snapshots`, {})
+
     assert.equal(snapshot.status, 409)
     assert.equal(snapshot.body.error.details.status, 'creating')
     await hold.close()
@@ -1234,10 +1518,12 @@ describe('snapshots and forks', () => {
       start: false,
     })
     const snapshot = (await api('POST', `/v1/sandboxes/${source.id}/snapshots`, {})).body
+
     assert.equal(snapshot.status, 'ready')
     assert.deepEqual(snapshot.warnings, [])
     assert.equal(snapshot.source_state, 'stopped')
     const removed = await api('DELETE', `/v1/sandbox-snapshots/${snapshot.id}`)
+
     assert.deepEqual(removed.body, {
       deleted: true,
     })
@@ -1258,6 +1544,7 @@ describe('environments that hold sandboxes', () => {
       start: false,
     })
     const blocked = await api('DELETE', `/v1/environments/${normal.id}`)
+
     assert.equal(blocked.status, 409)
     assert.equal(blocked.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.deepEqual(
@@ -1278,6 +1565,7 @@ describe('environments that hold sandboxes', () => {
     })
     const snapshot = (await api('POST', `/v1/sandboxes/${mine.id}/snapshots`, {})).body
     const removed = await api('DELETE', `/v1/environments/${temp.id}`)
+
     assert.equal(removed.status, 200, removed.text)
     await station.waitFor(
       () =>
@@ -1287,11 +1575,13 @@ describe('environments that hold sandboxes', () => {
       'sandbox and snapshot removal',
     )
     const gone = (await events('sandbox.deleted')).find((e) => e.payload.sandbox === mine.id)!
+
     assert.equal(gone.payload.reason, 'environment')
   })
 
   test('a station that still holds a sandbox cannot be removed', async () => {
     const reply = await api('DELETE', '/v1/stations/station-1')
+
     assert.equal(reply.status, 409)
     assert.equal(reply.body.error.code, 'DELETE_HAS_DEPENDENTS')
   })

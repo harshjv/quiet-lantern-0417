@@ -12,7 +12,7 @@ import { sha256Digest } from '../generation/hash.ts'
 import { knownRedaction, refsOf, renderedDelivery } from './deliver.ts'
 import { SecretsError } from './errors.ts'
 import type { Keyring } from './keyring.ts'
-import { isFallback, isSealed, leaves, Resolver, type SourceNode } from './resolve.ts'
+import { isFallback, isSealed, Resolver, type SourceNode } from './resolve.ts'
 
 type ActorValue = Static<typeof Actor>
 type EnvEntryValue = Static<typeof EnvEntry>
@@ -36,15 +36,19 @@ export const snapshotOf = (db: Db, serviceId: string): EnvSnapshot => {
   const resolver = Resolver.forService(db, serviceId)
   const entries = resolver.serviceVariables().map((v) => {
     let node: SourceNode
+
     try {
       node = resolver.resolve(v)
     } catch (error) {
-      if (error instanceof SecretsError)
+      if (error instanceof SecretsError) {
         Object.assign(error.details, {
           key: v.key,
         })
+      }
+
       throw error
     }
+
     return {
       key: v.key,
       variable_id: v.id,
@@ -56,6 +60,7 @@ export const snapshotOf = (db: Db, serviceId: string): EnvSnapshot => {
       node,
     }
   })
+
   return {
     resolved_at: new Date().toISOString(),
     entries,
@@ -72,7 +77,11 @@ export const createDeployment = (
   },
 ) => {
   const svc = db.select().from(service).where(eq(service.id, input.service_id)).get()
-  if (!svc) throw new SecretsError('NOT_FOUND', `service ${input.service_id} does not exist`)
+
+  if (!svc) {
+    throw new SecretsError('NOT_FOUND', `service ${input.service_id} does not exist`)
+  }
+
   const env_snapshot = snapshotOf(db, svc.id)
   const last = db
     .select({
@@ -86,6 +95,7 @@ export const createDeployment = (
   const id = newId('deployment')
   const number = (last?.number ?? 0) + 1
   const { id: _id, created_at: _c, updated_at: _u, ...config } = svc
+
   db.insert(deployment)
     .values({
       id,
@@ -104,6 +114,7 @@ export const createDeployment = (
       base_images: [],
     })
     .run()
+
   return {
     deployment_id: id,
     number,
@@ -112,7 +123,11 @@ export const createDeployment = (
 
 export const activateDeployment = (db: Db, deploymentId: string) => {
   const dep = db.select().from(deployment).where(eq(deployment.id, deploymentId)).get()
-  if (!dep) throw new SecretsError('NOT_FOUND', `deployment ${deploymentId} does not exist`)
+
+  if (!dep) {
+    throw new SecretsError('NOT_FOUND', `deployment ${deploymentId} does not exist`)
+  }
+
   db.update(deployment)
     .set({
       status: 'active',
@@ -126,12 +141,17 @@ export const activateDeployment = (db: Db, deploymentId: string) => {
     })
     .where(eq(service.id, dep.service_id))
     .run()
+
   return dep.service_id
 }
 
 const snapshotFor = (db: Db, deploymentId: string) => {
   const dep = db.select().from(deployment).where(eq(deployment.id, deploymentId)).get()
-  if (!dep) throw new SecretsError('NOT_FOUND', `deployment ${deploymentId} does not exist`)
+
+  if (!dep) {
+    throw new SecretsError('NOT_FOUND', `deployment ${deploymentId} does not exist`)
+  }
+
   return {
     dep,
     snapshot: dep.env_snapshot as EnvSnapshot,
@@ -140,6 +160,7 @@ const snapshotFor = (db: Db, deploymentId: string) => {
 
 export const envDigest = (env: EnvEntryValue[]) => {
   const stripped = env.map(({ value: _value, ...rest }) => rest)
+
   return sha256Digest(stripped)
 }
 
@@ -160,6 +181,7 @@ export const envOf = (
     ['STATIONLY_ENVIRONMENT_ID', ids.environment_id],
     ['STATIONLY_DEPLOYMENT_ID', ids.deployment_id],
   ]
+
   return [
     ...platform.map(([key, value]) => ({
       key,
@@ -194,11 +216,14 @@ export const generationEnv = (db: Db, deploymentId: string) => {
     snapshot.entries,
   )
   const invalid = env.findIndex((entry) => !Value.Check(EnvEntry, entry))
-  if (invalid >= 0)
+
+  if (invalid >= 0) {
     throw new SecretsError(
       'VALIDATION_FAILED',
       `env entry ${env[invalid]!.key} does not match EnvEntry`,
     )
+  }
+
   return {
     deployment_id: dep.id,
     number: dep.number,
@@ -218,6 +243,7 @@ export const secretsDeliver = (
 ): SecretsDeliver => {
   const { snapshot } = snapshotFor(db, deploymentId)
   const { env_digest } = generationEnv(db, deploymentId)
+
   return renderedDelivery(db, keyring, snapshot.entries, {
     target: {
       deployment_id: deploymentId,
@@ -230,17 +256,6 @@ export const secretsDeliver = (
     purpose,
     actor,
   })
-}
-
-export const snapshotVersions = (db: Db, deploymentId: string) => {
-  const { snapshot } = snapshotFor(db, deploymentId)
-  return snapshot.entries.map((entry) => ({
-    key: entry.key,
-    sealed: entry.sealed,
-    sources: leaves(entry.node).map((leaf) =>
-      leaf.kind === 'value' ? `${leaf.key}@v${leaf.version}` : `export:${leaf.key}`,
-    ),
-  }))
 }
 
 export const redactionKnown = (

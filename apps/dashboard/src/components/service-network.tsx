@@ -108,6 +108,7 @@ function ProbeResult({ service, input }: { service: Service; input: ProbeInput }
       ),
   })
   const result = probe.data
+
   return (
     <div className="space-y-2">
       <Button
@@ -204,6 +205,7 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
   const Icon = verdictIcon[explanation.verdict]
   const probe = explanation.fixes.find((f) => f.code === 'RUN_PROBE')
   const probeInput = probe?.action?.input as { to?: string; port?: number } | undefined
+
   return (
     <div className="space-y-4" data-testid="explanation">
       <div
@@ -239,6 +241,7 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
             const status = hopStatus[h.status]
             const HopIcon = hopIcon[h.status]
             const details = hopDetail(h.detail)
+
             return (
               <TableRow key={h.hop}>
                 <TableCell className="font-medium whitespace-normal">
@@ -333,6 +336,7 @@ function Reachability({ service }: { service: Service }) {
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const n = Number(port)
+
     explain.mutate({
       to: to.trim(),
       protocol,
@@ -343,6 +347,7 @@ function Reachability({ service }: { service: Service }) {
         : {}),
     })
   }
+
   return (
     <Section
       title="Check a connection"
@@ -407,6 +412,7 @@ function Reachability({ service }: { service: Service }) {
 
 function Connections({ service }: { service: Service }) {
   const { data: sample } = useSuspenseQuery(connectionsQuery(service.id))
+
   return (
     <div className="space-y-3">
       <ConnectionsTable
@@ -439,6 +445,7 @@ function Connections({ service }: { service: Service }) {
 function ConnectionsSection({ service }: { service: Service }) {
   const connections = useQuery(connectionsQuery(service.id))
   const sample = connections.data
+
   return (
     <Section
       title="Connections"
@@ -458,6 +465,7 @@ function ConnectionsSection({ service }: { service: Service }) {
 
 function DnsLogSection({ service }: { service: Service }) {
   const log = useQuery(dnsLogQuery(service.id))
+
   return (
     <Section
       title="Name lookups"
@@ -473,6 +481,7 @@ function DnsLogSection({ service }: { service: Service }) {
 
 function DnsLog({ service }: { service: Service }) {
   const { data } = useSuspenseQuery(dnsLogQuery(service.id))
+
   return (
     <TableFrame
       data-untrusted={data.untrusted.source}

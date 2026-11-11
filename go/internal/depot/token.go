@@ -114,14 +114,6 @@ func (s *Signer) JWKS() ([]byte, error) {
 }
 
 func (s *Signer) Mint(subject string, access []Access, ttl time.Duration) (string, error) {
-	return s.mint(Service, subject, access, ttl)
-}
-
-func (s *Signer) MintGrant(access []Access, ttl time.Duration) (string, error) {
-	return s.mint(grantAudience, "grant", access, ttl)
-}
-
-func (s *Signer) mint(audience, subject string, access []Access, ttl time.Duration) (string, error) {
 	opts := (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", s.keyID)
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: s.key}, opts)
 	if err != nil {
@@ -136,7 +128,7 @@ func (s *Signer) mint(audience, subject string, access []Access, ttl time.Durati
 		Claims: jwt.Claims{
 			Issuer:    Issuer,
 			Subject:   subject,
-			Audience:  jwt.Audience{audience},
+			Audience:  jwt.Audience{Service},
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now.Add(-notBeforeSkew)),
 			Expiry:    jwt.NewNumericDate(now.Add(ttl)),

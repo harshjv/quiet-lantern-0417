@@ -27,6 +27,7 @@ export const settingsSnapshot = (db: Db) => {
       .all()
       .map((row) => [row.key, row.value]),
   )
+
   return <K extends SettingKey>(key: K) =>
     ((rows.get(key) as SettingValue<K> | undefined) ?? settingDefault(key)) as ResolvedSetting<K>
 }
@@ -42,7 +43,7 @@ export const writeSetting = (
   value: unknown,
   actor: (typeof setting.$inferInsert)['updated_by'],
 ) => {
-  if (storedSetting(db, key) !== undefined)
+  if (storedSetting(db, key) !== undefined) {
     db.update(setting)
       .set({
         value,
@@ -50,7 +51,7 @@ export const writeSetting = (
       })
       .where(eq(setting.key, key))
       .run()
-  else
+  } else {
     db.insert(setting)
       .values({
         key,
@@ -58,4 +59,5 @@ export const writeSetting = (
         updated_by: actor,
       })
       .run()
+  }
 }

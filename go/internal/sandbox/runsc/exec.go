@@ -17,6 +17,8 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/sandbox"
 )
 
 const (
@@ -25,28 +27,15 @@ const (
 	defaultCols = 80
 )
 
-type ExecSpec struct {
-	ID        string
-	BundleDir string
-	Args      []string
-	Env       []string
-	Cwd       string
-	UID       int
-	GID       int
-	TTY       bool
-	Rows      int
-	Cols      int
-}
-
 type Exec struct {
-	Stdin  io.WriteCloser
-	Stdout io.Reader
-	Stderr io.Reader
+	stdin  io.WriteCloser
+	stdout io.Reader
+	stderr io.Reader
 	cmd    *exec.Cmd
 	master *os.File
 }
 
-func (rt Runtime) Exec(ctx context.Context, s ExecSpec) (*Exec, error) {
+func (rt Runtime) Exec(ctx context.Context, s sandbox.ExecSpec) (*Exec, error) {
 	if s.ID == "" || s.BundleDir == "" || len(s.Args) == 0 {
 		return nil, errors.New("runsc: exec needs an ID, a bundle directory and args")
 	}
@@ -115,7 +104,7 @@ func (e *Exec) startPipes() error {
 	if err := e.cmd.Start(); err != nil {
 		return fmt.Errorf("runsc exec: %w", err)
 	}
-	e.Stdin, e.Stdout, e.Stderr = stdin, stdout, stderr
+	e.stdin, e.stdout, e.stderr = stdin, stdout, stderr
 	return nil
 }
 
@@ -139,8 +128,8 @@ func (e *Exec) startTTY(rows, cols int) error {
 		return errors.Join(err, e.cmd.Process.Kill(), master.Close())
 	}
 	e.master = master
-	e.Stdin = ttyInput{master}
-	e.Stdout = ttyOutput{master}
+	e.stdin = ttyInput{master}
+	e.stdout = ttyOutput{master}
 	return nil
 }
 
@@ -198,6 +187,12 @@ func (t ttyOutput) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
+
+func (e *Exec) Stdin() io.WriteCloser { return e.stdin }
+
+func (e *Exec) Stdout() io.Reader { return e.stdout }
+
+func (e *Exec) Stderr() io.Reader { return e.stderr }
 
 func (e *Exec) Resize(rows, cols int) error {
 	if e.master == nil {

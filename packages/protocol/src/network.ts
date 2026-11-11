@@ -21,6 +21,7 @@ export const networkAddress = (pool: string, slash24Index: number, host: number)
     .split('.')
     .reduce((value, octet) => value * 256 + Number(octet), 0)
   const value = base + slash24Index * 256 + host
+
   return [24, 16, 8, 0].map((shift) => Math.floor(value / 2 ** shift) % 256).join('.')
 }
 

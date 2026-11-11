@@ -5,14 +5,16 @@ import type { Duplex } from 'node:stream'
 import { gzipSync } from 'node:zlib'
 
 import canonicalize from 'canonicalize'
-import { Cron } from 'croner'
 import { and, asc, eq, inArray, isNull, lt, or } from 'drizzle-orm'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 
 import {
   closeCodes,
   limits,
+  messageReplies,
+  messages,
   networkLayout,
+  outboxedMessageTypes,
   protocolVersion,
   stationConnectPath,
   subprotocol,
@@ -22,6 +24,7 @@ import {
   type MessageBody,
   type MessageType,
   type Observed,
+  type RequestType,
 } from '@stationly/protocol'
 
 import { recordAudit } from '../db/audit.ts'
@@ -46,6 +49,7 @@ import {
 import { projectRepository } from '../platform/registry.ts'
 import { upstreamBlob, UpstreamError } from '../platform/sigstore.ts'
 import { ingestObservedSandboxes } from '../sandboxes/lifecycle.ts'
+import { every, settingSchedule } from '../schedule.ts'
 import { ephemeralDelivery } from '../secrets/deliver.ts'
 import { secretsDeliver } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
@@ -54,7 +58,7 @@ import { sandboxDeliver, sandboxEnv } from '../secrets/sandbox.ts'
 
 import { mintGrant, serveBlob, storeBlob, sweepBlobs } from './blobs.ts'
 import { ingestRoutes } from './domains.ts'
-import { decode, encode, type RawEnvelope } from './envelope.ts'
+import { bodyOf, decode, encode, type RawEnvelope } from './envelope.ts'
 import { emitEvent } from './events.ts'
 import { ensureDesired, latestGeneration, reconnectRule, recordAck } from './generations.ts'
 import {
@@ -75,18 +79,18 @@ import {
   emitBuildFinished,
   failedPayload,
   ingest,
-  outboxedTypes,
 } from './outbox.ts'
 import { recordDeletes, retentionItems } from './registry.ts'
 import { runStartBody } from './run-start.ts'
 import { setServiceStatus, signalFromHeartbeat } from './signal.ts'
 
-const pingIntervalMs = 20_000
+const pingEveryS = 20
 const challengeTimeoutMs = 30_000
 const offlineAfterMs = 60_000
 const asleepAfterMs = 90_000
-const reconcileEveryMs = 2_000
-const ackEveryMs = 1_000
+const reconcileEveryS = 2
+const ackEveryS = 1
+const livenessEveryS = 5
 const ackEveryRecords = 100
 const requestTimeoutMs = 30_000
 const dispatchCapabilities: Capability[] = [
@@ -107,7 +111,7 @@ const streamHighWater = 1024 * 1024
 const streamLowWater = 256 * 1024
 const creditBatch = limits.streamWindowBytes / 4
 const generationBlobTtlMs = 24 * 3600 * 1000
-const retentionEveryMs = 3600 * 1000
+const retentionEveryS = 3600
 
 export const toBuffer = (data: RawData) =>
   Buffer.isBuffer(data) ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)])
@@ -126,13 +130,6 @@ type Pending = {
 }
 
 type StreamRequest = 'logs.follow' | 'metrics.subscribe' | 'network.subscribe' | 'forward.open'
-
-const streamCapability: Record<StreamRequest, Capability> = {
-  'logs.follow': 'logs.follow',
-  'metrics.subscribe': 'metrics.v1',
-  'network.subscribe': 'network.v1',
-  'forward.open': 'forward.tcp',
-}
 
 export type StreamHandlers = {
   onData?: (items: unknown[], bytes: number) => void
@@ -224,17 +221,30 @@ export const installProposalProblem = (proposal: {
   registry_subnet: string
 }) => {
   const poolProblem = cidrProblem(proposal.ipam_pool)
-  if (poolProblem) return `ipam_pool ${poolProblem}`
+
+  if (poolProblem) {
+    return `ipam_pool ${poolProblem}`
+  }
+
   const pool = parseCidr(proposal.ipam_pool)
   const subnet = parseCidr(proposal.registry_subnet)
-  if (!pool || pool.bits > 22)
+
+  if (!pool || pool.bits > 22) {
     return `ipam_pool ${proposal.ipam_pool} is not a CIDR of /22 or wider`
-  if (!subnet || subnet.bits !== 24)
+  }
+
+  if (!subnet || subnet.bits !== 24) {
     return `registry_subnet ${proposal.registry_subnet} is not a /24`
-  if (!contains(pool, subnet))
+  }
+
+  if (!contains(pool, subnet)) {
     return `registry_subnet ${proposal.registry_subnet} lies outside ipam_pool ${proposal.ipam_pool}`
-  if (slash24Index(pool, subnet) <= networkLayout.ingressIndex)
+  }
+
+  if (slash24Index(pool, subnet) <= networkLayout.ingressIndex) {
     return `registry_subnet ${proposal.registry_subnet} is one of the system and ingress /24s`
+  }
+
   return null
 }
 
@@ -246,36 +256,61 @@ const offeredSubprotocols = (req: IncomingMessage) =>
 
 const refuseUpgrade = (socket: Duplex, status: number) => {
   const body = STATUS_CODES[status] ?? ''
+
   socket.end(
     `HTTP/1.1 ${status} ${body}\r\nContent-Type: text/plain\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
   )
 }
 
 const admissionStatus = (req: IncomingMessage) => {
-  if (new URL(req.url ?? '/', 'http://dispatch').pathname !== stationConnectPath) return 404
-  if (req.headers.origin !== undefined) return 403
-  if (!offeredSubprotocols(req).includes(subprotocol)) return 400
+  if (new URL(req.url ?? '/', 'http://dispatch').pathname !== stationConnectPath) {
+    return 404
+  }
+
+  if (req.headers.origin !== undefined) {
+    return 403
+  }
+
+  if (!offeredSubprotocols(req).includes(subprotocol)) {
+    return 400
+  }
+
   return null
 }
 
 const minorOf = (version: string) => {
   const m = /^v?(\d+)\.(\d+)\./.exec(version)
+
   return m ? Number(m[1]) * 1000 + Number(m[2]) : null
 }
 
 const skewOf = (dispatchVersion: string, stationdVersion: string) => {
   const d = minorOf(dispatchVersion)
   const s = minorOf(stationdVersion)
-  if (d === null || s === null || d === 0 || s === 0) return 'ok' as const
-  if (Math.abs(d - s) > 1) return 'unsupported' as const
-  if (s < d) return 'behind' as const
-  if (s > d) return 'ahead' as const
+
+  if (d === null || s === null || d === 0 || s === 0) {
+    return 'ok' as const
+  }
+
+  if (Math.abs(d - s) > 1) {
+    return 'unsupported' as const
+  }
+
+  if (s < d) {
+    return 'behind' as const
+  }
+
+  if (s > d) {
+    return 'ahead' as const
+  }
+
   return 'ok' as const
 }
 
 export const createStationServer = (options: StationServerOptions) => {
   const { db, keyring, blobDir, version, github, hostAdmin } = options
   const log = options.log ?? defaultLog
+
   mkdirSync(blobDir, {
     recursive: true,
   })
@@ -293,7 +328,9 @@ export const createStationServer = (options: StationServerOptions) => {
     stationId ? (latestGeneration(db, stationId)?.generation ?? 0) : 0
 
   const sendRaw = (conn: Connection, text: string) => {
-    if (conn.ws.readyState === conn.ws.OPEN) conn.ws.send(text)
+    if (conn.ws.readyState === conn.ws.OPEN) {
+      conn.ws.send(text)
+    }
   }
 
   const send = <T extends MessageType>(
@@ -306,7 +343,9 @@ export const createStationServer = (options: StationServerOptions) => {
       ref,
       generation: generationOf(conn.stationId),
     })
+
     sendRaw(conn, text)
+
     return id
   }
 
@@ -353,13 +392,16 @@ export const createStationServer = (options: StationServerOptions) => {
     onReply?: (envelope: RawEnvelope) => void,
   ) =>
     new Promise<RawEnvelope>((resolve, reject) => {
-      if (conn.pending.size >= limits.pendingRequests)
+      if (conn.pending.size >= limits.pendingRequests) {
         return reject(new Error('PROTOCOL_LIMIT: 256 requests are pending'))
+      }
+
       const id = send(conn, type, body)
       const timer = setTimeout(() => {
         conn.pending.delete(id)
         reject(new Error(`${type} timed out after ${timeoutMs} ms`))
       }, timeoutMs)
+
       conn.pending.set(id, {
         type,
         resolve: (envelope) => {
@@ -374,28 +416,46 @@ export const createStationServer = (options: StationServerOptions) => {
   const flushStreams = (conn: Connection) => {
     clearTimeout(conn.streamTimer)
     conn.streamTimer = undefined
+
     while (conn.streamOut.length && conn.ws.readyState === conn.ws.OPEN) {
       const buffered = conn.ws.bufferedAmount
-      if (conn.streamPaused && buffered < streamLowWater) conn.streamPaused = false
-      if (!conn.streamPaused && buffered > streamHighWater) conn.streamPaused = true
-      if (conn.streamPaused) break
+
+      if (conn.streamPaused && buffered < streamLowWater) {
+        conn.streamPaused = false
+      }
+
+      if (!conn.streamPaused && buffered > streamHighWater) {
+        conn.streamPaused = true
+      }
+
+      if (conn.streamPaused) {
+        break
+      }
+
       conn.ws.send(conn.streamOut.shift()!, {
         binary: true,
       })
     }
-    if (conn.streamOut.length && conn.ws.readyState === conn.ws.OPEN)
+
+    if (conn.streamOut.length && conn.ws.readyState === conn.ws.OPEN) {
       conn.streamTimer = setTimeout(() => flushStreams(conn), 20)
+    }
   }
 
   const queueFrames = (conn: Connection, stream: Stream) => {
     while (stream.pending.length && stream.sendCredit > 0) {
       const frame = stream.pending[0]!
       const payload = frame.length - limits.binaryHeaderBytes
-      if (payload > stream.sendCredit) break
+
+      if (payload > stream.sendCredit) {
+        break
+      }
+
       stream.pending.shift()
       stream.sendCredit -= payload
       conn.streamOut.push(frame)
     }
+
     flushStreams(conn)
   }
 
@@ -406,15 +466,21 @@ export const createStationServer = (options: StationServerOptions) => {
     notify: boolean,
     exitCode: number | null = null,
   ) => {
-    if (stream.ended) return
+    if (stream.ended) {
+      return
+    }
+
     stream.ended = true
     conn.streams.delete(stream.number)
-    if (notify)
+
+    if (notify) {
       send(conn, 'stream.end', {
         stream: stream.number,
         reason,
         exit_code: null,
       })
+    }
+
     stream.handlers.onEnd(reason, exitCode)
   }
 
@@ -433,16 +499,25 @@ export const createStationServer = (options: StationServerOptions) => {
       pending: [],
       ended: false,
     }
+
     conn.streams.set(number, stream)
+
     return stream
   }
 
   const handleOf = (conn: Connection, stream: Stream): StreamHandle => ({
     stream: stream.number,
     credit: (bytes) => {
-      if (stream.ended || bytes <= 0) return
+      if (stream.ended || bytes <= 0) {
+        return
+      }
+
       stream.owed += bytes
-      if (stream.owed < creditBatch && stream.allowance > limits.streamWindowBytes / 2) return
+
+      if (stream.owed < creditBatch && stream.allowance > limits.streamWindowBytes / 2) {
+        return
+      }
+
       stream.allowance += stream.owed
       send(conn, 'stream.credit', {
         stream: stream.number,
@@ -451,7 +526,10 @@ export const createStationServer = (options: StationServerOptions) => {
       stream.owed = 0
     },
     write: (channel, payload) => {
-      if (stream.ended) return
+      if (stream.ended) {
+        return
+      }
+
       const chunks =
         payload.length === 0
           ? [payload]
@@ -465,17 +543,23 @@ export const createStationServer = (options: StationServerOptions) => {
                   (i + 1) * limits.binaryPayloadBytes,
                 ),
             )
+
       for (const chunk of chunks) {
         const frame = Buffer.alloc(limits.binaryHeaderBytes + chunk.length)
+
         frame.writeUInt32BE(stream.number, 0)
         frame.writeUInt8(channel, 4)
         chunk.copy(frame, limits.binaryHeaderBytes)
         stream.pending.push(frame)
       }
+
       queueFrames(conn, stream)
     },
     cancel: () => {
-      if (stream.ended) return
+      if (stream.ended) {
+        return
+      }
+
       send(conn, 'stream.cancel', {
         stream: stream.number,
       })
@@ -487,8 +571,10 @@ export const createStationServer = (options: StationServerOptions) => {
         rows,
         cols,
       })
+
       if (reply.type === 'error') {
         const e = reply.body as MessageBody<'error'>
+
         throw new StationRequestError(e.code, e.explanation, e.details ?? {})
       }
     },
@@ -501,7 +587,8 @@ export const createStationServer = (options: StationServerOptions) => {
     deliver: (stream: Stream) => void,
   ) => {
     const stream = conn.streams.get(number)
-    if (!stream)
+
+    if (!stream) {
       return sendError(conn, {
         code: 'STREAM_NOT_FOUND',
         explanation: `stream ${number} is not open on this connection`,
@@ -510,7 +597,10 @@ export const createStationServer = (options: StationServerOptions) => {
           stream: number,
         },
       })
+    }
+
     stream.allowance -= bytes
+
     if (stream.allowance < 0) {
       sendError(conn, {
         code: 'STREAM_CREDIT_EXCEEDED',
@@ -520,8 +610,10 @@ export const createStationServer = (options: StationServerOptions) => {
           stream: number,
         },
       })
+
       return endStream(conn, stream, 'STREAM_CREDIT_EXCEEDED', true)
     }
+
     deliver(stream)
   }
 
@@ -536,16 +628,21 @@ export const createStationServer = (options: StationServerOptions) => {
         fix: 'Split stream data into 64 KiB frames.',
       })
     }
+
     const number = data.readUInt32BE(0)
     const channel = data.readUInt8(4)
     const payload = data.subarray(limits.binaryHeaderBytes)
+
     onStreamData(conn, number, payload.length, (stream) =>
       stream.handlers.onBinary?.(channel, payload),
     )
   }
 
   const flushAck = (conn: Connection) => {
-    if (!conn.epoch || conn.ack.count === 0) return
+    if (!conn.epoch || conn.ack.count === 0) {
+      return
+    }
+
     send(conn, 'outbox.ack', {
       epoch: conn.epoch,
       up_to_seq: conn.ack.upTo,
@@ -560,10 +657,15 @@ export const createStationServer = (options: StationServerOptions) => {
     fix: string,
     ref: string | null,
   ) => {
-    if (!conn.capabilities.has('secrets.v1') || !conn.stationId) return false
+    if (!conn.capabilities.has('secrets.v1') || !conn.stationId) {
+      return false
+    }
+
     const id = 'deployment_id' in owner ? owner.deployment_id : owner.sandbox_id
+
     try {
       const body = build(stationActor(conn.stationId))
+
       send(conn, 'secrets.deliver', body, ref)
       conn.delivered.add(`${id}|${body.env_digest}`)
       log('secrets.delivered', {
@@ -574,16 +676,19 @@ export const createStationServer = (options: StationServerOptions) => {
         redaction: body.redaction.length,
         env_digest: body.env_digest,
       })
+
       return true
     } catch (error) {
       const code = error instanceof SecretsError ? error.code : 'SECRETS_UNAVAILABLE'
+
       log('secrets.deliver_failed', {
         station_id: conn.stationId,
         ...owner,
         code,
         explanation: (error as Error).message,
       })
-      if (ref)
+
+      if (ref) {
         sendError(
           conn,
           {
@@ -593,6 +698,8 @@ export const createStationServer = (options: StationServerOptions) => {
           },
           ref,
         )
+      }
+
       return false
     }
   }
@@ -611,13 +718,16 @@ export const createStationServer = (options: StationServerOptions) => {
       },
       (actor) => {
         const body = secretsDeliver(db, keyring, deploymentId, purpose, actor)
-        if (body.env_digest !== envDigest)
+
+        if (body.env_digest !== envDigest) {
           log('secrets.digest_mismatch', {
             station_id: conn.stationId,
             deployment_id: deploymentId,
             generation_digest: envDigest,
             delivery_digest: body.env_digest,
           })
+        }
+
         return body
       },
       'Re-enter the secret values, then redeploy.',
@@ -644,15 +754,19 @@ export const createStationServer = (options: StationServerOptions) => {
   ) => {
     const canonical = canonicalize(row.document)!
     const bytes = Buffer.byteLength(canonical, 'utf8')
+
     if (bytes <= limits.generationInlineBytes) {
       send(conn, 'generation', row.document)
+
       return {
         via: 'inline',
         bytes,
       }
     }
+
     const key = `${conn.stationId}|${row.generation}`
     let blobId = generationBlobs.get(key)
+
     if (!blobId) {
       blobId = storeBlob(db, blobDir, {
         kind: 'generation',
@@ -661,12 +775,15 @@ export const createStationServer = (options: StationServerOptions) => {
       }).id
       generationBlobs.set(key, blobId)
     }
+
     const grant = mintGrant(db, conn.stationId!, blobId)
+
     send(conn, 'generation.available', {
       number: row.generation,
       hash: row.hash,
       blob: grant,
     })
+
     return {
       via: 'blob',
       bytes,
@@ -677,19 +794,25 @@ export const createStationServer = (options: StationServerOptions) => {
 
   const syncGeneration = (conn: Connection) => {
     const stationId = conn.stationId
+
     if (
       !stationId ||
       conn.phase !== 'ready' ||
       conn.withheld ||
       conn.versionSkew === 'unsupported' ||
       !conn.capabilities.has('generation.v1')
-    )
+    ) {
       return
+    }
+
     let row
+
     try {
       const desired = ensureDesired(db, stationId, conn.applied)
+
       row = desired.row
-      if (desired.failed.length)
+
+      if (desired.failed.length) {
         log('generation.deployments_failed', {
           station_id: stationId,
           deployments: desired.failed,
@@ -697,7 +820,9 @@ export const createStationServer = (options: StationServerOptions) => {
             .filter((e) => desired.failed.includes(e.id))
             .map((e) => e.explanation),
         })
-      if (desired.created && desired.excluded.length)
+      }
+
+      if (desired.created && desired.excluded.length) {
         log('generation.excluded', {
           station_id: stationId,
           number: row.generation,
@@ -707,6 +832,7 @@ export const createStationServer = (options: StationServerOptions) => {
             explanation: e.explanation,
           })),
         })
+      }
     } catch (error) {
       if (error instanceof GenerationError || error instanceof SecretsError) {
         if (unbuildable.get(stationId) !== error.message) {
@@ -732,14 +858,20 @@ export const createStationServer = (options: StationServerOptions) => {
             },
           )
         }
+
         unbuildable.set(stationId, error.message)
+
         return
       }
+
       throw error
     }
+
     unbuildable.delete(stationId)
+
     if (row.generation > conn.applied && row.ack === null && conn.sentGeneration < row.generation) {
       const via = sendGeneration(conn, row)
+
       conn.sentGeneration = row.generation
       log('generation.sent', {
         station_id: stationId,
@@ -751,29 +883,54 @@ export const createStationServer = (options: StationServerOptions) => {
         ...via,
       })
     }
+
     if (
       row.ack === 'rejected' ||
       (row.generation > conn.applied && conn.sentGeneration < row.generation)
-    )
+    ) {
       return
-    for (const [id, dep] of Object.entries(row.document.deployments)) {
-      if (dep.cancel || !dep.target.env.some((e) => !e.platform)) continue
-      const key = `${id}|${dep.target.env_digest}`
-      if (conn.delivered.has(key) || conn.undeliverable.has(key)) continue
-      if (!deliverSecrets(conn, id, dep.target.env_digest, 'deploy', null))
-        conn.undeliverable.add(key)
     }
+
+    for (const [id, dep] of Object.entries(row.document.deployments)) {
+      if (dep.cancel || !dep.target.env.some((e) => !e.platform)) {
+        continue
+      }
+
+      const key = `${id}|${dep.target.env_digest}`
+
+      if (conn.delivered.has(key) || conn.undeliverable.has(key)) {
+        continue
+      }
+
+      if (!deliverSecrets(conn, id, dep.target.env_digest, 'deploy', null)) {
+        conn.undeliverable.add(key)
+      }
+    }
+
     for (const [id, box] of Object.entries(row.document.sandboxes ?? {})) {
-      if (box.status === 'destroy' || !sandboxEnv(db, id).env.length) continue
+      if (box.status === 'destroy' || !sandboxEnv(db, id).env.length) {
+        continue
+      }
+
       const key = `${id}|${box.env_digest}`
-      if (conn.delivered.has(key) || conn.undeliverable.has(key)) continue
-      if (!deliverSandboxSecrets(conn, id, null)) conn.undeliverable.add(key)
+
+      if (conn.delivered.has(key) || conn.undeliverable.has(key)) {
+        continue
+      }
+
+      if (!deliverSandboxSecrets(conn, id, null)) {
+        conn.undeliverable.add(key)
+      }
     }
   }
 
   const scheduleBuilds = (conn: Connection) => {
     const stationId = conn.stationId
-    if (!stationId || conn.phase !== 'ready' || conn.versionSkew === 'unsupported') return
+
+    if (!stationId || conn.phase !== 'ready' || conn.versionSkew === 'unsupported') {
+      return
+    }
+
     const queued = db
       .select({
         build: build,
@@ -785,8 +942,12 @@ export const createStationServer = (options: StationServerOptions) => {
       .where(and(eq(build.status, 'queued'), eq(service.station_id, stationId)))
       .orderBy(asc(build.created_at))
       .all()
+
     for (const { build: b, service_id } of queued) {
-      if (conn.requestedBuilds.has(b.id) || b.detail.requested_at) continue
+      if (conn.requestedBuilds.has(b.id) || b.detail.requested_at) {
+        continue
+      }
+
       conn.requestedBuilds.add(b.id)
       void startBuild(conn, b, service_id)
     }
@@ -817,7 +978,12 @@ export const createStationServer = (options: StationServerOptions) => {
           .from(run)
           .innerJoin(sandbox, eq(sandbox.id, run.sandbox_id))
           .where(
-            and(eq(run.status, 'queued'), eq(run.kind, 'exec'), eq(sandbox.station_id, stationId)),
+            and(
+              eq(run.status, 'queued'),
+              eq(run.kind, 'exec'),
+              eq(sandbox.station_id, stationId),
+              eq(sandbox.status, 'running'),
+            ),
           )
           .orderBy(asc(run.created_at))
           .all()
@@ -826,16 +992,23 @@ export const createStationServer = (options: StationServerOptions) => {
 
   const scheduleRuns = (conn: Connection) => {
     const stationId = conn.stationId
-    if (!stationId || conn.phase !== 'ready' || conn.versionSkew === 'unsupported') return
+
+    if (!stationId || conn.phase !== 'ready' || conn.versionSkew === 'unsupported') {
+      return
+    }
+
     for (const { run: r } of queuedRuns(stationId, conn.capabilities.has('sandbox.v1'))) {
-      if (conn.requestedRuns.has(r.id) || !(r.deployment_id || r.sandbox_id) || r.exec?.attach)
+      if (conn.requestedRuns.has(r.id) || !(r.deployment_id || r.sandbox_id) || r.exec?.attach) {
         continue
+      }
+
       conn.requestedRuns.add(r.id)
       const owner = r.sandbox_id
         ? {
             sandbox_id: r.sandbox_id,
           }
         : {}
+
       request(
         conn,
         'run.start',
@@ -848,7 +1021,7 @@ export const createStationServer = (options: StationServerOptions) => {
       )
         .then((reply) => {
           if (reply.type === 'run.accepted') {
-            if (r.exec?.stdin)
+            if (r.exec?.stdin) {
               db.update(run)
                 .set({
                   exec: {
@@ -858,13 +1031,17 @@ export const createStationServer = (options: StationServerOptions) => {
                 })
                 .where(eq(run.id, r.id))
                 .run()
+            }
+
             return log('run.accepted', {
               station_id: stationId,
               run_id: r.id,
               ...owner,
             })
           }
+
           const e = reply.body as MessageBody<'error'>
+
           db.update(run)
             .set({
               status: 'failed',
@@ -942,6 +1119,7 @@ export const createStationServer = (options: StationServerOptions) => {
         .from(deployment)
         .where(eq(deployment.id, b.deployment_id))
         .get()
+
       emitBuildFinished(db, b.id, b.deployment_id, 'failed', null, code)
       emitEvent(
         db,
@@ -960,13 +1138,18 @@ export const createStationServer = (options: StationServerOptions) => {
         summary,
       })
     }
-    if (source.type !== 'blob' && source.type !== 'git')
+
+    if (source.type !== 'blob' && source.type !== 'git') {
       return fail(
         'SOURCE_UNREACHABLE',
         `build ${b.id} has a ${source.type} source, which this Dispatch cannot build`,
       )
-    if (source.type === 'blob' && !source.blob_id)
+    }
+
+    if (source.type === 'blob' && !source.blob_id) {
       return fail('SOURCE_UNREACHABLE', `build ${b.id} names no blob`)
+    }
+
     const buildSecretKeys = db
       .select({
         key: variable.key,
@@ -983,38 +1166,52 @@ export const createStationServer = (options: StationServerOptions) => {
       )
       .all()
       .map((v) => v.key)
-    if (buildSecretKeys.length && !source.fork)
+
+    if (buildSecretKeys.length && !source.fork) {
       return fail(
         'SECRETS_UNAVAILABLE',
         `build secrets (${buildSecretKeys.join(', ')}) are not delivered by this Dispatch yet`,
       )
+    }
+
     let buildSource: MessageBody<'build.start'>['source']
+
     if (source.type === 'git') {
       const repo = source.repo!
       let sha = source.sha ?? null
       let token: string | null = null
+
       try {
-        if (!sha) sha = (await github.branchHead(repo, source.branch!)).sha
-        if (!sha)
+        if (!sha) {
+          sha = (await github.branchHead(repo, source.branch!)).sha
+        }
+
+        if (!sha) {
           return fail(
             'SOURCE_UNREACHABLE',
             `the head of ${repo} ${source.branch} could not be read`,
           )
+        }
+
         token = await github.cloneCredential(repo, source.auth ?? undefined)
       } catch (error) {
         conn.requestedBuilds.delete(b.id)
+
         return fail('SOURCE_UNREACHABLE', `${repo}: ${(error as Error).message}`)
       }
+
       const resolved = {
         ...source,
         sha,
       }
+
       db.update(build)
         .set({
           source: resolved,
         })
         .where(eq(build.id, b.id))
         .run()
+
       if (
         !db
           .select({
@@ -1025,6 +1222,7 @@ export const createStationServer = (options: StationServerOptions) => {
           .get()?.trigger.source_sha
       ) {
         const dep = db.select().from(deployment).where(eq(deployment.id, b.deployment_id)).get()!
+
         db.update(deployment)
           .set({
             trigger: {
@@ -1035,6 +1233,7 @@ export const createStationServer = (options: StationServerOptions) => {
           .where(eq(deployment.id, dep.id))
           .run()
       }
+
       const delivery = ephemeralDelivery(
         {
           build_id: b.id,
@@ -1042,8 +1241,10 @@ export const createStationServer = (options: StationServerOptions) => {
         'build',
         token ? [['STATIONLY_GIT_TOKEN', token]] : [],
       )
+
       if (token) {
         const ack = await request(conn, 'secrets.deliver', delivery).catch((error: Error) => error)
+
         if (ack instanceof Error || ack.type !== 'secrets.ack') {
           conn.requestedBuilds.delete(b.id)
           log('build.secrets_failed', {
@@ -1051,8 +1252,10 @@ export const createStationServer = (options: StationServerOptions) => {
             build_id: b.id,
             explanation: ack instanceof Error ? ack.message : ack.type,
           })
+
           return
         }
+
         recordAudit(db, {
           actor: stationActor(stationId),
           action: 'secret.deliver',
@@ -1067,6 +1270,7 @@ export const createStationServer = (options: StationServerOptions) => {
           },
         })
       }
+
       github.buildStarted(db.select().from(build).where(eq(build.id, b.id)).get()!, svc, sha)
       buildSource = {
         type: 'git',
@@ -1089,6 +1293,7 @@ export const createStationServer = (options: StationServerOptions) => {
       })
     } else {
       const grant = mintGrant(db, stationId, source.blob_id!)
+
       buildSource = {
         type: 'blob',
         blob: grant,
@@ -1096,6 +1301,7 @@ export const createStationServer = (options: StationServerOptions) => {
         dockerfile: source.dockerfile ?? null,
       }
     }
+
     const body: MessageBody<'build.start'> = {
       build_id: b.id,
       deployment_id: b.deployment_id,
@@ -1113,6 +1319,7 @@ export const createStationServer = (options: StationServerOptions) => {
         provenance: 'mode=max,version=v1',
       },
     }
+
     log('build.requested', {
       station_id: stationId,
       build_id: b.id,
@@ -1120,8 +1327,10 @@ export const createStationServer = (options: StationServerOptions) => {
       source: buildSource.type,
       blob_id: buildSource.type === 'blob' ? buildSource.blob.blob_id : null,
     })
+
     try {
       const reply = await request(conn, 'build.start', body)
+
       if (reply.type === 'build.accepted') {
         db.update(build)
           .set({
@@ -1144,9 +1353,12 @@ export const createStationServer = (options: StationServerOptions) => {
           station_id: stationId,
           build_id: b.id,
         })
+
         return
       }
+
       const e = reply.body as MessageBody<'error'>
+
       fail(e.code, e.explanation)
     } catch (error) {
       conn.requestedBuilds.delete(b.id)
@@ -1165,6 +1377,7 @@ export const createStationServer = (options: StationServerOptions) => {
       body.applied.status && body.applied.status !== 'rejected'
         ? body.applied.number
         : st.generation
+
     db.update(station)
       .set({
         last_seen_at: new Date(),
@@ -1174,6 +1387,7 @@ export const createStationServer = (options: StationServerOptions) => {
       })
       .where(eq(station.id, stationId))
       .run()
+
     if (st.status === 'offline' || st.status === 'asleep' || st.status === 'enrolling') {
       emitEvent(
         db,
@@ -1192,12 +1406,24 @@ export const createStationServer = (options: StationServerOptions) => {
         from: st.status,
       })
     }
+
     const ids = Object.keys(body.services)
-    if (!ids.length) return
+
+    if (!ids.length) {
+      return
+    }
+
     for (const svc of db.select().from(service).where(inArray(service.id, ids)).all()) {
       const hb = body.services[svc.id]!
-      if (!svc.current_deployment_id) continue
-      if (hb.health.state === 'none' && svc.health !== null) continue
+
+      if (!svc.current_deployment_id) {
+        continue
+      }
+
+      if (hb.health.state === 'none' && svc.health !== null) {
+        continue
+      }
+
       setServiceStatus(db, svc.id, signalFromHeartbeat(hb.status_hint, hb.health.state), {
         source: 'heartbeat',
         status_hint: hb.status_hint,
@@ -1210,6 +1436,7 @@ export const createStationServer = (options: StationServerOptions) => {
     const stationId = conn.stationId!
     const body = envelope.body as { seq: number }
     const result = ingest(db, keyring, stationId, conn.epoch!, envelope.type, body)
+
     conn.stats[result.status === 'applied' ? 'applied' : 'duplicate']++
     conn.stats.firstSeq ??= body.seq
     conn.stats.lastSeq = body.seq
@@ -1222,37 +1449,61 @@ export const createStationServer = (options: StationServerOptions) => {
     })
     conn.ack.upTo = Math.max(conn.ack.upTo, body.seq)
     conn.ack.count++
-    if (conn.ack.count >= ackEveryRecords) flushAck(conn)
-    if (result.reconcile) syncGeneration(conn)
-    if (result.status === 'applied' && envelope.type === 'deployment.finished')
+
+    if (conn.ack.count >= ackEveryRecords) {
+      flushAck(conn)
+    }
+
+    if (result.reconcile) {
+      syncGeneration(conn)
+    }
+
+    if (result.status === 'applied' && envelope.type === 'deployment.finished') {
       scheduleRetention(stationId)
-    if (result.status === 'applied') options.onRecord?.(stationId, envelope.type, envelope.body)
-    if (result.status === 'applied' && envelope.type === 'disk.pressure')
+    }
+
+    if (result.status === 'applied') {
+      options.onRecord?.(stationId, envelope.type, envelope.body)
+    }
+
+    if (result.status === 'applied' && envelope.type === 'disk.pressure') {
       runGc(stationId, 'disk_pressure').catch((error) =>
         log('registry.gc_failed', {
           station_id: stationId,
           explanation: (error as Error).message,
         }),
       )
+    }
   }
 
   const onReady = (conn: Connection, envelope: RawEnvelope, frameBytes: number) => {
     const stationId = conn.stationId!
     const pendingReply = envelope.ref ? conn.pending.get(envelope.ref) : undefined
+
     if (pendingReply) {
       conn.pending.delete(envelope.ref!)
       clearTimeout(pendingReply.timer)
       pendingReply.resolve(envelope)
+
       return
     }
-    if (outboxedTypes.has(envelope.type)) return onOutboxed(conn, envelope)
+
+    if (outboxedMessageTypes.has(envelope.type)) {
+      return onOutboxed(conn, envelope)
+    }
+
     switch (envelope.type) {
       case 'heartbeat':
         return onHeartbeat(conn, envelope.body as MessageBody<'heartbeat'>)
+
       case 'generation.ack': {
         const ack = envelope.body as MessageBody<'generation.ack'>
         const recorded = recordAck(db, stationId, ack)
-        if (ack.status !== 'rejected') conn.applied = Math.max(conn.applied, ack.number)
+
+        if (ack.status !== 'rejected') {
+          conn.applied = Math.max(conn.applied, ack.number)
+        }
+
         log('generation.ack', {
           station_id: stationId,
           number: ack.number,
@@ -1263,7 +1514,8 @@ export const createStationServer = (options: StationServerOptions) => {
           failure: ack.failure ?? null,
           failed: ack.results,
         })
-        if (ack.status === 'rejected')
+
+        if (ack.status === 'rejected') {
           emitEvent(
             db,
             'doctor.finding',
@@ -1277,15 +1529,20 @@ export const createStationServer = (options: StationServerOptions) => {
               failure: ack.failure ?? null,
             },
           )
+        }
+
         return
       }
+
       case 'observed.report': {
         const observed = envelope.body as Observed
+
         observedByStation.set(stationId, observed)
         conn.observed = observed
         ingestObservedSandboxes(db, stationId, observed)
         const drift = evaluateDrift(db, stationId, observed)
         const domains = ingestRoutes(db, stationId, observed)
+
         log('observed.report', {
           station_id: stationId,
           applied: observed.applied,
@@ -1294,32 +1551,44 @@ export const createStationServer = (options: StationServerOptions) => {
           drift_resolved: drift.resolved,
           domains_changed: domains,
         })
+
         return
       }
+
       case 'observed.update': {
         const merged = mergeObserved(
           observedByStation.get(stationId),
           envelope.body as MessageBody<'observed.update'>,
         )
+
         if (merged) {
           observedByStation.set(stationId, merged)
           const update = envelope.body as MessageBody<'observed.update'>
-          if (update.station || update.sandboxes || update.sandbox_snapshots)
+
+          if (update.station || update.sandboxes || update.sandbox_snapshots) {
             ingestObservedSandboxes(db, stationId, merged)
+          }
+
           evaluateDrift(db, stationId, merged)
+
           if ((envelope.body as MessageBody<'observed.update'>).gateway) {
             const domains = ingestRoutes(db, stationId, merged)
-            if (domains.length)
+
+            if (domains.length) {
               log('domains.changed', {
                 station_id: stationId,
                 domains,
               })
+            }
           }
         }
+
         return
       }
+
       case 'secrets.request': {
         const body = envelope.body as MessageBody<'secrets.request'>
+
         if ('sandbox_id' in body.target) {
           log('secrets.requested', {
             station_id: stationId,
@@ -1327,10 +1596,13 @@ export const createStationServer = (options: StationServerOptions) => {
             purpose: body.purpose,
             env_digest: body.env_digest,
           })
+
           return void deliverSandboxSecrets(conn, body.target.sandbox_id, envelope.id)
         }
+
         const depId = 'deployment_id' in body.target ? body.target.deployment_id : undefined
-        if (!depId)
+
+        if (!depId) {
           return sendError(
             conn,
             {
@@ -1341,12 +1613,15 @@ export const createStationServer = (options: StationServerOptions) => {
             },
             envelope.id,
           )
+        }
+
         log('secrets.requested', {
           station_id: stationId,
           deployment_id: depId,
           purpose: body.purpose,
           env_digest: body.env_digest,
         })
+
         return deliverSecrets(
           conn,
           depId,
@@ -1355,44 +1630,64 @@ export const createStationServer = (options: StationServerOptions) => {
           envelope.id,
         )
       }
+
       case 'stream.data': {
         const body = envelope.body as MessageBody<'stream.data'>
+
         return onStreamData(conn, body.stream, frameBytes, (stream) =>
           stream.handlers.onData?.(body.items, frameBytes),
         )
       }
+
       case 'stream.credit': {
         const body = envelope.body as MessageBody<'stream.credit'>
         const stream = conn.streams.get(body.stream)
-        if (!stream) return
+
+        if (!stream) {
+          return
+        }
+
         stream.sendCredit += body.bytes
+
         return queueFrames(conn, stream)
       }
+
       case 'stream.end': {
         const body = envelope.body as MessageBody<'stream.end'>
         const stream = conn.streams.get(body.stream)
-        if (stream) endStream(conn, stream, body.reason, false, body.exit_code)
+
+        if (stream) {
+          endStream(conn, stream, body.reason, false, body.exit_code)
+        }
+
         return
       }
+
       case 'secrets.ack': {
         const body = envelope.body as MessageBody<'secrets.ack'>
+
         log('secrets.ack', {
           station_id: stationId,
           target: body.target,
           env_digest: body.env_digest,
         })
+
         return
       }
+
       case 'error': {
         const body = envelope.body as MessageBody<'error'>
+
         log('station.error', {
           station_id: stationId,
           ref: envelope.ref,
           code: body.code,
           explanation: body.explanation,
         })
+
         return
       }
+
       case 'host.admin': {
         const body = envelope.body as MessageBody<'host.admin'>
         const hosts = db
@@ -1402,7 +1697,8 @@ export const createStationServer = (options: StationServerOptions) => {
           .from(station)
           .where(eq(station.id, stationId))
           .get()?.hosts
-        if (!hosts || !hostAdmin)
+
+        if (!hosts || !hostAdmin) {
           return sendError(
             conn,
             {
@@ -1413,6 +1709,8 @@ export const createStationServer = (options: StationServerOptions) => {
             },
             envelope.id,
           )
+        }
+
         log('host.admin', {
           station_id: stationId,
           op: body.op,
@@ -1430,6 +1728,7 @@ export const createStationServer = (options: StationServerOptions) => {
           )
           .catch((error) => {
             const known = error instanceof HostAdminError
+
             log('host.admin_failed', {
               station_id: stationId,
               op: body.op,
@@ -1446,13 +1745,17 @@ export const createStationServer = (options: StationServerOptions) => {
               envelope.id,
             )
           })
+
         return
       }
+
       case 'blob.grant': {
         const body = envelope.body as MessageBody<'blob.grant'>
+
         if (!body.blob_id && body.upstream) {
           const upstream = body.upstream
           const started = Date.now()
+
           upstreamBlob(db, blobDir, upstream)
             .then((stored) => {
               log('blob.upstream', {
@@ -1466,6 +1769,7 @@ export const createStationServer = (options: StationServerOptions) => {
             })
             .catch((error) => {
               const code = error instanceof UpstreamError ? error.code : 'SOURCE_UNREACHABLE'
+
               log('blob.upstream_failed', {
                 station_id: stationId,
                 upstream,
@@ -1485,9 +1789,11 @@ export const createStationServer = (options: StationServerOptions) => {
                 envelope.id,
               )
             })
+
           return
         }
-        if (!body.blob_id)
+
+        if (!body.blob_id) {
           return sendError(
             conn,
             {
@@ -1497,6 +1803,8 @@ export const createStationServer = (options: StationServerOptions) => {
             },
             envelope.id,
           )
+        }
+
         try {
           return void send(
             conn,
@@ -1516,8 +1824,9 @@ export const createStationServer = (options: StationServerOptions) => {
           )
         }
       }
+
       default:
-        if (['hello', 'enroll'].includes(envelope.type))
+        if (['hello', 'enroll'].includes(envelope.type)) {
           return sendError(
             conn,
             {
@@ -1527,6 +1836,8 @@ export const createStationServer = (options: StationServerOptions) => {
             },
             envelope.id,
           )
+        }
+
         return sendError(
           conn,
           {
@@ -1542,6 +1853,7 @@ export const createStationServer = (options: StationServerOptions) => {
   const enrollToken = (presentedToken: string): EnrollToken | undefined => {
     const bootstrap = env().STATIONLY_BOOTSTRAP_ENROLL_SHA256
     const presented = tokenDigest(presentedToken)
+
     if (bootstrap && sameDigest(presented, bootstrap.toLowerCase())) {
       const hosts = db
         .select({
@@ -1550,12 +1862,15 @@ export const createStationServer = (options: StationServerOptions) => {
         .from(station)
         .where(and(eq(station.hosts_dispatch, true), isNull(station.revoked_at)))
         .all()
-      if (!hosts.some((h) => byStation.has(h.id)))
+
+      if (!hosts.some((h) => byStation.has(h.id))) {
         return {
           kind: 'bootstrap',
           sha256: presented,
         }
+      }
     }
+
     const row = db
       .select({
         id: token.id,
@@ -1575,6 +1890,7 @@ export const createStationServer = (options: StationServerOptions) => {
         ),
       )
       .get()
+
     return row
       ? {
           kind: 'row',
@@ -1596,16 +1912,19 @@ export const createStationServer = (options: StationServerOptions) => {
         .all()
         .map((s) => s.subnet),
     )
+
     for (const { subnet } of slash24sFrom(
       readSetting(db, 'ipam.pool'),
       networkLayout.registryFirstIndex,
     )) {
-      if (!taken.has(subnet))
+      if (!taken.has(subnet)) {
         return {
           registry_subnet: subnet,
           registry_address: registryAddress(subnet),
         }
+      }
     }
+
     throw new Error('no free /24 left in ipam.pool for a registry subnet')
   }
 
@@ -1614,25 +1933,35 @@ export const createStationServer = (options: StationServerOptions) => {
     const now = Date.now()
     const enrolledWith = enrollToken(body.token)
     const verified = verifyEnroll(body, enrolledWith, conn.challenge, now)
-    if (!verified.ok) return fatal(conn, verified.refusal)
+
+    if (!verified.ok) {
+      return fatal(conn, verified.refusal)
+    }
+
     const instanceId = readSetting(db, 'instance.id')
-    if (!instanceId)
+
+    if (!instanceId) {
       return fatal(conn, {
         code: 'ENROLL_TOKEN_INVALID',
         close: closeCodes.revoked,
         explanation: 'Dispatch has no instance.id yet',
         fix: 'Run sly setup first.',
       })
+    }
+
     const proposal = enrolledWith?.kind === 'bootstrap' ? body.install : undefined
     const stationId =
       enrolledWith?.kind === 'row'
         ? enrolledWith.stationId
         : (proposal?.station_id ?? newId('station'))
-    if (body.install && !proposal)
+
+    if (body.install && !proposal) {
       log('station.enroll_install_ignored', {
         connection: conn.id,
         reason: 'only the bootstrap enrollment carries install-time values',
       })
+    }
+
     if (proposal) {
       const problem = installProposalProblem(proposal)
       const stored = storedSetting(db, 'ipam.pool')
@@ -1641,28 +1970,37 @@ export const createStationServer = (options: StationServerOptions) => {
         (stored !== undefined && stored !== proposal.ipam_pool
           ? `ipam.pool is ${stored} in Dispatch, the installer chose ${proposal.ipam_pool}`
           : null)
-      if (refusal)
+
+      if (refusal) {
         return fatal(conn, {
           code: 'VALIDATION_FAILED',
           close: closeCodes.revoked,
           explanation: `The installer's values were refused: ${refusal}.`,
           fix: 'Reinstall so that the installer and Dispatch start from the same ipam.pool.',
         })
+      }
     }
+
     const registry = db.transaction(() => {
       let allocated: { registry_subnet: string; registry_address: string }
+
       if (proposal) {
         allocated = {
           registry_subnet: proposal.registry_subnet,
           registry_address: registryAddress(proposal.registry_subnet),
         }
-        if (storedSetting(db, 'ipam.pool') === undefined)
+
+        if (storedSetting(db, 'ipam.pool') === undefined) {
           writeSetting(db, 'ipam.pool', proposal.ipam_pool, {
             type: 'station',
             id: stationId,
             client: 'bootstrap-enroll',
           })
-      } else allocated = allocateRegistry()
+        }
+      } else {
+        allocated = allocateRegistry()
+      }
+
       const enrolled = {
         public_key: body.public_key,
         os: body.os as (typeof station.$inferInsert)['os'],
@@ -1673,6 +2011,7 @@ export const createStationServer = (options: StationServerOptions) => {
         identity_key: body.identity_key,
         ...allocated,
       }
+
       if (enrolledWith?.kind === 'row') {
         db.update(station).set(enrolled).where(eq(station.id, stationId)).run()
         db.update(token)
@@ -1682,7 +2021,7 @@ export const createStationServer = (options: StationServerOptions) => {
           .where(eq(token.id, enrolledWith.id))
           .run()
       } else {
-        if (enrolledWith?.kind === 'bootstrap')
+        if (enrolledWith?.kind === 'bootstrap') {
           db.update(station)
             .set({
               hosts_dispatch: false,
@@ -1691,6 +2030,8 @@ export const createStationServer = (options: StationServerOptions) => {
             })
             .where(and(eq(station.hosts_dispatch, true), isNull(station.revoked_at)))
             .run()
+        }
+
         db.insert(station)
           .values({
             id: stationId,
@@ -1701,11 +2042,13 @@ export const createStationServer = (options: StationServerOptions) => {
           })
           .run()
       }
+
       return {
         ...allocated,
         adopted: Boolean(proposal),
       }
     })
+
     send(conn, 'enrolled', {
       station_id: stationId,
       instance_id: instanceId,
@@ -1733,10 +2076,15 @@ export const createStationServer = (options: StationServerOptions) => {
     const now = Date.now()
     const st = db.select().from(station).where(eq(station.id, body.station_id)).get()
     const verified = verifyHello(body, st, conn.challenge, now)
-    if (!verified.ok) return fatal(conn, verified.refusal)
+
+    if (!verified.ok) {
+      return fatal(conn, verified.refusal)
+    }
+
     const stationId = st!.id
     const instanceId = readSetting(db, 'instance.id')!
     const older = byStation.get(stationId)
+
     if (older && older !== conn) {
       log('station.duplicate', {
         station_id: stationId,
@@ -1751,6 +2099,7 @@ export const createStationServer = (options: StationServerOptions) => {
       older.ws.close(closeCodes.duplicateConnection, 'PROTOCOL_DUPLICATE_CONNECTION')
       older.phase = 'closed'
     }
+
     conn.stationId = stationId
     conn.sessionId = randomUUID()
     conn.epoch = body.outbox.epoch
@@ -1770,8 +2119,10 @@ export const createStationServer = (options: StationServerOptions) => {
       .run()
     const resume = committedSeq(db, stationId, conn.epoch)
     const rule = reconnectRule(db, stationId, body.applied)
+
     conn.withheld = rule.kind === 'drift'
     const latest = latestGeneration(db, stationId)
+
     send(conn, 'welcome', {
       session_id: conn.sessionId,
       protocol: protocolVersion,
@@ -1805,12 +2156,21 @@ export const createStationServer = (options: StationServerOptions) => {
 
   const onMessage = (conn: Connection, data: RawData, isBinary: boolean) => {
     conn.alive = true
-    if (conn.phase === 'closed') return
-    if (isBinary) {
-      if (conn.phase === 'ready') onBinary(conn, toBuffer(data))
+
+    if (conn.phase === 'closed') {
       return
     }
+
+    if (isBinary) {
+      if (conn.phase === 'ready') {
+        onBinary(conn, toBuffer(data))
+      }
+
+      return
+    }
+
     const text = toBuffer(data).toString()
+
     if (conn.phase === 'ready' && Buffer.byteLength(text) > limits.textFrameBytes) {
       return sendError(conn, {
         code: 'PROTOCOL_MESSAGE_TOO_LARGE',
@@ -1818,18 +2178,23 @@ export const createStationServer = (options: StationServerOptions) => {
         fix: 'Split the message.',
       })
     }
+
     const decoded = decode(text)
+
     if (conn.phase === 'challenged') {
       clearTimeout(conn.challengeTimer)
       const type = decoded.ok ? decoded.envelope.type : decoded.envelope?.type
-      if (type !== 'hello' && type !== 'enroll')
+
+      if (type !== 'hello' && type !== 'enroll') {
         return fatal(conn, {
           code: 'PROTOCOL_AUTH_FAILED',
           close: closeCodes.authFailed,
           explanation: `the first message must be hello or enroll, got ${type ?? 'an undecodable frame'}`,
           fix: 'Answer the challenge with hello.',
         })
-      if (!decoded.ok)
+      }
+
+      if (!decoded.ok) {
         return fatal(conn, {
           code: 'PROTOCOL_INVALID_MESSAGE',
           close: closeCodes.authFailed,
@@ -1839,9 +2204,12 @@ export const createStationServer = (options: StationServerOptions) => {
             issues: decoded.issues,
           },
         })
+      }
+
       return type === 'hello' ? onHello(conn, decoded.envelope) : onEnroll(conn, decoded.envelope)
     }
-    if (!decoded.ok)
+
+    if (!decoded.ok) {
       return sendError(
         conn,
         {
@@ -1854,6 +2222,8 @@ export const createStationServer = (options: StationServerOptions) => {
         },
         decoded.envelope?.id ?? null,
       )
+    }
+
     try {
       onReady(conn, decoded.envelope, Buffer.byteLength(text))
     } catch (error) {
@@ -1884,13 +2254,14 @@ export const createStationServer = (options: StationServerOptions) => {
       phase: 'challenged',
       challenge: issueChallenge(now),
       challengeTimer: setTimeout(() => {
-        if (conn.phase === 'challenged')
+        if (conn.phase === 'challenged') {
           fatal(conn, {
             code: 'PROTOCOL_REPLAY',
             close: closeCodes.authFailed,
             explanation: 'no hello or enroll arrived within 30 s of the challenge',
             fix: 'Answer the challenge within 30 s.',
           })
+        }
       }, challengeTimeoutMs),
       alive: true,
       capabilities: new Set(),
@@ -1917,6 +2288,7 @@ export const createStationServer = (options: StationServerOptions) => {
       streamOut: [],
       streamPaused: false,
     }
+
     connections.add(conn)
     ws.on('pong', () => (conn.alive = true))
     ws.on('message', (data, isBinary) => onMessage(conn, data, isBinary))
@@ -1931,14 +2303,22 @@ export const createStationServer = (options: StationServerOptions) => {
       clearTimeout(conn.challengeTimer)
       flushAck(conn)
       connections.delete(conn)
-      if (conn.stationId && byStation.get(conn.stationId) === conn) byStation.delete(conn.stationId)
+
+      if (conn.stationId && byStation.get(conn.stationId) === conn) {
+        byStation.delete(conn.stationId)
+      }
+
       for (const p of conn.pending.values()) {
         clearTimeout(p.timer)
         p.reject(new Error('the station connection closed'))
       }
+
       clearTimeout(conn.streamTimer)
-      for (const stream of [...conn.streams.values()])
+
+      for (const stream of [...conn.streams.values()]) {
         endStream(conn, stream, 'connection_closed', false)
+      }
+
       conn.phase = 'closed'
       log('station.closed', {
         connection: conn.id,
@@ -1958,10 +2338,11 @@ export const createStationServer = (options: StationServerOptions) => {
         generation: 0,
       },
     )
+
     ws.send(text)
   })
 
-  const pinger = setInterval(() => {
+  const pinger = every(pingEveryS, 'station.ping_failed', log, () => {
     for (const conn of connections) {
       if (!conn.alive) {
         log('station.terminated', {
@@ -1972,16 +2353,19 @@ export const createStationServer = (options: StationServerOptions) => {
         conn.ws.terminate()
         continue
       }
+
       conn.alive = false
       conn.ws.ping()
     }
-  }, pingIntervalMs)
+  })
 
-  const acker = setInterval(() => {
-    for (const conn of connections) flushAck(conn)
-  }, ackEveryMs)
+  const acker = every(ackEveryS, 'station.ack_failed', log, () => {
+    for (const conn of connections) {
+      flushAck(conn)
+    }
+  })
 
-  const liveness = setInterval(() => {
+  const liveness = every(livenessEveryS, 'station.liveness_failed', log, () => {
     const now = Date.now()
     const stale = db
       .select()
@@ -1990,10 +2374,16 @@ export const createStationServer = (options: StationServerOptions) => {
         and(eq(station.status, 'online'), lt(station.last_seen_at, new Date(now - offlineAfterMs))),
       )
       .all()
+
     for (const st of stale) {
       const asleep = st.intermittent
-      if (asleep && now - st.last_seen_at!.getTime() < asleepAfterMs) continue
+
+      if (asleep && now - st.last_seen_at!.getTime() < asleepAfterMs) {
+        continue
+      }
+
       const status = asleep ? 'asleep' : 'offline'
+
       db.update(station)
         .set({
           status,
@@ -2016,9 +2406,9 @@ export const createStationServer = (options: StationServerOptions) => {
         last_seen_at: st.last_seen_at,
       })
     }
-  }, 5_000)
+  })
 
-  const reconciler = setInterval(() => {
+  const reconciler = every(reconcileEveryS, 'reconcile.failed', log, () => {
     for (const conn of byStation.values()) {
       try {
         syncGeneration(conn)
@@ -2032,11 +2422,12 @@ export const createStationServer = (options: StationServerOptions) => {
         })
       }
     }
-  }, reconcileEveryMs)
+  })
 
   const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on('error', () => socket.destroy())
     const status = admissionStatus(req)
+
     if (status !== null) {
       log('station.upgrade_refused', {
         status,
@@ -2044,8 +2435,10 @@ export const createStationServer = (options: StationServerOptions) => {
         origin: req.headers.origin ?? null,
         protocols: offeredSubprotocols(req),
       })
+
       return refuseUpgrade(socket, status)
     }
+
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
   }
 
@@ -2062,9 +2455,10 @@ export const createStationServer = (options: StationServerOptions) => {
     }
   }
 
-  const connectionFor = (stationId: string, capability?: Capability) => {
+  const connectionFor = (stationId: string, capability: Capability | null) => {
     const conn = byStation.get(stationId)
-    if (!conn || conn.phase !== 'ready')
+
+    if (!conn || conn.phase !== 'ready') {
       throw new StationRequestError(
         'STATION_OFFLINE',
         `station ${stationId} is not connected to Dispatch`,
@@ -2072,7 +2466,9 @@ export const createStationServer = (options: StationServerOptions) => {
           station_id: stationId,
         },
       )
-    if (conn.versionSkew === 'unsupported')
+    }
+
+    if (conn.versionSkew === 'unsupported') {
       throw new StationRequestError(
         'STATION_VERSION_SKEW',
         `station ${stationId} runs a stationd outside the supported version window`,
@@ -2080,7 +2476,9 @@ export const createStationServer = (options: StationServerOptions) => {
           station_id: stationId,
         },
       )
-    if (capability && !conn.capabilities.has(capability))
+    }
+
+    if (capability && !conn.capabilities.has(capability)) {
       throw new StationRequestError(
         'STATION_VERSION_SKEW',
         `station ${stationId} did not negotiate ${capability}; upgrade stationd`,
@@ -2089,26 +2487,33 @@ export const createStationServer = (options: StationServerOptions) => {
           capability,
         },
       )
+    }
+
     return conn
   }
 
   const failed = (reply: RawEnvelope) => {
-    if (reply.type !== 'error') return
+    if (reply.type !== 'error') {
+      return
+    }
+
     const e = reply.body as MessageBody<'error'>
+
     throw new StationRequestError(e.code, e.explanation, {
       ...e.details,
       fix: e.fix,
     })
   }
 
-  const ask = async <T extends MessageType>(
+  const ask = async <T extends RequestType>(
     stationId: string,
     type: T,
     body: MessageBody<T>,
-    options: { timeoutMs?: number; capability?: Capability } = {},
+    options: { timeoutMs?: number } = {},
   ) => {
-    const conn = connectionFor(stationId, options.capability)
+    const conn = connectionFor(stationId, messages[type].capability)
     let reply: RawEnvelope
+
     try {
       reply = await request(conn, type, body, options.timeoutMs ?? requestTimeoutMs)
     } catch (error) {
@@ -2120,8 +2525,13 @@ export const createStationServer = (options: StationServerOptions) => {
         },
       )
     }
+
     failed(reply)
-    return reply
+
+    return {
+      ...reply,
+      body: bodyOf(reply, messageReplies[type]),
+    }
   }
 
   const openStream = async (
@@ -2130,16 +2540,23 @@ export const createStationServer = (options: StationServerOptions) => {
     body: MessageBody<StreamRequest>,
     handlers: StreamHandlers,
   ): Promise<StreamHandle> => {
-    const conn = connectionFor(stationId, streamCapability[type])
-    if (conn.streams.size >= limits.concurrentStreams)
+    const conn = connectionFor(stationId, messages[type].capability)
+
+    if (conn.streams.size >= limits.concurrentStreams) {
       throw new StationRequestError(
         'PROTOCOL_LIMIT',
         `station ${stationId} already has ${limits.concurrentStreams} open streams`,
       )
+    }
+
     let stream: Stream | undefined
     const reply = await request(conn, type, body as never, requestTimeoutMs, (envelope) => {
-      if (envelope.type !== 'stream.opened') return
+      if (envelope.type !== 'stream.opened') {
+        return
+      }
+
       const opened = envelope.body as MessageBody<'stream.opened'>
+
       stream = registerStream(conn, opened.stream, opened.window, handlers)
     }).catch((error) => {
       throw new StationRequestError(
@@ -2147,12 +2564,16 @@ export const createStationServer = (options: StationServerOptions) => {
         `${type} to station ${stationId} failed: ${(error as Error).message}`,
       )
     })
+
     failed(reply)
-    if (!stream)
+
+    if (!stream) {
       throw new StationRequestError(
         'PROTOCOL_INVALID_MESSAGE',
         `station answered ${type} with ${reply.type}`,
       )
+    }
+
     return handleOf(conn, stream)
   }
 
@@ -2161,20 +2582,27 @@ export const createStationServer = (options: StationServerOptions) => {
     body: MessageBody<'run.start'>,
     handlers?: StreamHandlers,
   ) => {
-    const conn = connectionFor(stationId, body.attach ? 'exec.tty' : undefined)
+    const conn = connectionFor(stationId, body.attach ? 'exec.tty' : null)
     let stream: Stream | undefined
     const reply = await request(conn, 'run.start', body, requestTimeoutMs, (envelope) => {
-      if (envelope.type !== 'run.accepted' || !handlers) return
+      if (envelope.type !== 'run.accepted' || !handlers) {
+        return
+      }
+
       const accepted = envelope.body as MessageBody<'run.accepted'>
-      if (accepted.stream !== null)
+
+      if (accepted.stream !== null) {
         stream = registerStream(conn, accepted.stream, limits.streamWindowBytes, handlers)
+      }
     }).catch((error) => {
       throw new StationRequestError(
         'STATION_OFFLINE',
         `run.start to station ${stationId} failed: ${(error as Error).message}`,
       )
     })
+
     failed(reply)
+
     return {
       accepted: reply.body as MessageBody<'run.accepted'>,
       handle: stream ? handleOf(conn, stream) : null,
@@ -2183,29 +2611,40 @@ export const createStationServer = (options: StationServerOptions) => {
 
   const revoke = (stationId: string, revokedAt: Date) => {
     const conn = byStation.get(stationId)
-    if (!conn) return false
+
+    if (!conn) {
+      return false
+    }
+
     fatal(conn, {
       code: 'STATION_REVOKED',
       close: closeCodes.revoked,
       explanation: `The station was removed at ${revokedAt.toISOString()}.`,
       fix: 'Enroll the host again with a new token from sly stations enroll.',
     })
+
     return true
   }
 
   const runRetention = async (stationId: string) => {
     const conn = byStation.get(stationId)
-    if (!conn || !conn.capabilities.has('registry.v1'))
+
+    if (!conn || !conn.capabilities.has('registry.v1')) {
       return {
         requested: 0,
         pruned: 0,
       }
+    }
+
     const items = retentionItems(db, stationId)
-    if (!items.length)
+
+    if (!items.length) {
       return {
         requested: 0,
         pruned: 0,
       }
+    }
+
     const reply = await request(
       conn,
       'registry.delete',
@@ -2214,9 +2653,11 @@ export const createStationServer = (options: StationServerOptions) => {
       },
       120_000,
     )
+
     failed(reply)
     const result = reply.body as MessageBody<'registry.delete.result'>
     const pruned = recordDeletes(db, stationId, result)
+
     log('registry.delete', {
       station_id: stationId,
       requested: items.length,
@@ -2225,6 +2666,7 @@ export const createStationServer = (options: StationServerOptions) => {
       failed: result.items.filter((i) => i.status === 'failed').length,
       deployments_pruned: pruned,
     })
+
     return {
       requested: items.length,
       pruned,
@@ -2232,27 +2674,25 @@ export const createStationServer = (options: StationServerOptions) => {
   }
 
   const runGc = async (stationId: string, reason: 'schedule' | 'disk_pressure') => {
-    const reply = await ask(
-      stationId,
-      'registry.gc',
-      {
-        reason,
-      },
-      {
-        capability: 'registry.v1',
-      },
-    )
+    const reply = await ask(stationId, 'registry.gc', {
+      reason,
+    })
+
     log('registry.gc', {
       station_id: stationId,
       reason,
       reply: reply.type,
     })
+
     return reply.type
   }
 
   const retentionPending = new Set<string>()
   const scheduleRetention = (stationId: string) => {
-    if (retentionPending.has(stationId)) return
+    if (retentionPending.has(stationId)) {
+      return
+    }
+
     retentionPending.add(stationId)
     setTimeout(() => {
       retentionPending.delete(stationId)
@@ -2265,34 +2705,12 @@ export const createStationServer = (options: StationServerOptions) => {
     }, 2_000).unref()
   }
 
-  let gcPattern: { text: string; cron: Cron } | null = null
-  let gcCheckedAt = new Date()
-  const gcTick = () => {
-    const text = readSetting(db, 'registry.gc_schedule')
-    if (gcPattern?.text !== text) {
-      try {
-        gcPattern = {
-          text,
-          cron: new Cron(text, {
-            timezone: 'UTC',
-            paused: true,
-          }),
-        }
-      } catch (error) {
-        log('registry.gc_schedule_invalid', {
-          schedule: text,
-          explanation: (error as Error).message,
-        })
-        gcPattern = null
-        return
-      }
-    }
-    const now = new Date()
-    const due = gcPattern.cron.nextRun(gcCheckedAt)
-    gcCheckedAt = now
-    if (!due || due > now) return
+  const gcSchedule = settingSchedule(db, 'registry.gc_schedule', log, () => {
     for (const conn of byStation.values()) {
-      if (!conn.stationId || !conn.capabilities.has('registry.v1')) continue
+      if (!conn.stationId || !conn.capabilities.has('registry.v1')) {
+        continue
+      }
+
       runGc(conn.stationId, 'schedule').catch((error) =>
         log('registry.gc_failed', {
           station_id: conn.stationId,
@@ -2300,7 +2718,7 @@ export const createStationServer = (options: StationServerOptions) => {
         }),
       )
     }
-  }
+  })
 
   const status = () =>
     [...byStation.values()].map((c) => ({
@@ -2316,26 +2734,33 @@ export const createStationServer = (options: StationServerOptions) => {
 
   const close = () =>
     new Promise<void>((resolve) => {
-      for (const timer of [pinger, acker, liveness, reconciler, gcTimer, housekeeping])
-        clearInterval(timer)
+      for (const job of [pinger, acker, liveness, reconciler, gcSchedule, housekeeping]) {
+        job.stop()
+      }
+
       for (const conn of connections) {
         flushAck(conn)
         conn.ws.close(closeCodes.goingAway, 'dispatch shutting down')
       }
+
       wss.close(() => resolve())
     })
 
-  const gcTimer = setInterval(gcTick, 15_000)
-  const housekeeping = setInterval(() => {
-    for (const conn of byStation.values()) if (conn.stationId) scheduleRetention(conn.stationId)
+  const housekeeping = every(retentionEveryS, 'station.housekeeping_failed', log, () => {
+    for (const conn of byStation.values()) {
+      if (conn.stationId) {
+        scheduleRetention(conn.stationId)
+      }
+    }
+
     const swept = sweepBlobs(db, blobDir)
-    if (swept)
+
+    if (swept) {
       log('blobs.swept', {
         count: swept,
       })
-  }, retentionEveryMs)
-
-  for (const timer of [pinger, acker, liveness, reconciler, gcTimer, housekeeping]) timer.unref()
+    }
+  })
 
   const isConnected = (stationId: string) => byStation.get(stationId)?.phase === 'ready'
 

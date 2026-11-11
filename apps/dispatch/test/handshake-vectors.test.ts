@@ -25,6 +25,7 @@ const identityKeyOf = (seed: Buffer) => {
   ).export({
     format: 'jwk',
   })
+
   return publicKey(jwk.x as string)
 }
 
@@ -35,6 +36,7 @@ test('the committed TypeScript vectors are what the generator produces now', () 
 test('each message is 100 bytes with the nonce right after its prefix', () => {
   const hello = helloMessage(vectorInputs.nonce, vectorInputs.stationId, vectorInputs.timestampMs)
   const enroll = enrollMessage(vectorInputs.nonce, vectorInputs.token, vectorInputs.timestampMs)
+
   assert.equal(hello.length, 100)
   assert.equal(enroll.length, 100)
   assert.deepEqual(hello.subarray(30, 62), vectorInputs.nonce)
@@ -43,8 +45,10 @@ test('each message is 100 bytes with the nonce right after its prefix', () => {
 
 test('the bytes and signatures built by Go match TypeScript and verify', () => {
   const go = load(goVectorsPath)
+
   assert.deepEqual(go, buildVectors())
   const identity = identityKeyOf(vectorInputs.seed)
+
   for (const kind of ['hello', 'enroll'] as const) {
     assert.ok(
       verify(

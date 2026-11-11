@@ -38,6 +38,7 @@ type SandboxBaseline struct {
 	Joined    bool
 	Allowlist bool
 	Ports     []uint16
+	Relay     uint16
 }
 
 type AllowElement struct {
@@ -79,6 +80,9 @@ func (b SandboxBaseline) fingerprint() string {
 	text := sandboxLayout + "|" + b.Resolver.String() + "|" + b.Self.String() + "|" + b.Subnet.Masked().String() + "|" + strconv.FormatBool(b.Joined) + "|" + strconv.FormatBool(b.Allowlist)
 	for _, p := range b.ports() {
 		text += "|" + strconv.Itoa(int(p))
+	}
+	if b.Relay != 0 {
+		text += "|relay=" + strconv.Itoa(int(b.Relay))
 	}
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:8])
@@ -171,6 +175,14 @@ func forwardOutExprs() []expr.Any {
 	return append(append(out, ctNew()...), &expr.Counter{}, verdict(expr.VerdictAccept))
 }
 
+func relayExprs(p uint16) []expr.Any {
+	out := iifExprs(SandboxIf, false)
+	for _, t := range []term{ipv4Term(), daddrTerm(CouplerLink), l4Term(unix.IPPROTO_TCP), dportTerm(p)} {
+		out = append(out, t.exprs()...)
+	}
+	return append(out, &expr.Counter{}, verdict(expr.VerdictAccept))
+}
+
 func masqExprs() []expr.Any {
 	return append(append(iifExprs(SandboxIf, false), oifExprs(couplerIf)...), &expr.Counter{}, &expr.Masq{})
 }
@@ -217,6 +229,9 @@ func writeSandbox(c *nftables.Conn, b SandboxBaseline, e SandboxElements, sw map
 	inbound := c.AddChain(&nftables.Chain{Name: "inbound", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookInput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
 	c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: append(established(), verdict(expr.VerdictAccept))})
 	c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: append(iifExprs("lo", false), verdict(expr.VerdictAccept))})
+	if b.Relay != 0 {
+		c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: relayExprs(b.Relay)})
+	}
 
 	localOut := c.AddChain(&nftables.Chain{Name: "local_out", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
 	c.AddRule(&nftables.Rule{Table: table, Chain: localOut, Exprs: append(established(), verdict(expr.VerdictAccept))})

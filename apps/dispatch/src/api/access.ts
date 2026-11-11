@@ -10,8 +10,12 @@ export const can = (principal: Principal, target: Target, level: Level) =>
   atLeast(levelAt(principal.scopes, target), level)
 
 export const requireLevel = (principal: Principal, target: Target, level: Level) => {
-  if (can(principal, target, level)) return
+  if (can(principal, target, level)) {
+    return
+  }
+
   const have = levelAt(principal.scopes, target)
+
   fail(
     'FORBIDDEN_SCOPE',
     `This credential has ${have ?? 'no access'} on ${describe(target)} but the operation needs ${level}.`,
@@ -26,7 +30,10 @@ export const requireLevel = (principal: Principal, target: Target, level: Level)
 }
 
 export const requireInstance = (principal: Principal, level: Level) => {
-  if (can(principal, anyTarget, level)) return
+  if (can(principal, anyTarget, level)) {
+    return
+  }
+
   fail(
     'INSTANCE_SCOPE_REQUIRED',
     `This operation is instance-level and needs ${level} on every project and environment.`,
@@ -45,7 +52,10 @@ export const requireHuman = (
   what: string,
   required: Record<string, unknown> = {},
 ) => {
-  if (principal.human) return
+  if (principal.human) {
+    return
+  }
+
   fail(
     'PROTECTED_ENVIRONMENT',
     `${what} needs a human actor; tokens and OAuth clients are never human.`,
@@ -61,14 +71,18 @@ export const seesProject = (principal: Principal, projectId: string) =>
   principal.scopes.some((scope) => scope.project_id === '*' || scope.project_id === projectId)
 
 export const authorize = (principal: Principal, target: Target, level: Level) => {
-  if (target.project_id === '*' && target.environment_id === '*')
+  if (target.project_id === '*' && target.environment_id === '*') {
     return requireInstance(principal, level)
+  }
+
   if (
     level === 'read' &&
     target.environment_id === '*' &&
     seesProject(principal, target.project_id)
-  )
+  ) {
     return
+  }
+
   requireLevel(principal, target, level)
 }
 

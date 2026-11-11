@@ -168,7 +168,12 @@ func (s *Station) verifyComponents(ctx context.Context, g *protocol.Generation) 
 		cancel()
 		if r.Signature == verify.Refused && g.Station.Settings.PlatformAllowUnsigned {
 			r.Signature = verify.UnsignedAllowed
-			s.emit(protocol.MessageAuditRecord, map[string]any{"action": "platform.unsigned_run", "target": map[string]any{"entity": "component", "id": name}, "actor": map[string]any{"type": "station", "id": s.opts.Identity.StationID}, "purpose": "platform.allow_unsigned is true: " + r.Reason})
+			s.emit(protocol.MessageAuditRecord, protocol.AuditRecordBody{
+				Action:  "platform.unsigned_run",
+				Target:  protocol.EntityRef{Entity: "component", Id: name},
+				Actor:   protocol.Actor{Type: protocol.ActorTypeStation, Id: &s.opts.Identity.StationID},
+				Purpose: new("platform.allow_unsigned is true: " + r.Reason),
+			})
 		}
 		s.sigs.set(name, r)
 		s.log.Info("platform artifact signature", "component", name, "version", r.Version, "digest", r.Digest, "signature", r.Signature, "source", r.Source, "bundles", r.BundlesSeen, "identity", r.Identity, "took_ms", r.DurationMs, "reason", r.Reason)
@@ -238,7 +243,7 @@ func (s *Station) verifyRelease(rel *protocol.PlatformVerifyRelease) *protocol.P
 	out.Identity = &san
 	dir := filepath.Join(ReleaseDir(s.opts.StateDir), "releases")
 	if err := os.MkdirAll(dir, 0o755); err == nil {
-		_ = writeAtomic(filepath.Join(dir, strings.TrimPrefix(out.ManifestDigest, "sha256:")+".json"), raw)
+		_ = fsx.WriteFile(filepath.Join(dir, strings.TrimPrefix(out.ManifestDigest, "sha256:")+".json"), raw, 0o600)
 	}
 	s.log.Info("platform.verify release manifest", "digest", out.ManifestDigest, "identity", san)
 	return out
@@ -357,10 +362,7 @@ func (s *Station) reportedPath() string {
 }
 
 func (s *Station) reportComponents(g *protocol.Generation) {
-	var last map[string]reportedComponent
-	if b, err := os.ReadFile(s.reportedPath()); err == nil {
-		_ = json.Unmarshal(b, &last)
-	}
+	last, _ := readJSON[map[string]reportedComponent](s.reportedPath())
 	next := map[string]reportedComponent{}
 	changed := false
 	rows := s.componentRows(g)
@@ -384,8 +386,7 @@ func (s *Station) reportComponents(g *protocol.Generation) {
 	if !changed && len(next) == len(last) {
 		return
 	}
-	b, _ := json.MarshalIndent(next, "", "  ")
-	_ = writeAtomic(s.reportedPath(), b)
+	_ = writeJSON(s.reportedPath(), next)
 }
 
 func ReleaseDir(stateDir string) string {

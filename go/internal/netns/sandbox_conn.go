@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/google/nftables"
 	"github.com/mdlayher/socket"
 	"golang.org/x/sys/unix"
 )
@@ -46,16 +45,4 @@ func (s *StreamConn) CloseWrite() error {
 
 func (s *StreamConn) Close() error {
 	return s.c.Close()
-}
-
-func (n *Namespace) ReadRefused() ([]Refused, error) {
-	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
-	if err != nil {
-		return nil, err
-	}
-	els, err := c.GetSetElements(refusedSet())
-	if err != nil {
-		return nil, err
-	}
-	return decodeRefused(els), nil
 }

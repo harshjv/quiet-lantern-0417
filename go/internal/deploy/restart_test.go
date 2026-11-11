@@ -100,3 +100,18 @@ func TestACrashingContainerExhaustsTheBudget(t *testing.T) {
 		t.Fatalf("failure = %v, want EXIT_NONZERO", st.failure)
 	}
 }
+
+func TestAServiceThatKeepsFailingRetriesAtTheBackoffCap(t *testing.T) {
+	s, sp := gateStation(t)
+	st := &serviceState{}
+	now := time.Unix(1_000, 0)
+	failure := &protocol.ErrorBody{Code: string(protocol.ErrorCodeExitNonzero)}
+
+	for range 100 {
+		s.holdBack(st, sp, failure, now)
+	}
+
+	if delay := st.retryAt.Sub(now); delay != backoffCap {
+		t.Fatalf("after 100 hold-backs the retry waits %s, want the %s cap", delay, backoffCap)
+	}
+}

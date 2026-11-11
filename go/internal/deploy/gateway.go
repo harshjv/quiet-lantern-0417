@@ -4,7 +4,6 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -109,15 +108,7 @@ func (s *Station) staticPath(slot string) string {
 }
 
 func loadGatewayState(stateDir string) (gatewayState, error) {
-	var st gatewayState
-	b, err := os.ReadFile(filepath.Join(stateDir, gatewayDir, gatewayStateFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return st, nil
-	}
-	if err != nil {
-		return st, err
-	}
-	return st, json.Unmarshal(b, &st)
+	return readJSON[gatewayState](filepath.Join(stateDir, gatewayDir, gatewayStateFile))
 }
 
 func (s *Station) saveGateway() {
@@ -125,11 +116,7 @@ func (s *Station) saveGateway() {
 		s.log.Error("create gateway state directory", "error", err)
 		return
 	}
-	b, err := json.MarshalIndent(s.gw.state, "", "  ")
-	if err == nil {
-		err = writeAtomic(filepath.Join(s.gatewayDir(), gatewayStateFile), b)
-	}
-	if err != nil {
+	if err := writeJSON(filepath.Join(s.gatewayDir(), gatewayStateFile), s.gw.state); err != nil {
 		s.log.Error("persist gateway state", "error", err)
 	}
 }

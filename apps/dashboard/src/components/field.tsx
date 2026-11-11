@@ -102,13 +102,16 @@ export function CheckboxField({
       {label}
     </Label>
   )
-  if (!hint)
+
+  if (!hint) {
     return (
       <div className={cn('flex items-center gap-2', className)}>
         {box}
         {text}
       </div>
     )
+  }
+
   return (
     <div className={cn('flex items-start gap-2', className)}>
       {box}

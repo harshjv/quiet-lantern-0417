@@ -5,7 +5,7 @@ import dockerignore from '@balena/dockerignore'
 import { create } from 'tar'
 
 import { usage } from './errors.ts'
-import { settle, type Run } from './kit.ts'
+import { send, type Run } from './kit.ts'
 
 export const maxPushBytes = 512 * 1024 * 1024
 
@@ -13,7 +13,10 @@ const dockerignoreOf = async (dir: string) => {
   try {
     return (await readFile(resolve(dir, '.dockerignore'), 'utf8')).split(/\r?\n/)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return []
+    }
+
     throw error
   }
 }
@@ -21,11 +24,14 @@ const dockerignoreOf = async (dir: string) => {
 export const packDirectory = async (path: string) => {
   const dir = resolve(path)
   const info = await stat(dir).catch(() => null)
-  if (!info?.isDirectory())
+
+  if (!info?.isDirectory()) {
     throw usage(
       `${path} is not a directory.`,
       'Pass the directory to push, or run sly push inside it.',
     )
+  }
+
   const rules = dockerignore.default().add(await dockerignoreOf(dir))
   let files = 0
   const chunks: Buffer[] = []
@@ -37,23 +43,36 @@ export const packDirectory = async (path: string) => {
       portable: true,
       filter: (entry: string) => {
         const rel = relative(dir, resolve(dir, entry)).split(sep).join('/')
-        if (rel === '' || rel === '.') return true
-        if (rel === '.git' || rel.startsWith('.git/') || rules.ignores(rel)) return false
+
+        if (rel === '' || rel === '.') {
+          return true
+        }
+
+        if (rel === '.git' || rel.startsWith('.git/') || rules.ignores(rel)) {
+          return false
+        }
+
         files += 1
+
         return true
       },
     },
     ['.'],
   )
+
   for await (const chunk of stream as AsyncIterable<Buffer>) {
     size += chunk.length
-    if (size > maxPushBytes)
+
+    if (size > maxPushBytes) {
       throw usage(
         `The directory packs to more than ${maxPushBytes} bytes.`,
         'Add large build inputs to .dockerignore.',
       )
+    }
+
     chunks.push(chunk)
   }
+
   return {
     bytes: Buffer.concat(chunks),
     entries: files,
@@ -69,10 +88,11 @@ export const uploadSource = async (
 ) => {
   const started = Date.now()
   const packed = await packDirectory(path)
+
   onProgress(
     `packed ${packed.entries} entries of ${packed.dir} into ${packed.bytes.length} bytes in ${Date.now() - started} ms`,
   )
-  const upload = await settle(
+  const upload = await send(
     run.api.v1.blobs.post(undefined, {
       headers: {
         'content-type': 'application/gzip',
@@ -84,9 +104,10 @@ export const uploadSource = async (
       },
     }),
   )
-  if (upload.data)
-    onProgress(
-      `uploaded ${upload.data.size_bytes} bytes as ${upload.data.blob_id} in ${Date.now() - started} ms`,
-    )
+
+  onProgress(
+    `uploaded ${upload.data.size_bytes} bytes as ${upload.data.blob_id} in ${Date.now() - started} ms`,
+  )
+
   return upload
 }

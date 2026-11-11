@@ -9,6 +9,7 @@ export const helpTreePath = fileURLToPath(new URL('../test/help-tree.txt', impor
 const usageOf = (command: CommandUnknownOpts) =>
   command.registeredArguments.map((a) => {
     const name = `${a.name()}${a.variadic ? '...' : ''}`
+
     return a.required ? `<${name}>` : `[${name}]`
   })
 
@@ -20,6 +21,7 @@ const lines = (command: CommandUnknownOpts, path: string[]): string[] =>
     .sort((a, b) => a.name().localeCompare(b.name()))
     .flatMap((child) => {
       const words = [...path, child.name()]
+
       return [
         [...words, ...usageOf(child)].join(' '),
         `  ${summaryOf(child)}`,

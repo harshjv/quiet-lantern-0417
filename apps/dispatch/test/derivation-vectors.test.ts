@@ -40,6 +40,7 @@ type DepotVectors = {
 for (const { name, object, hash } of (load('generation-hash-vectors.json') as HashVectors).cases) {
   test(`generation hash vector: ${name}`, () => {
     const { hash: _outer, ...content } = object
+
     assert.equal(hashed(content).hash, hash)
   })
 }

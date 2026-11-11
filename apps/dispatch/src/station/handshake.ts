@@ -35,21 +35,32 @@ export const issueChallenge = (now: number): Challenge => ({
 })
 
 export const decodeBase64Url = (value: string, bytes: number) => {
-  if (!base64url.test(value)) return undefined
+  if (!base64url.test(value)) {
+    return undefined
+  }
+
   const decoded = Buffer.from(value, 'base64url')
-  if (decoded.length !== bytes || decoded.toString('base64url') !== value) return undefined
+
+  if (decoded.length !== bytes || decoded.toString('base64url') !== value) {
+    return undefined
+  }
+
   return decoded
 }
 
 const timestampBytes = (timestampMs: number) => {
   const out = Buffer.alloc(8)
+
   out.writeBigUInt64BE(BigInt(timestampMs))
+
   return out
 }
 
 export const helloMessage = (nonce: Buffer, stationId: string, timestampMs: number) => {
-  if (!stationIdPattern.test(stationId))
+  if (!stationIdPattern.test(stationId)) {
     throw new Error('station id is not stn_ plus 26 Crockford base32 characters')
+  }
+
   return Buffer.concat([
     helloPrefix,
     nonce,
@@ -70,9 +81,14 @@ const keyCache = new Map<string, KeyObject>()
 
 export const publicKey = (raw: string) => {
   let key = keyCache.get(raw)
+
   if (!key) {
     const bytes = decodeBase64Url(raw, 32)
-    if (!bytes) throw new Error('identity key is not 32 bytes of base64url')
+
+    if (!bytes) {
+      throw new Error('identity key is not 32 bytes of base64url')
+    }
+
     key = createPublicKey({
       key: {
         kty: 'OKP',
@@ -83,6 +99,7 @@ export const publicKey = (raw: string) => {
     })
     keyCache.set(raw, key)
   }
+
   return key
 }
 
@@ -108,7 +125,7 @@ const refuse = (
 })
 
 const consumeChallenge = (challenge: Challenge | undefined, now: number) => {
-  if (!challenge)
+  if (!challenge) {
     return refuse(
       'PROTOCOL_REPLAY',
       closeCodes.authFailed,
@@ -118,7 +135,9 @@ const consumeChallenge = (challenge: Challenge | undefined, now: number) => {
         reason: 'unknown',
       },
     )
-  if (challenge.used)
+  }
+
+  if (challenge.used) {
     return refuse(
       'PROTOCOL_REPLAY',
       closeCodes.authFailed,
@@ -128,9 +147,12 @@ const consumeChallenge = (challenge: Challenge | undefined, now: number) => {
         reason: 'used',
       },
     )
+  }
+
   challenge.used = true
   const age = now - challenge.issuedAt
-  if (age >= nonceTtlMs)
+
+  if (age >= nonceTtlMs) {
     return refuse(
       'PROTOCOL_REPLAY',
       closeCodes.authFailed,
@@ -141,6 +163,8 @@ const consumeChallenge = (challenge: Challenge | undefined, now: number) => {
         age_ms: age,
       },
     )
+  }
+
   return {
     ok: true as const,
     nonce: challenge.nonce,
@@ -149,7 +173,8 @@ const consumeChallenge = (challenge: Challenge | undefined, now: number) => {
 
 const checkSkew = (timestamp: number, now: number) => {
   const skew = timestamp - now
-  if (Math.abs(skew) > maxSkewMs)
+
+  if (Math.abs(skew) > maxSkewMs) {
     return refuse(
       'PROTOCOL_CLOCK_SKEW',
       closeCodes.authFailed,
@@ -160,6 +185,8 @@ const checkSkew = (timestamp: number, now: number) => {
         skew_ms: skew,
       },
     )
+  }
+
   return {
     ok: true as const,
     skew,
@@ -175,7 +202,8 @@ export const verifyHello = (
   now: number,
 ): HelloVerified | { ok: false; refusal: Refusal } => {
   const signature = decodeBase64Url(body.signature, 64)
-  if (!signature)
+
+  if (!signature) {
     return refuse(
       'PROTOCOL_INVALID_MESSAGE',
       closeCodes.authFailed,
@@ -185,31 +213,46 @@ export const verifyHello = (
         issues: ['/signature'],
       },
     )
-  if (!station?.identity_key)
+  }
+
+  if (!station?.identity_key) {
     return refuse(
       'PROTOCOL_AUTH_FAILED',
       closeCodes.authFailed,
       'The station is unknown or its signature does not verify.',
       'Check identity/ on the station; enroll it again if the key was lost.',
     )
+  }
+
   const nonce = consumeChallenge(challenge, now)
-  if (!nonce.ok) return nonce
+
+  if (!nonce.ok) {
+    return nonce
+  }
+
   const skew = checkSkew(body.timestamp, now)
-  if (!skew.ok) return skew
+
+  if (!skew.ok) {
+    return skew
+  }
+
   const signed = verify(
     null,
     helloMessage(nonce.nonce, body.station_id, body.timestamp),
     publicKey(station.identity_key),
     signature,
   )
-  if (!signed)
+
+  if (!signed) {
     return refuse(
       'PROTOCOL_AUTH_FAILED',
       closeCodes.authFailed,
       'The station is unknown or its signature does not verify.',
       'Check identity/ on the station; enroll it again if the key was lost.',
     )
-  if (station.revoked_at)
+  }
+
+  if (station.revoked_at) {
     return refuse(
       'STATION_REVOKED',
       closeCodes.revoked,
@@ -219,6 +262,8 @@ export const verifyHello = (
         revoked_at: station.revoked_at.toISOString(),
       },
     )
+  }
+
   return {
     ok: true,
     skewMs: skew.skew,
@@ -241,23 +286,28 @@ export const verifyEnroll = (
   challenge: Challenge | undefined,
   now: number,
 ): { ok: true; skewMs: number } | { ok: false; refusal: Refusal } => {
-  if (!token)
+  if (!token) {
     return refuse(
       'ENROLL_TOKEN_INVALID',
       closeCodes.revoked,
       'The enrollment token is unknown or already used.',
       'Create a new token with sly stations enroll.',
     )
-  if (token.kind === 'row' && now >= token.expiresAt.getTime())
+  }
+
+  if (token.kind === 'row' && now >= token.expiresAt.getTime()) {
     return refuse(
       'ENROLL_TOKEN_EXPIRED',
       closeCodes.revoked,
       'The enrollment token expired.',
       'Create a new token with sly stations enroll.',
     )
+  }
+
   const identityKey = decodeBase64Url(body.identity_key, 32)
   const signature = decodeBase64Url(body.signature, 64)
-  if (!identityKey || !signature || !decodeBase64Url(body.public_key, 32))
+
+  if (!identityKey || !signature || !decodeBase64Url(body.public_key, 32)) {
     return refuse(
       'PROTOCOL_INVALID_MESSAGE',
       closeCodes.authFailed,
@@ -267,11 +317,22 @@ export const verifyEnroll = (
         issues: ['/identity_key', '/public_key', '/signature'],
       },
     )
+  }
+
   const nonce = consumeChallenge(challenge, now)
-  if (!nonce.ok) return nonce
+
+  if (!nonce.ok) {
+    return nonce
+  }
+
   const skew = checkSkew(body.timestamp, now)
-  if (!skew.ok) return skew
+
+  if (!skew.ok) {
+    return skew
+  }
+
   let key: KeyObject
+
   try {
     key = publicKey(body.identity_key)
   } catch {
@@ -285,13 +346,16 @@ export const verifyEnroll = (
       },
     )
   }
-  if (!verify(null, enrollMessage(nonce.nonce, body.token, body.timestamp), key, signature))
+
+  if (!verify(null, enrollMessage(nonce.nonce, body.token, body.timestamp), key, signature)) {
     return refuse(
       'PROTOCOL_AUTH_FAILED',
       closeCodes.authFailed,
       'The enrollment signature does not verify against identity_key.',
       'Run stationd enroll again.',
     )
+  }
+
   return {
     ok: true,
     skewMs: skew.skew,

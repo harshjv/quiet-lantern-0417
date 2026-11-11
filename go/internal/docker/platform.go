@@ -141,8 +141,3 @@ func (c *Client) ImageFile(ctx context.Context, image, path string) ([]byte, err
 		}
 	}
 }
-
-func (c *Client) RemoveImage(ctx context.Context, ref string) error {
-	_, err := c.api.ImageRemove(ctx, ref, client.ImageRemoveOptions{Force: true})
-	return ignoreNotFound(err)
-}

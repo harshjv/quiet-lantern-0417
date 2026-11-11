@@ -22,8 +22,9 @@ type DigestVectors = {
 const redaction = load('redaction-vectors.json') as RedactionVectors
 
 test('each value has the encoded forms the shared vectors pin', () => {
-  for (const { value, forms } of redaction.encodings)
+  for (const { value, forms } of redaction.encodings) {
     assert.deepEqual(encodedForms(value), forms, value)
+  }
 })
 
 for (const vector of redaction.cases) {

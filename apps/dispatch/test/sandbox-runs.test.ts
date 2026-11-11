@@ -78,6 +78,7 @@ before(async () => {
   const box = await createSandbox(h, envId, {
     name: 'worker',
   })
+
   boxId = box.id
   await waitForSandbox(h, boxId, 'running')
 })
@@ -106,8 +107,10 @@ describe('exec', () => {
       user: 'agent',
       timeout_s: 900,
     })
+
     assert.equal(reply.status, 201, reply.text)
     const body = reply.body
+
     assert.equal(body.kind, 'exec')
     assert.equal(body.sandbox_id, boxId)
     assert.equal(body.service_id, null)
@@ -120,6 +123,7 @@ describe('exec', () => {
     const sent = station.received.filter(
       (m) => m.type === 'run.start' && (m.body as any).run_id === body.id,
     )[0]!.body as any
+
     assert.deepEqual(
       [
         sent.service_id,
@@ -135,6 +139,7 @@ describe('exec', () => {
       [null, null, boxId, 'exec', 'agent', '/root', 900, false, false],
     )
     const again = await api('GET', `/v1/runs/${body.id}?wait_s=1`)
+
     assert.equal(again.body.status, 'succeeded')
     assert.match(again.body.output.untrusted.text, /echo hello/)
   })
@@ -143,10 +148,12 @@ describe('exec', () => {
     const reply = await exec({
       command: ['false'],
     })
+
     assert.equal(reply.body.status, 'failed')
     assert.equal(reply.body.exit_code, 1)
     assert.equal(reply.body.failure.code, 'EXIT_NONZERO')
     const diagnosis = await api('GET', `/v1/runs/${reply.body.id}/diagnosis`)
+
     assert.equal(diagnosis.status, 200, diagnosis.text)
     assert.equal(diagnosis.body.entity.id, reply.body.id)
   })
@@ -156,6 +163,7 @@ describe('exec', () => {
       name: 'cold',
       start: false,
     })
+
     for (const [path, body] of [
       [
         `/v1/sandboxes/${cold.id}/exec`,
@@ -166,6 +174,7 @@ describe('exec', () => {
       [`/v1/sandboxes/${cold.id}/shells`, {}],
     ] as const) {
       const reply = await api('POST', path, body)
+
       assert.equal(reply.status, 409)
       assert.equal(reply.body.error.code, 'SANDBOX_NOT_RUNNING')
       assert.equal(reply.body.error.details.status, 'stopped')
@@ -183,8 +192,10 @@ describe('exec', () => {
       },
       wait_s: 10,
     })
+
     assert.equal(reply.status, 201, reply.text)
     const delivery = station.secrets.find((s) => s.target.run_id === reply.body.id)!
+
     assert.equal(delivery.purpose, 'run')
     assert.deepEqual(delivery.values, {
       EXEC_SECRET: value,
@@ -195,6 +206,7 @@ describe('exec', () => {
       h,
       "select after from audit_event where action = 'sandbox.exec'",
     ).at(-1)!
+
     assert.deepEqual(JSON.parse(audit.after).env_keys, ['CI', 'EXEC_SECRET'])
   })
 
@@ -205,18 +217,21 @@ describe('exec', () => {
         BIG: 'x'.repeat(65 * 1024),
       },
     })
+
     assert.equal(bigEnv.status, 400)
     assert.equal(bigEnv.body.error.details.issues[0].path, '/env')
     const bigStdin = await exec({
       command: ['true'],
       stdin: Buffer.alloc(257 * 1024).toString('base64url'),
     })
+
     assert.equal(bigStdin.status, 400)
     assert.equal(bigStdin.body.error.details.issues[0].path, '/stdin')
     const ok = await exec({
       command: ['cat'],
       stdin: Buffer.from('from stdin').toString('base64url'),
     })
+
     assert.match(ok.body.output.untrusted.text, /stdin: from stdin/)
   })
 
@@ -225,12 +240,50 @@ describe('exec', () => {
       command: ['sleepless'],
       wait_s: 0,
     })
+
     assert.equal(reply.status, 201)
     assert.equal(reply.body.output, undefined)
     assert.ok(['queued', 'running', 'succeeded'].includes(reply.body.status))
     const later = await api('GET', `/v1/runs/${reply.body.id}?wait_s=5`)
+
     assert.equal(later.body.status, 'succeeded')
     assert.ok(later.body.output.untrusted.text.length > 0)
+  })
+
+  test('deadline_at is when the run is killed for its timeout, and null for a run without one', async () => {
+    const timed = await exec({
+      command: ['echo', 'timed'],
+      timeout_s: 900,
+    })
+    const plain = await exec({
+      command: ['echo', 'plain'],
+    })
+    const read = async (id: string) =>
+      (await api('GET', `/v1/runs/${id}?fields=created_at,started_at,deadline_at`)).body
+    const deadline = (body: any, seconds: number) =>
+      new Date(Date.parse(body.started_at ?? body.created_at) + seconds * 1000).toISOString()
+    const timedRun = await read(timed.body.id)
+    const plainRun = await read(plain.body.id)
+
+    assert.equal(timedRun.deadline_at, deadline(timedRun, 900))
+    assert.equal(plainRun.deadline_at, deadline(plainRun, 1800))
+    const id = newId('run')
+
+    h.db
+      .insert(run)
+      .values({
+        id,
+        service_id: null,
+        sandbox_id: boxId,
+        deployment_id: null,
+        kind: 'one_off',
+        command: ['migrate'],
+        status: 'running',
+        log_ref: `logs/${id}`,
+        tty: false,
+      })
+      .run()
+    assert.equal((await read(id)).deadline_at, null)
   })
 
   test('attach = true returns a queued run with attach_url and the shell reuses the run row', async () => {
@@ -238,6 +291,7 @@ describe('exec', () => {
       command: ['bash'],
       attach: true,
     })
+
     assert.equal(attached.body.status, 'queued')
     assert.equal(attached.body.attach_url, `/v1/runs/${attached.body.id}/attach`)
     assert.equal(attached.body.output, undefined)
@@ -245,6 +299,7 @@ describe('exec', () => {
       user: 'agent',
       cwd: '/home/agent',
     })
+
     assert.equal(shell.status, 201, shell.text)
     assert.deepEqual(
       [shell.body.kind, shell.body.tty, shell.body.sandbox_id, shell.body.status],
@@ -258,14 +313,17 @@ describe('exec', () => {
         ref: 'alpine:3.20',
       },
     })
+
     await waitForSandbox(h, plainBox.id, 'running')
     const alpineShell = await api('POST', `/v1/sandboxes/${plainBox.id}/shells`, {})
+
     assert.deepEqual(alpineShell.body.command, ['/bin/sh'])
     const queued = rows<{ n: number }>(
       h,
       "select count(*) as n from run where id = ? and status = 'queued'",
       shell.body.id,
     )[0]!.n
+
     assert.equal(queued, 1)
   })
 
@@ -273,6 +331,7 @@ describe('exec', () => {
     const box = await createSandbox(h, envId, {
       name: 'busy',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const planted = Array.from(
       {
@@ -280,7 +339,8 @@ describe('exec', () => {
       },
       () => newId('run'),
     )
-    for (const id of planted)
+
+    for (const id of planted) {
       h.db
         .insert(run)
         .values({
@@ -295,6 +355,8 @@ describe('exec', () => {
           tty: false,
         })
         .run()
+    }
+
     const reply = await exec(
       {
         command: ['true'],
@@ -302,6 +364,7 @@ describe('exec', () => {
       h.admin.token,
       box.id,
     )
+
     assert.equal(reply.status, 429)
     assert.equal(reply.body.error.code, 'RATE_LIMITED')
     h.db
@@ -327,6 +390,7 @@ describe('exec', () => {
 
   test('the run list filters by kind and status, and a run is cancellable through the common route', async () => {
     const listed = await api('GET', `/v1/sandboxes/${boxId}/runs?kind=exec&status=succeeded`)
+
     assert.equal(listed.status, 200)
     assert.ok(listed.body.items.length >= 3)
     assert.ok(
@@ -341,21 +405,25 @@ describe('exec', () => {
       })
     ).body
     const cancelled = await api('POST', `/v1/runs/${queued.id}/cancel`)
+
     assert.equal(cancelled.status, 200, cancelled.text)
     assert.equal(cancelled.body.status, 'cancelled')
   })
 
   test('a missing run or sandbox is NOT_FOUND on the shared run paths', async () => {
     const missing = newId('run')
+
     for (const path of [
       `/v1/runs/${missing}`,
       `/v1/runs/${missing}?wait_s=2`,
       `/v1/sandboxes/${newId('sandbox')}/runs`,
     ]) {
       const reply = await api('GET', path)
+
       assert.equal(reply.status, 404, path)
       assert.equal(reply.body.error.code, 'NOT_FOUND')
     }
+
     const queued = (
       await exec({
         command: ['bash'],
@@ -363,6 +431,7 @@ describe('exec', () => {
       })
     ).body
     const waiting = waitForRun(h.db, queued.id, 5, new AbortController().signal)
+
     h.db.delete(run).where(eq(run.id, queued.id)).run()
     await assert.rejects(waiting, {
       code: 'NOT_FOUND',
@@ -377,6 +446,7 @@ describe('exec', () => {
       },
       readToken,
     )
+
     assert.equal(refused.status, 403)
     assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
     assert.equal(
@@ -400,6 +470,7 @@ describe('exec', () => {
     const box = await createSandbox(h, envId, {
       name: 'stopping-runs',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const queued = (
       await exec(
@@ -411,6 +482,7 @@ describe('exec', () => {
         box.id,
       )
     ).body
+
     await api('POST', `/v1/sandboxes/${box.id}/stop`)
     await waitForSandbox(h, box.id, 'stopped')
     assert.equal((await api('GET', `/v1/runs/${queued.id}`)).body.status, 'cancelled')
@@ -432,6 +504,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(projectVars.status, 200, projectVars.text)
   })
 
@@ -460,6 +533,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(reply.status, 200, reply.text)
     assert.deepEqual(reply.body.variables.map((v: any) => v.key).sort(), [
       'GENERATED',
@@ -473,6 +547,7 @@ describe('variables', () => {
       ),
     )
     const full = (await api('GET', `/v1/sandboxes/${boxId}/variables?fields=sandbox_id`)).body.items
+
     assert.ok(full.every((v: any) => v.sandbox_id === boxId))
     const delivery = await station.waitFor(
       () =>
@@ -480,12 +555,14 @@ describe('variables', () => {
       8000,
       'the sandbox delivery',
     )
+
     assert.equal(delivery.purpose, 'sandbox')
     assert.equal(delivery.values.PLAIN, plain)
     assert.equal(delivery.values.OWN_SEALED, sealed)
     assert.equal(delivery.values.GH_TOKEN, secret)
     assert.ok(delivery.values.GENERATED!.length >= 32)
     const listed = await api('GET', `/v1/sandboxes/${boxId}/variables?fields=*`)
+
     assert.equal(listed.status, 200)
     assert.equal(listed.body.items.length, 4)
     assert.ok(listed.body.items.every((v: any) => v.value === null))
@@ -498,8 +575,10 @@ describe('variables', () => {
 
   test('the resolved view shows sources for a project reference and a value only to admin, never for sealed ones', async () => {
     const resolved = (await api('GET', `/v1/sandboxes/${boxId}/variables/resolved`)).body
+
     assert.equal(resolved.sandbox_id, boxId)
     const byKey = Object.fromEntries(resolved.variables.map((v: any) => [v.key, v]))
+
     assert.equal(byKey.PLAIN.value, plain)
     assert.equal(byKey.OWN_SEALED.sealed, true)
     assert.equal(byKey.OWN_SEALED.value, undefined)
@@ -510,9 +589,11 @@ describe('variables', () => {
     const asDeployer = (
       await api('GET', `/v1/sandboxes/${boxId}/variables/resolved`, undefined, deployToken)
     ).body
+
     assert.ok(asDeployer.variables.every((v: any) => v.value === undefined))
     assert.ok(!JSON.stringify(asDeployer).includes(plain))
     const expanded = (await api('GET', `/v1/sandboxes/${boxId}?fields=variables`)).body.variables
+
     assert.ok(expanded.some((v: any) => v.key === 'GH_TOKEN' && v.sealed === true))
     assert.ok(!JSON.stringify(expanded).includes(secret))
   })
@@ -523,6 +604,7 @@ describe('variables', () => {
     ).sandboxes![boxId]!.env_digest
     const deliveries = station.secrets.filter((s) => s.target.sandbox_id === boxId).length
     const next = 'ghp_rotatedsecret9876543210'
+
     assert.equal(
       (
         await api('PATCH', `/v1/projects/alpha/variables`, {
@@ -548,10 +630,12 @@ describe('variables', () => {
       8000,
       'the rotated delivery',
     )
+
     assert.notEqual(delivery.digest, before)
     const changed = (
       (await api('GET', '/v1/events?types=secret.changed&limit=50')).body.items as any[]
     ).filter((e) => e.payload.sandboxes?.includes(boxId))
+
     assert.ok(changed.length > 0, 'secret.changed names the sandbox that reads the value')
     assert.equal(
       rows<{ stale: number }>(h, 'select count(*) as stale from service where stale = 1')[0]!.stale,
@@ -560,6 +644,7 @@ describe('variables', () => {
     const after = await station.waitForGeneration(
       (d) => d.sandboxes?.[boxId]?.env_digest === delivery.digest,
     )
+
     assert.equal(after.sandboxes![boxId]!.env_digest, delivery.digest)
   })
 
@@ -567,13 +652,19 @@ describe('variables', () => {
     const reply = await exec({
       command: ['env'],
     })
+
     assert.equal(reply.status, 201)
     const text = reply.body.output.untrusted.text
+
     assert.ok(!text.includes(plain) || text.includes('[redacted:'))
-    for (const value of [sealed, 'ghp_rotatedsecret9876543210'])
+
+    for (const value of [sealed, 'ghp_rotatedsecret9876543210']) {
       assert.ok(!text.includes(value), `${value} leaked: ${text}`)
+    }
+
     assert.match(text, /\[redacted:OWN_SEALED\]/)
     const logs = await api('GET', `/v1/logs?run=${reply.body.id}&tail=50`)
+
     assert.equal(logs.status, 200, logs.text)
     assert.ok(!logs.text.includes(sealed))
     assert.match(logs.text, /\[redacted:/)
@@ -598,6 +689,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(service.status, 400)
     assert.equal(service.body.error.code, 'VALIDATION_FAILED')
     assert.equal(service.body.error.details.issues[0].path, '/set/0/reference')
@@ -610,6 +702,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(unresolved.status, 422)
     assert.equal(unresolved.body.error.code, 'VARIABLE_UNRESOLVED')
     assert.equal(
@@ -635,11 +728,13 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(ungranted.status, 403)
     assert.equal(ungranted.body.error.code, 'VARIABLE_NOT_GRANTED')
     const variable = (await api('GET', '/v1/global-variables')).body.items.find(
       (v: any) => v.key === 'ORG_KEY',
     )
+
     assert.equal(
       (
         await api('POST', `/v1/variables/${variable.id}/grants`, {
@@ -657,6 +752,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(granted.status, 200, granted.text)
     const deferred = await set({
       set: [
@@ -668,6 +764,7 @@ describe('variables', () => {
       ],
       allow_unresolved: true,
     })
+
     assert.equal(deferred.status, 200, deferred.text)
     assert.equal(
       (
@@ -692,6 +789,7 @@ describe('variables', () => {
       },
       deployToken,
     )
+
     assert.equal(sealedByDeployer.status, 403)
     assert.equal(sealedByDeployer.body.error.code, 'FORBIDDEN_SCOPE')
     assert.equal(
@@ -723,6 +821,7 @@ describe('variables', () => {
       },
       readToken,
     )
+
     assert.equal(asReader.status, 403)
   })
 
@@ -734,6 +833,7 @@ describe('variables', () => {
       },
       start: false,
     })
+
     assert.equal(rows(h, 'select id from variable where sandbox_id = ?', fork.id).length, 0)
     const withVariables = await createSandbox(h, envId, {
       name: 'created-with-variables',
@@ -746,6 +846,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(
       rows(h, 'select id from variable where sandbox_id = ?', withVariables.id).length,
       1,
@@ -760,6 +861,7 @@ describe('variables', () => {
         },
       ],
     })
+
     assert.equal(unresolved.status, 422)
     assert.equal(rows(h, "select id from sandbox where name = 'bad-variables'").length, 0)
     assert.equal((await api('DELETE', `/v1/sandboxes/${withVariables.id}`)).status, 200)
@@ -778,13 +880,16 @@ describe('variables', () => {
 describe('logs, metrics and network', () => {
   test('GET /v1/logs reads the init and runtime log of a sandbox', async () => {
     const init = await api('GET', `/v1/logs?sandbox=${boxId}`)
+
     assert.equal(init.status, 200, init.text)
     assert.equal(init.body.untrusted.lines[0].role, 'init')
     const runtime = await api('GET', `/v1/logs?sandbox=${boxId}&role=runtime`)
+
     assert.equal(runtime.body.untrusted.lines[0].role, 'runtime')
     const sent = station.received
       .filter((m) => m.type === 'logs.query' && (m.body as any).source === 'sandbox')
       .map((m) => m.body as any)
+
     assert.deepEqual(
       sent.map((b) => [b.sandbox_id, b.role]),
       [
@@ -793,17 +898,21 @@ describe('logs, metrics and network', () => {
       ],
     )
     const bad = await api('GET', `/v1/logs?sandbox=${boxId}&role=service`)
+
     assert.equal(bad.status, 400)
     const two = await api('GET', `/v1/logs?sandbox=${boxId}&run=run_01ARZ3NDEKTSV4RRFFQ69G5FAV`)
+
     assert.equal(two.status, 400)
   })
 
   test('metrics, connections and the DNS log come from the station with the sandbox form of each request', async () => {
     const metrics = await api('GET', `/v1/sandboxes/${boxId}/metrics`)
+
     assert.equal(metrics.status, 200, metrics.text)
     assert.equal(metrics.body.sandbox_id, boxId)
     assert.equal(metrics.body.disk_limit_bytes, 21474836480)
     const connections = await api('GET', `/v1/sandboxes/${boxId}/connections?direction=out`)
+
     assert.equal(connections.status, 200, connections.text)
     assert.deepEqual(connections.body.sandbox, {
       id: boxId,
@@ -812,6 +921,7 @@ describe('logs, metrics and network', () => {
     assert.equal(connections.body.refused[0].path, 'domain_not_allowed')
     assert.equal(connections.body.untrusted.source, 'resolver answers')
     const dns = await api('GET', `/v1/sandboxes/${boxId}/dns-log?tail=10`)
+
     assert.equal(dns.status, 200, dns.text)
     assert.equal(dns.body.untrusted.source, 'resolver log')
     assert.equal(
@@ -821,6 +931,7 @@ describe('logs, metrics and network', () => {
     const asked = station.received
       .filter((m) => ['metrics.sample', 'network.sample', 'dns.log'].includes(m.type))
       .map((m) => m.body as any)
+
     assert.ok(asked.some((b) => b.sandbox_ids?.[0] === boxId))
     assert.ok(asked.some((b) => b.sandbox_id === boxId))
   })
@@ -830,6 +941,7 @@ describe('logs, metrics and network', () => {
       name: 'cold-metrics',
       start: false,
     })
+
     assert.equal((await api('GET', `/v1/sandboxes/${cold.id}/metrics`)).status, 404)
     const idle = await startFakeStation(h, 'station-away', {
       sandboxes: {},
@@ -839,9 +951,11 @@ describe('logs, metrics and network', () => {
       station_id: 'station-away',
       start: false,
     })
+
     await idle.close()
     await idle.waitFor(() => !h.deps.stations.isConnected(idle.stationId), 5000, 'disconnect')
     const reply = await api('GET', `/v1/sandboxes/${away.id}/metrics`)
+
     assert.equal(reply.status, 503)
     assert.equal(reply.body.error.code, 'STATION_OFFLINE')
   })

@@ -17,8 +17,8 @@ import (
 	"github.com/harshjv/stationly/go/internal/dispatch"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
+	"github.com/harshjv/stationly/go/internal/sandbox"
 	"github.com/harshjv/stationly/go/internal/sandbox/diskfs"
-	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
 	"github.com/harshjv/stationly/go/internal/secrets"
 )
 
@@ -31,7 +31,7 @@ const (
 type sbxExec struct {
 	runID     string
 	sandboxID string
-	exec      *runsc.Exec
+	exec      sandbox.Process
 	cancelled string
 	timer     *time.Timer
 }
@@ -258,9 +258,8 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 		base = append(base, v.env...)
 	}
 	redactor := s.sandboxRedactor(id, runKnown)
-	spec := runsc.ExecSpec{ID: id, BundleDir: filepath.Join(sandboxBundles, id), Args: b.Command, Env: append(append([]string{}, base...), runEnv...), Cwd: cwd, UID: uid, GID: gid, TTY: tty && rr.Attach, Rows: rr.Rows, Cols: rr.Cols}
-	rt := runsc.At(runsc.LibDir, runsc.StateBase, st.rec.Runsc)
-	ex, err := rt.Exec(context.WithoutCancel(ctx), spec)
+	spec := sandbox.ExecSpec{ID: id, BundleDir: sandboxBundle(id), Args: b.Command, Env: append(append([]string{}, base...), runEnv...), Cwd: cwd, UID: uid, GID: gid, TTY: tty && rr.Attach, Rows: rr.Rows, Cols: rr.Cols}
+	ex, err := s.sbx.rt.Exec(context.WithoutCancel(ctx), st.rec.Runsc, spec)
 	ref := m.ID
 	s.send(protocol.MessageRunAccepted, &ref, accepted)
 	if err != nil {
@@ -305,13 +304,13 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(stdout, ex.Stdout)
+		_, _ = io.Copy(stdout, ex.Stdout())
 	}()
-	if ex.Stderr != nil {
+	if ex.Stderr() != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = io.Copy(stderr, ex.Stderr)
+			_, _ = io.Copy(stderr, ex.Stderr())
 		}()
 	}
 	switch {
@@ -321,14 +320,14 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 				p, eof, ok := att.stdin.pop()
 				switch {
 				case ok:
-					if _, err := ex.Stdin.Write(p); err != nil {
+					if _, err := ex.Stdin().Write(p); err != nil {
 						return
 					}
 					att.stream.Grant(len(p))
 					continue
 				case eof:
 					if !rr.TTY {
-						ex.Stdin.Close()
+						ex.Stdin().Close()
 					}
 					return
 				}
@@ -341,12 +340,12 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 				}
 			}
 		}()
-	case ex.Stdin != nil:
+	case ex.Stdin() != nil:
 		go func() {
 			if len(stdin) > 0 {
-				_, _ = ex.Stdin.Write(stdin)
+				_, _ = ex.Stdin().Write(stdin)
 			}
-			ex.Stdin.Close()
+			ex.Stdin().Close()
 		}()
 	}
 	wg.Wait()

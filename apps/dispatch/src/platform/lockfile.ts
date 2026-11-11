@@ -35,25 +35,33 @@ export const sha256Of = (bytes: string | Buffer) =>
 
 export const parseManifest = (raw: string): ReleaseManifestDoc => {
   const doc = JSON.parse(raw) as unknown
+
   if (!Value.Check(ReleaseManifest, doc)) {
     const first = Value.Errors(ReleaseManifest, doc).First()
+
     throw new Error(
       `release-manifest.json does not match schema 1: ${first?.path ?? '/'} ${first?.message ?? ''}`.trim(),
     )
   }
+
   for (const [name, c] of Object.entries(doc.components)) {
-    if (c.digest === null && c.platforms === null)
+    if (c.digest === null && c.platforms === null) {
       throw new Error(`components.${name} needs a digest or platforms`)
-    if (c.kind === 'image' && (c.digest === null || c.platforms === null))
+    }
+
+    if (c.kind === 'image' && (c.digest === null || c.platforms === null)) {
       throw new Error(
         `components.${name} is an image and needs its index digest and its platform digests`,
       )
+    }
   }
+
   return doc
 }
 
 export const readLockfile = (db: Db): LockfileDoc | null => {
   const value = storedSetting(db, 'platform.lockfile')
+
   return value && Value.Check(Lockfile, value) ? value : null
 }
 
@@ -72,8 +80,12 @@ const platformOf = (arch: string | null | undefined) =>
   arch === 'amd64' || arch === 'arm64' ? (`linux/${arch}` as const) : null
 
 export const pinFor = (c: ReleaseComponentDoc, arch: string | null | undefined): string | null => {
-  if (c.digest !== null) return c.digest
+  if (c.digest !== null) {
+    return c.digest
+  }
+
   const platform = platformOf(arch)
+
   return platform && c.platforms ? (c.platforms[platform] ?? null) : null
 }
 
@@ -83,6 +95,7 @@ export const resolvePins = (
   arch: string | null | undefined,
 ): Pins => {
   const pins: Pins = {}
+
   for (const [name, c] of Object.entries(manifest?.components ?? {})) {
     pins[name] = {
       version: c.version,
@@ -92,6 +105,7 @@ export const resolvePins = (
       origin: 'release',
     }
   }
+
   for (const [name, o] of Object.entries(lockfile?.overrides ?? {})) {
     pins[name] = {
       version: o.version,
@@ -101,11 +115,13 @@ export const resolvePins = (
       origin: 'override',
     }
   }
+
   return pins
 }
 
 export const effectivePins = (db: Db, arch: string | null | undefined): Pins => {
   const lockfile = readLockfile(db)
+
   return resolvePins(releaseFor(db, lockfile)?.manifest ?? null, lockfile, arch)
 }
 
@@ -129,6 +145,7 @@ export const storeRelease = (
   input: { manifestRaw: string; bundle: string; source: string; verifiedBy: string | null },
 ) => {
   const manifest = parseManifest(input.manifestRaw)
+
   JSON.parse(input.bundle)
   const manifest_digest = sha256Of(input.manifestRaw)
   const existing = db
@@ -136,7 +153,11 @@ export const storeRelease = (
     .from(platform_release)
     .where(eq(platform_release.manifest_digest, manifest_digest))
     .get()
-  if (existing) return existing
+
+  if (existing) {
+    return existing
+  }
+
   const row: typeof platform_release.$inferInsert = {
     release: manifest.release,
     channel: manifest.channel,
@@ -147,7 +168,9 @@ export const storeRelease = (
     source: input.source,
     verified_by: input.verifiedBy,
   }
+
   db.insert(platform_release).values(row).run()
+
   return db
     .select()
     .from(platform_release)
@@ -172,12 +195,15 @@ export const recordDispatchComponent = (db: Db, version: string) => {
     .from(component)
     .where(and(isNull(component.station_id), eq(component.name, 'dispatch')))
     .get()
-  if (row) db.update(component).set(values).where(eq(component.id, row.id)).run()
-  else
+
+  if (row) {
+    db.update(component).set(values).where(eq(component.id, row.id)).run()
+  } else {
     db.insert(component)
       .values({
         name: 'dispatch',
         ...values,
       })
       .run()
+  }
 }

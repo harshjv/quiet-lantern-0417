@@ -4,7 +4,6 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,31 +79,16 @@ func (rr *runRecord) phase() protocol.DiagnosisPhase {
 }
 
 func loadRuns(stateDir string) (map[string]*runRecord, error) {
-	dir := filepath.Join(stateDir, runDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(dir)
+	loaded, err := readJSONDir[runRecord](filepath.Join(stateDir, runDir))
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]*runRecord{}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			return nil, err
-		}
-		var rr runRecord
-		if err := json.Unmarshal(b, &rr); err != nil {
-			return nil, err
-		}
+	for _, rr := range loaded {
 		if rr.Detail == nil {
 			rr.Detail = map[string]any{}
 		}
-		out[rr.ID] = &rr
+		out[rr.ID] = rr
 	}
 	return out, nil
 }
@@ -114,9 +98,9 @@ func (s *Station) reportRun(rr *runRecord) {
 		return
 	}
 	if rr.Reported == "" && !rr.Requested {
-		s.emit(protocol.MessageRunCreated, map[string]any{"run": map[string]any{
-			"id": rr.ID, "service_id": rr.ServiceID, "deployment_id": nilIfEmpty(rr.DeploymentID), "kind": rr.Kind, "command": rr.Command,
-			"status": rr.Status, "exit_code": rr.ExitCode, "failure": rr.Failure, "log_ref": rr.LogRef, "started_at": rr.StartedAt, "finished_at": rr.FinishedAt,
+		s.emit(protocol.MessageRunCreated, protocol.RunCreatedBody{Run: protocol.RunRow{
+			Id: rr.ID, ServiceId: rr.ServiceID, DeploymentId: nilIfEmpty(rr.DeploymentID), Kind: rr.Kind, Command: rr.Command,
+			Status: rr.Status, ExitCode: rr.ExitCode, Failure: (*protocol.RunRowFailure)(rr.Failure), LogRef: rr.LogRef, StartedAt: rr.StartedAt, FinishedAt: rr.FinishedAt,
 		}})
 	}
 	if rr.Reported != "" || rr.Requested || rr.terminal() {
@@ -124,7 +108,7 @@ func (s *Station) reportRun(rr *runRecord) {
 		if rr.terminal() {
 			typ = protocol.MessageRunExited
 		}
-		s.emit(typ, map[string]any{"run_id": rr.ID, "status": rr.Status, "exit_code": rr.ExitCode, "started_at": rr.StartedAt, "finished_at": rr.FinishedAt, "failure": rr.Failure})
+		s.emit(typ, protocol.RunStatusBody{RunId: rr.ID, Status: rr.Status, ExitCode: rr.ExitCode, StartedAt: rr.StartedAt, FinishedAt: rr.FinishedAt, Failure: (*protocol.RunStatusBodyFailure)(rr.Failure)})
 	}
 	rr.Reported = rr.Status
 }
@@ -142,12 +126,7 @@ func (s *Station) saveRun(rr *runRecord) {
 	if rr.terminal() {
 		s.finishAttachment(rr)
 	}
-	b, err := json.MarshalIndent(rr, "", "  ")
-	if err != nil {
-		s.log.Error("encode run", "run", rr.ID, "error", err)
-		return
-	}
-	if err := writeAtomic(filepath.Join(s.opts.StateDir, runDir, rr.ID+".json"), b); err != nil {
+	if err := writeJSON(filepath.Join(s.opts.StateDir, runDir, rr.ID+".json"), rr); err != nil {
 		s.log.Error("persist run", "run", rr.ID, "error", err)
 	}
 }

@@ -1,22 +1,26 @@
-import { ArrowDownToLine, Pause, Play } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowDownToLine, CircleAlert, Pause, Play } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorState } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { api, ApiFailure, unwrap, type LogLine } from '@/lib/api'
+import { ApiFailure, type LogLine } from '@/lib/api'
+import { useEventStream } from '@/lib/event-stream'
 import { clock, plural } from '@/lib/format'
+import { firstErrorIndex, logFollowUrl, type LogSelector } from '@/lib/logs'
+import { logsQuery } from '@/lib/queries'
+import { useShortcut } from '@/lib/shortcuts'
+import { highlight } from '@/lib/use-fresh'
 import { cn } from '@/lib/utils'
 
-type Selector =
-  { deployment: string } | { build: string } | { sandbox: string; role: 'init' | 'runtime' }
-
 const maxLines = 5000
-const tail = 500
+const noLines: LogLine[] = []
 const redacted = /(\[redacted(?::[A-Za-z0-9_]+)?\])/
 
 function LogText({ text }: { text: string }) {
   const parts = text.split(redacted)
+
   return (
     <>
       {parts.map((part, i) =>
@@ -35,18 +39,69 @@ function LogText({ text }: { text: string }) {
   )
 }
 
-const queryOf = (selector: Selector): Record<string, string> => {
-  if ('deployment' in selector)
-    return {
-      deployment: selector.deployment,
-    }
-  if ('build' in selector)
-    return {
-      build: selector.build,
-    }
+type ServerError = {
+  code: string
+  explanation: string
+}
+
+function useFollowedLines(url: string | null) {
+  const [lines, setLines] = useState<LogLine[]>([])
+  const [failure, setFailure] = useState<ApiFailure | null>(null)
+  const [linesFrom, setLinesFrom] = useState(url)
+  const buffer = useRef<LogLine[]>([])
+  const frame = useRef(0)
+
+  if (linesFrom !== url) {
+    setLinesFrom(url)
+    setLines([])
+    setFailure(null)
+  }
+
+  useEffect(
+    () => () => {
+      window.cancelAnimationFrame(frame.current)
+      frame.current = 0
+      buffer.current = []
+    },
+    [url],
+  )
+
+  const flush = () => {
+    frame.current = 0
+    const batch = buffer.current.splice(0)
+
+    setLines((prev) => prev.concat(batch).slice(-maxLines))
+  }
+
+  const state = useEventStream<{
+    log: LogLine
+    end: unknown
+    error: ServerError
+  }>(url, {
+    log: (line) => {
+      buffer.current.push(line)
+
+      if (!frame.current) {
+        frame.current = window.requestAnimationFrame(flush)
+      }
+    },
+    end: (_, close) => close(),
+    error: (body, close) => {
+      setFailure(
+        new ApiFailure(503, {
+          code: body.code,
+          explanation: body.explanation,
+          fix: 'The station holds the logs; they stream again once it is reachable.',
+        }),
+      )
+      close()
+    },
+  })
+
   return {
-    sandbox: selector.sandbox,
-    role: selector.role,
+    lines,
+    failure,
+    state,
   }
 }
 
@@ -55,113 +110,78 @@ export function LogViewer({
   follow: followAtMount,
   label,
 }: {
-  selector: Selector
+  selector: LogSelector
   follow: boolean
   label: string
 }) {
   const [follow] = useState(followAtMount)
-  const [lines, setLines] = useState<LogLine[]>([])
-  const [error, setError] = useState<unknown>(null)
-  const [state, setState] = useState<'loading' | 'following' | 'ended' | 'idle'>('loading')
-  const [filter, setFilter] = useState('')
-  const [stick, setStick] = useState(true)
   const [paused, setPaused] = useState(false)
+  const streaming = follow && !paused
+  const tail = useQuery({
+    ...logsQuery(selector),
+    enabled: !streaming,
+  })
+  const followed = useFollowedLines(streaming ? logFollowUrl(selector) : null)
+  const lines = streaming ? followed.lines : (tail.data ?? noLines)
+  const error = streaming ? followed.failure : tail.error
+  const loading = streaming ? followed.state === 'connecting' : tail.isPending
+  const status = loading
+    ? 'Loading'
+    : !streaming
+      ? plural(lines.length, 'line')
+      : followed.state === 'live'
+        ? 'Following new lines'
+        : 'No more lines'
+  const [filter, setFilter] = useState('')
+  const filterInput = useRef<HTMLInputElement>(null)
+
+  useShortcut('filter', () => filterInput.current?.focus())
+  const [stick, setStick] = useState(true)
+  const [jumped, setJumped] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  const key = new URLSearchParams(queryOf(selector)).toString()
+  const firstError = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setLines([])
-    setError(null)
-    setState('loading')
-    if (!follow || paused) {
-      let cancelled = false
-      unwrap(
-        api.v1.logs.get({
-          query: {
-            ...Object.fromEntries(new URLSearchParams(key)),
-            tail,
-          },
-        }),
-      )
-        .then((page) => {
-          if (cancelled) return
-          setLines(page.untrusted.lines)
-          setState('idle')
-        })
-        .catch((failure) => !cancelled && (setError(failure), setState('idle')))
-      return () => {
-        cancelled = true
-      }
+    if (stick && box.current) {
+      box.current.scrollTop = box.current.scrollHeight
     }
-    const params = new URLSearchParams({
-      ...Object.fromEntries(new URLSearchParams(key)),
-      tail: String(tail),
-      follow: 'true',
-    })
-    const source = new EventSource(`/v1/logs?${params}`)
-    const buffer: LogLine[] = []
-    let frame = 0
-    const flush = () => {
-      frame = 0
-      const batch = buffer.splice(0)
-      setLines((prev) => {
-        const next = prev.concat(batch)
-        return next.length > maxLines ? next.slice(next.length - maxLines) : next
-      })
-    }
-    source.addEventListener('log', (message) => {
-      buffer.push(JSON.parse((message as MessageEvent<string>).data) as LogLine)
-      if (!frame) frame = window.requestAnimationFrame(flush)
-    })
-    source.addEventListener('end', () => {
-      source.close()
-      setState('ended')
-    })
-    source.addEventListener('error', (message) => {
-      if (message instanceof MessageEvent && typeof message.data === 'string') {
-        const body = JSON.parse(message.data) as { code: string; explanation: string }
-        setError(
-          new ApiFailure(503, {
-            code: body.code,
-            explanation: body.explanation,
-            fix: 'The station holds the logs; they stream again once it is reachable.',
-          }),
-        )
-        source.close()
-        setState('ended')
-      }
-    })
-    source.onopen = () => setState('following')
-    return () => {
-      source.close()
-      if (frame) window.cancelAnimationFrame(frame)
-    }
-  }, [key, follow, paused])
-
-  useEffect(() => {
-    if (stick && box.current) box.current.scrollTop = box.current.scrollHeight
   }, [lines, stick])
 
   const shown = useMemo(() => {
     const needle = filter.trim().toLowerCase()
+
     return needle ? lines.filter((line) => line.text.toLowerCase().includes(needle)) : lines
   }, [lines, filter])
+  const errorAt = firstErrorIndex(shown)
+  const jumpToError = () => {
+    setStick(false)
+    setJumped(true)
+    firstError.current?.scrollIntoView({
+      block: 'center',
+    })
+  }
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <span className="text-sm font-medium">{label}</span>
         <span className="text-xs text-muted-foreground" aria-live="polite">
-          {state === 'following'
-            ? 'Following new lines'
-            : state === 'loading'
-              ? 'Loading'
-              : state === 'ended'
-                ? 'No more lines'
-                : plural(lines.length, 'line')}
+          {status}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
+          {errorAt >= 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={jumpToError}
+            >
+              <CircleAlert /> First error
+            </Button>
+          )}
           <Input
+            ref={filterInput}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter lines"
@@ -203,13 +223,14 @@ export function LogViewer({
           tabIndex={0}
           onScroll={(e) => {
             const el = e.currentTarget
+
             setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 24)
           }}
           className="h-[26rem] overflow-auto bg-zinc-50 py-2 font-mono text-[0.75rem] leading-5 dark:bg-zinc-950"
         >
           {shown.length === 0 ? (
             <p className="px-3 text-muted-foreground">
-              {state === 'loading'
+              {loading
                 ? 'Loading lines…'
                 : filter
                   ? 'No lines match the filter.'
@@ -219,7 +240,11 @@ export function LogViewer({
             shown.map((line, i) => (
               <div
                 key={`${line.cursor ?? ''}-${i}`}
-                className="flex gap-3 px-3 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50"
+                ref={i === errorAt ? firstError : undefined}
+                className={cn(
+                  'flex gap-3 px-3 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50',
+                  i === errorAt && jumped && highlight,
+                )}
               >
                 <span className="shrink-0 text-muted-foreground tabular-nums select-none">
                   {clock(line.at)}

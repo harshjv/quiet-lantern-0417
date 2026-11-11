@@ -35,7 +35,7 @@ export const inEnvironment = (environmentId: string | null) =>
     : eq(secret_value.environment_id, environmentId)
 
 const refuseReentry = (row: SecretValueRow) => {
-  if (row.needs_reentry)
+  if (row.needs_reentry) {
     throw new SecretsError(
       'SECRETS_NEED_REENTRY',
       `secret_value ${row.id} must be re-entered after a restore`,
@@ -43,6 +43,8 @@ const refuseReentry = (row: SecretValueRow) => {
         secret_value_id: row.id,
       },
     )
+  }
+
   return row
 }
 
@@ -65,8 +67,15 @@ export const headValue = (
     .orderBy(desc(secret_value.version))
     .limit(1)
     .get()
-  if (!row) return undefined
-  if (reentry === 'unset' && row.needs_reentry) return undefined
+
+  if (!row) {
+    return undefined
+  }
+
+  if (reentry === 'unset' && row.needs_reentry) {
+    return undefined
+  }
+
   return refuseReentry(row)
 }
 

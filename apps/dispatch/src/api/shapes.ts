@@ -37,8 +37,10 @@ import {
   ingressValues,
   injectionValues,
   JsonObject,
+  networkDirectionValues,
   networkPathIds,
   networkPeerKinds,
+  networkProtocolValues,
   networkVerdicts,
   notificationChannelKindValues,
   notificationChannelStatusValues,
@@ -56,6 +58,9 @@ import {
   sandboxEgressModeValues,
   SandboxLimits as SandboxLimitsSchema,
   sandboxNetworkValues,
+  SandboxRuntimeAdvice as SandboxRuntimeAdviceSchema,
+  SandboxRuntime as SandboxRuntimeSchema,
+  sandboxRuntimeValues,
   SandboxSize as SandboxSizeSchema,
   sandboxSnapshotStatusValues,
   sandboxSourceStateValues,
@@ -84,6 +89,7 @@ import {
   volumeSnapshotStatusValues,
   volumeSnapshotTriggerValues,
   volumeStatusValues,
+  workspaceAgentValues,
 } from '@stationly/protocol'
 
 import { explanationVerdicts, hopNames, hopStatuses } from '../net/explain-values.ts'
@@ -119,10 +125,14 @@ export type Ref<T extends TSchema> = TUnsafe<Static<T>> & { readonly [Definition
 const definitions: Record<string, TSchema> = {}
 
 export const component = <T extends TSchema>(name: string, schema: T): Ref<T> => {
-  if (name in definitions) throw new Error(`OpenAPI component ${name} is registered twice`)
+  if (name in definitions) {
+    throw new Error(`OpenAPI component ${name} is registered twice`)
+  }
+
   definitions[name] = {
     ...schema,
   }
+
   return Object.assign(Type.Ref(`#/components/schemas/${name}`), {
     [Definition]: schema,
   })
@@ -183,6 +193,8 @@ const Schedule = component('Schedule', ScheduleSchema)
 const Resources = component('Resources', ResourcesSchema)
 
 const StationCapabilities = component('StationCapabilities', StationCapabilitiesSchema)
+const SandboxRuntimeAdvice = component('SandboxRuntimeAdvice', SandboxRuntimeAdviceSchema)
+const SandboxRuntime = component('SandboxRuntime', SandboxRuntimeSchema)
 
 const BaseImage = component('BaseImage', BaseImageSchema)
 
@@ -1045,6 +1057,8 @@ export const Station = component(
       public_address: NStr,
       sandbox_subnet: NStr,
       sandbox_limits: component('SandboxLimits', SandboxLimitsSchema),
+      default_sandbox_runtime: Nullable(SandboxRuntime),
+      sandbox_runtime_advice: Nullable(SandboxRuntimeAdvice),
       sandbox_memory: Type.Object({
         limit: Nullable(Int),
         used: Int,
@@ -1164,6 +1178,7 @@ export const Run = component(
       log_ref: Str,
       started_at: NTime,
       finished_at: NTime,
+      deadline_at: NTime,
       failure: Nullable(Diagnosis),
       output: SandboxRunOutput,
     },
@@ -1570,7 +1585,7 @@ export const NetworkConnections = component(
       connections: Type.Array(
         Type.Object(
           {
-            direction: StringEnum(['in', 'out']),
+            direction: StringEnum(networkDirectionValues),
             peer: Type.Object(
               {
                 kind: StringEnum(networkPeerKinds),
@@ -1586,7 +1601,7 @@ export const NetworkConnections = component(
               },
             ),
             port: Int,
-            protocol: StringEnum(['tcp', 'udp']),
+            protocol: StringEnum(networkProtocolValues),
             flows: Int,
             established: Int,
             bytes_out: NInt,
@@ -1850,6 +1865,21 @@ const SandboxForkedFrom = Type.Object(
   },
 )
 
+const SandboxWorkspace = Type.Object(
+  {
+    agent: StringEnum(workspaceAgentValues),
+    repository: Str,
+    branch: NStr,
+    path: Str,
+    level: StringEnum(tokenLevelValues),
+    token_id: Str,
+    setup_run_id: Str,
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
 export const SandboxSnapshot = component(
   'SandboxSnapshot',
   selectable(
@@ -1860,6 +1890,7 @@ export const SandboxSnapshot = component(
       environment_id: Str,
       station_id: Str,
       name: NStr,
+      runtime: StringEnum(sandboxRuntimeValues),
       status: StringEnum(sandboxSnapshotStatusValues),
       source_state: StringEnum(sandboxSourceStateValues),
       taken_at: NTime,
@@ -1875,6 +1906,7 @@ export const SandboxSnapshot = component(
       'environment_id',
       'station_id',
       'name',
+      'runtime',
       'status',
       'source_state',
       'taken_at',
@@ -1922,15 +1954,17 @@ export const Sandbox = component(
       desired_state: StringEnum(desiredStateValues),
       image: SandboxImage,
       size: SandboxSize,
+      runtime: StringEnum(sandboxRuntimeValues),
       network: StringEnum(sandboxNetworkValues),
       docker: Bool,
       egress: SandboxEgressView,
-      ttl_s: Int,
+      ttl_s: NInt,
       stop_at: NTime,
       delete_at: NTime,
       address: NStr,
       disk_used_bytes: Int,
       forked_from: Nullable(SandboxForkedFrom),
+      workspace: Nullable(SandboxWorkspace),
       command: Nullable(Type.Array(Str)),
       exit_code: NInt,
       failure: Nullable(Diagnosis),
@@ -1951,6 +1985,7 @@ export const Sandbox = component(
       'desired_state',
       'image',
       'size',
+      'runtime',
       'network',
       'docker',
       'egress',
@@ -1960,6 +1995,7 @@ export const Sandbox = component(
       'address',
       'disk_used_bytes',
       'forked_from',
+      'workspace',
       'created_at',
     ],
   ),

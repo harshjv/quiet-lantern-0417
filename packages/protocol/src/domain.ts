@@ -136,10 +136,14 @@ export const sandboxMemoryStep = 268435456
 export const sandboxMemoryMinimum = 536870912
 
 export const fitSandboxMemory = (free: number | null) => {
-  if (free === null) return sandboxSizeDefaults.memory_bytes
+  if (free === null) {
+    return sandboxSizeDefaults.memory_bytes
+  }
+
   const fitted = Math.min(
     sandboxSizeDefaults.memory_bytes,
     Math.floor(free / sandboxMemoryStep) * sandboxMemoryStep,
   )
+
   return fitted >= sandboxMemoryMinimum ? fitted : sandboxSizeDefaults.memory_bytes
 }

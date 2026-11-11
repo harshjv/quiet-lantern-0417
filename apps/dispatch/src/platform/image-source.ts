@@ -40,12 +40,14 @@ const repositoryPattern =
   /^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)*$/
 const tagPattern = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/
 const digestPattern = /^sha256:[0-9a-f]{64}$/
+
 export const pinnedPattern = /^[^@]+@sha256:[0-9a-f]{64}$/
 const maxManifestBytes = 4 * 1024 * 1024
 const maxConfigBytes = 1024 * 1024
 
 export const pinnedRef = (ref: string, digest: string) => {
   const r = parseReference(ref)
+
   return `${r.registry}/${r.repository}@${digest}`
 }
 
@@ -75,6 +77,7 @@ const ImageManifest = Type.Object({
 const parseManifest = (body: Buffer) => {
   try {
     const doc: unknown = JSON.parse(body.toString('utf8'))
+
     return Value.Check(ImageManifest, doc) ? doc : null
   } catch {
     return null
@@ -82,9 +85,13 @@ const parseManifest = (body: Buffer) => {
 }
 
 const registryCodes = (res: RegistryResponse) => {
-  if (!res.body) return []
+  if (!res.body) {
+    return []
+  }
+
   try {
     const doc = JSON.parse(res.body.toString('utf8')) as { errors?: { code?: string }[] }
+
     return (doc.errors ?? []).map((e) => e.code ?? '').filter(Boolean)
   } catch {
     return []
@@ -107,7 +114,8 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
     hosts: hostsOf(res),
     path,
   }
-  if (res.status === 0 || res.status >= 500 || res.status === 508)
+
+  if (res.status === 0 || res.status >= 500 || res.status === 508) {
     return fail(
       'SOURCE_UNREACHABLE',
       `Dispatch could not read ${shown} from ${r.apiHost}${res.error ? `: ${res.error}` : ` (HTTP ${res.status})`}.`,
@@ -117,8 +125,11 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
         reason: 'unreachable',
       },
     )
+  }
+
   if (res.status === 429 || codes.includes('TOOMANYREQUESTS')) {
     const retry = Number(res.headers.get('retry-after'))
+
     return fail(
       'SOURCE_UNREACHABLE',
       `${r.apiHost} refused the lookup of ${shown} with a rate limit.`,
@@ -134,12 +145,13 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
       },
     )
   }
+
   if (
     res.status === 401 ||
     res.status === 403 ||
     codes.includes('UNAUTHORIZED') ||
     codes.includes('DENIED')
-  )
+  ) {
     return fail(
       'SOURCE_UNREACHABLE',
       `${r.apiHost} refused anonymous access to ${r.repository}: the repository is private or does not exist (registries answer both the same way).`,
@@ -149,7 +161,9 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
         reason: 'auth_required',
       },
     )
-  if (res.status === 404 && codes.includes('NAME_UNKNOWN'))
+  }
+
+  if (res.status === 404 && codes.includes('NAME_UNKNOWN')) {
     return fail(
       'SOURCE_UNREACHABLE',
       `${r.registry} has no repository ${r.repository}.`,
@@ -159,7 +173,9 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
         reason: 'repository_not_found',
       },
     )
-  if (res.status === 404)
+  }
+
+  if (res.status === 404) {
     return fail(
       'SOURCE_UNREACHABLE',
       r.digest
@@ -173,6 +189,8 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
         reason: 'not_found',
       },
     )
+  }
+
   return fail(
     'SOURCE_UNREACHABLE',
     `${r.apiHost} answered HTTP ${res.status} for ${shown}.`,
@@ -186,22 +204,29 @@ const refuse = (r: Reference, input: string, res: RegistryResponse, path: string
 
 const validate = (r: Reference, path: string) => {
   const issues: { path: string; message: string }[] = []
-  if (!repositoryPattern.test(r.repository))
+
+  if (!repositoryPattern.test(r.repository)) {
     issues.push({
       path,
       message: `${r.repository} is not a valid repository name (lowercase letters, digits and separators)`,
     })
-  if (r.tag !== null && !tagPattern.test(r.tag))
+  }
+
+  if (r.tag !== null && !tagPattern.test(r.tag)) {
     issues.push({
       path,
       message: `${r.tag} is not a valid tag`,
     })
-  if (r.digest !== null && !digestPattern.test(r.digest))
+  }
+
+  if (r.digest !== null && !digestPattern.test(r.digest)) {
     issues.push({
       path,
       message: `${r.digest} is not a sha256 digest`,
     })
-  if (issues.length)
+  }
+
+  if (issues.length) {
     fail(
       'VALIDATION_FAILED',
       issues.map((i) => `${i.path}: ${i.message}`).join('; '),
@@ -210,24 +235,34 @@ const validate = (r: Reference, path: string) => {
         issues,
       },
     )
+  }
 }
 
 const configPlatform = async (r: Reference, manifest: { config?: Descriptor }) => {
   const digest = manifest.config?.digest
-  if (!digest) return []
+
+  if (!digest) {
+    return []
+  }
+
   const res = await registryRequest(r, `blobs/${digest}`, {
     method: 'GET',
     accept: '*/*',
     maxBytes: maxConfigBytes,
     timeoutMs: 15_000,
   })
-  if (res.status !== 200 || !res.body) return []
+
+  if (res.status !== 200 || !res.body) {
+    return []
+  }
+
   try {
     const config = JSON.parse(res.body.toString('utf8')) as {
       os?: string
       architecture?: string
       variant?: string
     }
+
     return config.os && config.architecture
       ? [[config.os, config.architecture, config.variant].filter(Boolean).join('/')]
       : []
@@ -242,6 +277,7 @@ export const resolveImage = async (
   path = '/source/ref',
 ): Promise<Resolution> => {
   const r = parseReference(input.trim())
+
   validate(r, path)
   const res = await registryRequest(r, `manifests/${r.digest ?? r.tag ?? 'latest'}`, {
     method: 'GET',
@@ -250,10 +286,15 @@ export const resolveImage = async (
     timeoutMs: 15_000,
     errorBody: true,
   })
-  if (res.status !== 200 || !res.body) return refuse(r, input, res, path)
+
+  if (res.status !== 200 || !res.body) {
+    return refuse(r, input, res, path)
+  }
+
   const computed = `sha256:${createHash('sha256').update(res.body).digest('hex')}`
   const announced = res.headers.get('docker-content-digest')
-  if ((announced && announced !== computed) || (r.digest && r.digest !== computed))
+
+  if ((announced && announced !== computed) || (r.digest && r.digest !== computed)) {
     fail(
       'SOURCE_UNREACHABLE',
       `${displayRef(r)} returned a manifest whose sha256 is ${computed}, not ${r.digest ?? announced}.`,
@@ -267,8 +308,11 @@ export const resolveImage = async (
         path,
       },
     )
+  }
+
   const doc = parseManifest(res.body)
-  if (!doc)
+
+  if (!doc) {
     return fail(
       'SOURCE_UNREACHABLE',
       `${displayRef(r)} returned a manifest that is not JSON.`,
@@ -279,10 +323,13 @@ export const resolveImage = async (
         path,
       },
     )
+  }
+
   const mediaType =
     (res.headers.get('content-type') ?? '').split(';')[0]!.trim() || doc.mediaType || null
   const isIndex = (mediaType !== null && indexTypes.has(mediaType)) || Array.isArray(doc.manifests)
-  if (!isIndex && mediaType !== null && !imageTypes.has(mediaType) && !doc.config)
+
+  if (!isIndex && mediaType !== null && !imageTypes.has(mediaType) && !doc.config) {
     fail(
       'SOURCE_UNREACHABLE',
       `${displayRef(r)} is a ${mediaType}, which is not a runnable image.`,
@@ -294,6 +341,8 @@ export const resolveImage = async (
         path,
       },
     )
+  }
+
   const platforms = isIndex
     ? [
         ...new Set(
@@ -309,11 +358,12 @@ export const resolveImage = async (
         ),
       ]
     : await configPlatform(r, doc)
+
   if (
     arch &&
     platforms.length &&
     !platforms.some((p) => p === `linux/${arch}` || p.startsWith(`linux/${arch}/`))
-  )
+  ) {
     fail(
       'STATION_CAPABILITY_MISSING',
       `${displayRef(r)} has no linux/${arch} image; it is published for ${platforms.join(', ')}.`,
@@ -327,6 +377,8 @@ export const resolveImage = async (
         path,
       },
     )
+  }
+
   return {
     ref: input,
     digest: computed,
@@ -338,7 +390,10 @@ export const resolveImage = async (
 }
 
 export const stationArch = (db: Db, stationId: string | null | undefined) => {
-  if (!stationId) return null
+  if (!stationId) {
+    return null
+  }
+
   return (
     db
       .select({
@@ -360,12 +415,13 @@ export const pinImageSource = async (
   path = '/source/ref',
 ): Promise<Pinned> => {
   const before = prior as Partial<ImageSource> | null | undefined
+
   if (
     before?.type === 'image' &&
     before.ref === source.ref &&
     typeof before.digest === 'string' &&
     digestPattern.test(before.digest)
-  )
+  ) {
     return {
       source: {
         type: 'image',
@@ -374,7 +430,10 @@ export const pinImageSource = async (
       },
       resolution: null,
     }
+  }
+
   const resolution = await resolveImage(source.ref, stationArch(db, stationId), path)
+
   return {
     source: {
       type: 'image',
@@ -388,6 +447,7 @@ export const pinImageSource = async (
 export const pinnedWarning = (resolution: Resolution) => {
   const r = parseReference(resolution.ref)
   const tagged = r.digest === null
+
   return {
     code: 'IMAGE_PINNED',
     explanation: tagged

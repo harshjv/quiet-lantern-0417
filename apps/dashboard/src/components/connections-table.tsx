@@ -44,6 +44,7 @@ export function ConnectionsTable({
   empty: ReactNode
 }) {
   const port = cn('tabular-nums', live && 'hidden sm:table-cell')
+
   return (
     <TableFrame caption={caption}>
       <TableHeader>
@@ -62,6 +63,7 @@ export function ConnectionsTable({
         {rows.length === 0 && <EmptyRow columns={live ? 8 : 6}>{empty}</EmptyRow>}
         {rows.map(({ key, service, names, connection: c }) => {
           const Arrow = c.direction === 'in' ? ArrowDownLeft : ArrowUpRight
+
           return (
             <TableRow key={key}>
               {live && <TableCell>{service}</TableCell>}

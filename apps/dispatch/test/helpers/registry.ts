@@ -26,7 +26,9 @@ export class FakeRegistry {
       (input: string | URL | Request, init?: RequestInit) =>
         registry.handle(new Request(input, init)),
     )
+
     registry.restoreFetch = () => stub.mock.restore()
+
     return registry
   }
 
@@ -42,6 +44,7 @@ export class FakeRegistry {
       nonce: ++this.counter,
       manifests: platforms.map((p, i) => {
         const [os, architecture] = p.split('/')
+
         return {
           mediaType: 'application/vnd.oci.image.manifest.v1+json',
           digest: `sha256:${String(i + 1).repeat(64)}`,
@@ -59,13 +62,16 @@ export class FakeRegistry {
       status: 200,
     }
     const digest = sha(body)
+
     this.tags.set(`${repository}:${tag}`, entry)
     this.digests.set(`${repository}@${digest}`, entry)
+
     return digest
   }
 
   fail(reference: string, status: number, body?: unknown, headers?: Record<string, string>) {
     const [repository, tag] = split(reference)
+
     this.failures.set(`${repository}:${tag}`, {
       status,
       body,
@@ -83,23 +89,31 @@ export class FakeRegistry {
 
   private handle(request: Request) {
     const url = new URL(request.url)
+
     this.requests.push({
       host: url.host,
       path: url.pathname,
       method: request.method,
     })
-    if (url.host !== 'registry-1.docker.io' && !url.host.endsWith('registry.test'))
+
+    if (url.host !== 'registry-1.docker.io' && !url.host.endsWith('registry.test')) {
       return Promise.reject(new Error(`the test registry does not serve ${url.host}`))
+    }
+
     const match = /^\/v2\/(.+)\/manifests\/(.+)$/.exec(url.pathname)
-    if (!match)
+
+    if (!match) {
       return Promise.resolve(
         new Response('{}', {
           status: 404,
         }),
       )
+    }
+
     const [, repository, reference] = match as unknown as [string, string, string]
     const failure = this.failures.get(`${repository}:${reference}`)
-    if (failure)
+
+    if (failure) {
       return Promise.resolve(
         new Response(
           JSON.stringify(
@@ -115,10 +129,13 @@ export class FakeRegistry {
           },
         ),
       )
+    }
+
     const entry = reference.startsWith('sha256:')
       ? this.digests.get(`${repository}@${reference}`)
       : this.tags.get(`${repository}:${reference}`)
-    if (!entry)
+
+    if (!entry) {
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -133,6 +150,8 @@ export class FakeRegistry {
           },
         ),
       )
+    }
+
     return Promise.resolve(
       new Response(entry.body, {
         status: 200,
@@ -147,9 +166,14 @@ export class FakeRegistry {
 
 const split = (reference: string) => {
   const at = reference.indexOf('@')
-  if (at >= 0) return [qualify(reference.slice(0, at)), reference.slice(at + 1)] as const
+
+  if (at >= 0) {
+    return [qualify(reference.slice(0, at)), reference.slice(at + 1)] as const
+  }
+
   const colon = reference.lastIndexOf(':')
   const slash = reference.lastIndexOf('/')
+
   return colon > slash
     ? ([qualify(reference.slice(0, colon)), reference.slice(colon + 1)] as const)
     : ([qualify(reference), 'latest'] as const)

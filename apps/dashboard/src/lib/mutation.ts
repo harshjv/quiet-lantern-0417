@@ -26,10 +26,12 @@ const toastWarnings = (body: unknown) => {
     body && typeof body === 'object' && 'warnings' in body && Array.isArray(body.warnings)
       ? (body.warnings as Warning[])
       : []
-  for (const warning of warnings)
+
+  for (const warning of warnings) {
     toast.warning(warning.explanation, {
       description: warning.fix,
     })
+  }
 }
 
 const split = (message: Message) =>
@@ -57,25 +59,40 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
       options.optimistic ? applyOptimistic(client, options.optimistic(vars)) : undefined,
     onSuccess: (result, vars, snapshot, { client }) => {
       if (result.staged) {
-        if (snapshot) rollback(client, snapshot)
+        if (snapshot) {
+          rollback(client, snapshot)
+        }
+
         toastStaged(navigate, result.body.id, options.staged?.(vars))
       } else {
         write(client, options.seed?.(result.body as Body<R>, vars) ?? [])
         const message = options.success?.(result.body as Body<R>, vars)
+
         if (message) {
           const { title, description } = split(message)
+
           toast.success(title, {
             description,
           })
         }
+
         toastWarnings(result.body)
       }
+
       options.onSuccess?.(result, vars)
     },
     onError: (failure, vars, snapshot, { client }) => {
-      if (snapshot) rollback(client, snapshot)
-      if (options.intercept?.(failure, vars)) return
-      if (options.failure) toastFailure(options.failure(vars), failure)
+      if (snapshot) {
+        rollback(client, snapshot)
+      }
+
+      if (options.intercept?.(failure, vars)) {
+        return
+      }
+
+      if (options.failure) {
+        toastFailure(options.failure(vars), failure)
+      }
     },
     onSettled: (result, _failure, _vars, _snapshot, { client }) =>
       invalidateGroups(client, [
@@ -83,6 +100,7 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
         ...(result?.staged ? (['staged'] as const) : []),
       ]),
   })
+
   return {
     ...mutation,
     errorText: mutation.error && !options.failure ? failureText(mutation.error) : null,

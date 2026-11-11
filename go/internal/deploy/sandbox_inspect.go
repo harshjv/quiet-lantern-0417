@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"path/filepath"
 	"time"
 
 	mdns "github.com/miekg/dns"
@@ -19,7 +18,7 @@ import (
 	"github.com/harshjv/stationly/go/internal/millis"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
+	"github.com/harshjv/stationly/go/internal/sandbox"
 )
 
 const (
@@ -32,14 +31,13 @@ const sandboxListenScript = `for f in tcp tcp6 udp udp6; do echo "@@$f"; cat /pr
 func (s *Station) sandboxListening(ctx context.Context, t netTarget, port uint16, proto string) ([]netns.Socket, error) {
 	ctx, cancel := context.WithTimeout(ctx, sandboxListenTimeout)
 	defer cancel()
-	rt := runsc.At(runsc.LibDir, runsc.StateBase, t.runsc)
-	ex, err := rt.Exec(ctx, runsc.ExecSpec{ID: t.serviceID, BundleDir: filepath.Join(sandboxBundles, t.serviceID), Args: []string{"/bin/sh", "-c", sandboxListenScript}, Cwd: "/"})
+	ex, err := s.sbx.rt.Exec(ctx, t.runsc, sandbox.ExecSpec{ID: t.serviceID, BundleDir: sandboxBundle(t.serviceID), Args: []string{"/bin/sh", "-c", sandboxListenScript}, Cwd: "/"})
 	if err != nil {
 		return nil, err
 	}
-	ex.Stdin.Close()
-	go func() { _, _ = io.Copy(io.Discard, ex.Stderr) }()
-	out, readErr := io.ReadAll(io.LimitReader(ex.Stdout, sandboxListenMax))
+	ex.Stdin().Close()
+	go func() { _, _ = io.Copy(io.Discard, ex.Stderr()) }()
+	out, readErr := io.ReadAll(io.LimitReader(ex.Stdout(), sandboxListenMax))
 	if ctx.Err() != nil || readErr != nil {
 		_ = ex.Kill()
 	}

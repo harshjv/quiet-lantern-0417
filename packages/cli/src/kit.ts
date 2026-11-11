@@ -1,15 +1,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
+
+import type { KyInstance } from 'ky'
 
 import { createApiClient, type ApiClient } from '@stationly/api-client'
-import { idPrefixes, tokenLevelValues, type IdEntity } from '@stationly/protocol'
+import { idPrefixes, type IdEntity } from '@stationly/protocol'
 
 import { currentInstance, normalizeInstance, readCredentials, type Credentials } from './config.ts'
 import { apiUrlEnv, env, tokenEnv, version } from './env.ts'
-import { apiFailure, DryRun, Exit, notFound, notLoggedIn, unreachable } from './errors.ts'
-import { acrossOutageOnce } from './outage.ts'
+import { apiFailure, notFound, notLoggedIn } from './errors.ts'
+import { createHttp, waitingHttp } from './http.ts'
 import { need } from './prompt.ts'
-import { proofFor } from './proof.ts'
 
 export type Globals = {
   json?: boolean
@@ -36,7 +38,10 @@ const readContext = async (): Promise<Context> => {
   try {
     return JSON.parse(await readFile(contextPath(), 'utf8')) as Context
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {}
+    }
+
     throw error
   }
 }
@@ -46,39 +51,8 @@ export const writeContext = async (context: Context) => {
     recursive: true,
   })
   await writeFile(contextPath(), `${JSON.stringify(context, null, 2)}\n`)
+
   return contextPath()
-}
-
-const redactSealed = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(redactSealed)
-  if (value === null || typeof value !== 'object') return value
-  const object = value as Record<string, unknown>
-  const redacted = Object.fromEntries(Object.entries(object).map(([k, v]) => [k, redactSealed(v)]))
-  if (object.kind === 'sealed' && typeof object.value === 'string')
-    redacted.value = `[sealed, ${object.value.length} characters, not shown]`
-  return redacted
-}
-
-const describeRequest = (url: string, init: RequestInit | undefined) => {
-  const headers = Object.fromEntries(new Headers(init?.headers).entries())
-  if (headers.authorization) headers.authorization = 'Bearer [redacted]'
-  if (headers.dpop) headers.dpop = '[redacted]'
-  const body =
-    typeof init?.body === 'string'
-      ? (() => {
-          try {
-            return redactSealed(JSON.parse(init.body))
-          } catch {
-            return init.body
-          }
-        })()
-      : (init?.body ?? null)
-  return {
-    method: init?.method ?? 'GET',
-    url,
-    headers,
-    body,
-  }
 }
 
 export type Selection = {
@@ -88,18 +62,20 @@ export type Selection = {
   sandbox?: string
 }
 
-export type Run = {
+export type Client = { http: KyInstance; api: ApiClient }
+
+export type Run = Client & {
   globals: Globals
   selection: Selection
   credentials: Credentials
   userAgent: string
-  api: ApiClient
-  request: (path: string, init: RequestInit) => Promise<Response>
+  waiting: (deadline?: number) => Client
 }
 
 export const resolveInstance = async (globals: Globals) => {
   const context = await readContext()
   const chosen = globals.instance ?? env[apiUrlEnv] ?? context.instance ?? (await currentInstance())
+
   return {
     instance: chosen ? normalizeInstance(chosen) : null,
     context,
@@ -119,37 +95,32 @@ export const tokenCredentials = (instance: string, token: string): Credentials =
 export const connect = async (globals: Globals): Promise<Run> => {
   const { instance, context } = await resolveInstance(globals)
   const envToken = env[tokenEnv]
+
   if (envToken) {
-    if (!instance) throw notLoggedIn(null, `Set ${apiUrlEnv} or pass --instance with ${tokenEnv}.`)
+    if (!instance) {
+      throw notLoggedIn(null, `Set ${apiUrlEnv} or pass --instance with ${tokenEnv}.`)
+    }
+
     return connectWith(globals, tokenCredentials(instance, envToken), context)
   }
-  if (!instance) throw notLoggedIn(null)
+
+  if (!instance) {
+    throw notLoggedIn(null)
+  }
+
   const credentials = await readCredentials(instance)
-  if (!credentials) throw notLoggedIn(instance)
+
+  if (!credentials) {
+    throw notLoggedIn(instance)
+  }
+
   return connectWith(globals, credentials, context)
 }
 
-export const proofHeaders = (
-  credentials: Credentials,
-  method: string,
-  url: string,
-): Record<string, string> =>
-  credentials.kind === 'session' && credentials.proof_key
-    ? {
-        dpop: proofFor(credentials.proof_key, method, url, credentials.token),
-      }
-    : {}
-
-export const credentialHeaders = (
-  credentials: Credentials,
-  method: string,
-  url: string,
-): Record<string, string> => ({
-  authorization: `Bearer ${credentials.token}`,
-  ...proofHeaders(credentials, method, url),
+const clientOf = (instance: string, http: KyInstance): Client => ({
+  http,
+  api: createApiClient(instance, (input, init) => http(input, init)),
 })
-
-const mutating = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 export const connectWith = (
   globals: Globals,
@@ -157,29 +128,16 @@ export const connectWith = (
   context: Context = {},
   agent = userAgent,
 ): Run => {
-  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input instanceof Request ? input.url : input)
-    const method = (init?.method ?? 'GET').toUpperCase()
-    if (globals.dryRun && method !== 'GET' && method !== 'HEAD')
-      throw new DryRun(describeRequest(url, init))
-    const attempt = async (idempotencyKey?: string) => {
-      const headers = new Headers(init?.headers)
-      for (const [name, value] of Object.entries(proofHeaders(credentials, method, url)))
-        headers.set(name, value)
-      if (idempotencyKey && !headers.has('idempotency-key'))
-        headers.set('idempotency-key', idempotencyKey)
-      try {
-        return await fetch(input, {
-          ...init,
-          headers,
-        })
-      } catch (error) {
-        throw unreachable(credentials.instance, error)
-      }
-    }
-    return mutating.has(method) ? acrossOutageOnce(attempt) : attempt()
-  }) as typeof fetch
+  const http = createHttp({
+    instance: credentials.instance,
+    userAgent: agent,
+    dryRun: globals.dryRun,
+    credentials,
+  })
+
   return {
+    ...clientOf(credentials.instance, http),
+    waiting: (deadline) => clientOf(credentials.instance, waitingHttp(http, deadline)),
     globals,
     selection: {
       project: globals.project ?? context.project,
@@ -189,20 +147,6 @@ export const connectWith = (
     },
     credentials,
     userAgent: agent,
-    request: (path, init) =>
-      fetcher(`${credentials.instance}${path}`, {
-        ...init,
-        headers: {
-          ...(init.headers as Record<string, string>),
-          authorization: `Bearer ${credentials.token}`,
-          'user-agent': agent,
-        },
-      }),
-    api: createApiClient(credentials.instance, {
-      token: credentials.token,
-      userAgent: agent,
-      fetcher,
-    }),
   }
 }
 
@@ -221,18 +165,27 @@ export type Sent<T = unknown> = { status: number; data: T }
 export const settle = async <R extends Reply>(call: Promise<R>) => {
   const result = await call
   const value = result.error?.value
-  if (value instanceof Exit || value instanceof DryRun) throw value
+
+  if (value instanceof Error) {
+    throw value
+  }
+
   return result
 }
 
 const succeeded = async <R extends Reply>(call: Promise<R>) => {
   const result: Reply = await settle(call)
-  if (result.error) throw apiFailure(result.status, result.error.value)
+
+  if (result.error) {
+    throw apiFailure(result.status, result.error.value)
+  }
+
   return result
 }
 
 export const send = async <R extends Reply>(call: Promise<R>): Promise<Sent<Ok<R>>> => {
   const { status, data } = await succeeded(call)
+
   return {
     status,
     data: data as Ok<R>,
@@ -243,7 +196,27 @@ export const stream = async (call: Promise<Reply>) => (await succeeded(call)).re
 
 export const document = async (call: Promise<Reply>) => {
   const { data, response } = await succeeded(call)
+
   return typeof data === 'string' ? data : response.text()
+}
+
+export const pollUntil = async <T>(
+  read: () => Promise<T>,
+  done: (value: T) => boolean,
+  deadline?: number,
+  pauseMs = 0,
+): Promise<T> => {
+  for (;;) {
+    const value = await read()
+
+    if (done(value) || (deadline !== undefined && Date.now() >= deadline)) {
+      return value
+    }
+
+    if (pauseMs) {
+      await sleep(pauseMs)
+    }
+  }
 }
 
 export const sseHeaders = (lastId: string | null): Record<string, string> => ({
@@ -257,11 +230,6 @@ export const sseHeaders = (lastId: string | null): Record<string, string> => ({
 
 export const isId = (entity: IdEntity, ref: string) => ref.startsWith(`${idPrefixes[entity]}_`)
 
-export const isOneOf = <T extends string>(values: readonly T[], value: string): value is T =>
-  (values as readonly string[]).includes(value)
-
-export const isLevel = (value: string) => isOneOf(tokenLevelValues, value)
-
 export const found = <T>(
   items: readonly T[],
   match: (item: T) => boolean,
@@ -269,7 +237,11 @@ export const found = <T>(
   fix: string,
 ): T => {
   const item = items.find(match)
-  if (item === undefined) throw notFound(explanation, fix)
+
+  if (item === undefined) {
+    throw notFound(explanation, fix)
+  }
+
   return item
 }
 
@@ -293,9 +265,13 @@ export const projectRef = async (run: Run) =>
 export const projectId = (run: Run, ref: string) => slugId(run, ref)
 
 export const environmentId = async (run: Run, ref = run.selection.environment): Promise<string> => {
-  if (ref && isId('environment', ref)) return ref
+  if (ref && isId('environment', ref)) {
+    return ref
+  }
+
   const project = await projectRef(run)
-  if (!ref)
+
+  if (!ref) {
     return (
       await send(
         run.api.v1
@@ -305,6 +281,8 @@ export const environmentId = async (run: Run, ref = run.selection.environment): 
           .get(),
       )
     ).data.default_environment_id
+  }
+
   return slugId(run, project, 'environments', ref)
 }
 
@@ -316,6 +294,7 @@ export const serviceId = async (run: Run): Promise<string> => {
     what: 'Service',
     flag: '--service <id or name>',
   })
+
   return isId('service', ref) ? ref : inEnvironment(run, 'services', ref)
 }
 

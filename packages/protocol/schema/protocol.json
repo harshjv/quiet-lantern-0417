@@ -1007,6 +1007,14 @@
         }
       }
     },
+    "CpuVirtualization": {
+      "title": "CpuVirtualization",
+      "type": "string",
+      "enum": [
+        "vmx",
+        "svm"
+      ]
+    },
     "CurrentDeployment": {
       "title": "CurrentDeployment",
       "type": "object",
@@ -1491,6 +1499,9 @@
             "null"
           ]
         },
+        "runtime": {
+          "$ref": "#/$defs/SandboxRuntime"
+        },
         "image": {
           "$ref": "#/$defs/DesiredSandboxImage"
         },
@@ -1532,6 +1543,10 @@
             "pattern": "^vip_[0-9A-HJKMNP-TV-Z]{26}$",
             "type": "string"
           }
+        },
+        "api_relay": {
+          "const": true,
+          "type": "boolean"
         }
       }
     },
@@ -3657,6 +3672,61 @@
         "result": {
           "type": "object",
           "additionalProperties": {}
+        }
+      }
+    },
+    "HostProbe": {
+      "title": "HostProbe",
+      "type": "object",
+      "required": [
+        "kvm_present",
+        "kvm_usable",
+        "cpu_virtualization",
+        "hypervisor",
+        "cpu_cores",
+        "memory_bytes",
+        "sandbox_free_bytes"
+      ],
+      "properties": {
+        "kvm_present": {
+          "type": "boolean"
+        },
+        "kvm_usable": {
+          "type": "boolean"
+        },
+        "cpu_virtualization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CpuVirtualization"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "goJSONSchema": {
+            "type": "*CpuVirtualization"
+          }
+        },
+        "hypervisor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cpu_cores": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sandbox_free_bytes": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       }
     },
@@ -6705,6 +6775,25 @@
         }
       }
     },
+    "RootSocketHostProbe": {
+      "title": "RootSocketHostProbe",
+      "type": "object",
+      "required": [
+        "host",
+        "runtimes"
+      ],
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/HostProbe"
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SandboxRuntime"
+          }
+        }
+      }
+    },
     "RootSocketLine": {
       "title": "RootSocketLine",
       "type": "object",
@@ -6934,6 +7023,9 @@
         },
         "public_address": {
           "type": "string"
+        },
+        "sandbox_runtime": {
+          "$ref": "#/$defs/SandboxRuntime"
         },
         "litestream": {
           "type": "object",
@@ -7482,6 +7574,12 @@
         "filesystem_max_bytes"
       ],
       "properties": {
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SandboxRuntime"
+          }
+        },
         "runsc_version": {
           "type": "string"
         },
@@ -7655,6 +7753,11 @@
         "failed",
         "deleted"
       ]
+    },
+    "SandboxRuntime": {
+      "title": "SandboxRuntime",
+      "const": "gvisor",
+      "type": "string"
     },
     "SandboxSize": {
       "title": "SandboxSize",
@@ -8355,6 +8458,9 @@
         },
         "stationd_version": {
           "type": "string"
+        },
+        "host": {
+          "$ref": "#/$defs/HostProbe"
         },
         "sandboxes": {
           "anyOf": [

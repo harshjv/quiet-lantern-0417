@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { Box, Clock, Inbox, Layers, Plus, ShieldCheck } from 'lucide-react'
+import { Clock, Plus, ShieldCheck } from 'lucide-react'
 import { lazy, useState } from 'react'
 
 import { Actor, AgentsLink } from '@/components/actor'
@@ -36,6 +36,7 @@ import { api, idempotency, send, type Environment } from '@/lib/api'
 import { merge, mergeItem } from '@/lib/cache'
 import { commands } from '@/lib/commands'
 import { byName, changeSummary, plural, shortSha, sourceText } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { serviceKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
@@ -47,6 +48,9 @@ import {
   servicesQuery,
   warm,
 } from '@/lib/queries'
+import { tabSearch, useSearchTab } from '@/lib/search'
+import { useShortcut } from '@/lib/shortcuts'
+import { placeOf, titled } from '@/lib/title'
 import { countPill, toneOutline, toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
@@ -57,26 +61,27 @@ const NetworkPanel = lazy(() =>
 )
 
 const tabs = ['services', 'sandboxes', 'network', 'variables', 'staged', 'settings'] as const
-type Tab = (typeof tabs)[number]
 
 export const Route = createFileRoute('/_app/projects/$project/$environment')({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
-    tabs.includes(search.tab as Tab)
-      ? {
-          tab: search.tab as Tab,
-        }
-      : {},
+  validateSearch: tabSearch(tabs),
   loader: async ({ context, params }) => {
     const environments = await load(context.queryClient, environmentsQuery(params.project))
     const environment = environments.items.find((e) => e.name === params.environment)
-    if (environment) await warm(context.queryClient, servicesQuery(environment.id))
+
+    if (environment) {
+      await warm(context.queryClient, servicesQuery(environment.id))
+    }
   },
+  head: ({ params }) => titled(placeOf(params.project, params.environment)),
   errorComponent: failurePage('Couldn’t load this environment'),
   component: EnvironmentPage,
 })
 
 function Services({ project, environment }: { project: string; environment: Environment }) {
   const [creating, setCreating] = useState(false)
+
+  useShortcut('create', () => setCreating(true))
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -113,10 +118,11 @@ function ServicesTable({
   onCreate: () => void
 }) {
   const { data } = useSuspenseQuery(servicesQuery(environment.id))
-  if (data.items.length === 0)
+
+  if (data.items.length === 0) {
     return (
       <EmptyState
-        icon={Box}
+        icon={entityIcon.service}
         title="No services yet"
         description={
           <>
@@ -140,6 +146,8 @@ function ServicesTable({
         }
       />
     )
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -154,6 +162,7 @@ function ServicesTable({
       <TableBody>
         {[...data.items].sort(byName).map((service) => {
           const current = service.current_deployment
+
           return (
             <TableRow key={service.id} className="relative">
               <TableCell>
@@ -165,7 +174,7 @@ function ServicesTable({
                   className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
                   data-testid="service-link"
                 >
-                  <Box className="size-4 text-muted-foreground" aria-hidden />
+                  <entityIcon.service className="size-4 text-muted-foreground" aria-hidden />
                   {service.name}
                   <Badge variant="outline" className="font-normal">
                     {serviceKind[service.kind]}
@@ -236,10 +245,11 @@ function ServicesTable({
 
 function StagedList({ environment }: { environment: Environment }) {
   const { data } = useSuspenseQuery(environmentStagedQuery(environment.id))
-  if (data.items.length === 0)
+
+  if (data.items.length === 0) {
     return environment.protected ? (
       <EmptyState
-        icon={Inbox}
+        icon={entityIcon.stagedChange}
         title="No staged changes"
         description={
           <>
@@ -249,7 +259,7 @@ function StagedList({ environment }: { environment: Environment }) {
       />
     ) : (
       <EmptyState
-        icon={Inbox}
+        icon={entityIcon.stagedChange}
         title="No staged changes"
         description="This environment applies changes at once. Protect it to review changes from agents and tokens first."
         action={
@@ -266,6 +276,8 @@ function StagedList({ environment }: { environment: Environment }) {
         }
       />
     )
+  }
+
   return (
     <ul className="divide-y overflow-hidden rounded-lg border">
       {data.items.map((change) => (
@@ -322,6 +334,7 @@ function Settings({ project, environment }: { project: string; environment: Envi
       env.protected ? `${env.name} is protected` : `${env.name} is no longer protected`,
     failure: () => 'change protection',
   })
+
   return (
     <div className="max-w-2xl rounded-lg border bg-card p-4">
       <div className="flex items-start justify-between gap-6">
@@ -347,18 +360,18 @@ function Settings({ project, environment }: { project: string; environment: Envi
 
 function EnvironmentPage() {
   const { project, environment: name } = Route.useParams()
-  const { tab = 'services' } = Route.useSearch()
-  const navigate = useNavigate({
-    from: Route.fullPath,
-  })
+  const { tab } = Route.useSearch()
+  const navigate = useNavigate()
+  const selectTab = useSearchTab(tabs)
   const {
     data: { items: environments },
   } = useSuspenseQuery(environmentsQuery(project))
   const environment = environments.find((e) => e.name === name)
-  if (!environment)
+
+  if (!environment) {
     return (
       <EmptyState
-        icon={Layers}
+        icon={entityIcon.environment}
         title={`Environment “${name}” isn’t in ${project}`}
         description={
           environments.length
@@ -384,6 +397,7 @@ function EnvironmentPage() {
         }
       />
     )
+  }
 
   return (
     <div className="space-y-6">
@@ -440,10 +454,7 @@ function EnvironmentPage() {
               <span>{plural(environment.service_count, 'service')}</span>
               {environment.protected && (
                 <span className="inline-flex items-center gap-1 text-foreground">
-                  <ShieldCheck
-                    className="size-3.5 text-emerald-600 dark:text-emerald-400"
-                    aria-hidden
-                  />
+                  <ShieldCheck className={cn('size-3.5', toneText.success)} aria-hidden />
                   <Term name="protectedEnvironment">Protected</Term>
                 </span>
               )}
@@ -484,17 +495,7 @@ function EnvironmentPage() {
           }
         />
       </div>
-      <Tabs
-        value={tab}
-        onValueChange={(value) =>
-          void navigate({
-            search: {
-              tab: value as Tab,
-            },
-            replace: true,
-          })
-        }
-      >
+      <Tabs value={tab} onValueChange={selectTab}>
         <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="services">Services</TabsTrigger>
           <TabsTrigger value="sandboxes">Sandboxes</TabsTrigger>

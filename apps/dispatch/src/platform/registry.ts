@@ -1,4 +1,7 @@
+import { isResponseSizeError } from 'ky'
+
 import { env } from '../env.ts'
+import { failureOf, http, transientRetry } from '../net/http.ts'
 
 export const manifestAccept =
   'application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, */*'
@@ -23,10 +26,12 @@ export const parseReference = (input: string): Reference => {
   let rest = decodeURIComponent(input.replace(/^pkg:docker\//, '').replace(/\?.*$/, ''))
   let digest: string | null = null
   const at = rest.indexOf('@')
+
   if (at >= 0) {
     digest = rest.slice(at + 1)
     rest = rest.slice(0, at)
   }
+
   const slash = rest.indexOf('/')
   const first = slash >= 0 ? rest.slice(0, slash) : ''
   const hasRegistry =
@@ -35,13 +40,22 @@ export const parseReference = (input: string): Reference => {
   let path = hasRegistry ? rest.slice(slash + 1) : rest
   let tag: string | null = null
   const colon = path.lastIndexOf(':')
+
   if (colon >= 0) {
     tag = path.slice(colon + 1)
     path = path.slice(0, colon)
   }
-  if (registry === 'index.docker.io' || registry === 'registry-1.docker.io') registry = 'docker.io'
-  if (registry === 'docker.io' && !path.includes('/')) path = `library/${path}`
+
+  if (registry === 'index.docker.io' || registry === 'registry-1.docker.io') {
+    registry = 'docker.io'
+  }
+
+  if (registry === 'docker.io' && !path.includes('/')) {
+    path = `library/${path}`
+  }
+
   const apiHost = registry === 'docker.io' ? 'registry-1.docker.io' : registry
+
   return {
     registry,
     apiHost,
@@ -57,9 +71,16 @@ export const displayRef = (r: Reference) =>
 type Challenge = { realm: string; service: string | null; scope: string | null }
 
 const parseChallenge = (header: string | null): Challenge | null => {
-  if (!header || !/^Bearer\s/i.test(header)) return null
+  if (!header || !/^Bearer\s/i.test(header)) {
+    return null
+  }
+
   const params: Record<string, string> = {}
-  for (const m of header.slice(7).matchAll(/(\w+)="([^"]*)"/g)) params[m[1]!.toLowerCase()] = m[2]!
+
+  for (const m of header.slice(7).matchAll(/(\w+)="([^"]*)"/g)) {
+    params[m[1]!.toLowerCase()] = m[2]!
+  }
+
   return params.realm
     ? {
         realm: params.realm,
@@ -84,11 +105,16 @@ export type RegistryResponse = {
 export type RequestOptions = {
   method: 'HEAD' | 'GET'
   accept: string
-  timeoutMs?: number
+  timeoutMs: number
   maxBytes?: number
   errorBody?: boolean
-  fetchImpl?: typeof fetch
 }
+
+const registry = http.extend({
+  redirect: 'manual',
+  retry: transientRetry,
+  throwHttpErrors: false,
+})
 
 const fetchToken = async (
   challenge: Challenge,
@@ -99,36 +125,50 @@ const fetchToken = async (
   const scope = challenge.scope ?? fallbackScope
   const key = `${challenge.realm}|${challenge.service ?? ''}|${scope}`
   const cached = tokenCache.get(key)
-  if (cached && cached.expires > Date.now())
+
+  if (cached && cached.expires > Date.now()) {
     return {
       token: cached.token,
     }
+  }
+
   const url = new URL(challenge.realm)
-  if (challenge.service) url.searchParams.set('service', challenge.service)
+
+  if (challenge.service) {
+    url.searchParams.set('service', challenge.service)
+  }
+
   url.searchParams.set('scope', scope)
-  const res = await (opts.fetchImpl ?? fetch)(url, {
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
-    redirect: 'manual',
+  const res = await registry(url, {
+    timeout: opts.timeoutMs,
   })
+
   hops.push({
     host: url.host,
     status: res.status,
     kind: 'token',
   })
-  if (res.status !== 200)
+
+  if (res.status !== 200) {
     return {
       status: res.status,
     }
+  }
+
   const doc = (await res.json()) as { token?: string; access_token?: string; expires_in?: number }
   const token = doc.token ?? doc.access_token
-  if (!token)
+
+  if (!token) {
     return {
       status: 502,
     }
+  }
+
   tokenCache.set(key, {
     token,
     expires: Date.now() + Math.max(60, doc.expires_in ?? 60) * 1000 - 5000,
   })
+
   return {
     token,
   }
@@ -140,37 +180,40 @@ export const registryRequest = async (
   opts: RequestOptions,
 ): Promise<RegistryResponse> => {
   const hops: Hop[] = []
-  const fetchImpl = opts.fetchImpl ?? fetch
   const origin = `${schemeFor(ref.apiHost)}://${ref.apiHost}`
   const scope = `repository:${ref.repository}:pull`
   let url = new URL(`${origin}/v2/${ref.repository}/${path}`)
   let token: string | null = null
   let triedToken = false
+
   try {
     for (let i = 0; i < 6; i++) {
-      const headers: Record<string, string> = {
-        accept: opts.accept,
-      }
-      if (token && url.host === ref.apiHost) headers.authorization = `Bearer ${token}`
-      const res = await fetchImpl(url, {
+      const res = await registry(url, {
         method: opts.method,
-        headers,
-        redirect: 'manual',
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+        headers: {
+          accept: opts.accept,
+          authorization: token && url.host === ref.apiHost ? `Bearer ${token}` : undefined,
+        },
+        timeout: opts.timeoutMs,
+        maxResponseSize: opts.maxBytes,
       })
+
       hops.push({
         host: url.host,
         status: res.status,
         kind: url.host === ref.apiHost ? 'registry' : 'redirect',
       })
+
       if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
         url = new URL(res.headers.get('location')!, url)
         continue
       }
+
       if (res.status === 401 && !triedToken && url.host === ref.apiHost) {
         triedToken = true
         const challenge = parseChallenge(res.headers.get('www-authenticate'))
-        if (!challenge)
+
+        if (!challenge) {
           return {
             status: 401,
             headers: res.headers,
@@ -178,8 +221,11 @@ export const registryRequest = async (
             hops,
             error: 'no bearer challenge',
           }
+        }
+
         const got = await fetchToken(challenge, scope, hops, opts)
-        if (!got.token)
+
+        if (!got.token) {
           return {
             status: got.status === 401 || got.status === 403 ? 401 : (got.status ?? 401),
             headers: res.headers,
@@ -187,30 +233,37 @@ export const registryRequest = async (
             hops,
             error: `token realm answered ${got.status}`,
           }
+        }
+
         token = got.token
         continue
       }
-      let body: Buffer | null = null
-      if (opts.method === 'GET' && (res.status === 200 || opts.errorBody)) {
-        const buf = Buffer.from(await res.arrayBuffer())
-        if (opts.maxBytes && buf.length > opts.maxBytes)
-          return {
-            status: 413,
-            headers: res.headers,
-            body: null,
-            hops,
-            error: `body above ${opts.maxBytes} bytes`,
-          }
-        body = buf
-      }
-      return {
-        status: res.status,
-        headers: res.headers,
-        body,
-        hops,
-        error: null,
+
+      const wantsBody = opts.method === 'GET' && (res.status === 200 || opts.errorBody)
+
+      try {
+        return {
+          status: res.status,
+          headers: res.headers,
+          body: wantsBody ? Buffer.from(await res.arrayBuffer()) : null,
+          hops,
+          error: null,
+        }
+      } catch (error) {
+        if (!isResponseSizeError(error)) {
+          throw error
+        }
+
+        return {
+          status: 413,
+          headers: res.headers,
+          body: null,
+          hops,
+          error: `body above ${opts.maxBytes} bytes`,
+        }
       }
     }
+
     return {
       status: 508,
       headers: new Headers(),
@@ -224,7 +277,7 @@ export const registryRequest = async (
       headers: new Headers(),
       body: null,
       hops,
-      error: (error as Error).message,
+      error: failureOf(error),
     }
   }
 }

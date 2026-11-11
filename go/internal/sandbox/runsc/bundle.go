@@ -3,32 +3,17 @@ package runsc
 import (
 	"encoding/json"
 	"errors"
-	"net/netip"
 	"strings"
-)
 
-type Spec struct {
-	ID          string
-	Hostname    string
-	DiskPath    string
-	BundleDir   string
-	NetNSPath   string
-	Args        []string
-	Env         []string
-	Cwd         string
-	UID         int
-	GID         int
-	MemoryBytes int64
-	CPUMillis   int64
-	ImageEnv    []string
-}
+	"github.com/harshjv/stationly/go/internal/sandbox"
+)
 
 const (
 	ociVersion   = "1.2.1"
 	nofileLimit  = 1048576
 	pidsLimit    = 16384
 	cpuPeriod    = 100000
-	scopeSlice   = "stationly-sandboxes.slice"
+	ScopeSlice   = "stationly-sandboxes.slice"
 	scopePrefix  = "sbx"
 	defaultCwd   = "/"
 	rlimitNofile = "RLIMIT_NOFILE"
@@ -133,14 +118,14 @@ type ociPids struct {
 	Limit int64 `json:"limit"`
 }
 
-func Config(s Spec) ([]byte, error) {
+func Config(s sandbox.Spec) ([]byte, error) {
 	if err := validateSpec(s); err != nil {
 		return nil, err
 	}
 	env := mergeEnv(s.ImageEnv, []string{"HOSTNAME=" + s.Hostname, "STATIONLY_SANDBOX_ID=" + s.ID}, s.Env)
 	spec := ociSpec{
 		OCIVersion: ociVersion,
-		Process:    process(s.Args, env, s.Cwd, s.UID, s.GID, false),
+		Process:    process(s.Args, env, s.Cwd, 0, 0, false),
 		Root:       ociRoot{Path: s.DiskPath, Readonly: false},
 		Hostname:   s.Hostname,
 		Mounts:     mounts(s.BundleDir),
@@ -158,13 +143,13 @@ func Config(s Spec) ([]byte, error) {
 				CPU:    ociCPU{Period: cpuPeriod, Quota: s.CPUMillis * 100},
 				Pids:   ociPids{Limit: pidsLimit},
 			},
-			CgroupsPath: scopeSlice + ":" + scopePrefix + ":" + strings.ToLower(s.ID),
+			CgroupsPath: ScopeSlice + ":" + scopePrefix + ":" + strings.ToLower(s.ID),
 		},
 	}
 	return json.MarshalIndent(spec, "", "  ")
 }
 
-func validateSpec(s Spec) error {
+func validateSpec(s sandbox.Spec) error {
 	var errs []error
 	for name, v := range map[string]string{"ID": s.ID, "Hostname": s.Hostname, "DiskPath": s.DiskPath, "BundleDir": s.BundleDir, "NetNSPath": s.NetNSPath} {
 		if v == "" {
@@ -236,11 +221,11 @@ func mergeEnv(lists ...[]string) []string {
 	return out
 }
 
-func HostFiles(_ Spec, resolver netip.Addr, name string) map[string][]byte {
+func HostFiles(s sandbox.Spec) map[string][]byte {
 	return map[string][]byte{
-		"resolv.conf": []byte("nameserver " + resolver.String() + "\n"),
-		"hosts":       []byte("127.0.0.1 localhost\n169.254.1.2 " + name + "\n"),
-		"hostname":    []byte(name + "\n"),
+		"resolv.conf": []byte("nameserver " + s.Resolver.String() + "\n"),
+		"hosts":       []byte("127.0.0.1 localhost\n169.254.1.2 " + s.Hostname + "\n"),
+		"hostname":    []byte(s.Hostname + "\n"),
 	}
 }
 

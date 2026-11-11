@@ -1,12 +1,13 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { Layers } from 'lucide-react'
 
 import { AlsoWith } from '@/components/code'
 import { NewEnvironment } from '@/components/new-environment'
 import { EmptyState, PageHeader } from '@/components/page'
 import { failurePage } from '@/components/panel'
 import { commands } from '@/lib/commands'
+import { entityIcon } from '@/lib/icons'
 import { environmentsQuery, load, projectQuery } from '@/lib/queries'
+import { titled } from '@/lib/title'
 
 export const Route = createFileRoute('/_app/projects/$project/')({
   loader: async ({ context, params }) => {
@@ -17,7 +18,8 @@ export const Route = createFileRoute('/_app/projects/$project/')({
     const chosen =
       environments.items.find((e) => e.id === project.default_environment_id) ??
       environments.items[0]
-    if (chosen)
+
+    if (chosen) {
       throw redirect({
         to: '/projects/$project/$environment',
         params: {
@@ -26,19 +28,23 @@ export const Route = createFileRoute('/_app/projects/$project/')({
         },
         replace: true,
       })
+    }
+
     return null
   },
+  head: ({ params }) => titled(params.project),
   errorComponent: failurePage('Couldn’t load this project'),
   component: EmptyProject,
 })
 
 function EmptyProject() {
   const { project } = Route.useParams()
+
   return (
     <div className="space-y-6">
       <PageHeader title={project} />
       <EmptyState
-        icon={Layers}
+        icon={entityIcon.environment}
         title="No environments yet"
         description="Create one to start adding services."
         action={<NewEnvironment project={project} environments={[]} />}

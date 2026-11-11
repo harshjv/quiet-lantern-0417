@@ -22,12 +22,14 @@ import (
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/hostconfig"
+	"github.com/harshjv/stationly/go/internal/hostprobe"
 	"github.com/harshjv/stationly/go/internal/identity"
 	"github.com/harshjv/stationly/go/internal/logstore"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/outbox"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/rootsocket"
+	"github.com/harshjv/stationly/go/internal/sandbox"
 	"github.com/harshjv/stationly/go/internal/secrets"
 	"github.com/harshjv/stationly/go/internal/upgrade"
 	"github.com/harshjv/stationly/go/internal/verify"
@@ -39,6 +41,7 @@ const (
 	restartBudget   = 5
 	backoffBase     = time.Second
 	backoffCap      = 60 * time.Second
+	backoffMaxShift = 6
 	fullResync      = 30 * time.Second
 	eventsRetryBase = time.Second
 	eventsRetryCap  = 30 * time.Second
@@ -63,6 +66,7 @@ type Options struct {
 	RunArgs       []string
 	BinDir        string
 	BinaryLink    string
+	Sandbox       sandbox.Runtime
 }
 
 type Station struct {
@@ -70,6 +74,7 @@ type Station struct {
 	log       *slog.Logger
 	docker    *docker.Client
 	info      system.Info
+	host      protocol.HostProbe
 	applied   *protocol.Generation
 	plan      *Plan
 	status    protocol.AppliedStatus
@@ -151,7 +156,7 @@ type Station struct {
 	handingOver       bool
 	handedOver        bool
 
-	sbx sandboxRuntime
+	sbx sandboxSet
 }
 
 type envState struct {
@@ -235,6 +240,7 @@ func Run(ctx context.Context, opts Options) error {
 		log:       opts.Log,
 		docker:    dc,
 		info:      info.Info,
+		host:      hostprobe.Default().Probe(ctx, ""),
 		applied:   applied,
 		envs:      map[string]*envState{},
 		services:  map[string]*serviceState{},
@@ -830,8 +836,12 @@ func (s *Station) holdBack(st *serviceState, sp *ServicePlan, failure *protocol.
 		return
 	}
 	st.failure = failure
-	st.retryAt = now.Add(min(backoffBase<<st.retries, backoffCap))
+	st.retryAt = now.Add(backoffDelay(st.retries))
 	st.retries++
+}
+
+func backoffDelay(attempt int) time.Duration {
+	return min(backoffBase<<min(attempt, backoffMaxShift), backoffCap)
 }
 
 func (s *Station) exitKeys(st *serviceState) []string {
@@ -856,9 +866,9 @@ func (s *Station) reportExit(st *serviceState, sp *ServicePlan) {
 		return
 	}
 	st.reportedExit = v.id
-	s.emit(protocol.MessageContainerExited, map[string]any{
-		"container_id": v.id, "role": role, "service_id": sp.ID, "deployment_id": nilIfEmpty(sp.DeploymentID),
-		"exit_code": *v.exitCode, "oom_killed": v.oom, "restarts": len(st.restarts),
+	s.emit(protocol.MessageContainerExited, protocol.ContainerExitedBody{
+		ContainerId: v.id, Role: role, ServiceId: &sp.ID, DeploymentId: nilIfEmpty(sp.DeploymentID),
+		ExitCode: *v.exitCode, OomKilled: v.oom, Restarts: len(st.restarts),
 	})
 	s.log.Warn("container exited", "service", sp.ID, "container", shortID(v.id), "role", role, "exit_code", *v.exitCode, "oom_killed", v.oom)
 }
@@ -914,7 +924,7 @@ func (s *Station) allowRestart(st *serviceState, sp *ServicePlan, now time.Time)
 		s.log.Error("restart budget exhausted, service is red", "service", sp.ID, "exit_code", exit)
 		return false
 	}
-	delay := min(backoffBase<<len(st.restarts), backoffCap)
+	delay := backoffDelay(len(st.restarts))
 	if now.Sub(st.downSince) < delay {
 		return false
 	}
@@ -1085,9 +1095,9 @@ func (s *Station) reportHealth() {
 		if !st.health.lastCheck.IsZero() {
 			last = stamp(st.health.lastCheck)
 		}
-		s.emit(protocol.MessageHealthResult, map[string]any{
-			"service_id": svcID, "deployment_id": depID, "state": st.health.state,
-			"consecutive": st.health.consecutive(), "last_check": last,
+		s.emit(protocol.MessageHealthResult, protocol.HealthResultBody{
+			ServiceId: svcID, DeploymentId: depID, State: protocol.HealthResultState(st.health.state),
+			Consecutive: st.health.consecutive(), LastCheck: last,
 		})
 	}
 }

@@ -34,8 +34,13 @@ export const serviceCommands = (program: Program) => {
               wait_s: 0,
             }),
         )
-        if (sent.status === 202 || options.detach) return print(options, sent)
+
+        if (sent.status === 202 || options.detach) {
+          return print(options, sent)
+        }
+
         const created = sent.data
+
         progress(`${created.id}: ${created.status}`)
         await streamLogs(
           run,
@@ -51,6 +56,7 @@ export const serviceCommands = (program: Program) => {
         ).catch((error) => {
           progress(`log stream unavailable: ${(error as Error).message}`)
         })
+
         return reportRun(options, await waitRun(run, created.id))
       }),
     )
@@ -79,6 +85,7 @@ export const serviceCommands = (program: Program) => {
               }),
           )
         ).data
+
         return shellExit(
           created.id,
           await attachRun(run, created, {
@@ -97,10 +104,11 @@ export const serviceCommands = (program: Program) => {
     )
     .argument('[path]', 'directory to push', '.')
     .option('--via <transport>', 'ssh lands the tarball on the station directly')
+
   waitOptions(push, deploy)
   push.action(
     action(async (options, path) => {
-      if (options.via === 'ssh')
+      if (options.via === 'ssh') {
         throw new Exit(exitCodes.usage, {
           error: {
             code: 'VALIDATION_FAILED',
@@ -109,9 +117,12 @@ export const serviceCommands = (program: Program) => {
             fix: 'Run sly push without --via against a directly reachable API host.',
           },
         })
+      }
+
       const run = await connect(options)
       const service = await serviceId(run)
-      const blob = (await send(uploadSource(run, service, path, progress))).data
+      const blob = (await uploadSource(run, service, path, progress)).data
+
       return runOperation(
         options,
         run,

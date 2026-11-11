@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { Box, Rocket, ShieldCheck } from 'lucide-react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { ShieldCheck } from 'lucide-react'
 
 import { Trigger } from '@/components/actor'
 import { AgentSheet } from '@/components/agent-sheet'
@@ -29,45 +29,51 @@ import type { Service } from '@/lib/api'
 import { isOptimistic } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
 import { blank, duration, shortDigest, shortSha, sourceText } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { deploymentStrategy, serviceKind } from '@/lib/labels'
 import { deploymentsQuery, load, serviceQuery, warm } from '@/lib/queries'
+import { tabSearch, useSearchTab } from '@/lib/search'
+import { loaderTitle } from '@/lib/title'
 import { toneText } from '@/lib/tone'
+import { highlight, useFresh } from '@/lib/use-fresh'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
 const tabs = ['deployments', 'variables', 'network'] as const
-type Tab = (typeof tabs)[number]
 
 export const Route = createFileRoute('/_app/services/$service')({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
-    tabs.includes(search.tab as Tab)
-      ? {
-          tab: search.tab as Tab,
-        }
-      : {},
+  validateSearch: tabSearch(tabs),
   loader: async ({ context, params }) => {
     const [service] = await Promise.all([
       load(context.queryClient, serviceQuery(params.service)),
       warm(context.queryClient, deploymentsQuery(params.service)),
     ])
-    await loadTrail(context.queryClient, service.environment_id)
+
+    return {
+      title: [service.name, await loadTrail(context.queryClient, service.environment_id)],
+    }
   },
+  head: loaderTitle,
   errorComponent: failurePage('Couldn’t load this service'),
   component: ServicePage,
 })
 
 function Deployments({ service, scope }: { service: Service; scope: ServiceScope }) {
   const { data } = useSuspenseQuery(deploymentsQuery(service.id))
-  if (data.items.length === 0)
+  const fresh = useFresh(data.items)
+
+  if (data.items.length === 0) {
     return (
       <EmptyState
-        icon={Rocket}
+        icon={entityIcon.deployment}
         title="Not deployed yet"
         description={`Deploy ${service.name} to start it. You’ll see each step and its logs here.`}
         action={<DeployButton service={service} />}
         also={<AlsoWith cli={commands.deploy(scope)} tool="deploy" />}
       />
     )
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -83,7 +89,10 @@ function Deployments({ service, scope }: { service: Service; scope: ServiceScope
       </TableHeader>
       <TableBody>
         {data.items.map((deployment) => (
-          <TableRow key={deployment.id} className="relative">
+          <TableRow
+            key={deployment.id}
+            className={cn('relative', fresh.has(deployment.id) && highlight)}
+          >
             <TableCell className="tabular-nums">
               {!isOptimistic(deployment) && (
                 <Link
@@ -139,10 +148,8 @@ function Deployments({ service, scope }: { service: Service; scope: ServiceScope
 
 function ServicePage() {
   const { service: id } = Route.useParams()
-  const { tab = 'deployments' } = Route.useSearch()
-  const navigate = useNavigate({
-    from: Route.fullPath,
-  })
+  const { tab } = Route.useSearch()
+  const selectTab = useSearchTab(tabs)
   const { data: s } = useSuspenseQuery(serviceQuery(id))
   const trail = useEnvironmentTrail(s.environment_id)
   const current = s.current_deployment
@@ -166,7 +173,7 @@ function ServicePage() {
         <PageHeader
           title={
             <span className="flex items-center gap-2">
-              <Box className="size-5 text-muted-foreground" aria-hidden />
+              <entityIcon.service className="size-5 text-muted-foreground" aria-hidden />
               {s.name}
               <Badge variant="outline" className="font-normal">
                 {serviceKind[s.kind]}
@@ -179,10 +186,7 @@ function ServicePage() {
               <Mono>{sourceText(s)}</Mono>
               {trail.environment.protected && (
                 <span className="inline-flex items-center gap-1">
-                  <ShieldCheck
-                    className="size-3.5 text-emerald-600 dark:text-emerald-400"
-                    aria-hidden
-                  />
+                  <ShieldCheck className={cn('size-3.5', toneText.success)} aria-hidden />
                   <Term name="protectedEnvironment">Protected</Term>
                 </span>
               )}
@@ -192,7 +196,7 @@ function ServicePage() {
             <>
               <AgentSheet hint={agentHints['/_app/services/$service']} scope={scope} />
               <RedeployButton service={s} />
-              <DeployButton service={s} />
+              <DeployButton service={s} shortcut />
             </>
           }
         />
@@ -221,17 +225,7 @@ function ServicePage() {
           ]}
         />
       )}
-      <Tabs
-        value={tab}
-        onValueChange={(value) =>
-          void navigate({
-            search: {
-              tab: value as Tab,
-            },
-            replace: true,
-          })
-        }
-      >
+      <Tabs value={tab} onValueChange={selectTab}>
         <TabsList>
           <TabsTrigger value="deployments">Deployments</TabsTrigger>
           <TabsTrigger value="variables">Variables</TabsTrigger>

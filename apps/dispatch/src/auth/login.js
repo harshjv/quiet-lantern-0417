@@ -9,10 +9,13 @@ const show = (message) => {
 
 if (button && notice && webauthn && webauthn.browserSupportsWebAuthn()) {
   const form = button.form
+
   button.hidden = false
+
   const signIn = async () => {
     notice.hidden = true
     button.disabled = true
+
     try {
       const options = await fetch('/auth/passkey/generate-authenticate-options', {
         credentials: 'same-origin',
@@ -20,10 +23,15 @@ if (button && notice && webauthn && webauthn.browserSupportsWebAuthn()) {
           accept: 'application/json',
         },
       })
-      if (!options.ok) throw new Error('The server did not start a passkey sign-in.')
+
+      if (!options.ok) {
+        throw new Error('The server did not start a passkey sign-in.')
+      }
+
       const response = await webauthn.startAuthentication({
         optionsJSON: await options.json(),
       })
+
       form.elements.namedItem('passkey').value = JSON.stringify(response)
       form.submit()
     } catch (error) {
@@ -37,5 +45,6 @@ if (button && notice && webauthn && webauthn.browserSupportsWebAuthn()) {
       )
     }
   }
+
   button.addEventListener('click', () => void signIn())
 }

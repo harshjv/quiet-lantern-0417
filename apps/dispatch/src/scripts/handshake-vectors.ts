@@ -47,6 +47,7 @@ export const buildVectors = () => {
   })
   const hello = helloMessage(nonce, stationId, timestampMs)
   const enroll = enrollMessage(nonce, token, timestampMs)
+
   return {
     seed: seed.toString('base64url'),
     nonce: nonce.toString('base64url'),

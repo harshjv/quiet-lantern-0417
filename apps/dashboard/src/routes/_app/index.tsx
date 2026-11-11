@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ChevronRight, FolderGit2 } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
+import { useState } from 'react'
 
 import { AlsoWith } from '@/components/code'
 import { GetStarted, useGetStarted } from '@/components/get-started'
@@ -8,12 +9,16 @@ import { NewProject } from '@/components/new-project'
 import { EmptyState, PageHeader } from '@/components/page'
 import { failurePage } from '@/components/panel'
 import { ServiceStatusDot } from '@/components/status'
+import { Button } from '@/components/ui/button'
 import type { ServiceStatus } from '@/lib/api'
 import { passkeysQuery } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { byName, plural } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { serviceStatus } from '@/lib/labels'
 import { agentTokensQuery, load, projectsQuery, warm } from '@/lib/queries'
+import { useShortcut } from '@/lib/shortcuts'
+import { titled } from '@/lib/title'
 
 export const Route = createFileRoute('/_app/')({
   loader: ({ context }) =>
@@ -22,6 +27,7 @@ export const Route = createFileRoute('/_app/')({
       warm(context.queryClient, passkeysQuery),
       warm(context.queryClient, agentTokensQuery),
     ]),
+  head: () => titled('Projects'),
   errorComponent: failurePage('Couldn’t load your projects'),
   component: Projects,
 })
@@ -31,21 +37,30 @@ const order: ServiceStatus[] = ['red', 'amber', 'green', 'asleep', 'stopped']
 function Projects() {
   const { data } = useSuspenseQuery(projectsQuery)
   const guide = useGetStarted(data.items)
+  const [creating, setCreating] = useState(false)
+
+  useShortcut('create', () => setCreating(true))
+  const create = (
+    <Button size="sm" onClick={() => setCreating(true)}>
+      <Plus /> New project
+    </Button>
+  )
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Projects"
         meta={<span>{plural(data.items.length, 'project')}</span>}
-        actions={<NewProject />}
+        actions={create}
       />
       {guide.visible && <GetStarted guide={guide} />}
       {data.items.length === 0 ? (
         !guide.visible && (
           <EmptyState
-            icon={FolderGit2}
+            icon={entityIcon.project}
             title="No projects yet"
             description="A project groups services that deploy together, with an environment for each stage."
-            action={<NewProject />}
+            action={create}
             also={<AlsoWith cli={commands.createProject()} tool="create_project" />}
           />
         )
@@ -62,7 +77,10 @@ function Projects() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <FolderGit2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <entityIcon.project
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
                     <span className="truncate font-medium">{project.name}</span>
                   </div>
                   <ChevronRight
@@ -96,6 +114,7 @@ function Projects() {
           ))}
         </ul>
       )}
+      {creating && <NewProject open={creating} onOpenChange={setCreating} />}
     </div>
   )
 }

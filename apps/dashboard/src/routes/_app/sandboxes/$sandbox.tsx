@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Camera, CircleAlert, TerminalSquare } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { lazy } from 'react'
 
 import { AlsoWith, Code } from '@/components/code'
@@ -28,10 +28,14 @@ import { VariablesPanel } from '@/components/variables-panel'
 import type { Sandbox } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { blank, bytes } from '@/lib/format'
-import { sandboxNetwork, snapshotSource } from '@/lib/labels'
+import { entityIcon } from '@/lib/icons'
+import { sandboxNetwork, sandboxRuntime, snapshotSource } from '@/lib/labels'
 import { load, sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
 import { egressText, imageText, sizeText } from '@/lib/sandbox'
+import { tabSearch, useSearchTab } from '@/lib/search'
 import { isIdle, isLive } from '@/lib/status'
+import { loaderTitle } from '@/lib/title'
+import { toneBorder, toneText } from '@/lib/tone'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 
 const SandboxTerminal = lazy(() =>
@@ -41,19 +45,17 @@ const SandboxTerminal = lazy(() =>
 )
 
 const tabs = ['terminal', 'variables', 'logs', 'snapshots', 'network'] as const
-type Tab = (typeof tabs)[number]
 
 export const Route = createFileRoute('/_app/sandboxes/$sandbox')({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } =>
-    tabs.includes(search.tab as Tab)
-      ? {
-          tab: search.tab as Tab,
-        }
-      : {},
+  validateSearch: tabSearch(tabs),
   loader: async ({ context, params }) => {
     const sandbox = await load(context.queryClient, sandboxQuery(params.sandbox))
-    await loadTrail(context.queryClient, sandbox.environment_id)
+
+    return {
+      title: [sandbox.name, await loadTrail(context.queryClient, sandbox.environment_id)],
+    }
   },
+  head: loaderTitle,
   errorComponent: failurePage('Couldn’t load this sandbox'),
   component: SandboxPage,
 })
@@ -68,6 +70,7 @@ function Snapshots({
   environment: string
 }) {
   const { data } = useSuspenseQuery(sandboxOwnSnapshotsQuery(sandbox.id))
+
   return (
     <div className="space-y-3">
       <CopiedFilesNotice />
@@ -81,7 +84,7 @@ function Snapshots({
         )}
         empty={
           <EmptyState
-            icon={Camera}
+            icon={entityIcon.snapshot}
             title="No snapshots yet"
             description="A snapshot saves this sandbox’s disk so you can fork new sandboxes from it."
             action={<SnapshotSandbox sandbox={sandbox} />}
@@ -106,12 +109,24 @@ function Snapshots({
 
 function Overview({ sandbox }: { sandbox: Sandbox }) {
   const metrics = sandbox.metrics
+
   return (
     <KeyValue
       framed
       items={[
         ['Image', <Code key="i">{imageText(sandbox.image)}</Code>],
         ['Size', sizeText(sandbox.size)],
+        ['Runtime', sandboxRuntime[sandbox.runtime]],
+        [
+          'Workspace',
+          sandbox.workspace ? (
+            <Code key="w" copy={sandbox.workspace.path}>
+              {`${sandbox.workspace.agent} in ${sandbox.workspace.path}`}
+            </Code>
+          ) : (
+            'no'
+          ),
+        ],
         [
           'Network',
           `${sandbox.network ? sandboxNetwork[sandbox.network] : blank}${sandbox.docker ? ' · Docker inside' : ''}`,
@@ -142,10 +157,9 @@ function Overview({ sandbox }: { sandbox: Sandbox }) {
 
 function SandboxPage() {
   const { sandbox: id } = Route.useParams()
-  const { tab = 'terminal' } = Route.useSearch()
-  const navigate = useNavigate({
-    from: Route.fullPath,
-  })
+  const { tab } = Route.useSearch()
+  const navigate = useNavigate()
+  const selectTab = useSearchTab(tabs)
   const { data: s } = useSuspenseQuery(sandboxQuery(id))
   const trail = useEnvironmentTrail(s.environment_id)
   const projectName = trail.project.name
@@ -165,7 +179,7 @@ function SandboxPage() {
         <PageHeader
           title={
             <span className="flex items-center gap-2">
-              <TerminalSquare className="size-5 text-muted-foreground" aria-hidden />
+              <entityIcon.sandbox className="size-5 text-muted-foreground" aria-hidden />
               {s.name}
             </span>
           }
@@ -176,6 +190,7 @@ function SandboxPage() {
                 <TimeLeft sandbox={s} />
               </span>
               {s.forked_from && <span>Fork</span>}
+              {s.workspace && <span>Workspace</span>}
               <Code copy={s.id} className="text-muted-foreground">
                 {s.id}
               </Code>
@@ -219,8 +234,8 @@ function SandboxPage() {
       </div>
       <ProtectedNotice environment={trail.environment} />
       {s.failure && (
-        <Alert className="border-red-300 dark:border-red-900">
-          <CircleAlert className="text-red-600 dark:text-red-400" />
+        <Alert className={toneBorder.danger}>
+          <CircleAlert className={toneText.danger} />
           <AlertTitle className="font-medium">{s.name} failed</AlertTitle>
           <AlertDescription className="space-y-1 [&_p:not(:last-child)]:mb-0">
             <p className="text-foreground">{s.failure.summary}</p>
@@ -229,17 +244,7 @@ function SandboxPage() {
         </Alert>
       )}
       <Overview sandbox={s} />
-      <Tabs
-        value={tab}
-        onValueChange={(value) =>
-          void navigate({
-            search: {
-              tab: value as Tab,
-            },
-            replace: true,
-          })
-        }
-      >
+      <Tabs value={tab} onValueChange={selectTab}>
         <TabsList>
           <TabsTrigger value="terminal">Terminal</TabsTrigger>
           <TabsTrigger value="variables">Variables</TabsTrigger>

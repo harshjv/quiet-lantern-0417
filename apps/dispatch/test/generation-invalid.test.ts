@@ -35,6 +35,7 @@ const plantQueuedDeployment = (serviceId: string, imageRef: string | null) => {
   const svc = h.db.select().from(service).where(eq(service.id, serviceId)).get()!
   const { id: _id, created_at: _c, updated_at: _u, ...config } = svc
   const id = newId('deployment')
+
   h.db
     .insert(deployment)
     .values({
@@ -58,6 +59,7 @@ const plantQueuedDeployment = (serviceId: string, imageRef: string | null) => {
       base_images: [],
     })
     .run()
+
   return id
 }
 
@@ -80,6 +82,7 @@ describe('an undeliverable deployment', () => {
       ],
       deploy: true,
     })
+
     await waitForDeployment(h, healthy.deployments[0].id, 'active')
     const broken = await createService(h, environmentId, {
       name: 'broken',
@@ -92,16 +95,22 @@ describe('an undeliverable deployment', () => {
       deploy: false,
     })
     const planted = plantQueuedDeployment(broken.id, 'docker.io/library/nginx:1.27')
+
     h.deps.stations.reconcile(station.stationId)
     const failed = await waitForDeployment(h, planted, 'failed')
+
     assert.equal(failed.status, 'failed')
     const diagnosis = await failureOf(planted)
+
     assert.equal(diagnosis.code, 'GENERATION_INVALID')
     assert.equal(diagnosis.phase, 'preflight')
     assert.match(diagnosis.summary, /image_ref/)
     assert.equal(diagnosis.fixes[0].code, 'RESOLVE_IMAGE')
     await station.waitFor(() => station.generations.length > 0)
-    for (const doc of station.generations) assert.equal(planted in doc.deployments, false)
+
+    for (const doc of station.generations) {
+      assert.equal(planted in doc.deployments, false)
+    }
   })
 
   test('the station keeps receiving every other change, and later deployments run', async () => {
@@ -117,6 +126,7 @@ describe('an undeliverable deployment', () => {
       deploy: true,
     })
     const doc = await station.waitForGeneration((d) => later.id in d.services)
+
     assert.ok(station.generations.length > before)
     assert.equal(
       Object.values(doc.deployments).some((d) => d.service_id === later.id),
@@ -131,9 +141,11 @@ describe('an undeliverable deployment', () => {
       .from(deployment)
       .all()
       .filter((d) => d.image_ref === 'docker.io/library/nginx:1.27')
+
     assert.equal(planted.length, 1)
     assert.equal(planted[0]!.status, 'failed')
     const last = station.generations.at(-1)!
+
     assert.equal(planted[0]!.id in last.deployments, false)
   })
 
@@ -149,6 +161,7 @@ describe('an undeliverable deployment', () => {
       deploy: false,
     })
     const row = h.db.select().from(service).where(eq(service.id, svc.id)).get()!
+
     h.db
       .update(service)
       .set({
@@ -163,9 +176,11 @@ describe('an undeliverable deployment', () => {
       svc.id,
       `docker.io/library/nginx@${registry.publish('nginx:1.27')}`,
     )
+
     h.deps.stations.reconcile(station.stationId)
     await waitForDeployment(h, planted, 'failed')
     const diagnosis = await failureOf(planted)
+
     assert.equal(diagnosis.code, 'GENERATION_INVALID')
     assert.equal(diagnosis.fixes[0].code, 'FIX_CONFIGURATION')
   })

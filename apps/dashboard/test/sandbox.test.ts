@@ -7,21 +7,10 @@ import {
   attachUrl,
   outputFrame,
   parseAllowlist,
-  parseDuration,
   remaining,
   stdinFrame,
   ttlProblem,
 } from '../src/lib/sandbox.ts'
-
-test('durations parse in single and combined units', () => {
-  assert.equal(parseDuration('90'), 90)
-  assert.equal(parseDuration('15m'), 900)
-  assert.equal(parseDuration('4h'), 14_400)
-  assert.equal(parseDuration('1h 30m'), 5400)
-  assert.equal(parseDuration('2d'), 172_800)
-  assert.equal(parseDuration('soon'), null)
-  assert.equal(parseDuration(''), null)
-})
 
 test('ttl limits follow the API range', () => {
   assert.equal(ttlProblem(30)?.includes('at least'), true)
@@ -40,6 +29,7 @@ test('spans format with the two largest units', () => {
 
 test('a running sandbox counts down to stop_at and a stopped one to delete_at', () => {
   const now = Date.parse('2026-11-08T10:00:00Z')
+
   assert.deepEqual(
     remaining(
       {
@@ -101,6 +91,7 @@ test('a running sandbox counts down to stop_at and a stopped one to delete_at', 
 test('attach frames carry the channel in the first byte', () => {
   assert.deepEqual([...stdinFrame('ls')], [0, 108, 115])
   const out = outputFrame(new Uint8Array([1, 104, 105]).buffer)
+
   assert.equal(out.channel, 1)
   assert.equal(new TextDecoder().decode(out.bytes), 'hi')
   assert.equal(
@@ -121,6 +112,7 @@ test('attach frames carry the channel in the first byte', () => {
 
 test('allowlist lines parse to API entries and back', () => {
   const parsed = parseAllowlist('registry.npmjs.org\n*.github.com:443,80 pypi.org')
+
   assert.equal(parsed.problem, null)
   assert.deepEqual(parsed.entries, [
     {

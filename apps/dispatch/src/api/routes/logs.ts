@@ -1,8 +1,8 @@
 import { Type } from '@sinclair/typebox'
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
-import { messages, type MessageBody } from '@stationly/protocol'
+import { logRoleValues, messages, StringEnum, type MessageBody } from '@stationly/protocol'
 
 import { deployment, sandbox, service, station } from '../../db/schema.ts'
 import type { StreamHandle } from '../../station/server.ts'
@@ -12,13 +12,14 @@ import { parseTime, type Kit } from '../kit.ts'
 import {
   buildById,
   deploymentById,
-  environmentById,
   runById,
   sandboxById,
   serviceById,
   stationByRef,
 } from '../lookup.ts'
-import { models, replies } from '../shapes.ts'
+import { since, until } from '../pagination.ts'
+import { input } from '../schemas.ts'
+import { replies } from '../shapes.ts'
 import { createSse } from '../sse.ts'
 
 import { stationError } from './runs.ts'
@@ -44,43 +45,67 @@ type Selector = MessageBody<'logs.query'>
 type LogLine = MessageBody<'logs.page'>['lines'][number]
 
 const maxTail = 5000
+const defaultTail = 50
 const redactionDeployments = 20
 
+const selector = (description: string) =>
+  t.Optional(
+    t.String({
+      description: `${description}; exactly one selector is required`,
+    }),
+  )
+
 const logQuery = t.Object({
-  service: t.Optional(t.String()),
-  deployment: t.Optional(t.String()),
-  build: t.Optional(t.String()),
-  run: t.Optional(t.String()),
-  sandbox: t.Optional(t.String()),
+  service: selector('Logs of this service'),
+  deployment: selector('Logs of this deployment id'),
+  build: selector('Logs of this build id'),
+  run: selector('Logs of this run id'),
+  sandbox: selector('Logs of this sandbox'),
   component: t.Optional(
-    t.Union([
-      t.Literal('stationd'),
-      t.Literal('depot'),
-      t.Literal('gateway'),
-      t.Literal('buildkit'),
-    ]),
+    t.Union(
+      [t.Literal('stationd'), t.Literal('depot'), t.Literal('gateway'), t.Literal('buildkit')],
+      {
+        description:
+          'Logs of this platform component, with station; exactly one selector is required',
+      },
+    ),
   ),
-  station: t.Optional(t.String()),
+  station: t.Optional(
+    t.String({
+      description: 'The station of a component, by id or name',
+    }),
+  ),
   role: t.Optional(
-    t.Union([
-      t.Literal('service'),
-      t.Literal('guard'),
-      t.Literal('coupler'),
-      t.Literal('init'),
-      t.Literal('runtime'),
-    ]),
+    input(
+      StringEnum(logRoleValues, {
+        description: 'Only lines of this container role of a service or deployment',
+      }),
+    ),
   ),
-  since: t.Optional(t.String()),
-  until: t.Optional(t.String()),
-  level: t.Optional(t.String()),
-  grep: t.Optional(t.String()),
+  since,
+  until,
+  level: t.Optional(
+    t.String({
+      description: 'Only lines of this parsed level, such as error; lines without a level pass',
+    }),
+  ),
+  grep: t.Optional(
+    t.String({
+      description: 'A case-insensitive substring, or a regular expression after re:',
+    }),
+  ),
   tail: t.Optional(
     t.Numeric({
       minimum: 1,
       maximum: maxTail,
+      description: `The last N lines (default ${defaultTail}, at most ${maxTail})`,
     }),
   ),
-  cursor: t.Optional(t.String()),
+  cursor: t.Optional(
+    t.String({
+      description: 'The next_cursor of a previous response, to read on from there',
+    }),
+  ),
   follow: t.Optional(t.BooleanString()),
 })
 
@@ -92,13 +117,16 @@ export const logRoutes = (kit: Kit) => {
     const chosen = (
       ['service', 'deployment', 'build', 'run', 'sandbox', 'component'] as const
     ).filter((k) => query[k] !== undefined)
-    if (chosen.length !== 1)
+
+    if (chosen.length !== 1) {
       invalid([
         {
           path: '/',
           message: `exactly one of service, deployment, build, run, sandbox, component is required (got ${chosen.length})`,
         },
       ])
+    }
+
     const base = {
       ...(query.since
         ? {
@@ -125,12 +153,13 @@ export const logRoutes = (kit: Kit) => {
             cursor: query.cursor,
           }
         : {}),
-      tail: query.tail ?? 50,
+      tail: query.tail ?? defaultTail,
     }
+
     if (
       query.role &&
       (query.role === 'init' || query.role === 'runtime') !== (query.sandbox !== undefined)
-    )
+    ) {
       invalid([
         {
           path: '/role',
@@ -138,18 +167,22 @@ export const logRoutes = (kit: Kit) => {
             'init and runtime narrow sandbox logs; service, guard and coupler narrow service logs',
         },
       ])
+    }
+
     if (
       query.role &&
       query.service === undefined &&
       query.deployment === undefined &&
       query.sandbox === undefined
-    )
+    ) {
       invalid([
         {
           path: '/role',
           message: 'role narrows runtime logs; pass it with service, deployment or sandbox',
         },
       ])
+    }
+
     const runtime = {
       source: 'runtime' as const,
       ...(query.role
@@ -159,6 +192,7 @@ export const logRoutes = (kit: Kit) => {
         : {}),
       ...base,
     }
+
     if (query.grep?.startsWith('re:')) {
       try {
         new RegExp(query.grep.slice(3))
@@ -171,13 +205,16 @@ export const logRoutes = (kit: Kit) => {
         ])
       }
     }
-    if (query.station !== undefined && query.component === undefined)
+
+    if (query.station !== undefined && query.component === undefined) {
       invalid([
         {
           path: '/station',
           message: 'station selects where component logs are read; pass it with component',
         },
       ])
+    }
+
     if (query.component !== undefined) {
       requireInstance(call.principal, 'read')
       const stationId = query.station
@@ -196,7 +233,11 @@ export const logRoutes = (kit: Kit) => {
             .from(station)
             .where(isNull(station.revoked_at))
             .get()?.id)
-      if (!stationId) fail('NOT_FOUND', 'No station holds component logs yet.')
+
+      if (!stationId) {
+        fail('NOT_FOUND', 'No station holds component logs yet.')
+      }
+
       return {
         call,
         stationId: stationId!,
@@ -209,9 +250,12 @@ export const logRoutes = (kit: Kit) => {
         sandboxId: undefined as string | undefined,
       }
     }
+
     if (query.sandbox !== undefined) {
       const ctx = sandboxById(db, query.sandbox)
+
       requireLevel(call.principal, ctx.target, 'read')
+
       return {
         call,
         stationId: ctx.sandbox.station_id,
@@ -225,8 +269,10 @@ export const logRoutes = (kit: Kit) => {
         sandboxId: ctx.sandbox.id as string | undefined,
       }
     }
+
     if (query.service !== undefined) {
       const ctx = serviceById(db, query.service)
+
       requireLevel(call.principal, ctx.target, 'read')
       const deps = db
         .select({
@@ -238,6 +284,7 @@ export const logRoutes = (kit: Kit) => {
         .limit(redactionDeployments)
         .all()
         .map((d) => d.id)
+
       return {
         call,
         stationId: ctx.service.station_id,
@@ -249,9 +296,12 @@ export const logRoutes = (kit: Kit) => {
         sandboxId: undefined as string | undefined,
       }
     }
+
     if (query.deployment !== undefined) {
       const ctx = deploymentById(db, query.deployment)
+
       requireLevel(call.principal, ctx.target, 'read')
+
       return {
         call,
         stationId: ctx.service.station_id,
@@ -263,9 +313,12 @@ export const logRoutes = (kit: Kit) => {
         sandboxId: undefined as string | undefined,
       }
     }
+
     if (query.build !== undefined) {
       const ctx = buildById(db, query.build)
+
       requireLevel(call.principal, ctx.target, 'read')
+
       return {
         call,
         stationId: ctx.service.station_id,
@@ -278,8 +331,11 @@ export const logRoutes = (kit: Kit) => {
         sandboxId: undefined as string | undefined,
       }
     }
+
     const { run: r, ...owner } = runById(db, query.run!)
+
     requireLevel(call.principal, owner.target, 'read')
+
     return {
       call,
       stationId: owner.station_id,
@@ -318,7 +374,8 @@ export const logRoutes = (kit: Kit) => {
         timeoutMs: 10_000,
       })
       .catch(stationError)
-    const page = reply.body as MessageBody<'logs.page'>
+    const page = reply.body
+
     return {
       stationId,
       selector,
@@ -341,6 +398,7 @@ export const logRoutes = (kit: Kit) => {
 
   const pageLogs = async (request: Request, query: typeof logQuery.static) => {
     const { page, lines } = await firstPage(request, query)
+
     return {
       untrusted: {
         source: sourceOf(query),
@@ -358,13 +416,20 @@ export const logRoutes = (kit: Kit) => {
     let owed = 0
     let chain = Promise.resolve()
     const credit = (bytes: number) => (handle ? handle.credit(bytes) : (owed += bytes))
+
     sse.onClose(() => handle?.cancel())
+
     void (async () => {
-      for (const line of lines) await sse.send('log', line, line.cursor)
-      if (page.truncated)
+      for (const line of lines) {
+        await sse.send('log', line, line.cursor)
+      }
+
+      if (page.truncated) {
         await sse.send('truncated', {
           truncated: true,
         })
+      }
+
       const followFrom = {
         ...selector,
         ...(page.next_cursor
@@ -374,11 +439,15 @@ export const logRoutes = (kit: Kit) => {
           : {}),
         tail: maxTail,
       }
+
       try {
         handle = await stations.openStream(stationId, 'logs.follow', followFrom, {
           onData: (items, bytes) => {
             chain = chain.then(async () => {
-              for (const item of items as LogLine[]) await sse.send('log', shown(item), item.cursor)
+              for (const item of items as LogLine[]) {
+                await sse.send('log', shown(item), item.cursor)
+              }
+
               credit(bytes)
             })
           },
@@ -392,8 +461,14 @@ export const logRoutes = (kit: Kit) => {
               .then(() => sse.close())
           },
         })
-        if (owed) handle.credit(owed)
-        if (sse.closed()) handle.cancel()
+
+        if (owed) {
+          handle.credit(owed)
+        }
+
+        if (sse.closed()) {
+          handle.cancel()
+        }
       } catch (error) {
         await sse.send('error', {
           code: (error as { code?: string }).code ?? 'STATION_OFFLINE',
@@ -402,15 +477,12 @@ export const logRoutes = (kit: Kit) => {
         sse.close()
       }
     })()
+
     return sse.response
   }
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('logs', '/v1')
     .get(
       '/logs',
       async ({ request, query }) =>
@@ -418,6 +490,7 @@ export const logRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'get_logs',
+          summary: 'Read logs for one selector; follow = true streams new lines as SSE',
           level: 'any',
           cli: {
             path: ['logs'],
@@ -430,32 +503,19 @@ export const logRoutes = (kit: Kit) => {
         response: replies({
           200: LogPage,
         }),
-        detail: {
-          summary: 'Read logs for one selector; follow = true streams new lines as SSE',
-          tags: ['logs'],
-        },
       },
     )
     .get(
       '/services/:service/metrics',
-      async ({ params }) => {
-        const ctx = serviceById(db, params.service)
+      async ({ ctx }) => {
         const reply = await stations
-          .ask(
-            ctx.service.station_id,
-            'metrics.sample',
-            {
-              service_ids: [ctx.service.id],
-            },
-            {
-              capability: 'metrics.v1',
-            },
-          )
+          .ask(ctx.service.station_id, 'metrics.sample', {
+            service_ids: [ctx.service.id],
+          })
           .catch(stationError)
-        const sample = (reply.body as MessageBody<'metrics.sample.result'>).samples.find(
-          (s) => s.service_id === ctx.service.id,
-        )
-        if (!sample)
+        const sample = reply.body.samples.find((s) => s.service_id === ctx.service.id)
+
+        if (!sample) {
           fail(
             'NOT_FOUND',
             `${ctx.service.name} has no running container reporting metrics.`,
@@ -465,29 +525,27 @@ export const logRoutes = (kit: Kit) => {
               status: ctx.service.status,
             },
           )
+        }
+
         return sample!
       },
       {
-        operation: {
+        service: {
           id: 'get_metrics',
+          summary: 'Latest live metrics sample of a service',
           level: 'read',
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         response: replies({
           200: MetricSample,
         }),
         detail: {
-          summary: 'Latest live metrics sample of a service',
           tags: ['metrics'],
         },
       },
     )
     .get(
       '/environments/:environment/metrics',
-      ({ request, params }) => {
-        const ctx = environmentById(db, params.environment)
+      ({ ctx, request }) => {
         const running = db
           .select({
             id: service.id,
@@ -520,13 +578,23 @@ export const logRoutes = (kit: Kit) => {
               sandboxes: [],
             })
             .get(stationId)!
-        for (const s of running) entry(s.station_id).services.push(s.id)
-        for (const b of boxes) entry(b.station_id).sandboxes.push(b.id)
+
+        for (const s of running) {
+          entry(s.station_id).services.push(s.id)
+        }
+
+        for (const b of boxes) {
+          entry(b.station_id).sandboxes.push(b.id)
+        }
+
         const sse = createSse(request.signal)
         const handles: StreamHandle[] = []
+
         sse.onClose(() => handles.forEach((h) => h.cancel()))
+
         void (async () => {
           let chain = Promise.resolve()
+
           for (const [stationId, ids] of byStation) {
             try {
               let handle: StreamHandle | null = null
@@ -541,9 +609,15 @@ export const logRoutes = (kit: Kit) => {
                 {
                   onData: (items, bytes) => {
                     chain = chain.then(async () => {
-                      for (const item of items) await sse.send('metrics', item)
-                      if (handle) handle.credit(bytes)
-                      else owed += bytes
+                      for (const item of items) {
+                        await sse.send('metrics', item)
+                      }
+
+                      if (handle) {
+                        handle.credit(bytes)
+                      } else {
+                        owed += bytes
+                      }
                     })
                   },
                   onEnd: (reason) =>
@@ -553,10 +627,18 @@ export const logRoutes = (kit: Kit) => {
                     }),
                 },
               )
+
               handle = opened
-              if (owed) opened.credit(owed)
+
+              if (owed) {
+                opened.credit(owed)
+              }
+
               handles.push(opened)
-              if (sse.closed()) opened.cancel()
+
+              if (sse.closed()) {
+                opened.cancel()
+              }
             } catch (error) {
               await sse.send('error', {
                 station_id: stationId,
@@ -565,16 +647,20 @@ export const logRoutes = (kit: Kit) => {
               })
             }
           }
-          if (!byStation.size)
+
+          if (!byStation.size) {
             await sse.send('empty', {
               explanation: 'no running service or sandbox in this environment',
             })
+          }
         })()
+
         return sse.response
       },
       {
-        operation: {
+        environment: {
           id: 'stream_metrics',
+          summary: 'SSE: one metrics sample per running service every 5 s',
           level: 'read',
           mcp: false,
           cli: {
@@ -582,11 +668,7 @@ export const logRoutes = (kit: Kit) => {
           },
           stream: true,
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         detail: {
-          summary: 'SSE: one metrics sample per running service every 5 s',
           tags: ['metrics'],
         },
       },

@@ -19,7 +19,7 @@ export const streamLogs = (
   followSse(
     (lastId) =>
       stream(
-        run.api.v1.logs.get({
+        run.waiting().api.v1.logs.get({
           query: {
             ...query,
             follow: true,
@@ -28,6 +28,8 @@ export const streamLogs = (
         }),
       ),
     streamed('log stream', (event) => {
-      if (event.event === 'log') showLine(globals, JSON.parse(event.data) as LogLine, sink)
+      if (event.event === 'log') {
+        showLine(globals, JSON.parse(event.data) as LogLine, sink)
+      }
     }),
   )

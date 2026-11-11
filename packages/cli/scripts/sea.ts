@@ -34,13 +34,21 @@ const fail = (message: string): never => {
 }
 
 const wanted = values.targets.split(',').map((t) => t.trim()) as Target[]
-for (const t of wanted) if (!(t in targets)) fail(`unknown target ${t}`)
-if (wanted.some((t) => t.startsWith('darwin-')) && process.platform !== 'darwin')
+
+for (const t of wanted) {
+  if (!(t in targets)) {
+    fail(`unknown target ${t}`)
+  }
+}
+
+if (wanted.some((t) => t.startsWith('darwin-')) && process.platform !== 'darwin') {
   fail('darwin targets need ad-hoc codesigning with codesign, so build them on macOS')
+}
 
 const out = resolve(values.out)
 const cache = resolve(values.cache ?? join(out, '.cache'))
 const work = join(cache, 'work')
+
 mkdirSync(cache, {
   recursive: true,
 })
@@ -54,7 +62,10 @@ const run = (cmd: string, args: string[]) => {
   const r = spawnSync(cmd, args, {
     stdio: ['ignore', 2, 'inherit'],
   })
-  if (r.status !== 0) fail(`${cmd} ${args.join(' ')} exited ${r.status ?? r.signal}`)
+
+  if (r.status !== 0) {
+    fail(`${cmd} ${args.join(' ')} exited ${r.status ?? r.signal}`)
+  }
 }
 
 const node = process.versions.node
@@ -64,12 +75,20 @@ const download = async (url: string) => {
   const res = await fetch(url, {
     signal: AbortSignal.timeout(300_000),
   })
-  if (res.status !== 200) fail(`GET ${url} answered ${res.status}`)
+
+  if (res.status !== 200) {
+    fail(`GET ${url} answered ${res.status}`)
+  }
+
   return Buffer.from(await res.arrayBuffer())
 }
 
 const shasumsPath = join(cache, `SHASUMS256-v${node}.txt`)
-if (!existsSync(shasumsPath)) writeFileSync(shasumsPath, await download(`${dist}/SHASUMS256.txt`))
+
+if (!existsSync(shasumsPath)) {
+  writeFileSync(shasumsPath, await download(`${dist}/SHASUMS256.txt`))
+}
+
 const shasums = new Map(
   readFileSync(shasumsPath, 'utf8')
     .split('\n')
@@ -82,17 +101,26 @@ const nodeBinary = async (os: string, arch: string) => {
   const tarball = join(cache, `${name}.tar.gz`)
   const want =
     shasums.get(`${name}.tar.gz`) ?? fail(`${dist}/SHASUMS256.txt lists no ${name}.tar.gz`)
-  if (!existsSync(tarball) || sha256(readFileSync(tarball)) !== want)
+
+  if (!existsSync(tarball) || sha256(readFileSync(tarball)) !== want) {
     writeFileSync(tarball, await download(`${dist}/${name}.tar.gz`))
-  if (sha256(readFileSync(tarball)) !== want)
+  }
+
+  if (sha256(readFileSync(tarball)) !== want) {
     fail(`${name}.tar.gz does not match ${dist}/SHASUMS256.txt`)
+  }
+
   const dir = join(cache, name)
-  if (!existsSync(join(dir, 'bin', 'node')))
+
+  if (!existsSync(join(dir, 'bin', 'node'))) {
     run('tar', ['-xzf', tarball, '-C', cache, `${name}/bin/node`])
+  }
+
   return join(dir, 'bin', 'node')
 }
 
 const bundle = join(work, 'sly.mjs')
+
 await build({
   input: resolve(import.meta.dirname, '../src/index.ts'),
   platform: 'node',
@@ -110,13 +138,16 @@ await build({
 })
 
 const result: Record<string, string> = {}
+
 for (const target of wanted) {
   const [os, arch] = targets[target]
   const output = join(out, `sly-${target}`)
+
   rmSync(output, {
     force: true,
   })
   const config = join(work, `sea-${target}.json`)
+
   writeFileSync(
     config,
     JSON.stringify({
@@ -130,10 +161,15 @@ for (const target of wanted) {
     }),
   )
   run(process.execPath, ['--build-sea', config])
-  if (os === 'darwin') run('codesign', ['--force', '--sign', '-', output])
+
+  if (os === 'darwin') {
+    run('codesign', ['--force', '--sign', '-', output])
+  }
+
   chmodSync(output, 0o755)
   result[target] = `sha256:${sha256(readFileSync(output))}`
 }
+
 rmSync(work, {
   recursive: true,
   force: true,

@@ -10,8 +10,11 @@ import { assignmentOf } from './variables.ts'
 
 const pair = (assignment: string) => {
   const found = assignmentOf(assignment)
-  if (!found)
+
+  if (!found) {
     throw usage(`${assignment} has no value.`, `Write ${assignment.split('=')[0]}=<value>.`)
+  }
+
   return found
 }
 
@@ -50,7 +53,11 @@ export const sandboxCommands = (program: Program) => {
             }),
         )
         const attach_url = 'attach_url' in created.data ? created.data.attach_url : undefined
-        if (detach || !attach_url) return print(options, created)
+
+        if (detach || !attach_url) {
+          return print(options, created)
+        }
+
         const exit = await attachRun(
           run,
           {
@@ -62,6 +69,7 @@ export const sandboxCommands = (program: Program) => {
             json: Boolean(options.json),
           },
         )
+
         return exit ? reportRun(options, await waitRun(run, created.data.id)) : exitCodes.connection
       }),
     )
@@ -76,11 +84,13 @@ export const sandboxCommands = (program: Program) => {
     .option('--cwd <dir>')
     .action(
       action(async (options, command) => {
-        if (!process.stdin.isTTY)
+        if (!process.stdin.isTTY) {
           throw usage(
             'sly sandboxes shell needs a terminal.',
             'Run it from an interactive terminal; agents use sly sandboxes exec.',
           )
+        }
+
         const run = await connect(options)
         const id = await targetId(run, 'sandbox')
         const created = (
@@ -96,6 +106,7 @@ export const sandboxCommands = (program: Program) => {
               }),
           )
         ).data
+
         return shellExit(
           created.id,
           await attachRun(run, created, {
@@ -119,6 +130,7 @@ export const sandboxCommands = (program: Program) => {
         const { address, close } = await forwardPort(run, id, remote, options.localPort, {
           control: progress,
         })
+
         process.stdout.write(
           options.json
             ? `${JSON.stringify({
@@ -127,8 +139,10 @@ export const sandboxCommands = (program: Program) => {
             : `${address}\n`,
         )
         progress(`forwarding ${address} to port ${remote} of ${id}; press Ctrl-C to stop`)
+
         return new Promise<number>((resolve) => {
           const stop = () => void close().then(() => resolve(exitCodes.ok))
+
           process.once('SIGINT', stop)
           process.once('SIGTERM', stop)
         })

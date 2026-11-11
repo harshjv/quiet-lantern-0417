@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@balena/dockerignore": "1.0.2",
+    "@bomb.sh/tab": "0.0.22",
+    "@clack/prompts": "catalog:",
     "@commander-js/extra-typings": "15.1.0",
     "@modelcontextprotocol/client": "catalog:",
     "@modelcontextprotocol/server": "catalog:",
@@ -22,6 +24,11 @@
     "@stationly/protocol": "workspace:*",
     "@t3-oss/env-core": "catalog:",
     "commander": "catalog:",
+    "eventsource-parser": "catalog:",
+    "jose": "catalog:",
+    "ky": "catalog:",
+    "open": "catalog:",
+    "table": "catalog:",
     "tar": "7.5.22",
     "tldts": "catalog:",
     "zod": "catalog:"

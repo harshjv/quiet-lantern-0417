@@ -22,7 +22,7 @@ import (
 	"github.com/harshjv/stationly/go/internal/logstore"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
+	"github.com/harshjv/stationly/go/internal/sandbox"
 	"github.com/harshjv/stationly/go/internal/sandbox/store"
 	"github.com/harshjv/stationly/go/internal/secrets"
 )
@@ -68,13 +68,10 @@ type sbxLogFile struct {
 	role string
 }
 
-func sandboxLogFiles(dir string) []sbxLogFile {
-	out := []sbxLogFile{{"init.log", string(protocol.LogRoleInit)}, {"runsc.log", string(protocol.LogRoleRuntime)}, {"panic.log", string(protocol.LogRoleRuntime)}}
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		if e.Type().IsRegular() && strings.HasPrefix(e.Name(), "runsc.log.") && strings.HasSuffix(e.Name(), ".txt") {
-			out = append(out, sbxLogFile{e.Name(), string(protocol.LogRoleRuntime)})
-		}
+func (s *Station) sandboxLogFiles(dir string) []sbxLogFile {
+	out := []sbxLogFile{{"init.log", string(protocol.LogRoleInit)}}
+	for _, name := range s.sbx.rt.LogFiles(dir) {
+		out = append(out, sbxLogFile{name, string(protocol.LogRoleRuntime)})
 	}
 	return out
 }
@@ -124,7 +121,7 @@ func (s *Station) collectSandboxLogs(ctx context.Context) {
 
 func (s *Station) copySandboxLogs(j sbxLogJob) map[string]int64 {
 	dir := filepath.Join(logDir, j.id, sandboxLogDirName)
-	for _, f := range sandboxLogFiles(j.dir) {
+	for _, f := range s.sandboxLogFiles(j.dir) {
 		path := filepath.Join(j.dir, f.name)
 		file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 		if err != nil {
@@ -230,7 +227,7 @@ type sbxSample struct {
 }
 
 func sampleSandbox(cgroup string, pid int, now time.Time) sbxSample {
-	dir := filepath.Join("/sys/fs/cgroup", cgroup)
+	dir := filepath.Join(sandbox.CgroupRoot, cgroup)
 	smp := sbxSample{at: now}
 	smp.cpu, _ = readCgroupKey(dir, "cpu.stat", "usage_usec")
 	smp.memory, _ = readCgroupInt(dir, "memory.current")
@@ -305,7 +302,7 @@ func (s *Station) collectSandbox(ctx context.Context, id, key string, c *collect
 			used, limit := int(c.diskUsed.Load()), int(c.diskLimit.Load())
 			smp := protocol.MetricSample{
 				SandboxId:        ptr(id),
-				ContainerId:      runsc.ScopeUnit(id),
+				ContainerId:      s.sbx.rt.Unit(id),
 				At:               logstore.FormatTime(cur.at),
 				CpuPct:           float64(int(cpu*100)) / 100,
 				MemoryBytes:      int(cur.memory),
@@ -335,7 +332,7 @@ func (s *Station) checkSandboxRuntime(ctx context.Context) protocol.DoctorCheck 
 	}
 	pinned, installed := s.pinnedRunsc()
 	c.detail["pinned"] = pinned
-	versions, _ := runsc.Installed(runsc.LibDir)
+	versions := s.sbx.rt.Versions()
 	c.detail["installed"] = strings.Join(versions, ",")
 	var missing, older []string
 	for id, st := range s.sbx.states {
@@ -354,10 +351,9 @@ func (s *Station) checkSandboxRuntime(ctx context.Context) protocol.DoctorCheck 
 	case pinned == "":
 		c.raise(protocol.DoctorStatusWarn, "runsc_version", "no runsc version is pinned on this station yet", "Wait for a generation that pins runsc, or run sly platform upgrade.")
 	case !installed:
-		c.raise(protocol.DoctorStatusFail, "runsc_missing", fmt.Sprintf("the pinned runsc %s is not installed under %s", pinned, runsc.LibDir), "Run sly platform upgrade so stationd downloads and verifies the runsc archive again.")
+		c.raise(protocol.DoctorStatusFail, "runsc_missing", fmt.Sprintf("the pinned runsc %s is not installed", pinned), "Run sly platform upgrade so stationd downloads and verifies the runsc archive again.")
 	default:
-		rt := runsc.At(runsc.LibDir, runsc.StateBase, pinned)
-		problems, err := rt.Verify()
+		problems, err := s.sbx.rt.Verify(pinned)
 		if err != nil {
 			c.raise(protocol.DoctorStatusFail, "runsc_missing", fmt.Sprintf("runsc %s: %v", pinned, err), "Run sly platform upgrade so stationd installs runsc again.")
 		}
@@ -369,7 +365,7 @@ func (s *Station) checkSandboxRuntime(ctx context.Context) protocol.DoctorCheck 
 			c.raise(protocol.DoctorStatusFail, code, "runsc "+pinned+": "+p, "Reinstall runsc from the verified release archive; remove the directory and run sly platform upgrade.")
 		}
 		pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		if err := rt.Probe(pctx); err != nil {
+		if err := s.sbx.rt.Probe(pctx, pinned); err != nil {
 			c.raise(protocol.DoctorStatusFail, "runsc_unusable", fmt.Sprintf("probe sandbox with runsc %s on systrap failed: %v", pinned, err), "Read the stationd log and the kernel log for the probe's error.")
 		}
 		cancel()
@@ -396,39 +392,7 @@ func (s *Station) strayHelpers() []string {
 			known[st.rec.Cgroup] = true
 		}
 	}
-	entries, _ := os.ReadDir("/proc")
-	var out []string
-	for _, e := range entries {
-		pid, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		exe, err := os.Readlink(filepath.Join("/proc", e.Name(), "exe"))
-		if err != nil || !strings.HasPrefix(exe, runsc.LibDir+"/runsc-") {
-			continue
-		}
-		base := filepath.Base(exe)
-		if base != "runsc-fd-parking" && base != "gvisor_sentry" && base != "runsc" {
-			continue
-		}
-		cg, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cgroup"))
-		if err != nil {
-			continue
-		}
-		path := strings.TrimSpace(strings.TrimPrefix(string(cg), "0::"))
-		if !strings.Contains(path, "/stationly-sandboxes.slice/") {
-			if strings.Contains(path, "stationd.service") {
-				continue
-			}
-			out = append(out, fmt.Sprintf("%s pid %d in %s", base, pid, path))
-			continue
-		}
-		if !known[path] {
-			out = append(out, fmt.Sprintf("%s pid %d in %s", base, pid, path))
-		}
-	}
-	slices.Sort(out)
-	return out
+	return s.sbx.rt.Strays(known)
 }
 
 func (s *Station) checkSandboxStorage() protocol.DoctorCheck {

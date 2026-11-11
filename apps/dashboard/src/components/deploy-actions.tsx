@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Loader2, RefreshCw, Rocket, TriangleAlert, Undo2 } from 'lucide-react'
+import { Loader2, RefreshCw, TriangleAlert, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 
 import { Confirm } from '@/components/confirm'
@@ -19,9 +19,11 @@ import {
   type Service,
 } from '@/lib/api'
 import { editItems } from '@/lib/cache'
+import { entityIcon } from '@/lib/icons'
 import { follow } from '@/lib/live'
 import { useApiMutation } from '@/lib/mutation'
 import { deploymentsQuery, seedDeployment } from '@/lib/queries'
+import { useShortcut } from '@/lib/shortcuts'
 import { isInFlight, withQueued, type TriggerType } from '@/lib/status'
 import { warningAlert } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -41,6 +43,7 @@ export function useDeploy<V = void>(
   } = {},
 ) {
   const navigate = useNavigate()
+
   return useApiMutation({
     mutationFn,
     optimistic: () => [
@@ -55,7 +58,11 @@ export function useDeploy<V = void>(
     }),
     onSuccess: (result) => {
       options.onSuccess?.()
-      if (result.staged) return
+
+      if (result.staged) {
+        return
+      }
+
       follow(result.body.id)
       void navigate({
         to: '/deployments/$deployment',
@@ -99,8 +106,11 @@ const useRedeploy = (service: Named, verb: 'Deploy' | 'Redeploy') =>
       ),
   )
 
-export function DeployButton({ service }: { service: Service }) {
+export function DeployButton({ service, shortcut }: { service: Service; shortcut?: boolean }) {
   const [open, setOpen] = useState(false)
+  const deployable = service.source.type !== 'local' && service.source.type !== 'template'
+
+  useShortcut('deploy', () => setOpen(true), Boolean(shortcut) && deployable)
   const image = service.source.type === 'image' ? service.source.ref : null
   const [ref, setRef] = useState(image ?? '')
   const mutation = useDeploy(
@@ -120,6 +130,7 @@ export function DeployButton({ service }: { service: Service }) {
                 source_ref: ref.trim(),
               }
             : {}
+
       return send(
         api.v1
           .services({
@@ -134,17 +145,24 @@ export function DeployButton({ service }: { service: Service }) {
     },
   )
   const repo = service.source.type === 'dockerfile' || service.source.type === 'railpack'
-  if (service.source.type === 'local' || service.source.type === 'template') return null
+
+  if (!deployable) {
+    return null
+  }
+
   return (
     <FormDialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) mutation.reset()
+
+        if (!next) {
+          mutation.reset()
+        }
       }}
       trigger={
         <Button size="sm">
-          <Rocket /> Deploy
+          <entityIcon.deployment /> Deploy
         </Button>
       }
       title={`Deploy ${service.name}`}
@@ -179,6 +197,7 @@ export function DeployButton({ service }: { service: Service }) {
 
 export function RedeployButton({ service }: { service: Service }) {
   const mutation = useRedeploy(service, 'Redeploy')
+
   return (
     <Button
       size="sm"
@@ -224,13 +243,17 @@ export function useRollback(service: Named, deployment: { id: string; label: str
       ),
     {
       intercept: (failure) => {
-        if (!(failure instanceof ApiFailure && failure.code === 'STALE_SECRETS_CONFIRM_REQUIRED'))
+        if (!(failure instanceof ApiFailure && failure.code === 'STALE_SECRETS_CONFIRM_REQUIRED')) {
           return false
+        }
+
         setConfirm(failure.message)
+
         return true
       },
     },
   )
+
   return {
     mutation,
     confirm: (
@@ -260,6 +283,7 @@ export function RollbackButton({
     id: deployment.id,
     label: `#${deployment.number}`,
   })
+
   return (
     <>
       <Button
@@ -291,11 +315,16 @@ export function StaleBanner({ service }: { service: Service }) {
   })
   const mutation = useRedeploy(service, 'Deploy')
   const reasons = service.stale_reasons ?? []
-  if (!service.stale || reasons.length === 0) return null
+
+  if (!service.stale || reasons.length === 0) {
+    return null
+  }
+
   const rolling = deployments.data?.items.find((d) => isInFlight(d.status))
   const sourceChanged = reasons.some(
     (r) => r.code === 'CONFIG_CHANGED' && r.keys.includes('source'),
   )
+
   return (
     <Alert
       role="status"
@@ -336,7 +365,7 @@ export function StaleBanner({ service }: { service: Service }) {
             onClick={() => mutation.mutate()}
             disabled={!service.current_deployment_id || mutation.isPending}
           >
-            {mutation.isPending ? <Loader2 className="animate-spin" /> : <Rocket />}
+            {mutation.isPending ? <Loader2 className="animate-spin" /> : <entityIcon.deployment />}
             Deploy
           </Button>
         ))}

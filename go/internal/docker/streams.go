@@ -3,7 +3,6 @@ package docker
 import (
 	"context"
 	"io"
-	"strconv"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -12,7 +11,7 @@ import (
 func (c *Client) FollowLogs(ctx context.Context, id string, since time.Time, follow bool) (io.ReadCloser, error) {
 	opts := client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Timestamps: true, Follow: follow}
 	if !since.IsZero() {
-		opts.Since = strconv.FormatInt(since.Unix(), 10) + "." + strconv.FormatInt(int64(since.Nanosecond()), 10)
+		opts.Since = since.Format(time.RFC3339Nano)
 	}
 	return c.api.ContainerLogs(ctx, id, opts)
 }

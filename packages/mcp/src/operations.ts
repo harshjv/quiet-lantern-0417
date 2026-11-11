@@ -80,6 +80,7 @@ export const resolved = (
   components: Record<string, Json>,
 ): Json | undefined => {
   const ref = schema?.$ref
+
   return typeof ref === 'string' && ref.startsWith(componentRef)
     ? components[ref.slice(componentRef.length)]
     : schema
@@ -87,12 +88,17 @@ export const resolved = (
 
 export const endpoints = (document: OpenApiDocument): Endpoint[] => {
   const components = document.components?.schemas ?? {}
+
   return Object.entries(document.paths).flatMap(([path, item]) =>
     Object.entries(item)
       .filter(([method, operation]) => methods.includes(method) && operation['x-stationly'])
       .map(([method, operation]) => {
         const name = operation.operationId
-        if (!name) throw new Error(`${method.toUpperCase()} ${path} has no operationId`)
+
+        if (!name) {
+          throw new Error(`${method.toUpperCase()} ${path} has no operationId`)
+        }
+
         return {
           name,
           method: method.toUpperCase(),
@@ -113,6 +119,7 @@ export const pathOf = (template: string, input: Input) =>
   template.replace(/\/([^/]+)\/\{([^}]+)\}/g, (_, collection: string, name: string) => {
     const value = String(input[name])
     const segments = slugPaths[name] ? value.split('/') : [value]
+
     return segments
       .map(
         (segment, i) =>
@@ -124,10 +131,15 @@ export const pathOf = (template: string, input: Input) =>
 export const requestOf = (route: Route, input: Input) => {
   const { idempotency_key: key, ...rest } = input
   const query = new URLSearchParams()
+
   for (const name of route.query) {
     const value = rest[name] as string | number | boolean | undefined
-    if (value !== undefined) query.set(name, String(value))
+
+    if (value !== undefined) {
+      query.set(name, String(value))
+    }
   }
+
   const body = Object.fromEntries(
     Object.entries(rest).filter(([name]) => !route.params.includes(name)),
   )
@@ -153,6 +165,7 @@ export const requestOf = (route: Route, input: Input) => {
         method: route.method,
         headers,
       }
+
   return {
     path: `${pathOf(route.path, rest)}${search}`,
     init,

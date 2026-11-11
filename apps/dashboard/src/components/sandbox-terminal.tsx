@@ -59,7 +59,11 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
 
   useEffect(() => {
     const node = container.current
-    if (!node) return
+
+    if (!node) {
+      return
+    }
+
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -67,6 +71,7 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
       scrollback: 5000,
     })
     const fit = new FitAddon()
+
     term.loadAddon(fit)
     term.open(node)
     fit.fit()
@@ -79,17 +84,23 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
         term.hasSelection()
       ) {
         void navigator.clipboard.writeText(term.getSelection())
+
         return false
       }
+
       return true
     })
     const input = term.onData((data) => {
       const socket = socketRef.current
-      if (socket?.readyState === WebSocket.OPEN) socket.send(stdinFrame(data))
+
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(stdinFrame(data))
+      }
     })
     const resized = term.onResize(({ rows, cols }) => {
       const socket = socketRef.current
-      if (socket?.readyState === WebSocket.OPEN)
+
+      if (socket?.readyState === WebSocket.OPEN) {
         socket.send(
           JSON.stringify({
             type: 'resize',
@@ -97,18 +108,30 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
             cols,
           }),
         )
+      }
     })
     let frame = 0
     const observer = new ResizeObserver(() => {
-      if (frame) cancelAnimationFrame(frame)
+      if (frame) {
+        cancelAnimationFrame(frame)
+      }
+
       frame = requestAnimationFrame(() => {
         frame = 0
-        if (node.clientWidth > 0 && node.clientHeight > 0) fit.fit()
+
+        if (node.clientWidth > 0 && node.clientHeight > 0) {
+          fit.fit()
+        }
       })
     })
+
     observer.observe(node)
+
     return () => {
-      if (frame) cancelAnimationFrame(frame)
+      if (frame) {
+        cancelAnimationFrame(frame)
+      }
+
       observer.disconnect()
       input.dispose()
       resized.dispose()
@@ -118,17 +141,26 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
   }, [])
 
   useEffect(() => {
-    if (termRef.current) termRef.current.options.theme = palette
+    if (termRef.current) {
+      termRef.current.options.theme = palette
+    }
   }, [palette])
 
   useEffect(() => {
     const term = termRef.current
-    if (!term) return
+
+    if (!term) {
+      return
+    }
+
     let cancelled = false
     let finished = false
     let socket: WebSocket | null = null
     const finish = (next: Phase, text: string) => {
-      if (finished) return
+      if (finished) {
+        return
+      }
+
       finished = true
       setPhase(next)
       setDetail(text)
@@ -138,6 +170,7 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
       setPhase('connecting')
       setDetail('')
       setFailure(null)
+
       try {
         const shell = await unwrap(
           api.v1
@@ -146,7 +179,11 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
             })
             .shells.post({}, idempotency()),
         )
-        if (cancelled) return
+
+        if (cancelled) {
+          return
+        }
+
         socket = new WebSocket(
           attachUrl(shell.attach_url, window.location.origin, {
             rows: term.rows,
@@ -155,9 +192,11 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
         )
         socket.binaryType = 'arraybuffer'
         socketRef.current = socket
+
         socket.onmessage = (message) => {
           if (typeof message.data === 'string') {
             const control = JSON.parse(message.data) as Control
+
             if (control.type === 'attached') {
               setPhase('live')
               term.focus()
@@ -178,25 +217,34 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
               )
               finish('error', 'Couldn’t attach to the shell.')
             }
+
             return
           }
+
           term.write(outputFrame(message.data as ArrayBuffer).bytes)
         }
+
         socket.onclose = () => finish('ended', 'Connection closed.')
       } catch (error) {
-        if (cancelled) return
+        if (cancelled) {
+          return
+        }
+
         setFailure(error)
         finish('error', failureText(error))
       }
     }
     const timer = window.setTimeout(() => void open(), 0)
+
     return () => {
       cancelled = true
       window.clearTimeout(timer)
+
       if (socket) {
         socket.onclose = null
         socket.close()
       }
+
       socketRef.current = null
     }
   }, [sandbox.id, epoch])
@@ -208,7 +256,11 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
 
   const copy = () => {
     const term = termRef.current
-    if (!term?.hasSelection()) return
+
+    if (!term?.hasSelection()) {
+      return
+    }
+
     void navigator.clipboard.writeText(term.getSelection()).then(() => {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
@@ -280,9 +332,13 @@ export function SandboxTerminal({
     failure?: Sandbox['failure']
   }
 }) {
-  if (sandbox.status === 'running') return <ShellSession sandbox={sandbox} />
+  if (sandbox.status === 'running') {
+    return <ShellSession sandbox={sandbox} />
+  }
+
   const busy = isTransient(sandbox.status)
   const idle = isIdle(sandbox.status)
+
   return (
     <div
       className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center"

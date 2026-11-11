@@ -71,14 +71,20 @@ const listOperations = async (h: Dispatch) => {
     })
   ).body
   const operations: Operation[] = []
+
   for (const [path, methods] of Object.entries<any>(doc.paths)) {
-    if (!path.startsWith('/v1') || !methods.get) continue
+    if (!path.startsWith('/v1') || !methods.get) {
+      continue
+    }
+
     const schema = methods.get.responses?.['200']?.content?.['application/json']?.schema
+
     operations.push({
       path,
       schema,
     })
   }
+
   return {
     operations,
     components: doc.components.schemas as Record<string, unknown>,
@@ -89,6 +95,7 @@ const fill = (h: Dispatch, path: string) => {
   const names = [...path.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]!)
   const segments = path.split('/')
   let combos: Record<string, string>[] = [{}]
+
   for (const name of names) {
     const kind = segmentKinds[segments[segments.indexOf(`{${name}}`) - 1] ?? ''] ?? name
     const ids =
@@ -97,6 +104,7 @@ const fill = (h: Dispatch, path: string) => {
             .map((r) => r.id)
             .slice(0, 8)
         : []
+
     combos = combos.flatMap((c) =>
       (ids.length ? ids : ['missing']).map((id) => ({
         ...c,
@@ -104,6 +112,7 @@ const fill = (h: Dispatch, path: string) => {
       })),
     )
   }
+
   return combos.map((c) => path.replace(/\{([^}]+)\}/g, (_, n) => c[n]!))
 }
 
@@ -120,6 +129,7 @@ const sweep = (
 
     before(async () => {
       const booted = await boot()
+
       cleanup = booted.cleanup
       h = booted.h
       world = booted.world
@@ -133,15 +143,22 @@ const sweep = (
 
     test('the OpenAPI document lists every GET route and each carries a 200 JSON schema unless skipped by name', () => {
       assert.ok(operations.length >= 40)
-      for (const op of operations)
+
+      for (const op of operations) {
         assert.ok(op.schema || skipped[op.path], `${op.path} has no 200 JSON response schema`)
+      }
     })
 
     test('every GET route answers its declared schema or a documented 4xx, never a 500', async () => {
       let checked = 0
+
       for (const op of operations) {
-        if (skipped[op.path] || !op.schema) continue
+        if (skipped[op.path] || !op.schema) {
+          continue
+        }
+
         const compiled = compileResponse(op.schema, components)
+
         for (const url of fill(h, op.path)) {
           const extra = (requiredQuery[op.path] ?? '').replace(
             'SERVICE',
@@ -151,14 +168,20 @@ const sweep = (
           const queries = base
             ? [`?${base}`, `?${base}&fields=*`]
             : ['', '?fields=*', extra ? `?${extra}` : null]
+
           for (const query of queries) {
-            if (query === null) continue
+            if (query === null) {
+              continue
+            }
+
             const reply = await h.call('GET', `${url}${query}`, {
               token: h.admin.token,
             })
             const where = `${url}${query}`
+
             assert.notEqual(reply.status, 500, `${where} answered 500: ${reply.text}`)
             assert.notEqual(reply.body?.error?.code, 'INTERNAL_ERROR', where)
+
             if (reply.status === 200) {
               assert.ok(
                 compiled.check(reply.body),
@@ -174,10 +197,12 @@ const sweep = (
                 `${where} answered without an error envelope`,
               )
             }
+
             checked += 1
           }
         }
       }
+
       assert.ok(checked > 60)
     })
   })
@@ -195,7 +220,9 @@ sweep(
     registry = FakeRegistry.install()
     const h = await startDispatch()
     const world = await seedWorld(h, registry)
+
     assert.ok(world.staged, 'the protected environment staged the agent change')
+
     return {
       h,
       world,

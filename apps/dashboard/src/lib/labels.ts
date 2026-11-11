@@ -1,9 +1,15 @@
+import {
+  sandboxRuntimeTradeoffs,
+  type SandboxRuntimeKind,
+} from '@stationly/protocol/sandbox-runtime'
+
 import type {
   Connections,
   Deployment,
   DeploymentStatus,
   Diagnosis,
   Explanation,
+  HostProbe,
   NetworkMap,
   Probe,
   Sandbox,
@@ -264,6 +270,16 @@ export const sandboxReason: Record<NonNullable<Sandbox['status_reason']>, string
   oom: 'out of memory',
   created_stopped: 'created stopped',
   station_restart: 'station restarted',
+}
+
+export const sandboxRuntime: Record<SandboxRuntimeKind, string> = {
+  gvisor: sandboxRuntimeTradeoffs.gvisor.label,
+  microvm: sandboxRuntimeTradeoffs.microvm.label,
+}
+
+export const cpuVirtualization: Record<NonNullable<HostProbe['cpu_virtualization']>, string> = {
+  vmx: 'Intel VT-x (vmx)',
+  svm: 'AMD-V (svm)',
 }
 
 export const sandboxNetwork: Record<Sandbox['network'], string> = {
@@ -600,6 +616,7 @@ const isMcpClient = (id: string): id is McpClient => Object.hasOwn(mcpClient, id
 
 export const client = (id: string) => {
   const name = id.replace(/^mcp\//, '')
+
   return isMcpClient(name) ? mcpClient[name] : name
 }
 
@@ -628,6 +645,7 @@ export const level: Record<Level, { label: string; hint: string }> = {
 
 export const sentence = (value: string) => {
   const words = value.replaceAll('_', ' ').toLowerCase()
+
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 

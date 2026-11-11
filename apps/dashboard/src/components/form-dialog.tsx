@@ -14,7 +14,10 @@ import {
 import { cn } from '@/lib/utils'
 
 export function FormError({ id, children }: { id?: string; children: ReactNode }) {
-  if (!children) return null
+  if (!children) {
+    return null
+  }
+
   return (
     <p id={id} className="text-sm text-destructive" role="alert">
       {children}
@@ -55,6 +58,7 @@ export function DialogForm({
     event.preventDefault()
     onSubmit()
   }
+
   return (
     <form onSubmit={submit} className="flex flex-col gap-4" autoComplete="off">
       <DialogHeader>
@@ -108,7 +112,11 @@ export function FormDialog({
           const field = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
             'form input:not([type=hidden]), form textarea, form [role=combobox]',
           )
-          if (!field) return
+
+          if (!field) {
+            return
+          }
+
           event.preventDefault()
           field.focus()
         }}

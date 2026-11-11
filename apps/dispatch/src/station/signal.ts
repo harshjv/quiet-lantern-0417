@@ -21,9 +21,17 @@ export const setServiceStatus = (
     .from(service)
     .where(eq(service.id, serviceId))
     .get()
-  if (!row) return false
+
+  if (!row) {
+    return false
+  }
+
   const next = row.desired === 'stopped' ? 'stopped' : status
-  if (row.status === next) return false
+
+  if (row.status === next) {
+    return false
+  }
+
   db.update(service)
     .set({
       status: next,
@@ -35,14 +43,30 @@ export const setServiceStatus = (
     to: next,
     ...details,
   })
+
   return true
 }
 
 export const signalFromHeartbeat = (hint: string, health: string): Signal => {
-  if (health === 'passing') return 'green'
-  if (health === 'failed') return 'red'
-  if (health === 'failing') return 'amber'
-  if (hint === 'running') return 'green'
-  if (hint === 'stopped') return 'red'
+  if (health === 'passing') {
+    return 'green'
+  }
+
+  if (health === 'failed') {
+    return 'red'
+  }
+
+  if (health === 'failing') {
+    return 'amber'
+  }
+
+  if (hint === 'running') {
+    return 'green'
+  }
+
+  if (hint === 'stopped') {
+    return 'red'
+  }
+
   return 'amber'
 }

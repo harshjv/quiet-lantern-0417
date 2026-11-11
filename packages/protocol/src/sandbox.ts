@@ -1,8 +1,15 @@
 import { Type } from '@sinclair/typebox'
 
 import { slugPattern, variableKeyPattern, variableKindValues } from './domain.ts'
-import { sandboxEgressModeValues, sandboxNetworkValues, sandboxTtl } from './model.ts'
+import { variablePatchText } from './field-text.ts'
+import {
+  sandboxEgressModeValues,
+  sandboxNetworkValues,
+  SandboxRuntime,
+  sandboxTtl,
+} from './model.ts'
 import { Port, StringEnum } from './primitives.ts'
+import { SandboxWorkspaceInput } from './workspace.ts'
 
 export const sandboxExecLimits = {
   envBytes: 64 * 1024,
@@ -35,6 +42,7 @@ export const SandboxSizeInput = Type.Object(
   },
   {
     additionalProperties: false,
+    description: 'cpu_millis, memory_bytes and disk_bytes; the disk only grows',
   },
 )
 
@@ -61,6 +69,7 @@ export const SandboxEgressInput = Type.Object(
   },
   {
     additionalProperties: false,
+    description: 'Outbound traffic: mode open or allowlist, with the allowed domains',
   },
 )
 
@@ -81,20 +90,34 @@ export const SandboxVariableSet = Type.Object(
 const ttl = Type.Integer({
   minimum: sandboxTtl.min,
   maximum: sandboxTtl.max,
+  description: `Time to live after each start (default ${sandboxTtl.default} s)`,
 })
 
-const command = Type.Union([
-  Type.Array(Type.String(), {
-    minItems: 1,
-  }),
-  Type.Null(),
-])
+const command = Type.Union(
+  [
+    Type.Array(Type.String(), {
+      minItems: 1,
+    }),
+    Type.Null(),
+  ],
+  {
+    description: "Overrides the image's entrypoint and command for the init process",
+  },
+)
 
 const configurable = {
   command: Type.Optional(command),
   size: Type.Optional(SandboxSizeInput),
-  network: Type.Optional(StringEnum(sandboxNetworkValues)),
-  docker: Type.Optional(Type.Boolean()),
+  network: Type.Optional(
+    StringEnum(sandboxNetworkValues, {
+      description: "isolated (default), or environment to join the environment's network",
+    }),
+  ),
+  docker: Type.Optional(
+    Type.Boolean({
+      description: 'Start dockerd inside at boot (default false)',
+    }),
+  ),
   egress: Type.Optional(SandboxEgressInput),
   ttl_s: Type.Optional(ttl),
 }
@@ -104,6 +127,7 @@ export const SandboxCreateBody = Type.Object(
     name: Type.Optional(
       Type.String({
         pattern: slugPattern,
+        description: 'Unique in the environment; generated from the id by default',
       }),
     ),
     image: Type.Optional(
@@ -115,41 +139,58 @@ export const SandboxCreateBody = Type.Object(
         },
         {
           additionalProperties: false,
+          description: 'ref=<image>; the toolchain image by default',
         },
       ),
     ),
     from: Type.Optional(
-      Type.Union([
-        Type.Object(
-          {
-            sandbox: Type.String({
-              minLength: 1,
-            }),
-          },
-          {
-            additionalProperties: false,
-          },
-        ),
-        Type.Object(
-          {
-            snapshot: Type.String({
-              minLength: 1,
-            }),
-          },
-          {
-            additionalProperties: false,
-          },
-        ),
-      ]),
+      Type.Union(
+        [
+          Type.Object(
+            {
+              sandbox: Type.String({
+                minLength: 1,
+              }),
+            },
+            {
+              additionalProperties: false,
+            },
+          ),
+          Type.Object(
+            {
+              snapshot: Type.String({
+                minLength: 1,
+              }),
+            },
+            {
+              additionalProperties: false,
+            },
+          ),
+        ],
+        {
+          description: 'Fork the disk of sandbox=<sandbox> or snapshot=<snapshot id>',
+        },
+      ),
     ),
     station_id: Type.Optional(
       Type.String({
         minLength: 1,
+        description: 'The station to place it on; a sandbox never moves',
       }),
     ),
+    runtime: Type.Optional(SandboxRuntime),
     ...configurable,
-    variables: Type.Optional(Type.Array(SandboxVariableSet)),
-    start: Type.Optional(Type.Boolean()),
+    variables: Type.Optional(
+      Type.Array(SandboxVariableSet, {
+        description: variablePatchText.set,
+      }),
+    ),
+    workspace: Type.Optional(SandboxWorkspaceInput),
+    start: Type.Optional(
+      Type.Boolean({
+        description: 'Start it once created (default true)',
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -247,15 +288,26 @@ export const SandboxShellBody = Type.Object(
 
 export const SandboxVariablesPatchBody = Type.Object(
   {
-    set: Type.Optional(Type.Array(SandboxVariableSet)),
+    set: Type.Optional(
+      Type.Array(SandboxVariableSet, {
+        description: variablePatchText.set,
+      }),
+    ),
     unset: Type.Optional(
       Type.Array(
         Type.String({
           pattern: variableKeyPattern,
         }),
+        {
+          description: variablePatchText.unset,
+        },
       ),
     ),
-    allow_unresolved: Type.Optional(Type.Boolean()),
+    allow_unresolved: Type.Optional(
+      Type.Boolean({
+        description: variablePatchText.allow_unresolved,
+      }),
+    ),
   },
   {
     additionalProperties: false,
@@ -267,6 +319,7 @@ export const SandboxSnapshotBody = Type.Object(
     name: Type.Optional(
       Type.String({
         pattern: slugPattern,
+        description: 'Unique in the environment when set',
       }),
     ),
   },
@@ -279,6 +332,7 @@ export const SandboxStorageGrowRequest = Type.Object(
   {
     size_bytes: Type.Integer({
       minimum: 1,
+      description: 'The new size of the sandbox filesystem; it only grows',
     }),
   },
   {

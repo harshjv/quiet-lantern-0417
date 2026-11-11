@@ -57,6 +57,7 @@ if (!attempt(() => git(['rev-parse', '--verify', `${base}^{commit}`]))) {
 }
 
 const baseline = attempt(() => snapshot((path) => git(['show', `${base}:${path}`])))
+
 if (!baseline) {
   process.stdout.write(`${base} has no generated protocol schema to compare against\n`)
   process.exit(0)
@@ -76,11 +77,15 @@ const problems = [
   ...breaks.filter((item) => !declared.has(item.at)).map((item) => `${item.at}: ${item.change}`),
 ]
 
-for (const entry of accepted.filter((entry) => !breaks.some((item) => item.at === entry.at)))
+for (const entry of accepted.filter((entry) => !breaks.some((item) => item.at === entry.at))) {
   process.stdout.write(`${acceptedFile}: ${entry.at} is not a break against ${base}\n`)
+}
 
 if (problems.length) {
-  for (const problem of problems) process.stderr.write(`${problem}\n`)
+  for (const problem of problems) {
+    process.stderr.write(`${problem}\n`)
+  }
+
   process.stderr.write(
     `breaking protocol changes against ${base}; declare deliberate ones in ${acceptedFile} with a reason\n`,
   )

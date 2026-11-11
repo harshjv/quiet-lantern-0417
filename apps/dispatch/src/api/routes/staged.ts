@@ -1,8 +1,8 @@
 import { Type, type Static } from '@sinclair/typebox'
 import { and, desc, eq, isNull } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
-import { Nullable } from '@stationly/protocol'
+import { Nullable, stagedChangeSourceValues, stagedChangeStatusValues } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
 import { deployment, staged_change } from '../../db/schema.ts'
@@ -15,12 +15,11 @@ import { acceptStaged, rejectStaged } from '../changes.ts'
 import { failureOf } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
-import { environmentById, serviceById, stagedById } from '../lookup.ts'
-import { before, collect, getQuery, listQuery } from '../pagination.ts'
+import { serviceById, stagedById } from '../lookup.ts'
+import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
 import {
   Deployment,
   extend,
-  models,
   NetworkProbe,
   Page,
   replies,
@@ -153,23 +152,28 @@ type StagedSource = (typeof staged_change.$inferSelect)['source']
 
 export const stagedRoutes = (kit: Kit) => {
   const { db } = kit.deps
-  const tags = ['staged-changes']
   const full = kit.fields('changes,refs,deployments,accepted_by')
   const decided = (row: typeof staged_change.$inferSelect) =>
     select(kit.views.staged, row, full) as Static<typeof Staged>
 
   const authorizeDecision = (principal: Principal, ctx: ReturnType<typeof stagedById>) => {
     if (ctx.environment) {
-      if (!ctx.environment.environment.protected) return
+      if (!ctx.environment.environment.protected) {
+        return
+      }
+
       requireLevel(principal, ctx.target, 'admin')
       requireHuman(principal, 'Accepting or rejecting a staged change in a protected environment', {
         ...ctx.target,
         level: 'admin',
       })
+
       return
     }
+
     requireInstance(principal, 'admin')
-    if (readSetting(db, 'platform.protected'))
+
+    if (readSetting(db, 'platform.protected')) {
       requireHuman(
         principal,
         'Accepting or rejecting an instance staged change while platform.protected is true',
@@ -177,18 +181,14 @@ export const stagedRoutes = (kit: Kit) => {
           level: 'admin',
         },
       )
+    }
   }
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('staged-changes', '/v1')
     .get(
       '/environments/:environment/staged-changes',
-      ({ params, query }) => {
-        const ctx = environmentById(db, params.environment)
+      ({ ctx, query }) => {
         const page = collect(
           (cursor, size) =>
             db
@@ -209,32 +209,31 @@ export const stagedRoutes = (kit: Kit) => {
               .all(),
           query,
         )
+
         return {
           items: page.rows.map((row) => select(kit.views.staged, row, kit.fields(query.fields))),
           next_cursor: page.next_cursor,
         }
       },
       {
-        operation: {
+        environment: {
           id: 'list_staged_changes',
+          summary:
+            'List staged changes of an environment (default status staged; status=all for every row)',
           level: 'read',
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         query: t.Object({
           ...listQuery,
-          status: t.Optional(t.String()),
-          source: t.Optional(t.String()),
+          status: t.Optional(
+            t.String({
+              description: `One of ${stagedChangeStatusValues.join(', ')}, or all (default staged)`,
+            }),
+          ),
+          source: filterOne(stagedChangeSourceValues),
         }),
         response: replies({
           200: Page(StagedChange),
         }),
-        detail: {
-          summary:
-            'List staged changes of an environment (default status staged; status=all for every row)',
-          tags,
-        },
       },
     )
     .get(
@@ -257,6 +256,7 @@ export const stagedRoutes = (kit: Kit) => {
               .all(),
           query,
         )
+
         return {
           items: page.rows.map((row) => select(kit.views.staged, row, kit.fields(query.fields))),
           next_cursor: page.next_cursor,
@@ -265,60 +265,56 @@ export const stagedRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'list_instance_staged_changes',
+          summary: 'List staged changes across the instance',
           level: 'instance read',
+          cli: {
+            path: ['staged-changes', 'list-all'],
+          },
         },
         query: t.Object({
           ...listQuery,
-          status: t.Optional(t.String()),
+          status: filterOne(stagedChangeStatusValues),
           scope: t.Optional(t.Literal('instance')),
         }),
         response: replies({
           200: Page(StagedChange),
         }),
-        detail: {
-          summary: 'List staged changes across the instance',
-          tags,
-        },
       },
     )
     .get(
       '/staged-changes/:id',
-      ({ params, query }) => {
-        const ctx = stagedById(db, params.id)
+      ({ ctx, query }) => {
         return select(kit.views.staged, ctx.staged, kit.fields(query.fields) ?? full)
       },
       {
-        operation: {
+        staged_change: {
           id: 'get_staged_change',
+          summary: 'Get a staged change with its diff',
           level: 'read',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         query: t.Object(getQuery),
         response: replies({
           200: StagedChange,
         }),
-        detail: {
-          summary: 'Get a staged change with its diff',
-          tags,
-        },
       },
     )
     .post(
       '/staged-changes/:id/accept',
-      async ({ request, params }) => {
+      async ({ ctx, request }) => {
         const call = await kit.call(request)
-        const ctx = stagedById(db, params.id)
+
         authorizeDecision(call.principal, ctx)
         const result = acceptStaged(kit.deps, call, ctx.staged)
+
         if (
           (ctx.staged.changes as { entity: string; path?: string }[]).some(
             (c) =>
               c.entity === 'setting' || (c.entity === 'station' && c.path === '/public_address'),
           )
-        )
+        ) {
           kit.deps.auth.rebuild()
+        }
+
         const deployments = result.deployments.map((id) =>
           select(
             kit.views.deployment,
@@ -421,6 +417,7 @@ export const stagedRoutes = (kit: Kit) => {
             ),
           ),
         )
+
         return {
           ...decided(result.staged),
           deployments,
@@ -447,42 +444,39 @@ export const stagedRoutes = (kit: Kit) => {
         }
       },
       {
-        operation: {
+        staged_change: {
           id: 'accept_staged_change',
+          summary: 'Accept a staged change and apply its diff',
           level: 'deploy',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Accepted,
         }),
-        detail: {
-          summary: 'Accept a staged change and apply its diff',
-          tags,
-        },
       },
     )
     .post(
       '/staged-changes/:id/reject',
-      async ({ request, params, body }) => {
+      async ({ ctx, request, body }) => {
         const call = await kit.call(request)
-        const ctx = stagedById(db, params.id)
+
         authorizeDecision(call.principal, ctx)
+
         return decided(rejectStaged(kit.deps, call, ctx.staged, body?.reason ?? null))
       },
       {
-        operation: {
+        staged_change: {
           id: 'reject_staged_change',
+          summary: 'Reject a staged change',
           level: 'deploy',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         body: t.Optional(
           t.Object(
             {
-              reason: t.Optional(t.String()),
+              reason: t.Optional(
+                t.String({
+                  description: 'Why the change is rejected, kept with the change',
+                }),
+              ),
             },
             {
               additionalProperties: false,
@@ -492,10 +486,6 @@ export const stagedRoutes = (kit: Kit) => {
         response: replies({
           200: Staged,
         }),
-        detail: {
-          summary: 'Reject a staged change',
-          tags,
-        },
       },
     )
 }

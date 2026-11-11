@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Bot, Loader2, Wrench } from 'lucide-react'
+import { Loader2, Wrench } from 'lucide-react'
 
 import { Code, Command } from '@/components/code'
 import { CopyButton } from '@/components/copy'
@@ -8,6 +8,7 @@ import { useSandboxPower } from '@/components/sandbox-actions'
 import { Button } from '@/components/ui/button'
 import { api, idempotency, send, type ApiFailure } from '@/lib/api'
 import { errorFix, planFix, type Fix, type FixContext, type FixPlan, type Run } from '@/lib/fixes'
+import { entityIcon } from '@/lib/icons'
 import { useApiMutation } from '@/lib/mutation'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +57,7 @@ function DeployRun({ run, ...props }: Pressable & { run: RunOf<'deploy'> }) {
           .deployments.post({}, idempotency()),
       ),
   )
+
   return <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate()} />
 }
 
@@ -70,6 +72,7 @@ function RollbackRun({ run, ...props }: Pressable & { run: RunOf<'rollback'> }) 
       label: 'the last good deployment',
     },
   )
+
   return (
     <>
       <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate(false)} />
@@ -93,6 +96,7 @@ function ServiceRun({
       const target = api.v1.services({
         service: run.service,
       })
+
       return send(
         run.tool === 'start_service'
           ? target.start.post(undefined, idempotency())
@@ -109,16 +113,19 @@ function ServiceRun({
     }),
     onSuccess: (result) => {
       const deployment = !result.staged && result.body.deployments[0]
-      if (deployment)
+
+      if (deployment) {
         void navigate({
           to: '/deployments/$deployment',
           params: {
             deployment: deployment.id,
           },
         })
+      }
     },
     failure: () => lower(props.label),
   })
+
   return <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate()} />
 }
 
@@ -130,20 +137,30 @@ function SandboxRun({ run, ...props }: Pressable & { run: RunOf<'start_sandbox'>
     },
     'start',
   )
+
   return <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate()} />
 }
 
 function RunButton({ run, ...props }: Pressable & { run: Run }) {
-  if (run.tool === 'deploy') return <DeployRun {...props} run={run} />
-  if (run.tool === 'rollback') return <RollbackRun {...props} run={run} />
-  if (run.tool === 'start_sandbox') return <SandboxRun {...props} run={run} />
+  if (run.tool === 'deploy') {
+    return <DeployRun {...props} run={run} />
+  }
+
+  if (run.tool === 'rollback') {
+    return <RollbackRun {...props} run={run} />
+  }
+
+  if (run.tool === 'start_sandbox') {
+    return <SandboxRun {...props} run={run} />
+  }
+
   return <ServiceRun {...props} run={run} />
 }
 
 function AskAgent({ plan }: { plan: FixPlan }) {
   return (
     <div className="flex min-w-0 items-start gap-2 text-xs text-muted-foreground">
-      <Bot className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <entityIcon.agent className="mt-0.5 size-3.5 shrink-0" aria-hidden />
       <p className="min-w-0 flex-1">
         <span className="font-medium text-foreground">Ask your agent</span>{' '}
         <q className="[quotes:'“'_'”']">{plan.prompt}</q>
@@ -198,9 +215,13 @@ function FixItem({ plan, lead, primary }: { plan: FixPlan; lead: boolean; primar
 }
 
 export function FixList({ fixes, context }: { fixes: Fix[]; context: FixContext }) {
-  if (fixes.length === 0) return null
+  if (fixes.length === 0) {
+    return null
+  }
+
   const plans = fixes.map((fix) => planFix(fix, context))
   const runnable = plans.findIndex((plan) => plan.button)
+
   return (
     <section className="space-y-2" aria-label="How to fix">
       <h3 className="text-sm font-semibold">How to fix</h3>
@@ -215,5 +236,6 @@ export function FixList({ fixes, context }: { fixes: Fix[]; context: FixContext 
 
 export function ErrorFix({ failure, context }: { failure: ApiFailure; context: FixContext }) {
   const fix = errorFix(failure.code, failure.fix)
+
   return fix ? <FixActions plan={planFix(fix, context)} primary /> : null
 }

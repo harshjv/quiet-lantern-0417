@@ -5,10 +5,8 @@ package deploy
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -65,23 +63,11 @@ type MigrationCheck struct {
 func dispatchStatePath(stateDir string) string { return filepath.Join(stateDir, dispatchStateFile) }
 
 func loadDispatchState(stateDir string) (dispatchState, error) {
-	var st dispatchState
-	b, err := os.ReadFile(dispatchStatePath(stateDir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return st, nil
-	}
-	if err != nil {
-		return st, err
-	}
-	return st, json.Unmarshal(b, &st)
+	return readJSON[dispatchState](dispatchStatePath(stateDir))
 }
 
 func saveDispatchState(stateDir string, st dispatchState) error {
-	b, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeAtomic(dispatchStatePath(stateDir), b)
+	return writeJSON(dispatchStatePath(stateDir), st)
 }
 
 func dispatchAddress(systemSubnet netip.Prefix) netip.Addr {

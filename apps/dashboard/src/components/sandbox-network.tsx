@@ -49,14 +49,19 @@ function EgressEditor({
     }),
     failure: () => `save outbound traffic for ${sandbox.name}`,
   })
+
   return (
     <form
       className="max-w-xl space-y-3 rounded-lg border bg-card p-4"
       onSubmit={(event) => {
         event.preventDefault()
         const body = egressBody(mode, domains)
+
         setProblem(body.problem)
-        if (body.egress) mutation.mutate(body.egress)
+
+        if (body.egress) {
+          mutation.mutate(body.egress)
+        }
       }}
     >
       <FormError>{problem ?? mutation.errorText}</FormError>
@@ -79,6 +84,7 @@ function ForwardCommand({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'status'> }
   const [port, setPort] = useState('3000')
   const valid = Number.isInteger(Number(port)) && Number(port) >= 1 && Number(port) <= 65_535
   const command = commands.forward(sandbox.id, valid ? Number(port) : 3000)
+
   return (
     <div className="max-w-xl space-y-3 rounded-lg border bg-card p-4">
       <Field id="forward-port" label="Port inside the sandbox">

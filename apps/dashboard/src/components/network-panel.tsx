@@ -92,6 +92,7 @@ function Serving({ service }: { service: MapService }) {
   const draining = drainingText(service.switch)
   const deployment = service.switch.state === 'serving' ? service.switch.deployment : null
   const tone = serving.tone && toneText[serving.tone]
+
   return (
     <span className="flex flex-wrap items-center gap-x-2">
       {deployment ? (
@@ -146,6 +147,7 @@ function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryDat
       ? entry.hostname
       : (entry.public ?? `Public TCP port ${hostPort ?? ''}`.trim())
   const problem = status && status.tone !== 'success' ? status : null
+
   return (
     <div className="flex w-72 items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs shadow-xs">
       <Handle type="target" position={Position.Left} isConnectable={false} className={hidden} />
@@ -186,6 +188,7 @@ function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryDat
 
 function ServiceNode({ data }: NodeProps<MapNode & { type: 'service'; data: ServiceData }>) {
   const s = data.service
+
   return (
     <div className="w-72 rounded-lg border bg-card text-card-foreground shadow-xs">
       <Handle
@@ -278,6 +281,7 @@ const peerIcon = {
 
 function PeerNode({ data }: NodeProps<MapNode & { type: 'peer'; data: PeerData }>) {
   const Icon = peerIcon[data.icon]
+
   return (
     <div
       className={cn(
@@ -328,6 +332,7 @@ const nodeTypes: NodeTypes = {
 function Legend({ live }: { live: boolean }) {
   const item = 'inline-flex items-center gap-1.5'
   const line = 'inline-block h-0 w-5 border-t-2'
+
   return (
     <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
       <span className={item}>
@@ -358,9 +363,11 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
   const { resolvedTheme } = useTheme()
   const { nodes, edges } = useMemo(() => {
     const base = layoutNetwork(map)
+
     return live.state === 'off' ? base : overlayLive(base, live.samples)
   }, [map, live])
   const shape = useMemo(() => nodes.map((n) => n.id).join('|'), [nodes])
+
   return (
     <div className="space-y-2">
       <div
@@ -404,6 +411,7 @@ const resultIcon = {
 
 function InboundSummary({ map }: { map: NetworkMap }) {
   const station = map.subnets[0]?.station.name
+
   return (
     <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
       <div className="flex items-center gap-2">
@@ -543,6 +551,7 @@ function TableView({ map }: { map: NetworkMap }) {
                   ? svc?.exposures.find((x) => x.public === e.public && x.port === e.port)
                   : undefined
               const state = domain ? domainState(domain) : exposureState(exposure)
+
               return (
                 <TableRow key={e.kind === 'domain' ? e.hostname : `${e.public}-${e.port}`}>
                   <TableCell className="hidden sm:table-cell">
@@ -589,6 +598,7 @@ function TrafficRules({ map }: { map: NetworkMap }) {
         <ul className="flex flex-wrap gap-x-5 gap-y-1 pt-1 text-xs text-muted-foreground">
           {(['allowed', 'blocked', 'rejected'] as const).map((verdict) => {
             const Icon = resultIcon[verdict]
+
             return (
               <li key={verdict} className="inline-flex items-center gap-1.5">
                 <Icon className={cn('size-3.5', toneText[pathResult[verdict].tone])} aria-hidden />
@@ -611,6 +621,7 @@ function TrafficRules({ map }: { map: NetworkMap }) {
           {map.paths.map((p) => {
             const result = pathResult[p.verdict]
             const Icon = resultIcon[p.verdict]
+
             return (
               <TableRow key={p.path}>
                 <TableCell className="hidden text-muted-foreground md:table-cell">
@@ -659,6 +670,7 @@ function LiveTables({ live }: { live: LiveNetwork }) {
       r,
     })),
   )
+
   return (
     <div className="space-y-6">
       <section className="space-y-2" aria-labelledby="network-live-connections">
@@ -723,14 +735,22 @@ function LiveTables({ live }: { live: LiveNetwork }) {
 }
 
 function LiveState({ live }: { live: LiveNetwork }) {
-  if (live.state === 'connecting') return <>Connecting…</>
-  if (live.state === 'offline') return <>Live traffic stopped. Turn it on again to reconnect.</>
-  if (live.state === 'live')
+  if (live.state === 'connecting') {
+    return <>Connecting…</>
+  }
+
+  if (live.state === 'offline') {
+    return <>Live traffic stopped. Turn it on again to reconnect.</>
+  }
+
+  if (live.state === 'live') {
     return live.at ? (
       <Time value={live.at} live prefix="Updated" />
     ) : (
       <>Waiting for the first update…</>
     )
+  }
+
   return null
 }
 
@@ -792,7 +812,10 @@ function Addresses({ map }: { map: NetworkMap }) {
 }
 
 function Summary({ map }: { map: NetworkMap }) {
-  if (map.subnets.length === 0) return null
+  if (map.subnets.length === 0) {
+    return null
+  }
+
   return (
     <div className="space-y-1 text-sm">
       {map.subnets.map((s, i) => (
@@ -820,11 +843,15 @@ function Summary({ map }: { map: NetworkMap }) {
 }
 
 function Warnings({ map, project }: { map: NetworkMap; project: string }) {
-  if (map.warnings.length === 0) return null
+  if (map.warnings.length === 0) {
+    return null
+  }
+
   const scope = {
     project,
     environment: map.environment.name,
   }
+
   return (
     <Alert>
       <CircleAlert className={toneText.warning} />
@@ -836,6 +863,7 @@ function Warnings({ map, project }: { map: NetworkMap; project: string }) {
         <ul className="space-y-1.5">
           {map.warnings.map((w, i) => {
             const plan = findingPlan(w, map.services, scope)
+
             return (
               <li key={`${w.code}-${i}`} className="space-y-1.5">
                 <p>
@@ -865,6 +893,7 @@ export function NetworkPanel({
   const [liveOn, setLiveOn] = useState(false)
   const [creating, setCreating] = useState(false)
   const live = useLiveNetwork(environment.id, liveOn)
+
   return (
     <div className="space-y-4">
       <Summary map={map} />

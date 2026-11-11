@@ -59,6 +59,7 @@ export const buildServer = (spec: ServerSpec) => {
       instructions: spec.instructions,
     },
   )
+
   for (const tool of spec.tools.filter((t) => visibleTo(spec.caller, t))) {
     server.registerTool(
       tool.name,
@@ -92,5 +93,6 @@ export const buildServer = (spec: ServerSpec) => {
       },
     )
   }
+
   return server
 }

@@ -3,6 +3,7 @@ packages:
   - packages/*
 catalog:
   '@better-auth/passkey': 1.7.18
+  '@clack/prompts': 1.9.0
   '@modelcontextprotocol/client': 2.4.0
   '@modelcontextprotocol/server': 2.4.0
   '@sinclair/typebox': 0.34.52
@@ -11,6 +12,11 @@ catalog:
   'better-auth': 1.7.18
   'commander': 15.1.0
   'elysia': 1.4.30
+  'eventsource-parser': 4.1.3
+  'jose': 6.2.16
+  'ky': 2.2.0
+  'open': 11.0.4
+  'table': 6.10.1
   'tldts': 7.4.19
   'yaml': 2.9.1
   'zod': 4.6.7

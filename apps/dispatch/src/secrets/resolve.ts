@@ -72,9 +72,16 @@ export const leaves = (node: SourceNode): (ValueNode | ExportNode)[] =>
   node.kind === 'template' ? node.parts.flatMap(leaves) : [node]
 
 export const render = (node: SourceNode, plaintext: (node: ValueNode) => string): string => {
-  if (node.kind === 'value') return plaintext(node)
-  if (node.kind === 'export') return node.value
+  if (node.kind === 'value') {
+    return plaintext(node)
+  }
+
+  if (node.kind === 'export') {
+    return node.value
+  }
+
   const parts = [...node.parts]
+
   return parseValue(node.template)
     .map((segment) => (segment.type === 'text' ? segment.text : render(parts.shift()!, plaintext)))
     .join('')
@@ -89,6 +96,7 @@ const withReference = (error: unknown, segment: ReferenceSegment, chain: string[
       chain: error.details.chain ?? chain,
     })
   }
+
   return error
 }
 
@@ -104,13 +112,18 @@ export class Resolver {
     this.svc = 'service' in owner ? owner.service : null
     this.box = 'sandbox' in owner ? owner.sandbox : null
     const environmentId = this.svc?.environment_id ?? this.box!.environment_id
+
     this.env = db.select().from(environment).where(eq(environment.id, environmentId)).get()!
     this.projectId = this.env.project_id
   }
 
   static forService(db: Db, serviceId: string) {
     const row = db.select().from(service).where(eq(service.id, serviceId)).get()
-    if (!row) throw new SecretsError('NOT_FOUND', `service ${serviceId} does not exist`)
+
+    if (!row) {
+      throw new SecretsError('NOT_FOUND', `service ${serviceId} does not exist`)
+    }
+
     return new Resolver(db, {
       service: row,
     })
@@ -118,7 +131,11 @@ export class Resolver {
 
   static forSandbox(db: Db, sandboxId: string) {
     const row = db.select().from(sandbox).where(eq(sandbox.id, sandboxId)).get()
-    if (!row) throw new SecretsError('NOT_FOUND', `sandbox ${sandboxId} does not exist`)
+
+    if (!row) {
+      throw new SecretsError('NOT_FOUND', `sandbox ${sandboxId} does not exist`)
+    }
+
     return new Resolver(db, {
       sandbox: row,
     })
@@ -148,14 +165,21 @@ export class Resolver {
 
   resolveSandbox(v: VariableRow): SourceNode {
     const box = this.box!
+
     if (v.kind === 'reference' && v.reference !== null) {
       const chain = [`${box.name}.${v.key}`]
       const parts = parseValue(v.reference)
         .filter((s): s is ReferenceSegment => s.type === 'reference')
         .map((segment) => {
           try {
-            if (segment.target.type === 'project') return this.resolveProject(segment.target.key)
-            if (segment.target.type === 'global') return this.resolveGlobal(segment.target.key)
+            if (segment.target.type === 'project') {
+              return this.resolveProject(segment.target.key)
+            }
+
+            if (segment.target.type === 'global') {
+              return this.resolveGlobal(segment.target.key)
+            }
+
             throw new SecretsError(
               'VARIABLE_REFERENCE_INVALID',
               'a sandbox variable references project or global variables only',
@@ -167,6 +191,7 @@ export class Resolver {
             throw withReference(error, segment, chain)
           }
         })
+
       return {
         kind: 'template',
         variable_id: v.id,
@@ -174,12 +199,16 @@ export class Resolver {
         parts,
       }
     }
+
     const row = headValue(this.db, v.id, null)
-    if (!row)
+
+    if (!row) {
       throw new SecretsError('VARIABLE_UNRESOLVED', `${box.name}.${v.key} has no value`, {
         key: v.key,
         sandbox_id: box.id,
       })
+    }
+
     return this.valueNode(v, row, 'sandbox', null)
   }
 
@@ -211,6 +240,7 @@ export class Resolver {
 
   private resolveServiceVariable(owner: ServiceRow, v: VariableRow, chain: string[]): SourceNode {
     const here = [...chain, this.label(v, owner)]
+
     if (v.kind === 'reference' && v.reference !== null) {
       const segments = parseValue(v.reference)
       const parts = segments
@@ -222,6 +252,7 @@ export class Resolver {
             throw withReference(error, segment, here)
           }
         })
+
       return {
         kind: 'template',
         variable_id: v.id,
@@ -229,12 +260,16 @@ export class Resolver {
         parts,
       }
     }
+
     const row = headValue(this.db, v.id, null)
-    if (!row)
+
+    if (!row) {
       throw new SecretsError('VARIABLE_UNRESOLVED', `${this.label(v, owner)} has no value`, {
         key: v.key,
         service_id: owner.id,
       })
+    }
+
     return this.valueNode(v, row, 'service', owner.id)
   }
 
@@ -245,6 +280,7 @@ export class Resolver {
     fromVariable: string,
   ): SourceNode {
     const target = segment.target
+
     if (chain.length > maxHops) {
       throw new SecretsError(
         'VARIABLE_REFERENCE_INVALID',
@@ -254,6 +290,7 @@ export class Resolver {
         },
       )
     }
+
     switch (target.type) {
       case 'service': {
         const svc = this.db
@@ -263,12 +300,15 @@ export class Resolver {
             and(eq(service.environment_id, owner.environment_id), eq(service.name, target.service)),
           )
           .get()
-        if (!svc)
+
+        if (!svc) {
           throw new SecretsError(
             'VARIABLE_TARGET_MISSING',
             `service ${target.service} does not exist in environment ${this.env.name}`,
             {},
           )
+        }
+
         const v = this.db
           .select()
           .from(variable)
@@ -280,6 +320,7 @@ export class Resolver {
             ),
           )
           .get()
+
         if (v) {
           if (v.id === fromVariable || chain.includes(this.label(v, svc))) {
             throw new SecretsError(
@@ -290,15 +331,20 @@ export class Resolver {
               },
             )
           }
+
           return this.resolveServiceVariable(svc, v, chain)
         }
+
         const value = this.exportOf(svc, target.key)
-        if (value === undefined)
+
+        if (value === undefined) {
           throw new SecretsError(
             'VARIABLE_UNRESOLVED',
             `service ${svc.name} has no variable or export ${target.key}`,
             {},
           )
+        }
+
         return {
           kind: 'export',
           from: 'export',
@@ -307,6 +353,7 @@ export class Resolver {
           value,
         }
       }
+
       case 'project':
         return this.resolveProject(target.key)
       case 'global':
@@ -334,9 +381,19 @@ export class Resolver {
       .where(eq(service_port.service_id, svc.id))
       .orderBy(asc(service_port.created_at), asc(service_port.port))
       .get()
-    if (key === 'HOST') return host
-    if (key === 'PORT' && port) return String(port.port)
-    if (key === 'URL' && port && svc.kind === 'web') return `http://${host}:${port.port}`
+
+    if (key === 'HOST') {
+      return host
+    }
+
+    if (key === 'PORT' && port) {
+      return String(port.port)
+    }
+
+    if (key === 'URL' && port && svc.kind === 'web') {
+      return `http://${host}:${port.port}`
+    }
+
     return undefined
   }
 
@@ -352,10 +409,17 @@ export class Resolver {
         ),
       )
       .get()
-    if (!v)
+
+    if (!v) {
       throw new SecretsError('VARIABLE_UNRESOLVED', `project variable ${key} does not exist`, {})
+    }
+
     const own = headValue(this.db, v.id, this.env.id)
-    if (own) return this.valueNode(v, own, `project:${this.env.name}`, null)
+
+    if (own) {
+      return this.valueNode(v, own, `project:${this.env.name}`, null)
+    }
+
     const protectedValues = this.env.protected
       ? []
       : this.db
@@ -367,8 +431,11 @@ export class Resolver {
           .all()
           .filter((e) => headValue(this.db, v.id, e.id) !== undefined)
     const fallback = headValue(this.db, v.id, null)
-    if (fallback)
+
+    if (fallback) {
       return this.valueNode(v, fallback, 'project:default', null, protectedValues.length > 0)
+    }
+
     if (protectedValues.length > 0) {
       throw new SecretsError(
         'VARIABLE_PROTECTED_SOURCE',
@@ -378,6 +445,7 @@ export class Resolver {
         },
       )
     }
+
     throw new SecretsError(
       'VARIABLE_UNRESOLVED',
       `project variable ${key} has no value for environment ${this.env.name} and no default`,
@@ -396,6 +464,7 @@ export class Resolver {
       .where(and(eq(grant.project_id, this.projectId), eq(variable.scope, 'global')))
       .all()
       .find((g) => (g.alias ?? g.v.key) === key)
+
     if (!granted) {
       const exists = this.db
         .select({
@@ -404,17 +473,24 @@ export class Resolver {
         .from(variable)
         .where(and(eq(variable.scope, 'global'), eq(variable.key, key)))
         .get()
-      if (exists)
+
+      if (exists) {
         throw new SecretsError(
           'VARIABLE_NOT_GRANTED',
           `global variable ${key} exists but project ${this.projectId} holds no grant for it`,
           {},
         )
+      }
+
       throw new SecretsError('VARIABLE_UNRESOLVED', `global variable ${key} does not exist`, {})
     }
+
     const row = headValue(this.db, granted.v.id, null)
-    if (!row)
+
+    if (!row) {
       throw new SecretsError('VARIABLE_UNRESOLVED', `global variable ${key} has no value`, {})
+    }
+
     return this.valueNode(granted.v, row, 'global', null)
   }
 }

@@ -53,7 +53,7 @@ func TestDecideSandbox(t *testing.T) {
 			return d
 		}(), diskReady: true, running: true, status: protocol.SandboxReportStatusRunning}, sbxStop, "ttl"},
 		{"desired stopped stops with user", sbxFacts{desired: desiredBox(protocol.DesiredStateStopped, 0), diskReady: true, running: true, status: protocol.SandboxReportStatusRunning, everStarted: true}, sbxStop, "user"},
-		{"running with no stop_at stops", sbxFacts{desired: desiredBox(protocol.DesiredStateRunning, 0), diskReady: true, running: true, status: protocol.SandboxReportStatusRunning}, sbxStop, "ttl"},
+		{"a workspace with no stop_at keeps running", sbxFacts{desired: desiredBox(protocol.DesiredStateRunning, 0), diskReady: true, running: true, status: protocol.SandboxReportStatusRunning}, sbxNothing, ""},
 		{"exited with the same hash is not restarted", sbxFacts{desired: desiredBox(protocol.DesiredStateRunning, time.Hour), diskReady: true, status: protocol.SandboxReportStatusStopped, heldHash: "sha256:a", everStarted: true}, sbxNothing, ""},
 		{"failed with the same hash is not retried", sbxFacts{desired: desiredBox(protocol.DesiredStateRunning, time.Hour), diskReady: true, status: protocol.SandboxReportStatusFailed, heldHash: "sha256:a"}, sbxNothing, ""},
 		{"a new hash after a failure starts again", sbxFacts{desired: desiredBox(protocol.DesiredStateRunning, time.Hour), diskReady: true, status: protocol.SandboxReportStatusFailed, heldHash: "sha256:old"}, sbxStart, ""},

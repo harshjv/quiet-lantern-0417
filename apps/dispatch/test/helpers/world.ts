@@ -29,6 +29,7 @@ export type World = {
 
 export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<World> => {
   const token = h.admin.token
+
   registry.publish('postgres:17')
   registry.publish('nginx:1.27')
   seedLockfile(h)
@@ -148,16 +149,23 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     origin: localOrigin,
     body: {},
   })
-  if (accepted.status !== 200)
+
+  if (accepted.status !== 200) {
     throw new Error(`could not accept the staged service: ${accepted.text}`)
+  }
+
   const lockedService = {
     id: rows<{ id: string }>(h, 'select id from service where environment_id = ?', locked)[0]!.id,
   }
-  for (const created of [db, web, worker, stagingWeb])
+
+  for (const created of [db, web, worker, stagingWeb]) {
     await waitForDeployment(h, created.deployments[0].id, 'active')
+  }
+
   await waitForActive(h, db.id)
 
   const webPort = web.ports[0].id as string
+
   await h.call('POST', `/v1/ports/${webPort}/domains`, {
     token,
     body: {
@@ -198,6 +206,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       ],
     },
   })
+
   await waitForSandbox(h, box.id, 'running')
   const snapshot = await h.call('POST', `/v1/sandboxes/${box.id}/snapshots`, {
     token,
@@ -205,6 +214,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       name: 'seed',
     },
   })
+
   await createSandbox(h, production, {
     name: 'parked',
     image: {
@@ -233,7 +243,9 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       deploy: false,
     },
   })
+
   h.fakeStations[0]?.report()
+
   return {
     station,
     project,

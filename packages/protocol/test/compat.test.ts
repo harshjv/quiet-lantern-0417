@@ -373,10 +373,11 @@ const pairs: { name: string; base: Node; head: Node; breaks: string[] }[] = [
   },
 ]
 
-for (const pair of pairs)
+for (const pair of pairs) {
   test(`schema pair: ${pair.name}`, () => {
     assert.deepEqual(changes(pair.base, pair.head), pair.breaks)
   })
+}
 
 test('a break inside a referenced definition is reported at the definition, once, through cycles', () => {
   const tree = (child: Node) => ({
@@ -390,6 +391,7 @@ test('a break inside a referenced definition is reported at the definition, once
       },
     }),
   })
+
   assert.deepEqual(
     changes(
       {
@@ -491,6 +493,7 @@ test('message types, root schemas and error codes', () => {
       warnings: ['SLOW', 'FAST'],
     },
   )
+
   assert.deepEqual(
     breakingChanges(base, head).map((item) => `${item.at} ${item.change}`),
     [

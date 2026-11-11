@@ -38,6 +38,7 @@ const runningOf = (rows: (typeof sandbox.$inferSelect)[]) =>
 export const sandboxMemory = (db: Db, st: StationRow) => {
   const limit = memoryCap(st)
   const used = runningOf(sandboxesOn(db, st, null)).reduce((sum, r) => sum + r.size.memory_bytes, 0)
+
   return {
     limit,
     used,
@@ -57,6 +58,7 @@ export const requireQuota = (db: Db, st: StationRow, request: QuotaRequest) => {
     requested: number,
   ) => {
     const text = limit === 'memory_bytes' ? bytesText : String
+
     return fail(
       'SANDBOX_QUOTA_EXCEEDED',
       `Station ${st.name} allows ${text(allowed)} for ${limit}; ${text(used)} ${limit === 'memory_bytes' ? 'is' : 'are'} used and this change needs ${text(requested)} more.`,
@@ -70,22 +72,37 @@ export const requireQuota = (db: Db, st: StationRow, request: QuotaRequest) => {
       },
     )
   }
-  if (request.newSandbox && rows.length + 1 > st.sandbox_limits.max_sandboxes)
+
+  if (request.newSandbox && rows.length + 1 > st.sandbox_limits.max_sandboxes) {
     exceeded('max_sandboxes', st.sandbox_limits.max_sandboxes, rows.length, 1)
-  if (!request.running) return
+  }
+
+  if (!request.running) {
+    return
+  }
+
   const running = runningOf(rows)
-  if (running.length + 1 > st.sandbox_limits.max_running)
+
+  if (running.length + 1 > st.sandbox_limits.max_running) {
     exceeded('max_running', st.sandbox_limits.max_running, running.length, 1)
+  }
+
   const cap = memoryCap(st)
   const used = running.reduce((sum, r) => sum + r.size.memory_bytes, 0)
-  if (cap !== null && used + request.memoryBytes > cap)
+
+  if (cap !== null && used + request.memoryBytes > cap) {
     exceeded('memory_bytes', cap, used, request.memoryBytes)
+  }
 }
 
 export const requireDiskRoom = (st: StationRow) => {
   const free = st.capabilities?.sandboxes?.filesystem_free_bytes
   const floor = minFree(st)
-  if (free === undefined || floor === null || free >= floor) return
+
+  if (free === undefined || floor === null || free >= floor) {
+    return
+  }
+
   fail(
     'SANDBOX_DISK_FULL',
     `Station ${st.name}'s sandbox filesystem has ${free} bytes free, below the ${floor} byte floor for new disks, snapshots and forks.`,

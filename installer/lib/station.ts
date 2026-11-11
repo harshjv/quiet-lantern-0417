@@ -30,7 +30,10 @@ const constants = {
 }
 
 const line = ([name, value]: [string, string | number]) => {
-  if (String(value).includes("'")) throw new Error(`${name} holds a single quote`)
+  if (String(value).includes("'")) {
+    throw new Error(`${name} holds a single quote`)
+  }
+
   return `${name}='${value}'`
 }
 

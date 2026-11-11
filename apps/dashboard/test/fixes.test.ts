@@ -63,6 +63,7 @@ test('raising memory is one click that patches the limits and redeploys', () => 
     },
     context,
   )
+
   assert.deepEqual(plan.button, {
     label: 'Raise memory to 1 GiB and redeploy',
     run: {
@@ -96,6 +97,7 @@ test('a fix without structured input leaves the button out and keeps the prompt'
     },
     context,
   )
+
   assert.equal(plan.button, null)
   assert.equal(plan.command, null)
   assert.match(plan.prompt, /raise web’s memory limit and redeploy it/)
@@ -116,6 +118,7 @@ test('rollback targets the last good deployment the diagnosis names', () => {
     },
     context,
   )
+
   assert.deepEqual(plan.button?.run, {
     tool: 'rollback',
     name: 'web',
@@ -133,6 +136,7 @@ test('log fixes point at the failed deployment, and at its build for a build fai
     code: 'READ_BUILD_LOGS',
     text: 'Read the build log.',
   }
+
   assert.equal(
     planFix(fix, context).command,
     'sly --project shop --environment production --service web logs --deployment dep_14',
@@ -163,6 +167,7 @@ test('a fix for another service names that service in the button, command and pr
     },
     context,
   )
+
   assert.equal(plan.button?.label, 'Start db')
   assert.equal(
     plan.command,
@@ -179,6 +184,7 @@ test('an unknown fix code still offers the agent prompt', () => {
     },
     context,
   )
+
   assert.equal(plan.button, null)
   assert.equal(plan.command, null)
   assert.equal(plan.prompt, 'In shop/production on Stationly, help me with this: Do the new thing.')
@@ -196,6 +202,7 @@ test('a stopped service gets Start and a never-deployed one gets Deploy', () => 
     project: 'shop',
     environment: 'production',
   }
+
   assert.equal(
     findingPlan(finding, [mapService('web', 'stopped')], scope)?.button?.run.tool,
     'start_service',
@@ -219,6 +226,7 @@ test('a missing public address offers the station command', () => {
       environment: 'production',
     },
   )
+
   assert.equal(plan?.command, 'sly stations update sta_home --public-address <ipv4>')
 })
 
@@ -257,6 +265,7 @@ test('error codes with a remedy map to a fix that keeps the API fix text', () =>
       name: 'web-sbx',
     },
   })
+
   assert.deepEqual(plan.button?.run, {
     tool: 'start_sandbox',
     name: 'web-sbx',

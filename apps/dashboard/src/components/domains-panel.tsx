@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Globe, Plus, ShieldCheck } from 'lucide-react'
+import { Plus, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 
 import { ChoiceCards } from '@/components/choice-cards'
@@ -26,6 +26,7 @@ import { api, idempotency, send, type Domain } from '@/lib/api'
 import { seedItem } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
 import { planFix } from '@/lib/fixes'
+import { entityIcon } from '@/lib/icons'
 import { domainIngress, domainKind, domainStatus, sentence } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import { domainsQuery, portsQuery } from '@/lib/queries'
@@ -95,6 +96,7 @@ function AddDomain({
     }),
     onSuccess: () => onOpenChange(false),
   })
+
   return (
     <FormDialog
       open={open}
@@ -173,6 +175,7 @@ function RemoveDomain({ domain }: { domain: Domain }) {
     staged: () => `Remove ${domain.hostname}`,
     success: () => `${domain.hostname} removed`,
   })
+
   return (
     <Confirm
       title={`Remove ${domain.hostname}?`}
@@ -192,6 +195,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
   const portOf = new Map(ports.items.map((p) => [p.id, p.port]))
   const noHttp = !ports.items.some((p) => p.protocol === 'http')
   const firstHttp = ports.items.find((p) => p.protocol === 'http')?.id ?? null
+
   return (
     <Subsection
       title="Domains"
@@ -210,7 +214,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
     >
       {domains.items.length === 0 ? (
         <EmptyState
-          icon={Globe}
+          icon={entityIcon.domain}
           title="No domains yet"
           description={
             noHttp
@@ -231,7 +235,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
           {domains.items.map((domain) => (
             <li key={domain.id} className="space-y-2 bg-card px-4 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <Globe className="size-4 text-muted-foreground" aria-hidden />
+                <entityIcon.domain className="size-4 text-muted-foreground" aria-hidden />
                 <a
                   href={`https://${domain.hostname}`}
                   target="_blank"

@@ -39,6 +39,7 @@ const rpcAll = async (token: string | null, method: string, params?: unknown, id
     },
   })
   const data = [...reply.text.matchAll(/^data: (.*)$/gm)].map((match) => JSON.parse(match[1]!))
+
   return {
     status: reply.status,
     headers: reply.headers,
@@ -48,6 +49,7 @@ const rpcAll = async (token: string | null, method: string, params?: unknown, id
 
 const rpc = async (token: string | null, method: string, params?: unknown, id = 1) => {
   const { status, headers: replied, messages } = await rpcAll(token, method, params, id)
+
   return {
     status,
     headers: replied,
@@ -78,6 +80,7 @@ const textOf = (result: any) => JSON.parse(result.content[0].text)
 
 const operations = async () => {
   const doc = (await h.call('GET', '/openapi/json')).body
+
   return Object.entries<Record<string, any>>(doc.paths).flatMap(([path, item]) =>
     Object.entries(item)
       .filter(([method, op]) => methods.includes(method) && op['x-stationly'])
@@ -113,6 +116,7 @@ before(async () => {
     project_id: '*',
     environment_id: '*',
   }
+
   readToken = await mintToken(
     h,
     [
@@ -171,6 +175,7 @@ describe('mcp transport', () => {
         version: '1',
       },
     })
+
     assert.equal(status, 200)
     assert.equal(message.result.serverInfo.name, 'stationly')
     assert.match(message.result.instructions, /wait_for_run/)
@@ -179,6 +184,7 @@ describe('mcp transport', () => {
 
   test('a request without a bearer is a 401 with a resource metadata challenge', async () => {
     const { status, headers: h2 } = await rpc(null, 'tools/list')
+
     assert.equal(status, 401)
     assert.match(h2.get('www-authenticate') ?? '', /resource_metadata=/)
   })
@@ -193,6 +199,7 @@ describe('mcp transport', () => {
         method: 'tools/list',
       },
     })
+
     assert.equal(reply.status, 401)
   })
 
@@ -208,6 +215,7 @@ describe('mcp transport', () => {
         body: '{}',
       }),
     )
+
     assert.equal(reply.status, 404)
     assert.equal(((await reply.json()) as any).error.code, 'WRONG_HOST')
   })
@@ -218,27 +226,34 @@ describe('generated catalog', () => {
     const expected = (await operations())
       .filter((op) => op.mcp !== false && !op.mcp?.hide)
       .map((op) => op.id)
+
     assert.deepEqual(await toolNames(adminToken), expected)
   })
 
   test('the tools visible to an instance admin stay within the 128 a client enables', async () => {
     const names = await toolNames(adminToken)
+
     assert.ok(names.length <= 128, `an instance admin sees ${names.length} tools`)
   })
 
   test('annotations, idempotency_key, always_load and the output schema come from the route', async () => {
     const byName = new Map((await toolsOf(adminToken)).map((t) => [t.name, t]))
+
     for (const op of (await operations()).filter((o) => o.mcp !== false)) {
       const tool = byName.get(op.id)!
+
       assert.equal(tool.annotations.openWorldHint, false, op.id)
       assert.equal(tool.annotations.readOnlyHint, op.method === 'GET', op.id)
       assert.equal('idempotency_key' in tool.inputSchema.properties, op.method !== 'GET', op.id)
-      if (op.method !== 'GET')
+
+      if (op.method !== 'GET') {
         assert.equal(
           tool.annotations.destructiveHint,
           op.method === 'DELETE' || op.mcp?.destructive === true,
           op.id,
         )
+      }
+
       assert.equal(
         tool._meta?.['anthropic/alwaysLoad'] === true,
         op.mcp?.always_load === true,
@@ -246,20 +261,24 @@ describe('generated catalog', () => {
       )
       assert.ok(tool.outputSchema, op.id)
     }
+
     for (const name of [
       'whoami',
       'describe_environment',
       'deploy',
       'wait_for_deployment',
       'get_deployment_diagnosis',
-    ])
+    ]) {
       assert.equal(byName.get(name)!._meta?.['anthropic/alwaysLoad'], true, name)
+    }
   })
 
   test('a polled tool takes timeout_s in place of the per-call wait', async () => {
     const byName = new Map((await toolsOf(readToken)).map((t) => [t.name, t]))
+
     for (const name of ['wait_for_deployment', 'wait_for_run']) {
       const input = byName.get(name)!.inputSchema
+
       assert.deepEqual(
         [input.properties.timeout_s.default, input.properties.timeout_s.maximum],
         [600, 3600],
@@ -271,6 +290,7 @@ describe('generated catalog', () => {
 
   test('a body schema reached through $ref is kept with its components under $defs', async () => {
     const tool = (await toolsOf(adminToken)).find((t) => t.name === 'describe_service')!
+
     assert.match(JSON.stringify(tool.outputSchema), /"\$ref":"#\/\$defs\/Service"/)
     assert.ok(tool.outputSchema.$defs.Service)
     assert.ok(!JSON.stringify(tool.outputSchema).includes('#/components/'))
@@ -280,37 +300,44 @@ describe('generated catalog', () => {
 describe('tools per access level', () => {
   test('read sees only read tools', async () => {
     const names = await toolNames(readToken)
+
     assert.ok(
       names.includes('whoami') &&
         names.includes('list_projects') &&
         names.includes('describe_service'),
     )
+
     for (const hidden of [
       'create_service',
       'deploy',
       'restart_service',
       'create_project',
       'list_stations',
-    ])
+    ]) {
       assert.ok(!names.includes(hidden), hidden)
+    }
   })
 
   test('deploy adds deploy tools but not admin tools', async () => {
     const names = await toolNames(deployToken)
+
     assert.ok(names.includes('restart_service') && names.includes('deploy'))
+
     for (const hidden of [
       'create_service',
       'create_project',
       'delete_service',
       'set_project_variables',
-    ])
+    ]) {
       assert.ok(!names.includes(hidden), hidden)
+    }
   })
 
   test('admin sees admin tools and each level is a strict superset of the one below', async () => {
     const read = await toolNames(readToken)
     const deploy = await toolNames(deployToken)
     const admin = await toolNames(adminToken)
+
     assert.ok(
       admin.includes('create_service') &&
         admin.includes('create_project') &&
@@ -323,6 +350,7 @@ describe('tools per access level', () => {
   test('instance tools need admin on every project', async () => {
     const instance = await toolNames(adminToken)
     const scoped = await toolNames(projectAdminToken)
+
     assert.ok(instance.includes('grant_variable') && instance.includes('list_stations'))
     assert.ok(!scoped.includes('grant_variable') && !scoped.includes('list_stations'))
     assert.ok(scoped.includes('create_service'))
@@ -335,6 +363,7 @@ describe('tool calls', () => {
     const rest = await h.call('GET', '/v1/me', {
       token: readToken,
     })
+
     assert.deepEqual(via, rest.body)
   })
 
@@ -343,6 +372,7 @@ describe('tool calls', () => {
     const rest = await h.call('GET', '/v1/projects', {
       token: readToken,
     })
+
     assert.equal(result.isError, undefined)
     assert.deepEqual(result.structuredContent, rest.body)
     assert.equal(result.structuredContent.items[0].name, 'alpha')
@@ -352,6 +382,7 @@ describe('tool calls', () => {
     const plain = await callTool(readToken, 'describe_service', {
       service: service.id,
     })
+
     assert.deepEqual(
       plain.structuredContent,
       (
@@ -365,6 +396,7 @@ describe('tool calls', () => {
       service: service.id,
       fields,
     })
+
     assert.deepEqual(
       full.structuredContent,
       (
@@ -379,10 +411,12 @@ describe('tool calls', () => {
     const svc = await callTool(readToken, 'describe_service', {
       service: 'alpha/production/web',
     })
+
     assert.equal(svc.structuredContent.id, service.id)
     const env = await callTool(readToken, 'list_services', {
       environment: 'alpha/production',
     })
+
     assert.deepEqual(
       env.structuredContent.items.map((s: any) => s.id),
       [service.id],
@@ -390,6 +424,7 @@ describe('tool calls', () => {
     const missing = await callTool(readToken, 'describe_service', {
       service: 'alpha/production/nope',
     })
+
     assert.equal(textOf(missing).error.code, 'NOT_FOUND')
   })
 
@@ -397,15 +432,18 @@ describe('tool calls', () => {
     const result = await callTool(deployToken, 'stop_service', {
       service: service.id,
     })
+
     assert.equal(result.isError, undefined, JSON.stringify(result))
     assert.equal(result.structuredContent.desired_state, 'stopped')
     const rest = await h.call('GET', `/v1/services/${service.id}?fields=desired_state`, {
       token: h.admin.token,
     })
+
     assert.equal(rest.body.desired_state, 'stopped')
     const started = await callTool(deployToken, 'start_service', {
       service: service.id,
     })
+
     assert.equal(started.isError, undefined, JSON.stringify(started))
   })
 
@@ -418,12 +456,14 @@ describe('tool calls', () => {
       name: 'once',
       idempotency_key: 'mcp-key-1',
     })
+
     assert.equal(first.isError, undefined, JSON.stringify(first))
     assert.equal(second.isError, undefined)
     assert.equal(second.structuredContent.id, first.structuredContent.id)
     const projects = await h.call('GET', '/v1/projects?name=once', {
       token: h.admin.token,
     })
+
     assert.equal(projects.body.items.length, 1)
   })
 
@@ -435,10 +475,12 @@ describe('tool calls', () => {
       },
     })
     const refused = reply.message.error ?? reply.message.result
+
     assert.ok(reply.message.error || refused.isError)
     const projects = await h.call('GET', '/v1/projects', {
       token: h.admin.token,
     })
+
     assert.ok(!projects.body.items.some((p: any) => p.name === 'nope'))
   })
 
@@ -446,6 +488,7 @@ describe('tool calls', () => {
     const result = await callTool(readToken, 'describe_service', {
       service: 'svc_01ARZ3NDEKTSV4RRFFQ69G5FAV',
     })
+
     assert.equal(result.isError, true)
     assert.equal(textOf(result).error.code, 'NOT_FOUND')
   })
@@ -462,8 +505,10 @@ describe('tool calls', () => {
       },
       deploy_on_create: false,
     })
+
     assert.equal(result.isError, true)
     const envelope = textOf(result).error
+
     assert.ok(['FORBIDDEN_SCOPE', 'NOT_FOUND'].includes(envelope.code))
     const services = await h.call(
       'GET',
@@ -472,6 +517,7 @@ describe('tool calls', () => {
         token: h.admin.token,
       },
     )
+
     assert.deepEqual(services.body.items, [])
   })
 
@@ -479,6 +525,7 @@ describe('tool calls', () => {
     const result = await callTool(readToken, 'get_logs', {
       service: service.id,
     })
+
     assert.equal(result.isError, undefined, JSON.stringify(result))
     assert.equal(result.structuredContent.untrusted.source, 'runtime log')
     assert.ok(Array.isArray(result.structuredContent.untrusted.lines))
@@ -491,6 +538,7 @@ describe('polled tools', () => {
       service: service.id,
       idempotency_key: 'mcp-poll-1',
     })
+
     assert.equal(created.isError, undefined, JSON.stringify(created))
     const id = created.structuredContent.id
     const { messages } = await rpcAll(readToken, 'tools/call', {
@@ -507,6 +555,7 @@ describe('polled tools', () => {
       .filter((m) => m.method === 'notifications/progress')
       .map((m) => m.params)
     const result = messages.at(-1).result
+
     assert.equal(result.isError, undefined, JSON.stringify(result))
     assert.equal(result.structuredContent.done, true)
     assert.equal(result.structuredContent.id, id)
@@ -527,6 +576,7 @@ describe('polled tools', () => {
       id: latest.id,
       timeout_s: 0,
     })
+
     assert.equal(result.structuredContent.id, latest.id)
     assert.equal(typeof result.structuredContent.done, 'boolean')
   })
@@ -537,11 +587,13 @@ describe('polled tools', () => {
       command: ['true'],
       wait_s: 0,
     })
+
     assert.equal(created.isError, undefined, JSON.stringify(created))
     const waited = await callTool(readToken, 'wait_for_run', {
       id: created.structuredContent.id,
       timeout_s: 20,
     })
+
     assert.equal(waited.isError, undefined, JSON.stringify(waited))
     assert.equal(waited.structuredContent.id, created.structuredContent.id)
     assert.equal(
@@ -554,20 +606,24 @@ describe('polled tools', () => {
 describe('update_station', () => {
   test('takes every field PATCH /v1/stations accepts and returns the station', async () => {
     const tool = (await toolsOf(adminToken)).find((t) => t.name === 'update_station')!
+
     for (const field of [
       'station',
       'public_address',
       'concurrency_cap',
       'draining',
       'intermittent',
-    ])
+    ]) {
       assert.ok(field in tool.inputSchema.properties, field)
+    }
+
     const result = await callTool(adminToken, 'update_station', {
       station: 'station-1',
       concurrency_cap: 4,
       intermittent: true,
       public_address: '203.0.113.7',
     })
+
     assert.equal(result.isError, undefined, JSON.stringify(result))
     assert.equal(result.structuredContent.concurrency_cap, 4)
     assert.equal(result.structuredContent.intermittent, true)
@@ -575,6 +631,7 @@ describe('update_station', () => {
     const rest = await h.call('GET', '/v1/stations/station-1?fields=*', {
       token: adminToken,
     })
+
     assert.deepEqual(
       [rest.body.concurrency_cap, rest.body.intermittent, rest.body.public_address],
       [4, true, '203.0.113.7'],
@@ -586,6 +643,7 @@ describe('update_station', () => {
       station: 'station-1',
       draining: true,
     })
+
     assert.deepEqual(
       [drained.structuredContent.status, drained.structuredContent.draining],
       ['online', true],
@@ -594,6 +652,7 @@ describe('update_station', () => {
       station: 'station-1',
       draining: false,
     })
+
     assert.deepEqual(
       [ended.structuredContent.status, ended.structuredContent.draining],
       ['online', false],
@@ -601,6 +660,7 @@ describe('update_station', () => {
     const empty = await callTool(adminToken, 'update_station', {
       station: 'station-1',
     })
+
     assert.equal(empty.isError, true)
     assert.equal(textOf(empty).error.code, 'VALIDATION_FAILED')
   })

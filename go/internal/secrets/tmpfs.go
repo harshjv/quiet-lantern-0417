@@ -15,6 +15,11 @@ import (
 
 const Root = "/run/stationly/secrets"
 
+type Owner struct {
+	UID int `json:"uid"`
+	GID int `json:"gid"`
+}
+
 func Dir(deploymentID string) string {
 	return filepath.Join(Root, deploymentID)
 }

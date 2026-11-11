@@ -1,15 +1,19 @@
+import fcntl
 import json
 import os
 import pty
 import re
 import select
+import struct
 import sys
+import termios
 import time
 
 spec = json.load(sys.stdin)
 ansi = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b[=>]|\r")
 pid, fd = pty.fork()
 if pid == 0:
+    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
     os.chdir(spec["cwd"])
     os.execve(spec["argv"][0], spec["argv"], spec["env"])
 

@@ -30,7 +30,10 @@ const readJson = async <T>(path: string): Promise<T | null> => {
   try {
     return JSON.parse(await readFile(path, 'utf8')) as T
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null
+    }
+
     throw error
   }
 }
@@ -48,6 +51,7 @@ const writePrivate = async (path: string, value: unknown) => {
 
 export const normalizeInstance = (instance: string) => {
   const url = new URL(instance)
+
   return `${url.protocol}//${url.host}`
 }
 
@@ -70,8 +74,10 @@ export const removeCredentials = async (instance: string) => {
   await rm(credentialsPath(instance), {
     force: true,
   })
-  if ((await currentInstance()) === instance)
+
+  if ((await currentInstance()) === instance) {
     await writePrivate(configPath(), {
       current: null,
     } satisfies Config)
+  }
 }

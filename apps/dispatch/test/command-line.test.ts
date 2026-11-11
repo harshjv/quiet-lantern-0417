@@ -29,13 +29,17 @@ after(() =>
 
 test('dispatch --help lists every command and exits 0', () => {
   const run = dispatch(['--help'])
+
   assert.equal(run.status, 0, run.stderr)
-  for (const command of ['serve', 'migrate', 'bootstrap', 'secrets', 'handshake-vectors'])
+
+  for (const command of ['serve', 'migrate', 'bootstrap', 'handshake-vectors', 'openapi']) {
     assert.match(run.stdout, new RegExp(`^  ${command}\\b`, 'm'))
+  }
 })
 
 test('dispatch migrate without --check is a usage error', () => {
   const run = dispatch(['migrate'])
+
   assert.equal(run.status, 2)
   assert.match(run.stderr, /required option '--check' not specified/)
 })
@@ -49,6 +53,7 @@ test('dispatch bootstrap refuses a pool with host bits set and names the masked 
       'ipam.pool': '10.200.5.0/16',
     }),
   )
+
   assert.equal(run.status, 1, run.stderr)
   assert.deepEqual(JSON.parse(run.stdout), {
     error: {

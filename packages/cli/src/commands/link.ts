@@ -33,19 +33,25 @@ export const linkCommands = (program: Program) => {
           project,
           environment: await environmentId(scoped),
         }
-        if (run.selection.service) context.service = await serviceId(scoped)
+
+        if (run.selection.service) {
+          context.service = await serviceId(scoped)
+        }
+
         const path = await writeContext(context)
-        if (options.json)
+
+        if (options.json) {
           process.stdout.write(
             `${JSON.stringify({
               path,
               context,
             })}\n`,
           )
-        else {
+        } else {
           progress(`linked ${path}`)
           process.stdout.write(`${human(context)}\n`)
         }
+
         return exitCodes.ok
       }),
     )

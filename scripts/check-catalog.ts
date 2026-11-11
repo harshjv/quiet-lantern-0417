@@ -23,13 +23,15 @@ const dirs = listed('packages').flatMap((pattern) =>
 const manifests = ['package.json', ...dirs.map((dir) => `${dir}/package.json`).filter(existsSync)]
 
 const uses = new Map<string, { file: string; spec: string }[]>()
+
 for (const file of manifests) {
   const pkg = JSON.parse(readFileSync(file, 'utf8')) as Partial<
     Record<(typeof sections)[number], Record<string, string>>
   >
-  for (const section of sections)
-    for (const [name, spec] of Object.entries(pkg[section] ?? {}))
-      if (!spec.startsWith('workspace:'))
+
+  for (const section of sections) {
+    for (const [name, spec] of Object.entries(pkg[section] ?? {})) {
+      if (!spec.startsWith('workspace:')) {
         uses.set(name, [
           ...(uses.get(name) ?? []),
           {
@@ -37,6 +39,9 @@ for (const file of manifests) {
             spec,
           },
         ])
+      }
+    }
+  }
 }
 
 const problems = [
@@ -59,6 +64,9 @@ const problems = [
 ]
 
 if (problems.length) {
-  for (const problem of problems) process.stderr.write(`${problem}\n`)
+  for (const problem of problems) {
+    process.stderr.write(`${problem}\n`)
+  }
+
   process.exit(1)
 }

@@ -44,6 +44,7 @@ before(async () => {
     },
   })
   const project = await createProject(h, 'boxes')
+
   envId = project.default_environment_id
   const web = await createService(h, envId, {
     name: 'web',
@@ -55,6 +56,7 @@ before(async () => {
     ],
     deploy: true,
   })
+
   await waitForActive(h, web.id)
   isolated = await createSandbox(h, envId, {
     name: 'locked',
@@ -79,7 +81,10 @@ before(async () => {
   open = await createSandbox(h, envId, {
     name: 'open',
   })
-  for (const box of [isolated, joined, open]) await waitForSandbox(h, box.id, 'running')
+
+  for (const box of [isolated, joined, open]) {
+    await waitForSandbox(h, box.id, 'running')
+  }
 })
 
 after(async () => {
@@ -93,8 +98,10 @@ describe('explain from a sandbox', () => {
       from: 'locked',
       to: 'example.com:443',
     })
+
     assert.equal(reply.status, 200, reply.text)
     const doc = reply.body
+
     assert.equal(doc.verdict, 'blocked')
     assert.equal(doc.phase, 'allowlist')
     assert.equal(doc.code, 'DOMAIN_NOT_ALLOWED')
@@ -102,6 +109,7 @@ describe('explain from a sandbox', () => {
     assert.equal(hopOf(doc, 'dns').status, 'skipped')
     assert.equal(hopOf(doc, 'firewall').status, 'skipped')
     const fix = doc.fixes.find((f: any) => f.code === 'ALLOW_DOMAIN')
+
     assert.equal(fix.action.tool, 'update_sandbox')
     assert.equal(fix.action.input.sandbox, isolated.id)
     assert.deepEqual(
@@ -118,6 +126,7 @@ describe('explain from a sandbox', () => {
         to: 'registry.npmjs.org:80',
       })
     ).body
+
     assert.equal(port.code, 'DOMAIN_NOT_ALLOWED')
     assert.match(port.fixes[0].text, /add the port/)
     const deep = (
@@ -126,6 +135,7 @@ describe('explain from a sandbox', () => {
         to: 'a.b.c.d.github.com:22',
       })
     ).body
+
     assert.equal(deep.code, 'DOMAIN_NOT_ALLOWED')
     const wildcard = (
       await explain({
@@ -133,6 +143,7 @@ describe('explain from a sandbox', () => {
         to: 'api.github.com:22',
       })
     ).body
+
     assert.equal(hopOf(wildcard, 'allowlist').status, 'pass')
     assert.equal(hopOf(wildcard, 'allowlist').detail.matched, 'github.com')
   })
@@ -144,6 +155,7 @@ describe('explain from a sandbox', () => {
         to: 'registry.npmjs.org:443',
       })
     ).body
+
     assert.equal(hopOf(doc, 'source').status, 'pass')
     assert.equal(hopOf(doc, 'applied').status, 'pass')
     assert.equal(hopOf(doc, 'dns').status, 'pass')
@@ -151,6 +163,7 @@ describe('explain from a sandbox', () => {
     assert.equal(hopOf(doc, 'firewall').status, 'pass')
     assert.equal(hopOf(doc, 'probe_required').status, 'unknown')
     const probe = doc.fixes.find((f: any) => f.code === 'RUN_PROBE')
+
     assert.equal(probe.action.input.sandbox, isolated.id)
     assert.equal(probe.action.input.service, undefined)
   })
@@ -162,6 +175,7 @@ describe('explain from a sandbox', () => {
         to: 'registry.npmjs.org:443',
       })
     ).body
+
     assert.equal(hopOf(publicName, 'allowlist'), undefined)
     const internal = (
       await explain({
@@ -169,10 +183,12 @@ describe('explain from a sandbox', () => {
         to: 'web.internal',
       })
     ).body
+
     assert.equal(internal.verdict, 'broken')
     assert.equal(internal.phase, 'dns')
     assert.equal(internal.code, 'NAME_NOT_IN_ENVIRONMENT')
     const fix = internal.fixes.find((f: any) => f.code === 'JOIN_ENVIRONMENT')
+
     assert.deepEqual(fix.action, {
       tool: 'update_sandbox',
       input: {
@@ -189,9 +205,13 @@ describe('explain from a sandbox', () => {
         to: 'web.internal',
       })
     ).body
+
     assert.equal(doc.verdict, 'reachable', JSON.stringify(doc.hops))
-    for (const name of ['source', 'applied', 'dns', 'firewall', 'switch', 'target', 'listening'])
+
+    for (const name of ['source', 'applied', 'dns', 'firewall', 'switch', 'target', 'listening']) {
       assert.equal(hopOf(doc, name).status, 'pass', name)
+    }
+
     assert.ok(Buffer.byteLength(JSON.stringify(doc)) < 8192)
   })
 
@@ -206,6 +226,7 @@ describe('explain from a sandbox', () => {
         to: 'registry.npmjs.org:443',
       })
     ).body
+
     assert.equal(doc.phase, 'source')
     assert.equal(doc.code, 'TARGET_NOT_RUNNING')
     assert.deepEqual(doc.fixes[0].action, {
@@ -218,6 +239,7 @@ describe('explain from a sandbox', () => {
       from: 'nobody',
       to: 'web',
     })
+
     assert.equal(missing.status, 422)
     assert.ok(missing.body.error.details.candidates.includes('locked'))
   })
@@ -229,6 +251,7 @@ describe('probe from a sandbox', () => {
       to: 'registry.npmjs.org',
       kind: 'dns',
     })
+
     assert.equal(dns.status, 200, dns.text)
     assert.equal(dns.body.sandbox, 'locked')
     assert.equal(dns.body.service, undefined)
@@ -236,15 +259,18 @@ describe('probe from a sandbox', () => {
     const tcp = await api('POST', `/v1/sandboxes/${isolated.id}/network/probe`, {
       to: 'registry.npmjs.org:443',
     })
+
     assert.equal(tcp.status, 200, tcp.text)
     assert.equal(tcp.body.port, 443)
     assert.equal(tcp.body.tcp.result, 'connected')
     const audit = (await api('GET', `/v1/audit?action=network.probe&limit=10`)).body.items.filter(
       (a: any) => a.target?.id === isolated.id || a.entity?.id === isolated.id,
     )
+
     assert.ok(audit.length >= 2, JSON.stringify(audit))
     let limited = 0
-    for (let i = 0; i < 6; i++)
+
+    for (let i = 0; i < 6; i++) {
       if (
         (
           await api('POST', `/v1/sandboxes/${isolated.id}/network/probe`, {
@@ -252,8 +278,11 @@ describe('probe from a sandbox', () => {
             kind: 'dns',
           })
         ).status === 429
-      )
+      ) {
         limited++
+      }
+    }
+
     assert.ok(limited > 0)
   })
 
@@ -265,11 +294,13 @@ describe('probe from a sandbox', () => {
     const reply = await api('POST', `/v1/sandboxes/${stopped.id}/network/probe`, {
       to: 'example.com:443',
     })
+
     assert.equal(reply.status, 409)
     assert.equal(reply.body.error.code, 'SANDBOX_STATE_CONFLICT')
     const invalid = await api('POST', `/v1/sandboxes/${open.id}/network/probe`, {
       to: '10.0.0.1',
     })
+
     assert.equal(invalid.status, 422)
     assert.equal(invalid.body.error.code, 'NETWORK_TARGET_INVALID')
   })

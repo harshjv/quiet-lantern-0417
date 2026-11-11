@@ -5,21 +5,33 @@ export type FieldTree = Map<string, FieldTree>
 export const all: FieldTree = new Map([['*', new Map()]])
 
 export const parseFields = (text: string | undefined): FieldTree | undefined => {
-  if (text === undefined || text.trim() === '') return undefined
+  if (text === undefined || text.trim() === '') {
+    return undefined
+  }
+
   const root: FieldTree = new Map()
+
   for (const raw of text.split(',')) {
     const path = raw.trim()
-    if (!path) continue
+
+    if (!path) {
+      continue
+    }
+
     let node = root
+
     for (const part of path.split('.')) {
       let next = node.get(part)
+
       if (!next) {
         next = new Map()
         node.set(part, next)
       }
+
       node = next
     }
   }
+
   return root
 }
 
@@ -34,10 +46,15 @@ export type View<R, S extends TSchema = TSchema> = {
 
 const setPath = (out: Row, path: string[], value: unknown) => {
   let node = out
+
   for (const part of path.slice(0, -1)) {
-    if (typeof node[part] !== 'object' || node[part] === null) node[part] = {}
+    if (typeof node[part] !== 'object' || node[part] === null) {
+      node[part] = {}
+    }
+
     node = node[part] as Row
   }
+
   node[path.at(-1)!] = value
 }
 
@@ -54,24 +71,46 @@ export const project = <R, S extends TSchema>(
 ): Static<S> => {
   const full = view.full(row)
   const out: Row = {}
+
   for (const field of view.summary) {
     const path = field.split('.')
     const value = getPath(full, path)
-    if (value !== undefined) setPath(out, path, value)
+
+    if (value !== undefined) {
+      setPath(out, path, value)
+    }
   }
-  if (!fields) return out
+
+  if (!fields) {
+    return out
+  }
+
   const everything = fields.has('*')
-  if (everything) Object.assign(out, full)
+
+  if (everything) {
+    Object.assign(out, full)
+  }
+
   const expansions = view.expand ?? {}
+
   for (const [name, loader] of Object.entries(expansions)) {
-    if (everything || fields.has(name))
+    if (everything || fields.has(name)) {
       out[name] = loader(row, everything ? (fields.get(name) ?? all) : fields.get(name))
+    }
   }
+
   for (const key of fields.keys()) {
-    if (key === '*' || key in expansions) continue
+    if (key === '*' || key in expansions) {
+      continue
+    }
+
     const value = full[key]
-    if (value !== undefined) out[key] = value
+
+    if (value !== undefined) {
+      out[key] = value
+    }
   }
+
   return out
 }
 

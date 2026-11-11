@@ -47,6 +47,7 @@ before(async () => {
       apply: false,
     },
   })
+
   assert.equal(set.status, 200, set.text)
   const created = await createService(h, project.default_environment_id, {
     name: 'web',
@@ -85,6 +86,7 @@ before(async () => {
       },
     ],
   })
+
   deploymentId = created.deployments[0].id
   await waitForDeployment(h, deploymentId, 'active')
 })
@@ -105,12 +107,16 @@ describe('log redaction covers sealed values and generated secrets only', () => 
     }))
     const values = redaction.map((r) => r.value)
     const generated = decode(body.values.find((v) => v.key === 'SECRET_KEY')!.value)
+
     assert.ok(values.includes(sealedValue))
     assert.ok(values.includes(generated))
     assert.ok(values.includes(projectSealed))
     assert.ok(values.includes(`postgres://u:${projectSealed}@db/app`))
-    for (const literal of [literalValue, projectLiteral, `https://${projectLiteral}/x`])
+
+    for (const literal of [literalValue, projectLiteral, `https://${projectLiteral}/x`]) {
       assert.ok(!values.includes(literal), `${literal} must not be redacted`)
+    }
+
     assert.equal(decode(body.values.find((v) => v.key === 'BASE_URL')!.value), literalValue)
   })
 
@@ -118,14 +124,18 @@ describe('log redaction covers sealed values and generated secrets only', () => 
     const known = redactionKnown(h.deps.db, h.deps.keyring, deploymentId, actor, 'req_test')
     const generated = known.find((k) => k.key === 'SECRET_KEY')!.value
     const redact = buildRedactor(known)
+
     for (const [key, value] of [
       ['API_KEY', sealedValue],
       ['SECRET_KEY', generated],
     ] as const) {
-      for (const form of encodedForms(value))
+      for (const form of encodedForms(value)) {
         assert.equal(redact(`before ${form} after`), `before [redacted:${key}] after`)
+      }
     }
+
     const line = `BASE_URL=${literalValue} SITE=https://${projectLiteral}/x`
+
     assert.equal(redact(line), line)
   })
 })

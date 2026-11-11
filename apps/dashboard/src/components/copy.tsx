@@ -18,6 +18,7 @@ export function CopyButton({
 }) {
   const [done, setDone] = useState(false)
   const [hover, setHover] = useState(false)
+
   return (
     <Tooltip open={done || hover} onOpenChange={setHover}>
       <TooltipTrigger asChild>

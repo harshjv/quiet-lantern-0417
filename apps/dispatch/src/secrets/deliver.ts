@@ -50,14 +50,22 @@ export const renderEntries = (
   const redacted = new Map<string, { key: string; value: string }>()
   const plaintext = (leaf: ValueNode) => {
     const cached = decrypted.get(leaf.secret_value_id)
-    if (cached !== undefined) return cached
+
+    if (cached !== undefined) {
+      return cached
+    }
+
     const value = decryptLeaf(db, keyring, leaf)
+
     decrypted.set(leaf.secret_value_id, value)
-    if (isRedacted(leaf))
+
+    if (isRedacted(leaf)) {
       redacted.set(leaf.secret_value_id, {
         key: leaf.key,
         value,
       })
+    }
+
     return value
   }
   const rendered = entries.map((entry) => ({
@@ -74,6 +82,7 @@ export const renderEntries = (
       })),
     ...redacted.values(),
   ]
+
   return {
     rendered,
     redaction,
@@ -109,13 +118,16 @@ export const renderedDelivery = (
       value: base64url(p.value),
     })),
   }
+
   if (!Value.Check(messages['secrets.deliver'].body, body)) {
     const issue = Value.Errors(messages['secrets.deliver'].body, body).First()
+
     throw new SecretsError(
       'PROTOCOL_INVALID_MESSAGE',
       `secrets.deliver body does not match its schema at ${issue?.path}: ${issue?.message}`,
     )
   }
+
   recordAudit(db, {
     actor: delivery.actor,
     action: 'secret.decrypt',
@@ -125,6 +137,7 @@ export const renderedDelivery = (
       secret_value_ids: decryptedIds,
     },
   })
+
   return body
 }
 
@@ -137,7 +150,8 @@ export const knownRedaction = (
   requestId: string,
 ) => {
   const { redaction, decryptedIds } = renderEntries(db, keyring, entries)
-  if (decryptedIds.length)
+
+  if (decryptedIds.length) {
     recordAudit(db, {
       actor,
       action: 'secret.decrypt',
@@ -148,6 +162,8 @@ export const knownRedaction = (
         secret_value_ids: decryptedIds,
       },
     })
+  }
+
   return redaction
 }
 

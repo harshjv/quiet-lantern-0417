@@ -54,6 +54,9 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
 
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+
       - name: Build stationd, runsc and the images
         env:
           VERSION: ${{ needs.version.outputs.version }}

@@ -26,16 +26,20 @@ const exitWaitMs = 10_000
 
 const requestOf = (req: IncomingMessage) => {
   const headers = new Headers()
+
   for (const [key, value] of Object.entries(req.headers)) {
     if (
       value === undefined ||
       key === 'upgrade' ||
       key === 'connection' ||
       key.startsWith('sec-websocket')
-    )
+    ) {
       continue
+    }
+
     headers.set(key, Array.isArray(value) ? value.join(', ') : value)
   }
+
   return new Request(`http://${req.headers.host ?? '127.0.0.1'}${req.url ?? '/'}`, {
     method: 'GET',
     headers,
@@ -44,6 +48,7 @@ const requestOf = (req: IncomingMessage) => {
 
 const refuse = (socket: Duplex, error: ApiError, requestId: string) => {
   const body = JSON.stringify(envelope(error, requestId))
+
   socket.end(
     `HTTP/1.1 ${error.status} ${error.code}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
   )
@@ -72,6 +77,7 @@ const TerminalFrame = Type.Union([
 const terminalFrame = (buf: Buffer) => {
   try {
     const message: unknown = JSON.parse(buf.toString('utf8'))
+
     return Value.Check(TerminalFrame, message) ? message : null
   } catch {
     return null
@@ -83,8 +89,10 @@ const framed = (channel: number, payload: Buffer) =>
 
 const terminalSize = (value: string | null, fallback: number) => {
   const size = Number(value)
+
   return Number.isInteger(size) && size >= 1 ? size : fallback
 }
+
 export const createAttachServer = (deps: Deps) => {
   const { db, stations } = deps
   const wss = new WebSocketServer({
@@ -106,13 +114,17 @@ export const createAttachServer = (deps: Deps) => {
     const runId = attachPath.exec(new URL(request.url).pathname)![1]!
     const principal: Principal = await authenticate(db, deps.auth, request)
     const r = db.select().from(run).where(eq(run.id, runId)).get()
-    if (!r)
+
+    if (!r) {
       throw new ApiError(
         'NOT_FOUND',
         `run ${runId} does not exist or is not visible to this credential.`,
       )
+    }
+
     const owner = runOwner(db, r)
-    if (!can(principal, owner.target, 'deploy'))
+
+    if (!can(principal, owner.target, 'deploy')) {
       throw new ApiError(
         'FORBIDDEN_SCOPE',
         'Attaching to a shell needs deploy on its environment.',
@@ -124,25 +136,35 @@ export const createAttachServer = (deps: Deps) => {
           },
         },
       )
+    }
+
     const attachable = r.kind === 'shell' || (r.kind === 'exec' && r.exec?.attach === true)
-    if (!attachable)
+
+    if (!attachable) {
       throw new ApiError(
         'VALIDATION_FAILED',
         `run ${runId} is a ${r.kind} run; only shells and execs created with attach attach.`,
       )
-    if (!sameActor(r.actor, principal.actor))
+    }
+
+    if (!sameActor(r.actor, principal.actor)) {
       throw new ApiError(
         'FORBIDDEN_SCOPE',
         'Only the actor that created the shell can attach to it.',
       )
-    if (r.status !== 'queued')
+    }
+
+    if (r.status !== 'queued') {
       throw new ApiError(
         'VALIDATION_FAILED',
         `run ${runId} is ${r.status}; a shell attaches once, before it starts.`,
       )
+    }
+
     const url = new URL(request.url)
     const rows = terminalSize(url.searchParams.get('rows'), 24)
     const cols = terminalSize(url.searchParams.get('cols'), 80)
+
     return {
       request,
       requestId,
@@ -161,7 +183,8 @@ export const createAttachServer = (deps: Deps) => {
     const sandboxId = forwardPath.exec(url.pathname)![1]!
     const principal: Principal = await authenticate(db, deps.auth, request)
     const ctx = sandboxById(db, sandboxId)
-    if (!can(principal, ctx.target, 'deploy'))
+
+    if (!can(principal, ctx.target, 'deploy')) {
       throw new ApiError(
         'FORBIDDEN_SCOPE',
         'Forwarding a sandbox port needs deploy on its environment.',
@@ -173,10 +196,14 @@ export const createAttachServer = (deps: Deps) => {
           },
         },
       )
-    if (ctx.environment.protected)
+    }
+
+    if (ctx.environment.protected) {
       requireHuman(principal, 'A port forward in a protected environment', {
         environment_id: ctx.environment.id,
       })
+    }
+
     if (ctx.sandbox.status !== 'running') {
       throw new ApiError(
         'SANDBOX_NOT_RUNNING',
@@ -187,7 +214,9 @@ export const createAttachServer = (deps: Deps) => {
         },
       )
     }
+
     const port = Number(url.searchParams.get('port'))
+
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new ApiError(
         'VALIDATION_FAILED',
@@ -203,6 +232,7 @@ export const createAttachServer = (deps: Deps) => {
         },
       )
     }
+
     if ((forwards.get(sandboxId) ?? 0) >= sandboxExecLimits.forwards) {
       throw new ApiError(
         'RATE_LIMITED',
@@ -213,7 +243,9 @@ export const createAttachServer = (deps: Deps) => {
         },
       )
     }
+
     requireLink(stations, ctx.sandbox.station_id)
+
     return {
       request,
       requestId,
@@ -225,6 +257,7 @@ export const createAttachServer = (deps: Deps) => {
 
   const session = async (ws: WebSocket, admitted: Awaited<ReturnType<typeof admit>>) => {
     const { run: r, principal, requestId } = admitted
+
     sessions.add(ws)
     const stationId = admitted.owner.station_id
     let handle: StreamHandle | null = null
@@ -232,12 +265,15 @@ export const createAttachServer = (deps: Deps) => {
     let closed = false
     const credit = (bytes: number) => (handle ? handle.credit(bytes) : (owed += bytes))
     const sendControl = (body: Record<string, unknown>) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(body))
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify(body))
+      }
     }
     const finish = async (reason: string, exitCode: number | null) => {
       const terminal = (status: string) =>
         (runTerminalStatuses as readonly string[]).includes(status)
       let row = runRow(db, r.id)
+
       await pollUntil(
         () => exitCode !== null || terminal((row = runRow(db, r.id)).status),
         exitWaitMs,
@@ -248,6 +284,7 @@ export const createAttachServer = (deps: Deps) => {
           : exitCode === 0
             ? 'succeeded'
             : 'failed'
+
       sendControl({
         type: 'exit',
         run_id: r.id,
@@ -255,15 +292,24 @@ export const createAttachServer = (deps: Deps) => {
         exit_code: exitCode ?? row.exit_code,
         reason,
       })
-      if (ws.readyState === ws.OPEN) ws.close(1000, 'exited')
+
+      if (ws.readyState === ws.OPEN) {
+        ws.close(1000, 'exited')
+      }
     }
     const inbox: Array<[Buffer, boolean]> = []
     let handleMessage: ((buf: Buffer, isBinary: boolean) => void) | null = null
+
     ws.on('message', (data: RawData, isBinary: boolean) => {
       const buf = toBuffer(data)
-      if (handleMessage) handleMessage(buf, isBinary)
-      else inbox.push([buf, isBinary])
+
+      if (handleMessage) {
+        handleMessage(buf, isBinary)
+      } else {
+        inbox.push([buf, isBinary])
+      }
     })
+
     try {
       const started = await stations.startRun(
         stationId,
@@ -275,7 +321,10 @@ export const createAttachServer = (deps: Deps) => {
         }),
         {
           onBinary: (channel, payload) => {
-            if (ws.readyState !== ws.OPEN) return
+            if (ws.readyState !== ws.OPEN) {
+              return
+            }
+
             ws.send(
               framed(channel, payload),
               {
@@ -285,17 +334,26 @@ export const createAttachServer = (deps: Deps) => {
             )
           },
           onEnd: (reason, exitCode) => {
-            if (!closed) void finish(reason, exitCode)
+            if (!closed) {
+              void finish(reason, exitCode)
+            }
           },
         },
       )
+
       handle = started.handle
-      if (!handle)
+
+      if (!handle) {
         throw new StationRequestError(
           'PROTOCOL_INVALID_MESSAGE',
           'run.accepted carried no stream for an attached run',
         )
-      if (owed) handle.credit(owed)
+      }
+
+      if (owed) {
+        handle.credit(owed)
+      }
+
       audit(
         db,
         {
@@ -323,6 +381,7 @@ export const createAttachServer = (deps: Deps) => {
       })
     } catch (error) {
       const explanation = error instanceof Error ? error.message : String(error)
+
       sendControl({
         type: 'error',
         code: error instanceof StationRequestError ? error.code : 'STATION_OFFLINE',
@@ -330,20 +389,36 @@ export const createAttachServer = (deps: Deps) => {
       })
       ws.close(1011, 'run.start failed')
       sessions.delete(ws)
+
       return
     }
+
     handleMessage = (buf, isBinary) => {
       if (isBinary) {
-        if (buf.length === 0) return
+        if (buf.length === 0) {
+          return
+        }
+
         handle.write(buf[0]!, buf.subarray(1))
+
         return
       }
+
       const message = terminalFrame(buf)
-      if (message?.type === 'resize')
+
+      if (message?.type === 'resize') {
         void handle.resize(message.rows, message.cols).catch(() => undefined)
-      if (message?.type === 'eof') handle.write(0, Buffer.alloc(0))
+      }
+
+      if (message?.type === 'eof') {
+        handle.write(0, Buffer.alloc(0))
+      }
     }
-    for (const [buf, isBinary] of inbox.splice(0)) handleMessage(buf, isBinary)
+
+    for (const [buf, isBinary] of inbox.splice(0)) {
+      handleMessage(buf, isBinary)
+    }
+
     ws.on('close', () => {
       closed = true
       sessions.delete(ws)
@@ -357,6 +432,7 @@ export const createAttachServer = (deps: Deps) => {
   ) => {
     const { ctx, port, principal, requestId } = admitted
     const sandboxId = ctx.sandbox.id
+
     sessions.add(ws)
     forwards.set(sandboxId, (forwards.get(sandboxId) ?? 0) + 1)
     let handle: StreamHandle | null = null
@@ -364,8 +440,11 @@ export const createAttachServer = (deps: Deps) => {
     let closed = false
     const credit = (bytes: number) => (handle ? handle.credit(bytes) : (owed += bytes))
     const sendControl = (body: Record<string, unknown>) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(body))
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify(body))
+      }
     }
+
     ws.on('close', () => {
       closed = true
       sessions.delete(ws)
@@ -375,14 +454,25 @@ export const createAttachServer = (deps: Deps) => {
     const inbox: Buffer[] = []
     let ready = false
     const deliver = (buf: Buffer) => {
-      if (buf.length > 0) handle!.write(buf[0]!, buf.subarray(1))
+      if (buf.length > 0) {
+        handle!.write(buf[0]!, buf.subarray(1))
+      }
     }
+
     ws.on('message', (data: RawData, isBinary: boolean) => {
-      if (!isBinary) return
+      if (!isBinary) {
+        return
+      }
+
       const buf = toBuffer(data)
-      if (ready) deliver(buf)
-      else inbox.push(buf)
+
+      if (ready) {
+        deliver(buf)
+      } else {
+        inbox.push(buf)
+      }
     })
+
     try {
       handle = await stations.openStream(
         ctx.sandbox.station_id,
@@ -393,7 +483,10 @@ export const createAttachServer = (deps: Deps) => {
         },
         {
           onBinary: (channel, payload) => {
-            if (ws.readyState !== ws.OPEN) return
+            if (ws.readyState !== ws.OPEN) {
+              return
+            }
+
             ws.send(
               framed(channel, payload),
               {
@@ -403,17 +496,30 @@ export const createAttachServer = (deps: Deps) => {
             )
           },
           onEnd: (reason) => {
-            if (closed) return
+            if (closed) {
+              return
+            }
+
             sendControl({
               type: 'end',
               reason,
             })
-            if (ws.readyState === ws.OPEN) ws.close(1000, reason)
+
+            if (ws.readyState === ws.OPEN) {
+              ws.close(1000, reason)
+            }
           },
         },
       )
-      if (owed) handle.credit(owed)
-      if (closed) handle.cancel()
+
+      if (owed) {
+        handle.credit(owed)
+      }
+
+      if (closed) {
+        handle.cancel()
+      }
+
       audit(
         db,
         {
@@ -444,10 +550,15 @@ export const createAttachServer = (deps: Deps) => {
         explanation: error instanceof Error ? error.message : String(error),
       })
       ws.close(1011, 'forward.open failed')
+
       return
     }
+
     ready = true
-    for (const buf of inbox.splice(0)) deliver(buf)
+
+    for (const buf of inbox.splice(0)) {
+      deliver(buf)
+    }
   }
 
   const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -458,23 +569,30 @@ export const createAttachServer = (deps: Deps) => {
         error instanceof ApiError
           ? error
           : new ApiError('INTERNAL_ERROR', error instanceof Error ? error.message : String(error))
+
       refuse(socket, apiError, `req_attach`)
     }
+
     if (forward) {
       admitForward(req)
         .then((admitted) =>
           wss.handleUpgrade(req, socket, head, (ws) => void forwardSession(ws, admitted)),
         )
         .catch(fail)
+
       return
     }
+
     admit(req)
       .then((admitted) => wss.handleUpgrade(req, socket, head, (ws) => void session(ws, admitted)))
       .catch(fail)
   }
 
   const close = () => {
-    for (const ws of sessions) ws.close(1001, 'dispatch shutting down')
+    for (const ws of sessions) {
+      ws.close(1001, 'dispatch shutting down')
+    }
+
     wss.close()
   }
 

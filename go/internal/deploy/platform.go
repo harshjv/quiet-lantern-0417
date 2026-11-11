@@ -133,6 +133,7 @@ func (s *Station) handlers() map[string]rootsocket.Handler {
 		protocol.RootSocketOpLogs:                s.opLogs,
 		protocol.RootSocketOpSetup:               s.opSetup,
 		protocol.RootSocketOpPublicAddressDetect: s.opDetectPublicAddress,
+		protocol.RootSocketOpHostProbe:           s.opHostProbe,
 		protocol.RootSocketOpAdminRecoveryKey:    s.opRecoveryKey,
 		protocol.RootSocketOpDoctor:              s.opDoctor,
 	}

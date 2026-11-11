@@ -5,6 +5,7 @@ import { terms, type TermKey } from '@/lib/labels'
 
 export function Term({ name, children }: { name: TermKey; children?: ReactNode }) {
   const term = terms[name]
+
   return (
     <HoverCard openDelay={250} closeDelay={100}>
       <HoverCardTrigger asChild>

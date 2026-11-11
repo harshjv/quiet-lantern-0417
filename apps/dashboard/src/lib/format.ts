@@ -6,8 +6,12 @@ import { bytesText } from '@stationly/protocol/format'
 import type { Service } from './api'
 
 const parsed = (value: string | null | undefined) => {
-  if (!value) return null
+  if (!value) {
+    return null
+  }
+
   const date = parseISO(value)
+
   return isValid(date) ? date : null
 }
 
@@ -15,8 +19,15 @@ export const blank = '—'
 
 export const ago = (value: string | null | undefined, now = new Date()) => {
   const date = parsed(value)
-  if (!date) return 'never'
-  if (Math.abs(differenceInSeconds(now, date)) < 5) return 'just now'
+
+  if (!date) {
+    return 'never'
+  }
+
+  if (Math.abs(differenceInSeconds(now, date)) < 5) {
+    return 'just now'
+  }
+
   return formatDistanceStrict(date, now, {
     addSuffix: true,
   })
@@ -24,6 +35,7 @@ export const ago = (value: string | null | undefined, now = new Date()) => {
 
 export const stamp = (value: string | null | undefined) => {
   const date = parsed(value)
+
   return date ? format(date, 'yyyy-MM-dd HH:mm:ss zzz') : 'not yet'
 }
 
@@ -32,14 +44,25 @@ export const span = (seconds: number) => {
   const days = Math.floor(total / 86_400)
   const hours = Math.floor((total % 86_400) / 3600)
   const minutes = Math.floor((total % 3600) / 60)
-  if (days > 0) return hours ? `${days} d ${hours} h` : `${days} d`
-  if (hours > 0) return minutes ? `${hours} h ${minutes} min` : `${hours} h`
-  if (minutes > 0) return total % 60 ? `${minutes} min ${total % 60} s` : `${minutes} min`
+
+  if (days > 0) {
+    return hours ? `${days} d ${hours} h` : `${days} d`
+  }
+
+  if (hours > 0) {
+    return minutes ? `${hours} h ${minutes} min` : `${hours} h`
+  }
+
+  if (minutes > 0) {
+    return total % 60 ? `${minutes} min ${total % 60} s` : `${minutes} min`
+  }
+
   return `${total} s`
 }
 
 export const clock = (value: string | null | undefined) => {
   const date = parsed(value)
+
   return date ? format(date, 'HH:mm:ss') : ''
 }
 
@@ -49,6 +72,7 @@ export const duration = (
   now = new Date(),
 ) => {
   const start = parsed(from)
+
   return start ? span(differenceInSeconds(parsed(to) ?? now, start)) : blank
 }
 
@@ -65,10 +89,19 @@ export const shortDigest = (ref: string) =>
 
 export const sourceText = (service: Pick<Service, 'source'>) => {
   const s = service.source
-  if (s.type === 'image') return shortDigest(s.ref.includes('@') ? s.ref : `${s.ref}@${s.digest}`)
-  if (s.type === 'dockerfile' || s.type === 'railpack')
+
+  if (s.type === 'image') {
+    return shortDigest(s.ref.includes('@') ? s.ref : `${s.ref}@${s.digest}`)
+  }
+
+  if (s.type === 'dockerfile' || s.type === 'railpack') {
     return `${s.repo.replace(/^github\.com\//, '')}@${s.branch}`
-  if (s.type === 'local') return 'Uploaded from a folder'
+  }
+
+  if (s.type === 'local') {
+    return 'Uploaded from a folder'
+  }
+
   return 'Template'
 }
 

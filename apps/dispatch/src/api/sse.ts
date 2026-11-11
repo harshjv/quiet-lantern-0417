@@ -16,11 +16,20 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
   const waiters: (() => void)[] = []
   const closers: (() => void)[] = []
   const finish = () => {
-    if (done) return
+    if (done) {
+      return
+    }
+
     done = true
     clearInterval(heartbeat)
-    for (const w of waiters.splice(0)) w()
-    for (const c of closers.splice(0)) c()
+
+    for (const w of waiters.splice(0)) {
+      w()
+    }
+
+    for (const c of closers.splice(0)) {
+      c()
+    }
   }
   const stream = new ReadableStream<Uint8Array>(
     {
@@ -28,7 +37,9 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
         controller = c
       },
       pull: () => {
-        for (const w of waiters.splice(0)) w()
+        for (const w of waiters.splice(0)) {
+          w()
+        }
       },
       cancel: () => finish(),
     },
@@ -38,7 +49,10 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
     },
   )
   const write = (text: string) => {
-    if (done) return
+    if (done) {
+      return
+    }
+
     try {
       controller.enqueue(encoder.encode(text))
     } catch {
@@ -49,10 +63,12 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
     () => write(`: keepalive ${new Date().toISOString()}\n\n`),
     heartbeatMs,
   )
+
   signal.addEventListener('abort', finish, {
     once: true,
   })
   write(': connected\n\n')
+
   return {
     response: new Response(stream, {
       headers: {
@@ -64,20 +80,29 @@ export const createSse = (signal: AbortSignal, headers: Record<string, string> =
     }),
     send: async (event, data, id) => {
       write(`${id ? `id: ${id}\n` : ''}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-      while (!done && (controller.desiredSize ?? 1) <= 0)
+
+      while (!done && (controller.desiredSize ?? 1) <= 0) {
         await new Promise<void>((resolve) => waiters.push(resolve))
+      }
     },
     close: () => {
-      if (done) return
+      if (done) {
+        return
+      }
+
       try {
         controller.close()
       } catch {}
+
       finish()
     },
     closed: () => done,
     onClose: (f) => {
-      if (done) f()
-      else closers.push(f)
+      if (done) {
+        f()
+      } else {
+        closers.push(f)
+      }
     },
   }
 }

@@ -99,6 +99,8 @@ export const commands = {
   exposeTcp: (port: string | null) => sly('domains', 'expose-tcp', port ?? '<port-id>'),
   setPublicAddress: (station: string) =>
     sly('stations', 'update', station, '--public-address', '<ipv4>'),
+  setSandboxRuntime: (station: string) =>
+    sly('stations', 'update', station, '--default-sandbox-runtime', '<runtime>'),
   startSandbox: (scope: Scope, sandbox: string) =>
     sly(...scoped(scope), '--sandbox', sandbox, 'sandboxes', 'start'),
   createSandbox: (scope: Scope) =>

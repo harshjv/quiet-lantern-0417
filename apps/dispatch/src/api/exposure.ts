@@ -18,7 +18,11 @@ export const generatedHostname = (
 ) => {
   const zone = readSetting(db, 'domains.zone')
   const label = `${serviceName}-${environmentName}`
-  if (zone) return `${label}.${zone}`
+
+  if (zone) {
+    return `${label}.${zone}`
+  }
+
   const address = db
     .select({
       public_address: station.public_address,
@@ -26,6 +30,7 @@ export const generatedHostname = (
     .from(station)
     .where(eq(station.id, stationId))
     .get()?.public_address
+
   return address ? `${label}.${sslipHost(address)}.sslip.io` : null
 }
 
@@ -44,15 +49,18 @@ export const hostPortPicker = (db: Db, stationId: string) => {
       .all()
       .map((a) => a.host_port),
   )
+
   return {
     range: `${low}-${high}`,
     next: () => {
       for (let candidate = low; candidate <= high; candidate++) {
         if (!used.has(candidate)) {
           used.add(candidate)
+
           return candidate
         }
       }
+
       return null
     },
   }
@@ -67,7 +75,11 @@ export const requireGatewayPin = (db: Db, stationId: string) => {
     .where(eq(station.id, stationId))
     .get()?.arch
   const lockfile = readLockfile(db)
-  if (effectivePins(db, arch).gateway?.digest) return
+
+  if (effectivePins(db, arch).gateway?.digest) {
+    return
+  }
+
   fail(
     'GATEWAY_NOT_PINNED',
     lockfile

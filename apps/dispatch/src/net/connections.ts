@@ -62,16 +62,25 @@ const shapeConnections = (
       const peer: ConnectionsDoc['connections'][number]['peer'] = {
         kind,
       }
+
       if (service_id !== undefined) {
         peer.service_id = service_id
         peer.service = names.get(service_id) ?? service_id
       }
+
       if (sandbox_id !== undefined) {
         peer.sandbox_id = sandbox_id
         peer.sandbox = boxes.get(sandbox_id) ?? sandbox_id
       }
-      if (deployment_id !== undefined) peer.deployment_id = deployment_id
-      if (address !== undefined) peer.address = address
+
+      if (deployment_id !== undefined) {
+        peer.deployment_id = deployment_id
+      }
+
+      if (address !== undefined) {
+        peer.address = address
+      }
+
       return {
         ...c,
         peer,
@@ -91,6 +100,7 @@ export const shapeSandboxSample = (
     s.connections.flatMap((c) => (c.peer.sandbox_id ? [c.peer.sandbox_id] : [])),
   )
   const redact = ctx.sandboxRedaction([row.id], ctx.actor, ctx.requestId)
+
   return {
     sandbox: {
       id: row.id,
@@ -122,18 +132,28 @@ export const shapeSamples = (
 ): ConnectionsDoc[] => {
   const ids = new Set<string>()
   const boxIds = new Set<string>()
+
   for (const s of samples) {
     ids.add(s.service_id!)
+
     for (const c of s.connections) {
-      if (c.peer.service_id) ids.add(c.peer.service_id)
-      if (c.peer.sandbox_id) boxIds.add(c.peer.sandbox_id)
+      if (c.peer.service_id) {
+        ids.add(c.peer.service_id)
+      }
+
+      if (c.peer.sandbox_id) {
+        boxIds.add(c.peer.sandbox_id)
+      }
     }
   }
+
   const names = namesOf(ctx.db, ids)
   const boxes = sandboxNamesOf(ctx.db, boxIds)
+
   return samples.map((s) => {
     const redact = ctx.redaction(s.deployment_id ? [s.deployment_id] : [], ctx.actor, ctx.requestId)
     const connections = shapeConnections(s, names, boxes, direction)
+
     return {
       service: {
         id: s.service_id!,

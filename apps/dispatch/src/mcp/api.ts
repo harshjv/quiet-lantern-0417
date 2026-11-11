@@ -17,6 +17,7 @@ const clientName = (request: ServerContext, fallback: string | null) => {
     { name?: unknown } | undefined
   const name =
     typeof info?.name === 'string' ? info.name.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 48) : ''
+
   return name ? `mcp/${name}` : fallback
 }
 
@@ -33,6 +34,7 @@ export const sendFor =
           }
         : {}),
     }
+
     return session.dispatch(
       new Request(`${session.origin}${path}`, {
         ...init,
@@ -49,6 +51,10 @@ export const loadTools = async (session: Session): Promise<ToolDef[]> => {
       },
     }),
   )
-  if (!response.ok) throw new Error(`GET /openapi/json answered ${response.status}`)
+
+  if (!response.ok) {
+    throw new Error(`GET /openapi/json answered ${response.status}`)
+  }
+
   return generateTools((await response.json()) as OpenApiDocument)
 }

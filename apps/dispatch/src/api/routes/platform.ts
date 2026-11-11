@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox'
 import { and, asc, eq, isNull } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
 import {
   baseImageCheckValues,
@@ -47,7 +47,7 @@ import { audit } from '../context.ts'
 import { fail } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import { stationByRef } from '../lookup.ts'
-import { models, replies, Staged } from '../shapes.ts'
+import { replies, Staged } from '../shapes.ts'
 
 import { stationError } from './runs.ts'
 
@@ -393,7 +393,6 @@ const upgradeView = (row: ReturnType<typeof latestUpgrade>) =>
 
 export const platformRoutes = (kit: Kit) => {
   const { db, stations } = kit.deps
-  const tags = ['platform']
 
   const verifyOn = async (
     stationId: string | null,
@@ -412,12 +411,15 @@ export const platformRoutes = (kit: Kit) => {
           .all()
           .map((s) => s.id)
     const target = candidates.find((id) => stations.isConnected(id))
-    if (!target)
+
+    if (!target) {
       return fail(
         'STATION_OFFLINE',
         'No connected station can verify signatures.',
         'Bring a station online, then retry.',
       )
+    }
+
     const reply = await stations
       .ask(
         target,
@@ -432,13 +434,13 @@ export const platformRoutes = (kit: Kit) => {
             },
         {
           timeoutMs: 240_000,
-          capability: 'platform.v1',
         },
       )
       .catch(stationError)
+
     return {
       station_id: target,
-      ...(reply.body as MessageBody<'platform.verify.result'>),
+      ...reply.body,
     }
   }
 
@@ -451,7 +453,7 @@ export const platformRoutes = (kit: Kit) => {
     set: { status?: number | string },
   ): Promise<Static<typeof ReleaseUpgrade> | Static<typeof Staged>> => {
     const fetched = await fetchRelease(version).catch((error: unknown) => {
-      if (error instanceof ReleaseFetchError)
+      if (error instanceof ReleaseFetchError) {
         return fail(
           error.code,
           error.message,
@@ -463,6 +465,8 @@ export const platformRoutes = (kit: Kit) => {
             url: error.url,
           },
         )
+      }
+
       throw error
     })
     const stationId = stationRef ? stationByRef(db, stationRef).id : null
@@ -482,10 +486,12 @@ export const platformRoutes = (kit: Kit) => {
       release: NonNullable<MessageBody<'platform.verify.result'>['release']> | null
       items: MessageBody<'platform.verify.result'>['items']
     }[] = []
+
     for (const st of targets) {
       const from = overlayPins(db, st.id, effectivePins(db, st.arch))
       const to = resolvePins(fetched.manifest, after, st.arch)
-      if (!to.stationd?.digest)
+
+      if (!to.stationd?.digest) {
         fail(
           'VALIDATION_FAILED',
           `release ${version} publishes no stationd for linux/${st.arch ?? 'unknown'}, the architecture of station ${st.id}`,
@@ -496,31 +502,41 @@ export const platformRoutes = (kit: Kit) => {
             arch: st.arch,
           },
         )
+      }
+
       const items: MessageBody<'platform.verify'>['items'] = []
+
       for (const [name, pin] of Object.entries(to)) {
         if (
           !pin.digest ||
           (from[name]?.digest === pin.digest && from[name]?.version === pin.version)
-        )
+        ) {
           continue
-        if (pin.kind === 'image' || name === 'stationd')
+        }
+
+        if (pin.kind === 'image' || name === 'stationd') {
           items.push({
             component: name as MessageBody<'platform.verify'>['items'][number]['component'],
             version: pin.version,
             digest: pin.digest,
           })
+        }
       }
+
       const reply = await verifyOn(st.id, items, {
         manifest: fetched.manifestRaw,
         bundle: fetched.bundle,
       })
+
       verification.push({
         station_id: reply.station_id,
         release: reply.release ?? null,
         items: reply.items,
       })
     }
+
     const releaseCheck = verification[0]?.release ?? null
+
     if (!releaseCheck || releaseCheck.signature !== 'verified') {
       audit(
         db,
@@ -547,6 +563,7 @@ export const platformRoutes = (kit: Kit) => {
         },
       )
     }
+
     const refused = verification.flatMap((v) =>
       v.items
         .filter((i) => i.signature === 'refused')
@@ -555,6 +572,7 @@ export const platformRoutes = (kit: Kit) => {
           station_id: v.station_id,
         })),
     )
+
     if (refused.length && !readSetting(db, 'platform.allow_unsigned')) {
       audit(
         db,
@@ -588,6 +606,7 @@ export const platformRoutes = (kit: Kit) => {
         },
       )
     }
+
     storeRelease(db, {
       manifestRaw: fetched.manifestRaw,
       bundle: fetched.bundle,
@@ -610,7 +629,8 @@ export const platformRoutes = (kit: Kit) => {
       changelog: fetched.manifest.changelog,
       removed_overrides: upgrade.removedOverrides,
     }
-    if (plan)
+
+    if (plan) {
       return {
         id: null,
         status: 'plan',
@@ -618,7 +638,9 @@ export const platformRoutes = (kit: Kit) => {
         changes,
         verification,
       }
-    if (!changes.length && lockfile.manifest_digest === fetched.manifestDigest)
+    }
+
+    if (!changes.length && lockfile.manifest_digest === fetched.manifestDigest) {
       return {
         id: null,
         status: 'accepted',
@@ -626,7 +648,10 @@ export const platformRoutes = (kit: Kit) => {
         changes,
         verification,
       }
+    }
+
     const set_ = new ChangeSet()
+
     set_.update('lockfile', 'platform.lockfile', '/', lockfile, after)
     const protect = readSetting(db, 'platform.protected') && !call.principal.human
     const result = commit(
@@ -639,7 +664,11 @@ export const platformRoutes = (kit: Kit) => {
       },
       set_,
     )
-    if (!result.applied) return kit.stagedBody(result, set)
+
+    if (!result.applied) {
+      return kit.stagedBody(result, set)
+    }
+
     audit(
       db,
       call,
@@ -661,6 +690,7 @@ export const platformRoutes = (kit: Kit) => {
     )
     stations.reconcile()
     kit.deps.upgrades?.kick()
+
     return {
       id: result.staged.id,
       status: 'accepted',
@@ -671,12 +701,8 @@ export const platformRoutes = (kit: Kit) => {
     }
   }
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('platform', '/v1')
     .get(
       '/inventory',
       ({ query }) => {
@@ -696,6 +722,7 @@ export const platformRoutes = (kit: Kit) => {
           .all()
         const lockfile = readLockfile(db)
         const release = currentRelease(db)
+
         return {
           release: release
             ? {
@@ -742,6 +769,8 @@ export const platformRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'platform_inventory',
+          summary:
+            'Components with versions, digests, signatures and lockfile drift; the pinned release; base images with their last check',
           level: 'instance read',
           cli: {
             render: 'inventory',
@@ -754,11 +783,6 @@ export const platformRoutes = (kit: Kit) => {
         response: replies({
           200: Inventory,
         }),
-        detail: {
-          summary:
-            'Components with versions, digests, signatures and lockfile drift; the pinned release; base images with their last check',
-          tags,
-        },
       },
     )
     .get(
@@ -778,6 +802,7 @@ export const platformRoutes = (kit: Kit) => {
           ?.split(',')
           .map((s) => s.trim())
           .filter(Boolean)
+
         return {
           ...report,
           checks: doctorFor(report.checks, names),
@@ -786,6 +811,8 @@ export const platformRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'platform_doctor',
+          summary:
+            'Health report: each check ok, warn or fail with a finding, a code and a fix; a row that changes status emits doctor.finding',
           level: 'instance read',
           cli: {
             render: 'doctor',
@@ -798,17 +825,13 @@ export const platformRoutes = (kit: Kit) => {
         response: replies({
           200: Doctor,
         }),
-        detail: {
-          summary:
-            'Health report: each check ok, warn or fail with a finding, a code and a fix; a row that changes status emits doctor.finding',
-          tags,
-        },
       },
     )
     .get(
       '/platform/releases',
       () => {
         const release = currentRelease(db)
+
         return {
           enabled: readSetting(db, 'platform.release_check'),
           current: release?.release ?? null,
@@ -818,16 +841,13 @@ export const platformRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'platform_check',
+          summary:
+            'Releases newer than the pinned one; enabled = false while platform.release_check is false',
           level: 'instance read',
         },
         response: replies({
           200: Releases,
         }),
-        detail: {
-          summary:
-            'Releases newer than the pinned one; enabled = false while platform.release_check is false',
-          tags,
-        },
       },
     )
     .post(
@@ -842,7 +862,8 @@ export const platformRoutes = (kit: Kit) => {
             'Run stationd install and sly setup.',
           )
         const running = activeUpgrade(db)
-        if (running && running.status !== 'failed' && !(body.plan ?? true))
+
+        if (running && running.status !== 'failed' && !(body.plan ?? true)) {
           fail(
             'UPGRADE_IN_PROGRESS',
             `Upgrade ${running.id} (${running.release_from} to ${running.release_to}) is ${running.status}.`,
@@ -852,13 +873,18 @@ export const platformRoutes = (kit: Kit) => {
               status: running.status,
             },
           )
-        if (body.version !== undefined)
+        }
+
+        if (body.version !== undefined) {
           return releaseUpgrade(call, lockfile, body.version, body.station, body.plan ?? true, set)
+        }
+
         const overrides = (body.overrides ?? {}) as Record<
           string,
           { version: string; digest: string; reason?: string } | { reset: true }
         >
-        if (!Object.keys(overrides).length)
+
+        if (!Object.keys(overrides).length) {
           fail('VALIDATION_FAILED', 'Name at least one override.', undefined, {
             issues: [
               {
@@ -867,6 +893,8 @@ export const platformRoutes = (kit: Kit) => {
               },
             ],
           })
+        }
+
         const stationId = body.station ? stationByRef(db, body.station).id : null
         const arch = stationId
           ? db
@@ -881,8 +909,9 @@ export const platformRoutes = (kit: Kit) => {
         const set_ = new ChangeSet()
         const verifyItems: MessageBody<'platform.verify'>['items'] = []
         const entries: { component: string; before: unknown; after: unknown }[] = []
+
         for (const [name, o] of Object.entries(overrides)) {
-          if (!lockfileComponents.has(name))
+          if (!lockfileComponents.has(name)) {
             fail(
               'VALIDATION_FAILED',
               `${name} cannot be overridden by digest here.`,
@@ -896,9 +925,15 @@ export const platformRoutes = (kit: Kit) => {
                 ],
               },
             )
+          }
+
           const before = lockfile.overrides[name] ?? null
+
           if ('reset' in o) {
-            if (!before) continue
+            if (!before) {
+              continue
+            }
+
             set_.update('lockfile', 'platform.lockfile', `/overrides/${name}`, before, null)
             entries.push({
               component: name,
@@ -909,7 +944,8 @@ export const platformRoutes = (kit: Kit) => {
             })
             continue
           }
-          if (!/^sha256:[0-9a-f]{64}$/.test(o.digest))
+
+          if (!/^sha256:[0-9a-f]{64}$/.test(o.digest)) {
             fail(
               'VALIDATION_FAILED',
               `overrides.${name}.digest must be sha256:<64 hex>; a tag is never a pin.`,
@@ -923,6 +959,8 @@ export const platformRoutes = (kit: Kit) => {
                 ],
               },
             )
+          }
+
           const source =
             pins[name]?.source ??
             fail('VALIDATION_FAILED', `${name} is not in release ${lockfile.release}.`)
@@ -932,6 +970,7 @@ export const platformRoutes = (kit: Kit) => {
             source,
             reason: o.reason ?? '',
           }
+
           verifyItems.push({
             component: name as MessageBody<'platform.verify'>['items'][number]['component'],
             version: o.version,
@@ -944,9 +983,11 @@ export const platformRoutes = (kit: Kit) => {
             after,
           })
         }
+
         const verification = verifyItems.length ? await verifyOn(stationId, verifyItems) : null
         const allowUnsigned = readSetting(db, 'platform.allow_unsigned')
         const refused = verification?.items.filter((i) => i.signature === 'refused') ?? []
+
         if (refused.length && !allowUnsigned) {
           audit(
             db,
@@ -978,7 +1019,8 @@ export const platformRoutes = (kit: Kit) => {
             },
           )
         }
-        if (body.plan ?? true)
+
+        if (body.plan ?? true) {
           return {
             id: null,
             status: 'plan',
@@ -986,7 +1028,9 @@ export const platformRoutes = (kit: Kit) => {
             changes: entries,
             verification,
           }
-        if (set_.empty)
+        }
+
+        if (set_.empty) {
           return {
             id: null,
             status: 'accepted',
@@ -994,6 +1038,8 @@ export const platformRoutes = (kit: Kit) => {
             changes: [],
             verification,
           }
+        }
+
         const protect = readSetting(db, 'platform.protected') && !call.principal.human
         const result = commit(
           kit.deps,
@@ -1005,7 +1051,11 @@ export const platformRoutes = (kit: Kit) => {
           },
           set_,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         audit(
           db,
           call,
@@ -1022,6 +1072,7 @@ export const platformRoutes = (kit: Kit) => {
         )
         stations.reconcile()
         kit.deps.upgrades?.kick()
+
         return {
           id: result.staged.id,
           status: 'accepted',
@@ -1034,6 +1085,8 @@ export const platformRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'platform_upgrade',
+          summary:
+            'Plan or apply lockfile overrides; every new digest is signature-checked by a station first (UNSIGNED_ARTIFACT)',
           level: 'instance admin',
           cli: false,
         },
@@ -1061,11 +1114,6 @@ export const platformRoutes = (kit: Kit) => {
           200: Type.Union([ReleaseUpgrade, OverrideUpgrade]),
           202: Staged,
         }),
-        detail: {
-          summary:
-            'Plan or apply lockfile overrides; every new digest is signature-checked by a station first (UNSIGNED_ARTIFACT)',
-          tags,
-        },
       },
     )
 }

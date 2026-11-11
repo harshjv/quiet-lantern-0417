@@ -58,6 +58,9 @@ func wantsRun(d protocol.DesiredSandbox, now time.Time) bool {
 	if d.Status != protocol.DesiredSandboxStatusActive || d.DesiredState != protocol.DesiredStateRunning {
 		return false
 	}
+	if d.StopAt == nil {
+		return true
+	}
 	at, ok := stopAtOf(d)
 	return ok && now.Before(at)
 }

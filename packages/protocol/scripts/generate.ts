@@ -51,14 +51,21 @@ const isSchema = (value: unknown): value is JsonSchema =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 const mapSchema = (node: unknown, visit: (schema: JsonSchema) => JsonSchema): unknown => {
-  if (Array.isArray(node)) return node.map((item) => mapSchema(item, visit))
-  if (!isSchema(node)) return node
+  if (Array.isArray(node)) {
+    return node.map((item) => mapSchema(item, visit))
+  }
+
+  if (!isSchema(node)) {
+    return node
+  }
+
   const mapped = Object.fromEntries(
     Object.entries(node).map(([key, value]) => [
       key,
       key === 'enum' || key === 'const' ? value : mapSchema(value, visit),
     ]),
   )
+
   return visit(mapped)
 }
 
@@ -69,6 +76,7 @@ const isStringEnum = (schema: JsonSchema | undefined) =>
 
 const normalize = (schema: JsonSchema): JsonSchema => {
   const { patternProperties, anyOf, ...rest } = schema
+
   if (
     isSchema(patternProperties) &&
     Object.keys(patternProperties).length === 1 &&
@@ -84,6 +92,7 @@ const normalize = (schema: JsonSchema): JsonSchema => {
       additionalProperties: patternProperties['^(.*)$'],
     })
   }
+
   if (
     Array.isArray(anyOf) &&
     anyOf.every((member) => isSchema(member) && typeof member.const === 'string')
@@ -94,11 +103,14 @@ const normalize = (schema: JsonSchema): JsonSchema => {
       enum: anyOf.map((member) => (member as JsonSchema).const),
     }
   }
-  if (typeof schema.const === 'number' && Number.isInteger(schema.const))
+
+  if (typeof schema.const === 'number' && Number.isInteger(schema.const)) {
     return {
       ...schema,
       type: 'integer',
     }
+  }
+
   return schema
 }
 
@@ -111,8 +123,13 @@ const hoistNamed = (roots: JsonSchema[]) => {
         key === 'enum' || key === 'const' ? value : hoistValue(value),
       ]),
     )
-    if (isDefinition || typeof schema.title !== 'string') return body
+
+    if (isDefinition || typeof schema.title !== 'string') {
+      return body
+    }
+
     register(schema.title, body)
+
     return {
       $ref: `#/$defs/${schema.title}`,
     }
@@ -121,14 +138,22 @@ const hoistNamed = (roots: JsonSchema[]) => {
     Array.isArray(value) ? value.map(hoistValue) : isSchema(value) ? hoist(value, false) : value
   const register = (title: string, body: JsonSchema) => {
     const existing = defs[title]
-    if (existing && !isDeepStrictEqual(existing, body))
+
+    if (existing && !isDeepStrictEqual(existing, body)) {
       throw new Error(`two different schemas are titled ${title}`)
+    }
+
     defs[title] = body
   }
+
   for (const root of roots) {
-    if (typeof root.title !== 'string') throw new Error('every root schema needs a title')
+    if (typeof root.title !== 'string') {
+      throw new Error('every root schema needs a title')
+    }
+
     register(root.title, hoist(root, true) as JsonSchema)
   }
+
   return defs
 }
 
@@ -139,25 +164,38 @@ const nullableForGo =
   (defs: Record<string, JsonSchema>) =>
   (schema: JsonSchema): JsonSchema => {
     const anyOf = schema.anyOf
-    if (!Array.isArray(anyOf) || anyOf.length !== 2) return schema
+
+    if (!Array.isArray(anyOf) || anyOf.length !== 2) {
+      return schema
+    }
+
     const nonNull = anyOf.filter((member) => !(isSchema(member) && member.type === 'null'))
-    if (nonNull.length !== 1 || !isSchema(nonNull[0])) return schema
+
+    if (nonNull.length !== 1 || !isSchema(nonNull[0])) {
+      return schema
+    }
+
     const member = nonNull[0]
     const named = refName(member)
-    if (named && isStringEnum(defs[named]))
+
+    if (named && isStringEnum(defs[named])) {
       return {
         ...schema,
         goJSONSchema: {
           type: `*${named}`,
         },
       }
-    if (isStringEnum(member))
+    }
+
+    if (isStringEnum(member)) {
       return {
         ...schema,
         goJSONSchema: {
           type: '*string',
         },
       }
+    }
+
     if (
       typeof member.type === 'string' &&
       primitiveTypes.has(member.type) &&
@@ -165,17 +203,22 @@ const nullableForGo =
       member.const === undefined
     ) {
       const { anyOf: _, ...rest } = schema
+
       return {
         ...rest,
         ...member,
         type: [member.type, 'null'],
       }
     }
+
     return schema
   }
 
 const bodyTitle = (body: { title?: string }) => {
-  if (!body.title) throw new Error('every message body needs a title')
+  if (!body.title) {
+    throw new Error('every message body needs a title')
+  }
+
   return body.title
 }
 
@@ -409,6 +452,7 @@ const goSettings = goFile([
   'const (',
   ...stationSettingKeys.flatMap((key) => {
     const value = settingDefault(key)
+
     return value === null ? [] : [`SettingDefault${pascal(key)} = ${JSON.stringify(value)}`]
   }),
   ')',

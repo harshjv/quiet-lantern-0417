@@ -24,9 +24,14 @@ type Context = {
 const apiPrefix = '/v1/'
 
 const shape = (node: Node) => {
-  if (node.type === 'Literal' && typeof node.value === 'string') return node.value
-  if (node.type === 'TemplateLiteral')
+  if (node.type === 'Literal' && typeof node.value === 'string') {
+    return node.value
+  }
+
+  if (node.type === 'TemplateLiteral') {
     return node.quasis!.map((quasi) => quasi.value.cooked).join('{}')
+  }
+
   return null
 }
 
@@ -56,12 +61,15 @@ const noLiteralApiPath = {
     const allowed = new Set(context.options[0]?.allowed ?? [])
     const check = (node: Node) => {
       const text = shape(node)
-      if (text?.startsWith(apiPrefix) && passed(node) && !allowed.has(text))
+
+      if (text?.startsWith(apiPrefix) && passed(node) && !allowed.has(text)) {
         context.report({
           node,
           message: `${text} is a hand-built API path; call the typed Eden client, or use a URL the server returned`,
         })
+      }
     }
+
     return {
       Literal: check,
       TemplateLiteral: check,
@@ -79,7 +87,11 @@ const multilineObjectLiteral = {
     return {
       ObjectExpression(node: Node) {
         const properties = node.properties!
-        if (!properties.length) return
+
+        if (!properties.length) {
+          return
+        }
+
         const text = context.sourceCode.text
         const [start, end] = node.range
         const gaps: Range[] = [
@@ -90,7 +102,11 @@ const multilineObjectLiteral = {
           [properties.at(-1)!.range[1], end - 1],
         ]
         const inline = gaps.filter(([from, to]) => !text.slice(from, to).includes('\n'))
-        if (!inline.length) return
+
+        if (!inline.length) {
+          return
+        }
+
         context.report({
           node,
           message:

@@ -21,6 +21,7 @@ const bootstrap = async (options: BootstrapOptions) => {
   const masterKey = masterKeyFromEnv()
   const keyring = new Keyring(db, masterKey)
   const auth = new AuthService(db, masterKey, options.origin, createMetadataFetch(null))
+
   try {
     const input = JSON.parse(await text(process.stdin)) as SetupInput
     const release = options.release
@@ -33,6 +34,7 @@ const bootstrap = async (options: BootstrapOptions) => {
           source: readFileSync(join(options.release, 'source'), 'utf8').trim(),
         }
       : null
+
     process.stdout.write(
       `${JSON.stringify(
         await setupInstance(
@@ -67,6 +69,7 @@ const bootstrap = async (options: BootstrapOptions) => {
       )
       process.exit(1)
     }
+
     throw error
   }
 }

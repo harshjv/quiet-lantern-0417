@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/release"
-	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
+	"github.com/harshjv/stationly/go/internal/sandbox"
 	"github.com/harshjv/stationly/go/internal/verify"
 )
 
@@ -25,8 +25,7 @@ func (s *Station) needsRunsc(want componentPin) bool {
 	if !s.sbx.kernelOK || !s.sandboxStorageReady() {
 		return false
 	}
-	versions, _ := runsc.Installed(runsc.LibDir)
-	return !slices.Contains(versions, want.Version)
+	return !slices.Contains(s.sbx.rt.Versions(), want.Version)
 }
 
 func (s *Station) runscRelease() string {
@@ -52,7 +51,7 @@ func (s *Station) runscProcedure(ctx context.Context, _ string, p *procState, st
 		return err
 	}
 	step("download", map[string]any{"release": src.Location(), "file": runscFile()})
-	_, err = InstallRunsc(ctx, s.verifier, src, p.To.Version, p.To.Digest)
+	_, err = InstallRunsc(ctx, s.sbx.rt, s.verifier, src, p.To.Version, p.To.Digest)
 	if err != nil {
 		return err
 	}
@@ -67,19 +66,17 @@ type RunscCheck struct {
 	Reused   bool   `json:"reused"`
 }
 
-func InstallRunsc(ctx context.Context, v *verify.Verifier, src release.Source, version, digest string) (RunscCheck, error) {
+func InstallRunsc(ctx context.Context, rt sandbox.Installer, v *verify.Verifier, src release.Source, version, digest string) (RunscCheck, error) {
 	start := time.Now()
 	out := RunscCheck{Version: version}
-	rt := runsc.At(runsc.LibDir, runsc.StateBase, version)
-	versions, _ := runsc.Installed(runsc.LibDir)
-	if slices.Contains(versions, version) {
+	if slices.Contains(rt.Versions(), version) {
 		out.Reused = true
-		problems, err := rt.Verify()
+		problems, err := rt.Verify(version)
 		if err == nil && len(problems) == 0 {
 			out.TookMs = time.Since(start).Milliseconds()
 			return out, nil
 		}
-		if err := runsc.Remove(runsc.LibDir, runsc.StateBase, version); err != nil {
+		if err := rt.Remove(version); err != nil {
 			return out, fmt.Errorf("remove the modified runsc %s: %w", version, err)
 		}
 	}
@@ -99,14 +96,10 @@ func InstallRunsc(ctx context.Context, v *verify.Verifier, src release.Source, v
 		return out, fmt.Errorf("runsc %s: no valid signature from the release signing identity: %w", version, err)
 	}
 	out.Identity = san
-	if err := runsc.Install(runsc.LibDir, version, bytes.NewReader(data)); err != nil {
-		return out, fmt.Errorf("unpack runsc %s: %w", version, err)
-	}
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	if err := rt.Probe(pctx); err != nil {
-		_ = runsc.Remove(runsc.LibDir, runsc.StateBase, version)
-		return out, fmt.Errorf("probe runsc %s on systrap: %w", version, err)
+	if err := rt.Install(pctx, version, bytes.NewReader(data)); err != nil {
+		return out, err
 	}
 	out.TookMs = time.Since(start).Milliseconds()
 	return out, nil

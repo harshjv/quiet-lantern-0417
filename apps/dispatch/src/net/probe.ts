@@ -29,9 +29,12 @@ export const createProbeLimits = (perService = 6, perEnvironment = 30) => {
   const hits = new Map<string, number[]>()
   const recent = (key: string, now: number) => {
     const list = (hits.get(key) ?? []).filter((at) => now - at < windowMs)
+
     hits.set(key, list)
+
     return list
   }
+
   return (serviceId: string, environmentId: string, now = Date.now()) => {
     const svc = recent(`service:${serviceId}`, now)
     const env = recent(`environment:${environmentId}`, now)
@@ -49,8 +52,10 @@ export const createProbeLimits = (perService = 6, perEnvironment = 30) => {
               scope: 'environment',
             }
           : null
+
     if (full) {
       const retry = Math.max(1, Math.ceil((full.list[0]! + windowMs - now) / 1000))
+
       throw new ApiError(
         'RATE_LIMITED',
         `Probes are limited to ${full.limit} per ${full.scope} per minute.`,
@@ -65,6 +70,7 @@ export const createProbeLimits = (perService = 6, perEnvironment = 30) => {
         },
       )
     }
+
     svc.push(now)
     env.push(now)
   }
@@ -130,12 +136,11 @@ const askProbe = async (deps: Pick<Deps, 'stations'>, source: Source, probe: Pro
         timeout_s: probe.timeout_s,
       },
       {
-        capability: 'network.v1',
         timeoutMs: 15_000,
       },
     )
     .catch((error) => {
-      if (error instanceof StationRequestError && error.code === 'PROTOCOL_LIMIT')
+      if (error instanceof StationRequestError && error.code === 'PROTOCOL_LIMIT') {
         throw new ApiError(
           'RATE_LIMITED',
           `The station is already running a probe from ${source.name}, or four probes at once.`,
@@ -148,9 +153,12 @@ const askProbe = async (deps: Pick<Deps, 'stations'>, source: Source, probe: Pro
             'retry-after': '1',
           },
         )
+      }
+
       return stationError(error)
     })
-  return reply.body as ProbeReply
+
+  return reply.body
 }
 
 const auditProbe = (
@@ -170,6 +178,7 @@ const auditProbe = (
         },
       }
     : call
+
   audit(
     deps.db,
     actorCall,
@@ -213,7 +222,9 @@ export const sendProbe = async (
     station_id: svc.station_id,
   }
   const r = await askProbe(deps, source, probe)
+
   auditProbe(deps, call, source, probe, r, requestedBy)
+
   return shapeProbe(svc.name, r)
 }
 
@@ -230,6 +241,8 @@ export const sendSandboxProbe = async (
     station_id: box.station_id,
   }
   const r = await askProbe(deps, source, probe)
+
   auditProbe(deps, call, source, probe, r, null)
+
   return shapeSandboxProbe(box.name, r)
 }

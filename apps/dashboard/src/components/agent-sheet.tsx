@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Bot } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 
 import { Code, CommandBlock, Snippet } from '@/components/code'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/sheet'
 import type { Hint } from '@/lib/agent-hints'
 import { commands, type Scope } from '@/lib/commands'
+import { entityIcon } from '@/lib/icons'
 import { client } from '@/lib/labels'
 import { agentTokensQuery } from '@/lib/queries'
 
@@ -32,13 +33,19 @@ function Connected({ project }: { project: string }) {
       <ArrowRight className="size-3.5" aria-hidden />
     </Link>
   )
-  if (tokens.isPending) return null
-  if (names.length)
+
+  if (tokens.isPending) {
+    return null
+  }
+
+  if (names.length) {
     return (
       <p className="text-sm text-muted-foreground">
         Connected: {names.join(', ')}. {link}
       </p>
     )
+  }
+
   return (
     <div className="space-y-2 rounded-md border border-dashed p-3 text-sm">
       <p className="font-medium">No agent connected yet</p>
@@ -65,7 +72,7 @@ export function AgentSheet<S extends Scope>({ hint, scope }: { hint: Hint<S>; sc
     <Sheet>
       <SheetTrigger asChild>
         <Button variant="outline" size="sm">
-          <Bot aria-hidden />
+          <entityIcon.agent aria-hidden />
           Agent
         </Button>
       </SheetTrigger>

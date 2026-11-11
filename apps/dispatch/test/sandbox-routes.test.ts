@@ -72,12 +72,16 @@ describe('the OpenAPI document', () => {
   test('lists every sandbox route with its success schema registered as a shared component', () => {
     for (const [method, path, statuses] of routes) {
       const operation = doc.paths[path]?.[method]
+
       assert.ok(operation, `${method.toUpperCase()} ${path} is missing`)
+
       for (const status of statuses) {
         const schema = operation.responses?.[String(status)]?.content?.['application/json']?.schema
+
         assert.ok(schema, `${method.toUpperCase()} ${path} has no ${status} schema`)
       }
     }
+
     for (const name of [
       'Sandbox',
       'SandboxCreated',
@@ -109,8 +113,11 @@ describe('the OpenAPI document', () => {
       SANDBOX_STORAGE_GROW_FAILED: 422,
       SANDBOX_IMAGE_UNPACK_FAILED: 422,
     }
-    for (const [code, http] of Object.entries(expected))
+
+    for (const [code, http] of Object.entries(expected)) {
       assert.equal(errorCatalog.find((e) => e.code === code)?.http, http, code)
+    }
+
     assert.ok(warningCatalog.includes('SANDBOX_RESTART_REQUIRED'))
     assert.ok(warningCatalog.includes('SANDBOX_SNAPSHOT_CRASH_CONSISTENT'))
     assert.ok(doc.components.schemas.ErrorCode.enum.includes('SANDBOX_QUOTA_EXCEEDED'))
@@ -121,6 +128,7 @@ describe('the OpenAPI document', () => {
     const box = await createSandbox(h, project.default_environment_id, {
       name: 'checked',
     })
+
     await waitForSandbox(h, box.id, 'running')
     const exec = await api('POST', `/v1/sandboxes/${box.id}/exec`, {
       command: ['echo', 'x'],
@@ -148,28 +156,35 @@ describe('the OpenAPI document', () => {
       ['/v1/sandboxes/{sandbox}/variables', `/v1/sandboxes/${box.id}/variables`],
       ['/v1/sandboxes/{sandbox}/variables/resolved', `/v1/sandboxes/${box.id}/variables/resolved`],
     ]
+
     for (const [path, url] of reads) {
       const schema = doc.paths[path].get.responses['200'].content['application/json'].schema
       const reply = await api('GET', url)
+
       assert.equal(reply.status, 200, `${url}: ${reply.text}`)
       const compiled = compileResponse(schema, doc.components.schemas)
+
       assert.ok(
         compiled.check(reply.body),
         `${url} does not match its schema: ${compiled.errors(reply.body).join('; ')}`,
       )
     }
+
     const writes: [string, string, any][] = [
       ['post', '/v1/sandboxes/{sandbox}/exec', exec],
       ['post', '/v1/sandboxes/{sandbox}/snapshots', snapshot],
     ]
+
     for (const [method, path, reply] of writes) {
       const schema = doc.paths[path][method].responses['201'].content['application/json'].schema
       const compiled = compileResponse(schema, doc.components.schemas)
+
       assert.ok(
         compiled.check(reply.body),
         `${path} does not match its schema: ${compiled.errors(reply.body).join('; ')}`,
       )
     }
+
     const patched = await api('PATCH', `/v1/sandboxes/${box.id}`, {
       docker: true,
     })
@@ -178,6 +193,7 @@ describe('the OpenAPI document', () => {
         .schema,
       doc.components.schemas,
     )
+
     assert.ok(patchSchema.check(patched.body), patchSchema.errors(patched.body).join('; '))
   })
 
@@ -215,8 +231,10 @@ describe('the OpenAPI document', () => {
         },
       ],
     ]
+
     for (const [path, body] of cases) {
       const reply = await api('POST', path, body)
+
       assert.equal(reply.status, 400, JSON.stringify(body))
       assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
       assert.ok(reply.body.error.details.issues.length > 0)
@@ -233,9 +251,12 @@ describe('the project summary', () => {
       const list = await api('GET', '/v1/projects')
       const one = await api('GET', `/v1/projects/${id}`)
       const listed = list.body.items.find((p: any) => p.id === id)
+
       assert.equal(listed.sandbox_count, one.body.sandbox_count)
+
       return one.body.sandbox_count
     }
+
     assert.equal(await count(counted.id), 0)
     await createSandbox(h, counted.default_environment_id, {
       name: 'first',
@@ -261,6 +282,7 @@ describe('growing the sandbox filesystem', () => {
 
   test('a larger size is grown through stationd and the station capabilities follow', async () => {
     const reply = await grow(150 * 1024 ** 3)
+
     assert.equal(reply.status, 200, reply.text)
     assert.deepEqual(reply.body, {
       filesystem_bytes: 161061273600,
@@ -268,11 +290,14 @@ describe('growing the sandbox filesystem', () => {
     })
     const sent = station.received.filter((m) => m.type === 'sandbox.storage.grow').at(-1)!
       .body as any
+
     assert.equal(sent.size_bytes, 161061273600)
     const stored = (await api('GET', '/v1/stations/station-1?fields=capabilities')).body
       .capabilities.sandboxes
+
     assert.equal(stored.filesystem_bytes, 161061273600)
     const inventory = (await api('GET', '/v1/inventory')).body.sandbox_storage
+
     assert.deepEqual(
       inventory.map((s: any) => [s.backing, s.size_bytes, s.max_size_bytes]),
       [['loop_file', 161061273600, 214748364800]],
@@ -282,6 +307,7 @@ describe('growing the sandbox filesystem', () => {
   test('a size that is not larger, or above the largest it accepts, is VALIDATION_FAILED at /size_bytes', async () => {
     for (const size of [107374182400, 1, 214748364801]) {
       const reply = await grow(size)
+
       assert.equal(reply.status, 400, `${size}`)
       assert.equal(reply.body.error.details.issues[0].path, '/size_bytes')
     }
@@ -300,6 +326,7 @@ describe('growing the sandbox filesystem', () => {
       'deployer',
     )
     const reply = await grow(190 * 1024 ** 3, deploy)
+
     assert.equal(reply.status, 403)
     assert.equal(reply.body.error.code, 'INSTANCE_SCOPE_REQUIRED')
   })
@@ -316,6 +343,7 @@ describe('growing the sandbox filesystem', () => {
     const reply = await api('POST', '/v1/stations/station-failing/sandbox-storage/grow', {
       size_bytes: 150 * 1024 ** 3,
     })
+
     assert.equal(reply.status, 422)
     assert.equal(reply.body.error.code, 'SANDBOX_STORAGE_GROW_FAILED')
     assert.deepEqual(
@@ -330,6 +358,7 @@ describe('growing the sandbox filesystem', () => {
     const reply = await api('POST', '/v1/stations/station-plain/sandbox-storage/grow', {
       size_bytes: 1 << 40,
     })
+
     assert.equal(reply.status, 422)
     assert.equal(reply.body.error.code, 'STATION_CAPABILITY_MISSING')
   })
@@ -342,8 +371,10 @@ describe('growing the sandbox filesystem', () => {
         'platform.protected': true,
       },
     })
+
     assert.equal(set.status, 200, set.text)
     const staged = await grow(180 * 1024 ** 3)
+
     assert.equal(staged.status, 202, staged.text)
     assert.equal(staged.body.changes[0].entity, 'sandbox_storage')
     assert.equal(
@@ -357,6 +388,7 @@ describe('growing the sandbox filesystem', () => {
       origin: localOrigin,
       body: {},
     })
+
     assert.equal(accepted.status, 200, accepted.text)
     assert.equal(accepted.body.grows[0].filesystem_bytes, 193273528320)
     const human = await h.call('POST', '/v1/stations/station-1/sandbox-storage/grow', {
@@ -366,6 +398,7 @@ describe('growing the sandbox filesystem', () => {
         size_bytes: 200 * 1024 ** 3,
       },
     })
+
     assert.equal(human.status, 200, human.text)
     await h.call('PATCH', '/v1/settings', {
       cookie: h.admin.cookie,

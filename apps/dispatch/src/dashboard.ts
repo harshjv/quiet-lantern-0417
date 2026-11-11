@@ -81,12 +81,17 @@ const walk = (dir: string): string[] =>
 
 const load = (dir: string) => {
   const assets = new Map<string, Asset>()
-  if (!existsSync(join(dir, 'index.html'))) return assets
+
+  if (!existsSync(join(dir, 'index.html'))) {
+    return assets
+  }
+
   for (const file of walk(dir)) {
     const path = `/${relative(dir, file).split(sep).join('/')}`
     const ext = extname(file)
     const body = readFileSync(file)
     const squeeze = compressible.has(ext) && body.length > 1024
+
     assets.set(path, {
       type: contentTypes[ext] ?? 'application/octet-stream',
       body,
@@ -105,6 +110,7 @@ const load = (dir: string) => {
       immutable: path.startsWith('/assets/'),
     })
   }
+
   return assets
 }
 
@@ -122,6 +128,7 @@ const respond = (request: Request, asset: Asset, version: string) => {
     vary: 'accept-encoding',
   })
   let body = asset.body
+
   if (asset.br && accepts(request, 'br')) {
     body = asset.br
     headers.set('content-encoding', 'br')
@@ -129,7 +136,9 @@ const respond = (request: Request, asset: Asset, version: string) => {
     body = asset.gzip
     headers.set('content-encoding', 'gzip')
   }
+
   headers.set('content-length', String(body.length))
+
   return new Response(request.method === 'HEAD' ? null : new Uint8Array(body), {
     status: 200,
     headers,
@@ -139,14 +148,22 @@ const respond = (request: Request, asset: Asset, version: string) => {
 export const createDashboard = (dir: string, version: string) => {
   const assets = load(dir)
   const index = assets.get('/index.html')
+
   return {
     built: Boolean(index),
     files: assets.size,
     handle: (request: Request, surface: Surface | null): Response | null => {
-      if (request.method !== 'GET' && request.method !== 'HEAD') return null
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return null
+      }
+
       const path = new URL(request.url).pathname
-      if (isServerPath(path) || surface === null) return null
-      if (surface === 'api')
+
+      if (isServerPath(path) || surface === null) {
+        return null
+      }
+
+      if (surface === 'api') {
         return refusal(
           request,
           new ApiError(
@@ -156,11 +173,22 @@ export const createDashboard = (dir: string, version: string) => {
           ),
           version,
         )
-      if (!index) return null
+      }
+
+      if (!index) {
+        return null
+      }
+
       const asset = assets.get(path)
-      if (asset && path !== '/index.html') return respond(request, asset, version)
-      if (extname(path) && path !== '/index.html')
+
+      if (asset && path !== '/index.html') {
+        return respond(request, asset, version)
+      }
+
+      if (extname(path) && path !== '/index.html') {
         return refusal(request, new ApiError('NOT_FOUND', `No dashboard file ${path}.`), version)
+      }
+
       return respond(request, index, version)
     },
   }

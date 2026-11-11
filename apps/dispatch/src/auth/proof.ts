@@ -18,7 +18,10 @@ export type ProofCheck = {
 }
 
 export const verifyProof = async (reservations: DpopReplayReservations, check: ProofCheck) => {
-  if (!check.proof) throw new ProofError('the request carries no DPoP proof header')
+  if (!check.proof) {
+    throw new ProofError('the request carries no DPoP proof header')
+  }
+
   try {
     return await verifyDpopProof({
       proofJwt: check.proof,
@@ -32,7 +35,10 @@ export const verifyProof = async (reservations: DpopReplayReservations, check: P
       replayStore: createDpopReplayStore(reservations),
     })
   } catch (error) {
-    if (isDpopProofError(error)) throw new ProofError(error.message)
+    if (isDpopProofError(error)) {
+      throw new ProofError(error.message)
+    }
+
     throw error
   }
 }
@@ -45,8 +51,18 @@ export const rememberSentUrl = (rewritten: Request, sent: string) => sentUrls.se
 
 export const publicUrl = (request: Request, canonicalOrigin: string | null) => {
   const url = new URL(sentUrls.get(request) ?? request.url)
-  if (url.protocol === 'ws:') url.protocol = 'http:'
-  if (url.protocol === 'wss:') url.protocol = 'https:'
-  if (!canonicalOrigin) return url.href
+
+  if (url.protocol === 'ws:') {
+    url.protocol = 'http:'
+  }
+
+  if (url.protocol === 'wss:') {
+    url.protocol = 'https:'
+  }
+
+  if (!canonicalOrigin) {
+    return url.href
+  }
+
   return `${canonicalOrigin}${url.pathname}${url.search}`
 }

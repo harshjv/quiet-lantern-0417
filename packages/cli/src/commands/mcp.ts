@@ -1,21 +1,16 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
+import { Argument, Option } from '@commander-js/extra-typings'
+
 import { serveBridge } from '@stationly/mcp'
+import { tokenLevelValues } from '@stationly/protocol'
 
 import { action, seconds, type Program } from '../command.ts'
 import { readCredentials, updateCredentials } from '../config.ts'
 import { version } from '../env.ts'
-import { Exit, exitCodes, inputRequired, notLoggedIn, usage } from '../errors.ts'
-import {
-  connect,
-  environmentId,
-  isLevel,
-  isOneOf,
-  projectId,
-  resolveInstance,
-  send,
-} from '../kit.ts'
+import { Exit, exitCodes, inputRequired, notLoggedIn } from '../errors.ts'
+import { connect, environmentId, projectId, resolveInstance, send } from '../kit.ts'
 import { localTools } from '../mcp-local.ts'
 import { print, progress } from '../output.ts'
 
@@ -24,6 +19,7 @@ export const clients = ['claude-code', 'cursor', 'codex', 'windsurf', 'generic']
 const launcher = async (client: string) => {
   const script = process.argv[1] ? await realpath(process.argv[1]) : null
   const installed = !script || basename(process.argv[1]!) === 'sly'
+
   return installed
     ? {
         type: 'stdio' as const,
@@ -42,10 +38,14 @@ const writeClaudeCode = async (server: { type: 'stdio'; command: string; args: s
   const existing = await readFile(path, 'utf8').then(
     (text) => JSON.parse(text) as { mcpServers?: Record<string, unknown> },
     (error: NodeJS.ErrnoException): { mcpServers?: Record<string, unknown> } => {
-      if (error.code === 'ENOENT') return {}
+      if (error.code === 'ENOENT') {
+        return {}
+      }
+
       throw error
     },
   )
+
   await writeFile(
     path,
     `${JSON.stringify(
@@ -60,6 +60,7 @@ const writeClaudeCode = async (server: { type: 'stdio'; command: string; args: s
       2,
     )}\n`,
   )
+
   return path
 }
 
@@ -71,18 +72,34 @@ export const mcpCommands = (program: Program) => {
     .description(
       'Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client',
     )
-    .option('--client <client>', 'the client whose token sly mcp install minted')
+    .addOption(
+      new Option('--client <client>', 'the client whose token sly mcp install minted').choices(
+        clients,
+      ),
+    )
     .action(
       action(async (options) => {
         const { instance } = await resolveInstance(options)
-        if (!instance) throw notLoggedIn(null)
+
+        if (!instance) {
+          throw notLoggedIn(null)
+        }
+
         const credentials = await readCredentials(instance)
-        if (!credentials) throw notLoggedIn(instance)
+
+        if (!credentials) {
+          throw notLoggedIn(instance)
+        }
+
         const names = Object.keys(credentials.mcp)
         const client = options.client ?? (names.length === 1 ? names[0] : undefined)
-        if (!client)
+
+        if (!client) {
           throw inputRequired('The MCP client', `--client <${names.join('|') || 'client'}>`)
+        }
+
         const stored = credentials.mcp[client]
+
         if (!stored || expired(stored.expires_at)) {
           throw new Exit(exitCodes.connection, {
             error: {
@@ -94,6 +111,7 @@ export const mcpCommands = (program: Program) => {
             },
           })
         }
+
         const log = (event: string, data: Record<string, unknown> = {}) =>
           process.stderr.write(
             `${JSON.stringify({
@@ -101,6 +119,7 @@ export const mcpCommands = (program: Program) => {
               ...data,
             })}\n`,
           )
+
         serveBridge({
           url: new URL('/mcp', instance),
           token: stored.token,
@@ -109,32 +128,31 @@ export const mcpCommands = (program: Program) => {
           log,
           local: localTools(instance, stored.token, `mcp/${client} sly/${version}`),
         })
+
         return new Promise<number>(() => {})
       }),
     )
 
   mcp
     .command('install')
-    .argument('<client>', clients.join(', '))
-    .option('--level <level>', 'read, deploy or admin', 'deploy')
+    .addArgument(new Argument('<client>', 'the MCP client to configure').choices(clients))
+    .addOption(
+      new Option('--level <level>', 'token level').choices(tokenLevelValues).default('deploy'),
+    )
     .option('--ttl <duration>', 'token lifetime, at most 30d', seconds, 30 * 86400)
     .action(
       action(async (options, client) => {
-        if (!isOneOf(clients, client))
-          throw usage(`${client} is not a supported client.`, `Pass one of ${clients.join(', ')}.`)
         const { level } = options
-        if (!isLevel(level))
-          throw usage(
-            `--level ${level} is not read, deploy or admin.`,
-            'Pass --level read, deploy or admin.',
-          )
         const run = await connect(options)
         const projectRef = run.selection.project
-        if (!projectRef)
+
+        if (!projectRef) {
           throw inputRequired(
             'The project the token covers',
             "--project <id or name>, or --project '*'",
           )
+        }
+
         const project = projectRef === '*' ? '*' : await projectId(run, projectRef)
         const environment =
           !run.selection.environment || run.selection.environment === '*'
@@ -156,6 +174,7 @@ export const mcpCommands = (program: Program) => {
         )
         const minted = sent.data
         const previous = run.credentials.mcp[client]
+
         await updateCredentials({
           ...run.credentials,
           mcp: {
@@ -167,25 +186,31 @@ export const mcpCommands = (program: Program) => {
             },
           },
         })
+
         if (previous && previous.token_id !== minted.id) {
           const revoked = await run.api.v1
             .tokens({
               id: previous.token_id,
             })
             .delete()
+
           progress(
             revoked.error
               ? `the previous token ${previous.token_id} was not revoked`
               : `revoked the previous token ${previous.token_id}`,
           )
         }
+
         const server = await launcher(client)
         const { key: _key, ...shown } = minted
+
         if (client === 'claude-code') {
           const path = await writeClaudeCode(server)
+
           progress(
             `wrote the Stationly server to ${path}; the token ${minted.id} is stored in sly's credentials, never in that file`,
           )
+
           return print(options, {
             status: sent.status,
             data: {
@@ -195,9 +220,11 @@ export const mcpCommands = (program: Program) => {
             },
           })
         }
+
         progress(
           `add this server to the ${client} configuration; the token ${minted.id} is stored in sly's credentials`,
         )
+
         return print(
           {
             ...options,

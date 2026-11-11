@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { z } from 'zod'
 
 import { Code } from '@/components/code'
 import { CheckboxField, Field } from '@/components/field'
@@ -20,24 +21,23 @@ import {
   sessionQuery,
 } from '@/lib/auth'
 import { commands } from '@/lib/commands'
-
-type Search = { next?: string }
+import { titled } from '@/lib/title'
 
 export const Route = createFileRoute('/login')({
-  validateSearch: (search: Record<string, unknown>): Search =>
-    typeof search.next === 'string'
-      ? {
-          next: search.next,
-        }
-      : {},
+  validateSearch: z.object({
+    next: z.string().optional().catch(undefined),
+  }),
   beforeLoad: async ({ context, search }) => {
     const session = await context.queryClient.query(sessionQuery)
     const next = safeNext(search.next)
-    if (session && !(next && serverPage(next)))
+
+    if (session && !(next && serverPage(next))) {
       throw redirect({
         to: next ?? '/',
       })
+    }
   },
+  head: () => titled('Sign in'),
   component: Login,
 })
 
@@ -60,14 +60,18 @@ function Login() {
       queryKey: ['auth'],
     })
     const target = safeNext(next)
+
     if (target && serverPage(target)) {
       window.location.assign(target)
+
       return
     }
+
     const session = await client.query(sessionQuery)
     const keys = passkeys
       ? await authClient.passkey.listUserPasskeys().then((r) => r.data ?? [])
       : []
+
     if (session && !session.user.twoFactorEnabled && keys.length === 0) {
       await navigate({
         to: '/account',
@@ -75,8 +79,10 @@ function Login() {
           enroll: true,
         },
       })
+
       return
     }
+
     await navigate({
       to: target ?? '/',
     })
@@ -86,13 +92,17 @@ function Login() {
     setError(null)
     setBusy('passkey')
     const result = await authClient.signIn.passkey()
+
     setBusy(null)
+
     if (result.error) {
       setError(
         authMessage(result.error, 'Your passkey didn’t work. Try again or use your password.'),
       )
+
       return
     }
+
     await finish()
   }
 
@@ -104,15 +114,21 @@ function Login() {
       email,
       password,
     })
+
     setBusy(null)
+
     if (result.error) {
       setError(authMessage(result.error, 'The email or password is wrong.'))
+
       return
     }
+
     if ((result.data as { twoFactorRedirect?: boolean }).twoFactorRedirect) {
       setStep('totp')
+
       return
     }
+
     await finish()
   }
 
@@ -129,12 +145,16 @@ function Login() {
           code,
           trustDevice: trust,
         })
+
     setBusy(null)
+
     if (result.error) {
       setError(authMessage(result.error, 'That code didn’t match. Check the app and try again.'))
       setCode('')
+
       return
     }
+
     await finish()
   }
 

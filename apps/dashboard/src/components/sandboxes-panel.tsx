@@ -1,10 +1,10 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Camera, Plus, ShieldCheck, TerminalSquare } from 'lucide-react'
+import { Plus, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { fitSandboxMemory, sandboxSizeDefaults } from '@stationly/protocol/domain'
-import { gibibyte } from '@stationly/protocol/format'
+import { gibibyte, parseSeconds } from '@stationly/protocol/format'
 
 import { AlsoWith, Code } from '@/components/code'
 import { CheckboxField, Field, FieldSet, Suffixed } from '@/components/field'
@@ -39,6 +39,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { api, idempotency, send, type Environment } from '@/lib/api'
 import { commands, type Scope } from '@/lib/commands'
 import { bytes } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { sandboxNetwork } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
@@ -47,11 +48,17 @@ import {
   sandboxStationQuery,
   seedSandbox,
 } from '@/lib/queries'
-import { egressBody, egressText, imageText, parseDuration, ttlProblem } from '@/lib/sandbox'
+import { egressBody, egressText, imageText, ttlProblem } from '@/lib/sandbox'
+import { useShortcut } from '@/lib/shortcuts'
 import { isIdle, isLive } from '@/lib/status'
+import { highlight, useFresh } from '@/lib/use-fresh'
+import { cn } from '@/lib/utils'
 
 export function ProtectedNotice({ environment }: { environment: Environment }) {
-  if (!environment.protected) return null
+  if (!environment.protected) {
+    return null
+  }
+
   return (
     <Alert>
       <ShieldCheck />
@@ -141,8 +148,11 @@ export function NewSandbox({
     enabled: open,
   })
   const room = station.data?.sandbox_memory
+
   useEffect(() => {
-    if (room && !memoryTouched) setMemory(String(fitSandboxMemory(room.free) / gibibyte))
+    if (room && !memoryTouched) {
+      setMemory(String(fitSandboxMemory(room.free) / gibibyte))
+    }
   }, [room, memoryTouched])
   const [docker, setDocker] = useState(false)
   const [start, setStart] = useState(true)
@@ -165,21 +175,28 @@ export function NewSandbox({
     }),
     onSuccess: (result) => {
       onOpenChange(false)
-      if (!result.staged)
+
+      if (!result.staged) {
         void navigate({
           to: '/sandboxes/$sandbox',
           params: {
             sandbox: result.body.id,
           },
         })
+      }
     },
   })
   const submit = () => {
-    const ttl_s = parseDuration(ttl)
+    const ttl_s = parseSeconds(ttl)
     const egress = egressBody(mode, domains)
     const found = ttlProblem(ttl_s) ?? egress.problem
+
     setProblem(found)
-    if (found || ttl_s === null || !egress.egress) return
+
+    if (found || ttl_s === null || !egress.egress) {
+      return
+    }
+
     mutation.mutate({
       ...(name
         ? {
@@ -205,6 +222,7 @@ export function NewSandbox({
       },
     })
   }
+
   return (
     <FormDialog
       open={open}
@@ -368,10 +386,12 @@ function SandboxTable({
   onCreate: () => void
 }) {
   const { data } = useSuspenseQuery(sandboxesQuery(environment.id))
-  if (data.items.length === 0)
+  const fresh = useFresh(data.items)
+
+  if (data.items.length === 0) {
     return (
       <EmptyState
-        icon={TerminalSquare}
+        icon={entityIcon.sandbox}
         title="No sandboxes yet"
         description="A sandbox is a machine for an agent or for you, with its own disk and a time limit."
         action={
@@ -382,6 +402,8 @@ function SandboxTable({
         also={<AlsoWith cli={commands.createSandbox(scope)} tool="create_sandbox" />}
       />
     )
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -397,7 +419,7 @@ function SandboxTable({
       </TableHeader>
       <TableBody>
         {data.items.map((sandbox) => (
-          <TableRow key={sandbox.id} className="relative">
+          <TableRow key={sandbox.id} className={cn('relative', fresh.has(sandbox.id) && highlight)}>
             <TableCell>
               <Link
                 to="/sandboxes/$sandbox"
@@ -407,7 +429,7 @@ function SandboxTable({
                 className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
                 data-testid="sandbox-link"
               >
-                <TerminalSquare className="size-4 text-muted-foreground" aria-hidden />
+                <entityIcon.sandbox className="size-4 text-muted-foreground" aria-hidden />
                 {sandbox.name}
                 {sandbox.forked_from && (
                   <Badge variant="outline" className="font-normal">
@@ -472,6 +494,7 @@ function EnvironmentSnapshots({
   const { data: snapshots } = useSuspenseQuery(sandboxSnapshotsQuery(environment.id))
   const { data: sandboxes } = useSuspenseQuery(sandboxesQuery(environment.id))
   const names = new Map(sandboxes.items.map((s) => [s.id, s.name]))
+
   return (
     <SnapshotsTable
       snapshots={snapshots.items}
@@ -487,7 +510,7 @@ function EnvironmentSnapshots({
       }
       empty={
         <EmptyState
-          icon={Camera}
+          icon={entityIcon.snapshot}
           title="No snapshots yet"
           description="A snapshot saves a sandbox’s disk so you can fork new sandboxes from it. Take one from a sandbox’s page."
           also={
@@ -510,10 +533,13 @@ export function SandboxesPanel({
   project: string
 }) {
   const [creating, setCreating] = useState(false)
+
+  useShortcut('create', () => setCreating(true))
   const scope = {
     project,
     environment: environment.name,
   }
+
   return (
     <div className="space-y-6">
       <ProtectedNotice environment={environment} />

@@ -61,7 +61,8 @@ export const requireStationReady = (
   },
 ) => {
   const row = db.select().from(station).where(eq(station.id, stationId)).get()
-  if (!row)
+
+  if (!row) {
     return fail('VALIDATION_FAILED', `station ${stationId} does not exist.`, undefined, {
       issues: [
         {
@@ -70,6 +71,8 @@ export const requireStationReady = (
         },
       ],
     })
+  }
+
   if (row.draining && options.placement) {
     fail(
       'STATION_OFFLINE',
@@ -82,6 +85,7 @@ export const requireStationReady = (
       },
     )
   }
+
   if (row.revoked_at || !deployableStationStatuses.has(row.status)) {
     fail(
       'STATION_OFFLINE',
@@ -93,7 +97,8 @@ export const requireStationReady = (
       },
     )
   }
-  if (row.version_skew === 'unsupported')
+
+  if (row.version_skew === 'unsupported') {
     fail(
       'STATION_VERSION_SKEW',
       `Station ${row.name} runs a stationd outside the supported version window.`,
@@ -102,14 +107,17 @@ export const requireStationReady = (
         station_id: row.id,
       },
     )
+  }
+
   return row
 }
 
 export const requireLink = (stations: Pick<StationServer, 'isConnected'>, stationId: string) => {
-  if (!stations.isConnected(stationId))
+  if (!stations.isConnected(stationId)) {
     fail('STATION_OFFLINE', `Station ${stationId} is not connected to Dispatch.`, undefined, {
       station_id: stationId,
     })
+  }
 }
 
 export const requireConnected = (
@@ -124,6 +132,7 @@ export const requireConnected = (
 
 export const usableBlob = (db: Db, blobId: string, serviceId: string) => {
   const row = db.select().from(blob).where(eq(blob.id, blobId)).get()
+
   if (!row || row.kind !== 'push_tarball' || row.service_id !== serviceId) {
     return fail(
       'VALIDATION_FAILED',
@@ -139,7 +148,8 @@ export const usableBlob = (db: Db, blobId: string, serviceId: string) => {
       },
     )
   }
-  if (row.expires_at.getTime() <= Date.now())
+
+  if (row.expires_at.getTime() <= Date.now()) {
     fail(
       'SOURCE_UNREACHABLE',
       `blob ${blobId} expired at ${row.expires_at.toISOString()}.`,
@@ -148,6 +158,8 @@ export const usableBlob = (db: Db, blobId: string, serviceId: string) => {
         blob_id: blobId,
       },
     )
+  }
+
   return row
 }
 
@@ -162,6 +174,7 @@ const lastBuildBlob = (db: Db, serviceId: string) => {
     .orderBy(desc(build.id))
     .limit(1)
     .all()
+
   return (rows[0]?.source as { blob_id?: string } | undefined)?.blob_id
 }
 
@@ -171,7 +184,10 @@ export const configDeployTrigger = (
   sourceChanged = false,
   reuse: 'redeploy' | 'variable_change' = 'redeploy',
 ): 'manual' | 'redeploy' | 'variable_change' | null => {
-  if (!svc.current_deployment_id) return source.type === 'local' ? null : 'manual'
+  if (!svc.current_deployment_id) {
+    return source.type === 'local' ? null : 'manual'
+  }
+
   return sourceChanged ? 'manual' : reuse
 }
 
@@ -181,15 +197,20 @@ const planBuild = (
   input: { blob_id?: string | null; rebuild?: boolean; source_sha?: string | null },
 ) => {
   const source = svc.source as Source
+
   if (source.type === 'local') {
     const blobId = input.blob_id ?? (input.rebuild ? lastBuildBlob(db, svc.id) : undefined)
-    if (!blobId)
+
+    if (!blobId) {
       return fail(
         'SOURCE_UNREACHABLE',
         `${svc.name} has a local source and no uploaded directory to build.`,
         'Run sly push (push_local_source) to upload the directory and deploy it.',
       )
+    }
+
     usableBlob(db, blobId, svc.id)
+
     return {
       source: {
         type: 'blob',
@@ -200,7 +221,8 @@ const planBuild = (
       builder: source.dockerfile ? ('dockerfile' as const) : ('railpack' as const),
     }
   }
-  if (input.blob_id)
+
+  if (input.blob_id) {
     fail(
       'VALIDATION_FAILED',
       'blob_id is accepted only for services with a local source.',
@@ -214,6 +236,8 @@ const planBuild = (
         ],
       },
     )
+  }
+
   const env = db
     .select({
       pull_request: environment.pull_request,
@@ -223,6 +247,7 @@ const planBuild = (
     .get()
   const forkPr =
     env?.pull_request?.fork && env.pull_request.repo === source.repo ? env.pull_request : null
+
   return {
     source: {
       type: 'git',
@@ -254,7 +279,11 @@ export type DeploymentInput = {
 
 export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   const svc = db.select().from(service).where(eq(service.id, input.service_id)).get()
-  if (!svc) return fail('NOT_FOUND', `service ${input.service_id} does not exist.`)
+
+  if (!svc) {
+    return fail('NOT_FOUND', `service ${input.service_id} does not exist.`)
+  }
+
   requireStationReady(db, svc.station_id)
   const open = db
     .select()
@@ -271,6 +300,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       (deploymentPastCutoverStatuses as readonly string[]).includes(d.status) ||
       (!input.supersede && (deploymentInFlightStatuses as readonly string[]).includes(d.status)),
   )
+
   if (blocking) {
     fail(
       'DEPLOY_IN_PROGRESS',
@@ -281,22 +311,29 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       },
     )
   }
+
   const current: DeploymentRow | undefined = svc.current_deployment_id
     ? db.select().from(deployment).where(eq(deployment.id, svc.current_deployment_id)).get()
     : undefined
   const target: DeploymentRow | undefined = input.rollback_of
     ? db.select().from(deployment).where(eq(deployment.id, input.rollback_of)).get()
     : undefined
-  if (input.trigger === 'rollback' && (!target || !target.image_ref))
+
+  if (input.trigger === 'rollback' && (!target || !target.image_ref)) {
     fail('VALIDATION_FAILED', `deployment ${input.rollback_of} cannot be rolled back to.`)
+  }
+
   const source = svc.source as Source
   const reuse = input.trigger === 'redeploy' || input.trigger === 'variable_change'
-  if (reuse && !current?.image_ref)
+
+  if (reuse && !current?.image_ref) {
     fail(
       'NO_CURRENT_DEPLOYMENT',
       `${svc.name} has no current deployment to redeploy.`,
       'Call deploy (POST /v1/services/{service}/deployments) first.',
     )
+  }
+
   const needsBuild = input.trigger !== 'rollback' && !reuse && source.type !== 'image'
   const plannedBuild = needsBuild ? planBuild(db, svc, input) : null
   const env_snapshot = target
@@ -312,6 +349,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
         ? null
         : (input.image ??
           (source.ref && source.digest ? pinnedRef(source.ref, source.digest) : null))
+
   if (!needsBuild && !isPinned(image_ref)) {
     fail(
       'SOURCE_UNREACHABLE',
@@ -325,6 +363,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       },
     )
   }
+
   const config_snapshot = target
     ? target.config_snapshot
     : (({ id: _i, created_at: _c, updated_at: _u, ...rest }) => rest)(svc)
@@ -336,6 +375,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       ? ((target.config_snapshot.strategy as DeploymentRow['strategy']) ?? svc.strategy)
       : svc.strategy,
   })
+
   if (problem) {
     fail(
       'VALIDATION_FAILED',
@@ -351,7 +391,9 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       },
     )
   }
+
   const now = new Date()
+
   for (const old of open) {
     db.update(deployment)
       .set({
@@ -362,14 +404,17 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       .where(eq(deployment.id, old.id))
       .run()
   }
+
   if (target) {
     const restored = Object.fromEntries(
       restoredColumns
         .filter((c) => c in target.config_snapshot)
         .map((c) => [c, target.config_snapshot[c]]),
     )
+
     db.update(service).set(restored).where(eq(service.id, svc.id)).run()
   }
+
   const fresh = db.select().from(service).where(eq(service.id, svc.id)).get()!
   const last = db
     .select({
@@ -383,6 +428,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   const id = newId('deployment')
   const { id: _id, created_at: _c, updated_at: _u, ...config } = fresh
   const buildId = plannedBuild ? newId('build') : null
+
   db.insert(deployment)
     .values({
       id,
@@ -407,6 +453,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       base_images: target ? target.base_images : [],
     })
     .run()
+
   if (plannedBuild) {
     const env = db
       .select({
@@ -415,6 +462,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       .from(environment)
       .where(eq(environment.id, svc.environment_id))
       .get()!
+
     db.insert(build)
       .values({
         id: buildId!,
@@ -428,13 +476,16 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       })
       .run()
   }
-  if (fresh.desired_state === 'running' && fresh.status !== 'amber')
+
+  if (fresh.desired_state === 'running' && fresh.status !== 'amber') {
     db.update(service)
       .set({
         status: 'amber',
       })
       .where(eq(service.id, svc.id))
       .run()
+  }
+
   return {
     id,
     superseded: open.map((o) => o.id),

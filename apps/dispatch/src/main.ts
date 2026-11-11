@@ -21,6 +21,7 @@ import { startBaseImageChecker } from './platform/base-images.ts'
 import { recordDispatchComponent } from './platform/lockfile.ts'
 import { createUpgradeDriver } from './platform/upgrade.ts'
 import { startSandboxRetention } from './sandboxes/lifecycle.ts'
+import { startWorkspaceTokenRenewal } from './sandboxes/workspace.ts'
 import { Keyring, masterKeyFromEnv } from './secrets/keyring.ts'
 import { createStationServer, HostAdminError, type HostAdmin } from './station/server.ts'
 import { pruneBackups, startBackupScheduler } from './volumes/backups.ts'
@@ -34,8 +35,12 @@ const {
   STATIONLY_DISPATCH_DIGEST: digest,
 } = env()
 
-if (!databasePath) throw new Error('STATIONLY_DATABASE must name the SQLite file Dispatch owns')
+if (!databasePath) {
+  throw new Error('STATIONLY_DATABASE must name the SQLite file Dispatch owns')
+}
+
 const routed = routeFetchThroughStation(resolver)
+
 log('resolver', {
   address: resolver,
   fetch: routed ? 'through the stationd host listener' : 'host resolver (STATIONLY_RESOLVER unset)',
@@ -44,6 +49,7 @@ log('resolver', {
 const db = openDb(databasePath, {
   replicated,
 })
+
 ensureInstanceId(db)
 const masterKey = masterKeyFromEnv()
 const keyring = new Keyring(db, masterKey)
@@ -60,12 +66,14 @@ const github = createGitHub({
   auth,
 })
 const hostAdmin: HostAdmin = async (stationId, op, params) => {
-  if (op !== 'setup')
+  if (op !== 'setup') {
     throw new HostAdminError(
       'PROTOCOL_INVALID_MESSAGE',
       `host.admin op ${op} is not handled by this Dispatch`,
       'Send an op Dispatch documents.',
     )
+  }
+
   try {
     const result = await setupInstance(
       {
@@ -80,10 +88,12 @@ const hostAdmin: HostAdmin = async (stationId, op, params) => {
         client: 'sly root-socket',
       },
     )
+
     stations.reconcile(stationId)
+
     return result
   } catch (error) {
-    if (error instanceof SetupError)
+    if (error instanceof SetupError) {
       throw new HostAdminError(
         error.code,
         error.message,
@@ -91,13 +101,19 @@ const hostAdmin: HostAdmin = async (stationId, op, params) => {
           ? 'Sign in as the existing admin; recovery is sly admin reset-password.'
           : 'Correct the input and run sly setup again.',
       )
+    }
+
     throw error
   }
 }
 const onRecord = (stationId: string, type: string, body: unknown) => {
   const b = body as { status?: string; volume_id?: string }
-  if (type === 'component.status') upgrades.kick()
-  if (type === 'volume.backup.result' && b.status === 'complete' && b.volume_id)
+
+  if (type === 'component.status') {
+    upgrades.kick()
+  }
+
+  if (type === 'volume.backup.result' && b.status === 'complete' && b.volume_id) {
     pruneBackups(
       {
         db,
@@ -122,6 +138,7 @@ const onRecord = (stationId: string, type: string, body: unknown) => {
           explanation: (error as Error).message,
         }),
       )
+  }
 }
 const stations = createStationServer({
   db,
@@ -151,6 +168,7 @@ const deps = {
 }
 const app = createApp(deps)
 const dashboard = createDashboard(dashboardDir, version)
+
 log('dashboard', {
   built: dashboard.built,
   files: dashboard.files,
@@ -159,6 +177,7 @@ log('dashboard', {
 const appHandler = toNodeHandler(createFetch(deps, app, dashboard)) as RequestListener
 const attach = createAttachServer(deps)
 const notifier = startNotifier(deps)
+
 github.start()
 const baseImages = startBaseImageChecker(db)
 const backupSchedule = startBackupScheduler(
@@ -176,6 +195,14 @@ const sandboxRetention = startSandboxRetention(
   },
   log,
 )
+const workspaceTokens = startWorkspaceTokenRenewal(
+  {
+    db,
+    auth,
+  },
+  log,
+)
+
 recordDispatchComponent(db, version)
 log('dispatch.version', {
   version,
@@ -183,10 +210,16 @@ log('dispatch.version', {
   database: databasePath,
 })
 const server = createServer((req, res) => {
-  if (!stations.handleRequest(req, res)) appHandler(req, res)
+  if (!stations.handleRequest(req, res)) {
+    appHandler(req, res)
+  }
 })
+
 server.on('upgrade', (req, socket, head) => {
-  if (attach.matches(req)) return attach.handleUpgrade(req, socket, head)
+  if (attach.matches(req)) {
+    return attach.handleUpgrade(req, socket, head)
+  }
+
   stations.handleUpgrade(req, socket, head)
 })
 server.listen(port, () =>
@@ -201,6 +234,7 @@ const shutdown = async () => {
   baseImages.stop()
   backupSchedule.stop()
   sandboxRetention.stop()
+  workspaceTokens.stop()
   github.stop()
   attach.close()
   await stations.close()

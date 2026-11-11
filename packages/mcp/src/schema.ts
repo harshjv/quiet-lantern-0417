@@ -13,6 +13,7 @@ const engine = new Ajv({
   logger: false,
 })
 const withFormats = addFormats as (ajv: typeof engine) => typeof engine
+
 withFormats(engine)
 
 const validator = new AjvJsonSchemaValidator(engine)

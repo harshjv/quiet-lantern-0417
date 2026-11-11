@@ -77,6 +77,7 @@ export function NewEnvironment({
     invalidate: ['environments'],
     success: (created) => {
       const started = created.deployments.length
+
       return {
         title: `${created.name} created`,
         description:
@@ -87,7 +88,8 @@ export function NewEnvironment({
     },
     onSuccess: (result) => {
       setOpen(false)
-      if (!result.staged)
+
+      if (!result.staged) {
         void navigate({
           to: '/projects/$project/$environment',
           params: {
@@ -98,14 +100,19 @@ export function NewEnvironment({
             tab: 'services',
           },
         })
+      }
     },
   })
+
   return (
     <FormDialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) mutation.reset()
+
+        if (!next) {
+          mutation.reset()
+        }
       }}
       trigger={
         <Button size="sm" variant="outline">

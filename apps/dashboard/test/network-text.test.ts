@@ -97,6 +97,7 @@ test('routing states read as sentences about the service', () => {
       state: 'mismatch',
     }),
   )
+
   assert.equal(mismatch.label, 'Routing is out of date')
   assert.equal(mismatch.tone, 'danger')
   assert.match(mismatch.hint ?? '', /Redeploy web/)
@@ -129,6 +130,7 @@ test('domain state names the first thing that is not live', () => {
       result: 'ok',
     },
   } as Parameters<typeof domainState>[0]
+
   assert.equal(domainState(live).label, 'Live, certificate valid')
   assert.equal(
     domainState({
@@ -186,6 +188,7 @@ test('a public TCP port reads as words, with or without a public address', () =>
     host_port: 30001,
     station_id: 'sta_home',
   } as MapService['exposures'][number]
+
   assert.equal(exposureText(map, exposure), '203.0.113.5:30001 to port 5432')
   assert.equal(
     exposureText(map, {
@@ -275,6 +278,7 @@ test('steps name the services they check', () => {
     from: 'web',
     to: 'db:5432',
   }
+
   assert.equal(stepText('source', entity), 'web is running')
   assert.equal(stepText('target', entity), 'db is running and healthy')
   assert.equal(stepText('listening', entity), 'db listens on the port')

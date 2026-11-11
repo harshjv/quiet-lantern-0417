@@ -14,13 +14,16 @@ export function Failure({
   onRetry?: () => void
 }) {
   const { reset } = useQueryErrorResetBoundary()
+
   useEffect(() => reset(), [reset])
+
   return <ErrorState error={error} title={title} onRetry={onRetry} />
 }
 
 export const failurePage = (title: string) =>
   function PageFailure({ error }: ErrorComponentProps) {
     const router = useRouter()
+
     return <Failure error={error} title={title} onRetry={() => void router.invalidate()} />
   }
 

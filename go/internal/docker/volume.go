@@ -3,10 +3,8 @@ package docker
 import (
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 
-	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 )
@@ -55,14 +53,4 @@ func CheckVolume(v volume.Volume, dockerRoot string) error {
 		return fmt.Errorf("volume %s mounts from %s, outside the volume root %s", v.Name, v.Mountpoint, root)
 	}
 	return nil
-}
-
-func (c *Client) CopyLogs(ctx context.Context, id string, w io.Writer) error {
-	rc, err := c.api.ContainerLogs(ctx, id, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-	_, err = stdcopy.StdCopy(w, w, rc)
-	return err
 }

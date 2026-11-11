@@ -100,7 +100,8 @@ export function VariableValueInput({
     className: cn('font-mono', className),
     spellCheck: false,
   }
-  if (kind === 'literal' && multiline)
+
+  if (kind === 'literal' && multiline) {
     return (
       <Textarea
         {...shared}
@@ -109,6 +110,8 @@ export function VariableValueInput({
         placeholder={placeholder}
       />
     )
+  }
+
   return (
     <Input
       {...shared}

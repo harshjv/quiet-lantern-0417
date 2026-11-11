@@ -19,6 +19,7 @@ type Entry = { key: string; node: SourceNode }
 export const sandboxEntries = (db: Db, sandboxId: string): Entry[] => {
   const resolver = Resolver.forSandbox(db, sandboxId)
   const entries: Entry[] = []
+
   for (const v of resolver.sandboxVariables()) {
     try {
       entries.push({
@@ -26,9 +27,12 @@ export const sandboxEntries = (db: Db, sandboxId: string): Entry[] => {
         node: resolver.resolveSandbox(v),
       })
     } catch (error) {
-      if (!(error instanceof SecretsError)) throw error
+      if (!(error instanceof SecretsError)) {
+        throw error
+      }
     }
   }
+
   return entries
 }
 
@@ -40,6 +44,7 @@ export const sandboxEnv = (db: Db, sandboxId: string) => {
     refs: refsOf(entry.node),
     platform: false,
   }))
+
   return {
     entries,
     env,
@@ -54,6 +59,7 @@ export const sandboxDeliver = (
   actor: ActorValue,
 ): SecretsDeliver => {
   const { entries, env_digest } = sandboxEnv(db, sandboxId)
+
   return renderedDelivery(
     db,
     keyring,

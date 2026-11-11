@@ -30,22 +30,30 @@ export type VariableScope =
 
 export const existingVariables = (db: Db, scope: VariableScope): VariableRow[] => {
   if (scope.scope === 'service') {
-    if (!scope.serviceId) return []
+    if (!scope.serviceId) {
+      return []
+    }
+
     return variablesOf(db, {
       scope: 'service',
       id: scope.serviceId,
     }).all()
   }
-  if (scope.scope === 'sandbox')
+
+  if (scope.scope === 'sandbox') {
     return variablesOf(db, {
       scope: 'sandbox',
       id: scope.sandboxId,
     }).all()
-  if (scope.scope === 'project')
+  }
+
+  if (scope.scope === 'project') {
     return variablesOf(db, {
       scope: 'project',
       id: scope.parent,
     }).all()
+  }
+
   return variablesOf(db, {
     scope: 'global',
   }).all()
@@ -85,19 +93,32 @@ export const dependentsOf = (db: Db, row: VariableRow) => {
       )
     : new Set<string>()
   const out: { entity: 'variable'; id: string; key: string; service_id: string }[] = []
+
   for (const candidate of candidates) {
-    if (candidate.id === row.id || !candidate.reference) continue
+    if (candidate.id === row.id || !candidate.reference) {
+      continue
+    }
+
     let segments: ReturnType<typeof parseValue>
+
     try {
       segments = parseValue(candidate.reference)
     } catch {
       continue
     }
+
     const hit = segments.some((segment) => {
-      if (segment.type !== 'reference') return false
+      if (segment.type !== 'reference') {
+        return false
+      }
+
       const target = segment.target
+
       if (row.scope === 'service' && target.type === 'service' && owner) {
-        if (target.service !== owner.name || target.key !== row.key) return false
+        if (target.service !== owner.name || target.key !== row.key) {
+          return false
+        }
+
         const candidateOwner = db
           .select({
             environment_id: service.environment_id,
@@ -105,27 +126,43 @@ export const dependentsOf = (db: Db, row: VariableRow) => {
           .from(service)
           .where(eq(service.id, candidate.service_id!))
           .get()
+
         return candidateOwner?.environment_id === owner.environment_id
       }
-      if (row.scope === 'project' && target.type === 'project')
+
+      if (row.scope === 'project' && target.type === 'project') {
         return target.key === row.key && projectServices.has(candidate.service_id!)
-      if (row.scope === 'global' && target.type === 'global') return target.key === row.key
+      }
+
+      if (row.scope === 'global' && target.type === 'global') {
+        return target.key === row.key
+      }
+
       return false
     })
-    if (hit)
+
+    if (hit) {
       out.push({
         entity: 'variable',
         id: candidate.id,
         key: candidate.key,
         service_id: candidate.service_id!,
       })
+    }
   }
+
   return out
 }
 
 const levelFor = (principal: Principal, scope: VariableScope, kind: string) => {
-  if (scope.scope === 'global') return requireInstance(principal, 'admin')
-  if (scope.scope === 'project') return requireLevel(principal, scope.target, 'admin')
+  if (scope.scope === 'global') {
+    return requireInstance(principal, 'admin')
+  }
+
+  if (scope.scope === 'project') {
+    return requireLevel(principal, scope.target, 'admin')
+  }
+
   return requireLevel(principal, scope.target, kind === 'sealed' ? 'admin' : 'deploy')
 }
 
@@ -136,21 +173,32 @@ const unchanged = (
   item: VariableItem,
   environmentId: string | null,
 ) => {
-  if (!prior || prior.kind !== item.kind) return false
+  if (!prior || prior.kind !== item.kind) {
+    return false
+  }
+
   if (
     (item.injection ?? prior.injection) !== prior.injection ||
     (item.build ?? prior.build) !== prior.build
-  )
+  ) {
     return false
-  if (item.kind === 'reference') return item.reference === prior.reference
+  }
+
+  if (item.kind === 'reference') {
+    return item.reference === prior.reference
+  }
+
   if (
     item.kind !== 'literal' ||
     item.reference !== undefined ||
     prior.reference !== null ||
     item.value === undefined
-  )
+  ) {
     return false
+  }
+
   const head = headValue(db, prior.id, environmentId, 'unset')
+
   return head !== undefined && decryptValue(keyring, head) === item.value
 }
 
@@ -166,25 +214,29 @@ export const planVariables = (
   const existing = new Map(existingVariables(db, scope).map((v) => [v.key, v]))
   const issues: { path: string; message: string }[] = []
   const items = input.set ?? []
+
   items.forEach((item, i) => {
     const path = `/set/${i}`
+
     if (item.kind === 'reference') {
-      if (scope.scope !== 'service' && scope.scope !== 'sandbox')
+      if (scope.scope !== 'service' && scope.scope !== 'sandbox') {
         issues.push({
           path: `${path}/kind`,
           message: `${scope.scope} variables hold values, not references`,
         })
-      if (item.reference === undefined)
+      }
+
+      if (item.reference === undefined) {
         issues.push({
           path: `${path}/reference`,
           message: 'required for kind reference',
         })
-      else if (!hasReference(parseValue(item.reference)))
+      } else if (!hasReference(parseValue(item.reference))) {
         issues.push({
           path: `${path}/reference`,
           message: 'contains no ${{...}} reference',
         })
-      else if (
+      } else if (
         scope.scope === 'sandbox' &&
         parseValue(item.reference).some(
           (segment) =>
@@ -192,12 +244,13 @@ export const planVariables = (
             segment.target.type !== 'project' &&
             segment.target.type !== 'global',
         )
-      )
+      ) {
         issues.push({
           path: `${path}/reference`,
           message:
             'a sandbox variable references ${{project.KEY}}, ${{global.KEY}} or ${{secret(N)}} only, never a service',
         })
+      }
     } else if (
       item.value === undefined &&
       !(item.kind === 'literal' && item.reference !== undefined)
@@ -207,6 +260,7 @@ export const planVariables = (
         message: `required for kind ${item.kind}`,
       })
     }
+
     if (
       item.kind === 'literal' &&
       item.value !== undefined &&
@@ -217,8 +271,10 @@ export const planVariables = (
         message: 'a literal holds no reference; use kind reference, or escape as $${{',
       })
     }
+
     if (item.kind === 'literal' && item.reference !== undefined) {
       const segments = parseValue(item.reference)
+
       if (!(
         segments.length === 1 &&
         segments[0]!.type === 'reference' &&
@@ -230,33 +286,48 @@ export const planVariables = (
         })
       }
     }
+
     const prior = existing.get(item.key)
-    if (prior?.kind === 'sealed' && item.kind !== 'sealed')
+
+    if (prior?.kind === 'sealed' && item.kind !== 'sealed') {
       issues.push({
         path: `${path}/kind`,
         message: `${item.key} is sealed; converting a sealed variable is not possible`,
       })
-    if (items.findIndex((other) => other.key === item.key) !== i)
+    }
+
+    if (items.findIndex((other) => other.key === item.key) !== i) {
       issues.push({
         path: `${path}/key`,
         message: 'key appears twice',
       })
+    }
   })
+
   for (const [i, key] of (input.unset ?? []).entries()) {
-    if (!existing.has(key))
+    if (!existing.has(key)) {
       issues.push({
         path: `/unset/${i}`,
         message: `${key} does not exist`,
       })
+    }
   }
-  if (issues.length) invalid(issues)
+
+  if (issues.length) {
+    invalid(issues)
+  }
 
   const environmentId = scope.scope === 'project' ? scope.environmentId : null
   const parent = scope.scope === 'global' ? null : scope.parent
+
   for (const item of items) {
     levelFor(principal, scope, item.kind)
     const prior = existing.get(item.key)
-    if (unchanged(db, keyring, prior, item, environmentId)) continue
+
+    if (unchanged(db, keyring, prior, item, environmentId)) {
+      continue
+    }
+
     const reference =
       item.kind === 'reference'
         ? item.reference!
@@ -290,7 +361,8 @@ export const planVariables = (
             value_id: set.secret(plaintext),
           }),
     }
-    if (prior)
+
+    if (prior) {
       set.update(
         'variable',
         prior.id,
@@ -302,15 +374,27 @@ export const planVariables = (
         },
         after,
       )
-    else set.add('variable', parent, after)
+    } else {
+      set.add('variable', parent, after)
+    }
   }
+
   const unset = new Set(input.unset ?? [])
-  if (options.replaceAll)
-    for (const key of existing.keys()) if (!items.some((item) => item.key === key)) unset.add(key)
+
+  if (options.replaceAll) {
+    for (const key of existing.keys()) {
+      if (!items.some((item) => item.key === key)) {
+        unset.add(key)
+      }
+    }
+  }
+
   for (const key of unset) {
     const prior = existing.get(key)!
+
     levelFor(principal, scope, prior.kind)
     const dependents = dependentsOf(db, prior)
+
     if (dependents.length) {
       fail(
         'DELETE_HAS_DEPENDENTS',
@@ -321,6 +405,7 @@ export const planVariables = (
         },
       )
     }
+
     set.remove('variable', prior.id, {
       key: prior.key,
       kind: prior.kind,

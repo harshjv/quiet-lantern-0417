@@ -17,14 +17,20 @@ const covers = (granted: string, wanted: string) => granted === '*' || granted =
 
 export const levelAt = (scopes: Scope[], target: Target): Level | null => {
   let best: Level | null = null
+
   for (const scope of scopes) {
     if (
       !covers(scope.project_id, target.project_id) ||
       !covers(scope.environment_id, target.environment_id)
-    )
+    ) {
       continue
-    if (best === null || rank(scope.level) > rank(best)) best = scope.level
+    }
+
+    if (best === null || rank(scope.level) > rank(best)) {
+      best = scope.level
+    }
   }
+
   return best
 }
 

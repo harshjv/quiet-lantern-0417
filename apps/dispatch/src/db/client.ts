@@ -12,6 +12,7 @@ const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url)
 
 export const openDb = (path: string, options: { replicated?: boolean } = {}) => {
   const sqlite = new Database(path)
+
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('busy_timeout = 5000')
   sqlite.pragma(`wal_autocheckpoint = ${options.replicated ? 0 : 1000}`)
@@ -19,8 +20,10 @@ export const openDb = (path: string, options: { replicated?: boolean } = {}) => 
   const db = drizzle(sqlite, {
     schema,
   })
+
   migrate(db, {
     migrationsFolder,
   })
+
   return db
 }

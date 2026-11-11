@@ -70,6 +70,7 @@ describe('virtual IPs', () => {
     const stageMap = (await api('GET', `/v1/environments/${staging.id}/network`)).body
     const prodVip = prodMap.services.find((s: any) => s.id === prod.id).virtual_ip
     const stageVip = stageMap.services.find((s: any) => s.id === stage.id).virtual_ip
+
     assert.match(prodVip, /^100\.64\./)
     assert.match(stageVip, /^100\.64\./)
     assert.notEqual(prodVip, stageVip)
@@ -84,8 +85,9 @@ describe('virtual IPs', () => {
       (await createEnvironment(h, project.name, 'qa')).id,
     ]
     const created: any[] = []
-    for (const env of envs)
-      for (const name of ['a', 'b', 'c'])
+
+    for (const env of envs) {
+      for (const name of ['a', 'b', 'c']) {
         created.push(
           await createService(h, env, {
             name,
@@ -98,10 +100,15 @@ describe('virtual IPs', () => {
             deploy: true,
           }),
         )
+      }
+    }
+
     const doomed = created[1]
     const deleted = await api('DELETE', `/v1/services/${doomed.id}`)
+
     assert.equal(deleted.status, 200)
-    for (const env of envs)
+
+    for (const env of envs) {
       await createService(h, env, {
         name: 'late',
         ref: 'traefik/whoami:v1',
@@ -112,7 +119,10 @@ describe('virtual IPs', () => {
         ],
         deploy: true,
       })
+    }
+
     const rows = addresses()
+
     assert.equal(new Set(rows.map((r) => r.address)).size, rows.length)
     assert.ok(rows.every((r) => r.address.startsWith('100.64.')))
   })
@@ -141,11 +151,13 @@ describe('ports', () => {
         },
       ],
     })
+
     assert.equal(patched.status, 200)
     assert.equal(patched.body.ports.length, 1)
     assert.equal(patched.body.ports[0].id, before.id)
     assert.equal(patched.body.ports[0].protocol, 'http')
     const listed = (await api('GET', `/v1/services/${svc.id}/ports`)).body.items
+
     assert.deepEqual(
       listed.map((p: any) => [p.id, p.protocol]),
       [[before.id, 'http']],
@@ -180,6 +192,7 @@ describe('ports', () => {
       deploy: true,
     })
     const allocation = await api('POST', `/v1/ports/${tcp.ports[0].id}/port-allocations`, {})
+
     assert.equal(allocation.status, 201)
     const toHttp = await api('PATCH', `/v1/services/${tcp.id}`, {
       ports: [
@@ -189,12 +202,14 @@ describe('ports', () => {
         },
       ],
     })
+
     assert.equal(toHttp.status, 409)
     assert.equal(toHttp.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.equal(toHttp.body.error.details.dependents[0].id, allocation.body.id)
     const domain = await api('POST', `/v1/ports/${web.ports[0].id}/domains`, {
       hostname: 'web.shop.example.com',
     })
+
     assert.equal(domain.status, 201)
     const toTcp = await api('PATCH', `/v1/services/${web.id}`, {
       ports: [
@@ -204,10 +219,12 @@ describe('ports', () => {
         },
       ],
     })
+
     assert.equal(toTcp.status, 409)
     assert.equal(toTcp.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.equal(toTcp.body.error.details.dependents[0].id, domain.body.id)
     const still = (await api('GET', `/v1/services/${web.id}/ports`)).body.items[0]
+
     assert.equal(still.protocol, 'http')
     assert.equal(still.id, web.ports[0].id)
   })
@@ -227,13 +244,17 @@ describe('ports', () => {
     const domain = await api('POST', `/v1/ports/${web.ports[0].id}/domains`, {
       hostname: 'delete.shop.example.com',
     })
+
     assert.equal(domain.status, 201)
     const removed = await api('DELETE', `/v1/ports/${web.ports[0].id}`)
+
     assert.equal(removed.status, 409)
     assert.equal(removed.body.error.code, 'DELETE_HAS_DEPENDENTS')
     const dropped = await api('DELETE', `/v1/domains/${domain.body.id}`)
+
     assert.equal(dropped.status, 200)
     const retry = await api('DELETE', `/v1/ports/${web.ports[0].id}`)
+
     assert.equal(retry.status, 200)
   })
 })
@@ -269,6 +290,7 @@ describe('service dependents', () => {
       ],
     })
     const refused = await api('DELETE', `/v1/services/${db.id}`)
+
     assert.equal(refused.status, 409)
     assert.equal(refused.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.deepEqual(
@@ -280,6 +302,7 @@ describe('service dependents', () => {
       variables: [],
       deploy: false,
     })
+
     assert.equal(cleared.status, 200)
     assert.equal((await api('DELETE', `/v1/services/${db.id}`)).status, 200)
   })
@@ -297,11 +320,14 @@ describe('no current deployment', () => {
         },
       ],
     })
+
     for (const action of ['restart', 'redeploy', 'start']) {
       const reply = await api('POST', `/v1/services/${svc.id}/${action}`)
+
       assert.equal(reply.status, 409, action)
       assert.equal(reply.body.error.code, 'NO_CURRENT_DEPLOYMENT', action)
     }
+
     assert.equal((await api('GET', `/v1/services/${svc.id}/deployments`)).body.items.length, 0)
   })
 
@@ -321,10 +347,12 @@ describe('no current deployment', () => {
         cpu_millis: 500,
       },
     })
+
     assert.equal(patched.status, 200)
     assert.equal(patched.body.deployments.length, 1)
     assert.equal(patched.body.deployments[0].trigger.type, 'manual')
     const current = await waitForActive(h, svc.id)
+
     assert.equal(current.current_deployment_id, patched.body.deployments[0].id)
   })
 
@@ -345,6 +373,7 @@ describe('no current deployment', () => {
       },
       deploy: false,
     })
+
     assert.equal(patched.status, 200)
     assert.deepEqual(patched.body.deployments, [])
   })
@@ -368,6 +397,7 @@ describe('domains and the Gateway pin', () => {
     const refused = await api('POST', `/v1/ports/${web.ports[0].id}/domains`, {
       hostname: 'gate.shop.example.com',
     })
+
     assert.equal(refused.status, 409)
     assert.equal(refused.body.error.code, 'GATEWAY_NOT_PINNED')
     assert.equal(refused.body.error.details.release, '0.0.0-test')
@@ -378,6 +408,7 @@ describe('domains and the Gateway pin', () => {
     const accepted = await api('POST', `/v1/ports/${web.ports[0].id}/domains`, {
       hostname: 'gate.shop.example.com',
     })
+
     assert.equal(accepted.status, 201)
     assert.equal(accepted.body.hostname, 'gate.shop.example.com')
   })
@@ -397,6 +428,7 @@ describe('domains and the Gateway pin', () => {
     const refused = await api('POST', `/v1/ports/${db.ports[0].id}/domains`, {
       hostname: 'db.shop.example.com',
     })
+
     assert.equal(refused.status, 400)
     assert.equal(refused.body.error.code, 'VALIDATION_FAILED')
   })

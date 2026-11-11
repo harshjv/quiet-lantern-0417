@@ -25,30 +25,43 @@ export const normalizeEgress = (input: EgressInput, path = '/egress'): Egress =>
   const issues: { path: string; message: string }[] = []
   const domains = (input.domains ?? []).map((entry, i) => {
     const domain = entry.domain.trim().toLowerCase().replace(/\.$/, '')
-    if (!parsesAsDomain(domain))
+
+    if (!parsesAsDomain(domain)) {
       issues.push({
         path: `${path}/domains/${i}/domain`,
         message: `${entry.domain} is not a DNS name; write a wildcard as wildcard = true on the parent name`,
       })
+    }
+
     const ports = [...new Set(entry.ports ?? [443])]
+
     return {
       domain,
       wildcard: entry.wildcard ?? false,
       ports,
     }
   })
-  if (domains.length > sandboxEgressLimits.domains)
+
+  if (domains.length > sandboxEgressLimits.domains) {
     issues.push({
       path: `${path}/domains`,
       message: `at most ${sandboxEgressLimits.domains} entries, got ${domains.length}`,
     })
+  }
+
   const distinct = new Set(domains.flatMap((d) => d.ports))
-  if (distinct.size > sandboxEgressLimits.ports)
+
+  if (distinct.size > sandboxEgressLimits.ports) {
     issues.push({
       path: `${path}/domains`,
       message: `at most ${sandboxEgressLimits.ports} distinct ports, got ${distinct.size}`,
     })
-  if (issues.length) invalid(issues)
+  }
+
+  if (issues.length) {
+    invalid(issues)
+  }
+
   return {
     mode: input.mode,
     domains,

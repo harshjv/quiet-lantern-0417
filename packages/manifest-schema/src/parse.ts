@@ -32,29 +32,50 @@ export const segmentsOf = (path: string) =>
 const locator =
   (doc: Document | null, counter: LineCounter | null) =>
   (issue: Issue, at: 'key' | 'value' = 'value'): Issue => {
-    if (!doc || !counter || issue.line !== undefined) return issue
+    if (!doc || !counter || issue.line !== undefined) {
+      return issue
+    }
+
     let node: unknown = doc.contents
     let keyNode: Node | null = null
     let best: Node | null = doc.contents ?? null
+
     for (const segment of segmentsOf(issue.path)) {
       keyNode = null
+
       if (isMap(node)) {
         const pair = node.items.find(
           (item) => isPair(item) && isScalar(item.key) && String(item.key.value) === segment,
         )
-        if (!pair) break
+
+        if (!pair) {
+          break
+        }
+
         keyNode = pair.key as Node
         node = pair.value
       } else if (isSeq(node)) {
         node = node.items[Number(segment)]
-      } else break
-      if (node && typeof node === 'object' && 'range' in node) best = node as Node
-      else if (keyNode) best = keyNode
+      } else {
+        break
+      }
+
+      if (node && typeof node === 'object' && 'range' in node) {
+        best = node as Node
+      } else if (keyNode) {
+        best = keyNode
+      }
     }
+
     const target = at === 'key' && keyNode ? keyNode : best
     const offset = target?.range?.[0]
-    if (offset === undefined) return issue
+
+    if (offset === undefined) {
+      return issue
+    }
+
     const { line, col } = counter.linePos(offset)
+
     return {
       ...issue,
       line,
@@ -71,6 +92,7 @@ export const parseText = (text: string): Parsed => {
     version: '1.2',
   })
   const locate = locator(doc, counter)
+
   if (doc.errors.length) {
     return {
       value: undefined,
@@ -88,6 +110,7 @@ export const parseText = (text: string): Parsed => {
       })),
     }
   }
+
   return {
     value: doc.toJS({
       maxAliasCount: 100,
@@ -122,22 +145,31 @@ const distance = (a: string, b: string) => {
     },
     (_, i) => i,
   )
+
   for (let i = 1; i <= a.length; i++) {
     let prev = row[0]!
+
     row[0] = i
+
     for (let j = 1; j <= b.length; j++) {
       const temp = row[j]!
+
       row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1))
       prev = temp
     }
   }
+
   return row[b.length]!
 }
 
 const suggest = (key: string, known: string[]) => {
-  if (key in aliases) return aliases[key] ? `; did you mean ${aliases[key]}?` : ''
+  if (key in aliases) {
+    return aliases[key] ? `; did you mean ${aliases[key]}?` : ''
+  }
+
   const ranked = known.map((k) => [k, distance(key, k)] as const).sort((x, y) => x[1] - y[1])
   const nearest = ranked[0]
+
   return nearest && nearest[1] <= Math.max(2, Math.floor(key.length / 3))
     ? `; did you mean ${nearest[0]}?`
     : ''
@@ -177,15 +209,25 @@ const typeName = (value: unknown) =>
 const pickMember = (schema: Schema, value: unknown): Schema | null => {
   const members = (schema.anyOf ?? []) as Schema[]
   const discriminated = members.filter((m) => m.properties?.type?.const !== undefined)
+
   if (discriminated.length && value && typeof value === 'object' && !Array.isArray(value)) {
     const tag = (value as { type?: unknown }).type
+
     return discriminated.find((m) => (m.properties!.type as Schema).const === tag) ?? null
   }
+
   const objects = members.filter((m) => m.type === 'object')
-  if (value && typeof value === 'object' && !Array.isArray(value) && objects.length === 1)
+
+  if (value && typeof value === 'object' && !Array.isArray(value) && objects.length === 1) {
     return objects[0]!
+  }
+
   const arrays = members.filter((m) => m.type === 'array')
-  if (Array.isArray(value) && arrays.length === 1) return arrays[0]!
+
+  if (Array.isArray(value) && arrays.length === 1) {
+    return arrays[0]!
+  }
+
   return null
 }
 
@@ -214,6 +256,7 @@ const bound = (schema: Schema) => {
   >
   const low = s.minimum ?? s.exclusiveMinimum ?? s.minItems ?? s.minLength
   const high = s.maximum ?? s.exclusiveMaximum ?? s.maxItems ?? s.maxLength
+
   return low !== undefined && high !== undefined
     ? `outside ${low} to ${high}`
     : low !== undefined
@@ -224,6 +267,7 @@ const bound = (schema: Schema) => {
 const convert = (error: ValueError): Issue[] => {
   const schema = error.schema as Schema
   const path = error.path
+
   switch (error.type) {
     case ValueErrorType.ObjectRequiredProperty:
       return [
@@ -259,6 +303,7 @@ const convert = (error: ValueError): Issue[] => {
           },
         ]
       }
+
       return [
         {
           path,
@@ -267,7 +312,7 @@ const convert = (error: ValueError): Issue[] => {
         },
       ]
     default:
-      if (rangeTypes.has(error.type))
+      if (rangeTypes.has(error.type)) {
         return [
           {
             path,
@@ -275,6 +320,8 @@ const convert = (error: ValueError): Issue[] => {
             message: `${JSON.stringify(error.value)} is ${bound(schema)}.`,
           },
         ]
+      }
+
       return [
         {
           path,
@@ -287,38 +334,59 @@ const convert = (error: ValueError): Issue[] => {
 
 const resolveAt = (root: Schema, path: string): Schema | null => {
   let schema: Schema | null = root
+
   for (const segment of segmentsOf(path)) {
-    if (!schema) return null
-    if (schema.anyOf) return null
-    if (schema.properties && segment in schema.properties)
+    if (!schema) {
+      return null
+    }
+
+    if (schema.anyOf) {
+      return null
+    }
+
+    if (schema.properties && segment in schema.properties) {
       schema = schema.properties[segment] as Schema
-    else if (schema.patternProperties) schema = Object.values(schema.patternProperties)[0] as Schema
-    else if ((schema as { items?: Schema }).items) schema = (schema as { items?: Schema }).items!
-    else return null
+    } else if (schema.patternProperties) {
+      schema = Object.values(schema.patternProperties)[0] as Schema
+    } else if ((schema as { items?: Schema }).items) {
+      schema = (schema as { items?: Schema }).items!
+    } else {
+      return null
+    }
   }
+
   return schema
 }
 
 const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Issue[] => {
   const out: Issue[] = []
   const missing = new Set<string>()
+
   for (const error of Value.Errors(schema, value)) {
-    if (error.type === ValueErrorType.ObjectRequiredProperty) missing.add(error.path)
-    else if (error.value === undefined && missing.has(error.path)) continue
+    if (error.type === ValueErrorType.ObjectRequiredProperty) {
+      missing.add(error.path)
+    } else if (error.value === undefined && missing.has(error.path)) {
+      continue
+    }
+
     const absolute = {
       ...error,
       path: prefix + error.path,
     }
+
     if (error.type === ValueErrorType.Union && !isLiteralUnion(error.schema)) {
       const member = pickMember(error.schema, error.value)
+
       if (member) {
         out.push(...walk(member, error.value, absolute.path, root))
         continue
       }
+
       const tag =
         error.value && typeof error.value === 'object'
           ? (error.value as { type?: unknown }).type
           : undefined
+
       if (
         tag !== undefined &&
         (error.schema as Schema).anyOf?.some((m) => (m as Schema).properties?.type)
@@ -326,6 +394,7 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
         const allowed = ((error.schema as Schema).anyOf as Schema[])
           .map((m) => JSON.stringify((m.properties!.type as Schema).const))
           .join(', ')
+
         out.push({
           path: `${absolute.path}/type`,
           code: 'ENUM',
@@ -334,6 +403,7 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
         continue
       }
     }
+
     if (error.type === ValueErrorType.ObjectAdditionalProperties) {
       const segments = segmentsOf(absolute.path)
       const key = segments.at(-1) ?? ''
@@ -342,8 +412,10 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
       const parent: Schema = schema.patternProperties
         ? schema
         : (resolveAt(root, parentPath) ?? schema)
+
       if (parent.patternProperties) {
         const pattern = Object.keys(parent.patternProperties)[0]!
+
         out.push({
           path: absolute.path,
           code: 'PATTERN',
@@ -351,7 +423,9 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
         })
         continue
       }
+
       const known = Object.keys(parent.properties ?? {})
+
       if (/^\/environments\/[^/]+\/services\/[^/]+$/.test(parentPath)) {
         out.push({
           path: absolute.path,
@@ -360,6 +434,7 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
         })
         continue
       }
+
       out.push({
         path: absolute.path,
         code: 'UNKNOWN_KEY',
@@ -367,17 +442,25 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
       })
       continue
     }
+
     out.push(...convert(absolute))
   }
+
   return out
 }
 
 export const schemaIssues = (value: unknown): Issue[] => {
   const seen = new Set<string>()
+
   return walk(Manifest as Schema, value, '', Manifest as Schema).filter((issue) => {
     const id = `${issue.path}|${issue.code}`
-    if (seen.has(id)) return false
+
+    if (seen.has(id)) {
+      return false
+    }
+
     seen.add(id)
+
     return true
   })
 }
@@ -387,12 +470,15 @@ export const serviceWithDefaults = (value: ServiceDoc): ServiceDoc =>
 
 export const validateSchema = (input: unknown) => {
   const parsed = parseInput(input)
-  if (parsed.issues.length)
+
+  if (parsed.issues.length) {
     return {
       value: undefined,
       issues: parsed.issues,
       locate: parsed.locate,
     }
+  }
+
   const issues = schemaIssues(parsed.value).map((issue) =>
     parsed.locate(
       issue,
@@ -401,6 +487,7 @@ export const validateSchema = (input: unknown) => {
         : 'value',
     ),
   )
+
   return {
     value: issues.length ? undefined : (parsed.value as ManifestDoc),
     issues,

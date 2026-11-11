@@ -33,8 +33,14 @@ const timeout = {
 }
 
 const local = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(local)
-  if (!isObject(value)) return value
+  if (Array.isArray(value)) {
+    return value.map(local)
+  }
+
+  if (!isObject(value)) {
+    return value
+  }
+
   return Object.fromEntries(
     Object.entries(value)
       .filter(
@@ -53,20 +59,37 @@ const local = (value: unknown): unknown => {
 const withDefinitions = (schema: Json, components: Record<string, Json>): JsonSchemaType => {
   const names = new Set<string>()
   const visit = (value: unknown) => {
-    if (Array.isArray(value)) return value.forEach(visit)
-    if (!isObject(value)) return
+    if (Array.isArray(value)) {
+      return value.forEach(visit)
+    }
+
+    if (!isObject(value)) {
+      return
+    }
+
     const ref = value.$ref
+
     if (typeof ref === 'string' && ref.startsWith(componentRef)) {
       const name = ref.slice(componentRef.length)
-      if (names.has(name)) return
-      if (!components[name]) throw new Error(`${ref} is not a component of the OpenAPI document`)
+
+      if (names.has(name)) {
+        return
+      }
+
+      if (!components[name]) {
+        throw new Error(`${ref} is not a component of the OpenAPI document`)
+      }
+
       names.add(name)
       visit(components[name])
     }
+
     Object.values(value).forEach(visit)
   }
+
   visit(schema)
   const definitions = Object.fromEntries([...names].map((name) => [name, local(components[name])]))
+
   return {
     ...(local(schema) as Json),
     ...(names.size
@@ -93,10 +116,16 @@ const annotationsOf = (method: string, title: string, flags: McpFlags): ToolAnno
       }
 
 export const pollParameter = ({ name, meta, parameters }: Endpoint) => {
-  if (!(meta.mcp || {}).poll) return null
+  if (!(meta.mcp || {}).poll) {
+    return null
+  }
+
   const wait = parameters.find((p) => p.in === 'query' && waitParameters.includes(p.name))?.name
-  if (!wait)
+
+  if (!wait) {
     throw new Error(`${name} polls but its route takes none of ${waitParameters.join(', ')}`)
+  }
+
   return wait
 }
 
@@ -107,17 +136,28 @@ const toolOf = (endpoint: Endpoint): ToolDef => {
   const properties: Json = {}
   const required: string[] = []
   const claim = (key: string, schema: unknown, needed: boolean) => {
-    if (key in properties) throw new Error(`${name}: the input property ${key} is declared twice`)
+    if (key in properties) {
+      throw new Error(`${name}: the input property ${key} is declared twice`)
+    }
+
     properties[key] = schema
-    if (needed) required.push(key)
+
+    if (needed) {
+      required.push(key)
+    }
   }
+
   for (const parameter of parameters) {
-    if (parameter.name === poll) continue
+    if (parameter.name === poll) {
+      continue
+    }
+
     const description =
       parameter.description ??
       (parameter.in === 'path' && slugPaths[parameter.name]
         ? `An id, or the names ${slugPaths[parameter.name]}`
         : undefined)
+
     claim(
       parameter.name,
       {
@@ -131,15 +171,24 @@ const toolOf = (endpoint: Endpoint): ToolDef => {
       parameter.in === 'path' || parameter.required === true,
     )
   }
-  for (const [key, schema] of Object.entries((body?.properties as Json | undefined) ?? {}))
+
+  for (const [key, schema] of Object.entries((body?.properties as Json | undefined) ?? {})) {
     claim(
       key,
       schema,
       operation.requestBody?.required !== false &&
         ((body?.required as string[] | undefined) ?? []).includes(key),
     )
-  if (method !== 'GET') claim('idempotency_key', idempotencyKey, false)
-  if (poll) claim('timeout_s', timeout, false)
+  }
+
+  if (method !== 'GET') {
+    claim('idempotency_key', idempotencyKey, false)
+  }
+
+  if (poll) {
+    claim('timeout_s', timeout, false)
+  }
+
   const open =
     body &&
     (body.patternProperties ||
@@ -174,6 +223,7 @@ const toolOf = (endpoint: Endpoint): ToolDef => {
             anyOf: successes,
           }
   const title = operation.summary ?? name
+
   return {
     name,
     title,

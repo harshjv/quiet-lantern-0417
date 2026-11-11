@@ -44,6 +44,7 @@ import {
   runKindValues,
   runStatusValues,
   sandboxNetworkValues,
+  sandboxRuntimeValues,
   sandboxSnapshotStatusValues,
   sandboxSourceStateValues,
   sandboxStatusReasonValues,
@@ -79,11 +80,14 @@ import {
   type SandboxLimits,
   type SandboxSize,
   type StationCapabilities,
+  type tokenLevelValues,
+  type WorkspaceAgent,
 } from '@stationly/protocol'
 
 import { newId } from './ids.ts'
 
 type ActorValue = Static<typeof Actor>
+type Level = (typeof tokenLevelValues)[number]
 type DiagnosisValue = Static<typeof Diagnosis>
 type ErrorBodyValue = Static<typeof ErrorBody>
 export type StaleReasonValue = {
@@ -174,6 +178,9 @@ export const station = sqliteTable(
       max_running: 20,
       memory_bytes: null,
       min_free_bytes: null,
+    }),
+    default_sandbox_runtime: text('default_sandbox_runtime', {
+      enum: sandboxRuntimeValues,
     }),
     cloudflare_tunnel_id: text('cloudflare_tunnel_id'),
     public_address: text('public_address'),
@@ -288,6 +295,16 @@ export const service = sqliteTable(
 
 export type SandboxFailure = DiagnosisValue
 
+export type SandboxWorkspace = {
+  agent: WorkspaceAgent
+  repository: string
+  branch: string | null
+  path: string
+  level: Level
+  token_id: string
+  setup_run_id: string
+}
+
 export const sandbox = sqliteTable(
   'sandbox',
   {
@@ -301,6 +318,11 @@ export const sandbox = sqliteTable(
     image: json<{ ref: string | null; digest: string }>('image').notNull(),
     command: json<string[]>('command'),
     size: json<Static<typeof SandboxSize>>('size').notNull(),
+    runtime: text('runtime', {
+      enum: sandboxRuntimeValues,
+    })
+      .notNull()
+      .default('gvisor'),
     network: text('network', {
       enum: sandboxNetworkValues,
     })
@@ -308,7 +330,7 @@ export const sandbox = sqliteTable(
       .default('isolated'),
     docker: bool('docker').notNull().default(false),
     egress: json<Static<typeof SandboxEgress>>('egress').notNull(),
-    ttl_s: integer('ttl_s').notNull(),
+    ttl_s: integer('ttl_s'),
     desired_state: text('desired_state', {
       enum: desiredStateValues,
     }).notNull(),
@@ -333,6 +355,7 @@ export const sandbox = sqliteTable(
       reason: 'user' | 'retention' | 'environment'
       requested_at: string
     }>('deletion'),
+    workspace: json<SandboxWorkspace>('workspace'),
     created_by: json<ActorValue>('created_by').notNull(),
   },
   (table) => [
@@ -346,7 +369,7 @@ export type SandboxSnapshotSettings = {
   docker: boolean
   egress: Static<typeof SandboxEgress>
   command: string[] | null
-  ttl_s: number
+  ttl_s: number | null
 }
 
 export const sandbox_snapshot = sqliteTable(
@@ -362,6 +385,11 @@ export const sandbox_snapshot = sqliteTable(
     name: text('name'),
     image: json<{ ref: string | null; digest: string }>('image').notNull(),
     size: json<Static<typeof SandboxSize>>('size').notNull(),
+    runtime: text('runtime', {
+      enum: sandboxRuntimeValues,
+    })
+      .notNull()
+      .default('gvisor'),
     settings: json<SandboxSnapshotSettings>('settings')
       .notNull()
       .default({

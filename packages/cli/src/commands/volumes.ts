@@ -1,7 +1,6 @@
 import { action, group, seconds, type Program } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
-import { connect, send } from '../kit.ts'
-import { pollUntil } from '../outage.ts'
+import { connect, pollUntil, send } from '../kit.ts'
 import { print } from '../output.ts'
 
 export const volumeCommands = (program: Program) => {
@@ -40,37 +39,52 @@ export const volumeCommands = (program: Program) => {
             }),
         )
         const snapshot = sent.data
-        if ('warnings' in snapshot)
-          for (const w of snapshot.warnings ?? [])
-            if (!options.json) process.stderr.write(`warning ${w.code}: ${w.explanation}\n`)
-        if (!options.wait || sent.status === 202) return print(options, sent)
+
+        if ('warnings' in snapshot) {
+          for (const w of snapshot.warnings ?? []) {
+            if (!options.json) {
+              process.stderr.write(`warning ${w.code}: ${w.explanation}\n`)
+            }
+          }
+        }
+
+        if (!options.wait || sent.status === 202) {
+          return print(options, sent)
+        }
+
         const finished = (items: { id: string; status: string }[]) =>
           items.find((i) => i.id === snapshot.id && i.status !== 'running')
+        const deadline = Date.now() + (options.timeout ?? 600) * 1000
         const list = await pollUntil(
           async () =>
             (
               await send(
-                run.api.v1
-                  .volumes({
+                run
+                  .waiting(deadline)
+                  .api.v1.volumes({
                     id: volume,
                   })
                   .backups.get(),
               )
             ).data,
           ({ items }) => finished(items) !== undefined,
-          Date.now() + (options.timeout ?? 600) * 1000,
+          deadline,
           1000,
         )
         const row = finished(list.items)
-        if (!row)
+
+        if (!row) {
           throw usage(
             `backup ${snapshot.id} is still running`,
             `sly volumes list-backups ${volume}`,
           )
+        }
+
         print(options, {
           ...sent,
           data: row,
         })
+
         return row.status === 'complete' ? exitCodes.ok : exitCodes.api
       }),
     )

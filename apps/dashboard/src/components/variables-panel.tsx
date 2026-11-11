@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Braces, Eye, EyeOff, Lock, Pencil, Plus } from 'lucide-react'
+import { Eye, EyeOff, Lock, Pencil, Plus } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { Code } from '@/components/code'
@@ -30,6 +30,7 @@ import {
 import { api, idempotency, send, unwrap, type Variable } from '@/lib/api'
 import { editItems, isOptimistic } from '@/lib/cache'
 import { plural } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { injection as injectionLabel, variableKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
@@ -39,6 +40,8 @@ import {
   sandboxVariablesQuery,
   variablesQuery,
 } from '@/lib/queries'
+import { highlight, useFresh } from '@/lib/use-fresh'
+import { cn } from '@/lib/utils'
 import {
   toSandboxVariableInput,
   toVariableInput,
@@ -76,6 +79,7 @@ async function patchVariables(
           idempotency(),
         ),
     )
+
     return {
       staged: false,
       body: {
@@ -83,6 +87,7 @@ async function patchVariables(
       },
     }
   }
+
   const body = {
     set: set?.map(toVariableInput),
     unset,
@@ -107,6 +112,7 @@ async function patchVariables(
             idempotency(),
           ),
   )
+
   return result.staged
     ? {
         staged: true,
@@ -139,12 +145,14 @@ const drafts = (target: VariableTarget, { set = [], unset = [] }: Patch) => [
 ]
 
 const announce = (target: VariableTarget, verb: string, deployments: number) => {
-  if (target.kind === 'sandbox')
+  if (target.kind === 'sandbox') {
     return {
       title: verb,
       description:
         'Shells and commands use the new value now. The sandbox’s startup process gets it on next start.',
     }
+  }
+
   return {
     title: verb,
     description: deployments
@@ -186,8 +194,11 @@ function VariableDialog({
         (v) => v.variable_id === existing?.id,
       )?.value
     : undefined
+
   useEffect(() => {
-    if (current !== undefined && !touched) setValue(current)
+    if (current !== undefined && !touched) {
+      setValue(current)
+    }
   }, [current, touched])
   const verb = existing ? `${key} updated` : `${key} added`
   const mutation = useApiMutation({
@@ -210,11 +221,15 @@ function VariableDialog({
     },
   })
   const isReference = kind === 'reference'
+
   return (
     <FormDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setValue('')
+        if (!next) {
+          setValue('')
+        }
+
         onOpenChange(next)
       }}
       title={existing ? `Change ${existing.key}` : 'Add a variable'}
@@ -264,7 +279,10 @@ function VariableDialog({
           multiline
           value={isReference ? reference : value}
           onValueChange={(next) => {
-            if (isReference) return setReference(next)
+            if (isReference) {
+              return setReference(next)
+            }
+
             setTouched(true)
             setValue(next)
           }}
@@ -326,6 +344,7 @@ function RemoveVariable({ target, variable }: { target: VariableTarget; variable
     staged: () => `Remove ${variable.key}`,
     success: (body) => announce(target, `${variable.key} removed`, body.deployments),
   })
+
   return (
     <Confirm
       title={`Remove ${variable.key}?`}
@@ -339,7 +358,10 @@ function RemoveVariable({ target, variable }: { target: VariableTarget; variable
 }
 
 function ValueCell({ variable, revealed }: { variable: Variable; revealed: string | undefined }) {
-  if (isOptimistic(variable)) return <Saving />
+  if (isOptimistic(variable)) {
+    return <Saving />
+  }
+
   if (variable.kind === 'sealed') {
     return (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-sealed="true">
@@ -350,14 +372,23 @@ function ValueCell({ variable, revealed }: { variable: Variable; revealed: strin
       </span>
     )
   }
-  if (variable.kind === 'reference') return <Code>{variable.reference}</Code>
-  if (revealed !== undefined) return <Code>{revealed}</Code>
+
+  if (variable.kind === 'reference') {
+    return <Code>{variable.reference}</Code>
+  }
+
+  if (revealed !== undefined) {
+    return <Code>{revealed}</Code>
+  }
+
   return (
     <span className="text-muted-foreground">
       {variable.head_version ? `Hidden · version ${variable.head_version}` : 'Not set'}
     </span>
   )
 }
+
+const headVersion = (variable: Variable) => String(variable.head_version)
 
 function VariableRows({
   target,
@@ -383,10 +414,12 @@ function VariableRows({
             v.environments.includes('default'),
         )
       : items
-  if (visible.length === 0)
+  const fresh = useFresh(visible, headVersion)
+
+  if (visible.length === 0) {
     return (
       <EmptyState
-        icon={Braces}
+        icon={entityIcon.variable}
         title="No variables yet"
         description={
           target.kind === 'sandbox'
@@ -403,6 +436,8 @@ function VariableRows({
         also={also}
       />
     )
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -418,7 +453,7 @@ function VariableRows({
       </TableHeader>
       <TableBody>
         {visible.map((variable) => (
-          <TableRow key={variable.id}>
+          <TableRow key={variable.id} className={cn(fresh.has(variable.id) && highlight)}>
             <TableCell>
               <span className="font-mono text-[0.8125rem] font-medium">{variable.key}</span>
               {target.kind === 'project' &&

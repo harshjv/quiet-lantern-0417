@@ -28,6 +28,7 @@ export const serviceSubject = (db: Db, serviceId: string): Subject => {
     .innerJoin(environment, eq(environment.id, service.environment_id))
     .where(eq(service.id, serviceId))
     .get()
+
   return row
     ? {
         entity: 'service',
@@ -43,7 +44,10 @@ export const serviceSubject = (db: Db, serviceId: string): Subject => {
 }
 
 const environmentSubject = (db: Db, subject: Subject): Subject => {
-  if (subject.project_id || !subject.environment_id) return subject
+  if (subject.project_id || !subject.environment_id) {
+    return subject
+  }
+
   const env = db
     .select({
       project_id: environment.project_id,
@@ -51,6 +55,7 @@ const environmentSubject = (db: Db, subject: Subject): Subject => {
     .from(environment)
     .where(eq(environment.id, subject.environment_id))
     .get()
+
   return env
     ? {
         ...subject,
@@ -60,11 +65,18 @@ const environmentSubject = (db: Db, subject: Subject): Subject => {
 }
 
 const bounded = (id: string, type: string, payload: Record<string, unknown>) => {
-  if (Buffer.byteLength(JSON.stringify(payload)) <= payloadLimitBytes) return payload
-  const kept: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(payload)) {
-    if (typeof value !== 'object' || value === null) kept[key] = value
+  if (Buffer.byteLength(JSON.stringify(payload)) <= payloadLimitBytes) {
+    return payload
   }
+
+  const kept: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value !== 'object' || value === null) {
+      kept[key] = value
+    }
+  }
+
   return {
     ...kept,
     truncated: true,
@@ -83,6 +95,7 @@ export const emitEvent = (
   payload: Record<string, unknown>,
 ) => {
   const id = newId('event')
+
   db.insert(event)
     .values({
       id,
@@ -93,5 +106,6 @@ export const emitEvent = (
     })
     .run()
   setImmediate(() => eventBus.emit('event', id))
+
   return id
 }

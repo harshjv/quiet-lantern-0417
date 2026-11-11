@@ -91,6 +91,7 @@ const count = (value: unknown) => (typeof value === 'number' ? value : null)
 
 const memoryOf = (input: Record<string, unknown>) => {
   const limits = input.limits
+
   return limits && typeof limits === 'object' && 'memory_bytes' in limits
     ? count(limits.memory_bytes)
     : null
@@ -146,12 +147,14 @@ export const remedies: Record<RemedyCode, Remedy> = {
   RAISE_MEMORY: {
     ask: ({ target, input }) => {
       const memory = memoryOf(input)
+
       return memory
         ? `raise ${target.name}’s memory limit to ${bytesText(memory)} and redeploy it`
         : `raise ${target.name}’s memory limit and redeploy it`
     },
     button: ({ target, input }) => {
       const memory = memoryOf(input)
+
       return memory
         ? {
             label: `Raise memory to ${bytesText(memory)} and redeploy`,
@@ -168,6 +171,7 @@ export const remedies: Record<RemedyCode, Remedy> = {
     },
     command: ({ target, input }) => {
       const memory = memoryOf(input)
+
       return memory ? commands.setMemory(target.scope, memory) : null
     },
   },
@@ -194,6 +198,7 @@ export const remedies: Record<RemedyCode, Remedy> = {
       `roll ${target.name} back to deployment ${text(input.deployment_id) ?? 'the last good one'}`,
     button: ({ target, input }) => {
       const deployment = text(input.deployment_id)
+
       return deployment
         ? {
             label: 'Roll back to the last good deployment',
@@ -208,6 +213,7 @@ export const remedies: Record<RemedyCode, Remedy> = {
     },
     command: ({ target, input }) => {
       const deployment = text(input.deployment_id)
+
       return deployment ? commands.rollback(target.scope, deployment) : null
     },
   },
@@ -269,6 +275,7 @@ export const remedies: Record<RemedyCode, Remedy> = {
       `send a test connection from ${context.subject.name} to ${text(input.to) ?? 'the target'} and tell me whether it answers`,
     command: ({ context, input }) => {
       const to = text(input.to)
+
       return to && context.subject.kind === 'service'
         ? commands.probe(
             {
@@ -299,6 +306,7 @@ const targetOf = (fix: Fix, context: FixContext): Target => {
   const id = text(input.service) ?? sandbox ?? context.subject.id
   const name =
     id === context.subject.id ? context.subject.name : (context.names?.[id] ?? context.subject.name)
+
   return {
     kind: sandbox ? 'sandbox' : id === context.subject.id ? context.subject.kind : 'service',
     id,
@@ -317,7 +325,8 @@ const prompt = (ask: string, context: FixContext) =>
 export const planFix = (fix: Fix, context: FixContext): FixPlan => {
   const target = targetOf(fix, context)
   const tool = fix.action?.tool ?? null
-  if (!isRemedy(fix.code))
+
+  if (!isRemedy(fix.code)) {
     return {
       code: fix.code,
       text: fix.text,
@@ -326,6 +335,8 @@ export const planFix = (fix: Fix, context: FixContext): FixPlan => {
       prompt: prompt(`help me with this: ${fix.text}`, context),
       tool,
     }
+  }
+
   const remedy = remedies[fix.code]
   const input: Input = {
     fix,
@@ -333,6 +344,7 @@ export const planFix = (fix: Fix, context: FixContext): FixPlan => {
     target,
     context,
   }
+
   return {
     code: fix.code,
     text: fix.text,
@@ -376,10 +388,18 @@ export const findingPlan = (
   scope: Scope,
 ): FixPlan | null => {
   const code = findingRemedy[finding.code]
-  if (!code) return null
+
+  if (!code) {
+    return null
+  }
+
   const details = finding.details ?? {}
   const service = services.find((s) => s.name === details.service)
-  if (!service) return null
+
+  if (!service) {
+    return null
+  }
+
   return planFix(
     {
       code: startable(code, service),
@@ -406,6 +426,7 @@ const isErrorCode = (code: string): code is ErrorCode => Object.hasOwn(errorReme
 
 export const errorFix = (code: string, text: string): Fix | null => {
   const remedy = isErrorCode(code) ? errorRemedy[code] : undefined
+
   return remedy
     ? {
         code: remedy,

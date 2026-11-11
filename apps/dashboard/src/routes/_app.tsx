@@ -10,7 +10,8 @@ export const Route = createFileRoute('/_app')({
       staleTime: ({ state }) =>
         state.data && Date.parse(state.data.expiresAt) > Date.now() ? 'static' : 0,
     })
-    if (!session)
+
+    if (!session) {
       throw redirect({
         to: '/login',
         search:
@@ -20,6 +21,8 @@ export const Route = createFileRoute('/_app')({
                 next: location.href,
               },
       })
+    }
+
     return {
       session,
     }

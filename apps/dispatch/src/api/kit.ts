@@ -1,4 +1,7 @@
 import type { Static } from '@sinclair/typebox'
+import { Elysia } from 'elysia'
+
+import { parseDuration } from '@stationly/protocol/format'
 
 import { principalCache } from '../auth/principal.ts'
 import { createLiveHub } from '../net/live.ts'
@@ -10,12 +13,14 @@ import { fail } from './errors.ts'
 import { parseFields, project, type FieldTree } from './fields.ts'
 import { createRedaction, createSandboxRedaction } from './redaction.ts'
 import { routeMeta } from './route-meta.ts'
-import type { Staged } from './shapes.ts'
+import { models, type Staged } from './shapes.ts'
 import { createViews } from './views.ts'
 
 export const createKit = (deps: Deps) => {
   const principal = principalCache(deps.db, deps.auth)
   const views = createViews(deps.db)
+  const operations = routeMeta(deps.db, principal)
+
   return {
     deps,
     views,
@@ -24,7 +29,14 @@ export const createKit = (deps: Deps) => {
     live: createLiveHub(deps.stations),
     probeLimit: createProbeLimits(),
     principal,
-    operations: routeMeta(deps.db, principal),
+    router: <const Prefix extends string>(tag: string, prefix: Prefix) =>
+      new Elysia({
+        prefix,
+        normalize: false,
+        tags: [tag],
+      })
+        .use(models())
+        .use(operations),
     call: async (request: Request) => callOf(request, await principal(request)),
     fields: (text: string | undefined): FieldTree | undefined => parseFields(text),
     stagedBody: (
@@ -32,6 +44,7 @@ export const createKit = (deps: Deps) => {
       set: { status?: number | string },
     ) => {
       set.status = 202
+
       return project(
         views.staged,
         result.staged,
@@ -43,21 +56,22 @@ export const createKit = (deps: Deps) => {
 
 export type Kit = ReturnType<typeof createKit>
 
-const durationUnits: Record<string, number> = {
-  s: 1000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-}
-
 const rfc3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
 
 export const parseTime = (value: string | undefined, path: string) => {
-  if (value === undefined) return undefined
-  const relative = /^-?(\d+)([smhd])$/.exec(value)
-  if (relative) return new Date(Date.now() - Number(relative[1]) * durationUnits[relative[2]!]!)
+  if (value === undefined) {
+    return undefined
+  }
+
+  const relative = parseDuration(value.replace(/^-/, ''))
+
+  if (relative !== null) {
+    return new Date(Date.now() - relative * 1000)
+  }
+
   const date = new Date(value)
-  if (!rfc3339.test(value) || Number.isNaN(date.getTime()))
+
+  if (!rfc3339.test(value) || Number.isNaN(date.getTime())) {
     return fail(
       'VALIDATION_FAILED',
       `${path} must be RFC 3339 or a relative duration such as 15m or -15m.`,
@@ -71,6 +85,8 @@ export const parseTime = (value: string | undefined, path: string) => {
         ],
       },
     )
+  }
+
   return date
 }
 

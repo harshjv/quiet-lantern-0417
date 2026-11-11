@@ -1,12 +1,10 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Plus } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 
 import { AlsoWith } from '@/components/code'
 import { Field, hintId } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
-import { Button } from '@/components/ui/button'
 import { api, idempotency, send } from '@/lib/api'
 import { seed } from '@/lib/cache'
 import { commands } from '@/lib/commands'
@@ -14,16 +12,13 @@ import { useApiMutation } from '@/lib/mutation'
 import { projectQuery } from '@/lib/queries'
 
 export function NewProject({
-  trigger = (
-    <Button size="sm">
-      <Plus /> New project
-    </Button>
-  ),
+  open,
+  onOpenChange,
 }: {
-  trigger?: ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const navigate = useNavigate()
-  const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [environment, setEnvironment] = useState('')
   const mutation = useApiMutation({
@@ -44,24 +39,29 @@ export function NewProject({
       description: 'Add a service to its first environment.',
     }),
     onSuccess: (result) => {
-      setOpen(false)
-      if (!result.staged)
+      onOpenChange(false)
+
+      if (!result.staged) {
         void navigate({
           to: '/projects/$project',
           params: {
             project: result.body.name,
           },
         })
+      }
     },
   })
+
   return (
     <FormDialog
       open={open}
       onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) mutation.reset()
+        onOpenChange(next)
+
+        if (!next) {
+          mutation.reset()
+        }
       }}
-      trigger={trigger}
       title="Create a project"
       description="Starts with one environment, named production unless you pick another name."
       also={<AlsoWith cli={commands.createProject()} tool="create_project" />}

@@ -12,6 +12,7 @@ import {
   StringEnum,
   Timestamp,
 } from './primitives.ts'
+import { sandboxRuntimeKindValues } from './sandbox-runtime.ts'
 
 export const stationOsValues = ['linux', 'wsl2'] as const
 
@@ -190,6 +191,10 @@ export const Ingress = StringEnum(ingressValues, {
 
 export const scheduleConcurrencyValues = ['skip', 'allow'] as const
 
+export const networkProtocolValues = ['tcp', 'udp'] as const
+
+export const networkDirectionValues = ['in', 'out'] as const
+
 export const volumeOwnerValues = ['service', 'station'] as const
 
 export const doctorStatusValues = ['ok', 'warn', 'fail'] as const
@@ -252,7 +257,7 @@ export const ListeningSocket = Type.Object(
       minimum: 0,
       maximum: 65535,
     }),
-    protocol: StringEnum(['tcp', 'udp'], {
+    protocol: StringEnum(networkProtocolValues, {
       title: 'NetworkProtocol',
     }),
   },
@@ -418,6 +423,61 @@ export const Resources = Type.Object(
   },
 )
 
+export const sandboxRuntimeValues = ['gvisor'] as const
+
+export const SandboxRuntime = StringEnum(sandboxRuntimeValues, {
+  title: 'SandboxRuntime',
+})
+
+export const cpuVirtualizationValues = ['vmx', 'svm'] as const
+
+export const HostProbe = Type.Object(
+  {
+    kvm_present: Type.Boolean(),
+    kvm_usable: Type.Boolean(),
+    cpu_virtualization: Nullable(
+      StringEnum(cpuVirtualizationValues, {
+        title: 'CpuVirtualization',
+      }),
+    ),
+    hypervisor: Nullable(Type.String()),
+    cpu_cores: Count,
+    memory_bytes: Bytes,
+    sandbox_free_bytes: Nullable(Bytes),
+  },
+  {
+    title: 'HostProbe',
+  },
+)
+
+export const SandboxRuntimeOption = Type.Object(
+  {
+    runtime: StringEnum(sandboxRuntimeKindValues, {
+      title: 'SandboxRuntimeKind',
+    }),
+    installed: Type.Boolean(),
+    recommended: Type.Boolean(),
+    pros: Type.Array(Type.String()),
+    cons: Type.Array(Type.String()),
+  },
+  {
+    title: 'SandboxRuntimeOption',
+    additionalProperties: false,
+  },
+)
+
+export const SandboxRuntimeAdvice = Type.Object(
+  {
+    default: SandboxRuntime,
+    reasons: Type.Array(Type.String()),
+    options: Type.Array(SandboxRuntimeOption),
+  },
+  {
+    title: 'SandboxRuntimeAdvice',
+    additionalProperties: false,
+  },
+)
+
 export const StationCapabilities = Type.Object(
   {
     gpus: Type.Optional(
@@ -439,10 +499,12 @@ export const StationCapabilities = Type.Object(
     windows_build: Type.Optional(Nullable(Type.String())),
     docker_version: Type.String(),
     stationd_version: Type.String(),
+    host: Type.Optional(HostProbe),
     sandboxes: Type.Optional(
       Nullable(
         Type.Object(
           {
+            runtimes: Type.Optional(Type.Array(SandboxRuntime)),
             runsc_version: Type.String(),
             platform: Type.Literal('systrap'),
             filesystem_backing: StringEnum(['device', 'loop_file'], {

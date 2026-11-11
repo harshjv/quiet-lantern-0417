@@ -1,6 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
 import {
-  Camera,
   CircleAlert,
   GitFork,
   Loader2,
@@ -12,6 +11,8 @@ import {
 } from 'lucide-react'
 import { useState, type ComponentProps } from 'react'
 
+import { parseSeconds } from '@stationly/protocol/format'
+
 import { Confirm } from '@/components/confirm'
 import { Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
@@ -20,9 +21,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api, idempotency, send, type Sandbox, type SandboxSnapshot } from '@/lib/api'
 import { plural, span } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { useApiMutation } from '@/lib/mutation'
 import { patchSandbox, seedSandbox, seedSnapshot } from '@/lib/queries'
-import { parseDuration, ttlProblem } from '@/lib/sandbox'
+import { ttlProblem } from '@/lib/sandbox'
 import { isIdle } from '@/lib/status'
 
 type Named = Pick<Sandbox, 'id' | 'name' | 'status'> & { environment_id: string }
@@ -83,6 +85,7 @@ export const useSandboxPower = (
   action: keyof typeof power,
 ) => {
   const { status, success, failure } = power[action]
+
   return useApiMutation({
     mutationFn: () =>
       send(
@@ -115,6 +118,7 @@ function PowerButton({
 }) {
   const { icon, label } = power[action]
   const mutation = useSandboxPower(sandbox, action)
+
   return (
     <ActionButton
       icon={icon}
@@ -138,11 +142,24 @@ export const StopSandbox = (props: { sandbox: Named; size?: Size }) => (
 
 const presets = ['30m', '1h', '4h', '12h', '1d']
 
-export function ExtendSandbox({
+type Extendable = { sandbox: Named & Pick<Sandbox, 'ttl_s'>; size?: Size }
+
+export const ExtendSandbox = ({ sandbox, size }: Extendable) =>
+  sandbox.ttl_s === null ? null : (
+    <ExtendDialog
+      sandbox={{
+        ...sandbox,
+        ttl_s: sandbox.ttl_s,
+      }}
+      size={size}
+    />
+  )
+
+function ExtendDialog({
   sandbox,
   size = 'sm',
 }: {
-  sandbox: Named & Pick<Sandbox, 'ttl_s'>
+  sandbox: Named & { ttl_s: number }
   size?: Size
 }) {
   const [open, setOpen] = useState(false)
@@ -169,11 +186,16 @@ export function ExtendSandbox({
     onSuccess: () => setOpen(false),
   })
   const submit = () => {
-    const seconds = parseDuration(text)
+    const seconds = parseSeconds(text)
     const found = ttlProblem(seconds)
+
     setProblem(found)
-    if (!found && seconds !== null) mutation.mutate(seconds)
+
+    if (!found && seconds !== null) {
+      mutation.mutate(seconds)
+    }
   }
+
   return (
     <>
       <ActionButton
@@ -247,6 +269,7 @@ function CopyDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const [name, setName] = useState('')
+
   return (
     <FormDialog
       open
@@ -293,6 +316,7 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
     failure: () => `snapshot ${sandbox.name}`,
     onSuccess: () => setOpen(false),
   })
+
   return (
     <>
       <Button
@@ -301,7 +325,7 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
         onClick={() => setOpen(true)}
         disabled={sandbox.status === 'creating' || sandbox.status === 'deleting'}
       >
-        <Camera /> Snapshot
+        <entityIcon.snapshot /> Snapshot
       </Button>
       {open && (
         <CopyDialog
@@ -314,7 +338,10 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
           onSubmit={(name) => mutation.mutate(name)}
           onOpenChange={(next) => {
             setOpen(next)
-            if (!next) mutation.reset()
+
+            if (!next) {
+              mutation.reset()
+            }
           }}
         />
       )}
@@ -377,15 +404,18 @@ export function ForkButton({
     failure: () => `fork ${subject}`,
     onSuccess: (result) => {
       setOpen(false)
-      if (!result.staged)
+
+      if (!result.staged) {
         void navigate({
           to: '/sandboxes/$sandbox',
           params: {
             sandbox: result.body.id,
           },
         })
+      }
     },
   })
+
   return (
     <>
       <ActionButton
@@ -406,7 +436,10 @@ export function ForkButton({
           onSubmit={(name) => mutation.mutate(name)}
           onOpenChange={(next) => {
             setOpen(next)
-            if (!next) mutation.reset()
+
+            if (!next) {
+              mutation.reset()
+            }
           }}
         />
       )}
@@ -441,6 +474,7 @@ export function DeleteSandbox({
     }),
     onSuccess: () => after?.(),
   })
+
   return (
     <Confirm
       title={`Delete sandbox ${sandbox.name}?`}
@@ -473,6 +507,7 @@ export function DeleteSnapshot({ snapshot }: { snapshot: SandboxSnapshot }) {
     invalidate: ['sandboxes'],
     success: () => `Snapshot ${label} deleted`,
   })
+
   return (
     <Confirm
       title={`Delete snapshot ${label}?`}

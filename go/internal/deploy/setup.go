@@ -47,6 +47,19 @@ func (s *Station) opDetectPublicAddress(context.Context, json.RawMessage, func(s
 	return protocol.RootSocketDetectedAddress{Address: &address, Interface: &route.Interface, Public: netns.PublicIPv4(route.Address)}, nil
 }
 
+func (s *Station) opHostProbe(ctx context.Context, _ json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
+	done := make(chan protocol.RootSocketHostProbe, 1)
+	s.post(ctx, func() { done <- protocol.RootSocketHostProbe{Host: s.hostCapability(), Runtimes: s.offeredRuntimes()} })
+	select {
+	case r := <-done:
+		return r, nil
+	case <-ctx.Done():
+		return nil, protocolError(protocol.ErrorCodeInternalError, "Retry.", "host probe interrupted")
+	case <-time.After(30 * time.Second):
+		return nil, protocolError(protocol.ErrorCodeInternalError, "Check the stationd log.", "host probe did not finish within 30 s")
+	}
+}
+
 func (s *Station) opRecoveryKey(context.Context, json.RawMessage, func(string, string)) (any, *protocol.ErrorBody) {
 	if s.opts.Host == nil {
 		return nil, protocolError(protocol.ErrorCodeHostAdminForbidden, "Run sly admin recovery-key on the station that hosts Dispatch (the one the installer set up).", "this station has no host.toml, so it does not hold a master key")
@@ -55,11 +68,11 @@ func (s *Station) opRecoveryKey(context.Context, json.RawMessage, func(string, s
 	if err != nil {
 		return nil, protocolError(protocol.ErrorCodeInternalError, "Repair dispatch.master_key in host.toml.", "%v", err)
 	}
-	s.emit(protocol.MessageAuditRecord, map[string]any{
-		"action":  "admin.recovery_key_displayed",
-		"target":  map[string]any{"entity": "instance", "id": s.opts.Identity.InstanceID},
-		"actor":   map[string]any{"type": "station", "id": s.opts.Identity.StationID, "client": "root-socket"},
-		"purpose": "recovery key displayed through the root socket",
+	s.emit(protocol.MessageAuditRecord, protocol.AuditRecordBody{
+		Action:  "admin.recovery_key_displayed",
+		Target:  protocol.EntityRef{Entity: "instance", Id: s.opts.Identity.InstanceID},
+		Actor:   protocol.Actor{Type: protocol.ActorTypeStation, Id: &s.opts.Identity.StationID, Client: new("root-socket")},
+		Purpose: new("recovery key displayed through the root socket"),
 	})
 	return protocol.RootSocketRecoveryKey{RecoveryKey: key}, nil
 }

@@ -13,6 +13,7 @@ const exportNames = (kind: string) => (kind === 'web' ? ['HOST', 'PORT', 'URL'] 
 
 export const createService = (db: Db, values: Omit<ServiceInsert, 'id' | 'exports' | 'status'>) => {
   const id = newId('service')
+
   db.insert(service)
     .values({
       ...values,
@@ -23,6 +24,7 @@ export const createService = (db: Db, values: Omit<ServiceInsert, 'id' | 'export
     .run()
   ensureNetwork(db, values.environment_id, values.station_id)
   ensureVirtualIp(db, id, values.environment_id)
+
   return id
 }
 
@@ -32,6 +34,7 @@ export const createServicePort = (
   port: Pick<PortInsert, 'port' | 'protocol' | 'grpc'>,
 ) => {
   const id = newId('service_port')
+
   db.insert(service_port)
     .values({
       id,
@@ -41,6 +44,7 @@ export const createServicePort = (
       grpc: port.grpc,
     })
     .run()
+
   return id
 }
 
@@ -50,6 +54,7 @@ export const createVolume = (
   mountPath: string,
 ) => {
   const id = newId('volume')
+
   db.insert(volume)
     .values({
       id,
@@ -61,5 +66,6 @@ export const createVolume = (
       docker_name: volumeDockerName(id),
     })
     .run()
+
   return id
 }

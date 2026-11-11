@@ -35,6 +35,7 @@ const oneQuery = queryOptions({
 
 const cached = () => {
   const client = new QueryClient()
+
   client.setQueryData(listQuery.queryKey, {
     items: [
       {
@@ -51,6 +52,7 @@ const cached = () => {
     id: 'a',
     on: false,
   })
+
   return client
 }
 
@@ -64,6 +66,7 @@ test('an optimistic edit writes every cached query and a rollback restores them'
       on: true,
     }),
   ])
+
   assert.deepEqual(
     client.getQueryData(listQuery.queryKey)?.items.map((row) => row.on),
     [true, false],
@@ -79,6 +82,7 @@ test('an optimistic edit writes every cached query and a rollback restores them'
 
 test('an optimistic edit leaves queries that are not cached alone', async () => {
   const client = new QueryClient()
+
   await applyOptimistic(client, [
     merge(oneQuery, {
       on: true,
@@ -114,6 +118,7 @@ test('a deploy queues a placeholder above the latest deployment', () => {
     'redeploy',
     '2026-11-10T00:00:00Z',
   )
+
   assert.ok(queued && isOptimistic(queued))
   assert.equal(queued.number, 5)
   assert.equal(queued.status, 'queued')
@@ -147,6 +152,7 @@ test('a saved variable shows as a draft until the server answers', () => {
     },
     'service',
   )
+
   assert.equal(added.length, 2)
   assert.ok(isOptimistic(added[1]))
   assert.equal(added[1].reference, '${{db.HOST}}')
@@ -161,6 +167,7 @@ test('a saved variable shows as a draft until the server answers', () => {
     },
     'service',
   )
+
   assert.equal(changed.length, 1)
   assert.equal(changed[0].id, 'var_A')
   assert.equal(changed[0].injection, 'file')
@@ -271,6 +278,7 @@ test('the step header counts distinct steps and times the running one', () => {
     step('health', 'running'),
     step('cutover', 'pending'),
   ]
+
   assert.equal(
     stepProgress(steps, new Date('2026-11-10T00:00:12Z')),
     'Step 3 of 4 · Health check · 12 s',

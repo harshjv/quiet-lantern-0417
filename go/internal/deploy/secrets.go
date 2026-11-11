@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/docker"
+	"github.com/harshjv/stationly/go/internal/imageuser"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/secrets"
 )
@@ -120,10 +121,11 @@ func (s *Station) ownerFor(ctx context.Context, spec protocol.ContainerSpec) (se
 			return secrets.Owner{}, fmt.Errorf("read /etc/passwd from %s: %w", spec.ImageRef, err)
 		}
 	}
-	o, err := secrets.ResolveOwner(user, files["/etc/passwd"], files["/etc/group"])
+	uid, gid, err := imageuser.Resolve(user, files["/etc/passwd"], files["/etc/group"])
 	if err != nil {
-		return secrets.Owner{}, err
+		return secrets.Owner{}, fmt.Errorf("image %s: %w", spec.ImageRef, err)
 	}
+	o := secrets.Owner{UID: uid, GID: gid}
 	s.owners[spec.ImageRef] = o
 	s.log.Info("secrets owner resolved from the image", "image", spec.ImageRef, "user", user, "uid", o.UID, "gid", o.GID)
 	return o, nil

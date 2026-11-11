@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/server'
 import type { LocalContext, LocalTool } from '@stationly/mcp'
 import { portRange } from '@stationly/protocol'
 
+import { Exit } from './errors.ts'
 import { connectWith, tokenCredentials } from './kit.ts'
 import { uploadSource } from './push.ts'
 import { forwardPort } from './sockets.ts'
@@ -25,6 +26,7 @@ const result = (body: unknown, isError = false): CallToolResult => ({
 
 const idOf = async (context: LocalContext, tool: string, args: Record<string, unknown>) => {
   const found = await context.call(tool, args)
+
   return found.isError
     ? {
         refused: found,
@@ -76,23 +78,35 @@ export const localTools = (instance: string, token: string, userAgent: string): 
       const service = await idOf(context, 'describe_service', {
         service: args.service,
       })
-      if (service.refused) return service.refused
-      const uploaded = await uploadSource(
-        run,
-        service.id,
-        args.path as string,
-        (message) => void context.progress(message),
-      )
-      if (uploaded.error) return result(uploaded.error.value, true)
-      return context.call('deploy', {
-        service: service.id,
-        blob_id: uploaded.data.blob_id,
-        ...(args.idempotency_key
-          ? {
-              idempotency_key: args.idempotency_key,
-            }
-          : {}),
-      })
+
+      if (service.refused) {
+        return service.refused
+      }
+
+      try {
+        const uploaded = await uploadSource(
+          run,
+          service.id,
+          args.path as string,
+          (message) => void context.progress(message),
+        )
+
+        return await context.call('deploy', {
+          service: service.id,
+          blob_id: uploaded.data.blob_id,
+          ...(args.idempotency_key
+            ? {
+                idempotency_key: args.idempotency_key,
+              }
+            : {}),
+        })
+      } catch (error) {
+        if (error instanceof Exit && error.envelope) {
+          return result(error.envelope, true)
+        }
+
+        throw error
+      }
     },
   }
 
@@ -135,7 +149,11 @@ export const localTools = (instance: string, token: string, userAgent: string): 
       const sandbox = await idOf(context, 'get_sandbox', {
         sandbox: args.sandbox,
       })
-      if (sandbox.refused) return sandbox.refused
+
+      if (sandbox.refused) {
+        return sandbox.refused
+      }
+
       const port = args.port as number
       const key = `${sandbox.id}:${port}`
       const stopIfGone = async () => {
@@ -146,7 +164,11 @@ export const localTools = (instance: string, token: string, userAgent: string): 
           .get({
             query: {},
           })
-        if (current.data?.status === 'running') return
+
+        if (current.data?.status === 'running') {
+          return
+        }
+
         forwards.delete(key)
         await (await listener).close()
       }
@@ -156,13 +178,16 @@ export const localTools = (instance: string, token: string, userAgent: string): 
           unopened: () => void stopIfGone(),
         }).then((forward) => {
           forward.server.unref()
+
           return forward
         })
+
       forwards.set(key, listener)
       const forward = await listener.catch((error) => {
         forwards.delete(key)
         throw error
       })
+
       return result({
         local_address: forward.address,
       })

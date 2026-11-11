@@ -24,7 +24,9 @@ const idempotencyKeys = new WeakMap<Request, string>()
 export const assignRequestId = (request: Request) => {
   const sent = request.headers.get('x-request-id')
   const id = sent && /^[A-Za-z0-9_.:-]{1,128}$/.test(sent) ? sent : mintRequestId()
+
   requestIds.set(request, id)
+
   return id
 }
 

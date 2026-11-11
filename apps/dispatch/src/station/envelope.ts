@@ -42,6 +42,7 @@ export const isMessageType = (type: string): type is MessageType => Object.hasOw
 
 export const decode = (text: string): Decoded => {
   let value: unknown
+
   try {
     value = JSON.parse(text)
   } catch (error) {
@@ -52,6 +53,7 @@ export const decode = (text: string): Decoded => {
       issues: [],
     }
   }
+
   if (!Value.Check(Envelope, value)) {
     return {
       ok: false,
@@ -60,7 +62,9 @@ export const decode = (text: string): Decoded => {
       issues: issuesOf(Envelope, value),
     }
   }
+
   const envelope = value
+
   if (!isMessageType(envelope.type)) {
     return {
       ok: false,
@@ -70,7 +74,9 @@ export const decode = (text: string): Decoded => {
       envelope,
     }
   }
+
   const schema = messages[envelope.type].body
+
   if (!Value.Check(schema, envelope.body)) {
     return {
       ok: false,
@@ -80,6 +86,7 @@ export const decode = (text: string): Decoded => {
       envelope,
     }
   }
+
   return {
     ok: true,
     envelope,
@@ -105,8 +112,11 @@ export const encode = <T extends MessageType>(
   })
   const limit =
     type === 'generation' ? limits.generationInlineBytes + 64 * 1024 : limits.textFrameBytes
-  if (Buffer.byteLength(text, 'utf8') > limit)
+
+  if (Buffer.byteLength(text, 'utf8') > limit) {
     throw new Error(`${type} encodes to more than ${limit} bytes`)
+  }
+
   return {
     id,
     text,

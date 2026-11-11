@@ -25,6 +25,7 @@ export const internalEnvelope = (error: unknown) => ({
 const outcomeOf = async (response: Response): Promise<Outcome> => {
   const text = await response.text()
   let body: unknown
+
   try {
     body = JSON.parse(text)
   } catch {
@@ -35,6 +36,7 @@ const outcomeOf = async (response: Response): Promise<Outcome> => {
       ),
     }
   }
+
   return response.ok
     ? {
         ok: true,
@@ -48,6 +50,7 @@ const outcomeOf = async (response: Response): Promise<Outcome> => {
 
 const once = async (tool: ToolDef, input: Input, send: Send, request: ServerContext) => {
   const { path, init } = requestOf(tool, input)
+
   return outcomeOf(
     await send(
       path,
@@ -62,7 +65,8 @@ const once = async (tool: ToolDef, input: Input, send: Send, request: ServerCont
 
 const progress = async (request: ServerContext, step: number, message: string) => {
   const progressToken = request.mcpReq._meta?.progressToken
-  if (progressToken !== undefined)
+
+  if (progressToken !== undefined) {
     await request.mcpReq.notify({
       method: 'notifications/progress',
       params: {
@@ -71,10 +75,12 @@ const progress = async (request: ServerContext, step: number, message: string) =
         message,
       },
     })
+  }
 }
 
 const stateOf = (body: unknown) => {
   const status = (body as { status?: unknown } | null)?.status
+
   return typeof status === 'string' ? `is ${status}` : 'is not done'
 }
 
@@ -106,7 +112,9 @@ export const repeatUntilDone = async ({
   )
   const deadline = Date.now() + limit * 1000
   let step = 0
+
   await report(++step, `${name}: waiting up to ${limit} s`)
+
   for (;;) {
     const seconds = Math.max(0, Math.min(maxWait, Math.ceil((deadline - Date.now()) / 1000)))
     const result = await attempt({
@@ -114,13 +122,16 @@ export const repeatUntilDone = async ({
       [wait]: seconds,
     })
     const done = result.ok && (result.body as { done?: unknown }).done === true
+
     if (!result.ok || done || Date.now() >= deadline || aborted()) {
       await report(
         ++step,
         `${name}: ${!result.ok ? 'refused' : done ? 'done' : `stopped after ${limit} s, not done`}`,
       )
+
       return result
     }
+
     await report(++step, `${name}: ${stateOf(result.body)}`)
   }
 }

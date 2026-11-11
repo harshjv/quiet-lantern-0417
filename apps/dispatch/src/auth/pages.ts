@@ -75,7 +75,11 @@ const page = (
     ...securityHeaders,
     'content-security-policy': policy,
   })
-  for (const cookie of extra.getSetCookie()) headers.append('set-cookie', cookie)
+
+  for (const cookie of extra.getSetCookie()) {
+    headers.append('set-cookie', cookie)
+  }
+
   return new Response(
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)} · Stationly</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;color:#1a1a1a}label{display:block;margin:.75rem 0 .25rem}input[type=email],input[type=password],input[type=text]{width:100%;padding:.5rem;font:inherit;box-sizing:border-box}button{font:inherit;padding:.5rem 1rem;margin:1rem .5rem 0 0}.or{color:#555;margin:1.5rem 0 0}.error{color:#a00}.box{border:1px solid #ccc;padding:.75rem 1rem;border-radius:6px;margin:1rem 0}code{font-size:.95em}fieldset{border:1px solid #ccc;border-radius:6px;margin:1rem 0}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`,
     {
@@ -90,7 +94,11 @@ const redirect = (location: string, extra: Headers = new Headers()) => {
     location,
     'cache-control': 'no-store',
   })
-  for (const cookie of extra.getSetCookie()) headers.append('set-cookie', cookie)
+
+  for (const cookie of extra.getSetCookie()) {
+    headers.append('set-cookie', cookie)
+  }
+
   return new Response(null, {
     status: 303,
     headers,
@@ -103,7 +111,13 @@ const signedQueryParams = new Set(['sig', 'exp', 'ba_iat', 'ba_pl', 'ba_param'])
 
 const authorizeQuery = (oauthQuery: string) => {
   const params = new URLSearchParams(oauthQuery)
-  for (const key of [...params.keys()]) if (signedQueryParams.has(key)) params.delete(key)
+
+  for (const key of [...params.keys()]) {
+    if (signedQueryParams.has(key)) {
+      params.delete(key)
+    }
+  }
+
   return params.toString()
 }
 
@@ -117,6 +131,7 @@ export const createAuthPages = (deps: Deps) => {
 
   const allowed = (request: Request, area: Area) => {
     const surface = surfaceOf(request, deps.auth)
+
     return surface === 'local' || surface === area
   }
 
@@ -141,11 +156,13 @@ export const createAuthPages = (deps: Deps) => {
 
   const apiHeaders = (request: Request) => {
     const headers = new Headers(request.headers)
+
     headers.delete('authorization')
     headers.delete('sec-fetch-mode')
     headers.delete('content-type')
     headers.delete('content-length')
     headers.set('accept', 'application/json')
+
     return headers
   }
 
@@ -170,6 +187,7 @@ export const createAuthPages = (deps: Deps) => {
         .from(passkey)
         .where(eq(passkey.userId, userId))
         .get()?.n ?? 0
+
     return Boolean(row?.twoFactorEnabled) || passkeys > 0
   }
 
@@ -189,12 +207,15 @@ export const createAuthPages = (deps: Deps) => {
     const passkeyForm = `<form method="post" action="/auth/login">${hidden}<input type="hidden" name="passkey" value=""><button type="button" id="passkey-button" hidden>Sign in with a passkey</button></form><p id="passkey-error" class="error" role="alert" hidden></p><p class="or">Or sign in with your password and TOTP code.</p>`
     const passwordForm = `<form method="post" action="/auth/login">${hidden}<label for="email">Email</label><input id="email" type="email" name="email" autocomplete="username" required><label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required><label for="code">TOTP code</label><input id="code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}"><button type="submit">Sign in</button></form>`
     const errorLine = error ? `<p class="error">${escape(error)}</p>` : ''
-    if (!passkeysHere(request))
+
+    if (!passkeysHere(request)) {
       return page(
         'Sign in',
         `${errorLine}${passwordForm}<p>Passkeys need the API hostname over HTTPS. On this address sign in with your password and TOTP code.</p>`,
         status,
       )
+    }
+
     return page(
       'Sign in',
       `${errorLine}${passkeyForm}${passwordForm}<script src="/auth/assets/webauthn.js"></script><script src="/auth/assets/login.js"></script>`,
@@ -208,11 +229,13 @@ export const createAuthPages = (deps: Deps) => {
     request: Request,
     form: URLSearchParams,
   ): Promise<{ ok: true; cookies: Headers; userId: string } | { ok: false; error: string }> => {
-    if (!passkeysHere(request))
+    if (!passkeysHere(request)) {
       return {
         ok: false,
         error: 'Passkeys need the API hostname over HTTPS.',
       }
+    }
+
     const response = (() => {
       try {
         return JSON.parse(form.get('passkey') ?? '') as unknown
@@ -220,11 +243,14 @@ export const createAuthPages = (deps: Deps) => {
         return null
       }
     })()
-    if (!response || typeof response !== 'object' || Array.isArray(response))
+
+    if (!response || typeof response !== 'object' || Array.isArray(response)) {
       return {
         ok: false,
         error: 'The passkey response was malformed.',
       }
+    }
+
     const verified = await auth().api.verifyPasskeyAuthentication({
       body: {
         response,
@@ -236,11 +262,14 @@ export const createAuthPages = (deps: Deps) => {
       user?: { id: string }
       message?: string
     } | null
-    if (!verified.ok || !body?.user)
+
+    if (!verified.ok || !body?.user) {
       return {
         ok: false,
         error: body?.message ?? 'The passkey was not accepted.',
       }
+    }
+
     return {
       ok: true,
       cookies: verified.headers,
@@ -253,6 +282,7 @@ export const createAuthPages = (deps: Deps) => {
     form: URLSearchParams,
   ): Promise<{ ok: true; cookies: Headers; userId: string } | { ok: false; error: string }> => {
     const headers = apiHeaders(request)
+
     headers.delete('cookie')
     const first = await auth().api.signInEmail({
       body: {
@@ -267,30 +297,40 @@ export const createAuthPages = (deps: Deps) => {
       user?: { id: string }
       message?: string
     } | null
-    if (!first.ok)
+
+    if (!first.ok) {
       return {
         ok: false,
         error: firstBody?.message ?? 'The email or password is wrong.',
       }
+    }
+
     if (!firstBody?.twoFactorRedirect) {
-      if (!firstBody?.user)
+      if (!firstBody?.user) {
         return {
           ok: false,
           error: 'Sign-in did not return a user.',
         }
+      }
+
       return {
         ok: true,
         cookies: first.headers,
         userId: firstBody.user.id,
       }
     }
+
     const code = form.get('code')?.trim()
-    if (!code)
+
+    if (!code) {
       return {
         ok: false,
         error: 'This account has TOTP enrolled; enter the current code.',
       }
+    }
+
     const second = new Headers(headers)
+
     second.set(
       'cookie',
       first.headers
@@ -309,11 +349,14 @@ export const createAuthPages = (deps: Deps) => {
       user?: { id: string }
       message?: string
     } | null
-    if (!verified.ok || !verifiedBody?.user)
+
+    if (!verified.ok || !verifiedBody?.user) {
       return {
         ok: false,
         error: verifiedBody?.message ?? 'The TOTP code was refused.',
       }
+    }
+
     return {
       ok: true,
       cookies: verified.headers,
@@ -337,6 +380,7 @@ export const createAuthPages = (deps: Deps) => {
       expires_at: new Date(),
       resource: null,
     }
+
     return {
       principal,
       request_id: requestIdOf(request),
@@ -359,6 +403,7 @@ export const createAuthPages = (deps: Deps) => {
         label: 'Every project and environment, including ones created later',
       },
     ]
+
     for (const p of projects) {
       options.push({
         value: `${p.id}|*`,
@@ -373,21 +418,32 @@ export const createAuthPages = (deps: Deps) => {
         .where(eq(environment.project_id, p.id))
         .orderBy(asc(environment.name))
         .all()
-      for (const e of envs)
+
+      for (const e of envs) {
         options.push({
           value: `${p.id}|${e.id}`,
           label: `${p.name} / ${e.name}`,
         })
+      }
     }
+
     return options
   }
 
   const scopesFrom = (values: string[], level: Level): Scope[] | null => {
     const scopes: Scope[] = []
+
     for (const value of values) {
       const [projectId, environmentId] = value.split('|')
-      if (!projectId || !environmentId) return null
-      if (projectId === '*' && environmentId !== '*') return null
+
+      if (!projectId || !environmentId) {
+        return null
+      }
+
+      if (projectId === '*' && environmentId !== '*') {
+        return null
+      }
+
       if (
         projectId !== '*' &&
         !db
@@ -397,8 +453,10 @@ export const createAuthPages = (deps: Deps) => {
           .from(project)
           .where(eq(project.id, projectId))
           .get()
-      )
+      ) {
         return null
+      }
+
       if (
         environmentId !== '*' &&
         !db
@@ -408,14 +466,17 @@ export const createAuthPages = (deps: Deps) => {
           .from(environment)
           .where(and(eq(environment.id, environmentId), eq(environment.project_id, projectId)))
           .get()
-      )
+      ) {
         return null
+      }
+
       scopes.push({
         project_id: projectId,
         environment_id: environmentId,
         level,
       })
     }
+
     return scopes.length ? scopes : null
   }
 
@@ -443,13 +504,16 @@ export const createAuthPages = (deps: Deps) => {
     })()
     const hidden = `<input type="hidden" name="oauth_query" value="${escape(oauthQuery)}">`
     const clientBox = `<div class="box">${client?.logo_uri ? `<img src="${escape(client.logo_uri)}" alt="" width="48" height="48" referrerpolicy="no-referrer">` : ''}<p><strong>${escape(client?.client_name ?? 'Unknown client')}</strong></p><p>Client id <code>${escape(clientId)}</code></p>${client?.client_uri ? `<p>Website <code>${escape(client.client_uri)}</code></p>` : ''}<p>Sends you back to <code>${escape(redirectHost)}</code></p></div>`
+
     if (!offered.length) {
       return page(
         'Authorize an MCP client',
         `${clientBox}<p class="error">The client asked for no Stationly level (scope ${escape(requested.join(' ') || 'none')}).</p><form method="post" action="/auth/consent">${hidden}<button type="submit" name="decision" value="deny">Deny</button></form>`,
       )
     }
+
     const options = targetOptions()
+
     return page(
       'Authorize an MCP client',
       `${error ? `<p class="error">${escape(error)}</p>` : ''}${clientBox}<p>It will act as a non-human OAuth client with the level and targets you choose. Its access token lasts one hour and refreshes for 30 days; revoke it any time with <code>sly tokens revoke</code>.</p><form method="post" action="/auth/consent">${hidden}<fieldset><legend>Level</legend>${offered
@@ -470,6 +534,7 @@ export const createAuthPages = (deps: Deps) => {
 
   const claimDeviceCode = async (request: Request, userCode: string) => {
     const headers = apiHeaders(request)
+
     try {
       await auth().api.deviceVerify({
         query: {
@@ -477,9 +542,11 @@ export const createAuthPages = (deps: Deps) => {
         },
         headers,
       })
+
       return null
     } catch (error) {
       const body = (error as { body?: { error_description?: string; message?: string } }).body
+
       return body?.error_description ?? body?.message ?? 'The code is unknown or expired.'
     }
   }
@@ -495,10 +562,13 @@ export const createAuthPages = (deps: Deps) => {
     const url =
       (body as { url?: string } | null)?.url ??
       (result instanceof Response ? result.headers.get('location') : null)
-    if (!url)
+
+    if (!url) {
       throw new Error(
         `the consent call returned no redirect: ${JSON.stringify(body).slice(0, 200)}`,
       )
+    }
+
     return redirect(url)
   }
 
@@ -509,8 +579,12 @@ export const createAuthPages = (deps: Deps) => {
     .get(
       '/auth/assets/:name',
       ({ request }) => {
-        if (!allowed(request, 'api')) return wrongHost(request)
+        if (!allowed(request, 'api')) {
+          return wrongHost(request)
+        }
+
         const body = loginScripts[new URL(request.url).pathname as keyof typeof loginScripts]
+
         return body ? script(body) : page('Not found', '<p>No such file.</p>', 404)
       },
       {
@@ -522,7 +596,10 @@ export const createAuthPages = (deps: Deps) => {
     .get(
       '/auth/login',
       ({ request }) => {
-        if (!allowed(request, 'api')) return wrongHost(request)
+        if (!allowed(request, 'api')) {
+          return wrongHost(request)
+        }
+
         return loginForm(request, new URL(request.url).search.slice(1), null)
       },
       {
@@ -534,21 +611,37 @@ export const createAuthPages = (deps: Deps) => {
     .post(
       '/auth/login',
       async ({ request }) => {
-        if (!allowed(request, 'api')) return wrongHost(request)
-        if (!sameOrigin(request)) return forbidden()
+        if (!allowed(request, 'api')) {
+          return wrongHost(request)
+        }
+
+        if (!sameOrigin(request)) {
+          return forbidden()
+        }
+
         const form = await formOf(request)
         const oauthQuery = form.get('oauth_query') ?? ''
-        if (!(await verifyOAuthQueryParams(oauthQuery, deps.auth.secretKey)))
+
+        if (!(await verifyOAuthQueryParams(oauthQuery, deps.auth.secretKey))) {
           return page(
             'Sign in',
             '<p class="error">The authorization request expired or was altered; start again from the client.</p>',
             400,
           )
+        }
+
         const result = form.get('passkey')
           ? await passkeySignIn(request, form)
           : await signIn(request, form)
-        if (!result.ok) return loginForm(request, oauthQuery, result.error, 401)
-        if (!enrolled(result.userId)) return enrollFirst()
+
+        if (!result.ok) {
+          return loginForm(request, oauthQuery, result.error, 401)
+        }
+
+        if (!enrolled(result.userId)) {
+          return enrollFirst()
+        }
+
         return redirect(`/auth/oauth2/authorize?${authorizeQuery(oauthQuery)}`, result.cookies)
       },
       {
@@ -561,17 +654,30 @@ export const createAuthPages = (deps: Deps) => {
     .get(
       '/auth/consent',
       async ({ request }) => {
-        if (!allowed(request, 'api')) return wrongHost(request)
+        if (!allowed(request, 'api')) {
+          return wrongHost(request)
+        }
+
         const oauthQuery = new URL(request.url).search.slice(1)
-        if (!(await verifyOAuthQueryParams(oauthQuery, deps.auth.secretKey)))
+
+        if (!(await verifyOAuthQueryParams(oauthQuery, deps.auth.secretKey))) {
           return page(
             'Authorize an MCP client',
             '<p class="error">The authorization request expired or was altered; start again from the client.</p>',
             400,
           )
+        }
+
         const session = await sessionOf(request)
-        if (!session) return redirect(`/auth/login?${oauthQuery}`)
-        if (!enrolled(session.user.id)) return enrollFirst()
+
+        if (!session) {
+          return redirect(`/auth/login?${oauthQuery}`)
+        }
+
+        if (!enrolled(session.user.id)) {
+          return enrollFirst()
+        }
+
         return consentPage(request, oauthQuery)
       },
       {
@@ -583,27 +689,43 @@ export const createAuthPages = (deps: Deps) => {
     .post(
       '/auth/consent',
       async ({ request }) => {
-        if (!allowed(request, 'api')) return wrongHost(request)
-        if (!sameOrigin(request)) return forbidden()
+        if (!allowed(request, 'api')) {
+          return wrongHost(request)
+        }
+
+        if (!sameOrigin(request)) {
+          return forbidden()
+        }
+
         const form = await formOf(request)
         const oauthQuery = form.get('oauth_query') ?? ''
-        if (!(await verifyOAuthQueryParams(oauthQuery, deps.auth.secretKey)))
+
+        if (!(await verifyOAuthQueryParams(oauthQuery, deps.auth.secretKey))) {
           return page(
             'Authorize an MCP client',
             '<p class="error">The authorization request expired or was altered; start again from the client.</p>',
             400,
           )
+        }
+
         const session = await sessionOf(request)
-        if (!session)
+
+        if (!session) {
           return page(
             'Authorize an MCP client',
             '<p class="error">Consent needs a signed-in admin session on this host.</p>',
             401,
           )
-        if (!enrolled(session.user.id)) return enrollFirst()
+        }
+
+        if (!enrolled(session.user.id)) {
+          return enrollFirst()
+        }
+
         const headers = apiHeaders(request)
         const query = new URLSearchParams(oauthQuery)
         const call = userCall(request, session.user.id)
+
         if (form.get('decision') !== 'approve') {
           const result = await auth().api.oauth2Consent({
             body: {
@@ -613,19 +735,28 @@ export const createAuthPages = (deps: Deps) => {
             headers,
             request: consentRequest(request, headers),
           })
+
           audit(db, call, 'oauth.deny', {
             entity: 'oauth_client',
             id: query.get('client_id') ?? '',
           })
+
           return redirectFrom(result)
         }
+
         const requested = (query.get('scope') ?? '').split(' ').filter(Boolean)
         const level = tokenLevelValues.find((l) => l === form.get('level'))
-        if (!level || !requested.includes(levelScopes[level]))
+
+        if (!level || !requested.includes(levelScopes[level])) {
           return consentPage(request, oauthQuery, 'Pick one of the levels the client asked for.')
+        }
+
         const scopes = scopesFrom(form.getAll('target'), level)
-        if (!scopes)
+
+        if (!scopes) {
           return consentPage(request, oauthQuery, 'Pick at least one project or environment.')
+        }
+
         const clientId = query.get('client_id') ?? ''
         const client = (await auth()
           .api.getOAuthClientPublic({
@@ -636,6 +767,7 @@ export const createAuthPages = (deps: Deps) => {
           })
           .catch(() => null)) as { client_name?: string } | null
         const id = newId('token')
+
         db.insert(token)
           .values({
             id,
@@ -651,6 +783,7 @@ export const createAuthPages = (deps: Deps) => {
           levelScopes[level],
           ...requested.filter((scope) => levelOfScope(scope) === null),
         ].join(' ')
+
         try {
           const result = await withPendingGrant(session.session.id, id, () =>
             auth().api.oauth2Consent({
@@ -663,6 +796,7 @@ export const createAuthPages = (deps: Deps) => {
               request: consentRequest(request, headers),
             }),
           )
+
           audit(
             db,
             call,
@@ -679,6 +813,7 @@ export const createAuthPages = (deps: Deps) => {
               },
             },
           )
+
           return redirectFrom(result)
         } catch (error) {
           db.delete(token).where(eq(token.id, id)).run()
@@ -695,18 +830,31 @@ export const createAuthPages = (deps: Deps) => {
     .get(
       '/device',
       async ({ request }) => {
-        if (!allowed(request, 'dashboard')) return wrongHost(request)
+        if (!allowed(request, 'dashboard')) {
+          return wrongHost(request)
+        }
+
         const url = new URL(request.url)
         const session = await sessionOf(request)
-        if (!session)
+
+        if (!session) {
           return redirect(`/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`)
-        if (!enrolled(session.user.id)) return enrollFirst()
+        }
+
+        if (!enrolled(session.user.id)) {
+          return enrollFirst()
+        }
+
         const userCode = (url.searchParams.get('user_code') ?? '').trim().toUpperCase()
+
         if (userCode) {
           const claimed = await claimDeviceCode(request, userCode)
-          if (claimed)
+
+          if (claimed) {
             return page('Approve sly login', `<p class="error">${escape(claimed)}</p>`, 400)
+          }
         }
+
         return page(
           'Approve sly login',
           `<p>Approve only a code you see in your own terminal right now. The machine that started <code>sly login</code> gets a 12 hour session that acts as you.</p><form method="post" action="/device"><label for="user_code">Code</label><input id="user_code" type="text" name="user_code" value="${escape(userCode)}" autocomplete="off" required><button type="submit" name="decision" value="approve">Approve</button><button type="submit" name="decision" value="deny">Deny</button></form>`,
@@ -721,42 +869,61 @@ export const createAuthPages = (deps: Deps) => {
     .post(
       '/device',
       async ({ request }) => {
-        if (!allowed(request, 'dashboard')) return wrongHost(request)
-        if (!sameOrigin(request)) return forbidden()
+        if (!allowed(request, 'dashboard')) {
+          return wrongHost(request)
+        }
+
+        if (!sameOrigin(request)) {
+          return forbidden()
+        }
+
         const session = await sessionOf(request)
-        if (!session) return page('Approve sly login', '<p class="error">Sign in first.</p>', 401)
-        if (!enrolled(session.user.id)) return enrollFirst()
+
+        if (!session) {
+          return page('Approve sly login', '<p class="error">Sign in first.</p>', 401)
+        }
+
+        if (!enrolled(session.user.id)) {
+          return enrollFirst()
+        }
+
         const form = await formOf(request)
         const userCode = (form.get('user_code') ?? '').trim().toUpperCase()
         const headers = apiHeaders(request)
         const approve = form.get('decision') === 'approve'
         const claimed = await claimDeviceCode(request, userCode)
-        if (claimed)
+
+        if (claimed) {
           return page('Approve sly login', `<p class="error">${escape(claimed)}</p>`, 400)
+        }
+
         try {
-          if (approve)
+          if (approve) {
             await auth().api.deviceApprove({
               body: {
                 userCode,
               },
               headers,
             })
-          else
+          } else {
             await auth().api.deviceDeny({
               body: {
                 userCode,
               },
               headers,
             })
+          }
         } catch (error) {
           const message = (error as { body?: { error_description?: string; message?: string } })
             .body
+
           return page(
             'Approve sly login',
             `<p class="error">${escape(message?.error_description ?? message?.message ?? 'The code was refused.')}</p>`,
             400,
           )
         }
+
         audit(
           db,
           userCall(request, session.user.id),
@@ -771,6 +938,7 @@ export const createAuthPages = (deps: Deps) => {
             },
           },
         )
+
         return page(
           approve ? 'sly login approved' : 'sly login denied',
           `<p>${approve ? 'Return to your terminal; sly picks up the session within a few seconds.' : 'The terminal that asked is told the request was denied.'}</p>`,

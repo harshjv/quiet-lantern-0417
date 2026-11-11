@@ -12,7 +12,7 @@ const ended = new Set(['failed', 'cancelled'])
 
 export const deploymentText = (deployment: Waited) =>
   deployment.status === 'failed'
-    ? `${human(deployment)}\n\ndiagnosis: sly deployments get-diagnosis ${deployment.id}`
+    ? `${human(deployment)}\n\ndiagnosis: sly deployments diagnosis ${deployment.id}`
     : human(deployment)
 
 export const deploymentExit = (deployment: Waited) =>

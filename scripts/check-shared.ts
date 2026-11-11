@@ -13,6 +13,7 @@ const readerText = (file: string) => {
   const imported = [...text.matchAll(/from '(\.\.?\/[^']+)'/g)]
     .map((m) => join(dirname(file), m[1]!))
     .filter(existsSync)
+
   return [text, ...imported.map((path) => readFileSync(path, 'utf8'))].join('\n')
 }
 
@@ -25,9 +26,17 @@ const problems = [
       .map((name) => `${id}: ${sharedTestdataDir}/${name} does not exist`),
     ...Object.entries(tests).flatMap(([side, file]) => {
       const suffix = testSuffix[side as keyof typeof testSuffix]
-      if (!file.endsWith(suffix)) return [`${id}: ${side} ${file} is not a ${suffix} file`]
-      if (!existsSync(file)) return [`${id}: ${side} ${file} does not exist`]
+
+      if (!file.endsWith(suffix)) {
+        return [`${id}: ${side} ${file} is not a ${suffix} file`]
+      }
+
+      if (!existsSync(file)) {
+        return [`${id}: ${side} ${file} does not exist`]
+      }
+
       const text = readerText(file)
+
       return vectors
         .filter((name) => !text.includes(name))
         .map((name) => `${id}: ${file} does not read ${name}`)
@@ -42,6 +51,9 @@ const problems = [
 ]
 
 if (problems.length) {
-  for (const problem of problems) process.stderr.write(`${problem}\n`)
+  for (const problem of problems) {
+    process.stderr.write(`${problem}\n`)
+  }
+
   process.exit(1)
 }

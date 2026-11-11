@@ -76,6 +76,7 @@ const (
 	ErrorCodeSandboxStartFailed          ErrorCode = "SANDBOX_START_FAILED"
 	ErrorCodeSandboxStorageGrowFailed    ErrorCode = "SANDBOX_STORAGE_GROW_FAILED"
 	ErrorCodeSandboxImageUnpackFailed    ErrorCode = "SANDBOX_IMAGE_UNPACK_FAILED"
+	ErrorCodeSandboxRuntimeUnavailable   ErrorCode = "SANDBOX_RUNTIME_UNAVAILABLE"
 	ErrorCodeEnvironmentIsDefault        ErrorCode = "ENVIRONMENT_IS_DEFAULT"
 	ErrorCodeDeleteHasDependents         ErrorCode = "DELETE_HAS_DEPENDENTS"
 	ErrorCodeNotFound                    ErrorCode = "NOT_FOUND"
@@ -184,6 +185,7 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeSandboxStartFailed:          {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
 	ErrorCodeSandboxStorageGrowFailed:    {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
 	ErrorCodeSandboxImageUnpackFailed:    {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
+	ErrorCodeSandboxRuntimeUnavailable:   {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
 	ErrorCodeEnvironmentIsDefault:        {HTTPStatus: 409, Area: "lifecycle", CloseCode: 0},
 	ErrorCodeDeleteHasDependents:         {HTTPStatus: 409, Area: "lifecycle", CloseCode: 0},
 	ErrorCodeNotFound:                    {HTTPStatus: 404, Area: "lifecycle", CloseCode: 0},

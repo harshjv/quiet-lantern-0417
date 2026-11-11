@@ -38,8 +38,10 @@ const targetHealth = async (seed: Omit<Parameters<typeof createService>[2], 'ref
     deploy: true,
   })
   const deploymentId = created.deployments[0].id as string
+
   await waitForDeployment(h, deploymentId, 'active')
   const doc = await station.waitForGeneration((g) => deploymentId in g.deployments)
+
   return (doc.deployments[deploymentId] as unknown as { target: { health: unknown } }).target.health
 }
 
@@ -115,6 +117,7 @@ describe('default health checks by service kind', () => {
       ],
       deploy: true,
     })
+
     await waitForDeployment(h, created.deployments[0].id, 'active')
     assert.equal(
       (
@@ -128,9 +131,11 @@ describe('default health checks by service kind', () => {
       token: h.admin.token,
       body: {},
     })
+
     assert.equal(redeployed.status, 201, redeployed.text)
     const deploymentId = redeployed.body.id as string
     const doc = await station.waitForGeneration((g) => deploymentId in g.deployments)
+
     assert.deepEqual(
       (doc.deployments[deploymentId] as unknown as { target: { health: unknown } }).target.health,
       {
@@ -155,6 +160,7 @@ describe('default health checks by service kind', () => {
         },
       },
     })
+
     assert.deepEqual(health, {
       type: 'tcp',
       port: 3000,
@@ -177,6 +183,7 @@ describe('default health checks by service kind', () => {
       ],
       deploy: true,
     })
+
     await waitForDeployment(h, created.deployments[0].id, 'active')
     pinPlatform(h, {
       gateway: true,
@@ -187,17 +194,20 @@ describe('default health checks by service kind', () => {
         hostname: 'bugsink.sly.test',
       },
     })
+
     assert.equal(added.status, 201, added.text)
     const redeployed = await h.call('POST', `/v1/services/${created.id}/redeploy`, {
       token: h.admin.token,
       body: {},
     })
+
     assert.equal(redeployed.status, 201, redeployed.text)
     const deploymentId = redeployed.body.id as string
     const doc = await station.waitForGeneration((g) => deploymentId in g.deployments)
     const health = (
       doc.deployments[deploymentId] as unknown as { target: { health: { host: string } } }
     ).target.health
+
     assert.equal(health.host, 'bugsink.sly.test')
   })
 
@@ -221,6 +231,7 @@ describe('default health checks by service kind', () => {
       host: string
       path: string
     }
+
     assert.equal(health.host, 'health.local')
     assert.equal(health.path, '/up')
   })
@@ -247,6 +258,7 @@ describe('default health checks by service kind', () => {
         },
       },
     })
+
     assert.equal(res.status, 400, res.text)
   })
 })

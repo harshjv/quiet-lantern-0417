@@ -2,7 +2,12 @@ import { isIPv4 } from 'node:net'
 
 import { and, eq, isNull } from 'drizzle-orm'
 
-import { dispatchAddress, networkLayout, type SettingKey } from '@stationly/protocol'
+import {
+  dispatchAddress,
+  networkLayout,
+  type sandboxRuntimeValues,
+  type SettingKey,
+} from '@stationly/protocol'
 
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
@@ -19,6 +24,7 @@ import {
   sha256Of,
   storeRelease,
 } from '../platform/lockfile.ts'
+import { runtimeRefusal } from '../sandboxes/runtime.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 
 import {
@@ -38,6 +44,7 @@ export type SetupInput = {
   hostnames?: { dashboard: string; api: string }
   'ipam.pool'?: string
   public_address?: string
+  sandbox_runtime?: (typeof sandboxRuntimeValues)[number]
   release?: InstalledRelease | null
 }
 
@@ -50,7 +57,10 @@ export class SetupError extends DomainError<
 > {}
 
 export const ensureInstanceId = (db: Db) => {
-  if (storedSetting(db, 'instance.id') !== undefined) return
+  if (storedSetting(db, 'instance.id') !== undefined) {
+    return
+  }
+
   writeSetting(db, 'instance.id', newId('instance'), {
     type: 'system',
     id: null,
@@ -64,62 +74,97 @@ export const setupInstance = async (
   actor: SetupActor,
 ) => {
   const { db, keyring, auth } = deps
-  if (userExists(db))
+
+  if (userExists(db)) {
     throw new SetupError('SETUP_DONE', 'An admin already exists; sly setup runs once.')
-  if (typeof input.email !== 'string' || !input.email.includes('@'))
+  }
+
+  if (typeof input.email !== 'string' || !input.email.includes('@')) {
     throw new SetupError('VALIDATION_FAILED', 'The admin email is not an email address.')
-  if (typeof input.password !== 'string' || input.password.length < minPasswordLength)
+  }
+
+  if (typeof input.password !== 'string' || input.password.length < minPasswordLength) {
     throw new SetupError(
       'VALIDATION_FAILED',
       `The password needs at least ${minPasswordLength} characters.`,
     )
+  }
+
   const settings: Partial<Record<SettingKey, unknown>> = {}
+
   if (input.hostnames) {
     const check = checkHostnamePair(input.hostnames.dashboard, input.hostnames.api)
-    if (!check.ok) throw new SetupError('HOSTNAME_DOMAIN_MISMATCH', check.reason)
+
+    if (!check.ok) {
+      throw new SetupError('HOSTNAME_DOMAIN_MISMATCH', check.reason)
+    }
+
     settings['hostnames.dashboard'] = input.hostnames.dashboard
     settings['hostnames.api'] = input.hostnames.api
     settings['auth.passkey_rp_id'] = check.commonParent
   }
-  if (input.acme_email) settings['acme.email'] = input.acme_email
-  if (input.public_address !== undefined && !isIPv4(input.public_address))
+
+  if (input.acme_email) {
+    settings['acme.email'] = input.acme_email
+  }
+
+  if (input.public_address !== undefined && !isIPv4(input.public_address)) {
     throw new SetupError(
       'VALIDATION_FAILED',
       `public_address ${input.public_address} is not an IPv4 address in dotted-quad form.`,
     )
-  if (
-    input.public_address !== undefined &&
-    !(
-      actor.type === 'station' &&
-      actor.id &&
-      db
-        .select({
-          id: station.id,
-        })
-        .from(station)
-        .where(and(eq(station.id, actor.id), eq(station.hosts_dispatch, true)))
-        .get()
-    )
-  )
-    throw new SetupError(
-      'VALIDATION_FAILED',
-      'public_address needs the station that hosts Dispatch to have enrolled.',
-    )
+  }
+
+  const host =
+    actor.type === 'station' && actor.id
+      ? db
+          .select()
+          .from(station)
+          .where(and(eq(station.id, actor.id), eq(station.hosts_dispatch, true)))
+          .get()
+      : undefined
+
+  for (const key of ['public_address', 'sandbox_runtime'] as const) {
+    if (input[key] !== undefined && !host) {
+      throw new SetupError(
+        'VALIDATION_FAILED',
+        `${key} needs the station that hosts Dispatch to have enrolled.`,
+      )
+    }
+  }
+
+  const runtimeProblem =
+    host && input.sandbox_runtime !== undefined ? runtimeRefusal(host, input.sandbox_runtime) : null
+
+  if (runtimeProblem) {
+    throw new SetupError('VALIDATION_FAILED', `sandbox_runtime: ${runtimeProblem}.`)
+  }
+
   const pool = input['ipam.pool']
+
   if (pool !== undefined) {
     const problem = cidrProblem(pool)
-    if (problem) throw new SetupError('VALIDATION_FAILED', `ipam.pool ${problem}.`)
+
+    if (problem) {
+      throw new SetupError('VALIDATION_FAILED', `ipam.pool ${problem}.`)
+    }
+
     const stored = storedSetting(db, 'ipam.pool')
-    if (stored === undefined) settings['ipam.pool'] = pool
-    else if (stored !== pool)
+
+    if (stored === undefined) {
+      settings['ipam.pool'] = pool
+    } else if (stored !== pool) {
       throw new SetupError(
         'VALIDATION_FAILED',
         `ipam.pool is ${stored} in Dispatch but the installer chose ${pool}.`,
       )
+    }
   }
+
   ensureInstanceId(db)
   let manifest: ReturnType<typeof parseManifest> | null = null
   const release = input.release ?? null
+
   if (release) {
     try {
       manifest = parseManifest(release.manifest)
@@ -130,6 +175,7 @@ export const setupInstance = async (
         `The installed release is unreadable: ${(error as Error).message}`,
       )
     }
+
     settings['platform.lockfile'] = lockfileFor(manifest, sha256Of(release.manifest))
   }
 
@@ -145,17 +191,24 @@ export const setupInstance = async (
     },
   })
   const userId = created.user.id
+
   db.transaction((tx) => {
     keyring.wrapForPassword(userId, input.password)
-    if (input.public_address !== undefined)
+
+    if (host && (input.public_address !== undefined || input.sandbox_runtime !== undefined)) {
       tx.update(station)
         .set({
-          public_address: input.public_address,
+          public_address: input.public_address ?? host.public_address,
+          default_sandbox_runtime: input.sandbox_runtime ?? host.default_sandbox_runtime,
         })
-        .where(eq(station.id, actor.id!))
+        .where(eq(station.id, host.id))
         .run()
-    for (const [key, value] of Object.entries(settings))
+    }
+
+    for (const [key, value] of Object.entries(settings)) {
       writeSetting(tx, key as SettingKey, value, actor)
+    }
+
     if (release && manifest) {
       storeRelease(tx, {
         manifestRaw: release.manifest,
@@ -163,6 +216,7 @@ export const setupInstance = async (
         source: release.source,
         verifiedBy: 'stationd install',
       })
+
       for (const [name, pin] of Object.entries(resolvePins(manifest, null, hostArch()))) {
         const values = {
           name: name as (typeof component.$inferInsert)['name'],
@@ -173,7 +227,8 @@ export const setupInstance = async (
           since: new Date(),
           signature: pin.kind === 'image' ? 'verified' : 'not_applicable',
         } satisfies typeof component.$inferInsert
-        if (name === 'dispatch')
+
+        if (name === 'dispatch') {
           tx.update(component)
             .set({
               lockfile_version: pin.version,
@@ -182,9 +237,12 @@ export const setupInstance = async (
             })
             .where(and(isNull(component.station_id), eq(component.name, 'dispatch')))
             .run()
-        else tx.insert(component).values(values).run()
+        } else {
+          tx.insert(component).values(values).run()
+        }
       }
     }
+
     recordAudit(tx, {
       actor,
       action: 'setup.admin_created',
@@ -196,6 +254,7 @@ export const setupInstance = async (
         email: input.email.toLowerCase(),
         settings: Object.keys(settings),
         public_address: input.public_address ?? null,
+        sandbox_runtime: input.sandbox_runtime ?? null,
         release: manifest?.release ?? null,
         components: Object.keys(manifest?.components ?? {}),
       },
@@ -203,6 +262,7 @@ export const setupInstance = async (
   })
   auth.rebuild()
   const surface = auth.surface
+
   await auth.current.api.signInMagicLink({
     body: {
       email: input.email,
@@ -215,6 +275,7 @@ export const setupInstance = async (
     ? `${surface.dashboardOrigin}${new URL(minted).pathname}${new URL(minted).search}`
     : null
   const instanceId = readSetting(db, 'instance.id')!
+
   return {
     admin_user_id: userId,
     email: created.user.email,

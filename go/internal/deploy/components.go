@@ -4,11 +4,7 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -54,23 +50,18 @@ var procedureKinds = map[string]string{
 }
 
 func loadComponents(stateDir string) (map[string]componentRecord, error) {
-	out := map[string]componentRecord{}
-	b, err := os.ReadFile(filepath.Join(stateDir, componentsFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return out, nil
-	}
+	comps, err := readJSON[map[string]componentRecord](filepath.Join(stateDir, componentsFile))
 	if err != nil {
 		return nil, err
 	}
-	return out, json.Unmarshal(b, &out)
+	if comps == nil {
+		comps = map[string]componentRecord{}
+	}
+	return comps, nil
 }
 
 func (s *Station) saveComponents() {
-	b, err := json.MarshalIndent(s.comps, "", "  ")
-	if err == nil {
-		err = writeAtomic(filepath.Join(s.opts.StateDir, componentsFile), b)
-	}
-	if err != nil {
+	if err := writeJSON(filepath.Join(s.opts.StateDir, componentsFile), s.comps); err != nil {
 		s.log.Error("persist components.json", "error", err)
 	}
 }
@@ -292,9 +283,9 @@ func (s *Station) depotProcedure(ctx context.Context, name string, p *procState,
 	}
 	defer s.depot.EndMaintenance()
 	start := time.Now()
-	s.emit(protocol.MessageRegistryMaintenance, map[string]any{"state": protocol.RegistryMaintenanceStateStarted, "deleted_blobs": 0, "freed_bytes": 0, "duration_s": 0})
+	s.emit(protocol.MessageRegistryMaintenance, protocol.RegistryMaintenanceBody{State: protocol.RegistryMaintenanceStateStarted})
 	defer func() {
-		s.emit(protocol.MessageRegistryMaintenance, map[string]any{"state": protocol.RegistryMaintenanceStateFinished, "deleted_blobs": 0, "freed_bytes": 0, "duration_s": int(time.Since(start).Seconds())})
+		s.emit(protocol.MessageRegistryMaintenance, protocol.RegistryMaintenanceBody{State: protocol.RegistryMaintenanceStateFinished, DurationS: int(time.Since(start).Seconds())})
 	}()
 	if err := s.workshops.WaitIdle(ctx); err != nil {
 		return err

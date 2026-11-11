@@ -49,6 +49,8 @@ export type LogPage = Data<V1['logs']['get']>
 export type LogLine = LogPage['untrusted']['lines'][number]
 export type Event = Item<Data<V1['events']['get']>>
 export type Token = Item<Data<V1['tokens']['get']>>
+export type Station = Item<Data<V1['stations']['get']>>
+export type HostProbe = NonNullable<NonNullable<Station['capabilities']>['host']>
 
 export class ApiFailure extends Error {
   readonly code: string
@@ -82,12 +84,17 @@ const failureOf = (result: EdenResult) => {
     value && typeof value === 'object' && 'error' in value
       ? (value as { error: Partial<ErrorBody> }).error
       : null
+
   return new ApiFailure(result.status, body)
 }
 
 export const unwrap = async <R extends EdenResult>(call: Promise<R>): Promise<Body<R>> => {
   const result = await call
-  if (result.error) throw failureOf(result)
+
+  if (result.error) {
+    throw failureOf(result)
+  }
+
   return result.data as Body<R>
 }
 
@@ -97,12 +104,18 @@ export type Sent<R extends EdenResult> =
 
 export const send = async <R extends EdenResult>(call: Promise<R>): Promise<Sent<R>> => {
   const result = await call
-  if (result.error) throw failureOf(result)
-  if (result.status === 202)
+
+  if (result.error) {
+    throw failureOf(result)
+  }
+
+  if (result.status === 202) {
     return {
       body: result.data as Extract<Body<R>, StagedShape>,
       staged: true,
     }
+  }
+
   return {
     body: result.data as Exclude<Body<R>, StagedShape>,
     staged: false,

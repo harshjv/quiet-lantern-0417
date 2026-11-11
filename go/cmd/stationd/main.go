@@ -30,6 +30,7 @@ import (
 	"github.com/harshjv/stationly/go/internal/outbox"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/rootsocket"
+	"github.com/harshjv/stationly/go/internal/sandbox/gvisor"
 	"github.com/harshjv/stationly/go/internal/upgrade"
 	"github.com/harshjv/stationly/go/internal/verify"
 )
@@ -195,7 +196,7 @@ func runCmd(vars environment) *cobra.Command {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		return deploy.Run(ctx, deploy.Options{StateDir: *stateDir, SocketPath: *socket, Log: log, Identity: id, Link: link, Outbox: ob, Verifier: v, SigstoreFetch: *fetch, EtcDir: *etcDir, Host: host, Install: inst, BackupRoot: *backupRoot, Handover: inheritedSockets, RunArgs: runArgs, BinDir: *binDir, BinaryLink: *binLink})
+		return deploy.Run(ctx, deploy.Options{StateDir: *stateDir, SocketPath: *socket, Log: log, Identity: id, Link: link, Outbox: ob, Verifier: v, SigstoreFetch: *fetch, EtcDir: *etcDir, Host: host, Install: inst, BackupRoot: *backupRoot, Handover: inheritedSockets, RunArgs: runArgs, BinDir: *binDir, BinaryLink: *binLink, Sandbox: gvisor.New()})
 	}
 	return c
 }
@@ -518,7 +519,7 @@ func installCmd(vars environment) *cobra.Command {
 			AllowUnsigned: *allow, Pull: !*noPull, Host: !*noHost,
 			Unit: !*noUnit, BinDir: *binDir, BinaryLink: *binLink, UnitPath: *unitPath, SlyPath: *slyPath, RunArgs: *runArgs,
 			Litestream: replica, RecoveryKey: vars.RecoveryKey,
-			SandboxDevice: *sandboxDevice, SandboxWipe: *sandboxWipe, SandboxSize: sandboxBytes,
+			SandboxDevice: *sandboxDevice, SandboxWipe: *sandboxWipe, SandboxSize: sandboxBytes, Sandbox: gvisor.New(),
 		})
 		printJSON(rep)
 		if rep.Test {

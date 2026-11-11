@@ -27,16 +27,28 @@ export const toneOutline: Record<Tone, string> = {
   neutral: 'border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300',
 }
 
+export const toneBorder: Record<Tone, string> = {
+  success: 'border-emerald-300 dark:border-emerald-900',
+  warning: 'border-amber-300 dark:border-amber-900',
+  danger: 'border-red-300 dark:border-red-900',
+  info: 'border-sky-300 dark:border-sky-900',
+  neutral: 'border-zinc-300 dark:border-zinc-700',
+}
+
+export const toneWash: Record<Tone, string> = {
+  success: 'bg-emerald-50 dark:bg-emerald-950/50',
+  warning: 'bg-amber-50 dark:bg-amber-950/50',
+  danger: 'bg-red-50 dark:bg-red-950/50',
+  info: 'bg-sky-50 dark:bg-sky-950/50',
+  neutral: 'bg-zinc-50 dark:bg-zinc-900',
+}
+
 export const tonePanel: Record<Tone, string> = {
-  success:
-    'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100',
-  warning:
-    'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100',
-  danger:
-    'border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/50 dark:text-red-100',
-  info: 'border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-100',
-  neutral:
-    'border-zinc-300 bg-zinc-50 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100',
+  success: `${toneBorder.success} ${toneWash.success} text-emerald-900 dark:text-emerald-100`,
+  warning: `${toneBorder.warning} ${toneWash.warning} text-amber-900 dark:text-amber-100`,
+  danger: `${toneBorder.danger} ${toneWash.danger} text-red-900 dark:text-red-100`,
+  info: `${toneBorder.info} ${toneWash.info} text-sky-900 dark:text-sky-100`,
+  neutral: `${toneBorder.neutral} ${toneWash.neutral} text-zinc-900 dark:text-zinc-100`,
 }
 
 export const toneDot: Record<Tone, string> = {

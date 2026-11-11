@@ -18,6 +18,7 @@ const (
 	RootSocketOpLogs                = "logs"
 	RootSocketOpSetup               = "setup"
 	RootSocketOpPublicAddressDetect = "public_address.detect"
+	RootSocketOpHostProbe           = "host.probe"
 	RootSocketOpAdminRecoveryKey    = "admin.recovery_key"
 	RootSocketOpDoctor              = "doctor"
 )

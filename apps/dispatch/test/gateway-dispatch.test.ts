@@ -69,6 +69,7 @@ describe('the generation carries Dispatch routes', () => {
 
   const next = async (predicate: (doc: Generation) => boolean) => {
     h.deps.stations.reconcile(fake.stationId)
+
     return (await fake.waitForGeneration((d) =>
       predicate(d as unknown as Generation),
     )) as unknown as Generation
@@ -77,6 +78,7 @@ describe('the generation carries Dispatch routes', () => {
   test('a station that hosts Dispatch gets the dispatch system target at the first address of the virtual prefix', async () => {
     const doc = await next((d) => 'dispatch' in d.system_targets)
     const target = doc.system_targets.dispatch!
+
     assert.equal(target.component, 'dispatch')
     assert.equal(target.virtual_ip, '100.64.0.1')
     assert.equal(target.port, 7900)
@@ -85,6 +87,7 @@ describe('the generation carries Dispatch routes', () => {
 
   test('without a public address and without hostnames there is no Dispatch route and the web ports stay closed', async () => {
     const doc = await next((d) => 'dispatch' in d.system_targets)
+
     assert.deepEqual(Object.keys(doc.gateway.routes), [])
     assert.equal(doc.station.inbound.web_ports, 'closed')
   })
@@ -94,12 +97,17 @@ describe('the generation carries Dispatch routes', () => {
     putSetting(h, 'hostnames.api', api)
     h.deps.stations.reconcile(fake.stationId)
     const built = (await import('../src/station/generations.ts')).buildDesired(h.db, fake.stationId)
+
     assert.deepEqual(Object.keys(built.content.gateway.routes), [])
     const reasons = built.excluded
       .filter((e) => e.object === 'route')
       .map((e) => `${e.id}: ${e.explanation}`)
+
     assert.equal(reasons.length, 2)
-    for (const r of reasons) assert.match(r, /public_address/)
+
+    for (const r of reasons) {
+      assert.match(r, /public_address/)
+    }
   })
 
   test('with a public address both hostnames route directly to Dispatch with the classic resolver and redirect HTTP', async () => {
@@ -111,12 +119,15 @@ describe('the generation carries Dispatch routes', () => {
       .where(eq(station.id, fake.stationId))
       .run()
     const doc = await next((d) => 'system-api' in d.gateway.routes)
+
     assert.deepEqual(Object.keys(doc.gateway.routes).sort(), ['system-api', 'system-dashboard'])
+
     for (const [id, host] of [
       ['system-api', api],
       ['system-dashboard', dashboard],
     ] as const) {
       const r = doc.gateway.routes[id]!
+
       assert.equal(r.hostname, host)
       assert.equal(r.ingress, 'direct')
       assert.deepEqual(r.target, {
@@ -129,6 +140,7 @@ describe('the generation carries Dispatch routes', () => {
       })
       assert.equal(r.redirect_http, true)
     }
+
     assert.equal(doc.station.inbound.web_ports, 'open')
     assert.equal(doc.station.public_address, publicAddress)
   })
@@ -137,8 +149,10 @@ describe('the generation carries Dispatch routes', () => {
     dropSetting(h, 'hostnames.dashboard')
     dropSetting(h, 'hostnames.api')
     const doc = await next((d) => 'system-address' in d.gateway.routes)
+
     assert.deepEqual(Object.keys(doc.gateway.routes), ['system-address'])
     const r = doc.gateway.routes['system-address']!
+
     assert.equal(r.hostname, publicAddress)
     assert.deepEqual(r.tls, {
       resolver: 'letsencrypt-shortlived',
@@ -155,6 +169,7 @@ describe('the generation carries Dispatch routes', () => {
       .where(eq(station.id, fake.stationId))
       .run()
     const doc = await next((d) => !('dispatch' in d.system_targets))
+
     assert.deepEqual(doc.system_targets, {})
     assert.deepEqual(Object.keys(doc.gateway.routes), [])
     h.db
@@ -188,6 +203,7 @@ describe('the generation carries Dispatch routes', () => {
         hostname: api,
       },
     })
+
     assert.equal(taken.status, 409, taken.text)
     assert.equal(taken.body.error.code, 'NAME_TAKEN')
     assert.equal(taken.body.error.details.setting, 'hostnames.api')
@@ -197,6 +213,7 @@ describe('the generation carries Dispatch routes', () => {
         hostname: 'shop.sly.test',
       },
     })
+
     assert.ok(routed.status === 201 || routed.status === 202, routed.text)
     const moved = await h.call('PATCH', '/v1/settings', {
       cookie: h.admin.cookie,
@@ -205,6 +222,7 @@ describe('the generation carries Dispatch routes', () => {
         'hostnames.api': 'shop.sly.test',
       },
     })
+
     assert.equal(moved.body.error.code, 'NAME_TAKEN', moved.text)
   })
 })
@@ -223,6 +241,7 @@ describe('clearing the hostnames makes the station domainless', () => {
         'hostnames.api': api,
       },
     })
+
     assert.equal(set.status, 200, set.text)
     const again = await h.call('POST', '/auth/sign-in/email', {
       origin: 'http://127.0.0.1:7900',
@@ -234,6 +253,7 @@ describe('clearing the hostnames makes the station domainless', () => {
         password: adminPassword,
       },
     })
+
     cookie = again.headers
       .getSetCookie()
       .map((c) => c.split(';')[0]!)
@@ -252,6 +272,7 @@ describe('clearing the hostnames makes the station domainless', () => {
         'hostnames.api': null,
       },
     })
+
     assert.equal(half.body.error.code, 'VALIDATION_FAILED', half.text)
   })
 
@@ -265,17 +286,20 @@ describe('clearing the hostnames makes the station domainless', () => {
       origin: 'http://127.0.0.1:7900',
       body,
     })
+
     assert.equal(plain.body.error.code, 'PASSKEY_RESET_REQUIRED', plain.text)
     const byToken = await h.call('PATCH', '/v1/settings?reset_passkeys=true', {
       token: h.admin.token,
       body,
     })
+
     assert.equal(byToken.status, 403, byToken.text)
     const human = await h.call('PATCH', '/v1/settings?reset_passkeys=true', {
       cookie,
       origin: 'http://127.0.0.1:7900',
       body,
     })
+
     assert.equal(human.status, 200, human.text)
     assert.equal(
       h.db.select().from(setting).where(eq(setting.key, 'auth.passkey_rp_id')).get()?.value ?? null,
@@ -309,6 +333,7 @@ describe('the setup login link', () => {
       },
       actor,
     )
+
     link = out.login_link!
   })
 
@@ -318,6 +343,7 @@ describe('the setup login link', () => {
 
   test('points at the dashboard host over HTTPS and returns there', () => {
     const url = new URL(link)
+
     assert.equal(url.origin, `https://${dashboard}`)
     assert.equal(url.pathname, '/auth/magic-link/verify')
     assert.equal(url.searchParams.get('callbackURL'), `https://${dashboard}/`)
@@ -335,10 +361,12 @@ describe('the setup login link', () => {
         redirect: 'manual',
       }),
     )
+
     assert.equal(first.status, 302, await first.clone().text())
     assert.equal(first.headers.get('location'), `https://${dashboard}/`)
     const cookies = first.headers.getSetCookie()
     const session = cookies.find((c) => c.startsWith('__Secure-better-auth.session_token='))
+
     assert.ok(session, cookies.join(' | '))
     assert.match(session, /;\s*Secure/i)
     assert.doesNotMatch(session, /Domain=/i)
@@ -351,6 +379,7 @@ describe('the setup login link', () => {
         },
       }),
     )
+
     assert.equal(me.status, 200, await me.clone().text())
     const onApi = await h.fetch(
       new Request(`https://${api}/v1/me`, {
@@ -361,6 +390,7 @@ describe('the setup login link', () => {
         },
       }),
     )
+
     assert.equal(onApi.status, 401, 'the dashboard session cookie is not accepted on the API host')
     const again = await h.fetch(
       new Request(link, {
@@ -368,6 +398,7 @@ describe('the setup login link', () => {
         redirect: 'manual',
       }),
     )
+
     assert.equal(
       again.headers
         .getSetCookie()
@@ -384,6 +415,7 @@ describe('a domainless station answers on its public address', () => {
     h = await startDispatch()
     seedLockfile(h)
     const fake = await startFakeStation(h)
+
     h.db
       .update(station)
       .set({
@@ -397,6 +429,7 @@ describe('a domainless station answers on its public address', () => {
         public_address: publicAddress,
       },
     })
+
     assert.equal(updated.status, 200, updated.text)
   })
 
@@ -406,6 +439,7 @@ describe('a domainless station answers on its public address', () => {
 
   test('the address serves both surfaces like the loopback publish and is a trusted origin for password sign-in', async () => {
     const origin = `https://${publicAddress}`
+
     assert.equal(h.deps.auth.surface.addressOrigin, origin)
     const signIn = await h.fetch(
       new Request(`${origin}/auth/sign-in/email`, {
@@ -421,6 +455,7 @@ describe('a domainless station answers on its public address', () => {
         }),
       }),
     )
+
     assert.equal(signIn.status, 200, await signIn.clone().text())
     const health = await h.fetch(
       new Request(`${origin}/v1/healthz`, {
@@ -429,6 +464,7 @@ describe('a domainless station answers on its public address', () => {
         },
       }),
     )
+
     assert.equal(health.status, 200)
     const other = await h.fetch(
       new Request('https://203.0.113.9/v1/me', {
@@ -438,6 +474,7 @@ describe('a domainless station answers on its public address', () => {
         },
       }),
     )
+
     assert.equal(other.status, 404)
   })
 })

@@ -36,6 +36,7 @@ const assertEnvelope = (reply: { status: number; body: any; headers: Headers }, 
   assert.equal(reply.status, statusOf(code), `${code} status`)
   assert.deepEqual(Object.keys(reply.body), ['error'])
   const { error } = reply.body
+
   assert.equal(error.code, code)
   assert.equal(typeof error.explanation, 'string')
   assert.ok(error.explanation.length > 0)
@@ -53,6 +54,7 @@ const assertEnvelope = (reply: { status: number; body: any; headers: Headers }, 
     ),
     [],
   )
+
   return error
 }
 
@@ -67,6 +69,7 @@ describe('idempotency', () => {
         'idempotency-key': 'create-idem-one',
       },
     )
+
     assert.equal(first.status, 201)
     assert.equal(first.headers.get('idempotent-replayed'), null)
     const second = await post(
@@ -78,6 +81,7 @@ describe('idempotency', () => {
         'idempotency-key': 'create-idem-one',
       },
     )
+
     assert.equal(second.status, 201)
     assert.equal(second.headers.get('idempotent-replayed'), 'true')
     assert.deepEqual(second.body, first.body)
@@ -104,6 +108,7 @@ describe('idempotency', () => {
       },
     )
     const error = assertEnvelope(reply, 'IDEMPOTENCY_MISMATCH')
+
     assert.equal(error.details.method, 'POST')
     assert.equal(error.details.path, '/v1/projects')
     assert.ok(!projects().some((p) => p.name === 'idem-three'))
@@ -128,6 +133,7 @@ describe('idempotency', () => {
         'idempotency-key': 'path-key',
       },
     )
+
     assertEnvelope(reply, 'IDEMPOTENCY_MISMATCH')
   })
 
@@ -152,6 +158,7 @@ describe('idempotency', () => {
         'idempotency-key': 'order-key',
       },
     )
+
     assert.equal(first.status, 201)
     assert.equal(second.status, 201)
     assert.equal(second.headers.get('idempotent-replayed'), 'true')
@@ -168,6 +175,7 @@ describe('idempotency', () => {
       },
     )
     const error = assertEnvelope(reply, 'VALIDATION_FAILED')
+
     assert.deepEqual(error.details.issues, [
       {
         path: 'header:idempotency-key',
@@ -221,8 +229,10 @@ describe('idempotency', () => {
         'idempotency-key': 'retry-key',
       },
     )
+
     assertEnvelope(failed, 'NAME_TAKEN')
     const taken = projects().find((p) => p.name === 'idem-taken')!
+
     assert.equal(
       (
         await h.call('DELETE', `/v1/projects/${taken.id}`, {
@@ -240,6 +250,7 @@ describe('idempotency', () => {
         'idempotency-key': 'retry-key',
       },
     )
+
     assert.equal(retry.status, 201)
     assert.equal(retry.headers.get('idempotent-replayed'), null)
   })
@@ -269,6 +280,7 @@ describe('idempotency', () => {
         'idempotency-key': 'free-key',
       },
     )
+
     assert.equal(reply.status, 201)
   })
 
@@ -303,6 +315,7 @@ describe('idempotency', () => {
       },
       other,
     )
+
     assert.equal(mine.status, 201)
     assert.equal(theirs.status, 201)
     assert.equal(theirs.headers.get('idempotent-replayed'), null)
@@ -325,6 +338,7 @@ describe('idempotency', () => {
         'idempotency-key': 'delete-key',
       },
     })
+
     assert.equal(first.status, 200)
     assert.equal(second.status, 200)
     assert.equal(second.headers.get('idempotent-replayed'), 'true')
@@ -338,6 +352,7 @@ describe('idempotency', () => {
         'idempotency-key': 'has space',
       },
     })
+
     assert.equal(reply.status, 200)
   })
 })
@@ -349,12 +364,15 @@ describe('error envelope', () => {
       extra: true,
     })
     const error = assertEnvelope(reply, 'VALIDATION_FAILED')
+
     assert.ok(Array.isArray(error.details.issues))
     assert.ok(error.details.issues.length >= 1)
+
     for (const issue of error.details.issues) {
       assert.equal(typeof issue.path, 'string')
       assert.equal(typeof issue.message, 'string')
     }
+
     assert.match(error.explanation, /\//)
   })
 
@@ -370,6 +388,7 @@ describe('error envelope', () => {
       }),
     )
     const body = await response.json()
+
     assertEnvelope(
       {
         status: response.status,
@@ -383,6 +402,7 @@ describe('error envelope', () => {
   test('a missing credential is UNAUTHENTICATED with the token fix', async () => {
     const reply = await h.call('GET', '/v1/projects')
     const error = assertEnvelope(reply, 'UNAUTHENTICATED')
+
     assert.match(error.fix, /Bearer/)
   })
 
@@ -419,6 +439,7 @@ describe('error envelope', () => {
       key,
     )
     const error = assertEnvelope(reply, 'FORBIDDEN_SCOPE')
+
     assert.equal(error.details.required.level, 'deploy')
     assert.equal(error.details.required.project_id, created.body.id)
   })
@@ -427,11 +448,13 @@ describe('error envelope', () => {
     const entity = await h.call('GET', '/v1/services/svc_00000000000000000000000000', {
       token: h.admin.token,
     })
+
     assertEnvelope(entity, 'NOT_FOUND')
     const route = await h.call('GET', '/v1/definitely-not-a-route', {
       token: h.admin.token,
     })
     const error = assertEnvelope(route, 'NOT_FOUND')
+
     assert.match(error.fix, /openapi/)
   })
 
@@ -444,6 +467,7 @@ describe('error envelope', () => {
       token: h.admin.token,
     })
     const error = assertEnvelope(missing, 'NOT_FOUND')
+
     assert.match(error.explanation, /environment nope/)
     const service = await h.call(
       'GET',
@@ -452,10 +476,12 @@ describe('error envelope', () => {
         token: h.admin.token,
       },
     )
+
     assert.match(assertEnvelope(service, 'NOT_FOUND').explanation, /service nope/)
     const anonymous = await h.call('GET', path, {
       token: null,
     })
+
     assertEnvelope(anonymous, 'UNAUTHENTICATED')
   })
 
@@ -469,6 +495,7 @@ describe('error envelope', () => {
       }),
       'NAME_TAKEN',
     )
+
     assert.deepEqual(error.details, {
       name: 'envelope-dup',
     })
@@ -483,6 +510,7 @@ describe('error envelope', () => {
       }),
     )
     const body = await response.json()
+
     assertEnvelope(
       {
         status: response.status,
@@ -500,6 +528,7 @@ describe('error envelope', () => {
         'x-request-id': 'trace-123.abc',
       },
     })
+
     assert.equal(reply.headers.get('x-request-id'), 'trace-123.abc')
     assert.equal(reply.body.error.request_id, 'trace-123.abc')
   })
@@ -511,10 +540,12 @@ describe('error envelope', () => {
         'x-request-id': 'bad id with spaces',
       },
     })
+
     assert.match(bad.headers.get('x-request-id')!, /^req_[0-9a-f]{24}$/)
     const none = await h.call('GET', '/v1/projects', {
       token: h.admin.token,
     })
+
     assert.match(none.headers.get('x-request-id')!, /^req_[0-9a-f]{24}$/)
     assert.notEqual(none.headers.get('x-request-id'), bad.headers.get('x-request-id'))
   })
@@ -523,6 +554,7 @@ describe('error envelope', () => {
     const reply = await h.call('GET', '/v1/me', {
       token: h.admin.token,
     })
+
     assert.equal(reply.status, 200)
     assert.ok(reply.headers.get('x-request-id'))
     assert.equal(reply.headers.get('x-stationly-version'), '0.0.0')
@@ -538,10 +570,12 @@ describe('error envelope', () => {
         'x-request-id': 'audit-me-1',
       },
     )
+
     assert.equal(created.status, 201)
     const audit = await h.call('GET', '/v1/audit?action=project.create', {
       token: h.admin.token,
     })
+
     assert.ok(
       audit.body.items.some(
         (e: any) => e.request_id === 'audit-me-1' && e.target.id === created.body.id,
@@ -558,8 +592,13 @@ describe('error envelope', () => {
         headers,
       })
     let last = await send()
-    for (let i = 1; i < 40 && last.status !== 429; i++) last = await send()
+
+    for (let i = 1; i < 40 && last.status !== 429; i++) {
+      last = await send()
+    }
+
     const error = assertEnvelope(last, 'RATE_LIMITED')
+
     assert.ok(Number(last.headers.get('retry-after')) >= 1)
     assert.ok(error.details.retry_after_s >= 1)
   })
@@ -573,6 +612,7 @@ describe(
   () => {
     const documented = () => {
       const text = readDoc('13-api.md')
+
       return [...text.matchAll(/^\| `([A-Z_]+)` \| (\d{3}|none) \|/gm)].map(
         (m) => [m[1]!, m[2] === 'none' ? null : Number(m[2])] as const,
       )
@@ -580,9 +620,12 @@ describe(
 
     test('every code in docs/13-api.md has the documented HTTP status in the protocol catalog', () => {
       const rows = documented()
+
       assert.ok(rows.length > 60)
+
       for (const [code, http] of rows) {
         const entry = errorCatalog.find((e) => e.code === code)
+
         assert.ok(entry, `${code} is missing from the catalog`)
         assert.equal(entry.http, http, `${code} status`)
       }
@@ -593,6 +636,7 @@ describe(
       const missing = errorCatalog
         .filter((e) => e.http !== null && !codes.has(e.code))
         .map((e) => e.code)
+
       assert.deepEqual(missing, [])
     })
   },

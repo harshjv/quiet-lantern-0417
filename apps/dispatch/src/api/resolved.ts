@@ -175,18 +175,25 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
   const compared = comparedId
     ? db.select().from(deployment).where(eq(deployment.id, comparedId)).get()
     : undefined
+
   if (
     subject.kind === 'service' &&
     comparedId &&
     (!compared || compared.service_id !== subject.ctx.service.id)
-  )
+  ) {
     fail('NOT_FOUND', `deployment ${comparedId} is not a deployment of this service`)
-  const pinned = new Map<string, number>()
-  for (const entry of (compared?.env_snapshot as EnvSnapshot | undefined)?.entries ?? []) {
-    for (const leaf of leaves(entry.node))
-      if (leaf.kind === 'value')
-        pinned.set(`${leaf.variable_id}:${leaf.environment_id}`, leaf.version)
   }
+
+  const pinned = new Map<string, number>()
+
+  for (const entry of (compared?.env_snapshot as EnvSnapshot | undefined)?.entries ?? []) {
+    for (const leaf of leaves(entry.node)) {
+      if (leaf.kind === 'value') {
+        pinned.set(`${leaf.variable_id}:${leaf.environment_id}`, leaf.version)
+      }
+    }
+  }
+
   const envNames = new Map(
     db
       .select({
@@ -211,7 +218,11 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
     const pinnedVersion = compared
       ? (pinned.get(`${leaf.variable_id}:${leaf.environment_id}`) ?? null)
       : null
-    if (compared && pinnedVersion !== leaf.version) stale = true
+
+    if (compared && pinnedVersion !== leaf.version) {
+      stale = true
+    }
+
     return {
       scope,
       ...(scope === 'service'
@@ -247,12 +258,16 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
 
   const partsOf = (node: Extract<SourceNode, { kind: 'template' }>): Hop[] => {
     const children = [...node.parts]
+
     return parseValue(node.template).map((segment) => {
-      if (segment.type === 'text')
+      if (segment.type === 'text') {
         return {
           text: segment.text,
         }
+      }
+
       const child = children.shift()!
+
       return {
         ref: segment.raw.slice(3, -2).trim(),
         chain: chainOf(child),
@@ -261,8 +276,11 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
   }
 
   const chainOf = (node: SourceNode): Hop[] => {
-    if (node.kind === 'value') return [valueHop(node)]
-    if (node.kind === 'export')
+    if (node.kind === 'value') {
+      return [valueHop(node)]
+    }
+
+    if (node.kind === 'export') {
       return [
         {
           scope: 'export',
@@ -271,6 +289,8 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
           value: node.value,
         },
       ]
+    }
+
     const row = variableRow(node.variable_id)
     const hop: Hop = {
       scope: row?.scope === 'sandbox' ? 'sandbox' : 'service',
@@ -281,7 +301,11 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       reference: node.template,
     }
     const segments = parseValue(node.template)
-    if (segments.length === 1 && node.parts.length === 1) return [hop, ...chainOf(node.parts[0]!)]
+
+    if (segments.length === 1 && node.parts.length === 1) {
+      return [hop, ...chainOf(node.parts[0]!)]
+    }
+
     return [
       {
         ...hop,
@@ -317,10 +341,14 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       build: v.build,
     }
     let node: SourceNode
+
     try {
       node = subject.kind === 'service' ? resolver.resolve(v) : resolver.resolveSandbox(v)
     } catch (error) {
-      if (!(error instanceof SecretsError)) throw error
+      if (!(error instanceof SecretsError)) {
+        throw error
+      }
+
       return {
         ...base,
         sealed: v.kind === 'sealed',
@@ -333,6 +361,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
         },
       }
     }
+
     stale = false
     const sealed = isSealed(node)
     const shape =
@@ -343,6 +372,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
         : node.kind === 'value'
           ? (() => {
               const hop = valueHop(node)
+
               return {
                 secret_value_id: hop.secret_value_id,
                 version: hop.version,
@@ -364,12 +394,15 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
             }
     const entryStale = stale
     let value: string | undefined
+
     if (options.admin && !sealed) {
       value = render(node, (leaf) => {
         decrypted.push(leaf.secret_value_id)
+
         return decryptLeaf(db, keyring, leaf)
       })
     }
+
     return {
       ...base,
       sealed,
@@ -384,6 +417,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
           }),
     }
   })
+
   if (decrypted.length) {
     audit(db, call, 'secret.decrypt', owner, {
       purpose: 'view',
@@ -392,6 +426,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       },
     })
   }
+
   return {
     variables,
     compared,
@@ -414,6 +449,7 @@ export const resolvedView = (
     },
     options,
   )
+
   return {
     service_id: ctx.service.id,
     environment_id: ctx.environment.id,

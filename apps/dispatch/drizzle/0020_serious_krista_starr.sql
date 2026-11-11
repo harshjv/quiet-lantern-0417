@@ -1,0 +1,1 @@
+ALTER TABLE `station` ADD `default_sandbox_runtime` text;

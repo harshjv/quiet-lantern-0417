@@ -4,6 +4,7 @@ import type { Db } from '../db/client.ts'
 import { deployment, service, type BaseImageRecord } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import { log as defaultLog, type Log } from '../log.ts'
+import { every } from '../schedule.ts'
 import { emitEvent } from '../station/events.ts'
 
 import {
@@ -33,14 +34,13 @@ export const intervalS = (db: Db) => readSetting(db, 'base_images.check_interval
 
 export const keyOf = (r: Reference) => `${r.apiHost}/${r.repository}:${r.tag ?? ''}`
 
-export const headCheck = async (ref: string, fetchImpl?: typeof fetch): Promise<CheckResult> => {
+export const headCheck = async (ref: string): Promise<CheckResult> => {
   const started = Date.now()
   const r = parseReference(ref)
   const res = await registryRequest(r, `manifests/${r.tag ?? 'latest'}`, {
     method: 'HEAD',
     accept: manifestAccept,
     timeoutMs: 15_000,
-    fetchImpl,
   })
   const digest = res.headers.get('docker-content-digest')
   const retry = Number(res.headers.get('retry-after'))
@@ -58,6 +58,7 @@ export const headCheck = async (ref: string, fetchImpl?: typeof fetch): Promise<
                 ? 'ok'
                 : 'no_digest'
               : 'unreachable'
+
   return {
     ref: displayRef(r),
     state,
@@ -109,10 +110,13 @@ const holders = (db: Db) => {
     : []
   const byDep = new Map(deps.map((d) => [d.id, d.base_images]))
   const out = new Map<string, Holder[]>()
+
   for (const svc of rows) {
     const images = byDep.get(svc.dep!) ?? []
+
     images.forEach((entry, index) => {
       const key = keyOf(parseReference(entry.ref))
+
       out.set(key, [
         ...(out.get(key) ?? []),
         {
@@ -125,6 +129,7 @@ const holders = (db: Db) => {
       ])
     })
   }
+
   return out
 }
 
@@ -132,6 +137,7 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
   const checkedAt = new Date().toISOString()
   const moved: Holder[] = []
   const findings: Holder[] = []
+
   db.transaction((tx) => {
     for (const h of list) {
       const dep = tx
@@ -141,14 +147,23 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
         .from(deployment)
         .where(eq(deployment.id, h.deploymentId))
         .get()
-      if (!dep) continue
+
+      if (!dep) {
+        continue
+      }
+
       const images = [...dep.base_images]
       const prev = images[h.index]
-      if (!prev) continue
+
+      if (!prev) {
+        continue
+      }
+
       const state: CheckState =
         result.state === 'ok' ? (result.digest === prev.digest ? 'current' : 'moved') : result.state
       const latest = result.state === 'ok' ? result.digest : (prev.latest_digest ?? null)
-      if (state === 'moved' && (prev.check !== 'moved' || prev.latest_digest !== latest))
+
+      if (state === 'moved' && (prev.check !== 'moved' || prev.latest_digest !== latest)) {
         moved.push({
           ...h,
           entry: {
@@ -156,7 +171,9 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
             latest_digest: latest,
           },
         })
-      if ((state === 'auth_required' || state === 'not_found') && prev.check !== state)
+      }
+
+      if ((state === 'auth_required' || state === 'not_found') && prev.check !== state) {
         findings.push({
           ...h,
           entry: {
@@ -164,6 +181,8 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
             check: state,
           },
         })
+      }
+
       images[h.index] = {
         ...prev,
         check: state,
@@ -177,8 +196,10 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
         .where(eq(deployment.id, h.deploymentId))
         .run()
     }
+
     if (moved.length) {
       const first = moved[0]!
+
       emitEvent(
         tx,
         'base_image.moved',
@@ -197,6 +218,7 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
         },
       )
     }
+
     for (const f of findings) {
       emitEvent(
         tx,
@@ -217,6 +239,7 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
       )
     }
   })
+
   return {
     moved: moved.length,
     findings: findings.length,
@@ -226,63 +249,66 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
 export const startBaseImageChecker = (db: Db, log: Log = defaultLog) => {
   const next = new Map<string, number>()
   let lastInterval = -1
-  let running = false
   const tick = async () => {
-    if (running) return
-    running = true
-    try {
-      const interval = intervalS(db)
-      if (interval !== lastInterval) {
-        next.clear()
-        lastInterval = interval
-        log('base_image.interval', {
-          interval_s: interval,
-          enabled: interval > 0,
-        })
-      }
-      if (interval === 0) return
-      const now = Date.now()
-      const groups = holders(db)
-      for (const key of [...next.keys()]) if (!groups.has(key)) next.delete(key)
-      for (const [key, list] of groups) {
-        if (!next.has(key)) next.set(key, now + Math.floor(Math.random() * interval * 1000))
-        if (next.get(key)! > now) continue
-        const result = await headCheck(list[0]!.entry.ref)
-        const effect = applyResult(db, key, result, list)
-        const wait =
-          result.state === 'rate_limited' && result.retry_after_s
-            ? result.retry_after_s * 1000
-            : interval * 1000
-        next.set(key, Date.now() + Math.round(wait * (0.9 + Math.random() * 0.2)))
-        log('base_image.check', {
-          ref: result.ref,
-          state: result.state,
-          digest: result.digest,
-          status: result.status,
-          hosts: [...new Set(result.hops.map((h) => h.host))],
-          hops: result.hops.length,
-          ratelimit: result.ratelimit,
-          moved_events: effect.moved,
-          findings: effect.findings,
-          deployments: list.length,
-          duration_ms: result.duration_ms,
-          error: result.error,
-        })
-      }
-    } catch (error) {
-      log('base_image.check_failed', {
-        explanation: (error as Error).message,
+    const interval = intervalS(db)
+
+    if (interval !== lastInterval) {
+      next.clear()
+      lastInterval = interval
+      log('base_image.interval', {
+        interval_s: interval,
+        enabled: interval > 0,
       })
-    } finally {
-      running = false
+    }
+
+    if (interval === 0) {
+      return
+    }
+
+    const now = Date.now()
+    const groups = holders(db)
+
+    for (const key of [...next.keys()]) {
+      if (!groups.has(key)) {
+        next.delete(key)
+      }
+    }
+
+    for (const [key, list] of groups) {
+      if (!next.has(key)) {
+        next.set(key, now + Math.floor(Math.random() * interval * 1000))
+      }
+
+      if (next.get(key)! > now) {
+        continue
+      }
+
+      const result = await headCheck(list[0]!.entry.ref)
+      const effect = applyResult(db, key, result, list)
+      const wait =
+        result.state === 'rate_limited' && result.retry_after_s
+          ? result.retry_after_s * 1000
+          : interval * 1000
+
+      next.set(key, Date.now() + Math.round(wait * (0.9 + Math.random() * 0.2)))
+      log('base_image.check', {
+        ref: result.ref,
+        state: result.state,
+        digest: result.digest,
+        status: result.status,
+        hosts: [...new Set(result.hops.map((h) => h.host))],
+        hops: result.hops.length,
+        ratelimit: result.ratelimit,
+        moved_events: effect.moved,
+        findings: effect.findings,
+        deployments: list.length,
+        duration_ms: result.duration_ms,
+        error: result.error,
+      })
     }
   }
-  const timer = setInterval(() => void tick(), 1000)
-  timer.unref()
-  return {
-    stop: () => clearInterval(timer),
-    tick,
-  }
+
+  return every(1, 'base_image.check_failed', log, tick)
 }
 
 export const baseImageInventory = (db: Db) => {
@@ -299,8 +325,10 @@ export const baseImageInventory = (db: Db) => {
       latest_digest: string | null
     }[]
   }[] = []
+
   for (const [, list] of holders(db)) {
     const r = parseReference(list[0]!.entry.ref)
+
     out.push({
       ref: displayRef(r),
       registry: r.apiHost,
@@ -315,5 +343,6 @@ export const baseImageInventory = (db: Db) => {
       })),
     })
   }
+
   return out.sort((a, b) => a.ref.localeCompare(b.ref))
 }

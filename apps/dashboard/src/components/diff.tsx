@@ -28,9 +28,12 @@ const opStyle = {
 } as const
 
 function Value({ value, tone }: { value: unknown; tone: 'old' | 'new' }) {
-  if (value === null || value === undefined)
+  if (value === null || value === undefined) {
     return <span className="text-muted-foreground italic">none</span>
+  }
+
   const text = json(value)
+
   return (
     <pre
       className={cn(
@@ -46,8 +49,10 @@ function Value({ value, tone }: { value: unknown; tone: 'old' | 'new' }) {
 }
 
 function Fields({ value }: { value: unknown }) {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return <Value value={value} tone="new" />
+  }
+
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-emerald-50 px-2 py-1.5 font-mono text-[0.75rem] leading-5 text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100">
       {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
@@ -76,6 +81,7 @@ export function ChangeDiff({
         const Icon = style.icon
         const name = change.id ?? change.ref ?? ''
         const assigned = change.ref ? refs?.[change.ref] : undefined
+
         return (
           <li
             key={i}

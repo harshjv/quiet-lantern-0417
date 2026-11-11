@@ -41,6 +41,7 @@ export const openApiDocument = async () => {
     github,
     log: () => {},
   })
+
   try {
     const app = createApp({
       db,
@@ -52,8 +53,13 @@ export const openApiDocument = async () => {
       github,
     })
     const response = await app.handle(new Request(`${origin}/openapi/json`))
-    if (!response.ok) throw new Error(`GET /openapi/json answered ${response.status}`)
+
+    if (!response.ok) {
+      throw new Error(`GET /openapi/json answered ${response.status}`)
+    }
+
     const { paths, components, tags } = (await response.json()) as Record<string, unknown>
+
     return {
       tags,
       paths,
@@ -74,6 +80,7 @@ export const openapiCommand = (program: Command) =>
     .description(`Write the OpenAPI document sly embeds to ${cliDocumentPath}`)
     .action(async () => {
       const document = JSON.stringify(await openApiDocument(), null, 2)
+
       writeFileSync(
         cliDocumentPath,
         [

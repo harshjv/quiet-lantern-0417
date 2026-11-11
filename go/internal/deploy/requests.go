@@ -49,10 +49,9 @@ func (s *Station) recoverBuilds() {
 			os.Remove(filepath.Join(dir, e.Name()))
 			continue
 		}
-		s.emit(protocol.MessageBuildResult, map[string]any{
-			"build_id": ib.BuildID, "status": protocol.BuildStatusFailed, "image_ref": nil, "index_digest": nil, "duration_s": 0,
-			"railpack_version": nil, "base_images": []any{}, "attestations": []any{},
-			"failure": map[string]any{"phase": protocol.DiagnosisPhaseRecovery, "code": protocol.ErrorCodeBuildFailed, "summary": "stationd restarted while the build was running; Dispatch may start it again"},
+		s.emit(protocol.MessageBuildResult, protocol.BuildResultBody{
+			BuildId: ib.BuildID, Status: protocol.BuildStatusFailed, BaseImages: []protocol.BaseImage{}, Attestations: []protocol.BuildAttestation{},
+			Failure: &protocol.BuildResultBodyFailure{Phase: protocol.DiagnosisPhaseRecovery, Code: string(protocol.ErrorCodeBuildFailed), Summary: "stationd restarted while the build was running; Dispatch may start it again"},
 		})
 		s.log.Warn("build in progress at restart reported failed", "build", ib.BuildID)
 		os.Remove(filepath.Join(dir, e.Name()))
@@ -91,9 +90,8 @@ func (s *Station) startBuild(ctx context.Context, m dispatch.Message, b protocol
 		s.replyError(m, protocolError(protocol.ErrorCodeProtocolLimit, "Wait until the outbox drains to Dispatch.", "the outbox is at its bound; stationd starts no build until it drains"))
 		return
 	}
-	marker, _ := json.Marshal(inflightBuild{BuildID: b.BuildId, DeploymentID: b.DeploymentId, StartedAt: *stamp(time.Now())})
 	if err := os.MkdirAll(filepath.Dir(s.buildMarker(b.BuildId)), 0o700); err == nil {
-		_ = writeAtomic(s.buildMarker(b.BuildId), marker)
+		_ = writeJSON(s.buildMarker(b.BuildId), inflightBuild{BuildID: b.BuildId, DeploymentID: b.DeploymentId, StartedAt: *stamp(time.Now())})
 	}
 	bctx, cancel := context.WithCancel(ctx)
 	s.builds[b.BuildId] = cancel
@@ -123,7 +121,7 @@ func (s *Station) cancelBuild(_ context.Context, m dispatch.Message, b protocol.
 }
 
 func (s *Station) buildStatus(id string, status protocol.BuildStatus, detail map[string]any) {
-	s.emit(protocol.MessageBuildStatus, map[string]any{"build_id": id, "status": status, "detail": detail})
+	s.emit(protocol.MessageBuildStatus, protocol.BuildStatusBody{BuildId: id, Status: status, Detail: detail})
 }
 
 func (s *Station) runBuild(ctx context.Context, b protocol.BuildStartBody, delivery protocol.SecretsDeliverBody, delivered bool) {
@@ -131,16 +129,9 @@ func (s *Station) runBuild(ctx context.Context, b protocol.BuildStartBody, deliv
 	src := filepath.Join(s.opts.StateDir, sourcesDir, b.BuildId)
 	defer os.RemoveAll(src)
 	start := time.Now()
-	result := func(res protocol.BuildResultBody) {
-		body, _ := json.Marshal(res)
-		var fields map[string]any
-		_ = json.Unmarshal(body, &fields)
-		delete(fields, "seq")
-		s.emit(protocol.MessageBuildResult, fields)
-	}
 	failed := func(code protocol.ErrorCode, format string, args ...any) {
 		f := protocol.BuildResultBodyFailure{Code: string(code), Phase: protocol.DiagnosisPhaseBuild, Summary: fmt.Sprintf(format, args...)}
-		result(protocol.BuildResultBody{BuildId: b.BuildId, Status: protocol.BuildStatusFailed, Attestations: []protocol.BuildAttestation{}, BaseImages: []protocol.BaseImage{}, DurationS: int(time.Since(start).Seconds()), Failure: &f})
+		s.emit(protocol.MessageBuildResult, protocol.BuildResultBody{BuildId: b.BuildId, Status: protocol.BuildStatusFailed, Attestations: []protocol.BuildAttestation{}, BaseImages: []protocol.BaseImage{}, DurationS: int(time.Since(start).Seconds()), Failure: &f})
 		s.log.Error("build failed", "build", b.BuildId, "code", code, "summary", f.Summary)
 	}
 	if b.Source.Type == "git" {
@@ -206,7 +197,7 @@ func (s *Station) runBuild(ctx context.Context, b protocol.BuildStartBody, deliv
 	})
 	var be *workshop.BuildError
 	if errors.As(err, &be) {
-		result(be.Record.Result)
+		s.emit(protocol.MessageBuildResult, be.Record.Result)
 		s.log.Error("build failed", "build", b.BuildId, "code", be.Failure.Code, "summary", be.Failure.Summary)
 		return
 	}
@@ -214,7 +205,7 @@ func (s *Station) runBuild(ctx context.Context, b protocol.BuildStartBody, deliv
 		failed(protocol.ErrorCodeBuildFailed, "%v", err)
 		return
 	}
-	result(rec.Result)
+	s.emit(protocol.MessageBuildResult, rec.Result)
 	s.log.Info("build result reported", "build", b.BuildId, "image_ref", deref(rec.Result.ImageRef))
 }
 

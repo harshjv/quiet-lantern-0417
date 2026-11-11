@@ -25,6 +25,7 @@ const sorted = <T>(entries: [string, T][]) =>
 
 const latest = (db: Db, keyring: Keyring, row: VariableRow, environmentId: string | null) => {
   const value = headValue(db, row.id, environmentId)
+
   return value ? decryptValue(keyring, value) : null
 }
 
@@ -44,7 +45,8 @@ const withFlags = (base: Json, row: VariableRow) => ({
 
 const serviceVariable = (db: Db, keyring: Keyring, row: VariableRow): unknown => {
   const plain = row.injection === 'env' && !row.build
-  if (row.kind === 'sealed')
+
+  if (row.kind === 'sealed') {
     return withFlags(
       {
         sealed: true,
@@ -56,7 +58,9 @@ const serviceVariable = (db: Db, keyring: Keyring, row: VariableRow): unknown =>
       },
       row,
     )
-  if (row.kind === 'reference' || row.reference)
+  }
+
+  if (row.kind === 'reference' || row.reference) {
     return plain
       ? row.reference
       : withFlags(
@@ -65,8 +69,14 @@ const serviceVariable = (db: Db, keyring: Keyring, row: VariableRow): unknown =>
           },
           row,
         )
+  }
+
   const value = latest(db, keyring, row, null) ?? ''
-  if (plain && !value.includes('${{')) return value
+
+  if (plain && !value.includes('${{')) {
+    return value
+  }
+
   return withFlags(
     {
       value,
@@ -82,12 +92,15 @@ const omitDefaults = (value: Json, defaults: Json) =>
 
 const exportSource = (source: Json) => {
   const { auth: _auth, ...rest } = source
-  if (rest.type === 'image')
+
+  if (rest.type === 'image') {
     return {
       type: 'image',
       ref: rest.ref,
     }
-  if (rest.type === 'local')
+  }
+
+  if (rest.type === 'local') {
     return rest.dockerfile
       ? {
           type: 'local',
@@ -96,19 +109,30 @@ const exportSource = (source: Json) => {
       : {
           type: 'local',
         }
+  }
+
   const out: Json = {
     type: rest.type,
     repo: rest.repo,
   }
-  if (rest.branch !== undefined) out.branch = rest.branch
-  if (rest.path !== undefined && rest.path !== '/' && rest.path !== '.') out.path = rest.path
+
+  if (rest.branch !== undefined) {
+    out.branch = rest.branch
+  }
+
+  if (rest.path !== undefined && rest.path !== '/' && rest.path !== '.') {
+    out.path = rest.path
+  }
+
   if (
     rest.type === 'dockerfile' &&
     rest.dockerfile !== undefined &&
     rest.dockerfile !== null &&
     rest.dockerfile !== 'Dockerfile'
-  )
+  ) {
     out.dockerfile = rest.dockerfile
+  }
+
   return out
 }
 
@@ -169,11 +193,20 @@ const exportService = (
     kind: svc.kind,
     source: exportSource(svc.source),
   }
-  if (multiStation) doc.station = stationNames.get(svc.station_id)
-  if (svc.command) doc.command = svc.command
-  if (svc.build_args && Object.keys(svc.build_args).length)
+
+  if (multiStation) {
+    doc.station = stationNames.get(svc.station_id)
+  }
+
+  if (svc.command) {
+    doc.command = svc.command
+  }
+
+  if (svc.build_args && Object.keys(svc.build_args).length) {
     doc.build_args = sorted(Object.entries(svc.build_args))
-  if (portDocs.length)
+  }
+
+  if (portDocs.length) {
     doc.ports = portDocs.map((p) => ({
       port: p.port,
       ...(p.protocol !== 'http'
@@ -187,11 +220,15 @@ const exportService = (
           }
         : {}),
     }))
+  }
+
   const defaultHealth = normalizeHealth(svc.kind, portDocs, undefined)
+
   if (svc.health && JSON.stringify(svc.health) !== JSON.stringify(defaultHealth)) {
     const base = normalizeHealth(svc.kind, portDocs, {
       type: (svc.health as { type: 'http' }).type,
     })
+
     doc.health = {
       type: svc.health.type,
       ...omitDefaults(svc.health, {
@@ -200,18 +237,42 @@ const exportService = (
       }),
     }
   }
+
   const limits = omitDefaults(svc.limits, defaultLimits)
-  if (Object.keys(limits).length) doc.limits = limits
+
+  if (Object.keys(limits).length) {
+    doc.limits = limits
+  }
+
   const defaultStrategy = volumes.length > 0 ? 'replace' : 'overlap'
-  if (svc.kind !== 'cron' && svc.kind !== 'one_off' && svc.strategy !== defaultStrategy)
+
+  if (svc.kind !== 'cron' && svc.kind !== 'one_off' && svc.strategy !== defaultStrategy) {
     doc.strategy = svc.strategy
-  if (svc.multi_writer_safe) doc.multi_writer_safe = true
-  if (svc.drain_timeout_s !== 30) doc.drain_timeout_s = svc.drain_timeout_s
-  if (svc.readonly_rootfs) doc.readonly_rootfs = true
-  if (svc.secrets_owner) doc.secrets_owner = svc.secrets_owner
-  if (svc.pre_deploy) doc.pre_deploy = svc.pre_deploy
+  }
+
+  if (svc.multi_writer_safe) {
+    doc.multi_writer_safe = true
+  }
+
+  if (svc.drain_timeout_s !== 30) {
+    doc.drain_timeout_s = svc.drain_timeout_s
+  }
+
+  if (svc.readonly_rootfs) {
+    doc.readonly_rootfs = true
+  }
+
+  if (svc.secrets_owner) {
+    doc.secrets_owner = svc.secrets_owner
+  }
+
+  if (svc.pre_deploy) {
+    doc.pre_deploy = svc.pre_deploy
+  }
+
   const overridable: Json = {}
-  if (svc.schedule)
+
+  if (svc.schedule) {
     overridable.schedule = {
       cron: svc.schedule.cron,
       ...omitDefaults(
@@ -225,10 +286,14 @@ const exportService = (
         },
       ),
     }
-  if (volumes.length)
+  }
+
+  if (volumes.length) {
     doc.volumes = volumes.map((v) => ({
       mount_path: v.mount_path,
     }))
+  }
+
   if (domains.length) {
     overridable.domains = domains.map((d) => {
       const port = portOf.get(d.service_port_id)!.port
@@ -240,29 +305,53 @@ const exportService = (
           : {
               hostname: d.hostname,
             }
-      if (port !== firstHttp) out.port = port
-      if (d.ingress !== 'direct') out.ingress = d.ingress
+
+      if (port !== firstHttp) {
+        out.port = port
+      }
+
+      if (d.ingress !== 'direct') {
+        out.ingress = d.ingress
+      }
+
       return out
     })
   }
-  if (allocations.length)
+
+  if (allocations.length) {
     overridable.expose_tcp = allocations
       .map((a) => portOf.get(a.service_port_id)!.port)
       .sort((a, b) => a - b)
-  if (variables.length)
+  }
+
+  if (variables.length) {
     overridable.variables = sorted(variables.map((v) => [v.key, serviceVariable(db, keyring, v)]))
-  if (svc.desired_state !== 'running') overridable.desired_state = svc.desired_state
+  }
+
+  if (svc.desired_state !== 'running') {
+    overridable.desired_state = svc.desired_state
+  }
+
   const source = svc.source
-  if (source.branch !== undefined)
+
+  if (source.branch !== undefined) {
     overridable.source = {
       branch: source.branch,
     }
-  if (source.type === 'image')
+  }
+
+  if (source.type === 'image') {
     overridable.source = {
       ref: source.ref,
     }
-  if (multiStation) overridable.station = stationNames.get(svc.station_id)
+  }
+
+  if (multiStation) {
+    overridable.station = stationNames.get(svc.station_id)
+  }
+
   overridable.limits = svc.limits
+
   return {
     doc: order({
       ...doc,
@@ -306,7 +395,7 @@ const projectVariable = (
   row: VariableRow,
   environments: EnvironmentRow[],
 ): unknown => {
-  if (row.kind === 'sealed')
+  if (row.kind === 'sealed') {
     return {
       sealed: true,
       ...(row.reference
@@ -315,12 +404,21 @@ const projectVariable = (
           }
         : {}),
     }
-  if (row.reference) return row.reference
+  }
+
+  if (row.reference) {
+    return row.reference
+  }
+
   const fallback = latest(db, keyring, row, null)
   const perEnv = environments
     .map((e) => [e.name, latest(db, keyring, row, e.id)] as const)
     .filter((e): e is readonly [string, string] => e[1] !== null)
-  if (!perEnv.length) return fallback ?? ''
+
+  if (!perEnv.length) {
+    return fallback ?? ''
+  }
+
   return {
     ...(fallback !== null
       ? {
@@ -333,6 +431,7 @@ const projectVariable = (
 
 const diffOverride = (base: Json, other: Json) => {
   const out: Json = {}
+
   for (const key of [
     'source',
     'station',
@@ -345,18 +444,30 @@ const diffOverride = (base: Json, other: Json) => {
   ]) {
     const a = base[key]
     const b = other[key]
-    if (JSON.stringify(a) === JSON.stringify(b)) continue
-    if (b === undefined) out[key] = null
-    else if (key === 'variables' && a && typeof a === 'object' && b && typeof b === 'object') {
+
+    if (JSON.stringify(a) === JSON.stringify(b)) {
+      continue
+    }
+
+    if (b === undefined) {
+      out[key] = null
+    } else if (key === 'variables' && a && typeof a === 'object' && b && typeof b === 'object') {
       const changed = Object.fromEntries(
         Object.entries(b as Json).filter(
           ([k, v]) => JSON.stringify((a as Json)[k]) !== JSON.stringify(v),
         ),
       )
-      if (Object.keys(changed).length) out[key] = changed
-    } else if (key === 'limits') out[key] = omitDefaults(b as Json, a as Json)
-    else out[key] = b
+
+      if (Object.keys(changed).length) {
+        out[key] = changed
+      }
+    } else if (key === 'limits') {
+      out[key] = omitDefaults(b as Json, a as Json)
+    } else {
+      out[key] = b
+    }
   }
+
   return out
 }
 
@@ -404,29 +515,50 @@ export const exportManifest = (
     version: 1,
     project: proj.name,
   }
-  if (projectRows.length)
+
+  if (projectRows.length) {
     doc.variables = sorted(
       projectRows.map((row) => [
         row.key,
         projectVariable(db, keyring, row, target ? [target] : [base, ...others]),
       ]),
     )
-  if (baseServices.size) doc.services = sorted([...baseServices].map(([name, e]) => [name, e.doc]))
+  }
+
+  if (baseServices.size) {
+    doc.services = sorted([...baseServices].map(([name, e]) => [name, e.doc]))
+  }
+
   const overrides: Json = {}
+
   for (const env of others) {
     const services: Json = {}
+
     for (const [name, e] of servicesOf(env)) {
       const baseline = baseServices.get(name)
-      if (!baseline) continue
+
+      if (!baseline) {
+        continue
+      }
+
       const diff = diffOverride(baseline.overridable, e.overridable)
-      if (Object.keys(diff).length) services[name] = diff
+
+      if (Object.keys(diff).length) {
+        services[name] = diff
+      }
     }
-    if (Object.keys(services).length)
+
+    if (Object.keys(services).length) {
       overrides[env.name] = {
         services: sorted(Object.entries(services)),
       }
+    }
   }
-  if (Object.keys(overrides).length) doc.environments = sorted(Object.entries(overrides))
+
+  if (Object.keys(overrides).length) {
+    doc.environments = sorted(Object.entries(overrides))
+  }
+
   return doc
 }
 

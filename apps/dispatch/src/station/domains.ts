@@ -23,7 +23,8 @@ const checkDns = (hostname: string) =>
 
 const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
   const failure = route.failure
-  if (route.result === 'blocked')
+
+  if (route.result === 'blocked') {
     return {
       phase: 'route',
       code: 'ROUTE_NOT_APPLIED',
@@ -38,6 +39,8 @@ const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
         ),
       ],
     }
+  }
+
   return {
     phase: 'route',
     code: failure?.code ?? 'ROUTE_NOT_APPLIED',
@@ -57,7 +60,7 @@ const certificateDiagnosis = (
   failure: ErrorBodyValue | null,
   expiresAt: string | null,
 ): DiagnosisValue => {
-  if (!failure)
+  if (!failure) {
     return {
       phase: 'certificate',
       code: 'CERTIFICATE_ISSUANCE_FAILED',
@@ -70,7 +73,10 @@ const certificateDiagnosis = (
       },
       fixes: [checkDns(d.hostname)],
     }
+  }
+
   const rateLimited = failure.code === 'CERTIFICATE_RATE_LIMITED'
+
   return {
     phase: 'certificate',
     code: failure.code,
@@ -100,21 +106,27 @@ const derive = (
         not_before: observed.not_before,
         expires_at: observed.expires_at,
       }
-  if (route.result === 'failed' || route.result === 'blocked')
+
+  if (route.result === 'failed' || route.result === 'blocked') {
     return {
       status: 'error',
       error: routeDiagnosis(d, route),
       certificate,
     }
-  if (route.result === 'pending')
+  }
+
+  if (route.result === 'pending') {
     return {
       status: d.status === 'active' ? 'active' : 'pending',
       error: d.status === 'active' ? d.error : null,
       certificate,
     }
+  }
+
   if (d.ingress === 'direct') {
     const status = certificate?.status
-    if (status === 'failed' || status === 'expired')
+
+    if (status === 'failed' || status === 'expired') {
       return {
         status: 'error',
         error:
@@ -123,24 +135,31 @@ const derive = (
             : certificateDiagnosis(d, observed?.failure ?? null, certificate?.expires_at ?? null),
         certificate,
       }
-    if (d.status === 'active')
+    }
+
+    if (d.status === 'active') {
       return {
         status: 'active',
         error: null,
         certificate,
       }
+    }
+
     return {
       status: status === 'valid' && route.probe?.ok ? 'active' : 'pending',
       error: null,
       certificate,
     }
   }
-  if (d.status === 'active')
+
+  if (d.status === 'active') {
     return {
       status: 'active',
       error: null,
       certificate,
     }
+  }
+
   return {
     status: route.probe?.ok ? 'active' : 'pending',
     error: null,
@@ -169,19 +188,27 @@ export const ingestRoutes = (
     .where(eq(service.station_id, stationId))
     .all()
   const changed: { domain: string; from: Status; to: Status }[] = []
+
   for (const { d, service_id } of rows) {
     const route = routes[d.id]
-    if (!route) continue
+
+    if (!route) {
+      continue
+    }
+
     const next = derive(d, route)
     const checkedAt =
       route.probe && d.status !== 'active' ? new Date(observed.observed_at) : d.last_checked_at
+
     if (
       next.status === d.status &&
       same(next.error, d.error) &&
       same(next.certificate, d.certificate) &&
       checkedAt?.getTime() === d.last_checked_at?.getTime()
-    )
+    ) {
       continue
+    }
+
     db.update(domain)
       .set({
         status: next.status,
@@ -194,7 +221,11 @@ export const ingestRoutes = (
       .run()
     const certificateMoved =
       certificateStatus(next.certificate) !== certificateStatus(d.certificate)
-    if (next.status === d.status && !certificateMoved) continue
+
+    if (next.status === d.status && !certificateMoved) {
+      continue
+    }
+
     emitEvent(
       db,
       'domain.changed',
@@ -224,5 +255,6 @@ export const ingestRoutes = (
       to: next.status,
     })
   }
+
   return changed
 }

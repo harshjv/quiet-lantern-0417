@@ -112,6 +112,7 @@ export function DiagnosisPanel({
   const fixes = diagnosis.fixes ?? []
   const details = facts(diagnosis)
   const changes = diff ? changeCount(diff) : 0
+
   return (
     <div className="overflow-hidden rounded-lg border bg-card" data-testid="diagnosis">
       <div className={cn('flex items-start gap-3 border-0 border-b px-4 py-3', tonePanel.danger)}>

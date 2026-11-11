@@ -55,37 +55,49 @@ export const defaultLimits = {
 const phase1b = 'is phase 1b and not available on this instance'
 
 const overrideMerge = (base: ServiceDoc, override: ServiceOverrideDoc | undefined): ServiceDoc => {
-  if (!override) return base
+  if (!override) {
+    return base
+  }
+
   const out: Json = {
     ...base,
   }
+
   for (const [key, value] of Object.entries(override)) {
-    if (value === undefined) continue
+    if (value === undefined) {
+      continue
+    }
+
     if (value === null) {
       delete out[key]
       continue
     }
-    if (key === 'source')
+
+    if (key === 'source') {
       out.source = {
         ...base.source,
         ...(value as Json),
       }
-    else if (
+    } else if (
       (key === 'limits' || key === 'schedule' || key === 'variables') &&
       typeof value === 'object' &&
       !Array.isArray(value)
-    )
+    ) {
       out[key] = {
         ...((base as Json)[key] as Json | undefined),
         ...value,
       }
-    else out[key] = value
+    } else {
+      out[key] = value
+    }
   }
+
   return out as ServiceDoc
 }
 
 export const effectiveServices = (doc: ManifestDoc, environmentName: string) => {
   const overrides = doc.environments?.[environmentName]?.services ?? {}
+
   return Object.fromEntries(
     Object.entries(doc.services ?? {}).map(([name, svc]) => [
       name,
@@ -101,13 +113,18 @@ const sameJson = (a: unknown, b: unknown) =>
   JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b))
 
 const sortKeys = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(sortKeys)
-  if (value && typeof value === 'object')
+  if (Array.isArray(value)) {
+    return value.map(sortKeys)
+  }
+
+  if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.keys(value)
         .sort()
         .map((k) => [k, sortKeys((value as Json)[k])]),
     )
+  }
+
   return value
 }
 
@@ -128,28 +145,34 @@ const parseReference = (text: string, path: string, issues: Issue[]) => {
   try {
     const segments = parseValue(text)
     const references = segments.filter((s) => s.type === 'reference')
-    if (references.length > 16)
+
+    if (references.length > 16) {
       issues.push({
         path,
         code: 'REFERENCE_SYNTAX',
         message: `A value holds at most 16 references; this one has ${references.length}.`,
       })
+    }
+
     return segments
   } catch (error) {
     const reason =
       (error as { details?: { reason?: string } }).details?.reason ?? (error as Error).message
-    if (/secret\(N\) must be the entire value/.test(reason))
+
+    if (/secret\(N\) must be the entire value/.test(reason)) {
       issues.push({
         path,
         code: 'GENERATOR_POSITION',
         message: 'secret(N) must be the whole value, never part of an interpolation.',
       })
-    else
+    } else {
       issues.push({
         path,
         code: 'REFERENCE_SYNTAX',
         message: reason,
       })
+    }
+
     return null
   }
 }
@@ -161,22 +184,31 @@ const desiredServiceVariable = (
 ): DesiredVariable | null => {
   if (typeof raw !== 'object') {
     const text = canonicalScalar(raw)
-    if (!text.includes('${{'))
+
+    if (!text.includes('${{')) {
       return {
         kind: 'literal',
         value: text,
         injection: 'env',
         build: false,
       }
+    }
+
     const segments = parseReference(text, path, issues)
-    if (!segments) return null
-    if (isGenerator(segments))
+
+    if (!segments) {
+      return null
+    }
+
+    if (isGenerator(segments)) {
       return {
         kind: 'literal-generator',
         reference: text,
         injection: 'env',
         build: false,
       }
+    }
+
     return {
       kind: 'reference',
       reference: text,
@@ -184,6 +216,7 @@ const desiredServiceVariable = (
       build: false,
     }
   }
+
   const injection = raw.injection ?? 'env'
   const build = raw.build ?? false
   const forms = [
@@ -191,6 +224,7 @@ const desiredServiceVariable = (
     raw.reference !== undefined && !raw.sealed,
     raw.sealed === true,
   ].filter(Boolean).length
+
   if (forms !== 1) {
     issues.push({
       path,
@@ -198,33 +232,45 @@ const desiredServiceVariable = (
       message:
         'Use exactly one of { value }, { reference } or { sealed: true }, optionally with a ${{secret(N)}} reference.',
     })
+
     return null
   }
-  if (raw.value !== undefined)
+
+  if (raw.value !== undefined) {
     return {
       kind: 'literal',
       value: raw.value,
       injection,
       build,
     }
+  }
+
   if (raw.sealed) {
-    if (raw.reference === undefined)
+    if (raw.reference === undefined) {
       return {
         kind: 'sealed',
         reference: null,
         injection,
         build,
       }
+    }
+
     const segments = parseReference(raw.reference, `${path}/reference`, issues)
-    if (!segments) return null
+
+    if (!segments) {
+      return null
+    }
+
     if (!isGenerator(segments)) {
       issues.push({
         path: `${path}/reference`,
         code: 'REFERENCE_SYNTAX',
         message: 'A sealed variable takes only ${{secret(N)}} as its reference.',
       })
+
       return null
     }
+
     return {
       kind: 'sealed',
       reference: raw.reference,
@@ -232,15 +278,22 @@ const desiredServiceVariable = (
       build,
     }
   }
+
   const segments = parseReference(raw.reference!, `${path}/reference`, issues)
-  if (!segments) return null
-  if (isGenerator(segments))
+
+  if (!segments) {
+    return null
+  }
+
+  if (isGenerator(segments)) {
     return {
       kind: 'literal-generator',
       reference: raw.reference!,
       injection,
       build,
     }
+  }
+
   return {
     kind: 'reference',
     reference: raw.reference!,
@@ -263,19 +316,27 @@ const desiredProjectVariable = (
   issues: Issue[],
 ): ProjectDesired | null => {
   const check = (text: string, at: string) => {
-    if (!text.includes('${{')) return true
+    if (!text.includes('${{')) {
+      return true
+    }
+
     const segments = parseReference(text, at, issues)
-    if (segments && !isGenerator(segments))
+
+    if (segments && !isGenerator(segments)) {
       issues.push({
         path: at,
         code: 'PROJECT_REFERENCE',
         message:
           'Project variables hold literals or ${{secret(N)}}; reference project values from service variables instead.',
       })
+    }
+
     return false
   }
+
   if (typeof raw !== 'object') {
     const text = canonicalScalar(raw)
+
     if (!check(text, path)) {
       return issues.some((i) => i.path === path)
         ? null
@@ -286,6 +347,7 @@ const desiredProjectVariable = (
             value: null,
           }
     }
+
     return {
       sealed: false,
       reference: null,
@@ -293,23 +355,29 @@ const desiredProjectVariable = (
       value: null,
     }
   }
+
   if (raw.sealed) {
-    if (raw.default !== undefined || raw.environments !== undefined)
+    if (raw.default !== undefined || raw.environments !== undefined) {
       issues.push({
         path,
         code: 'REFERENCE_SYNTAX',
         message:
           'A sealed project variable never carries values in the file; set them with set_project_variables.',
       })
+    }
+
     if (raw.reference !== undefined) {
       const segments = parseReference(raw.reference, `${path}/reference`, issues)
-      if (segments && !isGenerator(segments))
+
+      if (segments && !isGenerator(segments)) {
         issues.push({
           path: `${path}/reference`,
           code: 'PROJECT_REFERENCE',
           message: 'A sealed project variable takes only ${{secret(N)}}.',
         })
+      }
     }
+
     return {
       sealed: true,
       reference: raw.reference ?? null,
@@ -317,25 +385,35 @@ const desiredProjectVariable = (
       value: null,
     }
   }
+
   if (raw.reference !== undefined) {
     issues.push({
       path: `${path}/reference`,
       code: 'PROJECT_REFERENCE',
       message: 'reference at project scope is only allowed with sealed: true.',
     })
+
     return null
   }
+
   const text = (value: string | number | boolean | undefined, at: string) => {
-    if (value === undefined) return null
+    if (value === undefined) {
+      return null
+    }
+
     const s = canonicalScalar(value)
-    if (s.includes('${{'))
+
+    if (s.includes('${{')) {
       issues.push({
         path: at,
         code: 'PROJECT_REFERENCE',
         message: 'Per-environment values are literals.',
       })
+    }
+
     return s
   }
+
   return {
     sealed: false,
     reference: null,
@@ -346,6 +424,7 @@ const desiredProjectVariable = (
 
 const currentValue = (db: Db, keyring: Keyring, row: VariableRow, environmentId: string | null) => {
   const value = headValue(db, row.id, environmentId, 'unset')
+
   return value
     ? {
         version: value.version,
@@ -387,32 +466,39 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
   const unmanaged: Unmanaged[] = []
   const set = new ChangeSet()
 
-  if (doc.version !== 1)
+  if (doc.version !== 1) {
     issues.push({
       path: '/version',
       code: 'VERSION_UNSUPPORTED',
       message: `version ${doc.version} is not supported; use 1.`,
     })
-  if (doc.project !== project.name)
+  }
+
+  if (doc.project !== project.name) {
     issues.push({
       path: '/project',
       code: 'PROJECT_MISMATCH',
       message: `The file is for project ${doc.project}, the request names ${project.name}.`,
     })
-  if (doc.shared)
+  }
+
+  if (doc.shared) {
     issues.push({
       path: '/shared',
       code: 'PHASE_UNAVAILABLE',
       message: `shared ${phase1b}.`,
     })
+  }
+
   for (const [envName, override] of Object.entries(doc.environments ?? {})) {
     for (const name of Object.keys(override.services ?? {})) {
-      if (!doc.services?.[name])
+      if (!doc.services?.[name]) {
         issues.push({
           path: pointer(['environments', envName, 'services', name]),
           code: 'OVERRIDE_KEY',
           message: `The override names ${name}, which services does not declare.`,
         })
+      }
     }
   }
 
@@ -455,55 +541,70 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     const svc = serviceWithDefaults(raw)
     const row = existingByName.get(name)
     const kind = svc.kind
-    if (row && row.kind !== kind)
+
+    if (row && row.kind !== kind) {
       issues.push({
         path: at('kind'),
         code: 'KIND_IMMUTABLE',
         message: `${name} is a ${row.kind} service; kind cannot change. Delete and recreate it under a new name.`,
       })
-    if (svc.firewall)
+    }
+
+    if (svc.firewall) {
       issues.push({
         path: at('firewall'),
         code: 'PHASE_UNAVAILABLE',
         message: `firewall ${phase1b}.`,
       })
-    if (svc.gpu)
+    }
+
+    if (svc.gpu) {
       issues.push({
         path: at('gpu'),
         code: 'PHASE_UNAVAILABLE',
         message: 'gpu is phase 2 and not available on this instance.',
       })
-    if (svc.source.type === 'template')
+    }
+
+    if (svc.source.type === 'template') {
       issues.push({
         path: at('source', 'type'),
         code: 'PHASE_UNAVAILABLE',
         message: `template sources are phase 1b and not available on this instance.`,
       })
+    }
 
     const ports = (svc.ports ?? []) as PortDoc[]
-    if (kind === 'web' && ports.length === 0)
+
+    if (kind === 'web' && ports.length === 0) {
       issues.push({
         path: at('ports'),
         code: 'KIND_PORTS',
         message: 'A web service needs at least one port.',
       })
-    if (kind !== 'web' && ports.length > 0)
+    }
+
+    if (kind !== 'web' && ports.length > 0) {
       issues.push({
         path: at('ports'),
         code: 'KIND_PORTS',
         message: `A ${kind} service has no ports.`,
       })
+    }
+
     ports.forEach((p, i) => {
-      if (ports.findIndex((o) => o.port === p.port) !== i)
+      if (ports.findIndex((o) => o.port === p.port) !== i) {
         issues.push({
           path: at('ports', i),
           code: 'DUPLICATE',
           message: `port ${p.port} appears twice.`,
         })
+      }
     })
     const portSet = new Map(ports.map((p) => [p.port, p]))
 
     const health = normalizeHealth(kind, ports, raw.health)
+
     if (health && 'port' in health && !portSet.has(health.port)) {
       issues.push({
         path: at('health', svc.health?.port !== undefined ? 'port' : 'type'),
@@ -511,6 +612,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         message: `health.port ${health.port || '(none)'} is not in ports.`,
       })
     }
+
     if (raw.health?.host !== undefined && health?.type !== 'http') {
       issues.push({
         path: at('health', 'host'),
@@ -518,6 +620,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         message: `health.host applies only to an http check, not ${health?.type ?? 'none'}.`,
       })
     }
+
     if (
       health &&
       raw.health?.timeout_s !== undefined &&
@@ -532,25 +635,31 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     }
 
     const volumes = svc.volumes ? svc.volumes.map((v) => v.mount_path) : null
+
     svc.volumes?.forEach((v, i) => {
-      if (v.station_volume)
+      if (v.station_volume) {
         issues.push({
           path: at('volumes', i, 'station_volume'),
           code: 'PHASE_UNAVAILABLE',
           message: 'station_volume is phase 2.',
         })
-      if (v.mount_path === '/run/secrets' || v.mount_path.startsWith('/run/secrets/'))
+      }
+
+      if (v.mount_path === '/run/secrets' || v.mount_path.startsWith('/run/secrets/')) {
         issues.push({
           path: at('volumes', i, 'mount_path'),
           code: 'PATTERN',
           message: '/run/secrets is reserved for file-injected secrets.',
         })
-      if (volumes!.indexOf(v.mount_path) !== i)
+      }
+
+      if (volumes!.indexOf(v.mount_path) !== i) {
         issues.push({
           path: at('volumes', i),
           code: 'DUPLICATE',
           message: `mount_path ${v.mount_path} appears twice.`,
         })
+      }
     })
     const volumeCount =
       volumes?.length ??
@@ -564,13 +673,16 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             .all().length
         : 0)
 
-    if ((kind === 'cron' || kind === 'one_off') && svc.strategy)
+    if ((kind === 'cron' || kind === 'one_off') && svc.strategy) {
       issues.push({
         path: at('strategy'),
         code: 'STRATEGY_KIND',
         message: `strategy does not apply to ${kind} services.`,
       })
+    }
+
     const strategy = svc.strategy ?? (volumeCount > 0 ? 'replace' : 'overlap')
+
     if (strategy === 'overlap' && volumeCount > 0 && !svc.multi_writer_safe) {
       issues.push({
         path: at('strategy'),
@@ -580,18 +692,22 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       })
     }
 
-    if (kind === 'cron' && !svc.schedule)
+    if (kind === 'cron' && !svc.schedule) {
       issues.push({
         path: at('schedule'),
         code: 'SCHEDULE_KIND',
         message: 'A cron service needs a schedule.',
       })
-    if (kind !== 'cron' && svc.schedule)
+    }
+
+    if (kind !== 'cron' && svc.schedule) {
       issues.push({
         path: at('schedule'),
         code: 'SCHEDULE_KIND',
         message: `A ${kind} service takes no schedule.`,
       })
+    }
+
     const schedule = svc.schedule
       ? {
           cron: svc.schedule.cron,
@@ -599,9 +715,13 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           concurrency: svc.schedule.concurrency ?? 'skip',
         }
       : null
+
     if (schedule) {
       try {
-        if (schedule.cron.trim().split(/\s+/).length !== 5) throw new Error('needs five fields')
+        if (schedule.cron.trim().split(/\s+/).length !== 5) {
+          throw new Error('needs five fields')
+        }
+
         new Intl.DateTimeFormat('en', {
           timeZone: schedule.timezone,
         })
@@ -619,73 +739,96 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     }
 
     let stationId: string | null = null
+
     if (svc.station !== undefined) {
       const found = stations.find((s) => s.name === svc.station || s.id === svc.station)
-      if (!found)
+
+      if (!found) {
         issues.push(stationIssue(at('station'), `No enrolled station is named ${svc.station}.`))
-      else stationId = found.id
-    } else if (row) stationId = row.station_id
-    else if (online.length === 1) stationId = online[0]!.id
-    else
+      } else {
+        stationId = found.id
+      }
+    } else if (row) {
+      stationId = row.station_id
+    } else if (online.length === 1) {
+      stationId = online[0]!.id
+    } else {
       issues.push(
         stationIssue(at('station'), `${online.length} stations are online; name one with station.`),
       )
+    }
+
     const st = stations.find((s) => s.id === stationId)
     const limits = {
       ...defaultLimits,
       ...svc.limits,
     }
+
     if (st?.resources) {
-      if (limits.cpu_millis > st.resources.cpu_millis)
+      if (limits.cpu_millis > st.resources.cpu_millis) {
         issues.push({
           path: at('limits', 'cpu_millis'),
           code: 'RANGE',
           message: `${limits.cpu_millis} exceeds the station's ${st.resources.cpu_millis} millicores.`,
         })
-      if (limits.memory_bytes > st.resources.memory_bytes)
+      }
+
+      if (limits.memory_bytes > st.resources.memory_bytes) {
         issues.push({
           path: at('limits', 'memory_bytes'),
           code: 'RANGE',
           message: `${limits.memory_bytes} exceeds the station's ${st.resources.memory_bytes} bytes.`,
         })
+      }
     }
 
     const domains = svc.domains
       ? svc.domains.map((d: DomainDoc, i) => {
           const path = at('domains', i)
-          if ((d.generated === true) === (d.hostname !== undefined))
+
+          if ((d.generated === true) === (d.hostname !== undefined)) {
             issues.push({
               path,
               code: 'REQUIRED',
               message: 'Give exactly one of generated: true and hostname.',
             })
+          }
+
           const httpPorts = ports.filter((p) => p.protocol === 'http')
-          if (d.port === undefined && httpPorts.length > 1)
+
+          if (d.port === undefined && httpPorts.length > 1) {
             issues.push({
               path: `${path}/port`,
               code: 'REQUIRED',
               message: 'port is required when the service has several http ports.',
             })
+          }
+
           const port = d.port ?? httpPorts[0]?.port ?? 0
           const declaredPort = portSet.get(port)
-          if (!declaredPort)
+
+          if (!declaredPort) {
             issues.push({
               path: d.port !== undefined ? `${path}/port` : path,
               code: 'PORT_UNDECLARED',
               message: `port ${port || '(none)'} is not in ports.`,
             })
-          else if (declaredPort.protocol !== 'http')
+          } else if (declaredPort.protocol !== 'http') {
             issues.push({
               path: d.port !== undefined ? `${path}/port` : path,
               code: 'PORT_PROTOCOL',
               message: `port ${port} is tcp; a domain needs an http port.`,
             })
-          if (d.ingress === 'tunnel')
+          }
+
+          if (d.ingress === 'tunnel') {
             issues.push({
               path: `${path}/ingress`,
               code: 'PHASE_UNAVAILABLE',
               message: `tunnel ingress ${phase1b}.`,
             })
+          }
+
           return {
             identity: d.hostname ?? `generated:${port}`,
             hostname: d.hostname ?? null,
@@ -696,79 +839,108 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           }
         })
       : null
+
     domains?.forEach((d, i) => {
-      if (domains.findIndex((o) => o.identity === d.identity) !== i)
+      if (domains.findIndex((o) => o.identity === d.identity) !== i) {
         issues.push({
           path: d.path,
           code: 'DUPLICATE',
           message: `${d.hostname ?? `a generated domain on port ${d.port}`} appears twice.`,
         })
+      }
     })
 
     const exposures = svc.expose_tcp ?? null
+
     exposures?.forEach((port, i) => {
       const p = portSet.get(port)
-      if (!p)
+
+      if (!p) {
         issues.push({
           path: at('expose_tcp', i),
           code: 'PORT_UNDECLARED',
           message: `port ${port} is not in ports.`,
         })
-      else if (p.protocol !== 'tcp')
+      } else if (p.protocol !== 'tcp') {
         issues.push({
           path: at('expose_tcp', i),
           code: 'PORT_PROTOCOL',
           message: `port ${port} is http; only tcp ports are exposed.`,
         })
-      if (exposures.indexOf(port) !== i)
+      }
+
+      if (exposures.indexOf(port) !== i) {
         issues.push({
           path: at('expose_tcp', i),
           code: 'DUPLICATE',
           message: `port ${port} appears twice.`,
         })
+      }
     })
 
     const variables = svc.variables
       ? new Map(
           Object.entries(svc.variables).map(([key, value]) => {
             const path = at('variables', key)
-            if (key.startsWith('STATIONLY_'))
+
+            if (key.startsWith('STATIONLY_')) {
               issues.push({
                 path,
                 code: 'RESERVED_KEY',
                 message: 'Keys starting STATIONLY_ are reserved.',
               })
+            }
+
             return [key, desiredServiceVariable(value, path, issues)]
           }),
         )
       : null
+
     for (const [key, desired] of variables ?? []) {
-      if (!desired || desired.kind !== 'reference') continue
+      if (!desired || desired.kind !== 'reference') {
+        continue
+      }
+
       for (const segment of parseValue(desired.reference)) {
-        if (segment.type !== 'reference') continue
+        if (segment.type !== 'reference') {
+          continue
+        }
+
         const target = segment.target
-        if (target.type === 'shared')
+
+        if (target.type === 'shared') {
           issues.push({
             path: at('variables', key),
             code: 'PHASE_UNAVAILABLE',
             message: `shared references ${phase1b}.`,
           })
-        if (target.type !== 'service') continue
+        }
+
+        if (target.type !== 'service') {
+          continue
+        }
+
         const known = declaredNames.has(target.service) || existingByName.has(target.service)
-        if (known) continue
+
+        if (known) {
+          continue
+        }
+
         const message = `${key} references ${target.service}.${target.key}, and no service ${target.service} exists in the Manifest or in ${environment.name}.`
-        if (input.allowUnresolved)
+
+        if (input.allowUnresolved) {
           warnings.push({
             code: 'VARIABLE_TARGET_MISSING',
             explanation: message,
             path: at('variables', key),
           })
-        else
+        } else {
           issues.push({
             path: at('variables', key),
             code: 'VARIABLE_TARGET_MISSING',
             message,
           })
+        }
       }
     }
 
@@ -791,6 +963,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       schedule,
       desired_state: svc.desired_state ?? 'running',
     }
+
     prepared.push({
       name,
       doc: svc,
@@ -809,29 +982,37 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     ? new Map(
         Object.entries(doc.variables).map(([key, value]) => {
           const path = pointer(['variables', key])
-          if (key.startsWith('STATIONLY_'))
+
+          if (key.startsWith('STATIONLY_')) {
             issues.push({
               path,
               code: 'RESERVED_KEY',
               message: 'Keys starting STATIONLY_ are reserved.',
             })
+          }
+
           return [key, desiredProjectVariable(value, environment.name, path, issues)]
         }),
       )
     : null
 
-  if (issues.length)
+  if (issues.length) {
     return {
       set,
       unmanaged,
       warnings,
       issues,
     }
+  }
 
   await Promise.all(
     prepared.map(async (p) => {
       const source = p.desired.source as Json
-      if (source.type !== 'image') return
+
+      if (source.type !== 'image') {
+        return
+      }
+
       const path = pointer(['services', p.name, 'source', 'ref'])
       const prior = p.row && p.row.station_id === p.stationId ? p.row.source : null
       const pinned = await pinImageSource(
@@ -844,57 +1025,74 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         prior,
         path,
       ).catch((error) => {
-        if (error instanceof ApiError)
+        if (error instanceof ApiError) {
           throw new ApiError(error.code, error.message, error.fix, {
             ...error.details,
             path,
           })
+        }
+
         throw error
       })
+
       p.desired.source = pinned.source
-      if (pinned.resolution)
+
+      if (pinned.resolution) {
         warnings.push({
           ...pinnedWarning(pinned.resolution),
           path,
         })
+      }
     }),
   )
+
   for (const p of prepared) {
     const source = p.desired.source as Json
+
     if (source.type === 'dockerfile' || source.type === 'railpack') {
       const prior = p.row?.source
+
       try {
         const repo = source.repo as string
         const resolved = await input.resolveRepo(repo)
+
         source.auth = resolved.auth
-        if (source.branch === undefined)
+
+        if (source.branch === undefined) {
           source.branch =
             prior && prior.repo === repo && typeof prior.branch === 'string'
               ? prior.branch
               : resolved.default_branch
-        if (resolved.auth === 'public')
+        }
+
+        if (resolved.auth === 'public') {
           warnings.push({
             code: 'SOURCE_POLLING',
             explanation: `${repo} is read anonymously; Dispatch polls ${source.branch as string} every github.poll_interval_s seconds and posts no commit statuses.`,
             path: pointer(['services', p.name, 'source']),
           })
+        }
       } catch (error) {
-        if (error instanceof ApiError)
+        if (error instanceof ApiError) {
           throw new ApiError(error.code, error.message, error.fix, {
             ...error.details,
             path: pointer(['services', p.name, 'source', 'repo']),
           })
+        }
+
         throw error
       }
     }
   }
-  if (issues.length)
+
+  if (issues.length) {
     return {
       set,
       unmanaged,
       warnings,
       issues,
     }
+  }
 
   const variableChanges = (
     serviceName: string,
@@ -906,9 +1104,14 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     const scope = 'service'
     let changed = false
     const rows = new Map(existingRows.map((r) => [r.key, r]))
+
     for (const [key, want] of [...desired].sort(([a], [b]) => a.localeCompare(b))) {
-      if (!want) continue
+      if (!want) {
+        continue
+      }
+
       const prior = rows.get(key)
+
       if (prior?.kind === 'sealed' && want.kind !== 'sealed') {
         issues.push({
           path: `${servicePath}/variables/${key}`,
@@ -917,6 +1120,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
         continue
       }
+
       if (prior && prior.kind !== 'sealed' && want.kind === 'sealed') {
         issues.push({
           path: `${servicePath}/variables/${key}`,
@@ -925,6 +1129,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
         continue
       }
+
       const base = {
         scope,
         key,
@@ -932,6 +1137,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         build: want.build,
         allow_unresolved: true,
       }
+
       if (want.kind === 'sealed') {
         if (!prior) {
           if (want.reference === null) {
@@ -942,6 +1148,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             })
             continue
           }
+
           set.add('variable', parent, {
             ...base,
             kind: 'sealed',
@@ -952,9 +1159,13 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           changed = true
           continue
         }
+
         const referenceChanged = want.reference !== null && want.reference !== prior.reference
-        if (!referenceChanged && prior.injection === want.injection && prior.build === want.build)
+
+        if (!referenceChanged && prior.injection === want.injection && prior.build === want.build) {
           continue
+        }
+
         set.update(
           'variable',
           prior.id,
@@ -977,19 +1188,23 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         changed = true
         continue
       }
+
       if (want.kind === 'literal') {
         const current =
           prior?.kind === 'literal' && prior.reference === null
             ? currentValue(db, keyring, prior, null)
             : null
+
         if (
           prior &&
           current &&
           current.plaintext === want.value &&
           prior.injection === want.injection &&
           prior.build === want.build
-        )
+        ) {
           continue
+        }
+
         const after = {
           ...base,
           kind: 'literal',
@@ -998,7 +1213,8 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           version: prior ? nextValueVersion(db, prior.id, null) : 1,
           value_id: set.secret(escapeLiteral(want.value)),
         }
-        if (prior)
+
+        if (prior) {
           set.update(
             'variable',
             prior.id,
@@ -1012,19 +1228,26 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             },
             after,
           )
-        else set.add('variable', parent, after)
+        } else {
+          set.add('variable', parent, after)
+        }
+
         changed = true
         continue
       }
+
       const kind = want.kind === 'literal-generator' ? 'literal' : 'reference'
+
       if (
         prior &&
         prior.kind === kind &&
         prior.reference === want.reference &&
         prior.injection === want.injection &&
         prior.build === want.build
-      )
+      ) {
         continue
+      }
+
       const after = {
         ...base,
         kind,
@@ -1032,7 +1255,8 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         value_length: null,
         version: kind === 'literal' ? (prior ? nextValueVersion(db, prior.id, null) : 1) : null,
       }
-      if (prior)
+
+      if (prior) {
         set.update(
           'variable',
           prior.id,
@@ -1046,30 +1270,40 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           },
           after,
         )
-      else set.add('variable', parent, after)
+      } else {
+        set.add('variable', parent, after)
+      }
+
       changed = true
     }
+
     for (const row of existingRows) {
-      if (desired.has(row.key)) continue
+      if (desired.has(row.key)) {
+        continue
+      }
+
       if (input.prune) {
         set.remove('variable', row.id, {
           key: row.key,
           kind: row.kind,
         })
         changed = true
-      } else
+      } else {
         unmanaged.push({
           entity: 'variable',
           id: row.id,
           key: row.key,
           service: serviceName,
         })
+      }
     }
+
     return changed
   }
 
   const stationReady = (stationId: string | null) => {
     const st = stations.find((s) => s.id === stationId)
+
     return (
       !!st && deployableStations.has(st.status) && !st.draining && st.version_skew !== 'unsupported'
     )
@@ -1078,6 +1312,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
   for (const p of prepared) {
     const servicePath = pointer(['services', p.name])
     const desired = p.desired
+
     if (!p.row) {
       const { desired_state, ...rest } = desired
       const ref = set.add('service', environment.id, {
@@ -1087,7 +1322,8 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         desired_state,
       })
       const portRefs = new Map<number, string>()
-      for (const port of p.ports)
+
+      for (const port of p.ports) {
         portRefs.set(
           port.port,
           set.add('service_port', ref, {
@@ -1096,12 +1332,17 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             grpc: port.grpc,
           }),
         )
-      for (const mount of p.volumes ?? [])
+      }
+
+      for (const mount of p.volumes ?? []) {
         set.add('volume', ref, {
           mount_path: mount,
         })
+      }
+
       for (const d of p.domains ?? []) {
         const hostname = d.hostname ?? generatedHostname(db, p.name, environment.name, p.stationId!)
+
         if (!hostname) {
           issues.push({
             path: d.path,
@@ -1111,6 +1352,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           })
           continue
         }
+
         requireGatewayPin(db, p.stationId!)
         set.add('domain', portRefs.get(d.port)!, {
           hostname,
@@ -1118,33 +1360,47 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           ingress: d.ingress,
         })
       }
+
       if (p.exposures?.length) {
         const picker = hostPortPicker(db, p.stationId!)
+
         for (const port of p.exposures) {
           const hostPort = picker.next()
-          if (hostPort === null)
+
+          if (hostPort === null) {
             fail(
               'PORT_RANGE_EXHAUSTED',
               `Every port in ${picker.range} is allocated on this station.`,
             )
+          }
+
           set.add('port_allocation', portRefs.get(port)!, {
             station_id: p.stationId,
             host_port: hostPort,
           })
         }
       }
-      if (p.variables) variableChanges(p.name, ref, [], p.variables, servicePath)
+
+      if (p.variables) {
+        variableChanges(p.name, ref, [], p.variables, servicePath)
+      }
+
       const source = desired.source as Json
-      if (desired_state === 'running' && source.type !== 'local' && stationReady(p.stationId))
+
+      if (desired_state === 'running' && source.type !== 'local' && stationReady(p.stationId)) {
         set.deploy(ref, 'manual')
+      }
+
       continue
     }
 
     const row = p.row
     let deployReason: string[] = []
     let sourceChanged = false
+
     for (const [field, value] of Object.entries(desired)) {
       const current = (row as Json)[field] ?? null
+
       if (field === 'source') {
         const merged = {
           ...(current as Json),
@@ -1152,25 +1408,38 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         const next = {
           ...(value as Json),
         }
+
         if (!sameJson(merged, next)) {
           leafDiff(set, 'service', row.id, '/source', merged, next)
           sourceChanged = true
           deployReason.push('/source')
         }
+
         continue
       }
-      if (sameJson(current, value)) continue
+
+      if (sameJson(current, value)) {
+        continue
+      }
+
       if (
         field === 'health' ||
         field === 'limits' ||
         field === 'schedule' ||
         field === 'secrets_owner'
       ) {
-        if (current === null || value === null)
+        if (current === null || value === null) {
           set.update('service', row.id, `/${field}`, current, value)
-        else leafDiff(set, 'service', row.id, `/${field}`, current, value)
-      } else set.update('service', row.id, `/${field}`, current, value)
-      if (field !== 'desired_state') deployReason.push(`/${field}`)
+        } else {
+          leafDiff(set, 'service', row.id, `/${field}`, current, value)
+        }
+      } else {
+        set.update('service', row.id, `/${field}`, current, value)
+      }
+
+      if (field !== 'desired_state') {
+        deployReason.push(`/${field}`)
+      }
     }
 
     const currentPorts = db
@@ -1187,11 +1456,14 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       after: 'http' | 'tcp'
       path: string
     }[] = []
+
     for (const cp of currentPorts) {
       const index = p.ports.findIndex((x) => x.port === cp.port)
       const want = p.ports[index]
+
       if (want) {
         portIds.set(cp.port, cp.id)
+
         if (want.protocol !== cp.protocol) {
           protocolChanges.push({
             id: cp.id,
@@ -1202,12 +1474,15 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           })
           deployReason.push(`/ports/${cp.port}/protocol`)
         }
+
         if (want.grpc !== cp.grpc) {
           set.update('service_port', cp.id, '/grpc', cp.grpc, want.grpc)
           deployReason.push(`/ports/${cp.port}/grpc`)
         }
+
         continue
       }
+
       if (input.prune) {
         set.remove('service_port', cp.id, {
           port: cp.port,
@@ -1224,8 +1499,12 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         portIds.set(cp.port, cp.id)
       }
     }
+
     for (const want of p.ports) {
-      if (portIds.has(want.port)) continue
+      if (portIds.has(want.port)) {
+        continue
+      }
+
       portIds.set(
         want.port,
         set.add('service_port', row.id, {
@@ -1243,8 +1522,12 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         .from(volume)
         .where(and(eq(volume.service_id, row.id), eq(volume.status, 'active')))
         .all()
+
       for (const vol of current) {
-        if (p.volumes.includes(vol.mount_path)) continue
+        if (p.volumes.includes(vol.mount_path)) {
+          continue
+        }
+
         if (!input.prune) {
           unmanaged.push({
             entity: 'volume',
@@ -1254,6 +1537,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           })
           continue
         }
+
         set.update('volume', vol.id, '/status', vol.status, 'retained')
         set.update(
           'volume',
@@ -1265,8 +1549,12 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         set.update('volume', vol.id, '/service_id', row.id, null)
         structural = true
       }
+
       for (const mount of p.volumes) {
-        if (current.some((v) => v.mount_path === mount)) continue
+        if (current.some((v) => v.mount_path === mount)) {
+          continue
+        }
+
         set.add('volume', row.id, {
           mount_path: mount,
         })
@@ -1277,6 +1565,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     const ids = currentPorts.map((cp) => cp.id)
     const removedDomains = new Set<string>()
     const removedAllocations = new Set<string>()
+
     if (p.domains) {
       const current = ids.length
         ? db.select().from(domain).where(inArray(domain.service_port_id, ids)).all()
@@ -1284,29 +1573,41 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       const portOf = new Map(currentPorts.map((cp) => [cp.id, cp.port]))
       const identity = (d: (typeof current)[number]) =>
         d.kind === 'generated' ? `generated:${portOf.get(d.service_port_id)}` : d.hostname
+
       for (const d of current) {
         const want = p.domains.find((w) => w.identity === identity(d))
-        if (want && want.ingress === d.ingress) continue
+
+        if (want && want.ingress === d.ingress) {
+          continue
+        }
+
         if (input.prune || want) {
           set.remove('domain', d.id, {
             hostname: d.hostname,
           })
           removedDomains.add(d.id)
-        } else
+        } else {
           unmanaged.push({
             entity: 'domain',
             id: d.id,
             service: p.name,
             hostname: d.hostname,
           })
+        }
       }
+
       for (const want of p.domains) {
         const have = current.find(
           (d) => identity(d) === want.identity && d.ingress === want.ingress,
         )
-        if (have) continue
+
+        if (have) {
+          continue
+        }
+
         const hostname =
           want.hostname ?? generatedHostname(db, p.name, environment.name, p.stationId!)
+
         if (!hostname) {
           issues.push({
             path: want.path,
@@ -1316,6 +1617,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           })
           continue
         }
+
         requireGatewayPin(db, p.stationId!)
         set.add('domain', portIds.get(want.port)!, {
           hostname,
@@ -1339,28 +1641,41 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             .all()
         : []
       const portOf = new Map(currentPorts.map((cp) => [cp.id, cp.port]))
+
       for (const a of current) {
-        if (p.exposures.includes(portOf.get(a.service_port_id)!)) continue
+        if (p.exposures.includes(portOf.get(a.service_port_id)!)) {
+          continue
+        }
+
         if (input.prune) {
           set.update('port_allocation', a.id, '/status', a.status, 'removed')
           removedAllocations.add(a.id)
-        } else
+        } else {
           unmanaged.push({
             entity: 'port_allocation',
             id: a.id,
             service: p.name,
             port: portOf.get(a.service_port_id),
           })
+        }
       }
+
       const picker = hostPortPicker(db, p.stationId!)
+
       for (const port of p.exposures) {
-        if (current.some((a) => portOf.get(a.service_port_id) === port)) continue
+        if (current.some((a) => portOf.get(a.service_port_id) === port)) {
+          continue
+        }
+
         const hostPort = picker.next()
-        if (hostPort === null)
+
+        if (hostPort === null) {
           fail(
             'PORT_RANGE_EXHAUSTED',
             `Every port in ${picker.range} is allocated on this station.`,
           )
+        }
+
         set.add('port_allocation', portIds.get(port)!, {
           station_id: p.stationId,
           host_port: hostPort,
@@ -1394,6 +1709,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
               )
               .all()
               .filter((a) => !removedAllocations.has(a.id))
+
       if (remaining.length) {
         const what =
           change.after === 'tcp'
@@ -1403,6 +1719,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           change.after === 'tcp'
             ? 'drop the domain from domains and apply with prune'
             : 'drop the port from expose_tcp and apply with prune'
+
         issues.push({
           path: change.path,
           code: 'PORT_PROTOCOL',
@@ -1410,15 +1727,18 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
         continue
       }
+
       set.update('service_port', change.id, '/protocol', change.before, change.after)
     }
 
     let variablesChanged = false
+
     if (p.variables) {
       const rows = variablesOf(db, {
         scope: 'service',
         id: row.id,
       }).all()
+
       variablesChanged = variableChanges(p.name, row.id, rows, p.variables, servicePath)
     }
 
@@ -1430,6 +1750,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       sourceChanged,
       deployReason.length || structural ? 'redeploy' : 'variable_change',
     )
+
     if (
       trigger &&
       running &&
@@ -1441,16 +1762,21 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         ...(structural ? ['ports or volumes changed'] : []),
         ...(variablesChanged ? ['variables changed'] : []),
       ]
+
       set.deploy(row.id, trigger, {
         reason: reasons.join(', '),
       })
     }
+
     deployReason = []
   }
 
   if (doc.services) {
     for (const row of existing) {
-      if (declaredNames.has(row.name)) continue
+      if (declaredNames.has(row.name)) {
+        continue
+      }
+
       if (!input.prune) {
         unmanaged.push({
           entity: 'service',
@@ -1459,6 +1785,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
         continue
       }
+
       set.remove('service', row.id, {
         name: row.name,
         kind: row.kind,
@@ -1472,10 +1799,15 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       id: project.id,
     }).all()
     const byKey = new Map(rows.map((r) => [r.key, r]))
+
     for (const [key, want] of [...projectVariables].sort(([a], [b]) => a.localeCompare(b))) {
-      if (!want) continue
+      if (!want) {
+        continue
+      }
+
       const prior = byKey.get(key)
       const path = pointer(['variables', key])
+
       if (prior?.kind === 'sealed' && !want.sealed) {
         issues.push({
           path,
@@ -1484,6 +1816,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
         continue
       }
+
       if (prior && prior.kind !== 'sealed' && want.sealed) {
         issues.push({
           path,
@@ -1492,6 +1825,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
         continue
       }
+
       let targetRef: string | null = prior?.id ?? null
       const write = (
         environmentId: string | null,
@@ -1522,7 +1856,8 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
                 value_id: set.secret(escapeLiteral(plaintext)),
               }),
         }
-        if (targetRef)
+
+        if (targetRef) {
           set.update(
             'variable',
             targetRef,
@@ -1538,51 +1873,77 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
                 },
             after,
           )
-        else targetRef = set.add('variable', project.id, after)
+        } else {
+          targetRef = set.add('variable', project.id, after)
+        }
       }
+
       if (want.sealed) {
         const hasValue = prior
           ? (headValue(db, prior.id, environment.id, 'unset') ??
             headValue(db, prior.id, null, 'unset'))
           : null
-        if (hasValue && (!want.reference || prior!.reference === want.reference)) continue
-        if (want.reference) write(environment.id, null, want.reference)
-        else
+
+        if (hasValue && (!want.reference || prior!.reference === want.reference)) {
+          continue
+        }
+
+        if (want.reference) {
+          write(environment.id, null, want.reference)
+        } else {
           warnings.push({
             code: 'SEALED_VALUE_MISSING',
             explanation: `${key} is declared sealed and has no value in ${environment.name}; set it with set_project_variables.`,
             path,
           })
+        }
+
         continue
       }
+
       if (want.reference) {
-        if (prior && prior.reference === want.reference && headValue(db, prior.id, null)) continue
+        if (prior && prior.reference === want.reference && headValue(db, prior.id, null)) {
+          continue
+        }
+
         write(null, null, want.reference)
         continue
       }
+
       if (want.default !== null) {
         const current = prior ? currentValue(db, keyring, prior, null) : null
-        if (!current || current.plaintext !== want.default || prior?.reference)
+
+        if (!current || current.plaintext !== want.default || prior?.reference) {
           write(null, want.default, null)
+        }
       }
+
       if (want.value !== null) {
         const current = prior ? currentValue(db, keyring, prior, environment.id) : null
-        if (!current || current.plaintext !== want.value) write(environment.id, want.value, null)
+
+        if (!current || current.plaintext !== want.value) {
+          write(environment.id, want.value, null)
+        }
       }
     }
+
     for (const row of rows) {
-      if (projectVariables.has(row.key)) continue
+      if (projectVariables.has(row.key)) {
+        continue
+      }
+
       if (input.prune) {
         set.remove('variable', row.id, {
           key: row.key,
           kind: row.kind,
         })
-      } else
+      } else {
         unmanaged.push({
           entity: 'variable',
           id: row.id,
           key: row.key,
         })
+      }
     }
   }
 
@@ -1595,24 +1956,49 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 }
 
 export const changeLevel = (change: Change): Level => {
-  if (change.entity === 'deployment') return 'deploy'
-  if (change.entity === 'service' && change.op !== 'update') return 'admin'
-  if (change.entity === 'service' && change.op === 'update' && change.path === '/station_id')
+  if (change.entity === 'deployment') {
+    return 'deploy'
+  }
+
+  if (change.entity === 'service' && change.op !== 'update') {
     return 'admin'
-  if (change.entity === 'domain' || change.entity === 'port_allocation') return 'admin'
-  if (change.entity === 'volume' && change.op === 'update') return 'admin'
+  }
+
+  if (change.entity === 'service' && change.op === 'update' && change.path === '/station_id') {
+    return 'admin'
+  }
+
+  if (change.entity === 'domain' || change.entity === 'port_allocation') {
+    return 'admin'
+  }
+
+  if (change.entity === 'volume' && change.op === 'update') {
+    return 'admin'
+  }
+
   if (change.entity === 'variable') {
     const after = (change.op === 'remove' ? change.before : change.after) as Json
-    if (after?.scope === 'project' || after?.kind === 'sealed') return 'admin'
-    if (change.op === 'remove' && change.before.kind === 'sealed') return 'admin'
+
+    if (after?.scope === 'project' || after?.kind === 'sealed') {
+      return 'admin'
+    }
+
+    if (change.op === 'remove' && change.before.kind === 'sealed') {
+      return 'admin'
+    }
   }
+
   return 'deploy'
 }
 
 export const requireDiffLevel = (principal: Principal, target: Target, changes: Change[]) => {
   changes.forEach((change, index) => {
     const level = changeLevel(change)
-    if (can(principal, target, level)) return
+
+    if (can(principal, target, level)) {
+      return
+    }
+
     fail(
       'FORBIDDEN_SCOPE',
       `Entry ${index} of the diff (${change.op} ${change.entity}) needs ${level}.`,

@@ -16,6 +16,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { ApiFailure } from '@/lib/api'
 import type { FixContext } from '@/lib/fixes'
+import { toneBorder, toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 export function PageHeader({
@@ -102,6 +103,7 @@ function ErrorFooter({ failure }: { failure: ApiFailure }) {
     failure.code,
     ...(failure.requestId ? [`Request ${failure.requestId}`] : []),
   ].join(' · ')
+
   return (
     <div className="flex items-center gap-1 pt-1 font-mono text-xs text-muted-foreground">
       <span className="min-w-0 truncate">{details}</span>
@@ -128,9 +130,10 @@ export function ErrorState({
   fixes?: FixContext
 }) {
   const failure = error instanceof ApiFailure ? error : null
+
   return (
-    <Alert className="border-red-300 dark:border-red-900">
-      <CircleAlert className="text-red-600 dark:text-red-400" />
+    <Alert className={toneBorder.danger}>
+      <CircleAlert className={toneText.danger} />
       <AlertTitle className="font-medium">{title}</AlertTitle>
       <AlertDescription className="space-y-1.5 [&_p:not(:last-child)]:mb-0">
         <p className="text-muted-foreground">
@@ -227,7 +230,11 @@ export function KeyValue({
       ))}
     </dl>
   )
-  if (!framed) return list
+
+  if (!framed) {
+    return list
+  }
+
   return (
     <div className="rounded-lg border bg-card p-4">
       {list}

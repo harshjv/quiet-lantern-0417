@@ -1,6 +1,14 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 import { parse } from 'tldts'
+
+import {
+  domainFieldText,
+  domainStatusValues,
+  ingressValues,
+  portAllocationStatusValues,
+  StringEnum,
+} from '@stationly/protocol'
 
 import { domain, port_allocation, service_port } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
@@ -9,13 +17,12 @@ import { fail } from '../errors.ts'
 import { generatedHostname, hostPortPicker, requireGatewayPin } from '../exposure.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
-import { allocationById, domainById, portById, serviceById } from '../lookup.ts'
-import { getQuery } from '../pagination.ts'
-import { Deleted, Domain, models, Page, PortAllocation, replies, Staged } from '../shapes.ts'
+import { filterOne, getQuery } from '../pagination.ts'
+import { input } from '../schemas.ts'
+import { Deleted, Domain, Page, PortAllocation, replies, Staged } from '../shapes.ts'
 
 export const domainRoutes = (kit: Kit) => {
   const { db } = kit.deps
-  const tags = ['domains']
   const domainView = (id: string, fields?: string) =>
     select(
       kit.views.domain,
@@ -38,16 +45,11 @@ export const domainRoutes = (kit: Kit) => {
       .all()
       .map((p) => p.id)
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('domains', '/v1')
     .get(
       '/services/:service/domains',
-      ({ params, query }) => {
-        const ctx = serviceById(db, params.service)
+      ({ ctx, query }) => {
         const ports = portsOf(ctx.service.id)
         const rows = ports.length
           ? db
@@ -62,69 +64,59 @@ export const domainRoutes = (kit: Kit) => {
               .orderBy(desc(domain.id))
               .all()
           : []
+
         return {
           items: projectAll(kit.views.domain, rows, kit.fields(query.fields)),
           next_cursor: null,
         }
       },
       {
-        operation: {
+        service: {
           id: 'list_domains',
+          summary: 'List the domains of a service',
           level: 'read',
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         query: t.Object({
           ...getQuery,
-          status: t.Optional(t.String()),
+          status: filterOne(domainStatusValues),
         }),
         response: replies({
           200: Page(Domain),
         }),
-        detail: {
-          summary: 'List the domains of a service',
-          tags,
-        },
       },
     )
     .get(
       '/domains/:id',
-      ({ params, query }) =>
-        select(kit.views.domain, domainById(db, params.id).domain, kit.fields(query.fields)),
+      ({ ctx, query }) => select(kit.views.domain, ctx.domain, kit.fields(query.fields)),
       {
-        operation: {
+        domain: {
           id: 'get_domain',
+          summary: 'Get a domain',
           level: 'read',
           mcp: false,
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         query: t.Object(getQuery),
         response: replies({
           200: Domain,
         }),
-        detail: {
-          summary: 'Get a domain',
-          tags,
-        },
       },
     )
     .post(
       '/ports/:id/domains',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = portById(db, params.id)
         const ingress = body.ingress ?? 'direct'
+
         if (ctx.port.protocol !== 'http' || ctx.port.grpc) {
-          if (ingress === 'tunnel')
+          if (ingress === 'tunnel') {
             fail(
               'TUNNEL_UNSUPPORTED_PROTOCOL',
               `Port ${ctx.port.port} is ${ctx.port.grpc ? 'gRPC' : ctx.port.protocol}, which the Tunnel cannot carry.`,
               'Use ingress = direct, or expose a tcp port with POST /v1/ports/{id}/port-allocations.',
             )
-          if (ctx.port.protocol !== 'http')
+          }
+
+          if (ctx.port.protocol !== 'http') {
             fail(
               'VALIDATION_FAILED',
               `Port ${ctx.port.port} is tcp; a domain needs an http port.`,
@@ -138,9 +130,12 @@ export const domainRoutes = (kit: Kit) => {
                 ],
               },
             )
+          }
         }
+
         requireGatewayPin(db, ctx.service.station_id)
-        if (body.generated === (body.hostname !== undefined))
+
+        if (body.generated === (body.hostname !== undefined)) {
           fail(
             'VALIDATION_FAILED',
             'Send exactly one of generated = true or hostname.',
@@ -154,18 +149,23 @@ export const domainRoutes = (kit: Kit) => {
               ],
             },
           )
+        }
+
         let hostname: string
+
         if (body.hostname !== undefined) {
           hostname = body.hostname.toLowerCase()
           const parsed = parse(hostname, {
             allowPrivateDomains: true,
           })
-          if (parsed.isIp || !parsed.domain || parsed.hostname !== hostname)
+
+          if (parsed.isIp || !parsed.domain || parsed.hostname !== hostname) {
             fail(
               'DOMAIN_INVALID',
               `${body.hostname} is not a DNS name under a registrable domain.`,
               'Send a full hostname such as app.example.com.',
             )
+          }
         } else {
           hostname =
             generatedHostname(db, ctx.service.name, ctx.environment.name, ctx.service.station_id) ??
@@ -175,6 +175,7 @@ export const domainRoutes = (kit: Kit) => {
               'Set the domains.zone setting, or send a hostname.',
             )
         }
+
         if (
           db
             .select({
@@ -183,14 +184,17 @@ export const domainRoutes = (kit: Kit) => {
             .from(domain)
             .where(eq(domain.hostname, hostname))
             .get()
-        )
+        ) {
           fail('NAME_TAKEN', `${hostname} is already routed.`, undefined, {
             hostname,
           })
+        }
+
         const ownKey = (['hostnames.dashboard', 'hostnames.api'] as const).find(
           (key) => readSetting(db, key) === hostname,
         )
-        if (ownKey)
+
+        if (ownKey) {
           fail(
             'NAME_TAKEN',
             `${hostname} is Dispatch's own hostname (${ownKey}).`,
@@ -200,7 +204,10 @@ export const domainRoutes = (kit: Kit) => {
               setting: ownKey,
             },
           )
+        }
+
         const changes = new ChangeSet()
+
         changes.add('domain', ctx.port.id, {
           hostname,
           kind: body.generated ? 'generated' : 'custom',
@@ -215,27 +222,41 @@ export const domainRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         set.status = 201
+
         return domainView(result.refs['new:domain:1']!, 'dns_instructions')
       },
       {
-        operation: {
+        service_port: {
           id: 'add_domain',
+          summary: 'Add a generated or custom domain to an http port',
           level: 'admin',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         body: t.Object(
           {
-            generated: t.Optional(t.Boolean()),
+            generated: t.Optional(
+              t.Boolean({
+                description: domainFieldText.generated,
+              }),
+            ),
             hostname: t.Optional(
               t.String({
                 minLength: 1,
+                description: domainFieldText.hostname,
               }),
             ),
-            ingress: t.Optional(t.Union([t.Literal('direct'), t.Literal('tunnel')])),
+            ingress: t.Optional(
+              input(
+                StringEnum(ingressValues, {
+                  description: domainFieldText.ingress,
+                }),
+              ),
+            ),
           },
           {
             additionalProperties: false,
@@ -245,18 +266,14 @@ export const domainRoutes = (kit: Kit) => {
           201: Domain,
           202: Staged,
         }),
-        detail: {
-          summary: 'Add a generated or custom domain to an http port',
-          tags,
-        },
       },
     )
     .delete(
       '/domains/:id',
-      async ({ request, params, set }) => {
+      async ({ ctx, request, set }) => {
         const call = await kit.call(request)
-        const ctx = domainById(db, params.id)
         const changes = new ChangeSet()
+
         changes.remove('domain', ctx.domain.id, select(kit.views.domain, ctx.domain, undefined))
         const result = commit(
           kit.deps,
@@ -267,33 +284,30 @@ export const domainRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         return {
           deleted: true as const,
         }
       },
       {
-        operation: {
+        domain: {
           id: 'remove_domain',
+          summary: 'Remove a domain',
           level: 'admin',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Deleted,
           202: Staged,
         }),
-        detail: {
-          summary: 'Remove a domain',
-          tags,
-        },
       },
     )
     .get(
       '/services/:service/port-allocations',
-      ({ params, query }) => {
-        const ctx = serviceById(db, params.service)
+      ({ ctx, query }) => {
         const ports = portsOf(ctx.service.id)
         const rows = ports.length
           ? db
@@ -308,38 +322,33 @@ export const domainRoutes = (kit: Kit) => {
               .orderBy(desc(port_allocation.id))
               .all()
           : []
+
         return {
           items: projectAll(kit.views.allocation, rows, kit.fields(query.fields)),
           next_cursor: null,
         }
       },
       {
-        operation: {
+        service: {
           id: 'list_tcp_exposures',
+          summary: 'List the TCP exposures of a service',
           level: 'read',
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         query: t.Object({
           ...getQuery,
-          status: t.Optional(t.String()),
+          status: filterOne(portAllocationStatusValues),
         }),
         response: replies({
           200: Page(PortAllocation),
         }),
-        detail: {
-          summary: 'List the TCP exposures of a service',
-          tags,
-        },
       },
     )
     .post(
       '/ports/:id/port-allocations',
-      async ({ request, params, set }) => {
+      async ({ ctx, request, set }) => {
         const call = await kit.call(request)
-        const ctx = portById(db, params.id)
-        if (ctx.port.protocol !== 'tcp')
+
+        if (ctx.port.protocol !== 'tcp') {
           fail(
             'VALIDATION_FAILED',
             `Port ${ctx.port.port} is ${ctx.port.protocol}; only tcp ports are exposed this way.`,
@@ -353,6 +362,8 @@ export const domainRoutes = (kit: Kit) => {
               ],
             },
           )
+        }
+
         const picker = hostPortPicker(db, ctx.service.station_id)
         const hostPort =
           picker.next() ??
@@ -362,6 +373,7 @@ export const domainRoutes = (kit: Kit) => {
             'Remove an unused TCP exposure, or widen exposure.port_range.',
           )
         const changes = new ChangeSet()
+
         changes.add('port_allocation', ctx.port.id, {
           station_id: ctx.service.station_id,
           host_port: hostPort,
@@ -375,35 +387,38 @@ export const domainRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         set.status = 201
+
         return allocationView(result.refs['new:port_allocation:1']!)
       },
       {
-        operation: {
+        service_port: {
           id: 'expose_tcp',
+          summary: 'Expose a tcp port on a host port',
           level: 'admin',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           201: PortAllocation,
           202: Staged,
         }),
-        detail: {
-          summary: 'Expose a tcp port on a host port',
-          tags,
-        },
       },
     )
     .delete(
       '/port-allocations/:id',
-      async ({ request, params, set }) => {
+      async ({ ctx, request, set }) => {
         const call = await kit.call(request)
-        const ctx = allocationById(db, params.id)
-        if (ctx.allocation.status === 'removed') return allocationView(ctx.allocation.id)
+
+        if (ctx.allocation.status === 'removed') {
+          return allocationView(ctx.allocation.id)
+        }
+
         const changes = new ChangeSet()
+
         changes.update(
           'port_allocation',
           ctx.allocation.id,
@@ -420,25 +435,23 @@ export const domainRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         return allocationView(ctx.allocation.id)
       },
       {
-        operation: {
+        port_allocation: {
           id: 'remove_tcp_exposure',
+          summary: 'Remove a TCP exposure',
           level: 'admin',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: PortAllocation,
           202: Staged,
         }),
-        detail: {
-          summary: 'Remove a TCP exposure',
-          tags,
-        },
       },
     )
 }

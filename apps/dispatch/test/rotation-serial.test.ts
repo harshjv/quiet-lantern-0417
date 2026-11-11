@@ -30,6 +30,7 @@ before(async () => {
     hold: ['web1', 'web2'],
   })
   const project = await createProject(h, 'rotation')
+
   projectId = project.id
   const seeded = await h.call('PATCH', `/v1/projects/${projectId}/variables`, {
     token: token(),
@@ -45,6 +46,7 @@ before(async () => {
       apply: false,
     },
   })
+
   assert.equal(seeded.status, 200, seeded.text)
   const reference = [
     {
@@ -64,6 +66,7 @@ before(async () => {
     variables: reference,
     deploy: true,
   })
+
   await waitForDeployment(h, first.deployments[0].id, 'active')
   const second = await createService(h, project.default_environment_id, {
     name: 'web2',
@@ -76,6 +79,7 @@ before(async () => {
     variables: reference,
     deploy: true,
   })
+
   await waitForDeployment(h, second.deployments[0].id, 'active')
   web1 = first.id
   web2 = second.id
@@ -109,12 +113,14 @@ describe('secret rotation', () => {
         apply: false,
       },
     })
+
     assert.equal(changed.status, 200, changed.text)
     const variable = changed.body.variables[0].id as string
     const applied = await h.call('POST', `/v1/variables/${variable}/apply`, {
       token: token(),
       body: {},
     })
+
     assert.equal(applied.status, 200, applied.text)
     assert.equal(applied.body.deployments.length, 2)
 
@@ -129,6 +135,7 @@ describe('secret rotation', () => {
       'select service_id from deployment where id = ?',
       secondId,
     )[0]!.service_id
+
     assert.notEqual(firstService, secondService)
 
     await station.waitFor(

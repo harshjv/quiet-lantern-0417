@@ -51,6 +51,7 @@ describe('a restored Dispatch takes the new host as its station', () => {
 
   test('the bootstrap token is refused while the hosting station is connected', async () => {
     const live = await FakeStation.start(url, first)
+
     h.fakeStations.push(live)
     await assert.rejects(enrollFakeStation(url, bootstrapToken), /enrollment answered/)
     assert.deepEqual(
@@ -66,6 +67,7 @@ describe('a restored Dispatch takes the new host as its station', () => {
     const fresh = await enrollFakeStation(url, bootstrapToken)
     const rows = h.db.select().from(station).all()
     const old = rows.find((s) => s.id === first.station_id)!
+
     assert.equal(old.hosts_dispatch, false)
     assert.equal(old.status, 'offline')
     assert.notEqual(old.revoked_at, null)
@@ -137,6 +139,7 @@ describe('setup stores the station public address', () => {
 
   test('the hosting station gets the address in the same transaction as the admin', async () => {
     const out = await setup('203.0.113.7', hostId)
+
     assert.equal(out.public_address, '203.0.113.7')
     assert.equal(
       h.db.select().from(station).where(eq(station.id, hostId)).get()!.public_address,
@@ -149,10 +152,12 @@ describe('setup stores the station public address', () => {
 describe('the database is opened for Litestream', () => {
   test('a replicated database never autocheckpoints and always waits for locks', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sly-pragmas-'))
+
     try {
       const replicated = openDb(join(dir, 'a.sqlite'), {
         replicated: true,
       }).$client
+
       assert.equal(
         replicated.pragma('wal_autocheckpoint', {
           simple: true,
@@ -172,6 +177,7 @@ describe('the database is opened for Litestream', () => {
         'wal',
       )
       const plain = openDb(join(dir, 'b.sqlite')).$client
+
       assert.equal(
         plain.pragma('wal_autocheckpoint', {
           simple: true,

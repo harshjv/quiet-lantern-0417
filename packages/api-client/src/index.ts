@@ -2,31 +2,9 @@ import { treaty } from '@elysia/eden'
 
 import type { App } from '@stationly/dispatch'
 
-export type ApiClientOptions = {
-  token?: string
-  userAgent?: string
-  fetcher?: typeof fetch
-}
-
-export const createApiClient = (baseUrl: string, options: ApiClientOptions = {}) =>
+export const createApiClient = (baseUrl: string, fetcher?: typeof fetch) =>
   treaty<App>(baseUrl, {
-    headers: {
-      ...(options.token
-        ? {
-            authorization: `Bearer ${options.token}`,
-          }
-        : {}),
-      ...(options.userAgent
-        ? {
-            'user-agent': options.userAgent,
-          }
-        : {}),
-    },
-    ...(options.fetcher
-      ? {
-          fetcher: options.fetcher,
-        }
-      : {}),
+    fetcher,
     parseDate: false,
   })
 

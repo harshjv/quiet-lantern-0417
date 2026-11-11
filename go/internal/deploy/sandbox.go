@@ -5,9 +5,9 @@ package deploy
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -22,10 +22,9 @@ import (
 	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
-	"github.com/harshjv/stationly/go/internal/fsx"
 	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/harshjv/stationly/go/internal/sandbox/runsc"
+	"github.com/harshjv/stationly/go/internal/sandbox"
 	"github.com/harshjv/stationly/go/internal/sandbox/store"
 	"github.com/harshjv/stationly/go/internal/secrets"
 	vipswitch "github.com/harshjv/stationly/go/internal/switch"
@@ -100,6 +99,7 @@ type sbxState struct {
 	baseline     netns.SandboxBaseline
 	shape        string
 	forwards     *forwardSet
+	relay        *http.Server
 	startedOp    time.Time
 	syncedAt     time.Time
 }
@@ -128,7 +128,8 @@ type sbxNetIndex struct {
 	byAddr map[netip.Addr]*sbxNetEntry
 }
 
-type sandboxRuntime struct {
+type sandboxSet struct {
+	rt        sandbox.Runtime
 	fs        store.FS
 	info      store.Info
 	infoErr   error
@@ -154,8 +155,9 @@ type sandboxRuntime struct {
 	adopted   bool
 }
 
-func newSandboxRuntime() sandboxRuntime {
-	return sandboxRuntime{
+func newSandboxSet(rt sandbox.Runtime) sandboxSet {
+	return sandboxSet{
+		rt:     rt,
 		fs:     store.Open(store.Mount),
 		states: map[string]*sbxState{},
 		snaps:  map[string]*snapRecord{},
@@ -165,6 +167,10 @@ func newSandboxRuntime() sandboxRuntime {
 		index:  &sbxNetIndex{byAddr: map[netip.Addr]*sbxNetEntry{}},
 		usage:  map[string]store.Usage{},
 	}
+}
+
+func sandboxBundle(id string) string {
+	return filepath.Join(sandboxBundles, id)
 }
 
 func kernelRelease() string {
@@ -184,18 +190,11 @@ func sandboxHeld(kind, id string) bool {
 }
 
 func (s *Station) loadSandboxes() error {
-	s.sbx = newSandboxRuntime()
+	s.sbx = newSandboxSet(s.opts.Sandbox)
 	s.sbx.kernel = kernelRelease()
 	s.sbx.kernelOK = store.KernelSupported(s.sbx.kernel)
-	b, err := os.ReadFile(filepath.Join(s.opts.StateDir, sandboxRecords))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+	f, err := readJSON[sbxFile](filepath.Join(s.opts.StateDir, sandboxRecords))
 	if err != nil {
-		return err
-	}
-	var f sbxFile
-	if err := json.Unmarshal(b, &f); err != nil {
 		return err
 	}
 	for id, rec := range f.Sandboxes {
@@ -214,11 +213,7 @@ func (s *Station) saveSandboxes() {
 	for id, st := range s.sbx.states {
 		f.Sandboxes[id] = st.rec
 	}
-	b, err := json.MarshalIndent(f, "", "  ")
-	if err == nil {
-		err = writeAtomic(filepath.Join(s.opts.StateDir, sandboxRecords), b)
-	}
-	if err != nil {
+	if err := writeJSON(filepath.Join(s.opts.StateDir, sandboxRecords), f); err != nil {
 		s.log.Error("persist sandboxes.json", "error", err)
 	}
 }
@@ -275,12 +270,12 @@ func (s *Station) sandboxStorageReady() bool {
 	return s.sbx.ready()
 }
 
-func (x *sandboxRuntime) ready() bool {
+func (x *sandboxSet) ready() bool {
 	i := x.info
 	return x.kernelOK && x.infoErr == nil && i.Mounted && i.Btrfs && i.SimpleQuota
 }
 
-func (x *sandboxRuntime) recordInfo(info store.Info, err error, now time.Time) error {
+func (x *sandboxSet) recordInfo(info store.Info, err error, now time.Time) error {
 	x.infoAt, x.probing = now, false
 	if err != nil && x.ready() {
 		return err
@@ -294,8 +289,7 @@ func (s *Station) pinnedRunsc() (string, bool) {
 	if !ok || rec.Version == "" {
 		return "", false
 	}
-	versions, _ := runsc.Installed(runsc.LibDir)
-	return rec.Version, slices.Contains(versions, rec.Version)
+	return rec.Version, slices.Contains(s.sbx.rt.Versions(), rec.Version)
 }
 
 func (s *Station) sandboxCapability() *protocol.StationCapabilitiesSandboxes {
@@ -317,7 +311,24 @@ func (s *Station) sandboxCapability() *protocol.StationCapabilitiesSandboxes {
 			maxBytes = store.MaxGrow(i.Bytes, free)
 		}
 	}
-	return &protocol.StationCapabilitiesSandboxes{RunscVersion: v, Platform: "systrap", FilesystemBacking: backing, FilesystemBytes: int(i.Bytes), FilesystemFreeBytes: int(i.FreeBytes), FilesystemMaxBytes: int(maxBytes)}
+	return &protocol.StationCapabilitiesSandboxes{Runtimes: []protocol.SandboxRuntime{s.sbx.rt.Name()}, RunscVersion: v, Platform: "systrap", FilesystemBacking: backing, FilesystemBytes: int(i.Bytes), FilesystemFreeBytes: int(i.FreeBytes), FilesystemMaxBytes: int(maxBytes)}
+}
+
+func (s *Station) hostCapability() protocol.HostProbe {
+	host := s.host
+	host.SandboxFreeBytes = nil
+	if s.sandboxStorageReady() {
+		free := int(s.sbx.info.FreeBytes)
+		host.SandboxFreeBytes = &free
+	}
+	return host
+}
+
+func (s *Station) offeredRuntimes() []protocol.SandboxRuntime {
+	if c := s.sandboxCapability(); c != nil {
+		return c.Runtimes
+	}
+	return []protocol.SandboxRuntime{}
 }
 
 func rootFree(path string) (uint64, error) {
@@ -696,6 +707,9 @@ func (s *Station) sandboxElements(d protocol.DesiredSandbox) (netns.SandboxBasel
 	domains, _ := dns.ParseDomains(allowDomains(d.Egress))
 	allowlist := d.Egress.Mode == protocol.SandboxEgressModeAllowlist
 	b := netns.SandboxBaseline{Joined: d.Network == protocol.SandboxNetworkEnvironment, Allowlist: allowlist}
+	if d.ApiRelay != nil && *d.ApiRelay {
+		b.Relay = protocol.NetworkDispatchPort
+	}
 	if allowlist {
 		b.Ports = allowPorts(domains)
 	}
@@ -795,6 +809,10 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 		s.failSandbox(st, f)
 		return
 	}
+	if d.Runtime != nil && *d.Runtime != s.sbx.rt.Name() {
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeSandboxRuntimeUnavailable, "runtime", "this station runs sandboxes on %s, not %s", s.sbx.rt.Name(), *d.Runtime))
+		return
+	}
 	s.reportSandbox(st, protocol.SandboxReportStatusStarting, reason)
 	rec.Failure, rec.ExitCode, rec.OOM = nil, nil, false
 	s.removeNamed(ctx, docker.SandboxCouplerName(rec.ID))
@@ -830,7 +848,7 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 	st.busy, st.startedOp = true, time.Now()
 	st.oom.Store(0)
 	job := startJob{
-		id: rec.ID, rt: runsc.At(runsc.LibDir, runsc.StateBase, version), fs: s.sbx.fs, pid: v.pid, baseline: baseline, elements: elements,
+		id: rec.ID, rt: s.sbx.rt, version: version, fs: s.sbx.fs, pid: v.pid, baseline: baseline, elements: elements,
 		resolver: baseline.Resolver, name: d.Name, env: env, docker: s.docker, desired: d, oom: st.oom,
 	}
 	s.saveSandboxes()
@@ -842,7 +860,8 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 
 type startJob struct {
 	id       string
-	rt       runsc.Runtime
+	rt       sandbox.Runtime
+	version  string
 	fs       store.FS
 	pid      int
 	baseline netns.SandboxBaseline
@@ -895,7 +914,7 @@ func (j startJob) run(ctx context.Context) startResult {
 	if err != nil {
 		return fail("create", "read the image configuration of %s: %v", j.desired.Image.ImageRef, err)
 	}
-	bundle := filepath.Join(sandboxBundles, j.id)
+	bundle := sandboxBundle(j.id)
 	if err := os.MkdirAll(bundle, 0o700); err != nil {
 		return fail("create", "bundle directory: %v", err)
 	}
@@ -910,62 +929,27 @@ func (j startJob) run(ctx context.Context) startResult {
 	if j.desired.Docker {
 		extra = append(extra, "STATIONLY_SANDBOX_DOCKER=1")
 	}
-	spec := runsc.Spec{
-		ID: j.id, Hostname: j.name, DiskPath: j.fs.DiskPath(j.id), BundleDir: bundle, NetNSPath: netns.InnerPath(j.id),
-		Args: args, ImageEnv: cfg.Env, Env: append(extra, j.env...), Cwd: cfg.WorkingDir,
-		MemoryBytes: int64(j.desired.Size.MemoryBytes), CPUMillis: int64(j.desired.Size.CpuMillis),
-	}
-	config, err := runsc.Config(spec)
-	if err != nil {
-		return fail("create", "build config.json: %v", err)
-	}
-	for name, body := range runsc.HostFiles(spec, j.resolver, j.name) {
-		if err := fsx.WriteFile(filepath.Join(bundle, name), body, 0o644); err != nil {
-			return fail("create", "write %s: %v", name, err)
-		}
-	}
-	if err := fsx.WriteFile(filepath.Join(bundle, "config.json"), config, 0o600); err != nil {
-		return fail("create", "write config.json: %v", err)
-	}
-	defer os.Remove(filepath.Join(bundle, "config.json"))
 	if err := netns.Readdr(inner); err != nil {
 		return fail("namespace", "address the inner eth0: %v", err)
 	}
-	logDir := j.fs.LogDir(j.id)
 	initLog, err := j.fs.LogFile(j.id, "init.log")
 	if err != nil {
 		return fail("create", "open init.log: %v", err)
 	}
 	defer initLog.Close()
-	_ = j.rt.Delete(ctx, j.id, true)
-	if err := j.rt.Create(ctx, logDir, bundle, j.id, initLog); err != nil {
-		return fail("create", "runsc create: %v%s", err, panicLine(logDir))
+	spec := sandbox.Spec{
+		ID: j.id, Hostname: j.name, DiskPath: j.fs.DiskPath(j.id), BundleDir: bundle, LogDir: j.fs.LogDir(j.id), Output: initLog,
+		NetNSPath: netns.InnerPath(j.id), Resolver: j.resolver, Args: args, ImageEnv: cfg.Env, Env: append(extra, j.env...), Cwd: cfg.WorkingDir,
+		MemoryBytes: int64(j.desired.Size.MemoryBytes), CPUMillis: int64(j.desired.Size.CpuMillis),
 	}
-	if err := j.rt.Start(ctx, logDir, j.id); err != nil {
-		_ = j.rt.Delete(ctx, j.id, true)
-		return fail("start", "runsc start: %v%s", err, panicLine(logDir))
+	if err := j.rt.Create(ctx, j.version, spec); err != nil {
+		return fail("create", "%v", err)
 	}
-	cg, err := runsc.ScopeCgroup(ctx, j.id)
-	if err == nil && cg == "" {
-		err = errors.New("the scope has no control group")
-	}
-	if err == nil {
-		err = runsc.GroupOOM(cg)
-	}
+	cg, err := j.rt.Start(ctx, j.version, spec)
 	if err != nil {
-		_ = j.rt.Stop(ctx, j.id, 0)
-		_ = runsc.KillScope(ctx, j.id)
-		return fail("start", "set memory.oom.group on %s: %v", runsc.ScopeUnit(j.id), err)
+		return fail("start", "%v", err)
 	}
 	return startResult{cgroup: cg, env: append(slices.Clone(cfg.Env), "HOSTNAME="+j.name, "STATIONLY_SANDBOX_ID="+j.id), started: time.Now(), took: time.Since(start)}
-}
-
-func panicLine(logDir string) string {
-	b, err := os.ReadFile(filepath.Join(logDir, "panic.log"))
-	if err != nil || len(b) == 0 {
-		return ""
-	}
-	return "; " + firstLine(string(b))
 }
 
 func (s *Station) finishStart(ctx context.Context, st *sbxState, res startResult) {
@@ -979,6 +963,7 @@ func (s *Station) finishStart(ctx context.Context, st *sbxState, res startResult
 	st.wasRunning, st.syncedAt = false, time.Time{}
 	rec.StartedAt, rec.StoppedAt, rec.Cgroup, rec.ImageEnv = stamp(res.started), nil, res.cgroup, res.env
 	s.watchSandbox(ctx, st)
+	s.openRelay(st)
 	s.reportSandbox(st, protocol.SandboxReportStatusRunning, rec.Reason)
 	s.log.Info("sandbox started", "sandbox", rec.ID, "runsc", rec.Runsc, "address", rec.Address, "cgroup", rec.Cgroup, "took_ms", res.took.Milliseconds())
 }
@@ -990,15 +975,15 @@ func (s *Station) watchSandbox(ctx context.Context, st *sbxState) {
 	wctx, cancel := context.WithCancel(ctx)
 	st.waitCancel = cancel
 	id := st.rec.ID
-	rt := runsc.At(runsc.LibDir, runsc.StateBase, st.rec.Runsc)
+	version := st.rec.Runsc
 	if st.rec.Cgroup != "" {
-		go watchOOM(wctx, filepath.Join(runsc.CgroupRoot, st.rec.Cgroup, "memory.events"), st.oom, func() {
-			s.log.Warn("sandbox reached its memory limit; ending it as a whole", "sandbox", id, "scope", runsc.ScopeUnit(id))
+		go watchOOM(wctx, filepath.Join(sandbox.CgroupRoot, st.rec.Cgroup, "memory.events"), st.oom, func() {
+			s.log.Warn("sandbox reached its memory limit; ending it as a whole", "sandbox", id, "scope", s.sbx.rt.Unit(id))
 			s.killScope(ctx, id)
 		})
 	}
 	go func() {
-		code, err := waitSandbox(wctx, rt, id)
+		code, err := s.sbx.rt.Wait(wctx, version, id)
 		if wctx.Err() != nil {
 			return
 		}
@@ -1006,30 +991,12 @@ func (s *Station) watchSandbox(ctx context.Context, st *sbxState) {
 	}()
 }
 
-func waitSandbox(ctx context.Context, rt runsc.Runtime, id string) (*int, error) {
-	out, err := rt.Command(ctx, "", "wait", id).Output()
-	if err != nil {
-		return nil, err
-	}
-	var w struct {
-		ExitStatus *int `json:"exitStatus"`
-	}
-	if jerr := json.Unmarshal(out, &w); jerr != nil {
-		return nil, fmt.Errorf("runsc wait answered %q: %w", strings.TrimSpace(string(out)), jerr)
-	}
-	if w.ExitStatus != nil && *w.ExitStatus > 255 {
-		code := *w.ExitStatus >> 8
-		return &code, nil
-	}
-	return w.ExitStatus, nil
-}
-
 func (s *Station) sandboxEnded(ctx context.Context, st *sbxState, code *int, err error) {
 	if st.stopping != nil || st.rec.Status != protocol.SandboxReportStatusRunning {
 		return
 	}
 	rec := st.rec
-	oom := recentOOM(st.oom.Load(), time.Now()) || journalOOM(rec.ID, time.Now().Add(-sandboxOOMWindow))
+	oom := recentOOM(st.oom.Load(), time.Now()) || journalOOM(s.sbx.rt.Unit(rec.ID), time.Now().Add(-sandboxOOMWindow))
 	reason := protocol.SandboxStatusReasonExited
 	if oom {
 		reason = protocol.SandboxStatusReasonOom
@@ -1037,8 +1004,7 @@ func (s *Station) sandboxEnded(ctx context.Context, st *sbxState, code *int, err
 	rec.ExitCode, rec.OOM = code, oom
 	rec.StoppedAt = stamp(time.Now())
 	rec.HeldHash = rec.Hash
-	line := panicLine(s.sbx.fs.LogDir(rec.ID))
-	s.log.Warn("sandbox ended without being asked to", "sandbox", rec.ID, "exit_code", code, "oom_killed", oom, "wait_error", err, "panic", strings.TrimPrefix(line, "; "))
+	s.log.Warn("sandbox ended without being asked to", "sandbox", rec.ID, "exit_code", code, "oom_killed", oom, "wait_error", err, "panic", s.sbx.rt.Panic(s.sbx.fs.LogDir(rec.ID)))
 	st.busy = true
 	go func() {
 		s.stopRuntime(ctx, st, false)
@@ -1052,22 +1018,25 @@ func (s *Station) sandboxEnded(ctx context.Context, st *sbxState, code *int, err
 }
 
 func (s *Station) assertOOMGroup(st *sbxState) {
-	if st.rec.Cgroup == "" || runsc.GroupsOOM(st.rec.Cgroup) {
+	if st.rec.Cgroup == "" {
 		return
 	}
-	if err := runsc.GroupOOM(st.rec.Cgroup); err != nil {
+	changed, err := s.sbx.rt.AssertOOMGroup(st.rec.Cgroup)
+	if err != nil {
 		s.log.Warn("set memory.oom.group on the sandbox scope", "sandbox", st.rec.ID, "error", err)
 		return
 	}
-	s.log.Info("memory.oom.group re-asserted on the sandbox scope", "sandbox", st.rec.ID)
+	if changed {
+		s.log.Info("memory.oom.group re-asserted on the sandbox scope", "sandbox", st.rec.ID)
+	}
 }
 
 func recentOOM(at int64, now time.Time) bool {
 	return at > 0 && now.Sub(time.Unix(0, at)) <= sandboxOOMWindow
 }
 
-func journalOOM(id string, since time.Time) bool {
-	args := []string{"-q", "--no-pager", "-o", "cat", "-u", runsc.ScopeUnit(id), "-g", "killed by the OOM killer", "--since", "@" + fmt.Sprint(since.Unix())}
+func journalOOM(unit string, since time.Time) bool {
+	args := []string{"-q", "--no-pager", "-o", "cat", "-u", unit, "-g", "killed by the OOM killer", "--since", "@" + fmt.Sprint(since.Unix())}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "journalctl", args...).Output()
@@ -1089,6 +1058,7 @@ func (s *Station) stopSandbox(ctx context.Context, st *sbxState, reason *protoco
 		st.waitCancel = nil
 	}
 	s.reportSandbox(st, protocol.SandboxReportStatusStopping, reason)
+	st.closeRelay()
 	go func() {
 		start := time.Now()
 		st.forwards.closeAll()
@@ -1112,35 +1082,33 @@ func (s *Station) stopSandbox(ctx context.Context, st *sbxState, reason *protoco
 
 func (s *Station) stopRuntime(ctx context.Context, st *sbxState, graceful bool) {
 	rec := st.rec
-	rt := runsc.At(runsc.LibDir, runsc.StateBase, rec.Runsc)
 	grace := sandboxStopGrace
 	if !graceful {
 		grace = 0
 	}
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), grace+30*time.Second)
 	defer cancel()
-	if err := rt.Stop(sctx, rec.ID, grace); err != nil {
+	if err := s.sbx.rt.Stop(sctx, rec.Runsc, rec.ID, grace); err != nil {
 		s.log.Warn("stop the sandbox through runsc", "sandbox", rec.ID, "runsc", rec.Runsc, "error", err)
 	}
 	s.killScope(ctx, rec.ID)
 }
 
 func (s *Station) killScope(ctx context.Context, id string) {
-	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), runsc.ScopeKillLimit)
-	defer cancel()
-	if err := runsc.KillScope(kctx, id); err != nil {
-		s.log.Error("kill the sandbox scope", "sandbox", id, "scope", runsc.ScopeUnit(id), "error", err)
+	if err := s.sbx.rt.Kill(context.WithoutCancel(ctx), id); err != nil {
+		s.log.Error("kill the sandbox scope", "sandbox", id, "scope", s.sbx.rt.Unit(id), "error", err)
 	}
 }
 
 func (s *Station) teardownSandbox(ctx context.Context, st *sbxState) {
 	rec := st.rec
 	st.forwards.closeAll()
+	st.closeRelay()
 	if err := netns.RemoveInner(rec.ID); err != nil {
 		s.log.Warn("remove the inner namespace", "sandbox", rec.ID, "error", err)
 	}
 	s.removeNamed(ctx, docker.SandboxCouplerName(rec.ID))
-	os.RemoveAll(filepath.Join(sandboxBundles, rec.ID))
+	os.RemoveAll(sandboxBundle(rec.ID))
 	s.unindexSandbox(rec.ID)
 	s.applySandboxPolicies()
 	if st.waitCancel != nil {
@@ -1359,24 +1327,22 @@ func (s *Station) onAllow(a dns.AllowAnswer) {
 }
 
 func (s *Station) adoptSandboxes(ctx context.Context) {
-	versions, _ := runsc.Installed(runsc.LibDir)
 	running := map[string]string{}
-	for _, v := range versions {
-		rt := runsc.At(runsc.LibDir, runsc.StateBase, v)
+	for _, v := range s.sbx.rt.Versions() {
 		lctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		states, err := rt.List(lctx)
+		states, err := s.sbx.rt.List(lctx, v)
 		cancel()
 		if err != nil {
 			s.log.Warn("list runsc sandboxes", "runsc", v, "error", err)
 			continue
 		}
 		for _, state := range states {
-			if state.Status == "running" {
+			if state.Running {
 				running[state.ID] = v
 				continue
 			}
 			dctx, dcancel := context.WithTimeout(ctx, 20*time.Second)
-			_ = rt.Delete(dctx, state.ID, true)
+			_ = s.sbx.rt.Stop(dctx, v, state.ID, 0)
 			dcancel()
 		}
 	}
@@ -1409,7 +1375,7 @@ func (s *Station) adoptSandboxes(ctx context.Context) {
 		st.rec.Status = protocol.SandboxReportStatusRunning
 		st.wasRunning = false
 		if st.rec.Cgroup == "" {
-			st.rec.Cgroup, _ = runsc.ScopeCgroup(ctx, id)
+			st.rec.Cgroup, _ = s.sbx.rt.Cgroup(ctx, id)
 		}
 		if d, ok := s.plan.Generation.Sandboxes[id]; ok {
 			b, _, domains := s.sandboxElements(d)
@@ -1417,16 +1383,16 @@ func (s *Station) adoptSandboxes(ctx context.Context) {
 			b.Self = addr
 			st.shape, st.baseline = s.sandboxShape(d), b
 			s.indexSandbox(id, addr, st.pid, b.Ports, domains)
+			s.openRelay(st)
 		}
 		s.watchSandbox(ctx, st)
 		s.log.Info("adopted running sandbox", "sandbox", id, "runsc", v, "address", st.rec.Address)
 	}
 	for id, v := range running {
 		s.log.Warn("stopping a runsc sandbox unknown to stationd", "sandbox", id, "runsc", v)
-		rt := runsc.At(runsc.LibDir, runsc.StateBase, v)
-		kctx, cancel := context.WithTimeout(ctx, runsc.ScopeKillLimit)
-		s.killScope(kctx, id)
-		_ = rt.Delete(kctx, id, true)
+		s.killScope(ctx, id)
+		sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_ = s.sbx.rt.Stop(sctx, v, id, 0)
 		cancel()
 	}
 	s.applySandboxPolicies()
@@ -1581,12 +1547,11 @@ func (s *Station) cleanRuntimes(_ context.Context) {
 			used[st.rec.Runsc] = true
 		}
 	}
-	versions, _ := runsc.Installed(runsc.LibDir)
-	for _, v := range versions {
+	for _, v := range s.sbx.rt.Versions() {
 		if used[v] || pinned == "" {
 			continue
 		}
-		if err := runsc.Remove(runsc.LibDir, runsc.StateBase, v); err != nil {
+		if err := s.sbx.rt.Remove(v); err != nil {
 			s.log.Warn("remove unused runsc version", "runsc", v, "error", err)
 			continue
 		}

@@ -1,3 +1,5 @@
+import { Option } from '@commander-js/extra-typings'
+
 import { action, group, integer, type Program } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
 import { targetId } from '../generated.ts'
@@ -8,12 +10,14 @@ import { explanationText, probeText } from '../renderers/network.ts'
 type Origin = { from: string; environment: string; kind: 'service' | 'sandbox' | 'internet' }
 
 const originOf = async (run: Run, fromInternet: boolean): Promise<Origin> => {
-  if (fromInternet)
+  if (fromInternet) {
     return {
       from: 'internet',
       environment: await environmentId(run),
       kind: 'internet',
     }
+  }
+
   if (run.selection.sandbox) {
     const sandbox = await targetId(run, 'sandbox')
     const box = (
@@ -25,12 +29,14 @@ const originOf = async (run: Run, fromInternet: boolean): Promise<Origin> => {
           .get(),
       )
     ).data
+
     return {
       from: sandbox,
       environment: box.environment_id,
       kind: 'sandbox',
     }
   }
+
   return {
     from: await serviceId(run),
     environment: await environmentId(run),
@@ -74,20 +80,22 @@ export const networkCommands = (program: Program) => {
     )
     .option('--port <port>', "port; defaults to the target's only declared port", integer)
     .option('--udp', 'judge UDP instead of TCP')
-    .option('--probe', 'then send the probe from the service or sandbox')
+    .addOption(
+      new Option('--probe', 'then send the probe from the service or sandbox').conflicts(
+        'fromInternet',
+      ),
+    )
     .action(
       action(async (options) => {
         const fromInternet = Boolean(options.fromInternet)
-        if (fromInternet && options.probe)
-          throw usage(
-            '--probe needs --service or --sandbox; a probe is sent from inside, not from the internet.',
-            'sly network explain --service web --to db --probe',
-          )
-        if (fromInternet && (options.service || options.sandbox))
+
+        if (fromInternet && (options.service || options.sandbox)) {
           throw usage(
             'Give --service, --sandbox or --from-internet, not two of them.',
             'sly network explain --from-internet --to web.example.com',
           )
+        }
+
         const run = await connect(options)
         const origin = await originOf(run, fromInternet)
         const explained = await send(
@@ -104,15 +112,22 @@ export const networkCommands = (program: Program) => {
               },
             }),
         )
-        if (!options.probe) return print(options, explained, explanationText)
+
+        if (!options.probe) {
+          return print(options, explained, explanationText)
+        }
+
         const probed = await probe(run, origin, options.to, options.port)
-        if (options.json)
+
+        if (options.json) {
           json({
             explanation: explained.data,
             probe: probed.data,
           })
-        else
+        } else {
           process.stdout.write(`${explanationText(explained.data)}\n\n${probeText(probed.data)}\n`)
+        }
+
         return probed.status === 202 ? staged(probed, 'sent') : exitCodes.ok
       }),
     )

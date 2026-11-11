@@ -1,5 +1,5 @@
 import { Type } from '@sinclair/typebox'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
 import { Nullable } from '@stationly/protocol'
 
@@ -8,7 +8,7 @@ import { commit } from '../changes.ts'
 import { audit } from '../context.ts'
 import type { Kit } from '../kit.ts'
 import { listSettings, planSettings, resetPasskeys } from '../settings.ts'
-import { Actor, models, Page, replies, Staged } from '../shapes.ts'
+import { Actor, Page, replies, Staged } from '../shapes.ts'
 
 const Setting = Type.Object(
   {
@@ -26,14 +26,9 @@ const Setting = Type.Object(
 
 export const settingRoutes = (kit: Kit) => {
   const { db } = kit.deps
-  const tags = ['settings']
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('settings', '/v1')
     .get(
       '/settings',
       ({ query }) => {
@@ -45,6 +40,7 @@ export const settingRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'get_settings',
+          summary: 'Read instance settings',
           level: 'instance admin',
         },
         query: t.Object({
@@ -53,10 +49,6 @@ export const settingRoutes = (kit: Kit) => {
         response: replies({
           200: Page(Setting),
         }),
-        detail: {
-          summary: 'Read instance settings',
-          tags,
-        },
       },
     )
     .patch(
@@ -64,11 +56,14 @@ export const settingRoutes = (kit: Kit) => {
       async ({ request, body, query, set }) => {
         const call = await kit.call(request)
         const plan = planSettings(db, call.principal, body, query.reset_passkeys ?? false)
-        if (plan.set.empty)
+
+        if (plan.set.empty) {
           return {
             items: listSettings(db, undefined).filter((s) => plan.keys.includes(s.key)),
             next_cursor: null,
           }
+        }
+
         const protect = readSetting(db, 'platform.protected') && !call.principal.human
         const result = db.transaction(() => {
           const committed = commit(
@@ -80,6 +75,7 @@ export const settingRoutes = (kit: Kit) => {
             },
             plan.set,
           )
+
           if (committed.applied && plan.passkeyReset) {
             resetPasskeys(db)
             audit(
@@ -97,9 +93,14 @@ export const settingRoutes = (kit: Kit) => {
               },
             )
           }
+
           return committed
         })
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         audit(
           db,
           call,
@@ -114,7 +115,11 @@ export const settingRoutes = (kit: Kit) => {
             ),
           },
         )
-        if (plan.surface) kit.deps.auth.rebuild()
+
+        if (plan.surface) {
+          kit.deps.auth.rebuild()
+        }
+
         return {
           items: listSettings(db, undefined).filter((s) => plan.keys.includes(s.key)),
           next_cursor: null,
@@ -123,6 +128,8 @@ export const settingRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'update_setting',
+          summary:
+            'Change instance settings, all or nothing; frozen keys refuse with SETTING_FROZEN',
           level: 'instance admin',
         },
         body: t.Record(t.String(), t.Unknown()),
@@ -133,11 +140,6 @@ export const settingRoutes = (kit: Kit) => {
           200: Page(Setting),
           202: Staged,
         }),
-        detail: {
-          summary:
-            'Change instance settings, all or nothing; frozen keys refuse with SETTING_FROZEN',
-          tags,
-        },
       },
     )
 }

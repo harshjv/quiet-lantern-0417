@@ -1,6 +1,6 @@
 import { useQueries, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { Inbox } from 'lucide-react'
+import { z } from 'zod'
 
 import { stagedChangeStatusValues } from '@stationly/protocol/domain'
 
@@ -14,20 +14,21 @@ import { Time } from '@/components/time'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { changeSummary } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { stagedSource, stagedStatus } from '@/lib/labels'
 import { environmentQuery, load, stagedQuery } from '@/lib/queries'
+import { titled } from '@/lib/title'
 
 const statuses = stagedChangeStatusValues
+
 type Status = (typeof statuses)[number]
 
 export const Route = createFileRoute('/_app/staged/')({
-  validateSearch: (search: Record<string, unknown>): { status?: Status } =>
-    statuses.includes(search.status as Status)
-      ? {
-          status: search.status as Status,
-        }
-      : {},
+  validateSearch: z.object({
+    status: z.enum(statuses).default('staged').catch('staged'),
+  }),
   loader: ({ context }) => load(context.queryClient, stagedQuery('staged')),
+  head: () => titled('Staged changes'),
   errorComponent: failurePage('Couldn’t load staged changes'),
   component: StagedPage,
 })
@@ -43,10 +44,11 @@ function StagedTable({ status }: { status: Status }) {
   const names = new Map(
     environments.flatMap((e) => (e.data ? [[e.data.id, e.data.name] as const] : [])),
   )
-  if (data.items.length === 0)
+
+  if (data.items.length === 0) {
     return (
       <EmptyState
-        icon={Inbox}
+        icon={entityIcon.stagedChange}
         title={
           status === 'staged'
             ? 'Nothing to review'
@@ -60,6 +62,8 @@ function StagedTable({ status }: { status: Status }) {
         }
       />
     )
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -115,10 +119,11 @@ function StagedTable({ status }: { status: Status }) {
 }
 
 function StagedPage() {
-  const { status = 'staged' } = Route.useSearch()
+  const { status } = Route.useSearch()
   const navigate = useNavigate({
     from: Route.fullPath,
   })
+
   return (
     <div className="space-y-6">
       <PageHeader

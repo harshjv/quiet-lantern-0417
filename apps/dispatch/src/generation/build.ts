@@ -95,21 +95,33 @@ const workshopCache = {
 
 const subnetOfPool = (pool: string, index: number) => {
   const cidr = parseCidr(pool)
-  if (!cidr || cidr.bits > 24)
+
+  if (!cidr || cidr.bits > 24) {
     throw new GenerationError(`ipam.pool ${pool} cannot hold the platform /24 bridges`)
+  }
+
   return slash24At(pool, index)
 }
 
 const readSettings = (db: Db) => {
   const read = settingsSnapshot(db)
   const settings: Record<string, unknown> = {}
+
   for (const key of stationSettingKeys) {
     const value = read(key)
-    if (value !== null) settings[key] = value
+
+    if (value !== null) {
+      settings[key] = value
+    }
   }
+
   settings['acme.email'] ??= ''
   const lockfile = read('platform.lockfile')
-  if (lockfile !== null) settings['platform.lockfile'] = generationLockfile(db, lockfile)
+
+  if (lockfile !== null) {
+    settings['platform.lockfile'] = generationLockfile(db, lockfile)
+  }
+
   return {
     settings: settings as Settings,
     read,
@@ -120,7 +132,10 @@ const healthBudget = (health: HealthCheck) =>
   health && 'startup_timeout_s' in health ? health.startup_timeout_s : budgetDefaults.health_s
 
 const healthWithHost = (db: Db, serviceId: string, health: HealthCheck): HealthCheck => {
-  if (!health || health.type !== 'http' || health.host !== undefined) return health
+  if (!health || health.type !== 'http' || health.host !== undefined) {
+    return health
+  }
+
   const first = db
     .select({
       hostname: domain.hostname,
@@ -138,6 +153,7 @@ const healthWithHost = (db: Db, serviceId: string, health: HealthCheck): HealthC
       .from(service)
       .where(eq(service.id, serviceId))
       .get()?.name ?? serviceId
+
   return {
     ...health,
     host: first?.hostname ?? `${name}.internal`,
@@ -178,6 +194,7 @@ const specOf = (
     .where(and(eq(volume.service_id, dep.service_id), eq(volume.status, 'active')))
     .orderBy(asc(volume.id))
     .all()
+
   return {
     image_ref: dep.image_ref,
     command: config.command ?? null,
@@ -210,8 +227,15 @@ const specOf = (
 
 const containerSpec = (db: Db, deploymentId: string): ContainerSpecDoc => {
   const dep = db.select().from(deployment).where(eq(deployment.id, deploymentId)).get()
-  if (!dep) throw new GenerationError(`deployment ${deploymentId} does not exist`)
-  if (!dep.image_ref) throw new GenerationError(`deployment ${deploymentId} has no image_ref yet`)
+
+  if (!dep) {
+    throw new GenerationError(`deployment ${deploymentId} does not exist`)
+  }
+
+  if (!dep.image_ref) {
+    throw new GenerationError(`deployment ${deploymentId} has no image_ref yet`)
+  }
+
   return specOf(
     db,
     {
@@ -239,8 +263,13 @@ export const targetIssue = (
       env_digest: placeholderDigest,
     },
   )
-  if (Value.Check(ContainerSpec, target)) return null
+
+  if (Value.Check(ContainerSpec, target)) {
+    return null
+  }
+
   const issue = Value.Errors(ContainerSpec, target).First()
+
   return {
     path: `/target${issue?.path ?? ''}`,
     message: issue?.message ?? 'does not match ContainerSpec',
@@ -286,7 +315,11 @@ export const objectAt = (path: string): { object: ExcludedObject; id: string } |
     /^\/(environments|services|deployments|volumes|port_allocations|gateway\/routes|sandboxes|sandbox_snapshots)\/([^/]+)/.exec(
       path,
     )
-  if (!m) return null
+
+  if (!m) {
+    return null
+  }
+
   const object = (
     {
       environments: 'environment',
@@ -299,6 +332,7 @@ export const objectAt = (path: string): { object: ExcludedObject; id: string } |
       sandbox_snapshots: 'sandbox_snapshot',
     } as const
   )[m[1] as 'environments']
+
   return {
     object,
     id: m[2]!,
@@ -308,8 +342,12 @@ export const objectAt = (path: string): { object: ExcludedObject; id: string } |
 export const keyOf = (object: ExcludedObject, id: string) => objectKeys[object](id)
 
 const conform = (schema: Parameters<typeof Value.Check>[0], doc: unknown, at: string) => {
-  if (Value.Check(schema, doc)) return
+  if (Value.Check(schema, doc)) {
+    return
+  }
+
   const issue = Value.Errors(schema, doc).First()
+
   throw new GenerationError(
     `${at}${issue?.path ?? ''}: ${issue?.message ?? 'does not match its schema'}`,
     {
@@ -336,6 +374,7 @@ type SystemRoute = {
 const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): SystemRoute[] => {
   const dashboard = read('hostnames.dashboard')
   const api = read('hostnames.api')
+
   if (typeof dashboard === 'string' && dashboard && typeof api === 'string' && api) {
     return [
       {
@@ -350,6 +389,7 @@ const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): Sys
       },
     ]
   }
+
   return publicAddress
     ? [
         {
@@ -363,17 +403,27 @@ const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): Sys
 
 export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()): Built => {
   const st = db.select().from(station).where(eq(station.id, stationId)).get()
-  if (!st) throw new GenerationError(`station ${stationId} does not exist`)
-  if (!st.registry_address || !st.registry_subnet)
+
+  if (!st) {
+    throw new GenerationError(`station ${stationId} does not exist`)
+  }
+
+  if (!st.registry_address || !st.registry_subnet) {
     throw new GenerationError(`station ${stationId} has no registry address yet`)
+  }
+
   const { settings, read } = readSettings(db)
   const instanceId = read('instance.id')
-  if (typeof instanceId !== 'string')
+
+  if (typeof instanceId !== 'string') {
     throw new GenerationError('the instance.id setting is missing')
-  if (!read('platform.lockfile'))
+  }
+
+  if (!read('platform.lockfile')) {
     throw new GenerationError(
       'platform.lockfile is not set yet; sly setup writes it from the release stationd install verified',
     )
+  }
 
   const previous = db
     .select({
@@ -393,12 +443,20 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     dispatched = false,
   ): T | undefined => {
     const key = keyOf(object, id)
+
     try {
       const reason = skip.get(key)
-      if (reason) throw new GenerationError(reason)
+
+      if (reason) {
+        throw new GenerationError(reason)
+      }
+
       return build()
     } catch (error) {
-      if (!unbuildable(error)) throw error
+      if (!unbuildable(error)) {
+        throw error
+      }
+
       excluded.push({
         object,
         id,
@@ -407,6 +465,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         carried: carry !== undefined,
         dispatched,
       })
+
       return carry
     }
   }
@@ -449,6 +508,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const projectOf = new Map(environments.map((e) => [e.id, e.project_id]))
 
   const volumeDocs: GenerationContent['volumes'] = {}
+
   for (const v of db
     .select()
     .from(volume)
@@ -456,7 +516,11 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     .orderBy(asc(volume.id))
     .all()) {
     const status = v.status
-    if (status === 'destroyed') continue
+
+    if (status === 'destroyed') {
+      continue
+    }
+
     const doc = guarded('volume', v.id, previous?.volumes[v.id], () => {
       const built = hashed({
         owner: v.owner,
@@ -467,20 +531,30 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           ? v.retain_until.toISOString().replace(/\.\d{3}Z$/, 'Z')
           : null,
       })
+
       conform(DesiredVolume, built, keyOf('volume', v.id))
+
       return built
     })
-    if (doc) volumeDocs[v.id] = doc
+
+    if (doc) {
+      volumeDocs[v.id] = doc
+    }
   }
 
   const spec = (deploymentId: string, at: string) => {
     const target = containerSpec(db, deploymentId)
+
     conform(ContainerSpec, target, at)
-    for (const mount of target.volumes)
-      if (!volumeDocs[mount.volume_id])
+
+    for (const mount of target.volumes) {
+      if (!volumeDocs[mount.volume_id]) {
         throw new GenerationError(
           `${at}/volumes: volume ${mount.volume_id} is not in this station's generation`,
         )
+      }
+    }
+
     return target
   }
 
@@ -495,10 +569,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         and(eq(ipam_allocation.environment_id, env.id), eq(ipam_allocation.station_id, stationId)),
       )
       .get()
-    if (!allocation)
+
+    if (!allocation) {
       throw new GenerationError(
         `environment ${env.id} has no ipam_allocation on station ${stationId}`,
       )
+    }
+
     const envVips = vips.filter(
       (v) =>
         v.environment_id === env.id &&
@@ -518,6 +595,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       },
       dns: envVips.map((v) => {
         const svc = serviceById.get(v.service_id!)!
+
         return {
           name: svc.name,
           virtual_ip: v.address,
@@ -531,29 +609,43 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         service_id: v.service_id!,
       })),
     })
+
     conform(DesiredEnvironment, built, keyOf('environment', env.id))
+
     return built
   }
 
   const environmentDocs: GenerationContent['environments'] = {}
+
   for (const env of environments) {
     const doc = guarded('environment', env.id, previous?.environments[env.id], () =>
       environmentDoc(env, () => true),
     )
-    if (doc) environmentDocs[env.id] = doc
+
+    if (doc) {
+      environmentDocs[env.id] = doc
+    }
   }
 
   const serviceDocs: GenerationContent['services'] = {}
+
   for (const svc of services) {
     const at = keyOf('service', svc.id)
     const doc = guarded('service', svc.id, previous?.services[svc.id], () => {
-      if (!environmentDocs[svc.environment_id])
+      if (!environmentDocs[svc.environment_id]) {
         throw new GenerationError(
           `${at}: environment ${svc.environment_id} is not in this generation`,
         )
+      }
+
       const vip = vipOf.get(svc.id)
-      if (!vip) throw new GenerationError(`service ${svc.id} has no virtual_ip`)
+
+      if (!vip) {
+        throw new GenerationError(`service ${svc.id} has no virtual_ip`)
+      }
+
       let current = null
+
       if (svc.current_deployment_id) {
         const dep = db
           .select({
@@ -562,16 +654,20 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           .from(deployment)
           .where(eq(deployment.id, svc.current_deployment_id))
           .get()
-        if (!dep)
+
+        if (!dep) {
           throw new GenerationError(
             `service ${svc.id} names current deployment ${svc.current_deployment_id}, which does not exist`,
           )
+        }
+
         current = {
           deployment_id: svc.current_deployment_id,
           number: dep.number,
           spec: spec(svc.current_deployment_id, `${at}/current/spec`),
         }
       }
+
       const built = hashed({
         environment_id: svc.environment_id,
         project_id: projectOf.get(svc.environment_id)!,
@@ -584,25 +680,39 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           .filter((v) => v.environment_id === svc.environment_id && v.service_id)
           .map((v) => v.id),
       })
+
       conform(DesiredService, built, at)
+
       return built
     })
-    if (doc && environmentDocs[doc.environment_id]) serviceDocs[svc.id] = doc
+
+    if (doc && environmentDocs[doc.environment_id]) {
+      serviceDocs[svc.id] = doc
+    }
   }
+
   if (excluded.length) {
     const carried = new Set(excluded.filter((e) => e.carried).map((e) => e.key))
+
     for (const env of environments) {
-      if (environmentDocs[env.id] && !carried.has(keyOf('environment', env.id)))
+      if (environmentDocs[env.id] && !carried.has(keyOf('environment', env.id))) {
         environmentDocs[env.id] = environmentDoc(env, (id) => Boolean(serviceDocs[id]))
+      }
     }
+
     for (const [id, doc] of Object.entries(serviceDocs)) {
-      if (carried.has(keyOf('service', id))) continue
+      if (carried.has(keyOf('service', id))) {
+        continue
+      }
+
       const reachable = new Set(
         (environmentDocs[doc.environment_id]?.virtual_ips ?? []).map((v) => v.id),
       )
       const reach = doc.reach.filter((v) => reachable.has(v))
+
       if (reach.length !== doc.reach.length) {
         const { hash: _hash, ...rest } = doc
+
         serviceDocs[id] = hashed({
           ...rest,
           reach,
@@ -616,10 +726,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const desiredSandbox = (row: (typeof sandboxRows)[number]) => {
     const at = keyOf('sandbox', row.id)
     const destroy = row.status === 'deleting'
-    if (!destroy && row.network === 'environment' && !environmentDocs[row.environment_id])
+
+    if (!destroy && row.network === 'environment' && !environmentDocs[row.environment_id]) {
       throw new GenerationError(
         `${at}: environment ${row.environment_id} is not in this generation`,
       )
+    }
+
     const image_ref =
       row.image.ref === null
         ? `${pins.sandbox_toolchain?.source ?? releaseRepositories.sandbox_toolchain}@${row.image.digest}`
@@ -631,6 +744,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       status: destroy ? ('destroy' as const) : ('active' as const),
       desired_state: row.desired_state,
       stop_at: row.stop_at ? timestamp(row.stop_at) : null,
+      runtime: row.runtime,
       image: {
         ref: row.image.ref,
         digest: row.image.digest,
@@ -651,20 +765,32 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
               .filter((v) => v.environment_id === row.environment_id && v.service_id)
               .map((v) => v.id)
           : [],
+      ...(row.workspace
+        ? {
+            api_relay: true as const,
+          }
+        : {}),
     })
+
     conform(DesiredSandbox, built, at)
+
     return built
   }
-  const sandboxDocs: Record<string, ReturnType<typeof desiredSandbox>> = {}
+  const sandboxDocs: Record<string, Static<typeof DesiredSandbox>> = {}
+
   for (const row of sandboxRows) {
     const doc = guarded('sandbox', row.id, previous?.sandboxes?.[row.id], () => desiredSandbox(row))
-    if (doc) sandboxDocs[row.id] = doc
+
+    if (doc) {
+      sandboxDocs[row.id] = doc
+    }
   }
 
   const snapshotDocs: Record<
     string,
     { hash: string; sandbox_id: string; status: 'active' | 'destroy' }
   > = {}
+
   if (sandboxCapable) {
     for (const snap of db
       .select()
@@ -672,7 +798,10 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       .where(eq(sandbox_snapshot.station_id, stationId))
       .orderBy(asc(sandbox_snapshot.id))
       .all()) {
-      if (snap.status === 'failed') continue
+      if (snap.status === 'failed') {
+        continue
+      }
+
       const doc = guarded(
         'sandbox_snapshot',
         snap.id,
@@ -682,11 +811,16 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
             sandbox_id: snap.sandbox_id,
             status: snap.status === 'deleting' ? ('destroy' as const) : ('active' as const),
           })
+
           conform(DesiredSandboxSnapshot, built, keyOf('sandbox_snapshot', snap.id))
+
           return built
         },
       )
-      if (doc) snapshotDocs[snap.id] = doc
+
+      if (doc) {
+        snapshotDocs[snap.id] = doc
+      }
     }
   }
 
@@ -715,18 +849,26 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const dispatched = new Set(Object.keys(previous?.deployments ?? {}))
   const started = (dep: (typeof candidates)[number]) =>
     dispatched.has(dep.id) || dep.status !== 'queued' ? 0 : 1
+
   for (const dep of [...candidates].sort((a, b) => started(a) - started(b))) {
     const cancelled = dep.status === 'cancelled'
     const serial = dep.trigger.type === 'variable_change'
+
     if (
       !cancelled &&
       (perService.has(dep.service_id) ||
         uncancelled >= st.concurrency_cap ||
         (serial && variableChangeAdmitted))
-    )
+    ) {
       continue
+    }
+
     const svc = serviceById.get(dep.service_id)!
-    if (svc.current_deployment_id === dep.id) continue
+
+    if (svc.current_deployment_id === dep.id) {
+      continue
+    }
+
     const at = keyOf('deployment', dep.id)
     const wasSent = dispatched.has(dep.id)
     const doc = guarded(
@@ -734,8 +876,10 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       dep.id,
       wasSent ? previous!.deployments[dep.id] : undefined,
       () => {
-        if (!serviceDocs[dep.service_id])
+        if (!serviceDocs[dep.service_id]) {
           throw new GenerationError(`${at}: service ${dep.service_id} is not in this generation`)
+        }
+
         const target = spec(dep.id, `${at}/target`)
         const drain = target.drain_timeout_s
         const health = healthBudget(target.health)
@@ -764,17 +908,27 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
               }
             : null,
         })
+
         conform(DesiredDeployment, built, at)
+
         return built
       },
       wasSent,
     )
-    if (!doc || !serviceDocs[doc.service_id]) continue
+
+    if (!doc || !serviceDocs[doc.service_id]) {
+      continue
+    }
+
     deploymentDocs[dep.id] = doc
+
     if (!cancelled) {
       perService.add(dep.service_id)
       uncancelled++
-      if (serial) variableChangeAdmitted = true
+
+      if (serial) {
+        variableChangeAdmitted = true
+      }
     }
   }
 
@@ -791,13 +945,16 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       }
     : null
   const systemHosts = new Map<string, string>()
+
   if (dispatchTarget) {
     for (const r of systemRoutes(read, st.public_address)) {
       const route = guarded('route', r.id, previous?.gateway.routes[r.id], () => {
-        if (!st.public_address)
+        if (!st.public_address) {
           throw new GenerationError(
             `${keyOf('route', r.id)}: ${r.hostname} is a direct route, which needs the station's public_address; set it with sly stations update ${st.name} --public-address <ipv4>`,
           )
+        }
+
         const built = hashed({
           hostname: r.hostname,
           ingress: 'direct' as const,
@@ -807,15 +964,19 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           },
           redirect_http: true,
         })
+
         conform(Route, built, keyOf('route', r.id))
+
         return built
       })
+
       if (route) {
         routes[r.id] = route
         systemHosts.set(route.hostname, r.id)
       }
     }
   }
+
   if (ports.length) {
     for (const d of db
       .select()
@@ -826,15 +987,21 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       const route = guarded('route', d.id, previous?.gateway.routes[d.id], () => {
         const port = portById.get(d.service_port_id)!
         const taken = systemHosts.get(d.hostname)
-        if (taken)
+
+        if (taken) {
           throw new GenerationError(
             `${keyOf('route', d.id)}: ${d.hostname} is Dispatch's own hostname (route ${taken}); remove the domain or change the hostnames setting`,
           )
+        }
+
         const vip = vipOf.get(port.service_id)
-        if (!serviceDocs[port.service_id] || !vip)
+
+        if (!serviceDocs[port.service_id] || !vip) {
           throw new GenerationError(
             `${keyOf('route', d.id)}: service ${port.service_id} is not in this generation`,
           )
+        }
+
         const direct = d.ingress === 'direct'
         const resolver: SystemRoute['resolver'] =
           d.certificate?.resolver === 'letsencrypt-shortlived' || isIP(d.hostname)
@@ -855,15 +1022,20 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
             : null,
           redirect_http: direct,
         })
+
         conform(Route, built, keyOf('route', d.id))
+
         return built
       })
-      if (route && 'service_id' in route.target && serviceDocs[route.target.service_id])
+
+      if (route && 'service_id' in route.target && serviceDocs[route.target.service_id]) {
         routes[d.id] = route
+      }
     }
   }
 
   const allocationDocs: GenerationContent['port_allocations'] = {}
+
   for (const pa of db
     .select()
     .from(port_allocation)
@@ -871,13 +1043,20 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     .orderBy(asc(port_allocation.id))
     .all()) {
     const port = portById.get(pa.service_port_id)
-    if (!port) continue
+
+    if (!port) {
+      continue
+    }
+
     const doc = guarded('port_allocation', pa.id, previous?.port_allocations[pa.id], () => {
       const vip = vipOf.get(port.service_id)
-      if (!serviceDocs[port.service_id] || !vip)
+
+      if (!serviceDocs[port.service_id] || !vip) {
         throw new GenerationError(
           `${keyOf('port_allocation', pa.id)}: service ${port.service_id} is not in this generation`,
         )
+      }
+
       const built = hashed({
         service_port_id: pa.service_port_id,
         service_id: port.service_id,
@@ -886,14 +1065,20 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         virtual_ip: vip.address,
         container_port: port.port,
       })
+
       conform(DesiredPortAllocation, built, keyOf('port_allocation', pa.id))
+
       return built
     })
-    if (doc && serviceDocs[doc.service_id]) allocationDocs[pa.id] = doc
+
+    if (doc && serviceDocs[doc.service_id]) {
+      allocationDocs[pa.id] = doc
+    }
   }
 
   const projectIds = [...new Set(environments.map((e) => e.project_id))].sort()
   const workshopDocs: GenerationContent['workshops'] = {}
+
   for (const p of projectIds.length
     ? db.select().from(project).where(inArray(project.id, projectIds)).all()
     : []) {
@@ -913,8 +1098,12 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   }
 
   const components: GenerationContent['components'] = {}
+
   for (const [name, pin] of Object.entries(pins).sort(([a], [b]) => a.localeCompare(b))) {
-    if (unlistedComponents.has(name)) continue
+    if (unlistedComponents.has(name)) {
+      continue
+    }
+
     components[name] = {
       version: pin.version,
       digest: pin.digest,
@@ -1002,6 +1191,7 @@ export const contentDigest = (content: GenerationContent) => sha256Digest(conten
 
 export const contentOf = (doc: GenerationDoc): GenerationContent => {
   const { number: _n, previous: _p, hash: _h, issued_at: _i, resolution: _r, ...content } = doc
+
   return content
 }
 
@@ -1024,8 +1214,10 @@ export const seal = (
     resolution: envelope.resolution,
   }
   const doc = hashed(unhashed)
+
   if (!Value.Check(Generation, doc)) {
     const issue = Value.Errors(Generation, doc).First()
+
     throw new GenerationError(
       `the generation does not match its schema at ${issue?.path}: ${issue?.message}`,
       {
@@ -1033,5 +1225,6 @@ export const seal = (
       },
     )
   }
+
   return doc
 }

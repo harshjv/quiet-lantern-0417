@@ -39,8 +39,10 @@ describe('gateway.rate_per_source', () => {
         token: h.admin.token,
       })
     ).body
+
     assert.equal(listed.items.find((s: { key: string }) => s.key === key).value, 20)
     const doc = await station.waitForGeneration((d) => d.station.settings[key] === 20)
+
     assert.equal(doc.station.settings[key], 20)
   })
 
@@ -62,6 +64,7 @@ describe('gateway.rate_per_source', () => {
   test('negative, fractional, huge and non-numeric values are refused', async () => {
     for (const value of [-1, 2.5, 1000001, '20', true]) {
       const reply = await patch(value)
+
       assert.equal(reply.status, 400, `${JSON.stringify(value)} ${reply.text}`)
       assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
       assert.equal(reply.body.error.details.issues[0].path, `/${key}`)
@@ -83,9 +86,11 @@ describe('gateway.rate_per_source', () => {
     const staged = await patch(60, {
       token: h.admin.token,
     })
+
     assert.equal(staged.status, 202, staged.text)
     assert.equal(staged.body.environment_id, null)
     const accepted = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, human())
+
     assert.equal(accepted.status, 200, accepted.text)
     assert.equal(
       (await station.waitForGeneration((d) => d.station.settings[key] === 60)).station.settings[

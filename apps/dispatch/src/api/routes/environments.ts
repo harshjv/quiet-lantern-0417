@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import { and, asc, desc, eq } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
 import { slugPattern } from '@stationly/protocol'
 
@@ -19,7 +19,6 @@ import { fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { warning, type Kit } from '../kit.ts'
 import {
-  environmentById,
   environmentInProject,
   projectByRef,
   type EnvironmentRow,
@@ -31,13 +30,16 @@ import {
   Deployment,
   Environment,
   extend,
-  models,
   Page,
   replies,
   Staged,
   Warnings,
 } from '../shapes.ts'
 import { settleVariableWrites } from '../stale.ts'
+
+const ttlText = 'Inactivity before an ephemeral environment is deleted; required when ephemeral'
+
+const protectedText = 'Stage changes by agents for a human to accept'
 
 const EnvironmentCreated = extend(Environment, {
   deployments: Type.Array(Deployment),
@@ -65,11 +67,14 @@ export const cloneInto = (
     .all()
   const copyable = (v: { kind: string }, head: Parameters<typeof decryptValue>[1]) => {
     const value = decryptValue(kit.deps.keyring, head)
+
     return v.kind === 'sealed' ? value : value.replaceAll('${{', () => '$${{')
   }
+
   db.transaction((tx) => {
     const tdb = tx as unknown as Db
     const idMap = new Map<string, string>()
+
     for (const svc of services) {
       const {
         id: _id,
@@ -87,13 +92,17 @@ export const cloneInto = (
         environment_id: target.id,
         desired_state: 'running',
       })
+
       idMap.set(svc.id, id)
+
       for (const port of tdb
         .select()
         .from(service_port)
         .where(eq(service_port.service_id, svc.id))
-        .all())
+        .all()) {
         createServicePort(tdb, id, port)
+      }
+
       for (const vol of tdb
         .select()
         .from(volume)
@@ -109,20 +118,28 @@ export const cloneInto = (
           vol.mount_path,
         )
       }
+
       copied.push(id)
     }
+
     for (const svc of services) {
       for (const v of variablesOf(tdb, {
         scope: 'service',
         id: svc.id,
       }).all()) {
         let value = v.reference ?? ''
+
         if (v.reference === null) {
           const head = headValue(tdb, v.id, null)
-          if (!head) continue
+
+          if (!head) {
+            continue
+          }
+
           decrypted.push(head.id)
           value = copyable(v, head)
         }
+
         const result = setVariable(tdb, kit.deps.keyring, {
           scope: 'service',
           service_id: idMap.get(svc.id)!,
@@ -135,16 +152,24 @@ export const cloneInto = (
           actor: call.principal.actor,
           request_id: call.request_id,
         })
-        if (result.write) writes.push(result.write)
+
+        if (result.write) {
+          writes.push(result.write)
+        }
       }
     }
+
     if (!source.protected) {
       for (const v of variablesOf(tdb, {
         scope: 'project',
         id: proj.id,
       }).all()) {
         const head = headValue(tdb, v.id, source.id)
-        if (!head) continue
+
+        if (!head) {
+          continue
+        }
+
         decrypted.push(head.id)
         const result = setVariable(tdb, kit.deps.keyring, {
           scope: 'project',
@@ -158,11 +183,16 @@ export const cloneInto = (
           actor: call.principal.actor,
           request_id: call.request_id,
         })
-        if (result.write) writes.push(result.write)
+
+        if (result.write) {
+          writes.push(result.write)
+        }
       }
     }
+
     settleVariableWrites(tdb, writes)
-    if (decrypted.length)
+
+    if (decrypted.length) {
       audit(
         tdb,
         call,
@@ -179,8 +209,10 @@ export const cloneInto = (
           },
         },
       )
+    }
   })
   const deployments: string[] = []
+
   if (deploy) {
     for (const id of copied) {
       try {
@@ -193,7 +225,10 @@ export const cloneInto = (
           }).id,
         )
       } catch (error) {
-        if (!(error instanceof DomainError)) throw error
+        if (!(error instanceof DomainError)) {
+          throw error
+        }
+
         warnings.push(
           warning(
             error.code as string,
@@ -203,6 +238,7 @@ export const cloneInto = (
       }
     }
   }
+
   return {
     warnings,
     deployments,
@@ -216,14 +252,9 @@ const environmentTarget = (row: EnvironmentRow) => ({
 
 export const environmentRoutes = (kit: Kit) => {
   const { db } = kit.deps
-  const tags = ['environments']
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('environments', '/v1')
     .get(
       '/projects/:project/environments',
       async ({ request, params, query }) => {
@@ -252,6 +283,7 @@ export const environmentRoutes = (kit: Kit) => {
           query,
           (row) => seesEnvironment(principal, environmentTarget(row)),
         )
+
         return {
           items: page.rows.map((row) =>
             select(kit.views.environment, row, kit.fields(query.fields)),
@@ -262,61 +294,53 @@ export const environmentRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'list_environments',
+          summary: 'List the environments of a project',
           level: 'any',
         },
-        params: t.Object({
-          project: t.String(),
-        }),
         query: t.Object({
           ...listQuery,
-          ephemeral: t.Optional(t.BooleanString()),
-          protected: t.Optional(t.BooleanString()),
+          ephemeral: t.Optional(
+            t.BooleanString({
+              description: 'Only ephemeral environments, or with false only lasting ones',
+            }),
+          ),
+          protected: t.Optional(
+            t.BooleanString({
+              description: 'Only protected environments, or with false only unprotected ones',
+            }),
+          ),
         }),
         response: replies({
           200: Page(Environment),
         }),
-        detail: {
-          summary: 'List the environments of a project',
-          tags,
-        },
       },
     )
     .get(
       '/environments/:environment',
-      ({ params, query }) =>
-        select(
-          kit.views.environment,
-          environmentById(db, params.environment).environment,
-          kit.fields(query.fields),
-        ),
+      ({ ctx, query }) => select(kit.views.environment, ctx.environment, kit.fields(query.fields)),
       {
-        operation: {
+        environment: {
           id: 'describe_environment',
+          summary: 'Get an environment',
           level: 'read',
           mcp: {
             always_load: true,
           },
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         query: t.Object(getQuery),
         response: replies({
           200: Environment,
         }),
-        detail: {
-          summary: 'Get an environment',
-          tags,
-        },
       },
     )
     .post(
       '/projects/:project/environments',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const proj = projectByRef(db, params.project)
+        const proj = ctx.project
         const ephemeral = body.ephemeral ?? false
-        if (!ephemeral)
+
+        if (!ephemeral) {
           requireLevel(
             call.principal,
             {
@@ -325,11 +349,15 @@ export const environmentRoutes = (kit: Kit) => {
             },
             'admin',
           )
-        if (body.protected)
+        }
+
+        if (body.protected) {
           requireHuman(call.principal, 'Creating a protected environment', {
             protected: true,
           })
-        if (ephemeral && body.ttl_seconds === undefined)
+        }
+
+        if (ephemeral && body.ttl_seconds === undefined) {
           fail(
             'VALIDATION_FAILED',
             'ttl_seconds is required for an ephemeral environment.',
@@ -343,6 +371,8 @@ export const environmentRoutes = (kit: Kit) => {
               ],
             },
           )
+        }
+
         if (
           db
             .select({
@@ -361,10 +391,15 @@ export const environmentRoutes = (kit: Kit) => {
             },
           )
         }
+
         const source = body.source_environment_id
           ? environmentInProject(db, proj, body.source_environment_id)
           : null
-        if (source) requireLevel(call.principal, environmentTarget(source), 'read')
+
+        if (source) {
+          requireLevel(call.principal, environmentTarget(source), 'read')
+        }
+
         const id = newId('environment')
         const cloned = db.transaction(() => {
           db.insert(environment)
@@ -379,6 +414,7 @@ export const environmentRoutes = (kit: Kit) => {
             })
             .run()
           const created = db.select().from(environment).where(eq(environment.id, id)).get()!
+
           audit(
             db,
             call,
@@ -402,6 +438,7 @@ export const environmentRoutes = (kit: Kit) => {
             id,
             project_id: proj.id,
           })
+
           return source
             ? cloneInto(kit, call, proj, source, created, body.deploy_on_create ?? true)
             : {
@@ -409,7 +446,9 @@ export const environmentRoutes = (kit: Kit) => {
                 deployments: [],
               }
         })
+
         set.status = 201
+
         return {
           ...select(
             kit.views.environment,
@@ -427,30 +466,46 @@ export const environmentRoutes = (kit: Kit) => {
         }
       },
       {
-        params: t.Object({
-          project: t.String(),
-        }),
         body: t.Object(
           {
             name: t.String({
               pattern: slugPattern,
+              description: 'The environment name',
             }),
-            source_environment_id: t.Optional(t.String()),
-            ephemeral: t.Optional(t.Boolean()),
+            source_environment_id: t.Optional(
+              t.String({
+                description: 'Clone the services and variables of this environment',
+              }),
+            ),
+            ephemeral: t.Optional(
+              t.Boolean({
+                description: 'Delete the environment after ttl_seconds without activity',
+              }),
+            ),
             ttl_seconds: t.Optional(
               t.Integer({
                 minimum: 60,
+                description: ttlText,
               }),
             ),
-            deploy_on_create: t.Optional(t.Boolean()),
-            protected: t.Optional(t.Boolean()),
+            deploy_on_create: t.Optional(
+              t.Boolean({
+                description: 'Deploy the cloned services at once (default true)',
+              }),
+            ),
+            protected: t.Optional(
+              t.Boolean({
+                description: protectedText,
+              }),
+            ),
           },
           {
             additionalProperties: false,
           },
         ),
-        operation: {
+        project: {
           id: 'create_environment',
+          summary: 'Create an environment, empty or as a clone of source_environment_id',
           level: 'deploy',
           cli: {
             args: ['name'],
@@ -459,23 +514,20 @@ export const environmentRoutes = (kit: Kit) => {
         response: replies({
           201: EnvironmentCreated,
         }),
-        detail: {
-          summary: 'Create an environment, empty or as a clone of source_environment_id',
-          tags,
-        },
       },
     )
     .patch(
       '/environments/:environment',
-      async ({ request, params, body }) => {
+      async ({ ctx, request, body }) => {
         const call = await kit.call(request)
-        const ctx = environmentById(db, params.environment)
+
         if (body.protected !== undefined && body.protected !== ctx.environment.protected) {
           requireHuman(call.principal, 'Changing environment.protected', {
             ...ctx.target,
             level: 'admin',
           })
         }
+
         db.update(environment).set(body).where(eq(environment.id, ctx.environment.id)).run()
         audit(
           db,
@@ -493,6 +545,7 @@ export const environmentRoutes = (kit: Kit) => {
             after: body,
           },
         )
+
         return select(
           kit.views.environment,
           db.select().from(environment).where(eq(environment.id, ctx.environment.id)).get()!,
@@ -500,44 +553,50 @@ export const environmentRoutes = (kit: Kit) => {
         )
       },
       {
-        params: t.Object({
-          environment: t.String(),
-        }),
         body: t.Object(
           {
-            protected: t.Optional(t.Boolean()),
+            protected: t.Optional(
+              t.Boolean({
+                description: protectedText,
+              }),
+            ),
             ttl_seconds: t.Optional(
-              t.Union([
-                t.Integer({
-                  minimum: 60,
-                }),
-                t.Null(),
-              ]),
+              t.Union(
+                [
+                  t.Integer({
+                    minimum: 60,
+                  }),
+                  t.Null(),
+                ],
+                {
+                  description: ttlText,
+                },
+              ),
             ),
           },
           {
             additionalProperties: false,
           },
         ),
-        operation: {
+        environment: {
           id: 'update_environment',
+          summary: 'Update protected or ttl_seconds',
           level: 'admin',
         },
         response: replies({
           200: Environment,
         }),
-        detail: {
-          summary: 'Update protected or ttl_seconds',
-          tags,
-        },
       },
     )
     .delete(
       '/environments/:environment',
-      async ({ request, params, set }) => {
+      async ({ ctx, request, set }) => {
         const call = await kit.call(request)
-        const ctx = environmentById(db, params.environment)
-        if (!ctx.environment.ephemeral) requireLevel(call.principal, ctx.target, 'admin')
+
+        if (!ctx.environment.ephemeral) {
+          requireLevel(call.principal, ctx.target, 'admin')
+        }
+
         if (ctx.project.default_environment_id === ctx.environment.id) {
           fail(
             'ENVIRONMENT_IS_DEFAULT',
@@ -545,8 +604,10 @@ export const environmentRoutes = (kit: Kit) => {
             'Set another default_environment_id on the project first.',
           )
         }
+
         requireNoSandboxes(db, ctx.environment)
         const changes = new ChangeSet()
+
         changes.remove(
           'environment',
           ctx.environment.id,
@@ -561,7 +622,11 @@ export const environmentRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         audit(
           db,
           call,
@@ -582,27 +647,22 @@ export const environmentRoutes = (kit: Kit) => {
           project_id: ctx.project.id,
         })
         kit.deps.stations.reconcile()
+
         return {
           deleted: true as const,
           volumes_retained_until: result.retained_until?.toISOString() ?? null,
         }
       },
       {
-        operation: {
+        environment: {
           id: 'delete_environment',
+          summary: 'Delete an environment; staged when protected',
           level: 'deploy',
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         response: replies({
           200: DeletedRetaining,
           202: Staged,
         }),
-        detail: {
-          summary: 'Delete an environment; staged when protected',
-          tags,
-        },
       },
     )
 }

@@ -43,7 +43,11 @@ export const withQueued = (
   now = new Date().toISOString(),
 ): Deployment[] => {
   const latest = list[0]
-  if (!latest) return list
+
+  if (!latest) {
+    return list
+  }
+
   return [
     optimistic({
       id: `queued-${latest.service_id}`,
@@ -68,8 +72,13 @@ export const withQueued = (
 
 export const stepProgress = (steps: DeploymentStep[], now = new Date()) => {
   const current = steps.find((s) => s.status === 'running')
-  if (!current) return null
+
+  if (!current) {
+    return null
+  }
+
   const names = [...new Set(steps.filter((s) => s.status !== 'skipped').map((s) => s.step))]
+
   return [
     `Step ${names.indexOf(current.step) + 1} of ${names.length}`,
     deploymentStep[current.step],

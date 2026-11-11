@@ -99,7 +99,9 @@ export const optimistic = <T extends object>(row: T): T => ({
 export const isOptimistic = (row: object) => 'optimistic' in row
 
 export const write = (client: QueryClient, edits: Edit[]) => {
-  for (const edit of edits) edit.apply(client)
+  for (const edit of edits) {
+    edit.apply(client)
+  }
 }
 
 export const applyOptimistic = async (client: QueryClient, edits: Edit[]): Promise<Snapshot> => {
@@ -115,10 +117,14 @@ export const applyOptimistic = async (client: QueryClient, edits: Edit[]): Promi
     queryKey: edit.queryKey,
     data: client.getQueryData(edit.queryKey),
   }))
+
   write(client, edits)
+
   return snapshot
 }
 
 export const rollback = (client: QueryClient, snapshot: Snapshot) => {
-  for (const { queryKey, data } of snapshot) client.setQueryData(queryKey, data)
+  for (const { queryKey, data } of snapshot) {
+    client.setQueryData(queryKey, data)
+  }
 }

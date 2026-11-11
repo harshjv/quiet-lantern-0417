@@ -17,6 +17,7 @@ import {
 } from '../db/schema.ts'
 import { writeSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
+import { every, runNow } from '../schedule.ts'
 import { emitEvent } from '../station/events.ts'
 
 import { resolvePins, type Pins } from './lockfile.ts'
@@ -84,6 +85,7 @@ export const latestUpgrade = (db: Db) =>
 
 export const activeUpgrade = (db: Db) => {
   const row = latestUpgrade(db)
+
   return row && activeStatuses.has(row.status) ? row : null
 }
 
@@ -106,14 +108,23 @@ const dispatchStation = (db: Db) =>
 
 export const overlayPins = (db: Db, stationId: string, base: Pins): Pins => {
   const row = activeUpgrade(db)
-  if (!row) return base
+
+  if (!row) {
+    return base
+  }
+
   const out: Pins = {
     ...base,
   }
+
   for (const step of row.steps) {
-    if (step.station_id !== stationId) continue
+    if (step.station_id !== stationId) {
+      continue
+    }
+
     const pin = toStatuses.has(step.status) ? step.to : step.from
     const prev = out[step.component]
+
     out[step.component] = {
       version: pin.version,
       digest: pin.digest,
@@ -122,17 +133,20 @@ export const overlayPins = (db: Db, stationId: string, base: Pins): Pins => {
       origin: prev?.origin ?? 'release',
     }
   }
+
   return out
 }
 
 export const generationLockfile = (db: Db, current: unknown) => {
   const row = activeUpgrade(db)
+
   return row ? row.lockfile_before : current
 }
 
 const orderOf = (manifest: ReleaseManifestDoc | null, names: Set<string>) => {
   const listed = Object.keys(manifest?.components ?? {})
   const rest = [...names].filter((n) => !listed.includes(n)).sort()
+
   return [...listed, ...rest].filter((n) => names.has(n))
 }
 
@@ -162,6 +176,7 @@ export const planUpgrade = (
   const stepsFirst: UpgradeStep[] = []
   const stepsRest: UpgradeStep[] = []
   let dispatchStep: UpgradeStep | null = null
+
   for (const st of stations) {
     const from = resolvePins(beforeManifest, before, st.arch)
     const fromRunning = current ? overlayPins(db, st.id, from) : from
@@ -169,11 +184,19 @@ export const planUpgrade = (
     const names = new Set(
       [...Object.keys(fromRunning), ...Object.keys(to)].filter((n) => !unlisted.has(n)),
     )
+
     for (const name of orderOf(afterManifest ?? beforeManifest, names)) {
       const a = pinOf(fromRunning, name)
       const b = pinOf(to, name)
-      if (!b || samePin(a, b)) continue
-      if (name === 'dispatch' && st.id !== hostId) continue
+
+      if (!b || samePin(a, b)) {
+        continue
+      }
+
+      if (name === 'dispatch' && st.id !== hostId) {
+        continue
+      }
+
       const step: UpgradeStep = {
         component: name,
         station_id: st.id,
@@ -188,14 +211,21 @@ export const planUpgrade = (
         failure: null,
         detail: null,
       }
-      if (name === 'stationd') stepsFirst.push(step)
-      else if (name === 'dispatch') dispatchStep = step
-      else stepsRest.push(step)
+
+      if (name === 'stationd') {
+        stepsFirst.push(step)
+      } else if (name === 'dispatch') {
+        dispatchStep = step
+      } else {
+        stepsRest.push(step)
+      }
     }
   }
+
   const removedOverrides = Object.keys(before.overrides ?? {}).filter(
     (n) => !(n in (after.overrides ?? {})),
   )
+
   return {
     steps: [...stepsFirst, ...stepsRest, ...(dispatchStep ? [dispatchStep] : [])],
     removedOverrides,
@@ -251,6 +281,7 @@ export const startUpgrade = (
     station: input.station,
     result: null,
   }
+
   emitEvent(
     db,
     'platform.upgrade_started',
@@ -260,7 +291,8 @@ export const startUpgrade = (
     },
     payload,
   )
-  if (!plan.steps.length)
+
+  if (!plan.steps.length) {
     emitEvent(
       db,
       'platform.upgrade_done',
@@ -273,6 +305,8 @@ export const startUpgrade = (
         result: 'done',
       },
     )
+  }
+
   return id
 }
 
@@ -293,6 +327,7 @@ const save = (db: Db, row: Row, patch: Partial<Row> = {}) => {
 const finish = (db: Db, row: Row, result: 'done' | 'failed' | 'reverted') => {
   row.status = result
   row.finished_at = new Date()
+
   if (result === 'reverted') {
     writeSetting(db, 'platform.lockfile', row.lockfile_before, {
       type: 'system',
@@ -301,6 +336,7 @@ const finish = (db: Db, row: Row, result: 'done' | 'failed' | 'reverted') => {
     })
     syncComponentLockfile(db, row.lockfile_before as unknown as LockfileDoc)
   }
+
   save(db, row)
   emitEvent(
     db,
@@ -325,6 +361,7 @@ const finish = (db: Db, row: Row, result: 'done' | 'failed' | 'reverted') => {
 
 const syncComponentLockfile = (db: Db, lockfile: LockfileDoc) => {
   const manifest = manifestFor(db, lockfile)
+
   for (const st of db
     .select({
       id: station.id,
@@ -333,6 +370,7 @@ const syncComponentLockfile = (db: Db, lockfile: LockfileDoc) => {
     .from(station)
     .all()) {
     const pins = resolvePins(manifest, lockfile, st.arch)
+
     for (const [name, pin] of Object.entries(pins)) {
       db.update(component)
         .set({
@@ -358,8 +396,13 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
     backup: null,
   }
   const row = activeUpgrade(db)
-  if (!row || row.status === 'failed') return out
+
+  if (!row || row.status === 'failed') {
+    return out
+  }
+
   const at = Date.now()
+
   for (const step of row.steps) {
     if (
       (step.status === 'running' || step.status === 'reverting') &&
@@ -372,59 +415,101 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
         fix: 'Read the stationd log on the station; the upgrade reverts the components already moved.',
         details: {},
       }
+
       markFailed(db, row, step, failure, out)
+
       return out
     }
   }
+
   if (row.status === 'running') {
-    if (row.steps.some((s) => s.status === 'running')) return out
-    const next = row.steps.find((s) => s.status === 'pending')
-    if (!next) {
-      finish(db, row, 'done')
-      for (const s of row.steps) if (s.station_id) out.reconcile.add(s.station_id)
+    if (row.steps.some((s) => s.status === 'running')) {
       return out
     }
+
+    const next = row.steps.find((s) => s.status === 'pending')
+
+    if (!next) {
+      finish(db, row, 'done')
+
+      for (const s of row.steps) {
+        if (s.station_id) {
+          out.reconcile.add(s.station_id)
+        }
+      }
+
+      return out
+    }
+
     if (next.component === 'dispatch' && !row.backup) {
       out.backup = {
         row: row.id,
         version: dispatchVersion,
       }
+
       return out
     }
+
     next.status = 'running'
     next.started_at = now()
     save(db, row)
-    if (next.station_id) out.reconcile.add(next.station_id)
+
+    if (next.station_id) {
+      out.reconcile.add(next.station_id)
+    }
+
     return out
   }
-  if (row.steps.some((s) => s.status === 'reverting')) return out
+
+  if (row.steps.some((s) => s.status === 'reverting')) {
+    return out
+  }
+
   const back = [...row.steps].reverse().find((s) => s.status === 'done')
+
   if (!back) {
     finish(db, row, 'reverted')
-    for (const s of row.steps) if (s.station_id) out.reconcile.add(s.station_id)
+
+    for (const s of row.steps) {
+      if (s.station_id) {
+        out.reconcile.add(s.station_id)
+      }
+    }
+
     return out
   }
+
   back.status = 'reverting'
   back.started_at = now()
   save(db, row)
-  if (back.station_id) out.reconcile.add(back.station_id)
+
+  if (back.station_id) {
+    out.reconcile.add(back.station_id)
+  }
+
   return out
 }
 
 const markFailed = (db: Db, row: Row, step: UpgradeStep, failure: ErrorValue, out: Advance) => {
   step.finished_at = now()
   step.failure = failure
+
   if (step.status === 'reverting') {
     step.status = 'revert_failed'
     row.failure = failure
     finish(db, row, 'failed')
+
     return
   }
+
   step.status = 'failed'
   row.status = 'reverting'
   row.failure = failure
   save(db, row)
-  if (step.station_id) out.reconcile.add(step.station_id)
+
+  if (step.station_id) {
+    out.reconcile.add(step.station_id)
+  }
 }
 
 type ComponentReport = {
@@ -437,19 +522,29 @@ type ComponentReport = {
 
 export const upgradeOnComponent = (db: Db, stationId: string, body: ComponentReport) => {
   const row = activeUpgrade(db)
-  if (!row || row.status === 'failed') return false
+
+  if (!row || row.status === 'failed') {
+    return false
+  }
+
   const step = row.steps.find(
     (s) =>
       s.component === body.name &&
       s.station_id === stationId &&
       (s.status === 'running' || s.status === 'reverting'),
   )
-  if (!step) return false
+
+  if (!step) {
+    return false
+  }
+
   const target = step.status === 'running' ? step.to : step.from
   const matches =
     body.version === target.version && (target.digest === null || body.digest === target.digest)
+
   if (body.status === 'ok' && matches) {
     const from = step.status === 'running' ? step.from : step.to
+
     step.status = step.status === 'running' ? 'done' : 'reverted'
     step.finished_at = now()
     save(db, row)
@@ -470,8 +565,10 @@ export const upgradeOnComponent = (db: Db, stationId: string, body: ComponentRep
         revert: step.status === 'reverted',
       },
     )
+
     return true
   }
+
   if (body.status === 'failed' && step.status === 'running') {
     const failure = (body.failure as ErrorValue | null) ?? {
       code: 'UPGRADE_FAILED',
@@ -483,9 +580,12 @@ export const upgradeOnComponent = (db: Db, stationId: string, body: ComponentRep
       reconcile: new Set(),
       backup: null,
     }
+
     markFailed(db, row, step, failure, out)
+
     return true
   }
+
   if (body.status === 'failed' && step.status === 'reverting' && !matches) {
     markFailed(
       db,
@@ -502,13 +602,16 @@ export const upgradeOnComponent = (db: Db, stationId: string, body: ComponentRep
         backup: null,
       },
     )
+
     return true
   }
+
   return false
 }
 
 export const writeBackup = async (db: Db, databasePath: string, rowId: string, version: string) => {
   const dir = join(dirname(databasePath), 'backups')
+
   mkdirSync(dir, {
     recursive: true,
   })
@@ -517,6 +620,7 @@ export const writeBackup = async (db: Db, databasePath: string, rowId: string, v
     `pre-upgrade-${version}-${new Date().toISOString().replace(/[-:.]/g, '')}.sqlite`,
   )
   const started = Date.now()
+
   await (db as unknown as { $client: Database.Database }).$client.backup(path)
   db.update(platform_upgrade)
     .set({
@@ -524,6 +628,7 @@ export const writeBackup = async (db: Db, databasePath: string, rowId: string, v
     })
     .where(eq(platform_upgrade.id, rowId))
     .run()
+
   return {
     path,
     took_ms: Date.now() - started,
@@ -538,49 +643,41 @@ export const createUpgradeDriver = (deps: {
   log: Log
 }) => {
   const { db, log } = deps
-  let busy = false
-  let again = false
-  const run = async () => {
-    if (busy) {
-      again = true
-      return
-    }
-    busy = true
-    try {
-      for (let i = 0; i < 64; i++) {
-        again = false
-        const step = advanceUpgrade(db, deps.version)
-        for (const id of step.reconcile) deps.reconcile(id)
-        if (step.backup) {
-          const res = await writeBackup(db, deps.databasePath, step.backup.row, step.backup.version)
-          log('platform_upgrade.backup', {
-            upgrade: step.backup.row,
-            ...res,
-          })
-          continue
-        }
-        if (!step.reconcile.size && !again) break
+  const advance = async () => {
+    for (let i = 0; i < 64; i++) {
+      const step = advanceUpgrade(db, deps.version)
+
+      for (const id of step.reconcile) {
+        deps.reconcile(id)
       }
-    } catch (error) {
-      log('platform_upgrade.advance_failed', {
-        explanation: (error as Error).message,
-        stack: (error as Error).stack,
-      })
-    } finally {
-      busy = false
+
+      if (step.backup) {
+        const res = await writeBackup(db, deps.databasePath, step.backup.row, step.backup.version)
+
+        log('platform_upgrade.backup', {
+          upgrade: step.backup.row,
+          ...res,
+        })
+        continue
+      }
+
+      if (!step.reconcile.size) {
+        break
+      }
     }
   }
-  const timer = setInterval(() => void run(), 2000)
-  timer.unref()
+  const job = every(2, 'platform_upgrade.advance_failed', log, advance)
+
   return {
-    kick: () => void run(),
-    stop: () => clearInterval(timer),
+    kick: () => runNow(job),
+    stop: () => job.stop(),
   }
 }
 
 export const upgradeDoctorRow = (db: Db) => {
   const row = latestUpgrade(db)
-  if (!row)
+
+  if (!row) {
     return {
       name: 'platform_upgrade',
       status: 'ok' as const,
@@ -588,6 +685,8 @@ export const upgradeDoctorRow = (db: Db) => {
       fix: null,
       code: null,
     }
+  }
+
   const moved = row.steps
     .filter((s) => toStatuses.has(s.status))
     .map((s) => `${s.component} ${s.to.version}`)
@@ -596,6 +695,7 @@ export const upgradeDoctorRow = (db: Db) => {
     .map((s) => `${s.component} ${s.from.version}`)
   const current = row.steps.find((s) => s.status === 'running' || s.status === 'reverting')
   const head = `upgrade ${row.id} ${row.release_from} -> ${row.release_to}`
+
   switch (row.status) {
     case 'done':
       return {

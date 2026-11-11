@@ -457,6 +457,12 @@ export const errorCatalog = [
     close: null,
   },
   {
+    code: 'SANDBOX_RUNTIME_UNAVAILABLE',
+    http: 422,
+    area: 'sandbox',
+    close: null,
+  },
+  {
     code: 'ENVIRONMENT_IS_DEFAULT',
     http: 409,
     area: 'lifecycle',

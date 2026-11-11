@@ -15,6 +15,7 @@ const word = (value: string | number) => new RegExp(`(?<![\\w.])${escape(String(
 const builder = (prefix: string) => new RegExp(`["'\`]${escape(prefix)}`)
 const imageSource = (source: string) => {
   const path = source.slice(source.indexOf('/') + 1)
+
   return new RegExp(
     path.includes('/')
       ? `${escape(source)}|(?<![\\w./-])${escape(path)}(?![\\w-])`
@@ -198,26 +199,38 @@ const excepted = (file: string, constant: Constant) =>
   exceptions.some((e) => e.file === file && e.constant === constant.name)
 
 const problems: string[] = []
+
 for (const file of files) {
   let text: string
+
   try {
     text = readFileSync(file, 'utf8')
   } catch {
     continue
   }
+
   const candidates = constants.filter(
     (constant) =>
       constant.home !== file && !excepted(file, constant) && constant.pattern.test(text),
   )
-  if (!candidates.length) continue
+
+  if (!candidates.length) {
+    continue
+  }
+
   text.split('\n').forEach((line, index) => {
-    for (const constant of candidates)
-      if (constant.pattern.test(line))
+    for (const constant of candidates) {
+      if (constant.pattern.test(line)) {
         problems.push(`${file}:${index + 1}: ${constant.name} belongs in ${constant.home}`)
+      }
+    }
   })
 }
 
 if (problems.length) {
-  for (const problem of problems) process.stderr.write(`${problem}\n`)
+  for (const problem of problems) {
+    process.stderr.write(`${problem}\n`)
+  }
+
   process.exit(1)
 }

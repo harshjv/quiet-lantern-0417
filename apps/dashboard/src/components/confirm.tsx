@@ -44,13 +44,17 @@ export function Confirm({
   const [failure, setFailure] = useState<unknown>(null)
   const open = controlled ?? own
   const setOpen = (next: boolean) => {
-    if (!next) setFailure(null)
+    if (!next) {
+      setFailure(null)
+    }
+
     setOwn(next)
     onOpenChange?.(next)
   }
   const confirm = async () => {
     setFailure(null)
     setPending(true)
+
     try {
       await onConfirm()
       setOpen(false)
@@ -60,6 +64,7 @@ export function Confirm({
       setPending(false)
     }
   }
+
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       {trigger && <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>}

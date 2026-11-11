@@ -61,7 +61,7 @@ func extract(ctx context.Context, c *depot.Client, stateDir, buildID, repo, inde
 		return out, err
 	}
 	var index ociManifest
-	if err := json.Unmarshal(idx.Body, &index); err != nil {
+	if err := json.Unmarshal(idx, &index); err != nil {
 		return out, fmt.Errorf("index %s: %w", indexDigest, err)
 	}
 	platform := "linux/" + arch
@@ -94,7 +94,7 @@ func extract(ctx context.Context, c *depot.Client, stateDir, buildID, repo, inde
 			return out, err
 		}
 		var att ociManifest
-		if err := json.Unmarshal(am.Body, &att); err != nil {
+		if err := json.Unmarshal(am, &att); err != nil {
 			return out, fmt.Errorf("attestation manifest %s: %w", m.Digest, err)
 		}
 		seen := map[protocol.AttestationKind]int{}

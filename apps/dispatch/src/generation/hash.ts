@@ -4,7 +4,11 @@ import canonicalize from 'canonicalize'
 
 export const canonical = (value: unknown) => {
   const text = canonicalize(value)
-  if (text === undefined) throw new Error('value has no JSON encoding')
+
+  if (text === undefined) {
+    throw new Error('value has no JSON encoding')
+  }
+
   return text
 }
 

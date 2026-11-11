@@ -1,7 +1,15 @@
 import { and, eq, inArray, isNotNull, or } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
-import { dnsLogTail, portRange, probeTimeout, type MessageBody } from '@stationly/protocol'
+import {
+  dnsLogTail,
+  networkDirectionValues,
+  networkProtocolValues,
+  portRange,
+  probeTimeout,
+  StringEnum,
+  type MessageBody,
+} from '@stationly/protocol'
 
 import { service } from '../../db/schema.ts'
 import { shapeSamples, type ConnectionsDoc } from '../../net/connections.ts'
@@ -12,12 +20,10 @@ import { sendProbe } from '../../net/probe.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail, invalid } from '../errors.ts'
 import { csv, type Kit } from '../kit.ts'
-import { environmentById, serviceById } from '../lookup.ts'
 import { getQuery } from '../pagination.ts'
-import { ProbeBody } from '../schemas.ts'
+import { DnsLogQuery, input, ProbeBody } from '../schemas.ts'
 import {
   DnsLog,
-  models,
   NetworkConnections,
   NetworkExplanation,
   NetworkMap,
@@ -30,17 +36,23 @@ import { createSse } from '../sse.ts'
 import { stationError } from './runs.ts'
 
 const selects = (fields: ReturnType<Kit['fields']>, parent: string, child: string) => {
-  if (!fields) return false
-  if (fields.has('*')) return true
+  if (!fields) {
+    return false
+  }
+
+  if (fields.has('*')) {
+    return true
+  }
+
   const node = fields.get(parent)
+
   return node !== undefined && (node.size === 0 || node.has(child) || node.has('*'))
 }
 
-const direction = t.Optional(t.Union([t.Literal('in'), t.Literal('out')]))
+const direction = t.Optional(input(StringEnum(networkDirectionValues)))
 
 export const networkRoutes = (kit: Kit) => {
   const { db, stations } = kit.deps
-  const tags = ['network']
   const sources = {
     db,
     observedOf: stations.observedOf,
@@ -58,35 +70,31 @@ export const networkRoutes = (kit: Kit) => {
             checks,
           },
           {
-            capability: 'network.v1',
             timeoutMs: 10_000,
           },
         )
         .catch(stationError)
-      return (reply.body as MessageBody<'network.inspect.result'>).results
+
+      return reply.body.results
     },
     dnsLog: async (stationId: string, body: MessageBody<'dns.log'>) => {
       const reply = await stations
         .ask(stationId, 'dns.log', body, {
-          capability: 'network.v1',
           timeoutMs: 10_000,
         })
         .catch(stationError)
-      return (reply.body as MessageBody<'dns.log.result'>).entries
+
+      return reply.body.entries
     },
   }
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('network', '/v1')
     .get(
       '/environments/:environment/network',
-      ({ params, query }) => {
-        const ctx = environmentById(db, params.environment)
+      ({ ctx, query }) => {
         const fields = kit.fields(query.fields)
+
         return networkMap(sources, ctx.environment, {
           service: query.service,
           rules: selects(fields, 'paths', 'rule'),
@@ -94,16 +102,15 @@ export const networkRoutes = (kit: Kit) => {
         })
       },
       {
-        operation: {
+        environment: {
           id: 'describe_network',
+          summary:
+            "Get an environment's network map: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path",
           level: 'read',
           cli: {
             render: 'network-map',
           },
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         query: t.Object({
           ...getQuery,
           service: t.Optional(
@@ -115,18 +122,12 @@ export const networkRoutes = (kit: Kit) => {
         response: replies({
           200: NetworkMap,
         }),
-        detail: {
-          summary:
-            "Get an environment's network map: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path",
-          tags,
-        },
       },
     )
     .get(
       '/services/:service/connections',
-      async ({ request, params, query }) => {
+      async ({ ctx, request, query }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
         const reply = await stations
           .ask(
             ctx.service.station_id,
@@ -135,15 +136,13 @@ export const networkRoutes = (kit: Kit) => {
               service_ids: [ctx.service.id],
             },
             {
-              capability: 'network.v1',
               timeoutMs: 10_000,
             },
           )
           .catch(stationError)
-        const sample = (reply.body as MessageBody<'network.sample.result'>).samples.find(
-          (s) => s.service_id === ctx.service.id,
-        )
-        if (!sample)
+        const sample = reply.body.samples.find((s) => s.service_id === ctx.service.id)
+
+        if (!sample) {
           fail(
             'NOT_FOUND',
             `The station returned no connection sample for ${ctx.service.name}.`,
@@ -152,6 +151,8 @@ export const networkRoutes = (kit: Kit) => {
               service_id: ctx.service.id,
             },
           )
+        }
+
         return shapeSamples(
           {
             db,
@@ -164,34 +165,27 @@ export const networkRoutes = (kit: Kit) => {
         )[0]!
       },
       {
-        operation: {
+        service: {
           id: 'get_connections',
+          summary:
+            'Live connections of a service grouped by peer, and refused attempts with the path that refused them; one sample',
           level: 'read',
           cli: {
             render: 'connections',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         query: t.Object({
           direction,
         }),
         response: replies({
           200: NetworkConnections,
         }),
-        detail: {
-          summary:
-            'Live connections of a service grouped by peer, and refused attempts with the path that refused them; one sample',
-          tags,
-        },
       },
     )
     .get(
       '/environments/:environment/network/live',
-      async ({ request, params, query }) => {
+      async ({ ctx, request, query }) => {
         const call = await kit.call(request)
-        const ctx = environmentById(db, params.environment)
         const refs = csv(query.service)
         const rows = refs?.length
           ? db
@@ -224,19 +218,26 @@ export const networkRoutes = (kit: Kit) => {
                 ),
               )
               .all()
+
         if (refs?.length) {
           const missing = refs.filter((r) => !rows.some((s) => s.id === r || s.name === r))
-          if (missing.length)
+
+          if (missing.length) {
             invalid(
               missing.map((m) => ({
                 path: '/service',
                 message: `no service ${m} in environment ${ctx.environment.name}`,
               })),
             )
+          }
         }
+
         const byStation = new Map<string, Set<string>>()
-        for (const s of rows)
+
+        for (const s of rows) {
           byStation.set(s.station_id, new Set([...(byStation.get(s.station_id) ?? []), s.id]))
+        }
+
         const shape = {
           db,
           redaction: kit.redaction,
@@ -247,12 +248,18 @@ export const networkRoutes = (kit: Kit) => {
         const pending = new Map<string, LiveTick>()
         let sending = false
         const pump = async () => {
-          if (sending) return
+          if (sending) {
+            return
+          }
+
           sending = true
+
           while (pending.size && !sse.closed()) {
             const [stationId, tick] = pending.entries().next().value!
+
             pending.delete(stationId)
             const samples: ConnectionsDoc[] = shapeSamples(shape, tick.samples, query.direction)
+
             await sse.send(
               'network',
               {
@@ -262,12 +269,16 @@ export const networkRoutes = (kit: Kit) => {
               tick.at,
             )
           }
+
           sending = false
         }
-        if (!byStation.size)
+
+        if (!byStation.size) {
           void sse.send('empty', {
             explanation: 'no running service in this environment',
           })
+        }
+
         const leaves = [...byStation].map(([stationId, ids]) =>
           kit.live.subscribe(stationId, ctx.environment.id, {
             ids,
@@ -284,15 +295,22 @@ export const networkRoutes = (kit: Kit) => {
           })
           sse.close()
         })
+
         sse.onClose(() => {
           unclaim()
-          for (const leave of leaves) leave()
+
+          for (const leave of leaves) {
+            leave()
+          }
         })
+
         return sse.response
       },
       {
-        operation: {
+        environment: {
           id: 'stream_connections',
+          summary:
+            'SSE: one connections sample per watched service every 5 s, as event network with { at, samples }',
           level: 'read',
           mcp: false,
           cli: {
@@ -300,9 +318,6 @@ export const networkRoutes = (kit: Kit) => {
           },
           stream: true,
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         query: t.Object({
           service: t.Optional(
             t.String({
@@ -311,17 +326,11 @@ export const networkRoutes = (kit: Kit) => {
           ),
           direction,
         }),
-        detail: {
-          summary:
-            'SSE: one connections sample per watched service every 5 s, as event network with { at, samples }',
-          tags,
-        },
       },
     )
     .get(
       '/environments/:environment/network/explain',
-      async ({ params, query }) => {
-        const ctx = environmentById(db, params.environment)
+      async ({ ctx, query }) => {
         return explainNetwork(explainSources, ctx.environment, {
           from: query.from,
           to: query.to,
@@ -330,14 +339,13 @@ export const networkRoutes = (kit: Kit) => {
         })
       },
       {
-        operation: {
+        environment: {
           id: 'explain_network',
+          summary:
+            'Explain why a service can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes',
           level: 'read',
           cli: false,
         },
-        params: t.Object({
-          environment: t.String(),
-        }),
         query: t.Object({
           from: t.String({
             minLength: 1,
@@ -350,23 +358,18 @@ export const networkRoutes = (kit: Kit) => {
               'A service, service:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port',
           }),
           port: t.Optional(t.Numeric(portRange)),
-          protocol: t.Optional(t.Union([t.Literal('tcp'), t.Literal('udp')])),
+          protocol: t.Optional(input(StringEnum(networkProtocolValues))),
         }),
         response: replies({
           200: NetworkExplanation,
         }),
-        detail: {
-          summary:
-            'Explain why a service can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes',
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/network/probe',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
+
         kit.probeLimit(ctx.service.id, ctx.environment.id)
         const kind = body.kind ?? 'tcp'
         const target = probeTarget(db, ctx.environment, body.to, body.port, kind)
@@ -376,8 +379,10 @@ export const networkRoutes = (kit: Kit) => {
           port: target.port,
           timeout_s: body.timeout_s ?? probeTimeout.defaultS,
         }
+
         if (ctx.environment.protected && !call.principal.human) {
           const changes = new ChangeSet()
+
           changes.add('network_probe', ctx.service.id, probe)
           const result = commit(
             kit.deps,
@@ -388,38 +393,35 @@ export const networkRoutes = (kit: Kit) => {
             },
             changes,
           )
-          if (!result.applied) return kit.stagedBody(result, set)
+
+          if (!result.applied) {
+            return kit.stagedBody(result, set)
+          }
         }
+
         return sendProbe(kit.deps, call, ctx.service, probe)
       },
       {
-        operation: {
+        service: {
           id: 'probe_network',
+          summary:
+            "Send one TCP handshake or one DNS query from inside the service's own namespace, under its own rules; staged for a non-human actor in a protected environment",
           level: 'deploy',
           cli: {
             render: 'probe',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: ProbeBody,
         response: replies({
           200: NetworkProbe,
           202: Staged,
         }),
-        detail: {
-          summary:
-            "Send one TCP handshake or one DNS query from inside the service's own namespace, under its own rules; staged for a non-human actor in a protected environment",
-          tags,
-        },
       },
     )
     .get(
       '/services/:service/dns-log',
-      async ({ request, params, query }) => {
+      async ({ ctx, request, query }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
         const reply = await stations
           .ask(
             ctx.service.station_id,
@@ -439,12 +441,11 @@ export const networkRoutes = (kit: Kit) => {
                 : {}),
             },
             {
-              capability: 'network.v1',
               timeoutMs: 10_000,
             },
           )
           .catch(stationError)
-        const entries = (reply.body as MessageBody<'dns.log.result'>).entries
+        const entries = reply.body.entries
         const deployments = [
           ...new Set(entries.flatMap((e) => (e.deployment_id ? [e.deployment_id] : []))),
         ]
@@ -457,6 +458,7 @@ export const networkRoutes = (kit: Kit) => {
           call.principal.actor,
           call.request_id,
         )
+
         return {
           untrusted: {
             source: 'resolver log' as const,
@@ -468,44 +470,19 @@ export const networkRoutes = (kit: Kit) => {
         }
       },
       {
-        operation: {
+        service: {
           id: 'get_dns_log',
+          summary:
+            "The service's recent DNS queries from the resolver's ring, newest first, as untrusted data",
           level: 'read',
           cli: {
             render: 'dns-log',
           },
         },
-        params: t.Object({
-          service: t.String(),
-        }),
-        query: t.Object({
-          tail: t.Optional(
-            t.Numeric({
-              minimum: 1,
-              maximum: dnsLogTail.max,
-            }),
-          ),
-          name: t.Optional(
-            t.String({
-              minLength: 1,
-              maxLength: 253,
-            }),
-          ),
-          rcode: t.Optional(
-            t.String({
-              minLength: 1,
-              maxLength: 16,
-            }),
-          ),
-        }),
+        query: DnsLogQuery,
         response: replies({
           200: DnsLog,
         }),
-        detail: {
-          summary:
-            "The service's recent DNS queries from the resolver's ring, newest first, as untrusted data",
-          tags,
-        },
       },
     )
 }

@@ -6,10 +6,13 @@ import { cn } from '@/lib/utils'
 
 export const useNow = (intervalMs = 1000) => {
   const [now, setNow] = useState(() => Date.now())
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), intervalMs)
+
     return () => window.clearInterval(timer)
   }, [intervalMs])
+
   return now
 }
 
@@ -21,7 +24,11 @@ export function TimeLeft({
   className?: string
 }) {
   const clock = remaining(sandbox, useNow())
-  if (!clock) return <span className="text-muted-foreground">—</span>
+
+  if (!clock) {
+    return <span className="text-muted-foreground">—</span>
+  }
+
   return (
     <span className={cn('tabular-nums', clock.urgent && toneText.warning, className)}>
       {clock.text} <span className="text-muted-foreground">{clock.label}</span>

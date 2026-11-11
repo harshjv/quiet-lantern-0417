@@ -1,7 +1,8 @@
 import { useQueries, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Bot, CircleCheck, Loader2 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Check, CircleCheck, Loader2 } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { z } from 'zod'
 
 import { CommandBlock, Snippet } from '@/components/code'
 import { Confirm } from '@/components/confirm'
@@ -24,6 +25,7 @@ import { checkPrompt, expiries, installSly, setup, type Expiry } from '@/lib/age
 import { api, unwrap, type Project, type Token } from '@/lib/api'
 import { commands, type Level } from '@/lib/commands'
 import { byName } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
 import { client, level, mcpClient, mcpClients, type McpClient } from '@/lib/labels'
 import { done, useApiMutation } from '@/lib/mutation'
 import {
@@ -36,9 +38,10 @@ import {
   warm,
   withoutToken,
 } from '@/lib/queries'
+import { titled } from '@/lib/title'
+import { tonePanel, toneText } from '@/lib/tone'
+import { useBecame, useMoment } from '@/lib/use-moment'
 import { cn } from '@/lib/utils'
-
-type Search = { project?: string; client?: McpClient }
 
 const all = '*'
 
@@ -51,17 +54,9 @@ const named = (id: McpClient) => (id === 'generic' ? 'your MCP client' : mcpClie
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 export const Route = createFileRoute('/_app/agents')({
-  validateSearch: (search: Record<string, unknown>): Search => ({
-    ...(typeof search.project === 'string'
-      ? {
-          project: search.project,
-        }
-      : {}),
-    ...(mcpClients.includes(search.client as McpClient)
-      ? {
-          client: search.client as McpClient,
-        }
-      : {}),
+  validateSearch: z.object({
+    project: z.string().optional().catch(undefined),
+    client: z.literal(mcpClients).optional().catch(undefined),
   }),
   loader: ({ context }) =>
     Promise.all([
@@ -69,6 +64,7 @@ export const Route = createFileRoute('/_app/agents')({
       load(context.queryClient, apiOriginQuery),
       warm(context.queryClient, agentTokensQuery),
     ]),
+  head: () => titled('Connect an agent'),
   errorComponent: failurePage('Couldn’t load agent setup'),
   component: AgentsPage,
 })
@@ -78,19 +74,26 @@ function Step({
   title,
   description,
   last,
+  done,
   children,
 }: {
   number: number
   title: string
   description?: ReactNode
   last?: boolean
+  done?: boolean
   children: ReactNode
 }) {
   return (
     <li className="relative flex gap-4">
       {!last && <span className="absolute top-8 bottom-0 left-3.5 w-px bg-border" aria-hidden />}
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-medium tabular-nums">
-        {number}
+      <span
+        className={cn(
+          'flex size-7 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-medium tabular-nums',
+          done && tonePanel.success,
+        )}
+      >
+        {done ? <Check data-moment="check" className="size-3.5" aria-label="Done" /> : number}
       </span>
       <div className={cn('min-w-0 flex-1 space-y-3', !last && 'pb-8')}>
         <div className="space-y-0.5 pt-1">
@@ -136,8 +139,10 @@ function Picker<T extends string>({
   )
 }
 
+const tokenName = (id: McpClient) => `mcp/${id}`
+
 const tokenOf = (tokens: Token[] | undefined, id: McpClient) =>
-  tokens?.find((token) => token.name === `mcp/${id}`)
+  tokens?.find((token) => token.name === tokenName(id))
 
 function ConnectionStatus({ id }: { id: McpClient }) {
   const { data } = useSuspenseQuery({
@@ -146,16 +151,19 @@ function ConnectionStatus({ id }: { id: McpClient }) {
   })
   const token = tokenOf(data, id)
   const who = named(id)
-  if (token?.last_used_at)
+
+  if (token?.last_used_at) {
     return (
       <p role="status" className="flex items-center gap-2 text-sm">
-        <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+        <CircleCheck className={cn('size-4', toneText.success)} aria-hidden />
         <span className="font-medium">{capital(who)} is connected</span>
         <span className="text-muted-foreground">
           · last call <Time value={token.last_used_at} live />
         </span>
       </p>
     )
+  }
+
   return (
     <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -182,6 +190,7 @@ function Revoke({ token }: { token: Token }) {
     seed: () => [withoutToken(token.id)],
     success: () => `${name} disconnected`,
   })
+
   return (
     <Confirm
       title={`Disconnect ${name}?`}
@@ -198,7 +207,7 @@ function Revoke({ token }: { token: Token }) {
   )
 }
 
-function ConnectedAgents({ projects }: { projects: Project[] }) {
+function ConnectedAgents({ projects, shown }: { projects: Project[]; shown: McpClient }) {
   const { data } = useSuspenseQuery(agentTokensQuery)
   const environmentIds = [
     ...new Set(data.flatMap((token) => token.scopes.map((scope) => scope.environment_id))),
@@ -210,14 +219,17 @@ function ConnectedAgents({ projects }: { projects: Project[] }) {
   const environmentNames = new Map(
     environments.flatMap((e) => (e.data ? [[e.data.id, e.data.name] as const] : [])),
   )
-  if (data.length === 0)
+
+  if (data.length === 0) {
     return (
       <EmptyState
-        icon={Bot}
+        icon={entityIcon.agent}
         title="No agents connected yet"
         description="An agent appears here once you run sly mcp install for it."
       />
     )
+  }
+
   return (
     <TableFrame>
       <TableHeader>
@@ -233,8 +245,11 @@ function ConnectedAgents({ projects }: { projects: Project[] }) {
         {data.map((token) => (
           <TableRow key={token.id}>
             <TableCell>
-              <span className="inline-flex items-center gap-2 font-medium">
-                <Bot className="size-4 text-muted-foreground" aria-hidden />
+              <span
+                data-moment={token.name === tokenName(shown) ? 'agent' : undefined}
+                className="inline-flex items-center gap-2 font-medium"
+              >
+                <entityIcon.agent className="size-4 text-muted-foreground" aria-hidden />
                 {client(token.name)}
               </span>
             </TableCell>
@@ -290,6 +305,22 @@ function AgentsPage() {
   })
   const projectId = projects.find((p) => p.name === project)?.id ?? all
   const environmentId = environments.data?.items.find((e) => e.name === environment)?.id ?? all
+  const tokens = useQuery(agentTokensQuery)
+  const connected = tokens.data && Boolean(tokenOf(tokens.data, id)?.last_used_at)
+  const justConnected = useBecame(id, connected)
+  const page = useRef<HTMLDivElement>(null)
+
+  useMoment(page, justConnected, (timeline) =>
+    timeline
+      .from('[data-moment="check"]', {
+        autoAlpha: 0,
+        scale: 0.5,
+      })
+      .from('[data-moment="agent"]', {
+        autoAlpha: 0,
+        x: -12,
+      }),
+  )
   const install = (target: McpClient) =>
     commands.mcpInstall({
       client: target,
@@ -300,7 +331,7 @@ function AgentsPage() {
     })
 
   return (
-    <div className="max-w-3xl space-y-10">
+    <div ref={page} className="max-w-3xl space-y-10">
       <PageHeader
         title="Connect an agent"
         meta={
@@ -433,7 +464,7 @@ function AgentsPage() {
             your agent. Your agent should treat them as data.
           </p>
         </Step>
-        <Step number={4} title="Check that it works" last>
+        <Step number={4} title="Check that it works" last done={connected}>
           <Snippet code={checkPrompt} label="prompt" caption="Ask your agent" prose />
           <Panel rows={1} title="Couldn’t check the connection">
             <ConnectionStatus id={id} />
@@ -445,7 +476,7 @@ function AgentsPage() {
         description="Each agent has its own token. Revoke one to cut its access at once."
       >
         <Panel rows={2} title="Couldn’t load connected agents">
-          <ConnectedAgents projects={projects} />
+          <ConnectedAgents projects={projects} shown={id} />
         </Panel>
       </Section>
       <Section title="Other ways to connect">

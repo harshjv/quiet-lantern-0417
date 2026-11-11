@@ -291,8 +291,8 @@ func (s *Station) settle(r *rollout, outcome protocol.DeploymentOutcome) {
 	r.Outcome = &outcome
 	r.FinishedAt = stamp(now)
 	s.saveRollout(r)
-	s.emit(protocol.MessageDeploymentFinished, map[string]any{
-		"deployment_id": r.ID, "status": outcome, "failure": r.Failure, "cancel_reason": r.CancelReason,
+	s.emit(protocol.MessageDeploymentFinished, protocol.DeploymentFinishedBody{
+		DeploymentId: r.ID, Status: outcome, Failure: (*protocol.DeploymentFinishedBodyFailure)(r.Failure), CancelReason: r.CancelReason,
 	})
 	s.log.Info("deployment finished", "deployment", r.ID, "service", r.ServiceID, "outcome", outcome)
 	s.applyOverrides()

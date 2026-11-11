@@ -28,6 +28,7 @@ before(async () => {
     ],
     deploy: true,
   })
+
   await waitForDeployment(h, created.deployments[0].id, 'active')
   serviceId = created.id
 })
@@ -56,12 +57,15 @@ describe('output of a run that finished before its log stream opened', () => {
           wait_s: 0,
         },
       })
+
       assert.equal(created.status, 201)
       const reply = await h.call('GET', `/v1/logs?run=${created.body.id}&tail=5000&follow=true`, {
         token: h.admin.token,
       })
+
       assert.equal(reply.status, 200)
       const seen = events(reply.text)
+
       assert.deepEqual(
         seen.filter((e) => e.event === 'log').map((e) => e.data.text),
         ['[run] hi', '[run] bye'],

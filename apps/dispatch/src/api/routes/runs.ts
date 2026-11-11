@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox'
 import { and, eq, inArray } from 'drizzle-orm'
-import { Elysia, t } from 'elysia'
+import { t } from 'elysia'
 
 import { runActiveStatuses } from '@stationly/protocol'
 
@@ -15,7 +15,6 @@ import { runDiagnosis } from '../diagnosis.ts'
 import { ApiError, fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
-import { runById, serviceById } from '../lookup.ts'
 import { getQuery } from '../pagination.ts'
 import {
   listRuns,
@@ -25,7 +24,7 @@ import {
   terminalRun,
   waitForRun,
 } from '../runs.ts'
-import { Diagnosis, extend, models, Page, replies, Run, Staged } from '../shapes.ts'
+import { Diagnosis, extend, Page, replies, Run, Staged } from '../shapes.ts'
 
 const Shell = extend(Run, {
   tty: Type.Boolean(),
@@ -46,45 +45,35 @@ export const stationError = (error: unknown): never => {
             )
           ? error.code
           : 'STATION_OFFLINE'
+
     throw new ApiError(code as 'STATION_OFFLINE', error.message, undefined, {
       station_code: error.code,
       ...error.details,
     })
   }
+
   throw error
 }
 
 export const runRoutes = (kit: Kit) => {
   const { db, stations } = kit.deps
-  const tags = ['runs']
   const rowOf = (id: string) => runRow(db, id)
 
-  return new Elysia({
-    prefix: '/v1',
-    normalize: false,
-  })
-    .use(models())
-    .use(kit.operations)
+  return kit
+    .router('runs', '/v1')
     .get(
       '/services/:service/runs',
-      ({ params, query }) =>
-        listRuns(kit, eq(run.service_id, serviceById(db, params.service).service.id), query),
+      ({ ctx, query }) => listRuns(kit, eq(run.service_id, ctx.service.id), query),
       {
-        operation: {
+        service: {
           id: 'list_runs',
+          summary: 'List the runs of a service',
           level: 'read',
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         query: runListQuery,
         response: replies({
           200: Page(Run),
         }),
-        detail: {
-          summary: 'List the runs of a service',
-          tags,
-        },
       },
     )
     .get(
@@ -97,6 +86,7 @@ export const runRoutes = (kit: Kit) => {
           ...select(kit.views.run, row, kit.fields(query.fields)),
           done,
         }
+
         return row.sandbox_id && done
           ? {
               ...shown,
@@ -105,19 +95,18 @@ export const runRoutes = (kit: Kit) => {
           : shown
       },
       {
-        operation: {
+        run: {
           id: 'wait_for_run',
+          summary: 'Get a run with done; wait_s keeps waiting up to 10 s for it to finish',
           level: 'read',
           mcp: {
             poll: true,
           },
           cli: {
+            path: ['runs', 'get'],
             render: 'run',
           },
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         query: t.Object({
           ...getQuery,
           wait_s: t.Optional(
@@ -130,25 +119,27 @@ export const runRoutes = (kit: Kit) => {
         response: replies({
           200: Waited,
         }),
-        detail: {
-          summary: 'Get a run with done; wait_s keeps waiting up to 10 s for it to finish',
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/runs',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
-        if (!ctx.service.current_deployment_id)
+
+        if (!ctx.service.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
             `${ctx.service.name} has no current deployment to run the command in.`,
             'Deploy the service first.',
           )
+        }
+
         const staged = ctx.environment.protected && !call.principal.human
-        if (!staged) requireConnected(kit.deps, ctx.service.station_id)
+
+        if (!staged) {
+          requireConnected(kit.deps, ctx.service.station_id)
+        }
+
         const changes = new ChangeSet()
         const ref = changes.add('run', ctx.service.id, {
           kind: 'one_off',
@@ -163,8 +154,13 @@ export const runRoutes = (kit: Kit) => {
           },
           changes,
         )
-        if (!result.applied) return kit.stagedBody(result, set)
+
+        if (!result.applied) {
+          return kit.stagedBody(result, set)
+        }
+
         const id = result.refs[ref]!
+
         audit(
           db,
           call,
@@ -183,17 +179,16 @@ export const runRoutes = (kit: Kit) => {
         stations.reconcile(ctx.service.station_id)
         set.status = 201
         const row = await waitForRun(db, id, body.wait_s ?? 10, request.signal)
+
         return select(kit.views.run, row, kit.fields('failure'))
       },
       {
-        operation: {
+        service: {
           id: 'run_command',
+          summary: "Run a one-off command in the service's current image and variables",
           level: 'deploy',
           cli: false,
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: t.Object(
           {
             command: t.Array(t.String(), {
@@ -214,29 +209,30 @@ export const runRoutes = (kit: Kit) => {
           201: Run,
           202: Staged,
         }),
-        detail: {
-          summary: "Run a one-off command in the service's current image and variables",
-          tags,
-        },
       },
     )
     .post(
       '/services/:service/shells',
-      async ({ request, params, body, set }) => {
+      async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ctx = serviceById(db, params.service)
-        if (ctx.environment.protected)
+
+        if (ctx.environment.protected) {
           requireHuman(call.principal, 'A shell in a protected environment', {
             environment_id: ctx.environment.id,
           })
-        if (!ctx.service.current_deployment_id)
+        }
+
+        if (!ctx.service.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
             `${ctx.service.name} has no current deployment to open a shell in.`,
             'Deploy the service first.',
           )
+        }
+
         requireConnected(kit.deps, ctx.service.station_id)
         const id = newId('run')
+
         db.insert(run)
           .values({
             id,
@@ -266,6 +262,7 @@ export const runRoutes = (kit: Kit) => {
           },
         )
         set.status = 201
+
         return {
           ...select(kit.views.run, rowOf(id), undefined),
           tty: body.tty ?? true,
@@ -273,15 +270,13 @@ export const runRoutes = (kit: Kit) => {
         }
       },
       {
-        operation: {
+        service: {
           id: 'open_shell',
+          summary: 'Create a shell run; attach to it over the WebSocket at attach_url',
           level: 'deploy',
           mcp: false,
           cli: false,
         },
-        params: t.Object({
-          service: t.String(),
-        }),
         body: t.Object(
           {
             command: t.Optional(
@@ -298,18 +293,15 @@ export const runRoutes = (kit: Kit) => {
         response: replies({
           201: Shell,
         }),
-        detail: {
-          summary: 'Create a shell run; attach to it over the WebSocket at attach_url',
-          tags,
-        },
       },
     )
     .post(
       '/runs/:id/cancel',
-      async ({ request, params }) => {
+      async ({ ctx, request }) => {
         const call = await kit.call(request)
-        const { run: r, ...ctx } = runById(db, params.id)
-        if (terminalRun.has(r.status))
+        const r = ctx.run
+
+        if (terminalRun.has(r.status)) {
           fail('VALIDATION_FAILED', `Run ${r.id} is already ${r.status}.`, undefined, {
             issues: [
               {
@@ -318,17 +310,21 @@ export const runRoutes = (kit: Kit) => {
               },
             ],
           })
-        if (stations.isConnected(ctx.station_id))
+        }
+
+        if (stations.isConnected(ctx.station_id)) {
           await stations
             .ask(ctx.station_id, 'run.cancel', {
               run_id: r.id,
             })
             .catch(stationError)
-        else if (r.status !== 'queued')
+        } else if (r.status !== 'queued') {
           fail(
             'STATION_OFFLINE',
             `Station ${ctx.station_id} is not connected, so the running run cannot be stopped.`,
           )
+        }
+
         db.update(run)
           .set({
             status: 'cancelled',
@@ -353,23 +349,18 @@ export const runRoutes = (kit: Kit) => {
             },
           },
         )
+
         return select(kit.views.run, await waitForRun(db, r.id, 2, request.signal), undefined)
       },
       {
-        operation: {
+        run: {
           id: 'cancel_run',
+          summary: 'Cancel a queued or running run; never staged',
           level: 'deploy',
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Run,
         }),
-        detail: {
-          summary: 'Cancel a queued or running run; never staged',
-          tags,
-        },
       },
     )
     .get(
@@ -384,6 +375,7 @@ export const runRoutes = (kit: Kit) => {
               call.principal.actor,
               call.request_id,
             )
+
         return (
           runDiagnosis(r, redact) ??
           fail(
@@ -397,20 +389,17 @@ export const runRoutes = (kit: Kit) => {
         )
       },
       {
-        operation: {
+        run: {
           id: 'get_run_diagnosis',
+          summary: 'The diagnosis of a failed run',
           level: 'read',
+          cli: {
+            path: ['runs', 'diagnosis'],
+          },
         },
-        params: t.Object({
-          id: t.String(),
-        }),
         response: replies({
           200: Diagnosis,
         }),
-        detail: {
-          summary: 'The diagnosis of a failed run',
-          tags,
-        },
       },
     )
 }

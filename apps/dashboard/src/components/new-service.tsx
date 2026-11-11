@@ -117,13 +117,15 @@ export function NewService({
     }),
     onSuccess: (result) => {
       onOpenChange(false)
-      if (!result.staged)
+
+      if (!result.staged) {
         void navigate({
           to: '/services/$service',
           params: {
             service: result.body.id,
           },
         })
+      }
     },
   })
 
@@ -131,7 +133,10 @@ export function NewService({
     <FormDialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) mutation.reset()
+        if (!next) {
+          mutation.reset()
+        }
+
         onOpenChange(next)
       }}
       size="lg"

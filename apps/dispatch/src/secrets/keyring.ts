@@ -1,10 +1,4 @@
-import {
-  argon2Sync,
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto'
+import { argon2Sync, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 
 import { desc, eq } from 'drizzle-orm'
 
@@ -29,17 +23,22 @@ export const passwordKdf = {
 } as const
 
 export const parseMasterKey = (encoded: string | undefined) => {
-  if (!encoded)
+  if (!encoded) {
     throw new SecretsError(
       'MASTER_KEY_MISMATCH',
       `${masterKeyEnv} is not set; stationd passes the master key from host.toml`,
     )
+  }
+
   const key = Buffer.from(encoded, 'base64url')
-  if (key.length !== keyBytes)
+
+  if (key.length !== keyBytes) {
     throw new SecretsError(
       'MASTER_KEY_MISMATCH',
       `${masterKeyEnv} must be ${keyBytes} bytes in base64url, got ${key.length}`,
     )
+  }
+
   return key
 }
 
@@ -50,8 +49,10 @@ export const seal = (key: Buffer, plaintext: Buffer, aad: string) => {
   const cipher = createCipheriv('aes-256-gcm', key, nonce, {
     authTagLength: tagBytes,
   })
+
   cipher.setAAD(Buffer.from(aad, 'utf8'))
   const body = Buffer.concat([cipher.update(plaintext), cipher.final()])
+
   return Buffer.concat([nonce, cipher.getAuthTag(), body])
 }
 
@@ -61,8 +62,10 @@ export const open = (key: Buffer, sealed: Buffer, aad: string) => {
   const decipher = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, nonceBytes), {
     authTagLength: tagBytes,
   })
+
   decipher.setAAD(Buffer.from(aad, 'utf8'))
   decipher.setAuthTag(sealed.subarray(nonceBytes, nonceBytes + tagBytes))
+
   return Buffer.concat([decipher.update(sealed.subarray(nonceBytes + tagBytes)), decipher.final()])
 }
 
@@ -74,13 +77,18 @@ export class Keyring {
   constructor(db: Db, masterKey: Buffer) {
     this.db = db
     this.masterKey = masterKey
-    for (const row of db.select().from(data_key).all()) this.unwrap(row)
+
+    for (const row of db.select().from(data_key).all()) {
+      this.unwrap(row)
+    }
   }
 
   private unwrap(row: { id: string; wrapped: Buffer }) {
     try {
       const key = open(this.masterKey, row.wrapped, row.id)
+
       this.keys.set(row.id, key)
+
       return key
     } catch {
       throw new SecretsError(
@@ -92,8 +100,13 @@ export class Keyring {
 
   private key(id: string) {
     const known = this.keys.get(id)
-    if (known) return known
+
+    if (known) {
+      return known
+    }
+
     const row = this.db.select().from(data_key).where(eq(data_key.id, id)).get()
+
     return row ? this.unwrap(row) : undefined
   }
 
@@ -106,17 +119,21 @@ export class Keyring {
       .orderBy(desc(data_key.created_at), desc(data_key.id))
       .limit(1)
       .get()
-    if (newest)
+
+    if (newest) {
       return {
         id: newest.id,
         key: this.key(newest.id)!,
       }
+    }
+
     return this.rotateDataKey()
   }
 
   rotateDataKey() {
     const id = newId('data_key')
     const key = randomBytes(keyBytes)
+
     this.db
       .insert(data_key)
       .values({
@@ -125,6 +142,7 @@ export class Keyring {
       })
       .run()
     this.keys.set(id, key)
+
     return {
       id,
       key,
@@ -133,6 +151,7 @@ export class Keyring {
 
   encrypt(secretValueId: string, plaintext: string) {
     const { id, key } = this.activeKey()
+
     return {
       data_key_id: id,
       ciphertext: seal(key, Buffer.from(plaintext, 'utf8'), secretValueId),
@@ -141,10 +160,13 @@ export class Keyring {
 
   decrypt(secretValueId: string, dataKeyId: string, ciphertext: Buffer) {
     const key = this.key(dataKeyId)
-    if (!key)
+
+    if (!key) {
       throw new SecretsError('SECRETS_NEED_REENTRY', `data key ${dataKeyId} is unknown`, {
         secret_value_id: secretValueId,
       })
+    }
+
     return open(key, ciphertext, secretValueId).toString('utf8')
   }
 
@@ -163,6 +185,7 @@ export class Keyring {
       .from(master_key_wrap)
       .where(eq(master_key_wrap.user_id, userId))
       .get()
+
     if (existing) {
       this.db
         .update(master_key_wrap)
@@ -173,9 +196,12 @@ export class Keyring {
         })
         .where(eq(master_key_wrap.id, existing.id))
         .run()
+
       return existing.id
     }
+
     const id = newId('master_key_wrap')
+
     this.db
       .insert(master_key_wrap)
       .values({
@@ -185,6 +211,7 @@ export class Keyring {
         wrapped,
       })
       .run()
+
     return id
   }
 }
@@ -201,11 +228,14 @@ const deriveKek = (password: string, salt: Buffer) =>
 
 export const unwrapWithPassword = (db: Db, userId: string, password: string) => {
   const row = db.select().from(master_key_wrap).where(eq(master_key_wrap.user_id, userId)).get()
-  if (!row)
+
+  if (!row) {
     throw new SecretsError(
       'MASTER_KEY_MISMATCH',
       `no password wrap of the master key exists for ${userId}`,
     )
+  }
+
   const kek = argon2Sync(row.kdf.algorithm, {
     message: password,
     nonce: Buffer.from(row.kdf.salt, 'base64url'),
@@ -214,11 +244,10 @@ export const unwrapWithPassword = (db: Db, userId: string, password: string) => 
     parallelism: row.kdf.parallelism,
     tagLength: keyBytes,
   })
+
   try {
     return open(kek, row.wrapped, `master_key_wrap:${userId}`)
   } catch {
     throw new SecretsError('MASTER_KEY_MISMATCH', 'the password does not unwrap the master key')
   }
 }
-
-export const sameKey = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b)

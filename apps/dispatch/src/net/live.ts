@@ -40,47 +40,75 @@ export const createLiveHub = (
   const claims = new Map<string, () => void>()
 
   const flush = (g: Group) => {
-    if (g.flushTimer) clearTimeout(g.flushTimer)
+    if (g.flushTimer) {
+      clearTimeout(g.flushTimer)
+    }
+
     g.flushTimer = null
     const tick = g.buffer
+
     g.buffer = null
-    if (!tick) return
+
+    if (!tick) {
+      return
+    }
+
     for (const sub of g.subscribers) {
       const samples = tick.samples.filter(
         (s) => s.service_id !== undefined && sub.ids.has(s.service_id),
       )
-      if (samples.length)
+
+      if (samples.length) {
         sub.deliver({
           at: tick.at,
           samples,
         })
+      }
     }
   }
 
   const take = (g: Group, items: StationSample[]) => {
     for (const item of items) {
-      if (g.buffer && g.buffer.at !== item.at) flush(g)
-      if (!g.buffer)
+      if (g.buffer && g.buffer.at !== item.at) {
+        flush(g)
+      }
+
+      if (!g.buffer) {
         g.buffer = {
           at: item.at,
           samples: [],
         }
+      }
+
       g.buffer.samples.push(item)
     }
-    if (g.flushTimer) clearTimeout(g.flushTimer)
+
+    if (g.flushTimer) {
+      clearTimeout(g.flushTimer)
+    }
+
     g.flushTimer = setTimeout(() => flush(g), flushMs)
   }
 
   const wanted = (g: Group) => {
     const ids = new Set<string>()
-    for (const sub of g.subscribers) for (const id of sub.ids) ids.add(id)
+
+    for (const sub of g.subscribers) {
+      for (const id of sub.ids) {
+        ids.add(id)
+      }
+    }
+
     return ids
   }
 
   const covers = (have: Set<string>, want: Set<string>) => [...want].every((id) => have.has(id))
 
   const scheduleRetry = (g: Group) => {
-    if (g.retryTimer || !g.subscribers.size) return
+    if (g.retryTimer || !g.subscribers.size) {
+      return
+    }
+
     g.retryTimer = setTimeout(() => {
       g.retryTimer = null
       void reconfigure(g)
@@ -90,10 +118,15 @@ export const createLiveHub = (
   const open = async (g: Group) => {
     g.dirty = false
     const want = wanted(g)
-    if (!want.size || (g.current && covers(g.ids, want))) return
+
+    if (!want.size || (g.current && covers(g.ids, want))) {
+      return
+    }
+
     const ids = new Set([...g.ids, ...want])
     let handle: StreamHandle | null = null
     let owed = 0
+
     try {
       handle = await stations.openStream(
         g.stationId,
@@ -103,41 +136,67 @@ export const createLiveHub = (
         },
         {
           onData: (items, bytes) => {
-            if (handle && g.current === handle) take(g, items as StationSample[])
-            if (handle) handle.credit(bytes)
-            else owed += bytes
+            if (handle && g.current === handle) {
+              take(g, items as StationSample[])
+            }
+
+            if (handle) {
+              handle.credit(bytes)
+            } else {
+              owed += bytes
+            }
           },
           onEnd: (reason) => {
-            if (!handle || g.current !== handle) return
+            if (!handle || g.current !== handle) {
+              return
+            }
+
             g.current = null
             g.ids = new Set()
             flush(g)
-            for (const sub of g.subscribers)
+
+            for (const sub of g.subscribers) {
               sub.notify('end', {
                 station_id: g.stationId,
                 reason,
               })
+            }
+
             scheduleRetry(g)
           },
         },
       )
     } catch (error) {
-      for (const sub of g.subscribers)
+      for (const sub of g.subscribers) {
         sub.notify('error', {
           station_id: g.stationId,
           code: errorCode(error),
           explanation: (error as Error).message,
         })
+      }
+
       scheduleRetry(g)
-      if (!g.subscribers.size) startLinger(g)
+
+      if (!g.subscribers.size) {
+        startLinger(g)
+      }
+
       return
     }
-    if (owed) handle.credit(owed)
+
+    if (owed) {
+      handle.credit(owed)
+    }
+
     const previous = g.current
+
     g.current = handle
     g.ids = ids
     previous?.cancel()
-    if (!g.subscribers.size) startLinger(g)
+
+    if (!g.subscribers.size) {
+      startLinger(g)
+    }
   }
 
   const reconfigure = (g: Group) => {
@@ -150,28 +209,45 @@ export const createLiveHub = (
           message: error instanceof Error ? error.message : String(error),
         }),
       )
+
     return g.reconfiguring
   }
 
   const close = (g: Group) => {
-    if (g.closeTimer) clearTimeout(g.closeTimer)
-    if (g.retryTimer) clearTimeout(g.retryTimer)
-    if (g.flushTimer) clearTimeout(g.flushTimer)
+    if (g.closeTimer) {
+      clearTimeout(g.closeTimer)
+    }
+
+    if (g.retryTimer) {
+      clearTimeout(g.retryTimer)
+    }
+
+    if (g.flushTimer) {
+      clearTimeout(g.flushTimer)
+    }
+
     g.current?.cancel()
     groups.delete(g.key)
   }
 
   const startLinger = (g: Group) => {
-    if (g.closeTimer) return
+    if (g.closeTimer) {
+      return
+    }
+
     g.closeTimer = setTimeout(() => {
       g.closeTimer = null
-      if (!g.subscribers.size) close(g)
+
+      if (!g.subscribers.size) {
+        close(g)
+      }
     }, lingerMs)
   }
 
   const subscribe = (stationId: string, environmentId: string, sub: LiveSubscriber) => {
     const key = `${stationId}|${environmentId}`
     let g = groups.get(key)
+
     if (!g) {
       g = {
         key,
@@ -188,29 +264,46 @@ export const createLiveHub = (
       }
       groups.set(key, g)
     }
+
     const group = g
-    if (group.closeTimer) clearTimeout(group.closeTimer)
+
+    if (group.closeTimer) {
+      clearTimeout(group.closeTimer)
+    }
+
     group.closeTimer = null
     group.subscribers.add(sub)
     void reconfigure(group)
+
     return () => {
-      if (!group.subscribers.delete(sub)) return
-      if (!group.subscribers.size) startLinger(group)
+      if (!group.subscribers.delete(sub)) {
+        return
+      }
+
+      if (!group.subscribers.size) {
+        startLinger(group)
+      }
     }
   }
 
   const claim = (credential: string, environmentId: string, release: () => void) => {
     const key = `${credential}|${environmentId}`
     const previous = claims.get(key)
+
     claims.set(key, release)
     previous?.()
+
     return () => {
-      if (claims.get(key) === release) claims.delete(key)
+      if (claims.get(key) === release) {
+        claims.delete(key)
+      }
     }
   }
 
   const shutdown = () => {
-    for (const g of [...groups.values()]) close(g)
+    for (const g of [...groups.values()]) {
+      close(g)
+    }
   }
 
   return {

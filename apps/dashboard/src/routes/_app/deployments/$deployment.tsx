@@ -1,10 +1,13 @@
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Check, CircleDashed, Loader2, Square, X } from 'lucide-react'
+import { useRef } from 'react'
 
 import { Trigger } from '@/components/actor'
 import { Crumbs } from '@/components/crumbs'
 import { DiagnosisPanel } from '@/components/diagnosis'
+import { Disclosure } from '@/components/disclosure'
+import { FirstLive } from '@/components/first-live'
 import { LogViewer } from '@/components/log-viewer'
 import { KeyValue, Mono, PageHeader, Section } from '@/components/page'
 import { failurePage, Panel } from '@/components/panel'
@@ -14,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, idempotency, send, type DeploymentStep } from '@/lib/api'
 import type { FixContext } from '@/lib/fixes'
-import { clock, duration, shortDigest, shortSha, span, stamp } from '@/lib/format'
+import { clock, duration, plural, shortDigest, shortSha, span, stamp } from '@/lib/format'
 import {
   builder,
   buildStatus,
@@ -23,9 +26,11 @@ import {
   deploymentStrategy,
   stepStatus,
 } from '@/lib/labels'
+import { isFirstLive } from '@/lib/moments'
 import { useApiMutation } from '@/lib/mutation'
 import {
   deploymentQuery,
+  deploymentsQuery,
   diagnosisQuery,
   load,
   seedDeployment,
@@ -33,6 +38,9 @@ import {
   warm,
 } from '@/lib/queries'
 import { isCancellable, isTerminal, stepProgress } from '@/lib/status'
+import { loaderTitle } from '@/lib/title'
+import { toneText, toneWash } from '@/lib/tone'
+import { useBecame, useMoment } from '@/lib/use-moment'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
@@ -43,8 +51,15 @@ export const Route = createFileRoute('/_app/deployments/$deployment')({
       load(context.queryClient, serviceQuery(deployment.service_id)),
       deployment.status === 'failed' && warm(context.queryClient, diagnosisQuery(deployment.id)),
     ])
-    await loadTrail(context.queryClient, service.environment_id)
+
+    return {
+      title: [
+        `${service.name} #${deployment.number}`,
+        await loadTrail(context.queryClient, service.environment_id),
+      ],
+    }
   },
+  head: loaderTitle,
   errorComponent: failurePage('Couldn’t load this deployment'),
   component: DeploymentPage,
 })
@@ -59,6 +74,7 @@ function Diagnosis({
   context: FixContext
 }) {
   const { data } = useSuspenseQuery(diagnosisQuery(deployment))
+
   return (
     <DiagnosisPanel
       diagnosis={data}
@@ -74,24 +90,35 @@ function Diagnosis({
 }
 
 function StepIcon({ status }: { status: DeploymentStep['status'] }) {
-  if (status === 'done')
-    return <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-  if (status === 'failed')
-    return <X className="size-3.5 text-red-600 dark:text-red-400" aria-hidden />
-  if (status === 'running')
+  if (status === 'done') {
+    return <Check className={cn('size-3.5', toneText.success)} aria-hidden />
+  }
+
+  if (status === 'failed') {
+    return <X className={cn('size-3.5', toneText.danger)} aria-hidden />
+  }
+
+  if (status === 'running') {
     return (
       <Loader2
-        className="size-3.5 animate-spin text-sky-600 motion-reduce:animate-none dark:text-sky-400"
+        className={cn('size-3.5 animate-spin motion-reduce:animate-none', toneText.info)}
         aria-hidden
       />
     )
-  if (status === 'skipped') return <Square className="size-3 text-muted-foreground" aria-hidden />
+  }
+
+  if (status === 'skipped') {
+    return <Square className="size-3 text-muted-foreground" aria-hidden />
+  }
+
   return <CircleDashed className="size-3.5 text-muted-foreground" aria-hidden />
 }
 
 function Steps({ steps }: { steps: DeploymentStep[] }) {
-  if (steps.length === 0)
+  if (steps.length === 0) {
     return <p className="text-sm text-muted-foreground">No step has started yet.</p>
+  }
+
   return (
     <ol
       className="relative space-y-0 overflow-hidden rounded-lg border"
@@ -102,7 +129,7 @@ function Steps({ steps }: { steps: DeploymentStep[] }) {
           key={step.id}
           className={cn(
             'flex items-center gap-3 border-b bg-card px-4 py-2 text-sm last:border-b-0',
-            step.status === 'failed' && 'bg-red-50/60 dark:bg-red-950/30',
+            step.status === 'failed' && toneWash.danger,
           )}
         >
           <StepIcon status={step.status} />
@@ -124,6 +151,7 @@ function Steps({ steps }: { steps: DeploymentStep[] }) {
 function StepHeader({ steps }: { steps: DeploymentStep[] }) {
   const now = useNow(1000)
   const text = stepProgress(steps, new Date(now))
+
   return text && <span className="text-foreground tabular-nums">{text}</span>
 }
 
@@ -147,9 +175,33 @@ function DeploymentPage() {
     failure: () => `cancel deployment #${d.number}`,
   })
   const live = !isTerminal(d.status)
+  const history = useQuery(deploymentsQuery(service.id))
+  const became = useBecame(d.id, d.status === 'active')
+  const firstLive = became && history.data !== undefined && isFirstLive(d.id, history.data.items)
+  const page = useRef<HTMLDivElement>(null)
+
+  useMoment(page, firstLive, (timeline) =>
+    timeline
+      .from('[data-moment="live"]', {
+        autoAlpha: 0,
+        y: 8,
+      })
+      .from('[data-moment="address"]', {
+        autoAlpha: 0,
+        x: -8,
+      })
+      .from(
+        '[data-moment="steps"]',
+        {
+          autoAlpha: 0,
+        },
+        '<',
+      ),
+  )
+  const steps = d.steps ?? []
 
   return (
-    <div className="space-y-6">
+    <div ref={page} className="space-y-6">
       <div>
         <Crumbs
           items={[
@@ -186,7 +238,7 @@ function DeploymentPage() {
               </Link>
               <Mono>{d.id}</Mono>
               <Time value={d.started_at ?? d.created_at} />
-              {live && <StepHeader steps={d.steps ?? []} />}
+              {live && <StepHeader steps={steps} />}
             </>
           }
           actions={
@@ -204,6 +256,7 @@ function DeploymentPage() {
           }
         />
       </div>
+      {firstLive && <FirstLive service={service} />}
       <KeyValue
         framed
         items={[
@@ -248,7 +301,18 @@ function DeploymentPage() {
         </Panel>
       )}
       <Section title="Steps">
-        <Steps steps={d.steps ?? []} />
+        {firstLive ? (
+          <div data-moment="steps">
+            <Disclosure
+              title={`Live in ${duration(d.started_at, d.finished_at)}`}
+              summary={plural(steps.length, 'step')}
+            >
+              <Steps steps={steps} />
+            </Disclosure>
+          </div>
+        ) : (
+          <Steps steps={steps} />
+        )}
       </Section>
       <Section title="Logs" description="Stationly hides known secret values in these logs.">
         <Panel title="Couldn’t load logs">

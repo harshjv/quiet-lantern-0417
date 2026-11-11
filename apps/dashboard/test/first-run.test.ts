@@ -55,6 +55,7 @@ test('a step stays unknown until its data loads', () => {
     passkeysSettled: false,
     tokens: undefined,
   })
+
   assert.equal(done.secure, undefined)
   assert.equal(done.agent, undefined)
 })
@@ -102,6 +103,7 @@ test('only a healthy service checks off the deploy step', () => {
       }),
     ],
   })
+
   assert.equal(starting.done.service, false)
   assert.equal(starting.starting, 1)
   assert.equal(starting.services, 1)
@@ -118,6 +120,7 @@ test('only a healthy service checks off the deploy step', () => {
       }),
     ],
   })
+
   assert.equal(healthy.done.service, true)
   assert.equal(healthy.healthy, 2)
   assert.equal(healthy.services, 3)
@@ -133,6 +136,7 @@ test('sandboxes count across projects', () => {
       }),
     ],
   })
+
   assert.equal(progress.done.project, true)
   assert.equal(progress.done.sandbox, true)
   assert.equal(progress.sandboxes, 2)
@@ -148,6 +152,7 @@ test('an agent is connected once its token makes a call', () => {
       },
     ],
   })
+
   assert.equal(waiting.done.agent, false)
   assert.equal(waiting.waiting?.name, 'mcp:cursor')
   assert.equal(waiting.used, undefined)
@@ -164,6 +169,7 @@ test('an agent is connected once its token makes a call', () => {
       },
     ],
   })
+
   assert.equal(used.done.agent, true)
   assert.equal(used.used?.name, 'mcp:claude-code')
 })
@@ -175,6 +181,7 @@ test('the guide shows while steps remain and stays to celebrate a finish seen op
     complete: false,
     seenOpen: false,
   }
+
   assert.equal(guideVisible(state), true)
   assert.equal(
     guideVisible({

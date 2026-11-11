@@ -18,6 +18,7 @@ export const levelScopes = {
 
 export const levelOfScope = (scope: string): Level | null => {
   const found = Object.entries(levelScopes).find(([, value]) => value === scope)
+
   return found ? (found[0] as Level) : null
 }
 
@@ -31,6 +32,7 @@ export const withPendingGrant = async <T>(
   run: () => Promise<T>,
 ) => {
   pending.set(sessionId, tokenId)
+
   try {
     return await run()
   } finally {
@@ -39,23 +41,33 @@ export const withPendingGrant = async <T>(
 }
 
 export const liveGrant = (db: Db, tokenId: string | undefined) => {
-  if (!tokenId) return null
+  if (!tokenId) {
+    return null
+  }
+
   const row = db
     .select()
     .from(token)
     .where(and(eq(token.id, tokenId), eq(token.kind, 'oauth')))
     .get()
-  if (!row || row.expires_at.getTime() <= Date.now()) return null
+
+  if (!row || row.expires_at.getTime() <= Date.now()) {
+    return null
+  }
+
   return row
 }
 
 export const grantClaims = (db: Db, referenceId: string | undefined) => {
   const row = liveGrant(db, referenceId)
-  if (!row)
+
+  if (!row) {
     throw new APIError('BAD_REQUEST', {
       error: 'invalid_grant',
       error_description: 'this OAuth grant was revoked or has expired',
     })
+  }
+
   return {
     sly_token: row.id,
     sly_scopes: row.scopes,

@@ -50,6 +50,7 @@ type Served = {
 const listen = (handler: (req: IncomingMessage, res: ServerResponse) => void) =>
   new Promise<Server>((resolve) => {
     const s = createServer(handler)
+
     s.listen(0, '127.0.0.1', () => resolve(s))
   })
 
@@ -67,7 +68,9 @@ const publish = (
 ) => {
   const layers = Object.entries(files).map(([title, body]) => {
     const b = Buffer.from(body)
+
     state.blobs.set(sha(b), b)
+
     return {
       mediaType: 'application/octet-stream',
       digest: sha(b),
@@ -91,7 +94,9 @@ const publish = (
       layers,
     }),
   )
+
   state.tags.set(`v${version}`, manifest)
+
   return sha(manifest)
 }
 
@@ -99,7 +104,11 @@ before(async () => {
   blobHost = await listen((req, res) => {
     const digest = req.url!.slice(1)
     const blob = state.blobs.get(digest)
-    if (!blob) return res.writeHead(404).end()
+
+    if (!blob) {
+      return res.writeHead(404).end()
+    }
+
     res
       .writeHead(200, {
         'content-type': 'application/octet-stream',
@@ -108,10 +117,13 @@ before(async () => {
   })
   registry = await listen((req, res) => {
     const url = new URL(req.url!, 'http://x')
+
     state.requests.push(url.pathname)
+
     if (url.pathname === '/token') {
       state.tokens++
       assert.equal(url.searchParams.get('scope'), 'repository:stationly/release:pull')
+
       return res
         .writeHead(200, {
           'content-type': 'application/json',
@@ -122,6 +134,7 @@ before(async () => {
           }),
         )
     }
+
     if (req.headers.authorization !== 'Bearer anonymous-token') {
       return res
         .writeHead(401, {
@@ -129,22 +142,31 @@ before(async () => {
         })
         .end()
     }
+
     const m = /^\/v2\/stationly\/release\/(manifests|blobs)\/(.+)$/.exec(url.pathname)
-    if (!m) return res.writeHead(404).end()
+
+    if (!m) {
+      return res.writeHead(404).end()
+    }
+
     if (m[1] === 'manifests') {
       const body = state.tags.get(m[2]!)
-      if (!body)
+
+      if (!body) {
         return res
           .writeHead(404, {
             'content-type': 'application/json',
           })
           .end('{"errors":[{"code":"MANIFEST_UNKNOWN"}]}')
+      }
+
       return res
         .writeHead(200, {
           'content-type': 'application/vnd.oci.image.manifest.v1+json',
         })
         .end(body)
     }
+
     res
       .writeHead(307, {
         location: `http://127.0.0.1:${port(blobHost)}/${m[2]}`,
@@ -182,6 +204,7 @@ describe('fetching a release from the releases repository', () => {
       'stationd-linux-amd64': 'stationd',
     })
     const got = await fetchRelease('0.1.0')
+
     assert.equal(got.manifestRaw, raw)
     assert.equal(got.bundle, '{"bundle":true}')
     assert.equal(got.manifestDigest, sha(raw))
@@ -220,6 +243,7 @@ describe('fetching a release from the releases repository', () => {
 
   test('a blob that does not match its digest is refused', async () => {
     const raw = manifestFor('0.1.2')
+
     publish('0.1.2', {
       'release-manifest.json': raw,
       'release-manifest.json.sigstore.json': '{}',

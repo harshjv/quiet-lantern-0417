@@ -34,15 +34,25 @@ const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]'])
 export const surfaceOf = (request: Request, auth: AuthService): Surface | null => {
   const host = request.headers.get('host') ?? new URL(request.url).host
   const hostname = host.replace(/:\d+$/, '')
-  if (loopbackHosts.has(hostname) || `https://${host}` === auth.surface.addressOrigin)
+
+  if (loopbackHosts.has(hostname) || `https://${host}` === auth.surface.addressOrigin) {
     return 'local'
-  if (`https://${host}` === auth.surface.apiOrigin) return 'api'
-  if (`https://${host}` === auth.surface.dashboardOrigin) return 'dashboard'
+  }
+
+  if (`https://${host}` === auth.surface.apiOrigin) {
+    return 'api'
+  }
+
+  if (`https://${host}` === auth.surface.dashboardOrigin) {
+    return 'dashboard'
+  }
+
   return null
 }
 
 const clientOf = (request: Request) => {
   const agent = request.headers.get('user-agent')?.split(' ')[0]?.slice(0, 64)
+
   return agent && agent.includes('/') ? agent : null
 }
 
@@ -59,23 +69,30 @@ export const recordUnauthenticated = (request: Request) => {
   const ip = ipOf(request)
   const now = Date.now()
   const entry = failures.get(ip)
-  if (!entry || now - entry.start > unauthenticatedWindowMs)
+
+  if (!entry || now - entry.start > unauthenticatedWindowMs) {
     failures.set(ip, {
       start: now,
       count: 1,
     })
-  else entry.count += 1
+  } else {
+    entry.count += 1
+  }
 }
 
 const checkUnauthenticatedLimit = (request: Request) => {
   const entry = failures.get(ipOf(request))
+
   if (
     !entry ||
     Date.now() - entry.start > unauthenticatedWindowMs ||
     entry.count < unauthenticatedMax
-  )
+  ) {
     return
+  }
+
   const retry = Math.ceil((entry.start + unauthenticatedWindowMs - Date.now()) / 1000)
+
   throw new ApiError(
     'RATE_LIMITED',
     'Too many unauthenticated requests from this address.',
@@ -115,8 +132,10 @@ const oauthPrincipal = async (
   value: string,
 ): Promise<Principal> => {
   let payload: JWTPayload
+
   try {
     const keys = await auth.current.api.getJwks()
+
     payload = (
       await jwtVerify(value, createLocalJWKSet(keys), {
         issuer: auth.surface.baseURL,
@@ -127,19 +146,25 @@ const oauthPrincipal = async (
     ).payload
   } catch (error) {
     const failure = error as { code?: string; claim?: string; reason?: string; message?: string }
+
     throw unauthenticated(
       `The OAuth access token was refused: ${failure.code ?? failure.message ?? 'invalid'}${failure.claim ? ` (${failure.claim} ${failure.reason ?? 'check failed'})` : ''}.`,
     )
   }
+
   const row = liveGrant(db, typeof payload.sly_token === 'string' ? payload.sly_token : undefined)
-  if (!row || row.user_id !== payload.sub || !isScopeList(payload.sly_scopes))
+
+  if (!row || row.user_id !== payload.sub || !isScopeList(payload.sly_scopes)) {
     throw unauthenticated('The OAuth grant behind this access token was revoked or has expired.')
+  }
+
   db.update(token)
     .set({
       last_used_at: new Date(),
     })
     .where(eq(token.id, row.id))
     .run()
+
   return {
     actor: {
       type: 'oauth_client',
@@ -167,11 +192,15 @@ export const verifySlySession = async (auth: AuthService, request: Request, valu
     },
   })
   const popJkt = found?.session.popJkt
-  if (!found || !popJkt)
+
+  if (!found || !popJkt) {
     throw unauthenticated(
       'The bearer value is not a Stationly token, an OAuth access token or a live sly session.',
     )
+  }
+
   const context = await auth.current.$context
+
   try {
     await verifyProof(context.internalAdapter, {
       proof: request.headers.get(proofHeader),
@@ -181,12 +210,15 @@ export const verifySlySession = async (auth: AuthService, request: Request, valu
       expectedJkt: popJkt,
     })
   } catch (error) {
-    if (error instanceof ProofError)
+    if (error instanceof ProofError) {
       throw unauthenticated(
         `A sly session needs a proof of possession from the machine that logged in: ${error.message}.`,
       )
+    }
+
     throw error
   }
+
   return found
 }
 
@@ -196,6 +228,7 @@ const sessionPrincipal = async (
   value: string,
 ): Promise<Principal> => {
   const found = await verifySlySession(auth, request, value)
+
   return {
     actor: {
       type: 'user',
@@ -231,14 +264,21 @@ export const gateAuthRequest = async (auth: AuthService, request: Request) => {
       'Open /auth/consent or /device in a browser.',
     )
   }
+
   const value = bearerOf(request.headers)
-  if (!value || value.startsWith(tokenPrefix) || isJwt(value)) return null
+
+  if (!value || value.startsWith(tokenPrefix) || isJwt(value)) {
+    return null
+  }
+
   if (!authBearerPaths.has(new URL(request.url).pathname)) {
     throw unauthenticated(
       'A sly session is accepted on /auth only for sign-out; use the dashboard or the login page for everything else.',
     )
   }
+
   await verifySlySession(auth, request, value)
+
   return null
 }
 
@@ -250,8 +290,10 @@ export const authenticate = async (
   try {
     return await identify(db, auth, request)
   } catch (error) {
-    if (error instanceof ApiError && error.code === 'UNAUTHENTICATED')
+    if (error instanceof ApiError && error.code === 'UNAUTHENTICATED') {
       checkUnauthenticatedLimit(request)
+    }
+
     throw error
   }
 }
@@ -259,6 +301,7 @@ export const authenticate = async (
 const identify = async (db: Db, auth: AuthService, request: Request): Promise<Principal> => {
   const surface = surfaceOf(request, auth)
   const key = apiKeyFromHeaders(request.headers)
+
   if (key) {
     const result = await auth.current.api.verifyApiKey({
       body: {
@@ -266,12 +309,14 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
         permissions: v1Permission,
       },
     })
+
     if (!result.valid || !result.key) {
       if (result.error?.code === 'RATE_LIMITED') {
         const tryAgainIn = Number(
           (result.error as { details?: { tryAgainIn?: unknown } }).details?.tryAgainIn ?? 60_000,
         )
         const retry = Math.max(1, Math.ceil(tryAgainIn / 1000))
+
         throw new ApiError(
           'RATE_LIMITED',
           'This token exceeded its request rate.',
@@ -284,17 +329,23 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
           },
         )
       }
+
       throw unauthenticated(`The token was refused: ${result.error?.code ?? 'invalid'}.`)
     }
+
     const row = db.select().from(token).where(eq(token.api_key_id, result.key.id)).get()
-    if (!row || (row.kind !== 'personal' && row.kind !== 'scoped'))
+
+    if (!row || (row.kind !== 'personal' && row.kind !== 'scoped')) {
       throw unauthenticated('The token is not a personal or scoped Stationly token.')
+    }
+
     db.update(token)
       .set({
         last_used_at: new Date(),
       })
       .where(eq(token.id, row.id))
       .run()
+
     return {
       actor: {
         type: 'token',
@@ -311,26 +362,34 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
       resource: null,
     }
   }
+
   const value = bearerOf(request.headers)
-  if (value)
+
+  if (value) {
     return isJwt(value)
       ? oauthPrincipal(db, auth, request, value)
       : sessionPrincipal(auth, request, value)
+  }
+
   if (surface === 'dashboard' || surface === 'local') {
     const headers = new Headers(request.headers)
+
     headers.delete('authorization')
     const session = await auth.current.api.getSession({
       headers,
     })
+
     if (session) {
       if (!safeMethods.has(request.method)) {
         const origin = request.headers.get('origin')
+
         if (!origin || !auth.surface.trustedOrigins.includes(origin)) {
           throw unauthenticated(
             'A session cookie on a mutation must come with an Origin header from the dashboard.',
           )
         }
       }
+
       return {
         actor: {
           type: 'user',
@@ -348,17 +407,21 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
       }
     }
   }
+
   throw unauthenticated('No credential was sent.')
 }
 
 export const principalCache = (db: Db, auth: AuthService) => {
   const cache = new WeakMap<Request, Promise<Principal>>()
+
   return (request: Request) => {
     let found = cache.get(request)
+
     if (!found) {
       found = authenticate(db, auth, request)
       cache.set(request, found)
     }
+
     return found
   }
 }

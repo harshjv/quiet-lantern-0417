@@ -65,10 +65,10 @@ func (s *Station) maintenance(ctx context.Context, reason string, progress func(
 	defer s.depot.EndMaintenance()
 	start := time.Now()
 	s.log.Info("registry.maintenance", "state", "started", "reason", reason)
-	s.emit(protocol.MessageRegistryMaintenance, map[string]any{"state": protocol.RegistryMaintenanceStateStarted, "deleted_blobs": 0, "freed_bytes": 0, "duration_s": 0})
+	s.emit(protocol.MessageRegistryMaintenance, protocol.RegistryMaintenanceBody{State: protocol.RegistryMaintenanceStateStarted})
 	progress("registry.maintenance", "started; new builds queue with waiting_for_registry")
 	finished := func(res depot.GCResult) {
-		s.emit(protocol.MessageRegistryMaintenance, map[string]any{"state": protocol.RegistryMaintenanceStateFinished, "deleted_blobs": res.DeletedBlobs, "freed_bytes": res.FreedBytes, "duration_s": int(time.Since(start).Seconds())})
+		s.emit(protocol.MessageRegistryMaintenance, protocol.RegistryMaintenanceBody{State: protocol.RegistryMaintenanceStateFinished, DeletedBlobs: res.DeletedBlobs, FreedBytes: int(res.FreedBytes), DurationS: int(time.Since(start).Seconds())})
 	}
 	if err := s.workshops.WaitIdle(ctx); err != nil {
 		finished(depot.GCResult{})

@@ -12,12 +12,14 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/harshjv/stationly/go/internal/sandbox"
 )
 
 func TestExecPipes(t *testing.T) {
 	rt := fakeRuntime(t)
 	bundle := t.TempDir()
-	e, err := rt.Exec(context.Background(), ExecSpec{
+	e, err := rt.Exec(context.Background(), sandbox.ExecSpec{
 		ID: "sbx_1", BundleDir: bundle, Args: []string{"/bin/sh", "-c", "x"},
 		Env: []string{"A=1", "B=2", "A=3"}, Cwd: "/tmp", UID: 1000, GID: 1000,
 	})
@@ -34,17 +36,17 @@ func TestExecPipes(t *testing.T) {
 	if e.Pid() <= 0 {
 		t.Errorf("pid %d", e.Pid())
 	}
-	if _, err := io.WriteString(e.Stdin, "hello\n"); err != nil {
+	if _, err := io.WriteString(e.Stdin(), "hello\n"); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.Stdin.Close(); err != nil {
+	if err := e.Stdin().Close(); err != nil {
 		t.Fatal(err)
 	}
 	var stderr []byte
 	var serr error
 	var wg sync.WaitGroup
-	wg.Go(func() { stderr, serr = io.ReadAll(e.Stderr) })
-	stdout, err := io.ReadAll(e.Stdout)
+	wg.Go(func() { stderr, serr = io.ReadAll(e.Stderr()) })
+	stdout, err := io.ReadAll(e.Stdout())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,19 +114,19 @@ func (c *collector) waitFor(t *testing.T, s string) {
 
 func TestExecTTY(t *testing.T) {
 	rt := fakeRuntime(t)
-	e, err := rt.Exec(context.Background(), ExecSpec{
+	e, err := rt.Exec(context.Background(), sandbox.ExecSpec{
 		ID: "sbx_1", BundleDir: t.TempDir(), Args: []string{"/bin/bash"}, TTY: true, Rows: 40, Cols: 132,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Stderr != nil {
+	if e.Stderr() != nil {
 		t.Error("stderr set for a tty")
 	}
 	out := &collector{}
 	done := make(chan error, 1)
 	go func() {
-		_, err := io.Copy(out, e.Stdout)
+		_, err := io.Copy(out, e.Stdout())
 		done <- err
 	}()
 	out.waitFor(t, `"terminal":true`)
@@ -132,11 +134,11 @@ func TestExecTTY(t *testing.T) {
 	if err := e.Resize(50, 200); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := io.WriteString(e.Stdin, "size\n"); err != nil {
+	if _, err := io.WriteString(e.Stdin(), "size\n"); err != nil {
 		t.Fatal(err)
 	}
 	out.waitFor(t, "size 50 200")
-	if _, err := io.WriteString(e.Stdin, "exit\n"); err != nil {
+	if _, err := io.WriteString(e.Stdin(), "exit\n"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -155,12 +157,12 @@ func TestExecTTY(t *testing.T) {
 
 func TestExecKill(t *testing.T) {
 	rt := fakeRuntime(t)
-	e, err := rt.Exec(context.Background(), ExecSpec{ID: "sbx_1", BundleDir: t.TempDir(), Args: []string{"sh"}, TTY: true})
+	e, err := rt.Exec(context.Background(), sandbox.ExecSpec{ID: "sbx_1", BundleDir: t.TempDir(), Args: []string{"sh"}, TTY: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	go func() {
-		_, _ = io.Copy(io.Discard, e.Stdout)
+		_, _ = io.Copy(io.Discard, e.Stdout())
 	}()
 	if err := e.Kill(); err != nil {
 		t.Fatal(err)

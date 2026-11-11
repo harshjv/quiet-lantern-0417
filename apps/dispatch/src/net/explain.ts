@@ -64,9 +64,17 @@ const targetInvalid = (
 
 const splitPort = (to: string): [string, number | undefined] => {
   const m = /^(.+):(\d{1,5})$/.exec(to.trim())
-  if (!m) return [to.trim(), undefined]
+
+  if (!m) {
+    return [to.trim(), undefined]
+  }
+
   const port = Number(m[2])
-  if (port < 1 || port > 65535) targetInvalid(`${to} has a port outside 1 to 65535.`, [])
+
+  if (port < 1 || port > 65535) {
+    targetInvalid(`${to} has a port outside 1 to 65535.`, [])
+  }
+
   return [m[1]!, port]
 }
 
@@ -106,8 +114,10 @@ type MissingName = { kind: 'missing_name'; name: string; port: number | null }
 type Target = ServiceTarget | ContainerTarget | AddressTarget | PublicTarget | MissingName
 
 export const parsePortArg = (inline: number | undefined, arg: number | undefined, to: string) => {
-  if (inline !== undefined && arg !== undefined && inline !== arg)
+  if (inline !== undefined && arg !== undefined && inline !== arg) {
     targetInvalid(`${to} names port ${inline} but port is ${arg}.`, [inline])
+  }
+
   return inline ?? arg
 }
 
@@ -125,10 +135,18 @@ const idOf = (c: Check) => c.service_id ?? c.sandbox_id
 const allowEntry = (egress: SandboxRow['egress'], host: string) => {
   const name = host.toLowerCase().replace(/\.$/, '')
   const exact = egress.domains.find((d) => d.domain === name)
-  if (exact) return exact
+
+  if (exact) {
+    return exact
+  }
+
   return egress.domains.find((d) => {
-    if (!d.wildcard || !name.endsWith(`.${d.domain}`)) return false
+    if (!d.wildcard || !name.endsWith(`.${d.domain}`)) {
+      return false
+    }
+
     const prefix = name.slice(0, -(d.domain.length + 1))
+
     return prefix.length > 0 && prefix.split('.').length <= wildcardDepth
   })
 }
@@ -166,6 +184,7 @@ export const explainNetwork = async (
   )
   const fresh = (id: string) => {
     const seen = stations.get(id)?.last_seen_at?.getTime() ?? 0
+
     return (
       src.isConnected(id) && Boolean(src.observedOf(id)) && now.getTime() - seen <= staleAfterMs
     )
@@ -183,6 +202,7 @@ export const explainNetwork = async (
   const named = (svc: ServiceRow) => {
     const number = stations.get(svc.station_id)?.generation ?? 0
     const doc = number ? generationNumbered(db, svc.station_id, number)?.document : undefined
+
     return {
       number,
       ok:
@@ -207,11 +227,17 @@ export const explainNetwork = async (
 
   const defaultPort = (svc: ServiceRow, to: string) => {
     const declared = portsOf(svc.id).map((p) => p.port)
-    if (declared.length === 1) return declared[0]!
-    if (!declared.length)
+
+    if (declared.length === 1) {
+      return declared[0]!
+    }
+
+    if (!declared.length) {
       return targetInvalid(`${svc.name} declares no port, so ${to} needs one.`, [], {
         service: svc.name,
       })
+    }
+
     return targetInvalid(
       `${svc.name} declares ${declared.length} ports; name one with port or ${svc.name}:<port>.`,
       declared,
@@ -221,13 +247,16 @@ export const explainNetwork = async (
     )
   }
 
-  if (input.from === 'internet') return inbound(src, env, map, services, input, fresh)
+  if (input.from === 'internet') {
+    return inbound(src, env, map, services, input, fresh)
+  }
 
   const asService = services.find((s) => s.id === input.from || s.name === input.from)
   const asSandbox = asService
     ? undefined
     : boxes.find((b) => b.id === input.from || b.name === input.from)
-  if (!asService && !asSandbox)
+
+  if (!asService && !asSandbox) {
     return targetInvalid(
       `from ${input.from} is not a service or sandbox of environment ${env.name}.`,
       ['internet', ...services.map((s) => s.name), ...boxes.map((b) => b.name)],
@@ -235,6 +264,8 @@ export const explainNetwork = async (
         field: 'from',
       },
     )
+  }
+
   const source: Origin = asService
     ? {
         kind: 'service',
@@ -262,11 +293,15 @@ export const explainNetwork = async (
     const [host, inline] = splitPort(input.to)
     const port = parsePortArg(inline, input.port, input.to)
     const lower = host.toLowerCase()
+
     if (isIPv4(host)) {
-      if (port === undefined)
+      if (port === undefined) {
         return targetInvalid(`${input.to} is an address; give its port as ${host}:<port>.`, [])
+      }
+
       const byVip = map.services.find((s) => s.virtual_ip === host)
-      if (byVip)
+
+      if (byVip) {
         return {
           kind: 'service',
           svc: services.find((s) => s.id === byVip.id)!,
@@ -275,26 +310,33 @@ export const explainNetwork = async (
           viaAddress: true,
           port,
         }
+      }
+
       for (const svc of services) {
         const containers = src.observedOf(svc.station_id)?.services[svc.id]?.containers ?? []
-        if (containers.some((c) => c.address === host))
+
+        if (containers.some((c) => c.address === host)) {
           return {
             kind: 'container',
             svc,
             address: host,
             port,
           }
+        }
       }
+
       return {
         kind: 'address',
         address: host,
         port,
       }
     }
+
     if (lower.endsWith('.internal')) {
       const labels = lower.split('.')
       const svc = labels.length === 2 ? services.find((s) => s.name === labels[0]) : undefined
-      if (svc)
+
+      if (svc) {
         return {
           kind: 'service',
           svc,
@@ -303,19 +345,25 @@ export const explainNetwork = async (
           viaAddress: false,
           port: port ?? defaultPort(svc, input.to),
         }
+      }
+
       return {
         kind: 'missing_name',
         name: lower,
         port: port ?? null,
       }
     }
+
     if (slug.test(lower) && !lower.includes('.')) {
       const svc = services.find((s) => s.name === lower || s.id === host)
-      if (!svc)
+
+      if (!svc) {
         return targetInvalid(
           `${host} is not a service of environment ${env.name}.`,
           services.map((s) => s.name),
         )
+      }
+
       return {
         kind: 'service',
         svc,
@@ -325,6 +373,7 @@ export const explainNetwork = async (
         port: port ?? defaultPort(svc, input.to),
       }
     }
+
     if (host.startsWith('svc_')) {
       const svc =
         services.find((s) => s.id === host) ??
@@ -332,6 +381,7 @@ export const explainNetwork = async (
           `${host} is not a service of environment ${env.name}.`,
           services.map((s) => s.name),
         )
+
       return {
         kind: 'service',
         svc,
@@ -341,15 +391,19 @@ export const explainNetwork = async (
         port: port ?? defaultPort(svc, input.to),
       }
     }
+
     if (hostnamePattern.test(host)) {
-      if (port === undefined)
+      if (port === undefined) {
         return targetInvalid(`${input.to} is a public name; give its port as ${host}:<port>.`, [])
+      }
+
       return {
         kind: 'public',
         host: lower,
         port,
       }
     }
+
     return targetInvalid(
       `${input.to} does not parse as a service, a .internal name, ipv4:port or hostname:port.`,
       services.map((s) => s.name),
@@ -389,6 +443,7 @@ export const explainNetwork = async (
 
   if (!fresh(source.station_id)) {
     const st = stations.get(source.station_id)
+
     hops.push(
       hop(
         'source',
@@ -400,7 +455,11 @@ export const explainNetwork = async (
         'STATION_STALE',
       ),
     )
-    for (const name of ['applied', 'dns', 'firewall'] as const) hops.push(hop(name, 'unknown'))
+
+    for (const name of ['applied', 'dns', 'firewall'] as const) {
+      hops.push(hop(name, 'unknown'))
+    }
+
     return finish(
       entity,
       hops,
@@ -419,20 +478,24 @@ export const explainNetwork = async (
     },
   ]
   let publicAnswer: DnsEntry | null = null
+
   if (target.kind === 'public') {
     const entries = await src.dnsLog(source.station_id, {
       ...source.ref,
       tail: 200,
       name: target.host,
     })
+
     publicAnswer =
       entries.find(
         (e) =>
           e.name.toLowerCase() === target.host && e.rcode === 'NOERROR' && e.answers.length > 0,
       ) ?? null
   }
+
   const verdictAddress = destination ?? publicAnswer?.answers[0] ?? null
-  if (verdictAddress)
+
+  if (verdictAddress) {
     sourceChecks.push({
       kind: 'verdict',
       ...source.ref,
@@ -440,12 +503,16 @@ export const explainNetwork = async (
       port,
       protocol,
     })
-  if (target.kind === 'service' && target.vip && (!box || box.network === 'environment'))
+  }
+
+  if (target.kind === 'service' && target.vip && (!box || box.network === 'environment')) {
     sourceChecks.push({
       kind: 'switch',
       ...source.ref,
       virtual_ip: target.vip,
     })
+  }
+
   const targetChecks: Check[] = targetSvc
     ? [
         {
@@ -474,6 +541,7 @@ export const explainNetwork = async (
     : [...sourceChecks, ...(targetResults.length ? targetChecks : [])]
   const resultOf = (kind: Check['kind'], id?: string) => {
     const i = checks.findIndex((c) => c.kind === kind && (id === undefined || idOf(c) === id))
+
     return i >= 0 ? results[i] : undefined
   }
 
@@ -486,6 +554,7 @@ export const explainNetwork = async (
   const sourceNumber = box
     ? null
     : numberOf(sourceContainer?.deployment_id ?? asService!.current_deployment_id)
+
   if (!sourceRunning) {
     hops.push(
       hop(
@@ -509,7 +578,11 @@ export const explainNetwork = async (
           })
         : startFix(asService!),
     )
-    for (const name of ['applied', 'dns', 'firewall'] as const) hops.push(hop(name, 'skipped'))
+
+    for (const name of ['applied', 'dns', 'firewall'] as const) {
+      hops.push(hop(name, 'skipped'))
+    }
+
     return finish(
       entity,
       hops,
@@ -520,6 +593,7 @@ export const explainNetwork = async (
       {},
     )
   }
+
   hops.push(
     hop('source', 'pass', {
       ...(box
@@ -534,6 +608,7 @@ export const explainNetwork = async (
   const sandboxApplied = () => {
     const number = stations.get(source.station_id)?.generation ?? 0
     const doc = number ? generationNumbered(db, source.station_id, number)?.document : undefined
+
     return {
       number,
       ok: Boolean(doc?.sandboxes?.[source.id]),
@@ -546,14 +621,16 @@ export const explainNetwork = async (
         number: sourceApplied.number,
         ok: true,
       }
-  if (sourceApplied.ok && (!targetSvc || targetApplied.ok || !targetSvc.current_deployment_id))
+
+  if (sourceApplied.ok && (!targetSvc || targetApplied.ok || !targetSvc.current_deployment_id)) {
     hops.push(
       hop('applied', 'pass', {
         generation: sourceApplied.number,
       }),
     )
-  else {
+  } else {
     const late = !sourceApplied.ok ? source : targetSvc!
+
     hops.push(
       hop(
         'applied',
@@ -606,6 +683,7 @@ export const explainNetwork = async (
         )
         fixes.push(joinFix())
         hops.push(...skipFrom(['firewall', 'switch', 'target', 'listening']))
+
         return finish(
           entity,
           hops,
@@ -616,6 +694,7 @@ export const explainNetwork = async (
           {},
         )
       }
+
       hops.push(
         target.viaAddress
           ? hop('dns', 'skipped', {
@@ -638,6 +717,7 @@ export const explainNetwork = async (
     case 'public':
       if (box?.egress.mode === 'allowlist') {
         const entry = allowEntry(box.egress, target.host)
+
         if (!entry || !entry.ports.includes(port)) {
           const listed = box.egress.domains.map((d) => ({
             domain: d.domain,
@@ -661,6 +741,7 @@ export const explainNetwork = async (
                   ports: [port],
                 },
               ]
+
           hops.push(
             hop('dns', 'skipped', {
               reason: 'the resolver refuses a name the allowlist does not list',
@@ -704,6 +785,7 @@ export const explainNetwork = async (
             ),
           )
           hops.push(...skipFrom(['firewall']))
+
           return finish(
             entity,
             hops,
@@ -718,6 +800,7 @@ export const explainNetwork = async (
             },
           )
         }
+
         hops.push(
           publicAnswer
             ? hop('dns', 'pass', {
@@ -740,6 +823,7 @@ export const explainNetwork = async (
         )
         break
       }
+
       hops.push(
         publicAnswer
           ? hop('dns', 'pass', {
@@ -753,6 +837,7 @@ export const explainNetwork = async (
             }),
       )
       break
+
     case 'missing_name': {
       hops.push(
         hop(
@@ -767,16 +852,22 @@ export const explainNetwork = async (
         ),
       )
       const names = services.map((s) => `${s.name}.internal`)
-      if (isolated) fixes.push(joinFix())
-      else
+
+      if (isolated) {
+        fixes.push(joinFix())
+      } else {
         fixes.push(
           fix(
             'USE_INTERNAL_NAME',
             `${target.name} is not a service of ${env.name}; the resolver answers only <service>.internal for the services of ${source.name}'s own environment. Names here: ${names.slice(0, 5).join(', ')}.`,
           ),
         )
-      for (const name of ['firewall', 'switch', 'target', 'listening'] as const)
+      }
+
+      for (const name of ['firewall', 'switch', 'target', 'listening'] as const) {
         hops.push(hop(name, 'skipped'))
+      }
+
       return finish(
         entity,
         hops,
@@ -791,26 +882,27 @@ export const explainNetwork = async (
 
   const verdict = resultOf('verdict', source.id)
   let blockedPath: string | null = null
-  if (!verdict)
+
+  if (!verdict) {
     hops.push(
       hop('firewall', 'unknown', {
         reason: `no address to judge for ${target.kind === 'public' ? target.host : toText}`,
       }),
     )
-  else if (verdict.error)
+  } else if (verdict.error) {
     hops.push(
       hop('firewall', 'unknown', {
         error: verdict.error,
       }),
     )
-  else if (verdict.verdict === 'accept')
+  } else if (verdict.verdict === 'accept') {
     hops.push(
       hop('firewall', 'pass', {
         path: verdict.path,
         rule: verdict.rule,
       }),
     )
-  else if (verdict.verdict === 'reject')
+  } else if (verdict.verdict === 'reject') {
     hops.push(
       hop('firewall', 'warn', {
         path: verdict.path,
@@ -818,7 +910,7 @@ export const explainNetwork = async (
         verdict: 'reject',
       }),
     )
-  else {
+  } else {
     blockedPath = verdict.path ?? null
     hops.push(
       hop(
@@ -890,11 +982,13 @@ export const explainNetwork = async (
         ),
       )
     }
+
     const summary = blockedPath
       ? blockedSummary(source.name, verdictAddress!, port, blockedPath, verdict!.rule ?? '')
       : !verdict
         ? `${source.name} has not resolved ${target.kind === 'public' ? target.host : toText} yet, so the path cannot be judged without a probe.`
         : `The rules let ${source.name} reach ${verdictAddress}:${port}; only a probe shows whether it answers.`
+
     return finish(
       entity,
       hops,
@@ -921,14 +1015,15 @@ export const explainNetwork = async (
 
   if (target.kind === 'service') {
     const sw = box && box.network !== 'environment' ? undefined : resultOf('switch', source.id)
-    if (!sw || sw.error)
+
+    if (!sw || sw.error) {
       hops.push(
         hop('switch', 'unknown', {
           virtual_ip: target.vip,
           error: sw?.error ?? 'not read',
         }),
       )
-    else if (!sw.address) {
+    } else if (!sw.address) {
       hops.push(
         hop(
           'switch',
@@ -956,7 +1051,7 @@ export const explainNetwork = async (
           'SWITCH_MISMATCH',
         ),
       )
-    } else
+    } else {
       hops.push(
         hop('switch', 'pass', {
           virtual_ip: target.vip,
@@ -964,14 +1059,16 @@ export const explainNetwork = async (
           deployment: targetNumber,
         }),
       )
-  } else
+    }
+  } else {
     hops.push(
       hop('switch', 'skipped', {
         reason: 'a container address bypasses the Switch',
       }),
     )
+  }
 
-  if (!targetFresh)
+  if (!targetFresh) {
     hops.push(
       hop(
         'target',
@@ -982,7 +1079,7 @@ export const explainNetwork = async (
         'STATION_STALE',
       ),
     )
-  else if (!targetRunning) {
+  } else if (!targetRunning) {
     hops.push(
       hop(
         'target',
@@ -994,10 +1091,13 @@ export const explainNetwork = async (
         'TARGET_NOT_RUNNING',
       ),
     )
-    if (!fixes.some((f) => f.code === 'START_TARGET' || f.code === 'DEPLOY_TARGET'))
+
+    if (!fixes.some((f) => f.code === 'START_TARGET' || f.code === 'DEPLOY_TARGET')) {
       fixes.push(startFix(svc))
+    }
   } else if (containerResult!.health === 'failing') {
     const last = src.observedOf(svc.station_id)?.services[svc.id]?.health
+
     hops.push(
       hop(
         'target',
@@ -1011,33 +1111,37 @@ export const explainNetwork = async (
         'TARGET_UNHEALTHY',
       ),
     )
-  } else
+  } else {
     hops.push(
       hop('target', containerResult!.health === 'starting' ? 'warn' : 'pass', {
         state: 'running',
         health: containerResult!.health ?? 'none',
       }),
     )
+  }
 
   const listening = resultOf('listening', svc.id)
   let listeningSummary: string | null = null
-  if (!targetRunning || !listening) hops.push(hop('listening', 'skipped'))
-  else if (listening.error)
+
+  if (!targetRunning || !listening) {
+    hops.push(hop('listening', 'skipped'))
+  } else if (listening.error) {
     hops.push(
       hop('listening', 'unknown', {
         error: listening.error,
       }),
     )
-  else {
+  } else {
     const sockets = listening.sockets ?? []
     const onPort = sockets.filter((s) => s.port === port && s.protocol === protocol)
-    if (onPort.some((s) => wildcard(s.address) || s.address === targetAddress))
+
+    if (onPort.some((s) => wildcard(s.address) || s.address === targetAddress)) {
       hops.push(
         hop('listening', 'pass', {
           listening: onPort,
         }),
       )
-    else if (onPort.length && onPort.every((s) => loopback(s.address))) {
+    } else if (onPort.length && onPort.every((s) => loopback(s.address))) {
       hops.push(
         hop(
           'listening',
@@ -1071,6 +1175,7 @@ export const explainNetwork = async (
           sockets.filter((s) => s.protocol === protocol && !loopback(s.address)).map((s) => s.port),
         ),
       ]
+
       fixes.push(
         fix(
           'USE_DECLARED_PORT',
@@ -1086,13 +1191,14 @@ export const explainNetwork = async (
   }
 
   const declared = portsOf(svc.id).some((p) => p.port === port)
-  if (declared)
+
+  if (declared) {
     hops.push(
       hop('port', 'pass', {
         declared: true,
       }),
     )
-  else {
+  } else {
     hops.push(
       hop(
         'port',
@@ -1112,7 +1218,8 @@ export const explainNetwork = async (
   }
 
   const failed = hops.find((h) => h.status === 'fail' || h.status === 'unknown')
-  if (!failed)
+
+  if (!failed) {
     fixes.unshift(
       fix(
         'RUN_PROBE',
@@ -1130,9 +1237,13 @@ export const explainNetwork = async (
         },
       ),
     )
+  }
+
   const summary = (() => {
-    if (!failed)
+    if (!failed) {
       return `${source.name} can reach ${svc.name} on ${port}/${protocol}: every hop passed. Only a probe shows whether the server answers.`
+    }
+
     switch (failed.code) {
       case 'PATH_BLOCKED':
         return blockedSummary(source.name, verdictAddress!, port, blockedPath!, verdict?.rule ?? '')
@@ -1155,6 +1266,7 @@ export const explainNetwork = async (
         return `The path from ${source.name} to ${svc.name} fails at ${failed.hop}.`
     }
   })()
+
   return finish(
     entity,
     hops,
@@ -1208,11 +1320,19 @@ const finish = (
     not_checked: notChecked,
     observed_at: observedAt,
   }
+
   for (const h of doc.hops) {
-    if (Buffer.byteLength(JSON.stringify(doc)) <= maxBytes) break
+    if (Buffer.byteLength(JSON.stringify(doc)) <= maxBytes) {
+      break
+    }
+
     const list = h.detail.listening
-    if (Array.isArray(list) && list.length > 4) h.detail.listening = list.slice(0, 4)
+
+    if (Array.isArray(list) && list.length > 4) {
+      h.detail.listening = list.slice(0, 4)
+    }
   }
+
   return doc
 }
 
@@ -1249,7 +1369,8 @@ const inbound = async (
           ({ x }) => x.host_port === hostPort && (x.public === `${host}:${hostPort}` || !x.public),
         )
       : undefined
-  if (!found && !exposure)
+
+  if (!found && !exposure) {
     targetInvalid(
       `${input.to} is not a domain or TCP exposure of environment ${env.name}.`,
       [
@@ -1260,6 +1381,8 @@ const inbound = async (
         from: 'internet',
       },
     )
+  }
+
   const entry = found?.entry ?? exposure!.entry
   const svc = services.find((s) => s.id === entry.id)!
   const st = stationRow(svc.station_id)
@@ -1293,6 +1416,7 @@ const inbound = async (
         'STATION_STALE',
       ),
     )
+
     return finish(
       entity,
       hops,
@@ -1303,6 +1427,7 @@ const inbound = async (
       {},
     )
   }
+
   const vip = entry.virtual_ip
   const checks: Check[] = [
     found
@@ -1331,10 +1456,12 @@ const inbound = async (
   const address = container?.address ?? null
 
   let summary: string | null = null
+
   if (found) {
     const d = found.d
     const record = `an A record for ${d.hostname} pointing at ${st?.public_address ?? "the station's public address"}`
-    if (d.status === 'active')
+
+    if (d.status === 'active') {
       hops.push(
         hop('domain', 'pass', {
           hostname: d.hostname,
@@ -1342,7 +1469,7 @@ const inbound = async (
           ingress: d.ingress,
         }),
       )
-    else {
+    } else {
       const error =
         db
           .select({
@@ -1351,6 +1478,7 @@ const inbound = async (
           .from(domain)
           .where(eq(domain.id, d.id))
           .get()?.error ?? null
+
       hops.push(
         hop(
           'domain',
@@ -1365,15 +1493,19 @@ const inbound = async (
         ),
       )
       fixes.push(fix('CHECK_DNS_RECORD', `Create ${record}, then wait for the domain probe.`))
-      if (d.status !== 'pending') summary ??= `${d.hostname} is ${d.status}.`
+
+      if (d.status !== 'pending') {
+        summary ??= `${d.hostname} is ${d.status}.`
+      }
     }
-    if (st?.public_address)
+
+    if (st?.public_address) {
       hops.push(
         hop('public_address', 'pass', {
           address: st.public_address,
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'public_address',
@@ -1392,13 +1524,14 @@ const inbound = async (
       )
       summary ??= `Station ${st?.name ?? svc.station_id} has no public address.`
     }
-    if (map.inbound.web_ports === 'open')
+
+    if (map.inbound.web_ports === 'open') {
       hops.push(
         hop('web_ports', 'pass', {
           web_ports: 'open',
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'web_ports',
@@ -1418,20 +1551,21 @@ const inbound = async (
       )
       summary ??= `The station has no direct route, so inbound 80 and 443 are dropped and ${d.hostname} is unreachable from the internet.`
     }
-    if (d.ingress !== 'direct')
+
+    if (d.ingress !== 'direct') {
       hops.push(
         hop('certificate', 'skipped', {
           reason: 'tunnel ingress',
         }),
       )
-    else if (d.certificate.status === 'valid')
+    } else if (d.certificate.status === 'valid') {
       hops.push(
         hop('certificate', 'pass', {
           status: 'valid',
           expires_at: d.certificate.expires_at,
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'certificate',
@@ -1444,7 +1578,8 @@ const inbound = async (
       )
       summary ??= `${d.hostname} has no valid certificate (status ${d.certificate.status}).`
     }
-    if (d.route.result === 'ok' && hs && !hs.error && hs.gateway_target)
+
+    if (d.route.result === 'ok' && hs && !hs.error && hs.gateway_target) {
       hops.push(
         hop('route', 'pass', {
           entrypoint: d.route.entrypoint,
@@ -1453,7 +1588,7 @@ const inbound = async (
           gateway_target: true,
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'route',
@@ -1470,14 +1605,15 @@ const inbound = async (
       )
       summary ??= `The Gateway route for ${d.hostname} is not applied on the station.`
     }
-    if (!hs || hs.error)
+
+    if (!hs || hs.error) {
       hops.push(
         hop('switch', 'unknown', {
           virtual_ip: vip,
           error: hs?.error ?? 'not read',
         }),
       )
-    else if (!hs.address) {
+    } else if (!hs.address) {
       hops.push(
         hop(
           'switch',
@@ -1505,16 +1641,18 @@ const inbound = async (
         ),
       )
       summary ??= `The Gateway's Switch element for ${svc.name} points at ${hs.address}, not ${address}.`
-    } else
+    } else {
       hops.push(
         hop('switch', 'pass', {
           virtual_ip: vip,
           address: hs.address,
         }),
       )
+    }
   } else {
     const x = exposure!.x
-    if (x.status === 'active' && (x.result === 'ok' || x.result === null))
+
+    if (x.status === 'active' && (x.result === 'ok' || x.result === null)) {
       hops.push(
         hop('exposure', 'pass', {
           host_port: x.host_port,
@@ -1522,7 +1660,7 @@ const inbound = async (
           result: x.result,
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'exposure',
@@ -1537,13 +1675,14 @@ const inbound = async (
       )
       summary ??= `The TCP exposure on host port ${x.host_port} is ${x.status}${x.result ? ` (${x.result})` : ''}.`
     }
-    if (st?.public_address)
+
+    if (st?.public_address) {
       hops.push(
         hop('public_address', 'pass', {
           address: st.public_address,
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'public_address',
@@ -1562,16 +1701,18 @@ const inbound = async (
       )
       summary ??= `Station ${st?.name ?? svc.station_id} has no public address.`
     }
+
     const want = address ? `${address}:${port}` : null
     const have = hs && !hs.error && hs.address ? `${hs.address}:${hs.port}` : null
-    if (have && (!want || have === want))
+
+    if (have && (!want || have === want)) {
       hops.push(
         hop('route', 'pass', {
           host_port: x.host_port,
           target: have,
         }),
       )
-    else {
+    } else {
       hops.push(
         hop(
           'route',
@@ -1585,7 +1726,11 @@ const inbound = async (
           have ? 'ROUTE_NOT_APPLIED' : running ? 'ROUTE_NOT_APPLIED' : 'SWITCH_NO_TARGET',
         ),
       )
-      if (!running) fixes.push(startFixFor(svc))
+
+      if (!running) {
+        fixes.push(startFixFor(svc))
+      }
+
       summary ??= have
         ? `Host port ${x.host_port} points at ${have}, not ${want}.`
         : `Host port ${x.host_port} has no port_switch element on the station.`
@@ -1604,8 +1749,11 @@ const inbound = async (
         'TARGET_NOT_RUNNING',
       ),
     )
-    if (!fixes.some((f) => f.code === 'START_TARGET' || f.code === 'DEPLOY_TARGET'))
+
+    if (!fixes.some((f) => f.code === 'START_TARGET' || f.code === 'DEPLOY_TARGET')) {
       fixes.push(startFixFor(svc))
+    }
+
     summary ??= `${svc.name} has no running container.`
     hops.push(hop('listening', 'skipped'))
   } else {
@@ -1625,23 +1773,27 @@ const inbound = async (
             health: container!.health ?? 'none',
           }),
     )
-    if (container!.health === 'failing')
+
+    if (container!.health === 'failing') {
       summary ??= `${svc.name} is running but its health check is failing.`
+    }
+
     const sockets = listening?.sockets ?? []
     const onPort = sockets.filter((s) => s.port === port && s.protocol === protocol)
-    if (!listening || listening.error)
+
+    if (!listening || listening.error) {
       hops.push(
         hop('listening', 'unknown', {
           error: listening?.error ?? 'not read',
         }),
       )
-    else if (onPort.some((s) => wildcard(s.address) || s.address === address))
+    } else if (onPort.some((s) => wildcard(s.address) || s.address === address)) {
       hops.push(
         hop('listening', 'pass', {
           listening: onPort,
         }),
       )
-    else if (onPort.length && onPort.every((s) => loopback(s.address))) {
+    } else if (onPort.length && onPort.every((s) => loopback(s.address))) {
       hops.push(
         hop(
           'listening',
@@ -1679,7 +1831,9 @@ const inbound = async (
       summary ??= `Nothing in ${svc.name} listens on ${port}/tcp.`
     }
   }
+
   summary ??= `The internet can reach ${svc.name} through ${found ? found.d.hostname : `${host}:${hostPort}`}: every hop passed.`
+
   return finish(entity, hops, fixes, notChecked, observedAt, summary, {})
 }
 
@@ -1709,18 +1863,27 @@ export const probeTarget = (
   const port = parsePortArg(inline, portArg, to)
   const lower = host.toLowerCase()
   const services = db.select().from(service).where(eq(service.environment_id, env.id)).all()
+
   if (isIPv4(host)) {
-    if (kind === 'dns')
+    if (kind === 'dns') {
       return targetInvalid(`A DNS probe asks for a name; ${host} is an address.`, [])
-    if (port === undefined)
+    }
+
+    if (port === undefined) {
       return targetInvalid(`${to} is an address; give its port as ${host}:<port>.`, [])
+    }
+
     return {
       to: host,
       port,
     }
   }
+
   const declaredPort = (svcId: string, name: string) => {
-    if (port !== undefined || kind === 'dns') return port ?? null
+    if (port !== undefined || kind === 'dns') {
+      return port ?? null
+    }
+
     const declared = db
       .select({
         port: service_port.port,
@@ -1729,26 +1892,41 @@ export const probeTarget = (
       .where(eq(service_port.service_id, svcId))
       .all()
       .map((p) => p.port)
-    if (declared.length === 1) return declared[0]!
-    if (!declared.length)
+
+    if (declared.length === 1) {
+      return declared[0]!
+    }
+
+    if (!declared.length) {
       return targetInvalid(`${name} declares no port, so the probe needs one.`, [])
+    }
+
     return targetInvalid(`${name} declares ${declared.length} ports; name one with port.`, declared)
   }
+
   if (lower.endsWith('.internal')) {
     const labels = lower.split('.')
-    if (labels.length !== 2 || !labels[0])
+
+    if (labels.length !== 2 || !labels[0]) {
       return targetInvalid(
         `${to} is not a <service>.internal name.`,
         services.map((s) => `${s.name}.internal`),
       )
+    }
+
     const svc = services.find((s) => s.name === labels[0])
     const p = svc ? declaredPort(svc.id, svc.name) : (port ?? null)
-    if (kind === 'tcp' && p === null) return targetInvalid(`${to} needs a port.`, [])
+
+    if (kind === 'tcp' && p === null) {
+      return targetInvalid(`${to} needs a port.`, [])
+    }
+
     return {
       to: lower,
       port: p,
     }
   }
+
   if (slug.test(lower) || host.startsWith('svc_')) {
     const svc =
       services.find((s) => s.name === lower || s.id === host) ??
@@ -1756,19 +1934,24 @@ export const probeTarget = (
         `${host} is not a service of environment ${env.name}.`,
         services.map((s) => s.name),
       )
+
     return {
       to: `${svc.name}.internal`,
       port: declaredPort(svc.id, svc.name),
     }
   }
+
   if (hostnamePattern.test(host)) {
-    if (kind === 'tcp' && port === undefined)
+    if (kind === 'tcp' && port === undefined) {
       return targetInvalid(`${to} is a public name; give its port as ${host}:<port>.`, [])
+    }
+
     return {
       to: lower,
       port: port ?? null,
     }
   }
+
   return targetInvalid(
     `${to} does not parse as a service, a .internal name, ipv4:port or hostname:port.`,
     services.map((s) => s.name),

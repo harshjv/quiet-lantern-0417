@@ -550,15 +550,20 @@ func extractArchive(root string, src io.Reader, downloaded *teeHash, want string
 	return size, files, nil
 }
 
-func untar(root string, r io.Reader) (int64, int, error) {
+func entryName(hdr *tar.Header) string {
+	return strings.TrimPrefix(filepath.Clean("/"+hdr.Name), "/")
+}
+
+func untar(dir string, r io.Reader) (int64, int, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer root.Close()
 	tr := tar.NewReader(r)
 	var size int64
 	files := 0
-	type dirMode struct {
-		path string
-		hdr  *tar.Header
-	}
-	var dirs []dirMode
+	var dirs []*tar.Header
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -567,21 +572,19 @@ func untar(root string, r io.Reader) (int64, int, error) {
 		if err != nil {
 			return size, files, err
 		}
-		name := filepath.Clean("/" + hdr.Name)
-		target := filepath.Join(root, name)
-		if !strings.HasPrefix(target, filepath.Clean(root)+string(os.PathSeparator)) {
+		name := entryName(hdr)
+		if name == "" {
 			return size, files, fmt.Errorf("archive entry %s leaves the volume root", hdr.Name)
 		}
-		mode := tarMode(hdr.Mode)
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o700); err != nil {
+			if err := root.MkdirAll(name, 0o700); err != nil {
 				return size, files, err
 			}
-			dirs = append(dirs, dirMode{target, hdr})
+			dirs = append(dirs, hdr)
 			continue
 		case tar.TypeReg:
-			out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+			out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 			if err != nil {
 				return size, files, err
 			}
@@ -595,31 +598,31 @@ func untar(root string, r io.Reader) (int64, int, error) {
 			}
 			files++
 		case tar.TypeSymlink:
-			if err := os.Symlink(hdr.Linkname, target); err != nil {
+			if err := root.Symlink(hdr.Linkname, name); err != nil {
 				return size, files, err
 			}
-			if err := os.Lchown(target, hdr.Uid, hdr.Gid); err != nil {
+			if err := root.Lchown(name, hdr.Uid, hdr.Gid); err != nil {
 				return size, files, err
 			}
 			continue
 		default:
 			return size, files, fmt.Errorf("archive entry %s has type %c, which a volume backup never writes", hdr.Name, hdr.Typeflag)
 		}
-		if err := os.Chown(target, hdr.Uid, hdr.Gid); err != nil {
+		if err := root.Chown(name, hdr.Uid, hdr.Gid); err != nil {
 			return size, files, err
 		}
-		if err := os.Chmod(target, mode); err != nil {
+		if err := root.Chmod(name, tarMode(hdr.Mode)); err != nil {
 			return size, files, err
 		}
-		if err := os.Chtimes(target, hdr.ModTime, hdr.ModTime); err != nil {
+		if err := root.Chtimes(name, hdr.ModTime, hdr.ModTime); err != nil {
 			return size, files, err
 		}
 	}
 	for i := len(dirs) - 1; i >= 0; i-- {
-		d := dirs[i]
-		_ = os.Chown(d.path, d.hdr.Uid, d.hdr.Gid)
-		_ = os.Chmod(d.path, tarMode(d.hdr.Mode))
-		_ = os.Chtimes(d.path, d.hdr.ModTime, d.hdr.ModTime)
+		name := entryName(dirs[i])
+		_ = root.Chown(name, dirs[i].Uid, dirs[i].Gid)
+		_ = root.Chmod(name, tarMode(dirs[i].Mode))
+		_ = root.Chtimes(name, dirs[i].ModTime, dirs[i].ModTime)
 	}
 	return size, files, nil
 }

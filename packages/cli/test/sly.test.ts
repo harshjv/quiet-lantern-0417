@@ -95,10 +95,13 @@ describe('closed stdout', () => {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+
     child.stdout.destroy()
     let stderr = ''
+
     child.stderr.on('data', (chunk) => (stderr += chunk))
     const code = await new Promise<number | null>((resolve) => child.on('close', resolve))
+
     assert.equal(stderr, '')
     assert.equal(code, 141)
   })
@@ -108,14 +111,17 @@ describe('request mapping', () => {
   test('projects list sends GET /v1/projects with the bearer token and a sly user agent', async () => {
     server.requests.length = 0
     const result = await sly(['--json', 'projects', 'list'])
+
     assert.equal(result.code, 0)
     const sent = server.requests.find((r) => r.path.startsWith('/v1/projects'))!
+
     assert.equal(sent.method, 'GET')
     assert.equal(sent.headers.get('authorization'), `Bearer ${h.admin.token}`)
     assert.match(sent.headers.get('user-agent') ?? '', /^sly\//)
     const rest = await h.call('GET', '/v1/projects', {
       token: h.admin.token,
     })
+
     assert.deepEqual(JSON.parse(result.stdout), rest.body)
   })
 
@@ -129,8 +135,10 @@ describe('request mapping', () => {
       '--default-environment-name',
       'live',
     ])
+
     assert.equal(result.code, 0, result.stderr)
     const sent = server.requests.find((r) => r.method === 'POST')!
+
     assert.equal(sent.path, '/v1/projects')
     assert.deepEqual(JSON.parse(sent.body), {
       name: 'beta',
@@ -158,8 +166,10 @@ describe('request mapping', () => {
       '--environment',
       'production',
     ])
+
     assert.equal(result.code, 0, result.stderr)
     const sent = server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!
+
     assert.equal(sent.path, '/v1/projects/alpha/environments/production/services')
     assert.deepEqual(JSON.parse(sent.body), {
       name: 'web',
@@ -176,6 +186,7 @@ describe('request mapping', () => {
       ],
     })
     const created = JSON.parse(result.stdout)
+
     assert.equal(created.source.digest.startsWith('sha256:'), true)
   })
 
@@ -200,10 +211,12 @@ describe('request mapping', () => {
       '--no-deploy-on-create',
       '--json',
     ])
+
     assert.equal(local.code, 0, local.stderr)
     const body = JSON.parse(
       server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!.body,
     )
+
     assert.deepEqual(body.source, {
       type: 'local',
       dockerfile: 'Dockerfile',
@@ -232,6 +245,7 @@ describe('request mapping', () => {
       'nginx',
       '--json',
     ])
+
     assert.equal(bad.code, 2, bad.stderr)
     assert.match(bad.stderr, /nginx is not key=value/)
     assert.equal(
@@ -254,10 +268,12 @@ describe('request mapping', () => {
       '--intermittent',
       '--json',
     ])
+
     assert.equal(all.code, 0, all.stderr)
     const sent = server.requests.find(
       (r) => r.method === 'PATCH' && r.path === '/v1/stations/station-1',
     )!
+
     assert.deepEqual(JSON.parse(sent.body), {
       public_address: '203.0.113.9',
       concurrency_cap: 3,
@@ -273,6 +289,7 @@ describe('request mapping', () => {
       '--no-intermittent',
       '--json',
     ])
+
     assert.equal(some.code, 0, some.stderr)
     assert.deepEqual(JSON.parse(server.requests.find((r) => r.method === 'PATCH')!.body), {
       draining: false,
@@ -283,6 +300,7 @@ describe('request mapping', () => {
 
   test('stations update with no flag is refused by the API', async () => {
     const result = await sly(['stations', 'update', 'station-1', '--json'])
+
     assert.equal(result.code, 1)
     assert.equal(JSON.parse(result.stdout).error.code, 'VALIDATION_FAILED')
   })
@@ -296,6 +314,7 @@ describe('request mapping', () => {
       'services',
       'list',
     ])
+
     assert.equal(result.code, 0, result.stderr)
     assert.match(result.stdout, /NAME/)
     assert.match(result.stdout, /web/)
@@ -314,6 +333,7 @@ describe('request mapping', () => {
       'services',
       'stop',
     ])
+
     assert.equal(result.code, 0, result.stderr)
     assert.deepEqual(
       server.requests.map((r) => `${r.method} ${r.path}`),
@@ -325,8 +345,10 @@ describe('request mapping', () => {
   test('--dry-run prints the request, redacts the token and sends nothing', async () => {
     server.requests.length = 0
     const result = await sly(['--dry-run', 'projects', 'create', 'ghost'])
+
     assert.equal(result.code, 0)
     const shown = JSON.parse(result.stdout)
+
     assert.equal(shown.method, 'POST')
     assert.equal(shown.headers.authorization, 'Bearer [redacted]')
     assert.deepEqual(shown.body, {
@@ -336,12 +358,14 @@ describe('request mapping', () => {
     const projects = await h.call('GET', '/v1/projects?name=ghost', {
       token: h.admin.token,
     })
+
     assert.deepEqual(projects.body.items, [])
   })
 
   test('version prints JSON and never contacts Dispatch', async () => {
     server.requests.length = 0
     const result = await sly(['--json', 'version'])
+
     assert.equal(result.code, 0)
     assert.ok(JSON.parse(result.stdout).version)
     assert.equal(server.requests.length, 0)
@@ -351,6 +375,7 @@ describe('request mapping', () => {
 describe('exit codes', () => {
   test('an API error prints the envelope code on the last stderr line and exits 1', async () => {
     const result = await sly(['projects', 'create', 'alpha'])
+
     assert.equal(result.code, 1)
     assert.equal(lastLine(result.stderr), 'NAME_TAKEN')
     assert.match(result.stderr, /^error: /m)
@@ -360,18 +385,29 @@ describe('exit codes', () => {
 
   test('--json prints the envelope on stdout and still exits 1', async () => {
     const result = await sly(['--json', 'projects', 'create', 'alpha'])
+
     assert.equal(result.code, 1)
     assert.equal(JSON.parse(result.stdout).error.code, 'NAME_TAKEN')
   })
 
   test('an unknown command is a usage error, exit 2', async () => {
     const result = await sly(['frobnicate'])
+
     assert.equal(result.code, 2)
+    assert.equal(lastLine(result.stderr), 'USAGE')
+  })
+
+  test('--json prints a usage error as an envelope on stdout and still exits 2', async () => {
+    const result = await sly(['--json', 'variables', 'set', 'A=b', '--scope', 'nope'])
+
+    assert.equal(result.code, 2)
+    assert.equal(JSON.parse(result.stdout).error.code, 'VALIDATION_FAILED')
     assert.equal(lastLine(result.stderr), 'USAGE')
   })
 
   test('a missing required value without a TTY is a usage error, exit 2', async () => {
     const result = await sly(['services', 'list'])
+
     assert.equal(result.code, 2)
     assert.equal(lastLine(result.stderr), 'INPUT_REQUIRED')
   })
@@ -393,6 +429,7 @@ describe('exit codes', () => {
       'port=80',
       '--json',
     ])
+
     assert.equal(result.code, 3, result.stderr)
     assert.equal(JSON.parse(result.stdout).status, 'staged')
     assert.match(result.stderr, /staged: nothing was applied/)
@@ -402,6 +439,7 @@ describe('exit codes', () => {
     const result = await sly(['projects', 'list'], {
       STATIONLY_TOKEN: 'sly_wrongwrongwrong',
     })
+
     assert.equal(result.code, 5)
     assert.equal(lastLine(result.stderr), 'UNAUTHENTICATED')
   })
@@ -411,18 +449,22 @@ describe('exit codes', () => {
       STATIONLY_API_URL: undefined,
       STATIONLY_TOKEN: undefined,
     })
+
     assert.equal(result.code, 5)
     assert.equal(lastLine(result.stderr), 'UNAUTHENTICATED')
   })
 
   test('an unreachable Dispatch is CONNECTION_FAILED, exit 5', async () => {
     const closed = createServer()
+
     await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve))
     const port = (closed.address() as AddressInfo).port
+
     await new Promise<void>((resolve) => closed.close(() => resolve()))
     const result = await sly(['projects', 'list'], {
       STATIONLY_API_URL: `http://127.0.0.1:${port}`,
     })
+
     assert.equal(result.code, 5)
     assert.equal(lastLine(result.stderr), 'CONNECTION_FAILED')
     assert.match(result.stderr, /could not be reached/)
@@ -430,10 +472,12 @@ describe('exit codes', () => {
 
   test('a proxy 502 without an envelope is CONNECTION_FAILED, exit 5', async () => {
     const proxy = createServer((_, res) => res.writeHead(502).end('bad gateway'))
+
     await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
     const result = await sly(['projects', 'list'], {
       STATIONLY_API_URL: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
     })
+
     proxy.closeAllConnections()
     await new Promise<void>((resolve) => proxy.close(() => resolve()))
     assert.equal(result.code, 5)
@@ -448,10 +492,12 @@ describe('exit codes', () => {
         })
         .end('{}'),
     )
+
     await new Promise<void>((resolve) => broken.listen(0, '127.0.0.1', resolve))
     const result = await sly(['projects', 'list'], {
       STATIONLY_API_URL: `http://127.0.0.1:${(broken.address() as AddressInfo).port}`,
     })
+
     broken.closeAllConnections()
     await new Promise<void>((resolve) => broken.close(() => resolve()))
     assert.equal(result.code, 1)
@@ -466,6 +512,7 @@ describe('generated commands', () => {
     const project = await h.call('GET', '/v1/projects/alpha', {
       token: h.admin.token,
     })
+
     service = await createService(h, project.body.default_environment_id, {
       name: 'store',
       kind: 'worker',
@@ -487,8 +534,10 @@ describe('generated commands', () => {
       '/data',
       '--json',
     ])
+
     assert.equal(result.code, 0, result.stderr)
     const sent = server.requests.filter((r) => r.method === 'POST')
+
     assert.equal(sent.length, 1)
     assert.equal(sent[0]!.path, `/v1/services/${service.id}/volumes`)
     assert.deepEqual(JSON.parse(sent[0]!.body), {
@@ -496,10 +545,12 @@ describe('generated commands', () => {
     })
     assert.match(sent[0]!.headers.get('idempotency-key') ?? '', /.+/)
     const volume = JSON.parse(result.stdout)
+
     assert.equal(volume.mount_path, '/data')
     const rest = await h.call('GET', `/v1/services/${service.id}/volumes`, {
       token: h.admin.token,
     })
+
     assert.ok(rest.body.items.some((v: { id: string }) => v.id === volume.id))
   })
 
@@ -513,6 +564,7 @@ describe('generated commands', () => {
       'volumes',
       'list-service',
     ])
+
     assert.equal(result.code, 0, result.stderr)
     assert.ok(
       server.requests.some((r) =>
@@ -522,6 +574,7 @@ describe('generated commands', () => {
       ),
     )
     const [header, row] = result.stdout.split('\n')
+
     assert.match(
       header!,
       /^ID\s+OWNER\s+SERVICE ID\s+STATION ID\s+MOUNT PATH\s+SIZE BYTES\s+STATUS$/,
@@ -534,6 +587,7 @@ describe('generated commands', () => {
     const listed = await sly(['--service', service.id, '--json', 'volumes', 'list-service'])
     const volume = JSON.parse(listed.stdout).items[0]
     const human = await sly(['volumes', 'get', volume.id])
+
     assert.equal(human.code, 0, human.stderr)
     assert.match(human.stdout, /^id\s+vol_/m)
     assert.match(human.stdout, /^mount_path\s+\/data$/m)
@@ -541,8 +595,10 @@ describe('generated commands', () => {
       .trimEnd()
       .split('\n')
       .map((line) => /^\S+\s+/.exec(line)![0].length)
+
     assert.equal(new Set(starts).size, 1, human.stdout)
     const json = await sly(['--json', 'volumes', 'get', volume.id])
+
     assert.deepEqual(
       JSON.parse(json.stdout),
       (
@@ -556,8 +612,10 @@ describe('generated commands', () => {
   test('--dry-run prints the request with positional arguments and sends nothing', async () => {
     server.requests.length = 0
     const result = await sly(['--dry-run', 'volumes', 'remove', 'vol_01JC7ZABCDEFGHJKMNPQRSTVWX'])
+
     assert.equal(result.code, 0, result.stderr)
     const shown = JSON.parse(result.stdout)
+
     assert.equal(shown.method, 'DELETE')
     assert.match(shown.url, /\/v1\/volumes\/vol_01JC7ZABCDEFGHJKMNPQRSTVWX$/)
     assert.equal(shown.headers.authorization, 'Bearer [redacted]')
@@ -566,12 +624,14 @@ describe('generated commands', () => {
 
   test('an API error goes through the shared handler and exits 1', async () => {
     const result = await sly(['volumes', 'get', 'vol_01JC7ZABCDEFGHJKMNPQRSTVWX'])
+
     assert.equal(result.code, 1)
     assert.equal(lastLine(result.stderr), 'NOT_FOUND')
   })
 
   test('a flag typed integer refuses text as a usage error, exit 2', async () => {
     const result = await sly(['ports', 'add', '--service', service.id, '--port', 'eighty'])
+
     assert.equal(result.code, 2)
     assert.match(result.stderr, /eighty is not a number/)
   })
@@ -580,7 +640,11 @@ describe('generated commands', () => {
 describe('idempotency', () => {
   const requestOf = async (req: IncomingMessage) => {
     const chunks: Buffer[] = []
-    for await (const chunk of req) chunks.push(chunk as Buffer)
+
+    for await (const chunk of req) {
+      chunks.push(chunk as Buffer)
+    }
+
     return new Request(`${server.url}${req.url}`, {
       method: req.method,
       headers: req.headers as Record<string, string>,
@@ -593,21 +657,27 @@ describe('idempotency', () => {
     let dropped = 0
     const relay = async (req: IncomingMessage, res: ServerResponse) => {
       const request = await requestOf(req)
+
       seen.push({
         method: request.method,
         key: request.headers.get('idempotency-key'),
       })
       const response = await h.fetch(request)
+
       if (request.method === 'POST' && dropped < dropFirstResponses) {
         dropped++
         req.socket.destroy()
+
         return
       }
+
       res.writeHead(response.status, Object.fromEntries(response.headers))
       res.end(Buffer.from(await response.arrayBuffer()))
     }
     const proxy = createServer((req, res) => void relay(req, res))
+
     await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
+
     return {
       seen,
       url: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
@@ -630,6 +700,7 @@ describe('idempotency', () => {
     assert.equal((await sly(['--json', 'projects', 'create', 'keyed'])).code, 0)
     assert.equal((await sly(['--json', 'projects', 'list'])).code, 0)
     const post = server.requests.find((r) => r.method === 'POST' && r.path === '/v1/projects')!
+
     assert.ok(post.headers.get('idempotency-key'))
     assert.equal(
       server.requests
@@ -646,19 +717,23 @@ describe('idempotency', () => {
     const keys = server.requests
       .filter((r) => r.method === 'POST')
       .map((r) => r.headers.get('idempotency-key'))
+
     assert.equal(keys.length, 2)
     assert.notEqual(keys[0], keys[1])
   })
 
   test('a mutation retried after a lost response reuses its key and is applied once', async () => {
     const proxy = await lossyProxy(1)
+
     try {
       const result = await sly(['--json', 'projects', 'create', 'retried'], {
         STATIONLY_API_URL: proxy.url,
       })
+
       assert.equal(result.code, 0, result.stderr)
       assert.equal(JSON.parse(result.stdout).name, 'retried')
       const posts = proxy.seen.filter((r) => r.method === 'POST')
+
       assert.equal(posts.length, 2)
       assert.ok(posts[0]!.key)
       assert.equal(posts[0]!.key, posts[1]!.key)
@@ -670,12 +745,15 @@ describe('idempotency', () => {
 
   test('repeated losses keep one key and still apply once', async () => {
     const proxy = await lossyProxy(3)
+
     try {
       const result = await sly(['--json', 'projects', 'create', 'retried-thrice'], {
         STATIONLY_API_URL: proxy.url,
       })
+
       assert.equal(result.code, 0, result.stderr)
       const posts = proxy.seen.filter((r) => r.method === 'POST')
+
       assert.equal(posts.length, 4)
       assert.equal(new Set(posts.map((r) => r.key)).size, 1)
       assert.equal((await named('retried-thrice')).length, 1)
@@ -702,8 +780,10 @@ describe('time flags', () => {
       '--tail',
       '50',
     ])
+
     assert.equal(result.code, 0, result.stdout + result.stderr)
     const sent = server.requests.find((r) => r.path.startsWith('/v1/logs'))!
+
     assert.equal(new URL(sent.path, 'http://x').searchParams.get('since'), '10m')
     assert.equal(JSON.parse(result.stdout).untrusted.lines.at(-1).text, 'listening on :3000')
   })
@@ -722,6 +802,7 @@ describe('time flags', () => {
         '--since',
         since,
       ])
+
       assert.equal(result.code, 0, result.stdout + result.stderr)
     }
   })
@@ -731,6 +812,7 @@ describe('--json stdout', () => {
   const runStub = async () => {
     const stub = createServer((req, res) => {
       const path = req.url ?? ''
+
       if (req.method === 'POST' && path.startsWith('/v1/services/svc_STUB/runs')) {
         res.writeHead(201, {
           'content-type': 'application/json',
@@ -781,7 +863,9 @@ describe('--json stdout', () => {
         )
       }
     })
+
     await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve))
+
     return {
       url: `http://127.0.0.1:${(stub.address() as AddressInfo).port}`,
       close: async () => {
@@ -793,10 +877,12 @@ describe('--json stdout', () => {
 
   test('sly --json run writes one JSON document to stdout and the log lines to stderr', async () => {
     const stub = await runStub()
+
     try {
       const result = await sly(['--json', '--service', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
         STATIONLY_API_URL: stub.url,
       })
+
       assert.equal(result.code, 0, result.stderr)
       assert.deepEqual(JSON.parse(result.stdout), {
         id: 'run_STUB',
@@ -811,10 +897,12 @@ describe('--json stdout', () => {
 
   test('sly run without --json still prints the log lines to stdout', async () => {
     const stub = await runStub()
+
     try {
       const result = await sly(['--service', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
         STATIONLY_API_URL: stub.url,
       })
+
       assert.equal(result.code, 0, result.stderr)
       assert.ok(result.stdout.includes('hi'))
     } finally {
@@ -823,11 +911,13 @@ describe('--json stdout', () => {
   })
   test('sly run prints the output of a run that finished before the stream opened, every time', async () => {
     const stub = await runStub()
+
     try {
       for (let attempt = 1; attempt <= 5; attempt++) {
         const result = await sly(['--service', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
           STATIONLY_API_URL: stub.url,
         })
+
         assert.equal(result.code, 0, `attempt ${attempt}: ${result.stderr}`)
         assert.ok(result.stdout.includes(' hi\n'), `attempt ${attempt}: ${result.stdout}`)
         assert.ok(result.stderr.includes('log stream ended: run_finished'), `attempt ${attempt}`)
@@ -874,10 +964,12 @@ describe('waiting and streaming', () => {
     let polls = 0
     const server = createServer((req, res) => {
       const path = req.url ?? ''
+
       seen.push({
         path,
         accept: req.headers.accept ?? '',
       })
+
       if (path.startsWith('/v1/runs/run_WAIT')) {
         polls++
         res.writeHead(200, {
@@ -943,12 +1035,20 @@ describe('waiting and streaming', () => {
         })
         res.write(': connected\n\n')
         res.write(tick('2026-11-10T00:00:00Z'))
-        if (!req.headers.accept?.includes('text/event-stream')) return
+
+        if (!req.headers.accept?.includes('text/event-stream')) {
+          return
+        }
+
         res.write(tick('2026-11-10T00:00:05Z'))
         res.end('event: end\ndata: {"reason":"replaced by a newer live stream"}\n\n')
-      } else res.writeHead(404).end()
+      } else {
+        res.writeHead(404).end()
+      }
     })
+
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+
     return {
       env: {
         STATIONLY_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
@@ -972,13 +1072,16 @@ describe('waiting and streaming', () => {
 
   test('--wait repeats a polled operation through the MCP poll loop until done', async () => {
     const dispatch = await stub()
+
     try {
       const result = await sly(
-        ['runs', 'wait-for', 'run_WAIT', '--wait', '--timeout', '1m'],
+        ['runs', 'get', 'run_WAIT', '--wait', '--timeout', '1m'],
         dispatch.env,
       )
+
       assert.equal(result.code, 0, result.stderr)
       const polls = dispatch.seen.filter((r) => r.path.startsWith('/v1/runs/run_WAIT'))
+
       assert.equal(polls.length, 3)
       assert.ok(
         polls.every((r) => /[?&]wait_s=\d+/.test(r.path)),
@@ -995,15 +1098,18 @@ describe('waiting and streaming', () => {
 
   test('without --wait a polled operation is one call, and its wait parameter is no flag', async () => {
     const dispatch = await stub()
+
     try {
-      const result = await sly(['--json', 'runs', 'wait-for', 'run_WAIT'], dispatch.env)
+      const result = await sly(['--json', 'runs', 'get', 'run_WAIT'], dispatch.env)
+
       assert.equal(result.code, 0, result.stderr)
       assert.equal(JSON.parse(result.stdout).done, false)
       assert.deepEqual(
         dispatch.seen.map((r) => r.path),
         ['/v1/runs/run_WAIT'],
       )
-      const refused = await sly(['runs', 'wait-for', 'run_WAIT', '--wait-s', '5'], dispatch.env)
+      const refused = await sly(['runs', 'get', 'run_WAIT', '--wait-s', '5'], dispatch.env)
+
       assert.equal(refused.code, 2)
     } finally {
       await dispatch.close()
@@ -1012,8 +1118,10 @@ describe('waiting and streaming', () => {
 
   test('a stream prints its first event with its registered renderer and exits without --follow', async () => {
     const dispatch = await stub()
+
     try {
       const result = await sly(live, dispatch.env)
+
       assert.equal(result.code, 0, result.stderr)
       assert.match(result.stdout, /^2026-11-10T00:00:00Z web deployment - conntrack entries 3$/m)
       assert.doesNotMatch(result.stdout, /00:00:05/)
@@ -1025,14 +1133,17 @@ describe('waiting and streaming', () => {
 
   test('-f follows a stream through the shared reader until it ends; --json prints each event', async () => {
     const dispatch = await stub()
+
     try {
       const human = await sly([...live, '-f'], dispatch.env)
+
       assert.equal(human.code, 0, human.stderr)
       assert.match(human.stdout, /00:00:00Z web deployment/)
       assert.match(human.stdout, /00:00:05Z web deployment/)
       assert.match(human.stderr, /stream ended: replaced by a newer live stream/)
       assert.match(dispatch.seen[0]!.accept, /text\/event-stream/)
       const json = await sly(['--json', ...live, '--follow'], dispatch.env)
+
       assert.equal(json.code, 0, json.stderr)
       assert.deepEqual(
         json.stdout
@@ -1048,12 +1159,15 @@ describe('waiting and streaming', () => {
 
   test('a stream renders its events with the renderer event form and skips the ones it does not show', async () => {
     const dispatch = await stub()
+
     try {
       const human = await sly(['--service', 'svc_LIVE', 'logs', '-f'], dispatch.env)
+
       assert.equal(human.code, 0, human.stderr)
       assert.equal(human.stdout, '2026-11-10T00:00:00Z   ready\n')
       assert.match(dispatch.seen.at(-1)!.path, /^\/v1\/logs\?service=svc_LIVE&follow=true$/)
       const json = await sly(['--json', '--service', 'svc_LIVE', 'logs', '-f'], dispatch.env)
+
       assert.equal(JSON.parse(json.stdout).text, 'ready')
     } finally {
       await dispatch.close()
@@ -1062,15 +1176,19 @@ describe('waiting and streaming', () => {
 
   test('a renderer sets the exit code: doctor fail exits 1, a failed deployment after --wait exits 4', async () => {
     const dispatch = await stub()
+
     try {
       const doctor = await sly(['platform', 'doctor'], dispatch.env)
+
       assert.equal(doctor.code, 1, doctor.stderr)
       assert.match(doctor.stdout, /^doctor fail at /)
       const json = await sly(['--json', 'platform', 'doctor'], dispatch.env)
+
       assert.equal(json.code, 1)
       const deployed = await sly(['--service', 'svc_LIVE', 'deploy', '--wait'], dispatch.env)
+
       assert.equal(deployed.code, 4, deployed.stderr)
-      assert.match(deployed.stdout, /diagnosis: sly deployments get-diagnosis dep_LIVE/)
+      assert.match(deployed.stdout, /diagnosis: sly deployments diagnosis dep_LIVE/)
       assert.match(deployed.stderr, /dep_LIVE: done/)
     } finally {
       await dispatch.close()

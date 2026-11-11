@@ -3,10 +3,13 @@ import { useSuspenseQuery, type QueryClient } from '@tanstack/react-query'
 import type { Crumb } from '@/components/crumbs'
 
 import { environmentQuery, load, projectQuery } from './queries'
+import { placeOf } from './title'
 
 export const loadTrail = async (client: QueryClient, environmentId: string) => {
   const environment = await load(client, environmentQuery(environmentId))
-  await load(client, projectQuery(environment.project_id))
+  const project = await load(client, projectQuery(environment.project_id))
+
+  return placeOf(project.name, environment.name)
 }
 
 export function useEnvironmentTrail(environmentId: string) {
@@ -33,6 +36,7 @@ export function useEnvironmentTrail(environmentId: string) {
       },
     },
   ]
+
   return {
     environment,
     project,

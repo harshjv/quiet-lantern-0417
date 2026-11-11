@@ -49,9 +49,13 @@ const sealProblem = (content: GenerationContent) => {
       issued_at: new Date(),
       resolution: null,
     })
+
     return null
   } catch (error) {
-    if (!(error instanceof GenerationError)) throw error
+    if (!(error instanceof GenerationError)) {
+      throw error
+    }
+
     return {
       message: error.message,
       path: typeof error.details.path === 'string' ? error.details.path : '',
@@ -63,17 +67,26 @@ const maxExclusionPasses = 64
 
 export const buildDesired = (db: Db, stationId: string): Built => {
   const skip: Skip = new Map()
+
   for (let pass = 0; pass < maxExclusionPasses; pass++) {
     const built = buildContent(db, stationId, skip)
     const problem = sealProblem(built.content)
-    if (!problem) return built
+
+    if (!problem) {
+      return built
+    }
+
     const at = objectAt(problem.path)
-    if (!at || skip.has(keyOf(at.object, at.id)))
+
+    if (!at || skip.has(keyOf(at.object, at.id))) {
       throw new GenerationError(problem.message, {
         path: problem.path,
       })
+    }
+
     skip.set(keyOf(at.object, at.id), problem.message)
   }
+
   throw new GenerationError(
     `more than ${maxExclusionPasses} objects of station ${stationId} fail the generation schema`,
   )
@@ -93,10 +106,18 @@ const imageFix = (serviceId: string) =>
 
 const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
   const failed: string[] = []
+
   for (const e of excluded) {
-    if (e.object !== 'deployment' || e.dispatched) continue
+    if (e.object !== 'deployment' || e.dispatched) {
+      continue
+    }
+
     const dep = db.select().from(deployment).where(eq(deployment.id, e.id)).get()
-    if (!dep || dep.finished_at || dep.status !== 'queued') continue
+
+    if (!dep || dep.finished_at || dep.status !== 'queued') {
+      continue
+    }
+
     const svc = db
       .select({
         name: service.name,
@@ -127,6 +148,7 @@ const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
             ),
       ],
     }
+
     db.transaction((tx) => {
       tx.update(deployment)
         .set({
@@ -145,6 +167,7 @@ const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
     })
     failed.push(dep.id)
   }
+
   return failed
 }
 
@@ -153,10 +176,18 @@ const reported = new Map<string, Map<string, string>>()
 const reportExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
   const seen = reported.get(stationId) ?? new Map<string, string>()
   const now = new Map<string, string>()
+
   for (const e of excluded) {
-    if (e.object === 'deployment' && !e.dispatched) continue
+    if (e.object === 'deployment' && !e.dispatched) {
+      continue
+    }
+
     now.set(e.key, e.explanation)
-    if (seen.get(e.key) === e.explanation) continue
+
+    if (seen.get(e.key) === e.explanation) {
+      continue
+    }
+
     emitEvent(
       db,
       'doctor.finding',
@@ -181,6 +212,7 @@ const reportExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
       },
     )
   }
+
   reported.set(stationId, now)
 }
 
@@ -191,15 +223,19 @@ export const ensureDesired = (
 ): { row: GenerationRow; created: boolean; excluded: Exclusion[]; failed: string[] } => {
   const { content, excluded } = buildDesired(db, stationId)
   const failed = failExcluded(db, stationId, excluded)
+
   reportExcluded(db, stationId, excluded)
   const latest = latestGeneration(db, stationId)
-  if (latest && contentDigest(contentOf(latest.document)) === contentDigest(content))
+
+  if (latest && contentDigest(contentOf(latest.document)) === contentDigest(content)) {
     return {
       row: latest,
       created: false,
       excluded,
       failed,
     }
+  }
+
   return db.transaction(() => {
     const st = db
       .select({
@@ -225,6 +261,7 @@ export const ensureDesired = (
       })
       .returning()
       .get()
+
     return {
       row,
       created: true,
@@ -236,10 +273,13 @@ export const ensureDesired = (
 
 export const recordAck = (db: Db, stationId: string, ack: MessageBody<'generation.ack'>) => {
   const row = generationNumbered(db, stationId, ack.number)
-  if (!row || row.hash !== ack.hash)
+
+  if (!row || row.hash !== ack.hash) {
     return {
       known: false as const,
     }
+  }
+
   db.update(station_generation)
     .set({
       ack: ack.status,
@@ -247,6 +287,7 @@ export const recordAck = (db: Db, stationId: string, ack: MessageBody<'generatio
     })
     .where(eq(station_generation.id, row.id))
     .run()
+
   if (ack.status !== 'rejected') {
     const st = db
       .select({
@@ -255,6 +296,7 @@ export const recordAck = (db: Db, stationId: string, ack: MessageBody<'generatio
       .from(station)
       .where(eq(station.id, stationId))
       .get()!
+
     if (ack.number >= st.generation) {
       db.update(station)
         .set({
@@ -265,6 +307,7 @@ export const recordAck = (db: Db, stationId: string, ack: MessageBody<'generatio
         .run()
     }
   }
+
   return {
     known: true as const,
     row,
@@ -279,11 +322,14 @@ export const reconnectRule = (
   stationId: string,
   applied: MessageBody<'hello'>['applied'],
 ): Reconnect => {
-  if (applied.number === 0)
+  if (applied.number === 0) {
     return {
       kind: 'fresh',
     }
+  }
+
   const row = generationNumbered(db, stationId, applied.number)
+
   if (row && row.hash === applied.hash) {
     if (applied.status && applied.status !== 'rejected' && row.ack !== applied.status) {
       recordAck(db, stationId, {
@@ -294,11 +340,13 @@ export const reconnectRule = (
         duration_ms: 0,
       })
     }
+
     return {
       kind: 'known',
       row,
     }
   }
+
   const latest = latestGeneration(db, stationId)
   const open = db
     .select()
@@ -311,11 +359,14 @@ export const reconnectRule = (
       ),
     )
     .get()
-  if (open)
+
+  if (open) {
     return {
       kind: 'drift',
       driftId: open.id,
     }
+  }
+
   const desired = latest
     ? {
         number: latest.generation,
@@ -334,6 +385,7 @@ export const reconnectRule = (
       id: drift.id,
     })
     .get()
+
   emitEvent(
     db,
     'station.drift',
@@ -351,6 +403,7 @@ export const reconnectRule = (
         : 'the station reports a generation number Dispatch did not issue',
     },
   )
+
   return {
     kind: 'drift',
     driftId: inserted.id,
