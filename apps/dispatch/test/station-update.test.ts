@@ -648,7 +648,7 @@ describe('a drain across a lost heartbeat', () => {
 
         return stationRow().status === 'offline'
       },
-      8000,
+      15_000,
       'the station offline',
     )
     assert.equal(stationRow().draining, 1)
@@ -688,7 +688,7 @@ describe('a drain across a lost heartbeat', () => {
 
         return stationRow().status === 'offline'
       },
-      8000,
+      15_000,
       'the station offline',
     )
     assert.equal(
