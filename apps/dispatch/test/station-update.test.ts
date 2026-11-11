@@ -642,8 +642,15 @@ describe('a drain across a lost heartbeat', () => {
 
     assert.equal(drained.status, 200, drained.text)
     await wanderer.close()
-    backdate()
-    await wanderer.waitFor(() => stationRow().status === 'offline', 8000, 'the station offline')
+    await wanderer.waitFor(
+      () => {
+        backdate()
+
+        return stationRow().status === 'offline'
+      },
+      8000,
+      'the station offline',
+    )
     assert.equal(stationRow().draining, 1)
     const whileOffline = (
       await h.call('GET', `/v1/stations/${name}`, {
@@ -675,8 +682,15 @@ describe('a drain across a lost heartbeat', () => {
 
   test('draining can be set and cleared while the station is offline', async () => {
     await wanderer.close()
-    backdate()
-    await wanderer.waitFor(() => stationRow().status === 'offline', 8000, 'the station offline')
+    await wanderer.waitFor(
+      () => {
+        backdate()
+
+        return stationRow().status === 'offline'
+      },
+      8000,
+      'the station offline',
+    )
     assert.equal(
       (
         await patch(
