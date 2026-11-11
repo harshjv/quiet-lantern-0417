@@ -614,7 +614,10 @@ export const sandboxRoutes = (kit: Kit) => {
           ...(wanted && minted
             ? workspaceVariableSets(
                 db,
-                ctx.project.id,
+                {
+                  project: ctx.project.id,
+                  environment: ctx.environment.id,
+                },
                 wanted.agent,
                 minted.key,
                 (body.variables ?? []).map((v) => v.key),
@@ -712,10 +715,7 @@ export const sandboxRoutes = (kit: Kit) => {
                   sandbox_id: id,
                   deployment_id: null,
                   kind: 'exec',
-                  command: setupCommand(workspace, {
-                    project: ctx.project.id,
-                    environment: ctx.environment.id,
-                  }),
+                  command: setupCommand(workspace),
                   status: 'queued',
                   log_ref: `logs/sandboxes/${id}/${workspace.setup_run_id}`,
                   tty: false,

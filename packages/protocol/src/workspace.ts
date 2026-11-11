@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox'
 import { tokenLevelValues } from './domain.ts'
 import { networkLayout } from './network.ts'
 import { StringEnum } from './primitives.ts'
+import { releaseConfig } from './release-config.ts'
 
 export const workspaceAgentValues = ['claude', 'codex'] as const
 
@@ -57,6 +58,17 @@ export const workspaceAgents: Record<WorkspaceAgent, AgentPreset> = {
 
 export const workspaceSharedKeys = ['GH_TOKEN']
 
+export const workspaceToolchainHosts = [
+  'mise.jdx.dev',
+  'mise-versions.jdx.dev',
+  'nodejs.org',
+  'dl.google.com',
+  'go.dev',
+  'storage.googleapis.com',
+  new URL(releaseConfig.tuf_mirror).hostname,
+  'rekor.sigstore.dev',
+]
+
 export const workspaceSharedDomains: Entry[] = [
   {
     domain: 'github.com',
@@ -77,6 +89,8 @@ export const workspaceSharedDomains: Entry[] = [
     'registry-1.docker.io',
     'auth.docker.io',
     'production.cloudflare.docker.com',
+    'production.cloudfront.docker.com',
+    ...workspaceToolchainHosts,
   ),
 ]
 
@@ -94,6 +108,8 @@ export const workspacePrefix = `${workspaceUser.home}/.local`
 export const workspaceEnv = {
   token: 'STATIONLY_TOKEN',
   apiUrl: 'STATIONLY_API_URL',
+  project: 'STATIONLY_PROJECT',
+  environment: 'STATIONLY_ENVIRONMENT',
 } as const
 
 export const workspaceEgress = (agent: WorkspaceAgent) => ({

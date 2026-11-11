@@ -239,6 +239,13 @@ describe('lifecycle commands', () => {
 
     assert.equal(json(byId).id, id)
     assert.ok(sent('GET', `/v1/sandboxes/${id}`))
+    const positional = await sly(['--json', 'sandboxes', 'get', 'dev', '--fields', '*'])
+
+    assertOk(positional)
+    assert.equal(json(positional).id, id)
+    const positionalId = await sly(['--json', 'sandboxes', 'get', id])
+
+    assert.equal(json(positionalId).id, id)
     const human = await sly(['sandboxes', 'list'])
 
     assertOk(human)
@@ -647,7 +654,11 @@ describe('lifecycle commands', () => {
     assertOk(idle)
     assert.equal(bodyOf('POST', '/sandboxes').start, false)
     assert.equal(json(idle).status, 'stopped')
-    const deleted = await inSandbox('idle')(['--json', 'sandboxes', 'delete'])
+    const updated = await sly(['--json', 'sandboxes', 'update', 'idle', '--ttl-s', '30m'])
+
+    assertOk(updated)
+    assert.equal(json(updated).name, 'idle')
+    const deleted = await sly(['--json', 'sandboxes', 'delete', 'idle'])
 
     assertOk(deleted)
     assert.deepEqual(json(deleted), {

@@ -54,13 +54,13 @@ sly environments
   Environments of a project
 sly environments create <name>
   Create an environment, empty or as a clone of source_environment_id
-sly environments delete
+sly environments delete [environment]
   Delete an environment; staged when protected
-sly environments describe
+sly environments describe [environment]
   Get an environment
 sly environments list
   List the environments of a project
-sly environments update
+sly environments update [environment]
   Update protected or ttl_seconds
 sly events
   Events visible to the caller; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
@@ -152,13 +152,13 @@ sly projects
   Projects
 sly projects create <name>
   Create a project with its default environment
-sly projects delete
+sly projects delete [project]
   Delete an empty project
-sly projects get
+sly projects get [project]
   Get a project by id or name
 sly projects list
   List projects visible to the caller
-sly projects update
+sly projects update [project]
   Update a project
 sly push [path]
   Upload a local directory (honoring .dockerignore) as the service source and deploy it
@@ -182,7 +182,7 @@ sly sandboxes
   Persistent Linux machines for agents, isolated with gVisor
 sly sandboxes create [name]
   Create a sandbox, or fork one from a snapshot or a live sandbox disk with from
-sly sandboxes delete
+sly sandboxes delete [sandbox]
   Delete a sandbox and its disk; its snapshots stay
 sly sandboxes delete-snapshot <id>
   Delete a sandbox snapshot
@@ -190,7 +190,7 @@ sly sandboxes exec <command...>
   Run a command in the running sandbox --sandbox and stream its output; put the command after --
 sly sandboxes forward <port>
   Listen on 127.0.0.1 and forward to a port of the running sandbox --sandbox
-sly sandboxes get
+sly sandboxes get [sandbox]
   Get a sandbox
 sly sandboxes get-connections
   Live connections and refused attempts of a sandbox; one sample
@@ -226,15 +226,15 @@ sly sandboxes start
   Start a stopped sandbox; ttl_s replaces the stored one
 sly sandboxes stop
   Stop a sandbox and keep its disk
-sly sandboxes update
+sly sandboxes update [sandbox]
   Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start
 sly services
   Services of an environment
 sly services create <name>
   Create a service
-sly services delete
+sly services delete [service]
   Delete a service; volumes are retained
-sly services describe
+sly services describe [service]
   Get a service
 sly services list
   List the services of an environment
@@ -246,7 +246,7 @@ sly services start
   Start: desired_state = running
 sly services stop
   Stop: desired_state = stopped
-sly services update
+sly services update [service]
   Update a service; deploys when deploy = true and the configuration changed
 sly settings
   Instance settings
@@ -304,12 +304,12 @@ sly variables get-resolved
   The resolved variables of the next deployment; sealed values never appear
 sly variables grant <id>
   Grant a global variable to a project
+sly variables list
+  List project variables
 sly variables list-global
   List global variables
 sly variables list-grants <id>
   List the grants of a global variable
-sly variables list-project
-  List project variables
 sly variables list-service
   List the variables of a service; values are never listed
 sly variables list-versions <id>

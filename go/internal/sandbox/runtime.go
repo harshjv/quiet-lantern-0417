@@ -37,6 +37,7 @@ type ExecSpec struct {
 	Cwd       string
 	UID       int
 	GID       int
+	Groups    []int
 	TTY       bool
 	Rows      int
 	Cols      int

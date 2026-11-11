@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +22,7 @@ func TestExecPipes(t *testing.T) {
 	bundle := t.TempDir()
 	e, err := rt.Exec(context.Background(), sandbox.ExecSpec{
 		ID: "sbx_1", BundleDir: bundle, Args: []string{"/bin/sh", "-c", "x"},
-		Env: []string{"A=1", "B=2", "A=3"}, Cwd: "/tmp", UID: 1000, GID: 1000,
+		Env: []string{"A=1", "B=2", "A=3"}, Cwd: "/tmp", UID: 1000, GID: 1000, Groups: []int{998},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +70,7 @@ func TestExecPipes(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[0]), &p); err != nil {
 		t.Fatal(err)
 	}
-	if p.Terminal || p.Cwd != "/tmp" || p.User != (ociUser{UID: 1000, GID: 1000}) || !p.NoNewPrivileges {
+	if p.Terminal || p.Cwd != "/tmp" || p.User.UID != 1000 || p.User.GID != 1000 || !slices.Equal(p.User.AdditionalGids, []int{998}) || !p.NoNewPrivileges {
 		t.Errorf("process %+v", p)
 	}
 	if strings.Join(p.Env, ",") != "A=3,B=2" || strings.Join(p.Args, " ") != "/bin/sh -c x" || len(p.Capabilities.Bounding) != 16 || len(p.Rlimits) != 1 {

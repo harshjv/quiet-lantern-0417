@@ -39,7 +39,7 @@ func (rt Runtime) Exec(ctx context.Context, s sandbox.ExecSpec) (*Exec, error) {
 	if s.ID == "" || s.BundleDir == "" || len(s.Args) == 0 {
 		return nil, errors.New("runsc: exec needs an ID, a bundle directory and args")
 	}
-	body, err := json.Marshal(process(s.Args, mergeEnv(s.Env), s.Cwd, s.UID, s.GID, s.TTY))
+	body, err := json.Marshal(process(s.Args, mergeEnv(s.Env), s.Cwd, s.UID, s.GID, s.Groups, s.TTY))
 	if err != nil {
 		return nil, err
 	}

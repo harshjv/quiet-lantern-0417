@@ -45,13 +45,13 @@ func TestLookupUser(t *testing.T) {
 		{"4242:staff", 4242, 50},
 	}
 	for _, c := range cases {
-		uid, gid, err := LookupUser(d.root, c.user)
+		uid, gid, _, err := LookupUser(d.root, c.user)
 		if err != nil || uid != c.uid || gid != c.gid {
 			t.Errorf("LookupUser(%q) = %d, %d, %v; want %d, %d", c.user, uid, gid, err, c.uid, c.gid)
 		}
 	}
 	for _, user := range []string{"nobody", "app:nogroup"} {
-		if uid, gid, err := LookupUser(d.root, user); err == nil {
+		if uid, gid, _, err := LookupUser(d.root, user); err == nil {
 			t.Errorf("LookupUser(%q) = %d, %d, want an error", user, uid, gid)
 		}
 	}
@@ -59,11 +59,11 @@ func TestLookupUser(t *testing.T) {
 
 func TestLookupUserNumericWithoutPasswd(t *testing.T) {
 	d := newDirs(t)
-	uid, gid, err := LookupUser(d.root, "1234")
+	uid, gid, _, err := LookupUser(d.root, "1234")
 	if err != nil || uid != 1234 || gid != 0 {
 		t.Errorf("LookupUser = %d, %d, %v", uid, gid, err)
 	}
-	if _, _, err := LookupUser(d.root, "root"); err == nil {
+	if _, _, _, err := LookupUser(d.root, "root"); err == nil {
 		t.Error("LookupUser(root) without /etc/passwd in the disk succeeded, read the host's")
 	}
 }
@@ -77,11 +77,11 @@ func TestLookupUserHostileSymlink(t *testing.T) {
 	symlink(t, filepath.Join(d.canary, "passwd"), filepath.Join(d.root, "etc/passwd"))
 	symlink(t, climb("srv/group"), filepath.Join(d.root, "etc/group"))
 
-	uid, gid, err := LookupUser(d.root, "app")
+	uid, gid, _, err := LookupUser(d.root, "app")
 	if err != nil || uid != 4242 || gid != 4343 {
 		t.Errorf("LookupUser(app) = %d, %d, %v; want the in-root 4242, 4343", uid, gid, err)
 	}
-	uid, gid, err = LookupUser(d.root, "app:staff")
+	uid, gid, _, err = LookupUser(d.root, "app:staff")
 	if err != nil || uid != 4242 || gid != 77 {
 		t.Errorf("LookupUser(app:staff) = %d, %d, %v; want 4242, 77", uid, gid, err)
 	}
@@ -90,7 +90,7 @@ func TestLookupUserHostileSymlink(t *testing.T) {
 func TestLookupUserHostPasswdSymlink(t *testing.T) {
 	d := newDirs(t)
 	symlink(t, "/etc/passwd", filepath.Join(d.root, "etc/passwd"))
-	if _, _, err := LookupUser(d.root, "root"); err == nil {
+	if _, _, _, err := LookupUser(d.root, "root"); err == nil {
 		t.Error("LookupUser(root) through a symlink to /etc/passwd read the host's file")
 	}
 }
@@ -130,5 +130,25 @@ func TestReadFile(t *testing.T) {
 	}
 	if _, err := ReadFile(d.root, "data/file", 4); err == nil || !strings.Contains(err.Error(), "exceeds limit") {
 		t.Errorf("ReadFile over limit: %v", err)
+	}
+}
+
+func TestLookupUserSupplementaryGroups(t *testing.T) {
+	d := newDirs(t)
+	writeFile(t, filepath.Join(d.root, "etc/passwd"), "agent:x:1000:1000::/home/agent:/bin/bash\n")
+	writeFile(t, filepath.Join(d.root, "etc/group"), "agent:x:1000:\ndocker:x:998:agent\n")
+	_, _, groups, err := LookupUser(d.root, "agent")
+	if err != nil || len(groups) != 1 || groups[0] != 998 {
+		t.Errorf("LookupUser(agent) groups = %v, %v; want [998]", groups, err)
+	}
+}
+
+func TestLookupUserSurvivesAnUnreadableGroupFile(t *testing.T) {
+	d := newDirs(t)
+	writeFile(t, filepath.Join(d.root, "etc/passwd"), "agent:x:1000:1000::/home/agent:/bin/bash\n")
+	writeFile(t, filepath.Join(d.root, "etc/group"), strings.Repeat("x", accountsLimit+1))
+	uid, gid, groups, err := LookupUser(d.root, "agent")
+	if err != nil || uid != 1000 || gid != 1000 || len(groups) != 0 {
+		t.Errorf("LookupUser(agent) = %d, %d, %v, %v; want 1000, 1000, no groups", uid, gid, groups, err)
 	}
 }

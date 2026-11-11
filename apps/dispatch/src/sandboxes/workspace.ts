@@ -34,17 +34,25 @@ const renewalActor: ActorValue = {
 
 const renewBelowMs = (scopedTokenMaxSeconds * 1000) / 2
 
+const toolchainFiles = [
+  'mise.toml',
+  '.mise.toml',
+  '.config/mise.toml',
+  'mise.local.toml',
+  '.tool-versions',
+]
+
 const setupScript = [
   'set -euo pipefail',
-  'export HOME="$6"',
-  'npm install --global --prefix "$7" --no-fund --no-audit "$1"',
-  'if [ -n "$8" ] && [ ! -e "$HOME/$8" ]; then mkdir -p "$(dirname "$HOME/$8")" && printf \'%s\' "$9" >"$HOME/$8"; fi',
+  'export HOME="$5"',
+  'npm install --global --prefix "$6" --no-fund --no-audit "$1"',
+  'if [ -n "$7" ] && [ ! -e "$HOME/$7" ]; then mkdir -p "$(dirname "$HOME/$7")" && printf \'%s\' "$8" >"$HOME/$7"; fi',
   'if [ -n "${GH_TOKEN:-}" ]; then gh auth setup-git; fi',
   'if [ ! -d "$3/.git" ]; then git clone "$2" "$3"; fi',
   'if [ -n "$4" ]; then git -C "$3" checkout "$4"; fi',
-  'mkdir -p "$3/.stationly"',
-  'printf \'%s\\n\' "$5" >"$3/.stationly/context.json"',
-  'grep -qxF .stationly/ "$3/.git/info/exclude" || printf \'.stationly/\\n\' >>"$3/.git/info/exclude"',
+  'toolchain=0',
+  `for file in ${toolchainFiles.join(' ')}; do if [ -f "$3/$file" ]; then toolchain=1; fi; done`,
+  'if [ "$toolchain" = 1 ]; then (cd "$3" && mise trust --all && mise install --yes); fi',
 ].join('\n')
 
 export const repositoryName = (repository: string) =>
@@ -61,7 +69,6 @@ export const workspacePath = (repository: string) =>
 
 export const setupCommand = (
   workspace: Pick<SandboxWorkspace, 'agent' | 'repository' | 'branch' | 'path'>,
-  context: { project: string; environment: string },
 ) => [
   'bash',
   '-c',
@@ -71,10 +78,6 @@ export const setupCommand = (
   workspace.repository,
   workspace.path,
   workspace.branch ?? '',
-  JSON.stringify({
-    instance: workspaceApiUrl,
-    ...context,
-  }),
   workspaceUser.home,
   workspacePrefix,
   workspaceAgents[workspace.agent].config?.path ?? '',
@@ -83,7 +86,7 @@ export const setupCommand = (
 
 export const workspaceVariableSets = (
   db: Db,
-  projectId: string,
+  context: { project: string; environment: string },
   agent: WorkspaceAgent,
   key: string,
   taken: string[],
@@ -91,7 +94,7 @@ export const workspaceVariableSets = (
   const defined = new Set(
     variablesOf(db, {
       scope: 'project',
-      id: projectId,
+      id: context.project,
     })
       .all()
       .map((v) => v.key),
@@ -107,6 +110,16 @@ export const workspaceVariableSets = (
       key: workspaceEnv.apiUrl,
       kind: 'literal',
       value: workspaceApiUrl,
+    },
+    {
+      key: workspaceEnv.project,
+      kind: 'literal',
+      value: context.project,
+    },
+    {
+      key: workspaceEnv.environment,
+      kind: 'literal',
+      value: context.environment,
     },
     ...Object.entries(workspaceAgents[agent].env)
       .filter(([name]) => !taken.includes(name))

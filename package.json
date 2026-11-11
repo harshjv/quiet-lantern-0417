@@ -7,8 +7,9 @@
     "node": ">=26"
   },
   "scripts": {
+    "prepare": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "typecheck": "tsc -p tsconfig.json && pnpm -r --parallel typecheck",
-    "test": "pnpm -r test",
+    "test": "node --test scripts/*.test.ts && pnpm -r test",
     "build": "pnpm -r build",
     "generate": "pnpm --filter @stationly/protocol --filter @stationly/manifest-schema generate && pnpm --filter @stationly/dispatch openapi && pnpm --filter @stationly/cli generate && node installer/lib/station.ts",
     "db:generate": "pnpm --filter @stationly/dispatch db:generate",

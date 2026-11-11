@@ -22,6 +22,7 @@ import {
 } from '@stationly/mcp'
 
 import { action, bytes, group, parseJson, seconds, type Program } from './command.ts'
+import { environmentEnv, projectEnv } from './env.ts'
 import { Exit } from './errors.ts'
 import {
   connect,
@@ -694,12 +695,14 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   const summary = operation.summary ?? name
   const pathParameters = parameters.filter((p) => p.in === 'path')
   const contextual = pathParameters.map((p) => p.name).filter(isTarget)
+  const last = pathParameters.at(-1)?.name
+  const named = last !== undefined && isTarget(last) && path.endsWith(`/{${last}}`) ? last : null
   const command = new Command(word).description(summary)
 
   if (contextual.length) {
     command.addHelpText(
       'after',
-      `\nTarget: ${contextual.map((t) => `--${t} <id or name>`).join(', ')}. Names resolve within --project and --environment, with defaults from .stationly/context.json.`,
+      `\nTarget: ${contextual.map((t) => `--${t} <id or name>`).join(', ')}${named ? `, or [${named}] as the last argument` : ''}. Names resolve within --project and --environment, with defaults from ${projectEnv} and ${environmentEnv}, else .stationly/context.json.`,
     )
   }
 
@@ -722,6 +725,10 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
     }
 
     command.addArgument(argument)
+  }
+
+  if (named) {
+    command.addArgument(new Argument(`[${named}]`, `the ${named} to act on, id or name`))
   }
 
   const flows = flowsOf(command, endpoint)
@@ -772,7 +779,17 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
 
   command.action(
     action<unknown[], Record<string, unknown>, Globals>(async (options, ...positional) => {
-      const run = await connect(options)
+      const connected = await connect(options)
+      const run =
+        named && positional[args.length] !== undefined
+          ? {
+              ...connected,
+              selection: {
+                ...connected.selection,
+                [named]: positional[args.length] as string,
+              },
+            }
+          : connected
       const input: Input = {
         ...extraBody(options.body),
       }

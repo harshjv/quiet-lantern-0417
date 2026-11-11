@@ -350,6 +350,9 @@ export const variableRoutes = (kit: Kit) => {
           id: 'list_project_variables',
           summary: 'List project variables',
           level: 'read',
+          cli: {
+            path: ['variables', 'list'],
+          },
         },
         query: t.Object({
           ...getQuery,

@@ -121,7 +121,7 @@ func (s *Station) ownerFor(ctx context.Context, spec protocol.ContainerSpec) (se
 			return secrets.Owner{}, fmt.Errorf("read /etc/passwd from %s: %w", spec.ImageRef, err)
 		}
 	}
-	uid, gid, err := imageuser.Resolve(user, files["/etc/passwd"], files["/etc/group"])
+	uid, gid, _, err := imageuser.Resolve(user, files["/etc/passwd"], files["/etc/group"])
 	if err != nil {
 		return secrets.Owner{}, fmt.Errorf("image %s: %w", spec.ImageRef, err)
 	}

@@ -13,8 +13,14 @@ export const createProgram = () =>
     .option('--json', 'print the API response unmodified as one JSON document')
     .option('--dry-run', 'print the request a mutating command would send, and send nothing')
     .option('--instance <url>', 'instance to use instead of the current one')
-    .option('--project <project>', 'project id or name (default from .stationly/context.json)')
-    .option('--environment <environment>', 'environment id or name (default: the project default)')
+    .option(
+      '--project <project>',
+      'project id or name (default from STATIONLY_PROJECT or .stationly/context.json)',
+    )
+    .option(
+      '--environment <environment>',
+      'environment id or name (default from STATIONLY_ENVIRONMENT, else the project default)',
+    )
     .option('--service <service>', 'service id or name')
     .option('--sandbox <sandbox>', 'sandbox id or name')
     .exitOverride()

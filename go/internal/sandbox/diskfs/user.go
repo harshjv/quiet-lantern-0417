@@ -5,7 +5,6 @@ package diskfs
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -18,16 +17,14 @@ const (
 	accountsLimit = 4 << 20
 )
 
-func LookupUser(root, spec string) (uid, gid int, err error) {
+func LookupUser(root, spec string) (uid, gid int, groups []int, err error) {
 	passwd, err := readAccounts(root, passwdPath)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
-	var group []byte
-	if strings.Contains(spec, ":") {
-		if group, err = readAccounts(root, groupPath); err != nil {
-			return 0, 0, err
-		}
+	group, err := readAccounts(root, groupPath)
+	if err != nil {
+		group = nil
 	}
 	return imageuser.Resolve(spec, passwd, group)
 }

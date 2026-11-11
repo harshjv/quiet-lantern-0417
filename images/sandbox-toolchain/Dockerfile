@@ -3,6 +3,7 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 ARG TARGETARCH
 ARG NODE_VERSION=26.13.0
 ARG BUN_VERSION=1.4.4
+ARG MISE_VERSION=2026.11.6
 ARG GH_VERSION=2.103.3
 ARG DOCKER_VERSION=5:29.9.3-1~debian.13~trixie
 ARG CONTAINERD_VERSION=2.4.2-3~debian.13~trixie
@@ -31,8 +32,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 RUN case "$TARGETARCH" in \
-	amd64) node_arch=x64 bun_arch=x64 ;; \
-	arm64) node_arch=arm64 bun_arch=aarch64 ;; \
+	amd64) node_arch=x64 bun_arch=x64 mise_arch=x64 ;; \
+	arm64) node_arch=arm64 bun_arch=aarch64 mise_arch=arm64 ;; \
 	*) echo "unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
 	esac \
  && work=$(mktemp -d) && cd "$work" \
@@ -50,11 +51,17 @@ RUN case "$TARGETARCH" in \
  && unzip -q "$bun" \
  && install -m 0755 "bun-linux-$bun_arch/bun" /usr/local/bin/bun \
  && ln -s bun /usr/local/bin/bunx \
+ && mise=mise-v$MISE_VERSION-linux-$mise_arch \
+ && curl -fsSLO --retry 5 --retry-all-errors --retry-delay 5 "https://github.com/jdx/mise/releases/download/v$MISE_VERSION/$mise" \
+ && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://github.com/jdx/mise/releases/download/v$MISE_VERSION/SHASUMS256.txt" -o MISE_SHASUMS256.txt \
+ && grep "  ./$mise\$" MISE_SHASUMS256.txt | sha256sum -c - \
+ && install -m 0755 "$mise" /usr/local/bin/mise \
+ && printf '%s\n' 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >/etc/profile.d/mise.sh \
  && cd / && rm -rf "$work"
 
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy \
  && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy \
- && useradd --create-home --uid 1000 --home-dir /home/agent --shell /bin/bash agent \
+ && useradd --create-home --groups docker --uid 1000 --home-dir /home/agent --shell /bin/bash agent \
  && install -d -o agent -g agent /workspaces
 
 COPY --chmod=0755 sandbox-init /usr/local/bin/sandbox-init

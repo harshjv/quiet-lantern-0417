@@ -26454,7 +26454,13 @@ export const openApiDocument = {
         "operationId": "list_project_variables",
         "summary": "List project variables",
         "x-stationly": {
-          "level": "read"
+          "level": "read",
+          "cli": {
+            "path": [
+              "variables",
+              "list"
+            ]
+          }
         },
         "parameters": [
           {

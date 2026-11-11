@@ -93,7 +93,7 @@ func TestConfigProcess(t *testing.T) {
 			t.Errorf("%s caps %v", name, set)
 		}
 	}
-	if p.Terminal || !p.NoNewPrivileges || p.Cwd != "/" || p.User != (ociUser{}) {
+	if p.Terminal || !p.NoNewPrivileges || p.Cwd != "/" || p.User.UID != 0 || p.User.GID != 0 || p.User.AdditionalGids != nil {
 		t.Errorf("process %+v", p)
 	}
 	if !reflect.DeepEqual(p.Rlimits, []ociRlimit{{Type: "RLIMIT_NOFILE", Hard: 1048576, Soft: 1048576}}) {
@@ -107,7 +107,7 @@ func TestConfigProcess(t *testing.T) {
 	s.Env = nil
 	s.Cwd = "/work"
 	spec, _ = decodeConfig(t, s)
-	if spec.Process.Cwd != "/work" || spec.Process.User != (ociUser{UID: 0, GID: 0}) {
+	if spec.Process.Cwd != "/work" || spec.Process.User.UID != 0 || spec.Process.User.GID != 0 {
 		t.Errorf("process %+v", spec.Process)
 	}
 	if !reflect.DeepEqual(spec.Process.Env, []string{"PATH=/image", "HOME=/root", "TOKEN=image", "HOSTNAME=box", "STATIONLY_SANDBOX_ID=sbx_01JCB4ABC"}) {

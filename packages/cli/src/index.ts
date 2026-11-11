@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { CommanderError } from '@commander-js/extra-typings'
 
+import { version } from './env.ts'
 import { exitCodes, usage } from './errors.ts'
 import { json } from './output.ts'
 import { buildProgram } from './program.ts'
@@ -12,6 +13,11 @@ process.stdout.on('error', (error) => {
 
   throw error
 })
+
+if (process.argv[2] === '--version') {
+  process.stdout.write(`sly ${version}\n`)
+  process.exit(exitCodes.ok)
+}
 
 const program = buildProgram()
 

@@ -362,6 +362,31 @@ describe('request mapping', () => {
     assert.deepEqual(projects.body.items, [])
   })
 
+  test('--version prints the version and never contacts Dispatch', async () => {
+    server.requests.length = 0
+    const result = await sly(['--version'])
+
+    assert.equal(result.code, 0)
+    assert.match(result.stdout, /^sly \S+\n$/)
+    assert.equal(server.requests.length, 0)
+  })
+
+  test('a subcommand keeps its own --version option', async () => {
+    server.requests.length = 0
+    const result = await sly(['platform', 'upgrade', '--version', '1.2.3', '--dry-run'])
+
+    assert.equal(result.code, 0)
+    const shown = JSON.parse(result.stdout)
+
+    assert.equal(shown.method, 'POST')
+    assert.match(shown.url, /\/v1\/platform\/upgrade$/)
+    assert.deepEqual(shown.body, {
+      version: '1.2.3',
+      plan: false,
+    })
+    assert.equal(server.requests.length, 0)
+  })
+
   test('version prints JSON and never contacts Dispatch', async () => {
     server.requests.length = 0
     const result = await sly(['--json', 'version'])
@@ -388,6 +413,16 @@ describe('exit codes', () => {
 
     assert.equal(result.code, 1)
     assert.equal(JSON.parse(result.stdout).error.code, 'NAME_TAKEN')
+  })
+
+  test('variables list lists the project variables', async () => {
+    const set = await sly(['--json', '--project', 'alpha', 'variables', 'set', 'LISTED=yes'])
+
+    assert.equal(set.code, 0)
+    const listed = await sly(['--json', '--project', 'alpha', 'variables', 'list'])
+
+    assert.equal(listed.code, 0)
+    assert.ok(JSON.parse(listed.stdout).items.some((v: { key: string }) => v.key === 'LISTED'))
   })
 
   test('an unknown command is a usage error, exit 2', async () => {

@@ -59,8 +59,9 @@ type ociProcess struct {
 }
 
 type ociUser struct {
-	UID int `json:"uid"`
-	GID int `json:"gid"`
+	UID            int   `json:"uid"`
+	GID            int   `json:"gid"`
+	AdditionalGids []int `json:"additionalGids,omitempty"`
 }
 
 type ociCapabilities struct {
@@ -125,7 +126,7 @@ func Config(s sandbox.Spec) ([]byte, error) {
 	env := mergeEnv(s.ImageEnv, []string{"HOSTNAME=" + s.Hostname, "STATIONLY_SANDBOX_ID=" + s.ID}, s.Env)
 	spec := ociSpec{
 		OCIVersion: ociVersion,
-		Process:    process(s.Args, env, s.Cwd, 0, 0, false),
+		Process:    process(s.Args, env, s.Cwd, 0, 0, nil, false),
 		Root:       ociRoot{Path: s.DiskPath, Readonly: false},
 		Hostname:   s.Hostname,
 		Mounts:     mounts(s.BundleDir),
@@ -168,13 +169,13 @@ func validateSpec(s sandbox.Spec) error {
 	return errors.Join(errs...)
 }
 
-func process(args, env []string, cwd string, uid, gid int, terminal bool) ociProcess {
+func process(args, env []string, cwd string, uid, gid int, groups []int, terminal bool) ociProcess {
 	if cwd == "" {
 		cwd = defaultCwd
 	}
 	return ociProcess{
 		Terminal: terminal,
-		User:     ociUser{UID: uid, GID: gid},
+		User:     ociUser{UID: uid, GID: gid, AdditionalGids: groups},
 		Args:     args,
 		Env:      env,
 		Cwd:      cwd,

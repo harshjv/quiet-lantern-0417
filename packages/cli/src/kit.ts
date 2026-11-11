@@ -8,7 +8,7 @@ import { createApiClient, type ApiClient } from '@stationly/api-client'
 import { idPrefixes, type IdEntity } from '@stationly/protocol'
 
 import { currentInstance, normalizeInstance, readCredentials, type Credentials } from './config.ts'
-import { apiUrlEnv, env, tokenEnv, version } from './env.ts'
+import { apiUrlEnv, env, environmentEnv, projectEnv, tokenEnv, version } from './env.ts'
 import { apiFailure, notFound, notLoggedIn } from './errors.ts'
 import { createHttp, waitingHttp } from './http.ts'
 import { need } from './prompt.ts'
@@ -122,12 +122,28 @@ const clientOf = (instance: string, http: KyInstance): Client => ({
   api: createApiClient(instance, (input, init) => http(input, init)),
 })
 
+const defaultSelection = (globals: Globals, context: Context): Context => {
+  if (globals.project) {
+    return {}
+  }
+
+  if (env[projectEnv] || env[environmentEnv]) {
+    return {
+      project: env[projectEnv],
+      environment: env[environmentEnv],
+    }
+  }
+
+  return context
+}
+
 export const connectWith = (
   globals: Globals,
   credentials: Credentials,
   context: Context = {},
   agent = userAgent,
 ): Run => {
+  const defaults = defaultSelection(globals, context)
   const http = createHttp({
     instance: credentials.instance,
     userAgent: agent,
@@ -140,9 +156,9 @@ export const connectWith = (
     waiting: (deadline) => clientOf(credentials.instance, waitingHttp(http, deadline)),
     globals,
     selection: {
-      project: globals.project ?? context.project,
-      environment: globals.environment ?? context.environment,
-      service: globals.service ?? context.service,
+      project: globals.project ?? defaults.project,
+      environment: globals.environment ?? defaults.environment,
+      service: globals.service ?? defaults.service,
       sandbox: globals.sandbox,
     },
     credentials,

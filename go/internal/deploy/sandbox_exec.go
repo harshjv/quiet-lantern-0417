@@ -196,10 +196,11 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 		user = *b.User
 	}
 	uid, gid := 0, 0
+	var groups []int
 	if user != "" && user != "root" && user != "0" && user != "0:0" {
 		var err error
-		if uid, gid, err = diskfs.LookupUser(s.sbx.fs.DiskPath(id), user); err != nil {
-			refuse(protocol.ErrorCodeValidationFailed, "Name a user the sandbox's /etc/passwd knows, or a uid:gid.", "user %q: %v", user, err)
+		if uid, gid, groups, err = diskfs.LookupUser(s.sbx.fs.DiskPath(id), user); err != nil {
+			refuse(protocol.ErrorCodeValidationFailed, "Name a user the sandbox's /etc/passwd knows, or a uid:gid; a group name must be in its /etc/group.", "user %q: %v", user, err)
 			return
 		}
 	}
@@ -258,7 +259,7 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 		base = append(base, v.env...)
 	}
 	redactor := s.sandboxRedactor(id, runKnown)
-	spec := sandbox.ExecSpec{ID: id, BundleDir: sandboxBundle(id), Args: b.Command, Env: append(append([]string{}, base...), runEnv...), Cwd: cwd, UID: uid, GID: gid, TTY: tty && rr.Attach, Rows: rr.Rows, Cols: rr.Cols}
+	spec := sandbox.ExecSpec{ID: id, BundleDir: sandboxBundle(id), Args: b.Command, Env: append(append([]string{}, base...), runEnv...), Cwd: cwd, UID: uid, GID: gid, Groups: groups, TTY: tty && rr.Attach, Rows: rr.Rows, Cols: rr.Cols}
 	ex, err := s.sbx.rt.Exec(context.WithoutCancel(ctx), st.rec.Runsc, spec)
 	ref := m.ID
 	s.send(protocol.MessageRunAccepted, &ref, accepted)
