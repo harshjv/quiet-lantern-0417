@@ -2,7 +2,6 @@ import { useQueries, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Check, CircleCheck, Loader2 } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
-import { z } from 'zod'
 
 import { CommandBlock, Snippet } from '@/components/code'
 import { Confirm } from '@/components/confirm'
@@ -42,6 +41,7 @@ import { titled } from '@/lib/title'
 import { tonePanel, toneText } from '@/lib/tone'
 import { useBecame, useMoment } from '@/lib/use-moment'
 import { cn } from '@/lib/utils'
+import { z } from '@/lib/zod'
 
 const all = '*'
 

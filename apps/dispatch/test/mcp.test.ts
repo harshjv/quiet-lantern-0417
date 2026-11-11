@@ -219,6 +219,33 @@ describe('mcp transport', () => {
     assert.equal(reply.status, 404)
     assert.equal(((await reply.json()) as any).error.code, 'WRONG_HOST')
   })
+
+  test('a token past its request rate is a 429 with Retry-After, not a 401 that tells the client its token is bad', async () => {
+    const token = await mintToken(
+      h,
+      [
+        {
+          project_id: '*',
+          environment_id: '*',
+          level: 'read',
+        },
+      ],
+      'mcp-busy',
+    )
+
+    for (let i = 0; i < 600; i++) {
+      await h.call('GET', '/v1/me', {
+        token,
+      })
+    }
+
+    const { status, headers: replied, message } = await rpc(token, 'tools/list')
+
+    assert.equal(status, 429)
+    assert.ok(Number(replied.get('retry-after')) >= 1)
+    assert.equal(replied.get('www-authenticate'), null)
+    assert.equal(message.error.code, 'RATE_LIMITED')
+  })
 })
 
 describe('generated catalog', () => {

@@ -58,44 +58,50 @@ const clientOf = (request: Request) => {
 
 const unauthenticated = (explanation: string) => new ApiError('UNAUTHENTICATED', explanation)
 
-const unauthenticatedWindowMs = 60_000
+const limitWindowMs = 60_000
 const unauthenticatedMax = 30
-const failures = new Map<string, { start: number; count: number }>()
+const tokenRequestMax = 600
 
-const ipOf = (request: Request) =>
-  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
+const fixedWindow = (max: number) => {
+  const windows = new Map<string, { start: number; count: number }>()
+  const current = (key: string, now: number) => {
+    const entry = windows.get(key)
 
-export const recordUnauthenticated = (request: Request) => {
-  const ip = ipOf(request)
-  const now = Date.now()
-  const entry = failures.get(ip)
+    return entry && now - entry.start < limitWindowMs ? entry : null
+  }
 
-  if (!entry || now - entry.start > unauthenticatedWindowMs) {
-    failures.set(ip, {
-      start: now,
-      count: 1,
-    })
-  } else {
-    entry.count += 1
+  return {
+    add: (key: string) => {
+      const now = Date.now()
+      const entry = current(key, now)
+
+      if (entry) {
+        entry.count += 1
+      } else {
+        windows.set(key, {
+          start: now,
+          count: 1,
+        })
+      }
+    },
+    retryAfter: (key: string) => {
+      const now = Date.now()
+      const entry = current(key, now)
+
+      return entry && entry.count >= max
+        ? Math.max(1, Math.ceil((entry.start + limitWindowMs - now) / 1000))
+        : null
+    },
   }
 }
 
-const checkUnauthenticatedLimit = (request: Request) => {
-  const entry = failures.get(ipOf(request))
+const unauthenticatedRequests = fixedWindow(unauthenticatedMax)
+const tokenRequests = fixedWindow(tokenRequestMax)
 
-  if (
-    !entry ||
-    Date.now() - entry.start > unauthenticatedWindowMs ||
-    entry.count < unauthenticatedMax
-  ) {
-    return
-  }
-
-  const retry = Math.ceil((entry.start + unauthenticatedWindowMs - Date.now()) / 1000)
-
-  throw new ApiError(
+const rateLimited = (explanation: string, retry: number) =>
+  new ApiError(
     'RATE_LIMITED',
-    'Too many unauthenticated requests from this address.',
+    explanation,
     undefined,
     {
       retry_after_s: retry,
@@ -104,6 +110,33 @@ const checkUnauthenticatedLimit = (request: Request) => {
       'retry-after': String(retry),
     },
   )
+
+const ipOf = (request: Request) =>
+  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
+
+export const recordUnauthenticated = (request: Request) => {
+  unauthenticatedRequests.add(ipOf(request))
+}
+
+const checkUnauthenticatedLimit = (request: Request) => {
+  const retry = unauthenticatedRequests.retryAfter(ipOf(request))
+
+  if (retry !== null) {
+    throw rateLimited('Too many unauthenticated requests from this address.', retry)
+  }
+}
+
+const countTokenRequest = (tokenId: string) => {
+  const retry = tokenRequests.retryAfter(tokenId)
+
+  if (retry !== null) {
+    throw rateLimited(
+      `This token made ${tokenRequestMax} requests in the last minute, its limit.`,
+      retry,
+    )
+  }
+
+  tokenRequests.add(tokenId)
 }
 
 const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -311,25 +344,6 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
     })
 
     if (!result.valid || !result.key) {
-      if (result.error?.code === 'RATE_LIMITED') {
-        const tryAgainIn = Number(
-          (result.error as { details?: { tryAgainIn?: unknown } }).details?.tryAgainIn ?? 60_000,
-        )
-        const retry = Math.max(1, Math.ceil(tryAgainIn / 1000))
-
-        throw new ApiError(
-          'RATE_LIMITED',
-          'This token exceeded its request rate.',
-          undefined,
-          {
-            retry_after_s: retry,
-          },
-          {
-            'retry-after': String(retry),
-          },
-        )
-      }
-
       throw unauthenticated(`The token was refused: ${result.error?.code ?? 'invalid'}.`)
     }
 
@@ -339,6 +353,7 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
       throw unauthenticated('The token is not a personal or scoped Stationly token.')
     }
 
+    countTokenRequest(row.id)
     db.update(token)
       .set({
         last_used_at: new Date(),

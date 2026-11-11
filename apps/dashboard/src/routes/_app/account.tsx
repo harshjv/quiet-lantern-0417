@@ -3,7 +3,6 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { KeyRound, Loader2, ShieldCheck, Smartphone } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
-import { z } from 'zod'
 
 import { Code } from '@/components/code'
 import { RemoveButton } from '@/components/confirm'
@@ -24,6 +23,7 @@ import { done, useApiMutation } from '@/lib/mutation'
 import { load, warm } from '@/lib/queries'
 import { titled } from '@/lib/title'
 import { toneOutline } from '@/lib/tone'
+import { z } from '@/lib/zod'
 
 export const Route = createFileRoute('/_app/account')({
   validateSearch: z.object({

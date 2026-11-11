@@ -1,7 +1,7 @@
 import { useNavigate, useSearch, type RegisteredRouter } from '@tanstack/react-router'
-import { z } from 'zod'
 
 import { useShortcut } from './shortcuts'
+import { z } from './zod'
 
 type SearchTab = NonNullable<
   ReturnType<typeof useSearch<RegisteredRouter, undefined, false>>['tab']

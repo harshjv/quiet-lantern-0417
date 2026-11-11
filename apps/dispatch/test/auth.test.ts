@@ -795,3 +795,33 @@ describe('unauthenticated requests', () => {
     assert.equal(other.status, 401)
   })
 })
+
+describe('token request rate', () => {
+  test('a token gets 600 requests per minute, and steady use never carries its count into the next minute', async (t) => {
+    const token = await tokenFor(envA, projectA, 'read')
+    const read = () =>
+      h.call('GET', '/v1/projects', {
+        token,
+      })
+
+    t.mock.timers.enable({
+      apis: ['Date'],
+      now: Date.now(),
+    })
+
+    for (let i = 0; i < 599; i++) {
+      assert.equal((await read()).status, 200)
+    }
+
+    t.mock.timers.tick(59_000)
+    assert.equal((await read()).status, 200)
+    const refused = await read()
+
+    assert.equal(refused.status, 429)
+    assert.equal(refused.body.error.code, 'RATE_LIMITED')
+    assert.equal(refused.headers.get('retry-after'), '1')
+    assert.equal(refused.body.error.details.retry_after_s, 1)
+    t.mock.timers.tick(59_000)
+    assert.equal((await read()).status, 200)
+  })
+})

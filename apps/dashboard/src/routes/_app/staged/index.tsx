@@ -1,6 +1,5 @@
 import { useQueries, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { z } from 'zod'
 
 import { stagedChangeStatusValues } from '@stationly/protocol/domain'
 
@@ -18,6 +17,7 @@ import { entityIcon } from '@/lib/icons'
 import { stagedSource, stagedStatus } from '@/lib/labels'
 import { environmentQuery, load, stagedQuery } from '@/lib/queries'
 import { titled } from '@/lib/title'
+import { z } from '@/lib/zod'
 
 const statuses = stagedChangeStatusValues
 

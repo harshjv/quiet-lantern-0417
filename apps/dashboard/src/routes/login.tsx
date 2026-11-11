@@ -2,7 +2,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { z } from 'zod'
 
 import { Code } from '@/components/code'
 import { CheckboxField, Field } from '@/components/field'
@@ -22,6 +21,7 @@ import {
 } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { titled } from '@/lib/title'
+import { z } from '@/lib/zod'
 
 export const Route = createFileRoute('/login')({
   validateSearch: z.object({

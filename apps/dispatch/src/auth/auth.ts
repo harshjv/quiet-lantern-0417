@@ -270,9 +270,7 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
           minExpiresIn: 1 / 24,
         },
         rateLimit: {
-          enabled: true,
-          timeWindow: 60_000,
-          maxRequests: 600,
+          enabled: false,
         },
         enableSessionForAPIKeys: false,
       }),

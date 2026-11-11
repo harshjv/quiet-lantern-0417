@@ -134,6 +134,17 @@
         "jsx-a11y/no-autofocus": "off",
         "jsx-a11y/no-noninteractive-tabindex": "off",
         "jsx-a11y/label-has-associated-control": "off",
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "zod",
+                "message": "Import z from @/lib/zod, which turns off zod's eval-based JIT that the dashboard CSP refuses."
+              }
+            ]
+          }
+        ],
         "typescript/only-throw-error": [
           "error",
           {
@@ -146,6 +157,12 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "files": ["apps/dashboard/src/lib/zod.ts"],
+      "rules": {
+        "eslint/no-restricted-imports": "off"
       }
     },
     {

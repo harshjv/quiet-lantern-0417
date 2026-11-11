@@ -1,12 +1,14 @@
 import {
+  bearerAuthChallengeResponse,
   createMcpHandler,
   getOAuthProtectedResourceMetadataUrl,
   OAuthError,
   OAuthErrorCode,
   originValidationResponse,
-  requireBearerAuth,
+  verifyBearerToken,
   type AuthInfo,
   type McpRequestContext,
+  type VerifyBearerTokenOptions,
 } from '@modelcontextprotocol/server'
 
 import { buildServer, type Level, type ToolDef } from '@stationly/mcp'
@@ -35,10 +37,11 @@ const highest = (scopes: Scope[]): Level | null =>
 
 type Grant = { principal: Principal; session: Session; tools: ToolDef[] }
 
-const json = (status: number, body: unknown) =>
+const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
+      ...headers,
       'content-type': 'application/json',
     },
   })
@@ -122,7 +125,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
     const origin =
       surface === 'api' ? deps.auth.surface.apiOrigin : `${new URL(request.url).protocol}//${host}`
     const resource = new URL(`${origin}/mcp`)
-    const gate = requireBearerAuth({
+    const gate: VerifyBearerTokenOptions = {
       expectedResource: resource,
       resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resource),
       verifier: {
@@ -132,6 +135,10 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
           try {
             principal = await authenticate(deps.db, deps.auth, request)
           } catch (error) {
+            if (error instanceof ApiError && error.code !== 'UNAUTHENTICATED') {
+              throw error
+            }
+
             throw new OAuthError(
               OAuthErrorCode.InvalidToken,
               error instanceof ApiError ? error.message : 'the token could not be verified',
@@ -173,11 +180,15 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
           }
         },
       },
-    })
-    const auth = await gate(request)
+    }
+    let auth: AuthInfo
 
-    if (auth instanceof Response) {
-      return auth
+    try {
+      auth = await verifyBearerToken(request.headers.get('authorization'), gate)
+    } catch (error) {
+      return error instanceof ApiError
+        ? json(error.status, envelope(error, requestIdOf(request)), error.headers)
+        : bearerAuthChallengeResponse(error, gate)
     }
 
     return handler.fetch(request, {
