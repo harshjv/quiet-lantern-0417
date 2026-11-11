@@ -49,12 +49,11 @@ const out = resolve(values.out)
 const cache = resolve(values.cache ?? join(out, '.cache'))
 const work = join(cache, 'work')
 
-mkdirSync(cache, {
-  recursive: true,
-})
-mkdirSync(work, {
-  recursive: true,
-})
+for (const dir of [out, work]) {
+  mkdirSync(dir, {
+    recursive: true,
+  })
+}
 
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 
