@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+set -e
+mise exec -- gitleaks git --pre-commit --staged --redact --no-banner --config .gitleaks.toml .
+mise exec -- pnpm check:literals
