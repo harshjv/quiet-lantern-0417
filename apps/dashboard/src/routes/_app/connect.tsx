@@ -53,7 +53,7 @@ const named = (id: McpClient) => (id === 'generic' ? 'your MCP client' : mcpClie
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
-export const Route = createFileRoute('/_app/agents')({
+export const Route = createFileRoute('/_app/connect')({
   validateSearch: z.object({
     project: z.string().optional().catch(undefined),
     client: z.literal(mcpClients).optional().catch(undefined),
@@ -66,7 +66,7 @@ export const Route = createFileRoute('/_app/agents')({
     ]),
   head: () => titled('Connect an agent'),
   errorComponent: failurePage('Couldn’t load agent setup'),
-  component: AgentsPage,
+  component: ConnectPage,
 })
 
 function Step({
@@ -284,7 +284,7 @@ function ConnectedAgents({ projects, shown }: { projects: Project[]; shown: McpC
   )
 }
 
-function AgentsPage() {
+function ConnectPage() {
   const search = Route.useSearch()
   const navigate = useNavigate({
     from: Route.fullPath,

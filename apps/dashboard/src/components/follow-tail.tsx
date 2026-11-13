@@ -9,11 +9,13 @@ export function FollowTail({
   changes,
   label,
   className,
+  frameClassName,
   children,
 }: {
   changes: unknown
   label: string
   className?: string
+  frameClassName?: string
   children: ReactNode
 }) {
   const element = useRef<HTMLDivElement>(null)
@@ -34,7 +36,7 @@ export function FollowTail({
   }, [changes, atTail])
 
   return (
-    <div className="relative">
+    <div className={cn('relative', frameClassName)}>
       <div
         ref={element}
         onScroll={() => {

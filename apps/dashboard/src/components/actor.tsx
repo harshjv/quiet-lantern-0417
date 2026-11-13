@@ -13,7 +13,7 @@ export function Actor({ actor }: { actor: Who }) {
 
   return (
     <Link
-      to="/agents"
+      to="/connect"
       className="relative z-10 inline-flex items-center gap-1 text-foreground underline-offset-4 hover:underline"
     >
       <entityIcon.agent className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -24,7 +24,7 @@ export function Actor({ actor }: { actor: Who }) {
 
 export function AgentsLink() {
   return (
-    <Link to="/agents" className="underline underline-offset-4 hover:text-foreground">
+    <Link to="/connect" className="underline underline-offset-4 hover:text-foreground">
       agents
     </Link>
   )

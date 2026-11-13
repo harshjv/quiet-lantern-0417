@@ -8,7 +8,11 @@ export function AgentStatusBadge({
   status,
   announce,
 }: {
-  status: AgentStatusRecord | null | undefined
+  status:
+    | (Pick<AgentStatusRecord, 'status' | 'last_event_at'> &
+        Partial<Pick<AgentStatusRecord, 'agents'>>)
+    | null
+    | undefined
   announce?: boolean
 }) {
   const now = useNow(30_000)

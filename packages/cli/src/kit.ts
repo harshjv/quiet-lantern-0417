@@ -9,9 +9,9 @@ import { idPrefixes, type IdEntity } from '@stationly/protocol'
 
 import { currentInstance, normalizeInstance, readCredentials, type Credentials } from './config.ts'
 import { apiUrlEnv, env, environmentEnv, projectEnv, tokenEnv, version } from './env.ts'
-import { apiFailure, notFound, notLoggedIn } from './errors.ts'
+import { apiFailure, inputRequired, notFound, notLoggedIn } from './errors.ts'
 import { createHttp, waitingHttp } from './http.ts'
-import { need } from './prompt.ts'
+import { choose, interactive, need } from './prompt.ts'
 
 export type Globals = {
   json?: boolean
@@ -313,6 +313,58 @@ export const serviceId = async (run: Run): Promise<string> => {
 
   return isId('service', ref) ? ref : inEnvironment(run, 'services', ref)
 }
+
+export const sandboxRef = async (run: Run): Promise<string> => {
+  const given = run.selection.sandbox
+
+  if (given !== undefined && given !== '') {
+    return given
+  }
+
+  if (!interactive()) {
+    throw inputRequired('Sandbox', '--sandbox <id or name>, or the sandbox as an argument')
+  }
+
+  const { items } = (
+    await send(
+      run.api.v1
+        .environments({
+          environment: await environmentId(run),
+        })
+        .sandboxes.get({
+          query: {},
+        }),
+    )
+  ).data
+
+  if (items.length === 0) {
+    throw notFound(
+      'This environment has no sandboxes.',
+      'Create one with sly sandboxes create <name>.',
+    )
+  }
+
+  return choose(
+    'Which sandbox?',
+    items.map((item) => ({
+      value: item.name,
+      label: item.name,
+      hint: item.status,
+    })),
+    items[0]!.name,
+  )
+}
+
+export const withSandbox = (run: Run, sandbox: string | undefined): Run =>
+  sandbox === undefined
+    ? run
+    : {
+        ...run,
+        selection: {
+          ...run.selection,
+          sandbox,
+        },
+      }
 
 export const sandboxId = async (run: Run, ref: string) =>
   isId('sandbox', ref) ? ref : inEnvironment(run, 'sandboxes', ref)

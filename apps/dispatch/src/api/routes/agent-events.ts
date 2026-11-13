@@ -18,11 +18,13 @@ import {
   shownAgentEvent,
   type AgentEventLive,
 } from '../../sandboxes/agent-events.ts'
+import { filterStatuses, listAgentSessions } from '../../sandboxes/agent-sessions.ts'
 import { fail, invalid } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import { sandboxById, type SandboxRow } from '../lookup.ts'
+import { filterMany } from '../pagination.ts'
 import { input } from '../schemas.ts'
-import { AgentEventPage, AgentEventsAccepted, replies } from '../shapes.ts'
+import { AgentEventPage, AgentEventsAccepted, AgentSessionPage, replies } from '../shapes.ts'
 import { createSse } from '../sse.ts'
 
 const drainSize = 200
@@ -204,6 +206,56 @@ export const agentEventRoutes = (kit: Kit) => {
 
   return kit
     .router('sandboxes', '/v1')
+    .get(
+      '/agent-sessions',
+      async ({ request, query }) => {
+        const call = await kit.call(request)
+
+        return listAgentSessions(db, {
+          limit: query.limit ?? defaultPageSize,
+          cursor: query.cursor,
+          status: filterStatuses(query.status),
+          workspace: query.workspace,
+          redactor: (sandboxId) =>
+            kit.sandboxRedaction([sandboxId], call.principal.actor, call.request_id),
+        })
+      },
+      {
+        operation: {
+          id: 'list_agent_sessions',
+          summary:
+            'Agent sessions of every workspace, newest first, with status, attention kind and the first prompt as the title; for an instance admin',
+          level: 'instance admin',
+          mcp: false,
+          cli: {
+            path: ['sandboxes', 'sessions'],
+          },
+        },
+        query: t.Object({
+          limit: t.Optional(
+            t.Integer({
+              minimum: 1,
+              maximum: 200,
+              description: `Page size, default ${defaultPageSize}`,
+            }),
+          ),
+          cursor: t.Optional(
+            t.String({
+              description: 'The next_cursor of the previous page',
+            }),
+          ),
+          status: filterMany(['working', 'waiting', 'ready', 'failed', 'ended']),
+          workspace: t.Optional(
+            t.String({
+              description: 'Only the sessions of this workspace, a sandbox id',
+            }),
+          ),
+        }),
+        response: replies({
+          200: AgentSessionPage,
+        }),
+      },
+    )
     .post(
       '/sandboxes/:sandbox/agent/events',
       async ({ ctx, request, body, set }) => {

@@ -1,5 +1,6 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { isSea } from 'node:sea'
 
 import { Argument, Option } from '@commander-js/extra-typings'
 
@@ -17,7 +18,7 @@ import { print, progress } from '../output.ts'
 export const clients = ['claude-code', 'cursor', 'codex', 'windsurf', 'generic'] as const
 
 const launcher = async (client: string) => {
-  const script = process.argv[1] ? await realpath(process.argv[1]) : null
+  const script = isSea() || !process.argv[1] ? null : await realpath(process.argv[1])
   const installed = !script || basename(process.argv[1]!) === 'sly'
 
   return installed
@@ -153,6 +154,7 @@ export const mcpCommands = (program: Program) => {
           )
         }
 
+        const server = await launcher(client)
         const project = projectRef === '*' ? '*' : await projectId(run, projectRef)
         const environment =
           !run.selection.environment || run.selection.environment === '*'
@@ -201,7 +203,6 @@ export const mcpCommands = (program: Program) => {
           )
         }
 
-        const server = await launcher(client)
         const { key: _key, ...shown } = minted
 
         if (client === 'claude-code') {

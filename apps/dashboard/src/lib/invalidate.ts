@@ -16,7 +16,7 @@ export const groups = {
     ['deployments'],
     ['network'],
   ],
-  sandboxes: [['sandboxes'], ['sandbox-snapshots'], ['projects']],
+  sandboxes: [['sandboxes'], ['sandbox-snapshots'], ['agent-sessions'], ['projects']],
   stations: [['stations']],
   staged: [['staged']],
   auth: [['auth']],

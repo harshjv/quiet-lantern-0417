@@ -1,6 +1,6 @@
 import type { HealthDoc } from '@stationly/manifest-schema'
 
-type PortDoc = { port: number; protocol: 'http' | 'tcp' }
+export type PortDoc = { port: number; protocol: 'http' | 'tcp' }
 
 export const normalizeHealth = (kind: string, ports: PortDoc[], input: HealthDoc | undefined) => {
   if (kind === 'cron' || kind === 'one_off') {
@@ -53,3 +53,20 @@ export const normalizeHealth = (kind: string, ports: PortDoc[], input: HealthDoc
     seconds: input?.seconds ?? 10,
   }
 }
+
+export const healthPortMissing = (health: ReturnType<typeof normalizeHealth>, ports: PortDoc[]) =>
+  health && 'port' in health && !ports.some((p) => p.port === health.port) ? health.port : null
+
+export const undeclaredHealthPort = (
+  health: ReturnType<typeof normalizeHealth>,
+  ports: PortDoc[],
+) => {
+  const port = healthPortMissing(health, ports)
+
+  return port === null ? null : `health.port ${port || '(none)'} is not in ports.`
+}
+
+export type StoredHealth = ReturnType<typeof normalizeHealth>
+
+export const effectiveHealth = (kind: string, ports: PortDoc[], stored: StoredHealth | undefined) =>
+  stored ?? normalizeHealth(kind, ports, undefined)

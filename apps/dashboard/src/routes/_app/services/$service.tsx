@@ -15,6 +15,7 @@ import {
 import { EmptyState, KeyValue, Mono, PageHeader } from '@/components/page'
 import { failurePage, Panel } from '@/components/panel'
 import { PublicNetworking } from '@/components/public-networking'
+import { ServiceHealth } from '@/components/service-health'
 import { ServiceNetwork } from '@/components/service-network'
 import { DeploymentStatusBadge, ServiceStatus } from '@/components/status'
 import { ActionsHead, TableFrame } from '@/components/table-frame'
@@ -29,6 +30,7 @@ import type { Service } from '@/lib/api'
 import { isOptimistic } from '@/lib/cache'
 import { commands, type ServiceScope } from '@/lib/commands'
 import { blank, duration, shortDigest, shortSha, sourceText } from '@/lib/format'
+import { healthChangeText } from '@/lib/health-text'
 import { entityIcon } from '@/lib/icons'
 import { deploymentStrategy, serviceKind } from '@/lib/labels'
 import { deploymentsQuery, load, serviceQuery, warm } from '@/lib/queries'
@@ -183,6 +185,17 @@ function ServicePage() {
           meta={
             <>
               <ServiceStatus status={s.status} reason={s.status_reason} />
+              {s.last_health_change && (
+                <span className="text-muted-foreground">
+                  {healthChangeText(s.last_health_change)}
+                  {s.last_health_change.last_check && (
+                    <>
+                      {' · last check '}
+                      <Time value={s.last_health_change.last_check} />
+                    </>
+                  )}
+                </span>
+              )}
               <Mono>{sourceText(s)}</Mono>
               {trail.environment.protected && (
                 <span className="inline-flex items-center gap-1">
@@ -202,29 +215,33 @@ function ServicePage() {
         />
       </div>
       <StaleBanner service={s} />
-      {current && (
-        <KeyValue
-          framed
-          items={[
-            [
-              'Current deployment',
-              <Link
-                key="d"
-                to="/deployments/$deployment"
-                params={{
-                  deployment: current.id,
-                }}
-                className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
-              >
-                #{current.number} <DeploymentStatusBadge status={current.status} />
-              </Link>,
-            ],
-            ['Trigger', <Trigger key="trigger" trigger={current.trigger} />],
-            ['Started', <Time key="t" value={current.started_at} />],
-            ['Strategy', deploymentStrategy[current.strategy]],
-          ]}
-        />
-      )}
+      <KeyValue
+        framed
+        items={
+          current
+            ? [
+                [
+                  'Current deployment',
+                  <Link
+                    key="d"
+                    to="/deployments/$deployment"
+                    params={{
+                      deployment: current.id,
+                    }}
+                    className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
+                  >
+                    #{current.number} <DeploymentStatusBadge status={current.status} />
+                  </Link>,
+                ],
+                ['Trigger', <Trigger key="trigger" trigger={current.trigger} />],
+                ['Started', <Time key="t" value={current.started_at} />],
+                ['Strategy', deploymentStrategy[current.strategy]],
+              ]
+            : []
+        }
+      >
+        <ServiceHealth service={s} scope={scope} />
+      </KeyValue>
       <Tabs value={tab} onValueChange={selectTab}>
         <TabsList>
           <TabsTrigger value="deployments">Deployments</TabsTrigger>

@@ -7913,6 +7913,59 @@ export const openApiDocument = {
                         }
                       ]
                     },
+                    "health_default": {
+                      "type": "boolean"
+                    },
+                    "last_health_change": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "required": [
+                        "at",
+                        "from",
+                        "to",
+                        "state",
+                        "consecutive",
+                        "last_check",
+                        "status_hint"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "consecutive": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "last_check": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status_hint": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      }
+                    },
                     "strategy": {
                       "type": "string",
                       "enum": [
@@ -23438,6 +23491,199 @@ export const openApiDocument = {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Staged"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agent-sessions": {
+      "get": {
+        "tags": [
+          "sandboxes"
+        ],
+        "operationId": "list_agent_sessions",
+        "summary": "Agent sessions of every workspace, newest first, with status, attention kind and the first prompt as the title; for an instance admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "sandboxes",
+              "sessions"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Page size, default 100",
+              "anyOf": [
+                {
+                  "format": "integer",
+                  "default": 0,
+                  "type": "string"
+                },
+                {
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Page size, default 100",
+                  "type": "integer"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "The next_cursor of the previous page",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "One or more of working, waiting, ready, failed, ended, comma separated",
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only the sessions of this workspace, a sandbox id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionPage"
                 }
               }
             }
@@ -43592,6 +43838,59 @@ export const openApiDocument = {
               }
             ]
           },
+          "health_default": {
+            "type": "boolean"
+          },
+          "last_health_change": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "at",
+              "from",
+              "to",
+              "state",
+              "consecutive",
+              "last_check",
+              "status_hint"
+            ],
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "consecutive": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_check": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
           "strategy": {
             "type": "string",
             "enum": [
@@ -48424,6 +48723,144 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AgentEventPage"
       },
+      "AgentSession": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "sandbox",
+          "agent",
+          "project",
+          "environment",
+          "status",
+          "kind",
+          "title",
+          "started_at",
+          "last_event_at"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "sandbox": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "project": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "environment": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "working",
+              "waiting",
+              "ready",
+              "failed",
+              "ended"
+            ]
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "const": "permission",
+                "type": "string"
+              },
+              {
+                "const": "question",
+                "type": "string"
+              },
+              {
+                "const": "plan",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "last_event_at": {
+            "type": "string"
+          }
+        },
+        "$id": "#/components/schemas/AgentSession"
+      },
+      "AgentSessionPage": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSession"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "$id": "#/components/schemas/AgentSessionPage"
+      },
       "Sandbox": {
         "title": "Sandbox",
         "additionalProperties": false,
@@ -49834,6 +50271,59 @@ export const openApiDocument = {
                 "type": "null"
               }
             ]
+          },
+          "health_default": {
+            "type": "boolean"
+          },
+          "last_health_change": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "at",
+              "from",
+              "to",
+              "state",
+              "consecutive",
+              "last_check",
+              "status_hint"
+            ],
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "consecutive": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_check": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           },
           "strategy": {
             "type": "string",

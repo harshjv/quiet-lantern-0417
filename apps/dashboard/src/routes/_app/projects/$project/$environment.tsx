@@ -31,6 +31,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { VariablesPanel } from '@/components/variables-panel'
+import { WorkspacesPanel } from '@/components/workspaces-panel'
 import { agentHints } from '@/lib/agent-hints'
 import { api, idempotency, send, type Environment } from '@/lib/api'
 import { merge, mergeItem } from '@/lib/cache'
@@ -60,7 +61,15 @@ const NetworkPanel = lazy(() =>
   })),
 )
 
-const tabs = ['services', 'sandboxes', 'network', 'variables', 'staged', 'settings'] as const
+const tabs = [
+  'services',
+  'workspaces',
+  'sandboxes',
+  'network',
+  'variables',
+  'staged',
+  'settings',
+] as const
 
 export const Route = createFileRoute('/_app/projects/$project/$environment')({
   validateSearch: tabSearch(tabs),
@@ -498,6 +507,7 @@ function EnvironmentPage() {
       <Tabs value={tab} onValueChange={selectTab}>
         <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="services">Services</TabsTrigger>
+          <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
           <TabsTrigger value="sandboxes">Sandboxes</TabsTrigger>
           <TabsTrigger value="network">Network</TabsTrigger>
           <TabsTrigger value="variables">Project variables</TabsTrigger>
@@ -511,6 +521,9 @@ function EnvironmentPage() {
         </TabsList>
         <TabsContent value="services" className="mt-4">
           <Services project={project} environment={environment} />
+        </TabsContent>
+        <TabsContent value="workspaces" className="mt-4">
+          <WorkspacesPanel environment={environment} project={project} />
         </TabsContent>
         <TabsContent value="sandboxes" className="mt-4">
           <SandboxesPanel environment={environment} project={project} />

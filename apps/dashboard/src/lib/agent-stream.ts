@@ -16,4 +16,5 @@ export const agentStreamTypes: readonly (AgentEventValue['type'] | 'message.part
   'omitted',
 ]
 
-export const agentStreamUrl = (sandbox: string) => `/v1/sandboxes/${sandbox}/agent/events`
+export const agentStreamUrl = (sandbox: string, session?: string) =>
+  `/v1/sandboxes/${sandbox}/agent/events${session ? `?session=${encodeURIComponent(session)}` : ''}`

@@ -14,6 +14,7 @@ import { Elysia, type t } from 'elysia'
 
 import {
   Actor as ActorSchema,
+  agentAttentionKindValues,
   appliedStatusValues,
   attestationKindValues,
   baseImageCheckValues,
@@ -800,6 +801,18 @@ export const Service = component(
         memory_bytes: Int,
       }),
       health: Nullable(HealthCheck),
+      health_default: Bool,
+      last_health_change: Nullable(
+        Type.Object({
+          at: Str,
+          from: Str,
+          to: Str,
+          state: Nullable(Str),
+          consecutive: Nullable(Int),
+          last_check: Nullable(Str),
+          status_hint: Nullable(Str),
+        }),
+      ),
       strategy: StringEnum(strategyValues),
       multi_writer_safe: Bool,
       drain_timeout_s: Int,
@@ -1955,6 +1968,45 @@ export const AgentEventPage = component(
     {
       items: Type.Array(AgentEvent),
       next_since: NStr,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+const NamedRef = Type.Object({
+  id: Str,
+  name: Str,
+})
+
+export const AgentSession = component(
+  'AgentSession',
+  Type.Object(
+    {
+      session_id: Str,
+      sandbox: NamedRef,
+      agent: StringEnum(workspaceAgentValues),
+      project: NamedRef,
+      environment: NamedRef,
+      status: StringEnum(['working', 'waiting', 'ready', 'failed', 'ended']),
+      kind: NullableEnum(agentAttentionKindValues),
+      title: NStr,
+      started_at: Str,
+      last_event_at: Str,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const AgentSessionPage = component(
+  'AgentSessionPage',
+  Type.Object(
+    {
+      items: Type.Array(AgentSession),
+      next_cursor: NStr,
     },
     {
       additionalProperties: false,

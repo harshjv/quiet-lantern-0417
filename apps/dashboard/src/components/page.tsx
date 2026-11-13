@@ -220,7 +220,7 @@ export function KeyValue({
   framed?: boolean
   children?: ReactNode
 }) {
-  const list = (
+  const list = items.length > 0 && (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
       {items.map(([label, value]) => (
         <div key={label} className="min-w-0">
@@ -238,7 +238,7 @@ export function KeyValue({
   return (
     <div className="rounded-lg border bg-card p-4">
       {list}
-      {children}
+      {children && <div className={cn(items.length > 0 && 'mt-4 border-t pt-4')}>{children}</div>}
     </div>
   )
 }

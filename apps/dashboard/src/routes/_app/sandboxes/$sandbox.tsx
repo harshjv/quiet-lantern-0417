@@ -26,6 +26,7 @@ import { SandboxStatusBadge } from '@/components/status'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
+import { WorkspaceSessions } from '@/components/workspace-sessions'
 import { isInstanceAdmin } from '@/lib/agent-session'
 import type { Sandbox } from '@/lib/api'
 import { commands } from '@/lib/commands'
@@ -235,7 +236,7 @@ function SandboxPage() {
                       environment: environmentName,
                     },
                     search: {
-                      tab: 'sandboxes',
+                      tab: s.workspace ? 'workspaces' : 'sandboxes',
                     },
                   })
                 }
@@ -255,6 +256,7 @@ function SandboxPage() {
           </AlertDescription>
         </Alert>
       )}
+      {showAgent && <WorkspaceSessions sandbox={s} />}
       <Overview sandbox={s} />
       <Tabs value={shown} onValueChange={selectTab}>
         <TabsList>

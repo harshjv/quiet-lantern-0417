@@ -696,6 +696,15 @@ export const terms = {
     term: 'Sandbox',
     definition: 'A machine for an agent or for you, with its own disk and a time limit.',
   },
+  workspace: {
+    term: 'Workspace',
+    definition:
+      'Where an agent works: a sandbox with the agent installed, a repository cloned and its own token. A workspace has many sessions.',
+  },
+  session: {
+    term: 'Session',
+    definition: 'One conversation with an agent in a workspace.',
+  },
   snapshot: {
     term: 'Snapshot',
     definition: 'A saved copy of a sandbox’s disk. You can fork new sandboxes from it.',

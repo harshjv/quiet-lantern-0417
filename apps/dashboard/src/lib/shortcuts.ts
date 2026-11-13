@@ -1,6 +1,12 @@
 import { useHotkeys } from 'react-hotkeys-hook'
 
-export const places = ['Anywhere', 'Pages with tabs', 'Lists', 'Service', 'Logs'] as const
+export const places = [
+  'Anywhere',
+  'Pages with tabs',
+  'Lists',
+  'Service',
+  'Logs and sessions',
+] as const
 
 export type Place = (typeof places)[number]
 
@@ -40,9 +46,14 @@ export const shortcuts = {
     label: 'Go to staged changes',
     place: 'Anywhere',
   },
-  agents: {
+  sessions: {
     keys: ['g>a'],
-    label: 'Go to agents',
+    label: 'Go to agent sessions',
+    place: 'Anywhere',
+  },
+  connect: {
+    keys: ['g>c'],
+    label: 'Go to connect an agent',
     place: 'Anywhere',
   },
   tab: {
@@ -62,8 +73,8 @@ export const shortcuts = {
   },
   filter: {
     keys: ['slash'],
-    label: 'Filter log lines',
-    place: 'Logs',
+    label: 'Filter log lines or sessions',
+    place: 'Logs and sessions',
   },
 } as const satisfies Record<string, Shortcut>
 

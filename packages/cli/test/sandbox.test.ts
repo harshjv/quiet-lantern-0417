@@ -571,6 +571,44 @@ describe('lifecycle commands', () => {
     })
   })
 
+  test('the sandbox is positional on exec, stop, start and shell, and --sandbox still works', async () => {
+    const ran = await sly(['sandboxes', 'exec', 'dev', '--', 'echo', 'hi'])
+
+    assertOk(ran)
+    assert.deepEqual(bodyOf('POST', `/sandboxes/${id}/exec`), {
+      command: ['echo', 'hi'],
+      attach: true,
+    })
+
+    const bare = await sly(['sandboxes', 'exec', 'dev'])
+
+    assert.equal(bare.code, 2)
+    assert.match(bare.stderr, /no command to run/)
+
+    const twice = await dev(['sandboxes', 'stop', 'dev'])
+
+    assert.equal(twice.code, 2)
+    assert.match(twice.stderr, /given twice/)
+
+    assertOk(await sly(['--json', 'sandboxes', 'stop', 'dev']))
+    await waitForSandbox(h, id, 'stopped')
+    assertOk(await sly(['--json', 'sandboxes', 'start', 'dev']))
+    await waitForSandbox(h, id, 'running')
+
+    const shell = await sly(['sandboxes', 'shell', 'dev'])
+
+    assert.equal(shell.code, 2)
+    assert.match(shell.stderr, /needs a terminal/)
+  })
+
+  test('without a sandbox and without a terminal, a per-sandbox command asks for one', async () => {
+    const result = await sly(['sandboxes', 'stop'])
+
+    assert.equal(result.code, 2)
+    assert.match(result.stderr, /INPUT_REQUIRED/)
+    assert.match(result.stderr, /as an argument/)
+  })
+
   test('shell refuses without a terminal', async () => {
     const result = await dev(['sandboxes', 'shell'])
 

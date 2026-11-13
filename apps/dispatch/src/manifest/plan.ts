@@ -22,7 +22,7 @@ import type { Principal } from '../auth/principal.ts'
 import type { Level, Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 import { domain, port_allocation, service, service_port, station, volume } from '../db/schema.ts'
-import { normalizeHealth } from '../generation/health.ts'
+import { normalizeHealth, undeclaredHealthPort } from '../generation/health.ts'
 import { pinImageSource, pinnedWarning } from '../platform/image-source.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { parseValue, type Segment } from '../secrets/reference.ts'
@@ -605,11 +605,13 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
     const health = normalizeHealth(kind, ports, raw.health)
 
-    if (health && 'port' in health && !portSet.has(health.port)) {
+    const undeclared = undeclaredHealthPort(health, ports)
+
+    if (undeclared) {
       issues.push({
         path: at('health', svc.health?.port !== undefined ? 'port' : 'type'),
         code: 'PORT_UNDECLARED',
-        message: `health.port ${health.port || '(none)'} is not in ports.`,
+        message: undeclared,
       })
     }
 

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 
 import { serviceStatusValues } from '@stationly/protocol'
 
@@ -29,6 +29,7 @@ import {
   volume,
   volume_snapshot,
 } from '../db/schema.ts'
+import { effectiveHealth, type StoredHealth } from '../generation/health.ts'
 import { agentStatusOf } from '../sandboxes/agent-status.ts'
 import { deleteAt, retentionSeconds } from '../sandboxes/lifecycle.ts'
 import { sandboxMemory } from '../sandboxes/limits.ts'
@@ -555,6 +556,53 @@ export const createViews = (db: Db) => {
     },
   }
 
+  const portDocsOf = (serviceId: string) =>
+    db
+      .select()
+      .from(service_port)
+      .where(eq(service_port.service_id, serviceId))
+      .orderBy(asc(service_port.port))
+      .all()
+      .map((p) => ({
+        port: p.port,
+        protocol: p.protocol,
+      }))
+
+  const lastHealthChange = (row: ServiceRow) => {
+    if (row.status !== 'amber' && row.status !== 'red') {
+      return null
+    }
+
+    const found = db
+      .select()
+      .from(event)
+      .where(
+        and(
+          eq(event.type, 'health.changed'),
+          sql`json_extract(${event.subject}, '$.id') = ${row.id}`,
+        ),
+      )
+      .orderBy(desc(event.id))
+      .limit(1)
+      .get()
+
+    if (!found) {
+      return null
+    }
+
+    const payload = found.payload as Record<string, string | number | null | undefined>
+
+    return {
+      at: found.created_at.toISOString(),
+      from: String(payload.from),
+      to: String(payload.to),
+      state: String(payload.state ?? payload.health ?? '') || null,
+      consecutive: typeof payload.consecutive === 'number' ? payload.consecutive : null,
+      last_check: typeof payload.last_check === 'string' ? payload.last_check : null,
+      status_hint: typeof payload.status_hint === 'string' ? payload.status_hint : null,
+    }
+  }
+
   const serviceView: View<ServiceRow, typeof shapes.Service> = {
     schema: shapes.Service,
     full: (row) => ({
@@ -567,7 +615,7 @@ export const createViews = (db: Db) => {
       command: row.command,
       build_args: row.build_args,
       limits: row.limits,
-      health: row.health,
+      health_default: row.health === null,
       strategy: row.strategy,
       multi_writer_safe: row.multi_writer_safe,
       drain_timeout_s: row.drain_timeout_s,
@@ -598,6 +646,8 @@ export const createViews = (db: Db) => {
       'stale_reasons',
     ],
     expand: {
+      health: (row) => effectiveHealth(row.kind, portDocsOf(row.id), row.health as StoredHealth),
+      last_health_change: (row) => lastHealthChange(row),
       ports: (row, sub) =>
         projectAll(
           portView,

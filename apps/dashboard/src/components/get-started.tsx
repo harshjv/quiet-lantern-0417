@@ -174,7 +174,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
           : 'Claude Code, Cursor, Codex or any MCP client.',
       action: (next) => (
         <Button asChild size="sm" variant={variant(next)}>
-          <Link to="/agents">Connect agent</Link>
+          <Link to="/connect">Connect agent</Link>
         </Button>
       ),
     },

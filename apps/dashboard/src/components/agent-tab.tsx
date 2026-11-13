@@ -1,5 +1,5 @@
 import { ChevronRight, CircleAlert, Loader2, TerminalSquare } from 'lucide-react'
-import { useMemo, useReducer, useState } from 'react'
+import { useMemo, useReducer, useState, type ReactNode } from 'react'
 
 import type { AgentEventValue } from '@stationly/protocol'
 
@@ -157,6 +157,82 @@ function TurnView({ turn }: { turn: Turn }) {
   )
 }
 
+export function useAgentSession(sandboxId: string, enabled: boolean, session?: string) {
+  const [state, dispatch] = useReducer(reduce, emptyAgentState)
+  const stream = useEventStream(
+    enabled ? agentStreamUrl(sandboxId, session) : null,
+    handlers(dispatch),
+  )
+
+  return {
+    state,
+    stream,
+  }
+}
+
+export function WaitingNotice({
+  kind,
+  state,
+}: {
+  kind: keyof typeof attentionText | null
+  state: AgentState
+}) {
+  const lastAttention = state.events.findLast((event) => event.type === 'attention')
+
+  return (
+    <Alert className={warningAlert}>
+      <CircleAlert />
+      <AlertDescription className="text-current">
+        {attentionText[kind ?? 'permission']}
+        {lastAttention?.type === 'attention' && lastAttention.data.tool
+          ? ` ${lastAttention.data.tool}${lastAttention.data.summary ? `: ${lastAttention.data.summary}` : ''}.`
+          : ''}{' '}
+        Answer in the terminal.
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+export function AgentThread({
+  state,
+  stream,
+  session,
+  empty,
+  frameClassName,
+  className = 'max-h-[65vh] space-y-6 rounded-lg border p-4',
+}: {
+  state: AgentState
+  stream: ReturnType<typeof useEventStream>
+  session: string | null
+  empty: ReactNode
+  frameClassName?: string
+  className?: string
+}) {
+  const turns = useMemo(() => (session ? turnsOf(state, session) : []), [state, session])
+
+  return (
+    <>
+      {turns.length ? (
+        <FollowTail
+          changes={state}
+          label="Agent session"
+          className={className}
+          frameClassName={frameClassName}
+        >
+          {turns.map((turn) => (
+            <TurnView key={turn.key} turn={turn} />
+          ))}
+        </FollowTail>
+      ) : (
+        empty
+      )}
+      {stream === 'offline' && state.events.length > 0 && (
+        <p className="text-xs text-muted-foreground">Disconnected. Reload to follow again.</p>
+      )}
+    </>
+  )
+}
+
 export function AgentTab({
   sandbox,
   onOpenTerminal,
@@ -164,15 +240,12 @@ export function AgentTab({
   sandbox: Sandbox
   onOpenTerminal: () => void
 }) {
-  const [state, dispatch] = useReducer(reduce, emptyAgentState)
   const [chosen, setChosen] = useState<string | null>(null)
   const claude = sandbox.workspace?.agent === 'claude'
-  const stream = useEventStream(claude ? agentStreamUrl(sandbox.id) : null, handlers(dispatch))
+  const { state, stream } = useAgentSession(sandbox.id, claude)
   const sessions = useMemo(() => sessionsOf(state.events), [state.events])
   const session = chosen ?? sessions.at(-1)?.id ?? null
-  const turns = useMemo(() => (session ? turnsOf(state, session) : []), [state, session])
   const status = sandbox.agent_status ?? null
-  const lastAttention = state.events.findLast((event) => event.type === 'attention')
 
   if (!claude) {
     return (
@@ -221,41 +294,22 @@ export function AgentTab({
           </Code>
         </span>
       </div>
-      {status?.status === 'waiting' && (
-        <Alert className={warningAlert}>
-          <CircleAlert />
-          <AlertDescription className="text-current">
-            {attentionText[status.kind ?? 'permission']}
-            {lastAttention?.type === 'attention' && lastAttention.data.tool
-              ? ` ${lastAttention.data.tool}${lastAttention.data.summary ? `: ${lastAttention.data.summary}` : ''}.`
-              : ''}{' '}
-            Answer in the terminal.
-          </AlertDescription>
-        </Alert>
-      )}
-      {turns.length ? (
-        <FollowTail
-          changes={state}
-          label="Agent session"
-          className="max-h-[65vh] space-y-6 rounded-lg border p-4"
-        >
-          {turns.map((turn) => (
-            <TurnView key={turn.key} turn={turn} />
-          ))}
-        </FollowTail>
-      ) : (
-        <EmptyState
-          title="No agent session yet"
-          description={
-            <>
-              Start <Code>claude</Code> in the workspace and what it does appears here.
-            </>
-          }
-        />
-      )}
-      {stream === 'offline' && state.events.length > 0 && (
-        <p className="text-xs text-muted-foreground">Disconnected. Reload to follow again.</p>
-      )}
+      {status?.status === 'waiting' && <WaitingNotice kind={status.kind} state={state} />}
+      <AgentThread
+        state={state}
+        stream={stream}
+        session={session}
+        empty={
+          <EmptyState
+            title="No agent session yet"
+            description={
+              <>
+                Start <Code>claude</Code> in the workspace and what it does appears here.
+              </>
+            }
+          />
+        }
+      />
     </div>
   )
 }

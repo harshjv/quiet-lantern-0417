@@ -144,7 +144,7 @@ export const serviceQuery = (service: string) =>
           .get({
             query: {
               fields:
-                'id,environment_id,name,kind,status,status_reason,desired_state,station_id,source,current_deployment_id,stale,stale_reasons,current_deployment',
+                'id,environment_id,name,kind,status,status_reason,desired_state,station_id,source,current_deployment_id,stale,stale_reasons,health,health_default,last_health_change,ports,current_deployment',
             },
           }),
       ),
@@ -485,6 +485,20 @@ export const stagedChangeQuery = (id: string) =>
 
 const sandboxFields =
   'id,environment_id,station_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,workspace,agent_status,created_at,failure,exit_code'
+
+export const agentSessionsQuery = (workspace?: string) =>
+  queryOptions({
+    queryKey: workspace ? ['agent-sessions', 'of', workspace] : ['agent-sessions'],
+    queryFn: () =>
+      unwrap(
+        api.v1['agent-sessions'].get({
+          query: {
+            limit: 200,
+            workspace,
+          },
+        }),
+      ),
+  })
 
 export const sandboxesQuery = (environment: string) =>
   queryOptions({

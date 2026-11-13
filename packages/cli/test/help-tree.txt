@@ -184,7 +184,7 @@ sly runs list
   List the runs of a service
 sly sandboxes
   Persistent Linux machines for agents, isolated with gVisor
-sly sandboxes agent
+sly sandboxes agent [sandbox]
   Events of a workspace's agent session, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
 sly sandboxes create [name]
   Create a sandbox, or fork one from a snapshot or a live sandbox disk with from
@@ -192,19 +192,19 @@ sly sandboxes delete [sandbox]
   Delete a sandbox and its disk; its snapshots stay
 sly sandboxes delete-snapshot <id>
   Delete a sandbox snapshot
-sly sandboxes exec <command...>
-  Run a command in the running sandbox --sandbox and stream its output; put the command after --
-sly sandboxes forward <port>
-  Listen on 127.0.0.1 and forward to a port of the running sandbox --sandbox
+sly sandboxes exec <words...>
+  Run a command in a running sandbox and stream its output: sly sandboxes exec <sandbox> -- <command>
+sly sandboxes forward <port> [sandbox]
+  Listen on 127.0.0.1 and forward to a port of a running sandbox
 sly sandboxes get [sandbox]
   Get a sandbox
-sly sandboxes get-connections
+sly sandboxes get-connections [sandbox]
   Live connections and refused attempts of a sandbox; one sample
-sly sandboxes get-dns-log
+sly sandboxes get-dns-log [sandbox]
   The sandbox's recent DNS queries from the resolver's ring, newest first, as untrusted data
-sly sandboxes get-metrics
+sly sandboxes get-metrics [sandbox]
   Latest live metrics sample of a sandbox
-sly sandboxes get-resolved-variables
+sly sandboxes get-resolved-variables [sandbox]
   The resolved variables of a sandbox with their sources; a value only with admin and never a sealed one
 sly sandboxes get-snapshot <id>
   Get a sandbox snapshot
@@ -214,23 +214,25 @@ sly sandboxes list
   List the sandboxes of an environment
 sly sandboxes list-environment-snapshots
   List the sandbox snapshots of an environment
-sly sandboxes list-runs
+sly sandboxes list-runs [sandbox]
   List the runs of a sandbox
-sly sandboxes list-snapshots
+sly sandboxes list-snapshots [sandbox]
   List the snapshots of a sandbox
-sly sandboxes list-variables
+sly sandboxes list-variables [sandbox]
   List the variables of a sandbox; values are never listed
-sly sandboxes probe-network
+sly sandboxes probe-network [sandbox]
   Ask the sandbox's resolver as the sandbox, or judge one TCP handshake with the sandbox ruleset and send it from the station when the ruleset accepts the destination
-sly sandboxes set-variables
+sly sandboxes sessions
+  Agent sessions of every workspace, newest first, with status, attention kind and the first prompt as the title; for an instance admin
+sly sandboxes set-variables [sandbox]
   Set and unset a sandbox's variables; references to project and global variables keep values out of the agent's hands
-sly sandboxes shell [command...]
-  Interactive shell in the running sandbox --sandbox; needs a terminal and a human actor in protected environments
-sly sandboxes snapshot
+sly sandboxes shell [words...]
+  Interactive shell in a running sandbox: sly sandboxes shell <sandbox>; needs a terminal and a human actor in protected environments
+sly sandboxes snapshot [sandbox]
   Take a read-only copy of a sandbox's disk; files on the disk, credentials included, are copied into every snapshot and fork
-sly sandboxes start
+sly sandboxes start [sandbox]
   Start a stopped sandbox; ttl_s replaces the stored one
-sly sandboxes stop
+sly sandboxes stop [sandbox]
   Stop a sandbox and keep its disk
 sly sandboxes update [sandbox]
   Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start

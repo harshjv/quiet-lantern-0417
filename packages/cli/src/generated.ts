@@ -23,7 +23,7 @@ import {
 
 import { action, bytes, group, parseJson, seconds, type Program } from './command.ts'
 import { environmentEnv, projectEnv } from './env.ts'
-import { Exit } from './errors.ts'
+import { Exit, usage } from './errors.ts'
 import {
   connect,
   environmentId,
@@ -31,6 +31,7 @@ import {
   projectId,
   projectRef,
   sandboxId,
+  sandboxRef,
   serviceId,
   type Globals,
   type Run,
@@ -412,10 +413,12 @@ const optionsOf = (
 }
 
 const selected = (run: Run, target: 'service' | 'sandbox') =>
-  need(run.selection[target], {
-    what: target === 'service' ? 'Service' : 'Sandbox',
-    flag: `--${target} <id or name>`,
-  })
+  target === 'sandbox'
+    ? sandboxRef(run)
+    : need(run.selection[target], {
+        what: 'Service',
+        flag: `--${target} <id or name>`,
+      })
 
 const scoped = async (run: Run, entity: 'service' | 'sandbox', ref: string) =>
   isId(entity, ref)
@@ -696,7 +699,11 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   const pathParameters = parameters.filter((p) => p.in === 'path')
   const contextual = pathParameters.map((p) => p.name).filter(isTarget)
   const last = pathParameters.at(-1)?.name
-  const named = last !== undefined && isTarget(last) && path.endsWith(`/{${last}}`) ? last : null
+  const named = pathParameters.some((p) => p.name === 'sandbox')
+    ? 'sandbox'
+    : last !== undefined && isTarget(last) && path.endsWith(`/{${last}}`)
+      ? last
+      : null
   const command = new Command(word).description(summary)
 
   if (contextual.length) {
@@ -780,6 +787,14 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   command.action(
     action<unknown[], Record<string, unknown>, Globals>(async (options, ...positional) => {
       const connected = await connect(options)
+
+      if (named && positional[args.length] !== undefined && options[named] !== undefined) {
+        throw usage(
+          `The ${named} is given twice, as an argument and as --${named}.`,
+          `Give it once: sly ... ${positional[args.length] as string}, or --${named}.`,
+        )
+      }
+
       const run =
         named && positional[args.length] !== undefined
           ? {

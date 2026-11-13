@@ -6,7 +6,13 @@ import { serviceKindValues, serviceStatusValues } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
 import { deployment, service, service_port, station, variable, volume } from '../../db/schema.ts'
-import { normalizeHealth } from '../../generation/health.ts'
+import {
+  healthPortMissing,
+  normalizeHealth,
+  undeclaredHealthPort,
+  type PortDoc,
+  type StoredHealth,
+} from '../../generation/health.ts'
 import { pinImageSource, pinnedWarning } from '../../platform/image-source.ts'
 import { parseValue } from '../../secrets/reference.ts'
 import { requireLevel } from '../access.ts'
@@ -58,8 +64,38 @@ const defaultLimits = {
   cpu_millis: 1000,
   memory_bytes: 536870912,
 }
-const fullHealth = (kind: string, health: HealthBody | null | undefined) =>
-  health ? normalizeHealth(kind, [], health) : null
+
+const fullHealth = (
+  kind: string,
+  ports: PortDoc[],
+  health: HealthBody | null | undefined,
+  path: string,
+) => {
+  if (!health) {
+    return null
+  }
+
+  const resolved = normalizeHealth(kind, ports, health)
+  const undeclared = undeclaredHealthPort(resolved, ports)
+
+  if (undeclared) {
+    invalid([
+      {
+        path,
+        code: 'PORT_UNDECLARED',
+        message: undeclared,
+      },
+    ])
+  }
+
+  return resolved
+}
+
+const portDocs = (ports: { port: number; protocol?: 'http' | 'tcp' }[]): PortDoc[] =>
+  ports.map((p) => ({
+    port: p.port,
+    protocol: p.protocol ?? 'http',
+  }))
 
 const kindTakesPorts = (kind: string) => kind === 'web'
 
@@ -330,7 +366,7 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
       ...defaultLimits,
       ...body.limits,
     },
-    health: fullHealth(body.kind, body.health),
+    health: fullHealth(body.kind, portDocs(ports), body.health, '/health/port'),
     strategy,
     multi_writer_safe: body.multi_writer_safe ?? false,
     drain_timeout_s: body.drain_timeout_s ?? 30,
@@ -392,6 +428,35 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
     placeStation(kit, body.station_id)
   }
 
+  const stored = db.select().from(service_port).where(eq(service_port.service_id, svc.id)).all()
+  const nextPorts: PortDoc[] = body.ports
+    ? body.ports.map((p) => ({
+        port: p.port,
+        protocol: p.protocol ?? stored.find((c) => c.port === p.port)?.protocol ?? 'http',
+      }))
+    : stored.map((p) => ({
+        port: p.port,
+        protocol: p.protocol,
+      }))
+  const nextHealth =
+    body.health === undefined
+      ? undefined
+      : fullHealth(svc.kind, nextPorts, body.health, '/health/port')
+
+  if (body.health === undefined && body.ports) {
+    const dropped = healthPortMissing(svc.health as StoredHealth, nextPorts)
+
+    if (dropped !== null) {
+      invalid([
+        {
+          path: '/ports',
+          code: 'PORT_UNDECLARED',
+          message: `health.port ${dropped} would no longer be in ports; change the health check in the same request.`,
+        },
+      ])
+    }
+  }
+
   const set = new ChangeSet()
   const next: Record<string, unknown> = {
     ...body,
@@ -401,7 +466,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
           ...body.limits,
         }
       : undefined,
-    health: body.health === undefined ? undefined : fullHealth(svc.kind, body.health),
+    health: nextHealth,
   }
 
   for (const field of configFields) {
@@ -430,7 +495,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
       invalid(issues)
     }
 
-    const current = db.select().from(service_port).where(eq(service_port.service_id, svc.id)).all()
+    const current = stored
 
     for (const port of current) {
       if (body.ports.some((p) => p.port === port.port)) {

@@ -189,10 +189,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       }),
   )
   useShortcut(
-    'agents',
+    'sessions',
     () =>
       void navigate({
-        to: '/agents',
+        to: '/sessions',
+      }),
+  )
+  useShortcut(
+    'connect',
+    () =>
+      void navigate({
+        to: '/connect',
       }),
   )
 
@@ -215,6 +222,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="hidden sm:inline">Stationly</span>
           </Link>
           <nav aria-label="Main" className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            <Link to="/sessions" className={navLink}>
+              Sessions
+            </Link>
             <Link
               to="/"
               activeOptions={{
@@ -232,8 +242,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </span>
               )}
             </Link>
-            <Link to="/agents" className={navLink}>
-              Agents
+            <Link to="/connect" className={navLink}>
+              Connect
             </Link>
             <Link to="/stations" className={navLink}>
               Stations

@@ -23,7 +23,7 @@ function Connected({ project }: { project: string }) {
   const names = [...new Set((tokens.data ?? []).map((token) => client(token.name)))]
   const link = (
     <Link
-      to="/agents"
+      to="/connect"
       search={{
         project,
       }}

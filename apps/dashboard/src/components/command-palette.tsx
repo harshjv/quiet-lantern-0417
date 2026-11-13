@@ -247,6 +247,14 @@ function Item({
 
 const goTo: { label: string; icon: LucideIcon; link: LinkOptions; shortcut?: ShortcutId }[] = [
   {
+    label: 'Sessions',
+    icon: entityIcon.session,
+    link: {
+      to: '/sessions',
+    },
+    shortcut: 'sessions',
+  },
+  {
     label: 'Projects',
     icon: entityIcon.project,
     link: {
@@ -263,12 +271,12 @@ const goTo: { label: string; icon: LucideIcon; link: LinkOptions; shortcut?: Sho
     shortcut: 'staged',
   },
   {
-    label: 'Agents',
+    label: 'Connect an agent',
     icon: entityIcon.agent,
     link: {
-      to: '/agents',
+      to: '/connect',
     },
-    shortcut: 'agents',
+    shortcut: 'connect',
   },
   {
     label: 'Stations',

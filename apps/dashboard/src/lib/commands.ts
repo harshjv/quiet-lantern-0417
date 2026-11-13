@@ -75,6 +75,14 @@ export const commands = {
     sly(...serviceScoped(scope), 'rollback', '--deployment-id', deployment, '--wait'),
   setMemory: (scope: ServiceScope, bytes: number) =>
     sly(...serviceScoped(scope), 'services', 'update', '--limits', `memory_bytes=${bytes}`),
+  setHealth: (scope: ServiceScope, port: number | null) =>
+    sly(
+      ...serviceScoped(scope),
+      'services',
+      'update',
+      '--health',
+      `type=http,path=/,port=${port ?? '<port>'}`,
+    ),
   logs: (scope: ServiceScope, deployment: string, build: string | null) =>
     sly(
       ...serviceScoped(scope),
@@ -103,6 +111,16 @@ export const commands = {
     sly('stations', 'update', station, '--default-sandbox-runtime', '<runtime>'),
   startSandbox: (scope: Scope, sandbox: string) =>
     sly(...scoped(scope), '--sandbox', sandbox, 'sandboxes', 'start'),
+  createWorkspace: (scope: Scope) =>
+    sly(
+      ...scoped(scope),
+      'sandboxes',
+      'create',
+      '<name>',
+      '--workspace',
+      'agent=claude,repository=<repository-url>',
+    ),
+  openWorkspace: (name: string) => sly('sandboxes', 'shell', name),
   createSandbox: (scope: Scope) =>
     sly(...scoped(scope), 'sandboxes', 'create', '<name>', '--ttl-s', '2h'),
   snapshotSandbox: (scope: Scope, sandbox: string) =>

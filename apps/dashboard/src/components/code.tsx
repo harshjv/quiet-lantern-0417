@@ -181,7 +181,7 @@ export function AlsoWith({
         <Tooltip>
           <TooltipTrigger asChild>
             <Link
-              to="/agents"
+              to="/connect"
               className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground"
             >
               <entityIcon.agent className="size-3.5 shrink-0" aria-label="Your agent" />

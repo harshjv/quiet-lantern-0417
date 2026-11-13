@@ -52,7 +52,7 @@ import { SecretsError } from '../secrets/errors.ts'
 import { sandboxEnv } from '../secrets/sandbox.ts'
 
 import { hashed, sha256Digest } from './hash.ts'
-import { normalizeHealth } from './health.ts'
+import { effectiveHealth } from './health.ts'
 
 type GenerationDoc = Static<typeof Generation>
 type ContainerSpecDoc = Static<typeof ContainerSpec>
@@ -199,11 +199,7 @@ const specOf = (
     image_ref: dep.image_ref,
     command: config.command ?? null,
     limits: config.limits,
-    health: healthWithHost(
-      db,
-      dep.service_id,
-      config.health ?? normalizeHealth(config.kind, ports, undefined),
-    ),
+    health: healthWithHost(db, dep.service_id, effectiveHealth(config.kind, ports, config.health)),
     ports: ports.map((p) => ({
       id: p.id,
       port: p.port,

@@ -13,15 +13,18 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
-import { Route as AppAgentsRouteImport } from './routes/_app/agents'
+import { Route as AppConnectRouteImport } from './routes/_app/connect'
+import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
 import { Route as AppStationsRouteImport } from './routes/_app/stations'
 import { Route as AppDeploymentsDeploymentRouteImport } from './routes/_app/deployments/$deployment'
 import { Route as AppSandboxesSandboxRouteImport } from './routes/_app/sandboxes/$sandbox'
 import { Route as AppServicesServiceRouteImport } from './routes/_app/services/$service'
+import { Route as AppSessionsIndexRouteImport } from './routes/_app/sessions/index'
 import { Route as AppStagedIndexRouteImport } from './routes/_app/staged/index'
 import { Route as AppStagedChangeRouteImport } from './routes/_app/staged/$change'
 import { Route as AppProjectsProjectIndexRouteImport } from './routes/_app/projects/$project/index'
 import { Route as AppProjectsProjectEnvironmentRouteImport } from './routes/_app/projects/$project/$environment'
+import { Route as AppSessionsSandboxSessionRouteImport } from './routes/_app/sessions/$sandbox/$session'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -42,9 +45,14 @@ const AppAccountRoute = AppAccountRouteImport.update({
   path: '/account',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAgentsRoute = AppAgentsRouteImport.update({
-  id: '/agents',
-  path: '/agents',
+const AppConnectRoute = AppConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSessionsRoute = AppSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
   getParentRoute: () => AppRoute,
 } as any)
 const AppStationsRoute = AppStationsRouteImport.update({
@@ -68,6 +76,11 @@ const AppServicesServiceRoute = AppServicesServiceRouteImport.update({
   path: '/services/$service',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSessionsIndexRoute = AppSessionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppSessionsRoute,
+} as any)
 const AppStagedIndexRoute = AppStagedIndexRouteImport.update({
   id: '/staged/',
   path: '/staged/',
@@ -89,33 +102,44 @@ const AppProjectsProjectEnvironmentRoute =
     path: '/projects/$project/$environment',
     getParentRoute: () => AppRoute,
   } as any)
+const AppSessionsSandboxSessionRoute =
+  AppSessionsSandboxSessionRouteImport.update({
+    id: '/$sandbox/$session',
+    path: '/$sandbox/$session',
+    getParentRoute: () => AppSessionsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/account': typeof AppAccountRoute
-  '/agents': typeof AppAgentsRoute
+  '/connect': typeof AppConnectRoute
+  '/sessions': typeof AppSessionsRouteWithChildren
   '/stations': typeof AppStationsRoute
   '/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
   '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/services/$service': typeof AppServicesServiceRoute
   '/staged/$change': typeof AppStagedChangeRoute
+  '/sessions/': typeof AppSessionsIndexRoute
   '/staged/': typeof AppStagedIndexRoute
   '/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
+  '/sessions/$sandbox/$session': typeof AppSessionsSandboxSessionRoute
   '/projects/$project/': typeof AppProjectsProjectIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/account': typeof AppAccountRoute
-  '/agents': typeof AppAgentsRoute
+  '/connect': typeof AppConnectRoute
   '/stations': typeof AppStationsRoute
   '/': typeof AppIndexRoute
   '/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
   '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/services/$service': typeof AppServicesServiceRoute
   '/staged/$change': typeof AppStagedChangeRoute
+  '/sessions': typeof AppSessionsIndexRoute
   '/staged': typeof AppStagedIndexRoute
   '/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
+  '/sessions/$sandbox/$session': typeof AppSessionsSandboxSessionRoute
   '/projects/$project': typeof AppProjectsProjectIndexRoute
 }
 export interface FileRoutesById {
@@ -123,15 +147,18 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/account': typeof AppAccountRoute
-  '/_app/agents': typeof AppAgentsRoute
+  '/_app/connect': typeof AppConnectRoute
+  '/_app/sessions': typeof AppSessionsRouteWithChildren
   '/_app/stations': typeof AppStationsRoute
   '/_app/': typeof AppIndexRoute
   '/_app/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
   '/_app/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/_app/services/$service': typeof AppServicesServiceRoute
   '/_app/staged/$change': typeof AppStagedChangeRoute
+  '/_app/sessions/': typeof AppSessionsIndexRoute
   '/_app/staged/': typeof AppStagedIndexRoute
   '/_app/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
+  '/_app/sessions/$sandbox/$session': typeof AppSessionsSandboxSessionRoute
   '/_app/projects/$project/': typeof AppProjectsProjectIndexRoute
 }
 export interface FileRouteTypes {
@@ -140,43 +167,51 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/account'
-    | '/agents'
+    | '/connect'
+    | '/sessions'
     | '/stations'
     | '/deployments/$deployment'
     | '/sandboxes/$sandbox'
     | '/services/$service'
     | '/staged/$change'
+    | '/sessions/'
     | '/staged/'
     | '/projects/$project/$environment'
+    | '/sessions/$sandbox/$session'
     | '/projects/$project/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/account'
-    | '/agents'
+    | '/connect'
     | '/stations'
     | '/'
     | '/deployments/$deployment'
     | '/sandboxes/$sandbox'
     | '/services/$service'
     | '/staged/$change'
+    | '/sessions'
     | '/staged'
     | '/projects/$project/$environment'
+    | '/sessions/$sandbox/$session'
     | '/projects/$project'
   id:
     | '__root__'
     | '/_app'
     | '/login'
     | '/_app/account'
-    | '/_app/agents'
+    | '/_app/connect'
+    | '/_app/sessions'
     | '/_app/stations'
     | '/_app/'
     | '/_app/deployments/$deployment'
     | '/_app/sandboxes/$sandbox'
     | '/_app/services/$service'
     | '/_app/staged/$change'
+    | '/_app/sessions/'
     | '/_app/staged/'
     | '/_app/projects/$project/$environment'
+    | '/_app/sessions/$sandbox/$session'
     | '/_app/projects/$project/'
   fileRoutesById: FileRoutesById
 }
@@ -215,11 +250,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAccountRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/agents': {
-      id: '/_app/agents'
-      path: '/agents'
-      fullPath: '/agents'
-      preLoaderRoute: typeof AppAgentsRouteImport
+    '/_app/connect': {
+      id: '/_app/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof AppConnectRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sessions': {
+      id: '/_app/sessions'
+      path: '/sessions'
+      fullPath: '/sessions'
+      preLoaderRoute: typeof AppSessionsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/stations': {
@@ -250,6 +292,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServicesServiceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/sessions/': {
+      id: '/_app/sessions/'
+      path: '/'
+      fullPath: '/sessions/'
+      preLoaderRoute: typeof AppSessionsIndexRouteImport
+      parentRoute: typeof AppSessionsRoute
+    }
     '/_app/staged/': {
       id: '/_app/staged/'
       path: '/staged'
@@ -278,12 +327,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectEnvironmentRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/sessions/$sandbox/$session': {
+      id: '/_app/sessions/$sandbox/$session'
+      path: '/$sandbox/$session'
+      fullPath: '/sessions/$sandbox/$session'
+      preLoaderRoute: typeof AppSessionsSandboxSessionRouteImport
+      parentRoute: typeof AppSessionsRoute
+    }
   }
 }
 
+interface AppSessionsRouteChildren {
+  AppSessionsIndexRoute: typeof AppSessionsIndexRoute
+  AppSessionsSandboxSessionRoute: typeof AppSessionsSandboxSessionRoute
+}
+
+const AppSessionsRouteChildren: AppSessionsRouteChildren = {
+  AppSessionsIndexRoute: AppSessionsIndexRoute,
+  AppSessionsSandboxSessionRoute: AppSessionsSandboxSessionRoute,
+}
+
+const AppSessionsRouteWithChildren = AppSessionsRoute._addFileChildren(
+  AppSessionsRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAccountRoute: typeof AppAccountRoute
-  AppAgentsRoute: typeof AppAgentsRoute
+  AppConnectRoute: typeof AppConnectRoute
+  AppSessionsRoute: typeof AppSessionsRouteWithChildren
   AppStationsRoute: typeof AppStationsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppDeploymentsDeploymentRoute: typeof AppDeploymentsDeploymentRoute
@@ -297,7 +368,8 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAccountRoute: AppAccountRoute,
-  AppAgentsRoute: AppAgentsRoute,
+  AppConnectRoute: AppConnectRoute,
+  AppSessionsRoute: AppSessionsRouteWithChildren,
   AppStationsRoute: AppStationsRoute,
   AppIndexRoute: AppIndexRoute,
   AppDeploymentsDeploymentRoute: AppDeploymentsDeploymentRoute,

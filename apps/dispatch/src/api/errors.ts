@@ -95,7 +95,7 @@ export const issue = (path: string, message: string) => ({
   message,
 })
 
-export const invalid = (issues: { path: string; message: string }[]): never =>
+export const invalid = (issues: { path: string; message: string; code?: string }[]): never =>
   fail('VALIDATION_FAILED', issues.map((i) => `${i.path}: ${i.message}`).join('; '), undefined, {
     issues,
   })
