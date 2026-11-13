@@ -49,6 +49,9 @@ import {
   portProtocolValues,
   probeKinds,
   probeTcpResults,
+  AgentEvent as ProtocolAgentEvent,
+  AgentEventsAccepted as ProtocolAgentEventsAccepted,
+  AgentStatus as ProtocolAgentStatus,
   refusedPaths,
   repoAuthValues,
   Resources as ResourcesSchema,
@@ -1940,6 +1943,25 @@ export const SandboxMetricSample = component(
   ),
 )
 
+export const AgentStatus = component('AgentStatus', ProtocolAgentStatus)
+
+export const AgentEvent = component('AgentEvent', ProtocolAgentEvent)
+
+export const AgentEventsAccepted = component('AgentEventsAccepted', ProtocolAgentEventsAccepted)
+
+export const AgentEventPage = component(
+  'AgentEventPage',
+  Type.Object(
+    {
+      items: Type.Array(AgentEvent),
+      next_since: NStr,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
 export const Sandbox = component(
   'Sandbox',
   selectable(
@@ -1965,6 +1987,7 @@ export const Sandbox = component(
       disk_used_bytes: Int,
       forked_from: Nullable(SandboxForkedFrom),
       workspace: Nullable(SandboxWorkspace),
+      agent_status: Nullable(AgentStatus),
       command: Nullable(Type.Array(Str)),
       exit_code: NInt,
       failure: Nullable(Diagnosis),
@@ -1996,6 +2019,7 @@ export const Sandbox = component(
       'disk_used_bytes',
       'forked_from',
       'workspace',
+      'agent_status',
       'created_at',
     ],
   ),

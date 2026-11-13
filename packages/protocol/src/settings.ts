@@ -145,6 +145,17 @@ export const settings = {
       default: 604800,
     },
   ),
+  'sandbox.agent_events_retention_s': define(
+    Type.Integer({
+      minimum: 3600,
+    }),
+    {
+      default: 604800,
+    },
+  ),
+  'sandbox.agent_events_output': define(Bool, {
+    default: false,
+  }),
   'volume_backup.target': define(
     Type.Union([
       Type.Object(

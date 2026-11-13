@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { fitSandboxMemory, sandboxSizeDefaults } from '@stationly/protocol/domain'
 import { gibibyte, parseSeconds } from '@stationly/protocol/format'
 
+import { AgentStatusBadge } from '@/components/agent-status'
 import { AlsoWith, Code } from '@/components/code'
 import { CheckboxField, Field, FieldSet, Suffixed } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
@@ -442,7 +443,12 @@ function SandboxTable({
               </span>
             </TableCell>
             <TableCell>
-              <SandboxStatusBadge status={sandbox.status} reason={sandbox.status_reason} />
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <SandboxStatusBadge status={sandbox.status} reason={sandbox.status_reason} />
+                {sandbox.workspace && sandbox.status === 'running' && (
+                  <AgentStatusBadge status={sandbox.agent_status} />
+                )}
+              </span>
             </TableCell>
             <TableCell className="hidden max-w-56 truncate xl:table-cell">
               <span className="font-mono text-[0.8125rem] text-muted-foreground">

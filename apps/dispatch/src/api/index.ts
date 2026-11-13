@@ -13,6 +13,7 @@ import {
   mutationMethods,
 } from './idempotency.ts'
 import { createKit } from './kit.ts'
+import { agentEventRoutes } from './routes/agent-events.ts'
 import { auditRoutes } from './routes/audit.ts'
 import { blobRoutes } from './routes/blobs.ts'
 import { deployActionRoutes } from './routes/deploy-actions.ts'
@@ -243,6 +244,7 @@ export const createApi = (deps: Deps) => {
     .use(deployActionRoutes(kit))
     .use(runRoutes(kit))
     .use(sandboxRoutes(kit))
+    .use(agentEventRoutes(kit))
     .use(blobRoutes(kit))
     .use(logRoutes(kit))
     .use(eventRoutes(kit))

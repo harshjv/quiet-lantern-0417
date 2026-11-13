@@ -2,7 +2,7 @@ import { Elysia, type DocumentDecoration } from 'elysia'
 
 import type { CliMeta } from '@stationly/mcp'
 
-import type { Principal } from '../auth/principal.ts'
+import { chargeTokenWindow, type AuthenticateOptions, type Principal } from '../auth/principal.ts'
 import { anyTarget, type Level, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 
@@ -30,7 +30,10 @@ export type Operation = {
   target?: (input: TargetInput) => Target
 }
 
-type EntityOperation = Omit<Operation, 'level' | 'target'> & { level: Level }
+type EntityOperation = Omit<Operation, 'level' | 'target'> & {
+  level: Level
+  deferTokenWindow?: true
+}
 
 type RouteContext = {
   request: Request
@@ -68,16 +71,31 @@ const entityParameter = (route: string) => {
   return segment.slice(1)
 }
 
-export const routeMeta = (db: Db, principalOf: (request: Request) => Promise<Principal>) => {
+export const routeMeta = (
+  db: Db,
+  principalOf: (request: Request, options?: AuthenticateOptions) => Promise<Principal>,
+) => {
   const onEntity =
     <Found extends { target: Target }>(lookup: (db: Db, id: string) => Found) =>
     (operation: EntityOperation) => ({
       detail: documented(operation),
       resolve: async (context: RouteContext) => {
-        const principal = await principalOf(context.request)
-        const ctx = lookup(db, context.params[entityParameter(context.route)]!)
+        const principal = await principalOf(context.request, {
+          deferTokenWindow: operation.deferTokenWindow === true,
+        })
 
-        authorize(principal, ctx.target, operation.level)
+        let ctx: Found
+
+        try {
+          ctx = lookup(db, context.params[entityParameter(context.route)]!)
+          authorize(principal, ctx.target, operation.level)
+        } catch (error) {
+          if (operation.deferTokenWindow) {
+            chargeTokenWindow(principal)
+          }
+
+          throw error
+        }
 
         return {
           ctx,

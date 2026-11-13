@@ -23547,6 +23547,2584 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/sandboxes/{sandbox}/agent/events": {
+      "post": {
+        "tags": [
+          "sandboxes"
+        ],
+        "operationId": "post_agent_events",
+        "summary": "Report events of the agent session in a workspace; only the workspace token is accepted",
+        "x-stationly": {
+          "level": "read",
+          "mcp": false,
+          "cli": false
+        },
+        "parameters": [
+          {
+            "name": "sandbox",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "A batch of at most 100 events; a repeated id is ignored",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "A batch of at most 100 events; a repeated id is ignored",
+                "type": "object",
+                "required": [
+                  "events"
+                ],
+                "properties": {
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "description": "One event a workspace relay reports about its agent session",
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "session.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "cwd": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "session.ended",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "reason": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "prompt",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "text"
+                              ],
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "message.part",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "message_id",
+                                "index",
+                                "final",
+                                "text"
+                              ],
+                              "properties": {
+                                "message_id": {
+                                  "type": "string"
+                                },
+                                "index": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "final": {
+                                  "type": "boolean"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "message",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "message_id",
+                                "text"
+                              ],
+                              "properties": {
+                                "message_id": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "tool.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool_use_id",
+                                "name",
+                                "summary"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "tool.finished",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool_use_id",
+                                "name",
+                                "summary",
+                                "is_error"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "is_error": {
+                                  "type": "boolean"
+                                },
+                                "duration_ms": {
+                                  "type": "integer"
+                                },
+                                "output": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "attention",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "kind"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "permission",
+                                    "question",
+                                    "plan"
+                                  ]
+                                },
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.ended",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.failed",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "error"
+                              ],
+                              "properties": {
+                                "error": {
+                                  "type": "string"
+                                },
+                                "error_details": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "subagent.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "agent_type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "subagent.stopped",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "agent_type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "omitted",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "count"
+                              ],
+                              "properties": {
+                                "count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "A batch of at most 100 events; a repeated id is ignored",
+                "type": "object",
+                "required": [
+                  "events"
+                ],
+                "properties": {
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "description": "One event a workspace relay reports about its agent session",
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "session.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "cwd": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "session.ended",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "reason": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "prompt",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "text"
+                              ],
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "message.part",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "message_id",
+                                "index",
+                                "final",
+                                "text"
+                              ],
+                              "properties": {
+                                "message_id": {
+                                  "type": "string"
+                                },
+                                "index": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "final": {
+                                  "type": "boolean"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "message",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "message_id",
+                                "text"
+                              ],
+                              "properties": {
+                                "message_id": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "tool.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool_use_id",
+                                "name",
+                                "summary"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "tool.finished",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool_use_id",
+                                "name",
+                                "summary",
+                                "is_error"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "is_error": {
+                                  "type": "boolean"
+                                },
+                                "duration_ms": {
+                                  "type": "integer"
+                                },
+                                "output": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "attention",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "kind"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "permission",
+                                    "question",
+                                    "plan"
+                                  ]
+                                },
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.ended",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.failed",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "error"
+                              ],
+                              "properties": {
+                                "error": {
+                                  "type": "string"
+                                },
+                                "error_details": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "subagent.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "agent_type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "subagent.stopped",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "agent_type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "omitted",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "count"
+                              ],
+                              "properties": {
+                                "count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "A batch of at most 100 events; a repeated id is ignored",
+                "type": "object",
+                "required": [
+                  "events"
+                ],
+                "properties": {
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "description": "One event a workspace relay reports about its agent session",
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "session.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "type": "string"
+                                },
+                                "cwd": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "session.ended",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "reason": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "prompt",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "text"
+                              ],
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "message.part",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "message_id",
+                                "index",
+                                "final",
+                                "text"
+                              ],
+                              "properties": {
+                                "message_id": {
+                                  "type": "string"
+                                },
+                                "index": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "final": {
+                                  "type": "boolean"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "message",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "message_id",
+                                "text"
+                              ],
+                              "properties": {
+                                "message_id": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "tool.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool_use_id",
+                                "name",
+                                "summary"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "tool.finished",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool_use_id",
+                                "name",
+                                "summary",
+                                "is_error"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "is_error": {
+                                  "type": "boolean"
+                                },
+                                "duration_ms": {
+                                  "type": "integer"
+                                },
+                                "output": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "attention",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "kind"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "permission",
+                                    "question",
+                                    "plan"
+                                  ]
+                                },
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.ended",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.failed",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "error"
+                              ],
+                              "properties": {
+                                "error": {
+                                  "type": "string"
+                                },
+                                "error_details": {
+                                  "type": "string"
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "subagent.started",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "agent_type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "subagent.stopped",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "agent_type": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "omitted",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "count"
+                              ],
+                              "properties": {
+                                "count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Response for status 202",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEventsAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sandboxes"
+        ],
+        "operationId": "get_agent_events",
+        "summary": "Events of a workspace's agent session, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "sandboxes",
+              "agent"
+            ]
+          },
+          "stream": true
+        },
+        "parameters": [
+          {
+            "name": "sandbox",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Resume after this seq, the id of an event of this sandbox",
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only the events of this Claude Code session",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Page size, default 100",
+              "anyOf": [
+                {
+                  "format": "integer",
+                  "default": 0,
+                  "type": "string"
+                },
+                {
+                  "minimum": 1,
+                  "maximum": 500,
+                  "description": "Page size, default 100",
+                  "type": "integer"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/blobs": {
       "post": {
         "tags": [
@@ -45026,6 +47604,818 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/SandboxMetricSample"
       },
+      "AgentStatus": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "since",
+          "session_id",
+          "kind",
+          "agents",
+          "last_event_at"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "working",
+              "waiting",
+              "ready",
+              "failed",
+              "ended"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "permission",
+              "question",
+              "plan"
+            ]
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_event_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "$id": "#/components/schemas/AgentStatus"
+      },
+      "AgentEvent": {
+        "description": "One stored event of an agent session; seq is the sandbox cursor",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "session.started",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "session.ended",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "prompt",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "message",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "message_id",
+                  "text"
+                ],
+                "properties": {
+                  "message_id": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "tool.started",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "tool_use_id",
+                  "name",
+                  "summary"
+                ],
+                "properties": {
+                  "tool_use_id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "tool.finished",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "tool_use_id",
+                  "name",
+                  "summary",
+                  "is_error"
+                ],
+                "properties": {
+                  "tool_use_id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "is_error": {
+                    "type": "boolean"
+                  },
+                  "duration_ms": {
+                    "type": "integer"
+                  },
+                  "output": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "attention",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "permission",
+                      "question",
+                      "plan"
+                    ]
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "turn.ended",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "turn.failed",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "error"
+                ],
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  },
+                  "error_details": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "subagent.started",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "agent_type": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "subagent.stopped",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "agent_type": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "type": {
+                "const": "omitted",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "count"
+                ],
+                "properties": {
+                  "count": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "$id": "#/components/schemas/AgentEvent"
+      },
+      "AgentEventsAccepted": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "accepted",
+          "duplicates"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer"
+          },
+          "duplicates": {
+            "type": "integer"
+          }
+        },
+        "$id": "#/components/schemas/AgentEventsAccepted"
+      },
+      "AgentEventPage": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "next_since"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentEvent"
+            }
+          },
+          "next_since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "$id": "#/components/schemas/AgentEventPage"
+      },
       "Sandbox": {
         "title": "Sandbox",
         "additionalProperties": false,
@@ -45051,7 +48441,8 @@ export const openApiDocument = {
           "address",
           "disk_used_bytes",
           "forked_from",
-          "workspace"
+          "workspace",
+          "agent_status"
         ],
         "properties": {
           "id": {
@@ -45258,6 +48649,16 @@ export const openApiDocument = {
               }
             }
           },
+          "agent_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "command": {
             "type": [
               "array",
@@ -45354,6 +48755,7 @@ export const openApiDocument = {
           "disk_used_bytes",
           "forked_from",
           "workspace",
+          "agent_status",
           "warnings"
         ],
         "properties": {
@@ -45560,6 +48962,16 @@ export const openApiDocument = {
                 "type": "string"
               }
             }
+          },
+          "agent_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "command": {
             "type": [

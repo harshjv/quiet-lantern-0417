@@ -44,6 +44,7 @@ const listened = [
   'sandbox.stopped',
   'sandbox.failed',
   'sandbox.deleted',
+  'sandbox.agent_status',
 ]
 
 const groupsFor = (event: EventRow): Group[] => {

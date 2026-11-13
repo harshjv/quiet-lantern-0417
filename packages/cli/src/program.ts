@@ -2,6 +2,7 @@ import tab from '@bomb.sh/tab/commander'
 import type { Command } from 'commander'
 
 import { createProgram } from './command.ts'
+import { agentCommands } from './commands/agent.ts'
 import { authCommands } from './commands/auth.ts'
 import { adminHostCommands, hostCommands } from './commands/host.ts'
 import { linkCommands } from './commands/link.ts'
@@ -19,6 +20,7 @@ import { registerGenerated } from './generated.ts'
 export const handWrittenProgram = () => {
   const program = createProgram()
 
+  agentCommands(program)
   authCommands(program)
   linkCommands(program)
   serviceCommands(program)

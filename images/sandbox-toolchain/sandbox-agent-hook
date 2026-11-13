@@ -1,0 +1,27 @@
+#!/bin/sh
+if [ "${1:-}" = "--relay" ]; then
+	while :; do
+		flock -n -E 99 "$2/.lock" sly agent relay
+		status=$?
+		[ "$status" -eq 0 ] || exit 0
+		ls "$2"/*.json >/dev/null 2>&1 || exit 0
+	done
+fi
+
+[ -n "${STATIONLY_TOKEN:-}" ] || exit 0
+
+spool="$HOME/.local/state/stationly/spool"
+name="$(date +%s%N)-$$"
+
+mkdir -p "$spool" || exit 0
+
+if cat >"$spool/.$name"; then
+	mv "$spool/.$name" "$spool/$name.json"
+else
+	rm -f "$spool/.$name"
+	exit 0
+fi
+
+setsid "$0" --relay "$spool" </dev/null >/dev/null 2>&1 &
+
+exit 0

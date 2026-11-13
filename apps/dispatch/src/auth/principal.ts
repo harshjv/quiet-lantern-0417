@@ -62,7 +62,7 @@ const limitWindowMs = 60_000
 const unauthenticatedMax = 30
 const tokenRequestMax = 600
 
-const fixedWindow = (max: number) => {
+export const fixedWindow = (max: number) => {
   const windows = new Map<string, { start: number; count: number }>()
   const current = (key: string, now: number) => {
     const entry = windows.get(key)
@@ -98,7 +98,7 @@ const fixedWindow = (max: number) => {
 const unauthenticatedRequests = fixedWindow(unauthenticatedMax)
 const tokenRequests = fixedWindow(tokenRequestMax)
 
-const rateLimited = (explanation: string, retry: number) =>
+export const rateLimited = (explanation: string, retry: number) =>
   new ApiError(
     'RATE_LIMITED',
     explanation,
@@ -138,6 +138,14 @@ const countTokenRequest = (tokenId: string) => {
 
   tokenRequests.add(tokenId)
 }
+
+export const chargeTokenWindow = (principal: Principal) => {
+  if (principal.token_id) {
+    countTokenRequest(principal.token_id)
+  }
+}
+
+export type AuthenticateOptions = { deferTokenWindow?: boolean }
 
 const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -319,9 +327,10 @@ export const authenticate = async (
   db: Db,
   auth: AuthService,
   request: Request,
+  options: AuthenticateOptions = {},
 ): Promise<Principal> => {
   try {
-    return await identify(db, auth, request)
+    return await identify(db, auth, request, options)
   } catch (error) {
     if (error instanceof ApiError && error.code === 'UNAUTHENTICATED') {
       checkUnauthenticatedLimit(request)
@@ -331,7 +340,12 @@ export const authenticate = async (
   }
 }
 
-const identify = async (db: Db, auth: AuthService, request: Request): Promise<Principal> => {
+const identify = async (
+  db: Db,
+  auth: AuthService,
+  request: Request,
+  options: AuthenticateOptions,
+): Promise<Principal> => {
   const surface = surfaceOf(request, auth)
   const key = apiKeyFromHeaders(request.headers)
 
@@ -353,7 +367,10 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
       throw unauthenticated('The token is not a personal or scoped Stationly token.')
     }
 
-    countTokenRequest(row.id)
+    if (!options.deferTokenWindow) {
+      countTokenRequest(row.id)
+    }
+
     db.update(token)
       .set({
         last_used_at: new Date(),
@@ -429,11 +446,11 @@ const identify = async (db: Db, auth: AuthService, request: Request): Promise<Pr
 export const principalCache = (db: Db, auth: AuthService) => {
   const cache = new WeakMap<Request, Promise<Principal>>()
 
-  return (request: Request) => {
+  return (request: Request, options?: AuthenticateOptions) => {
     let found = cache.get(request)
 
     if (!found) {
-      found = authenticate(db, auth, request)
+      found = authenticate(db, auth, request, options)
       cache.set(request, found)
     }
 

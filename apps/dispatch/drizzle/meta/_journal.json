@@ -162,6 +162,20 @@
       "when": 1794360369997,
       "tag": "0022_concerned_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1794512064816,
+      "tag": "0023_salty_avengers",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794522575688,
+      "tag": "0024_petite_punisher",
+      "breakpoints": true
     }
   ]
 }

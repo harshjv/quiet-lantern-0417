@@ -4,12 +4,22 @@ import { and, count, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { runActiveStatuses, type Actor, type MessageBody, type Observed } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { run, sandbox, sandbox_snapshot, secret_value, station, variable } from '../db/schema.ts'
+import {
+  agent_event,
+  run,
+  sandbox,
+  sandbox_snapshot,
+  secret_value,
+  station,
+  variable,
+} from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 import { emitEvent } from '../station/events.ts'
 
+import { applyAgentReset } from './agent-status.ts'
+import { sandboxSubject } from './subject.ts'
 import { revokeWorkspaceToken } from './workspace.ts'
 
 type ActorValue = Static<typeof Actor>
@@ -22,14 +32,6 @@ export const systemActor: ActorValue = {
 }
 
 export const expiringLeadS = 86400
-
-export const sandboxSubject = (row: Pick<SandboxRow, 'id' | 'project_id' | 'environment_id'>) => ({
-  entity: 'sandbox',
-  id: row.id,
-  sandbox_id: row.id,
-  project_id: row.project_id,
-  environment_id: row.environment_id,
-})
 
 export const retentionSeconds = (db: Db) => readSetting(db, 'sandbox.stopped_retention_s')
 
@@ -119,6 +121,7 @@ export const removeSandbox = (db: Db, row: SandboxRow) => {
     const tdb = tx as unknown as Db
 
     dropVariables(tdb, row.id)
+    tdb.delete(agent_event).where(eq(agent_event.sandbox_id, row.id)).run()
     tdb.delete(sandbox).where(eq(sandbox.id, row.id)).run()
     emitEvent(tdb, 'sandbox.deleted', sandboxSubject(row), {
       sandbox: row.id,
@@ -219,6 +222,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
         .where(eq(sandbox.id, row.id))
         .run()
       endRuns(db, row.id)
+      applyAgentReset(db, row)
 
       if (row.status !== 'stopped') {
         emitEvent(db, 'sandbox.stopped', subject, {
@@ -248,6 +252,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
         .where(eq(sandbox.id, row.id))
         .run()
       endRuns(db, row.id)
+      applyAgentReset(db, row)
 
       if (row.status !== 'failed') {
         emitEvent(db, 'sandbox.failed', subject, {

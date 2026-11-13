@@ -70,6 +70,7 @@ import {
   volumeSnapshotTriggerValues,
   volumeStatusValues,
   type Actor,
+  type AgentStatusRecord,
   type Diagnosis,
   type ErrorBody,
   type Generation,
@@ -356,6 +357,8 @@ export const sandbox = sqliteTable(
       requested_at: string
     }>('deletion'),
     workspace: json<SandboxWorkspace>('workspace'),
+    agent_status: json<AgentStatusRecord>('agent_status'),
+    agent_seq: integer('agent_seq').notNull().default(0),
     created_by: json<ActorValue>('created_by').notNull(),
   },
   (table) => [
@@ -371,6 +374,32 @@ export type SandboxSnapshotSettings = {
   command: string[] | null
   ttl_s: number | null
 }
+
+export const agent_event = sqliteTable(
+  'agent_event',
+  {
+    sandbox_id: text('sandbox_id').notNull(),
+    seq: integer('seq').notNull(),
+    event_id: text('event_id').notNull(),
+    session_id: text('session_id').notNull(),
+    prompt_id: text('prompt_id'),
+    turn_id: text('turn_id'),
+    agent_id: text('agent_id'),
+    type: text('type').notNull(),
+    at: timestamp('at').notNull(),
+    received_at: timestamp('received_at').notNull(),
+    data: json<JsonObject>('data').notNull(),
+    bytes: integer('bytes').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.sandbox_id, table.seq],
+    }),
+    uniqueIndex('agent_event_sandbox_event_unique').on(table.sandbox_id, table.event_id),
+    index('agent_event_session').on(table.sandbox_id, table.session_id, table.seq),
+    index('agent_event_received_at').on(table.received_at),
+  ],
+)
 
 export const sandbox_snapshot = sqliteTable(
   'sandbox_snapshot',

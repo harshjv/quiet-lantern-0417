@@ -2,6 +2,10 @@ sly admin
   Host-only administration, as root on the station host through stationd's root socket
 sly admin recovery-key
   Print the recovery key again; the display is audited
+sly agent
+  Agent session commands that run inside a workspace
+sly agent relay
+  Post the agent session events that the workspace hook spooled to Dispatch, then exit when the spool stays empty
 sly apply
   Plan or apply a Manifest (alias of sly manifest apply)
 sly audit
@@ -180,6 +184,8 @@ sly runs list
   List the runs of a service
 sly sandboxes
   Persistent Linux machines for agents, isolated with gVisor
+sly sandboxes agent
+  Events of a workspace's agent session, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
 sly sandboxes create [name]
   Create a sandbox, or fork one from a snapshot or a live sandbox disk with from
 sly sandboxes delete [sandbox]

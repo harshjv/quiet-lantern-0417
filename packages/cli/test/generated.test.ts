@@ -274,6 +274,7 @@ test(
       'open_sandbox_shell',
       'open_shell',
       'platform_upgrade',
+      'post_agent_events',
       'run_command',
       'sandbox_exec',
       'upload_blob',

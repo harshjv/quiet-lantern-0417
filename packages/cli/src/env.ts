@@ -12,6 +12,7 @@ export const tokenEnv = workspaceEnv.token
 export const apiUrlEnv = workspaceEnv.apiUrl
 export const projectEnv = workspaceEnv.project
 export const environmentEnv = workspaceEnv.environment
+export const sandboxIdEnv = 'STATIONLY_SANDBOX_ID'
 
 const optional = z.string().optional()
 const blankAsUnset = optional.transform((v) => v || undefined)
@@ -23,6 +24,7 @@ export const env = createEnv({
     [apiUrlEnv]: blankAsUnset,
     [projectEnv]: blankAsUnset,
     [environmentEnv]: blankAsUnset,
+    [sandboxIdEnv]: blankAsUnset,
     APPDATA: z.string().default(join(homedir(), 'AppData', 'Roaming')),
     XDG_CONFIG_HOME: optional.transform((v) => v || join(homedir(), '.config')),
     LITESTREAM_SECRET_ACCESS_KEY: optional,
@@ -33,6 +35,7 @@ export const env = createEnv({
     [apiUrlEnv]: process.env[apiUrlEnv],
     [projectEnv]: process.env[projectEnv],
     [environmentEnv]: process.env[environmentEnv],
+    [sandboxIdEnv]: process.env[sandboxIdEnv],
     APPDATA: process.env.APPDATA,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
     LITESTREAM_SECRET_ACCESS_KEY: process.env.LITESTREAM_SECRET_ACCESS_KEY,

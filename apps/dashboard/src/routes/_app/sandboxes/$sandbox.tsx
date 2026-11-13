@@ -1,8 +1,9 @@
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CircleAlert } from 'lucide-react'
 import { lazy } from 'react'
 
+import { AgentStatusBadge } from '@/components/agent-status'
 import { AlsoWith, Code } from '@/components/code'
 import { Crumbs } from '@/components/crumbs'
 import { LogViewer } from '@/components/log-viewer'
@@ -25,12 +26,13 @@ import { SandboxStatusBadge } from '@/components/status'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
+import { isInstanceAdmin } from '@/lib/agent-session'
 import type { Sandbox } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { blank, bytes } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { sandboxNetwork, sandboxRuntime, snapshotSource } from '@/lib/labels'
-import { load, sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
+import { load, meQuery, sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
 import { egressText, imageText, sizeText } from '@/lib/sandbox'
 import { tabSearch, useSearchTab } from '@/lib/search'
 import { isIdle, isLive } from '@/lib/status'
@@ -38,13 +40,19 @@ import { loaderTitle } from '@/lib/title'
 import { toneBorder, toneText } from '@/lib/tone'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 
+const AgentTab = lazy(() =>
+  import('@/components/agent-tab').then((m) => ({
+    default: m.AgentTab,
+  })),
+)
+
 const SandboxTerminal = lazy(() =>
   import('@/components/sandbox-terminal').then((m) => ({
     default: m.SandboxTerminal,
   })),
 )
 
-const tabs = ['terminal', 'variables', 'logs', 'snapshots', 'network'] as const
+const tabs = ['agent', 'terminal', 'variables', 'logs', 'snapshots', 'network'] as const
 
 export const Route = createFileRoute('/_app/sandboxes/$sandbox')({
   validateSearch: tabSearch(tabs),
@@ -159,8 +167,11 @@ function SandboxPage() {
   const { sandbox: id } = Route.useParams()
   const { tab } = Route.useSearch()
   const navigate = useNavigate()
-  const selectTab = useSearchTab(tabs)
   const { data: s } = useSuspenseQuery(sandboxQuery(id))
+  const { data: me } = useQuery(meQuery)
+  const showAgent = Boolean(s.workspace) && isInstanceAdmin(me?.scopes ?? [])
+  const selectTab = useSearchTab(showAgent ? tabs : tabs.filter((name) => name !== 'agent'))
+  const shown = tab === 'agent' && !showAgent ? 'terminal' : tab
   const trail = useEnvironmentTrail(s.environment_id)
   const projectName = trail.project.name
   const environmentName = trail.environment.name
@@ -191,6 +202,7 @@ function SandboxPage() {
               </span>
               {s.forked_from && <span>Fork</span>}
               {s.workspace && <span>Workspace</span>}
+              {s.workspace && <AgentStatusBadge status={s.agent_status} announce />}
               <Code copy={s.id} className="text-muted-foreground">
                 {s.id}
               </Code>
@@ -244,14 +256,22 @@ function SandboxPage() {
         </Alert>
       )}
       <Overview sandbox={s} />
-      <Tabs value={tab} onValueChange={selectTab}>
+      <Tabs value={shown} onValueChange={selectTab}>
         <TabsList>
+          {showAgent && <TabsTrigger value="agent">Agent</TabsTrigger>}
           <TabsTrigger value="terminal">Terminal</TabsTrigger>
           <TabsTrigger value="variables">Variables</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
           <TabsTrigger value="network">Network</TabsTrigger>
         </TabsList>
+        {showAgent && (
+          <TabsContent value="agent" className="mt-4">
+            <Panel rows={4} title="Couldn’t open the agent view">
+              <AgentTab sandbox={s} onOpenTerminal={() => selectTab('terminal')} />
+            </Panel>
+          </TabsContent>
+        )}
         <TabsContent value="terminal" className="mt-4">
           <Panel rows={4} title="Couldn’t open the terminal">
             <SandboxTerminal sandbox={s} />

@@ -1,10 +1,11 @@
-export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'violet' | 'neutral'
 
 export const toneText: Record<Tone, string> = {
   success: 'text-emerald-700 dark:text-emerald-400',
   warning: 'text-amber-700 dark:text-amber-400',
   danger: 'text-red-700 dark:text-red-400',
   info: 'text-sky-700 dark:text-sky-400',
+  violet: 'text-violet-700 dark:text-violet-400',
   neutral: 'text-muted-foreground',
 }
 
@@ -16,6 +17,8 @@ export const toneBadge: Record<Tone, string> = {
   danger:
     'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200',
   info: 'border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200',
+  violet:
+    'border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-200',
   neutral: 'border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400',
 }
 
@@ -24,6 +27,7 @@ export const toneOutline: Record<Tone, string> = {
   warning: 'border-amber-300 text-amber-800 dark:border-amber-800 dark:text-amber-300',
   danger: 'border-red-300 text-red-800 dark:border-red-800 dark:text-red-300',
   info: 'border-sky-300 text-sky-800 dark:border-sky-800 dark:text-sky-300',
+  violet: 'border-violet-300 text-violet-800 dark:border-violet-800 dark:text-violet-300',
   neutral: 'border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300',
 }
 
@@ -32,6 +36,7 @@ export const toneBorder: Record<Tone, string> = {
   warning: 'border-amber-300 dark:border-amber-900',
   danger: 'border-red-300 dark:border-red-900',
   info: 'border-sky-300 dark:border-sky-900',
+  violet: 'border-violet-300 dark:border-violet-900',
   neutral: 'border-zinc-300 dark:border-zinc-700',
 }
 
@@ -40,6 +45,7 @@ export const toneWash: Record<Tone, string> = {
   warning: 'bg-amber-50 dark:bg-amber-950/50',
   danger: 'bg-red-50 dark:bg-red-950/50',
   info: 'bg-sky-50 dark:bg-sky-950/50',
+  violet: 'bg-violet-50 dark:bg-violet-950/50',
   neutral: 'bg-zinc-50 dark:bg-zinc-900',
 }
 
@@ -48,6 +54,7 @@ export const tonePanel: Record<Tone, string> = {
   warning: `${toneBorder.warning} ${toneWash.warning} text-amber-900 dark:text-amber-100`,
   danger: `${toneBorder.danger} ${toneWash.danger} text-red-900 dark:text-red-100`,
   info: `${toneBorder.info} ${toneWash.info} text-sky-900 dark:text-sky-100`,
+  violet: `${toneBorder.violet} ${toneWash.violet} text-violet-900 dark:text-violet-100`,
   neutral: `${toneBorder.neutral} ${toneWash.neutral} text-zinc-900 dark:text-zinc-100`,
 }
 
@@ -56,6 +63,7 @@ export const toneDot: Record<Tone, string> = {
   warning: 'bg-amber-500',
   danger: 'bg-red-500',
   info: 'bg-sky-500',
+  violet: 'bg-violet-500',
   neutral: 'bg-zinc-400 dark:bg-zinc-500',
 }
 

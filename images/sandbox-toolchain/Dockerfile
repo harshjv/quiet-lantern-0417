@@ -65,6 +65,8 @@ RUN update-alternatives --set iptables /usr/sbin/iptables-legacy \
  && install -d -o agent -g agent /workspaces
 
 COPY --chmod=0755 sandbox-init /usr/local/bin/sandbox-init
+COPY --chmod=0755 sandbox-agent-hook /usr/local/bin/sandbox-agent-hook
+COPY --chmod=0644 claude-managed-settings.json /etc/claude-code/managed-settings.d/stationly.json
 COPY --from=sly --chmod=0755 sly-linux-${TARGETARCH} /usr/local/bin/sly
 
 USER root

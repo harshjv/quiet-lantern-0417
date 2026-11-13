@@ -1,0 +1,1 @@
+ALTER TABLE `sandbox` ADD `agent_seq` integer DEFAULT 0 NOT NULL;
