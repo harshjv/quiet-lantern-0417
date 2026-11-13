@@ -17,7 +17,13 @@ export type McpFlags = { destructive?: true; always_load?: true; poll?: true }
 export type CliMeta =
   false | { path?: string[]; args?: string[]; render?: string; wait?: string; exclusive?: string[] }
 
-export type Meta = { level: RouteLevel; mcp?: false | McpFlags; cli?: CliMeta; stream?: true }
+export type Meta = {
+  level: RouteLevel
+  human_for_workspace_token?: string
+  mcp?: false | McpFlags
+  cli?: CliMeta
+  stream?: true
+}
 
 export type Operation = {
   operationId?: string

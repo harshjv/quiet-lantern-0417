@@ -18002,8 +18002,10 @@ export const openApiDocument = {
         ],
         "operationId": "create_sandbox",
         "summary": "Create a sandbox, or fork one from a snapshot or a live sandbox disk with from",
+        "description": "Create a sandbox, or fork one from a snapshot or a live sandbox disk with from. A workspace token needs a human actor to create a sandbox with wider egress than its own workspace, on the environment network, or with docker.",
         "x-stationly": {
           "level": "deploy",
+          "human_for_workspace_token": "create a sandbox with wider egress than its own workspace, on the environment network, or with docker",
           "cli": {
             "args": [
               "name"
@@ -19006,8 +19008,10 @@ export const openApiDocument = {
         ],
         "operationId": "update_sandbox",
         "summary": "Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start",
+        "description": "Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start. A workspace token needs a human actor to widen egress, move a sandbox to the environment network or turn docker on.",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "human_for_workspace_token": "widen egress, move a sandbox to the environment network or turn docker on"
         },
         "parameters": [
           {
@@ -19932,8 +19936,10 @@ export const openApiDocument = {
         ],
         "operationId": "sandbox_exec",
         "summary": "Run a command in a running sandbox and wait up to wait_s for it; env values are never stored",
+        "description": "Run a command in a running sandbox and wait up to wait_s for it; env values are never stored. A workspace token needs a human actor to run a command in another sandbox with wider egress than its own workspace, on the environment network or with docker.",
         "x-stationly": {
           "level": "deploy",
+          "human_for_workspace_token": "run a command in another sandbox with wider egress than its own workspace, on the environment network or with docker",
           "cli": false
         },
         "parameters": [
@@ -20238,8 +20244,10 @@ export const openApiDocument = {
         ],
         "operationId": "open_sandbox_shell",
         "summary": "Create a shell run in a sandbox; attach to it over the WebSocket at attach_url",
+        "description": "Create a shell run in a sandbox; attach to it over the WebSocket at attach_url. A workspace token needs a human actor to open a shell in another sandbox with wider egress than its own workspace, on the environment network or with docker.",
         "x-stationly": {
           "level": "deploy",
+          "human_for_workspace_token": "open a shell in another sandbox with wider egress than its own workspace, on the environment network or with docker",
           "mcp": false,
           "cli": false
         },

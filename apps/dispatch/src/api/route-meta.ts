@@ -33,6 +33,7 @@ export type Operation = {
 type EntityOperation = Omit<Operation, 'level' | 'target'> & {
   level: Level
   deferTokenWindow?: true
+  humanForWorkspaceToken?: string
 }
 
 type RouteContext = {
@@ -43,23 +44,29 @@ type RouteContext = {
   route: string
 }
 
-const documented = ({
-  id,
-  summary,
-  level,
-  mcp,
-  cli,
-  stream,
-}: Operation | EntityOperation): DocumentDecoration & { 'x-stationly': object } => ({
-  operationId: id,
-  summary,
-  'x-stationly': {
-    level,
-    mcp,
-    cli,
-    stream,
-  },
-})
+const documented = (
+  operation: Operation | EntityOperation,
+): DocumentDecoration & { 'x-stationly': object } => {
+  const { id, summary, level, mcp, cli, stream } = operation
+  const human = 'humanForWorkspaceToken' in operation ? operation.humanForWorkspaceToken : undefined
+
+  return {
+    operationId: id,
+    summary,
+    ...(human
+      ? {
+          description: `${summary}. A workspace token needs a human actor to ${human}.`,
+        }
+      : {}),
+    'x-stationly': {
+      level,
+      human_for_workspace_token: human,
+      mcp,
+      cli,
+      stream,
+    },
+  }
+}
 
 const entityParameter = (route: string) => {
   const segment = route.split('/').find((part) => part.startsWith(':'))

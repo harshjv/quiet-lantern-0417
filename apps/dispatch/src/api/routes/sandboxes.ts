@@ -39,6 +39,12 @@ import { probeTarget } from '../../net/explain.ts'
 import { sendSandboxProbe } from '../../net/probe.ts'
 import { resolveImage, stationArch } from '../../platform/image-source.ts'
 import { effectivePins } from '../../platform/lockfile.ts'
+import {
+  egressWithin,
+  requireHumanToEnter,
+  requireHumanToWiden,
+  workspaceHeldBy,
+} from '../../sandboxes/confinement.ts'
 import { normalizeEgress, openEgress } from '../../sandboxes/egress.ts'
 import { requestDeletion } from '../../sandboxes/lifecycle.ts'
 import { fittingMemory, requireDiskRoom, requireQuota } from '../../sandboxes/limits.ts'
@@ -546,13 +552,26 @@ export const sandboxRoutes = (kit: Kit) => {
           : []
 
         requireMintable(call.principal, scopes)
+        const caller = workspaceHeldBy(db, call.principal)
         const egress = body.egress
           ? normalizeEgress(body.egress)
           : wanted
             ? normalizeEgress(workspaceEgress(wanted.agent))
-            : (inherited?.egress ?? openEgress())
+            : (inherited?.egress ?? caller?.egress ?? openEgress())
         const network = body.network ?? inherited?.network ?? 'isolated'
         const docker = body.docker ?? inherited?.docker ?? false
+
+        requireHumanToWiden(
+          call.principal,
+          caller,
+          caller && !egressWithin(egress, caller.egress)
+            ? 'cannot create a sandbox with wider egress than its own'
+            : network === 'environment'
+              ? 'cannot create a sandbox on the environment network'
+              : docker
+                ? 'cannot create a sandbox with docker'
+                : null,
+        )
         const command = body.command !== undefined ? body.command : (inherited?.command ?? null)
         const ttl_s = wanted ? null : (body.ttl_s ?? inherited?.ttl_s ?? sandboxTtl.default)
         const start = body.start ?? true
@@ -779,6 +798,8 @@ export const sandboxRoutes = (kit: Kit) => {
           id: 'create_sandbox',
           summary: 'Create a sandbox, or fork one from a snapshot or a live sandbox disk with from',
           level: 'deploy',
+          humanForWorkspaceToken:
+            'create a sandbox with wider egress than its own workspace, on the environment network, or with docker',
           cli: {
             args: ['name'],
           },
@@ -810,6 +831,17 @@ export const sandboxRoutes = (kit: Kit) => {
           conflict(row, ['creating', 'starting', 'running', 'stopping', 'stopped', 'failed'])
         }
 
+        requireHumanToWiden(
+          call.principal,
+          workspaceHeldBy(db, call.principal),
+          body.egress && !egressWithin(normalizeEgress(body.egress), row.egress)
+            ? 'cannot widen the egress of a sandbox'
+            : body.network === 'environment' && row.network !== 'environment'
+              ? 'cannot put a sandbox on the environment network'
+              : body.docker && !row.docker
+                ? 'cannot turn on docker for a sandbox'
+                : null,
+        )
         noTtl(row.workspace, body.ttl_s)
         const live = row.desired_state === 'running'
         const idle = (sandboxIdleStatuses as readonly string[]).includes(row.status)
@@ -936,6 +968,8 @@ export const sandboxRoutes = (kit: Kit) => {
           summary:
             'Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start',
           level: 'deploy',
+          humanForWorkspaceToken:
+            'widen egress, move a sandbox to the environment network or turn docker on',
         },
         body: input(SandboxPatchBody),
         response: replies({
@@ -1137,6 +1171,8 @@ export const sandboxRoutes = (kit: Kit) => {
         requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
 
+        requireHumanToEnter(db, call.principal, row)
+
         if (row.status !== 'running') {
           fail(
             'SANDBOX_NOT_RUNNING',
@@ -1273,6 +1309,8 @@ export const sandboxRoutes = (kit: Kit) => {
           summary:
             'Run a command in a running sandbox and wait up to wait_s for it; env values are never stored',
           level: 'deploy',
+          humanForWorkspaceToken:
+            'run a command in another sandbox with wider egress than its own workspace, on the environment network or with docker',
           cli: false,
         },
         body: input(SandboxExecBody),
@@ -1288,6 +1326,8 @@ export const sandboxRoutes = (kit: Kit) => {
 
         requireHumanIn(call, ctx.environment)
         const row = ctx.sandbox
+
+        requireHumanToEnter(db, call.principal, row)
 
         if (row.status !== 'running') {
           fail(
@@ -1354,6 +1394,8 @@ export const sandboxRoutes = (kit: Kit) => {
           id: 'open_sandbox_shell',
           summary: 'Create a shell run in a sandbox; attach to it over the WebSocket at attach_url',
           level: 'deploy',
+          humanForWorkspaceToken:
+            'open a shell in another sandbox with wider egress than its own workspace, on the environment network or with docker',
           mcp: false,
           cli: false,
         },
