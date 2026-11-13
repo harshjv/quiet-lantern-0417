@@ -1,6 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Keyboard, ListChecks, LogOut, Monitor, Moon, Search, Sun, UserRound } from 'lucide-react'
+import {
+  Keyboard,
+  ListChecks,
+  LogOut,
+  Monitor,
+  Moon,
+  Package,
+  Search,
+  Sun,
+  UserRound,
+} from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useState, type ReactNode } from 'react'
 
@@ -25,7 +35,7 @@ import { authClient, sessionQuery } from '@/lib/auth'
 import type { StreamState } from '@/lib/event-stream'
 import { setGuideHidden, useGuideHidden } from '@/lib/first-run'
 import { useLiveEvents } from '@/lib/live'
-import { stagedQuery } from '@/lib/queries'
+import { inventoryQuery, stagedQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { countPill, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -94,6 +104,8 @@ function ThemeMenu() {
 
 function UserMenu({ onHelp }: { onHelp: () => void }) {
   const session = useQuery(sessionQuery)
+  const inventory = useQuery(inventoryQuery)
+  const version = inventory.data?.release?.version
   const guideHidden = useGuideHidden()
   const client = useQueryClient()
   const navigate = useNavigate()
@@ -135,6 +147,11 @@ function UserMenu({ onHelp }: { onHelp: () => void }) {
           <DropdownMenuShortcut>
             <ShortcutKeys id="help" />
           </DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/stations">
+            <Package /> {version ? `Stationly v${version}` : 'Stationly version'}
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut /> Sign out

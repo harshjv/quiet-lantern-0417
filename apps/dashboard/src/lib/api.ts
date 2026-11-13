@@ -50,6 +50,8 @@ export type LogLine = LogPage['untrusted']['lines'][number]
 export type Event = Item<Data<V1['events']['get']>>
 export type Token = Item<Data<V1['tokens']['get']>>
 export type Station = Item<Data<V1['stations']['get']>>
+export type Inventory = Data<V1['inventory']['get']>
+export type InventoryComponent = Item<Inventory>
 export type HostProbe = NonNullable<NonNullable<Station['capabilities']>['host']>
 
 export class ApiFailure extends Error {

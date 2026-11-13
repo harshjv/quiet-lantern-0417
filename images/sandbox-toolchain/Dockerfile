@@ -62,7 +62,8 @@ RUN case "$TARGETARCH" in \
 RUN update-alternatives --set iptables /usr/sbin/iptables-legacy \
  && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy \
  && useradd --create-home --groups docker --uid 1000 --home-dir /home/agent --shell /bin/bash agent \
- && install -d -o agent -g agent /workspaces
+ && install -d -o agent -g agent /workspaces \
+ && install -d -m 0755 /etc/claude-code /etc/claude-code/managed-settings.d
 
 COPY --chmod=0755 sandbox-init /usr/local/bin/sandbox-init
 COPY --chmod=0755 sandbox-agent-hook /usr/local/bin/sandbox-agent-hook

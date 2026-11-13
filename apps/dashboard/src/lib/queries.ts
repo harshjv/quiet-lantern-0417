@@ -413,6 +413,11 @@ export const stationsQuery = queryOptions({
     ),
 })
 
+export const inventoryQuery = queryOptions({
+  queryKey: ['inventory'],
+  queryFn: () => unwrap(api.v1.inventory.get()),
+})
+
 export const stationQuery = (station: string) =>
   queryOptions({
     queryKey: ['stations', station],
