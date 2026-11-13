@@ -10,7 +10,6 @@ ARG CONTAINERD_VERSION=2.4.2-3~debian.13~trixie
 ARG BUILDX_VERSION=0.38.1-1~debian.13~trixie
 ARG COMPOSE_VERSION=5.7.0-1~debian.13~trixie
 ARG DOCKER_APT_GPG_SHA256=1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
-ARG GH_APT_GPG_SHA256=6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
@@ -20,16 +19,17 @@ RUN apt-get update \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
  && echo "$DOCKER_APT_GPG_SHA256  /etc/apt/keyrings/docker.asc" | sha256sum -c - \
- && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg \
- && echo "$GH_APT_GPG_SHA256  /etc/apt/keyrings/githubcli.gpg" | sha256sum -c - \
- && chmod 0644 /etc/apt/keyrings/docker.asc /etc/apt/keyrings/githubcli.gpg \
+ && chmod 0644 /etc/apt/keyrings/docker.asc \
  && printf 'Types: deb\nURIs: https://download.docker.com/linux/debian\nSuites: trixie\nComponents: stable\nSigned-By: /etc/apt/keyrings/docker.asc\n' >/etc/apt/sources.list.d/docker.sources \
- && printf 'Types: deb\nURIs: https://cli.github.com/packages\nSuites: stable\nComponents: main\nSigned-By: /etc/apt/keyrings/githubcli.gpg\n' >/etc/apt/sources.list.d/github-cli.sources \
+ && gh=gh_${GH_VERSION}_linux_$TARGETARCH.deb \
+ && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://github.com/cli/cli/releases/download/v$GH_VERSION/$gh" -o "/tmp/$gh" \
+ && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_checksums.txt" -o /tmp/gh_checksums.txt \
+ && (cd /tmp && grep "  $gh\$" gh_checksums.txt | sha256sum -c -) \
  && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 	"docker-ce=$DOCKER_VERSION" "docker-ce-cli=$DOCKER_VERSION" "containerd.io=$CONTAINERD_VERSION" \
-	"docker-buildx-plugin=$BUILDX_VERSION" "docker-compose-plugin=$COMPOSE_VERSION" "gh=$GH_VERSION" \
- && rm -rf /var/lib/apt/lists/*
+	"docker-buildx-plugin=$BUILDX_VERSION" "docker-compose-plugin=$COMPOSE_VERSION" "/tmp/$gh" \
+ && rm -rf /var/lib/apt/lists/* "/tmp/$gh" /tmp/gh_checksums.txt
 
 RUN case "$TARGETARCH" in \
 	amd64) node_arch=x64 bun_arch=x64 mise_arch=x64 ;; \
