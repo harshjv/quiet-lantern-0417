@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
 import {
@@ -14,6 +15,7 @@ import {
   rateLimited,
   type Principal,
 } from '../../auth/principal.ts'
+import { station } from '../../db/schema.ts'
 import { log } from '../../log.ts'
 import {
   agentBus,
@@ -35,8 +37,11 @@ import {
   wantRunner,
 } from '../../sandboxes/agent-runner.ts'
 import { filterStatuses, listAgentSessions } from '../../sandboxes/agent-sessions.ts'
+import { startSandbox } from '../../sandboxes/lifecycle.ts'
 import { variablesOf } from '../../secrets/values.ts'
 import { requireHuman } from '../access.ts'
+import { audit, type Call } from '../context.ts'
+import { requireConnected } from '../deployments.ts'
 import { fail, invalid } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import { sandboxById, type SandboxRow } from '../lookup.ts'
@@ -140,6 +145,47 @@ const cursorOf = (request: Request, query: AgentQuery) => {
 
 export const agentEventRoutes = (kit: Kit) => {
   const { db } = kit.deps
+
+  const wake = (call: Call, row: SandboxRow, refusal: string) => {
+    if (row.status === 'stopped') {
+      requireConnected(kit.deps, row.station_id)
+      startSandbox(
+        db,
+        db.select().from(station).where(eq(station.id, row.station_id)).get()!,
+        call.principal,
+        row,
+        null,
+      )
+      audit(
+        db,
+        call,
+        'sandbox.start',
+        {
+          entity: 'sandbox',
+          id: row.id,
+        },
+        {
+          before: {
+            status: row.status,
+          },
+        },
+      )
+      kit.deps.stations.reconcile(row.station_id)
+
+      return
+    }
+
+    if (!['creating', 'starting', 'running'].includes(row.status)) {
+      fail(
+        'SANDBOX_NOT_RUNNING',
+        `Workspace ${row.name} is ${row.status}, so ${refusal}.`,
+        'Start the workspace with start_sandbox, then try again.',
+        {
+          status: row.status,
+        },
+      )
+    }
+  }
 
   const start = (sandboxId: string, since: number | undefined, session: string | undefined) => {
     if (since !== undefined) {
@@ -345,16 +391,7 @@ export const agentEventRoutes = (kit: Kit) => {
           ])
         }
 
-        if (row.status !== 'running' && row.status !== 'creating') {
-          fail(
-            'SANDBOX_NOT_RUNNING',
-            `Workspace ${row.name} is ${row.status}, so no session can start in it.`,
-            'Start the workspace with start_sandbox, then start the session.',
-            {
-              status: row.status,
-            },
-          )
-        }
+        wake(call, row, 'no session can start in it')
 
         const session = createRunnerSession(db, row, {
           model: body.model ?? preset.models[0]?.id ?? null,
@@ -422,16 +459,7 @@ export const agentEventRoutes = (kit: Kit) => {
           ])
         }
 
-        if (row.status !== 'running') {
-          fail(
-            'SANDBOX_NOT_RUNNING',
-            `Workspace ${row.name} is ${row.status}, so its session cannot take a prompt.`,
-            'Start the workspace with start_sandbox, then send the prompt again.',
-            {
-              status: row.status,
-            },
-          )
-        }
+        wake(call, row, 'its session cannot take a prompt')
 
         const stored = addInput(
           db,

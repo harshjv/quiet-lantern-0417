@@ -737,6 +737,7 @@ export const sandboxStatusReasonValues = [
   'oom',
   'created_stopped',
   'station_restart',
+  'idle',
 ] as const
 
 export const SandboxStatusReason = StringEnum(sandboxStatusReasonValues, {

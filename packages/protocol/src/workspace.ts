@@ -136,6 +136,32 @@ export const workspaceSharedDomains: Entry[] = [
   ),
 ]
 
+export const workspaceSizeDefaults = {
+  memory_bytes: 2147483648,
+} as const
+
+export const workspaceSetupStepValues = [
+  'agent',
+  'config',
+  'git_auth',
+  'clone',
+  'checkout',
+  'toolchain',
+] as const
+
+export type WorkspaceSetupStep = (typeof workspaceSetupStepValues)[number]
+
+export const workspaceSetupSteps: Record<WorkspaceSetupStep, string> = {
+  agent: 'install the agent',
+  config: "write the agent's configuration",
+  git_auth: 'set up git sign-in',
+  clone: 'clone the repository',
+  checkout: 'check out the branch',
+  toolchain: "install the repository's toolchain",
+}
+
+export const setupFailedMarker = 'setup-failed:'
+
 export const workspaceApiUrl = `http://169.254.1.1:${networkLayout.dispatchPort}`
 
 export const workspaceRoot = '/workspaces'

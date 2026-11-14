@@ -34,6 +34,7 @@ import { agentStatusOf } from '../sandboxes/agent-status.ts'
 import { deleteAt, retentionSeconds } from '../sandboxes/lifecycle.ts'
 import { sandboxMemory } from '../sandboxes/limits.ts'
 import { sandboxRuntimeAdvice } from '../sandboxes/runtime.ts'
+import { workspaceSetupOf } from '../sandboxes/setup-failure.ts'
 import type { EnvSnapshot } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { valueBytes } from '../secrets/keyring.ts'
@@ -1232,7 +1233,7 @@ export const createViews = (db: Db) => {
       address: row.address,
       disk_used_bytes: row.disk_used_bytes,
       forked_from: row.forked_from,
-      workspace: row.workspace,
+      workspace: workspaceSetupOf(db, row),
       agent_status: agentStatusOf(row),
       exit_code: row.exit_code,
       started_at: iso(row.started_at),

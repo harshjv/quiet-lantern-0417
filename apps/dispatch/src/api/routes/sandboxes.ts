@@ -24,6 +24,7 @@ import {
   SandboxVariablesPatchBody,
   StringEnum,
   workspaceEgress,
+  workspaceSizeDefaults,
   workspaceUser,
 } from '@stationly/protocol'
 import { releaseRepositories } from '@stationly/protocol/release-config'
@@ -46,8 +47,14 @@ import {
   workspaceHeldBy,
 } from '../../sandboxes/confinement.ts'
 import { normalizeEgress, openEgress } from '../../sandboxes/egress.ts'
-import { requestDeletion } from '../../sandboxes/lifecycle.ts'
+import {
+  requestDeletion,
+  startSandbox,
+  stopAtFrom,
+  stopSandbox,
+} from '../../sandboxes/lifecycle.ts'
 import { fittingMemory, requireDiskRoom, requireQuota } from '../../sandboxes/limits.ts'
+import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
 import { requireRuntime } from '../../sandboxes/runtime.ts'
 import { growStorage, requireGrowable } from '../../sandboxes/storage.ts'
 import {
@@ -396,9 +403,6 @@ export const sandboxRoutes = (kit: Kit) => {
 
   const workspaceDefault = (row: SandboxRow, value: string) => (row.workspace ? value : null)
 
-  const stopAtFrom = (ttl: number | null) =>
-    ttl === null ? null : new Date(Date.now() + ttl * 1000)
-
   const defaultShell = (row: SandboxRow) =>
     row.image.ref === null ? ['/bin/bash', '-l'] : ['/bin/sh']
 
@@ -514,7 +518,11 @@ export const sandboxRoutes = (kit: Kit) => {
         const inherited = source?.settings
         const size = {
           ...sandboxSizeDefaults,
-          memory_bytes: fittingMemory(db, st),
+          memory_bytes: fittingMemory(
+            db,
+            st,
+            body.workspace ? workspaceSizeDefaults.memory_bytes : undefined,
+          ),
           ...source?.size,
           ...body.size,
         }
@@ -539,6 +547,15 @@ export const sandboxRoutes = (kit: Kit) => {
               message: 'the last path segment, without .git, must be a lowercase slug',
             },
           ])
+        }
+
+        if (wanted) {
+          await requireRepositoryAccess(kit.deps, {
+            project: ctx.project,
+            environment: ctx.environment.id,
+            repository: wanted.repository,
+            variables: body.variables,
+          })
         }
 
         const scopes = wanted
@@ -579,12 +596,17 @@ export const sandboxRoutes = (kit: Kit) => {
           ? await imageFor(st, body.image.ref)
           : (source?.image ?? (await imageFor(st, undefined)))
 
-        requireQuota(db, st, {
-          sandboxId: null,
-          newSandbox: true,
-          running: start,
-          memoryBytes: size.memory_bytes,
-        })
+        requireQuota(
+          db,
+          st,
+          {
+            sandboxId: null,
+            newSandbox: true,
+            running: start,
+            memoryBytes: size.memory_bytes,
+          },
+          call.principal,
+        )
         requireDiskRoom(st)
         const id = newId('sandbox')
         const name = body.name ?? `sandbox-${id.slice(-6).toLowerCase()}`
@@ -867,12 +889,17 @@ export const sandboxRoutes = (kit: Kit) => {
         const st = stationRow(row.station_id)
 
         if (live && size.memory_bytes > row.size.memory_bytes) {
-          requireQuota(db, st, {
-            sandboxId: row.id,
-            newSandbox: false,
-            running: true,
-            memoryBytes: size.memory_bytes,
-          })
+          requireQuota(
+            db,
+            st,
+            {
+              sandboxId: row.id,
+              newSandbox: false,
+              running: true,
+              memoryBytes: size.memory_bytes,
+            },
+            call.principal,
+          )
         }
 
         const changed: string[] = []
@@ -1007,25 +1034,7 @@ export const sandboxRoutes = (kit: Kit) => {
               .run()
           }
         } else {
-          requireQuota(db, stationRow(row.station_id), {
-            sandboxId: row.id,
-            newSandbox: false,
-            running: true,
-            memoryBytes: row.size.memory_bytes,
-          })
-          db.update(sandbox)
-            .set({
-              ttl_s,
-              desired_state: 'running',
-              stop_at: stopAtFrom(ttl_s),
-              status: 'starting',
-              status_reason: null,
-              failure: null,
-              exit_code: null,
-              expiring_notified_at: null,
-            })
-            .where(eq(sandbox.id, row.id))
-            .run()
+          startSandbox(db, stationRow(row.station_id), call.principal, row, ttl_s)
         }
 
         audit(
@@ -1075,16 +1084,7 @@ export const sandboxRoutes = (kit: Kit) => {
 
         requireConnected(kit.deps, row.station_id)
 
-        if (row.status !== 'stopped' && row.status !== 'failed') {
-          db.update(sandbox)
-            .set({
-              desired_state: 'stopped',
-              stop_at: null,
-              status: 'stopping',
-            })
-            .where(eq(sandbox.id, row.id))
-            .run()
-        }
+        stopSandbox(db, row)
 
         audit(
           db,

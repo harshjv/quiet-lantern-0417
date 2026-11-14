@@ -43198,6 +43198,8 @@ export const openApiDocument = {
           "STATION_OFFLINE",
           "STATION_VERSION_SKEW",
           "STATION_CAPABILITY_MISSING",
+          "REPO_ACCESS_REQUIRED",
+          "REPO_ACCESS_DENIED",
           "SANDBOX_NOT_RUNNING",
           "SANDBOX_STATE_CONFLICT",
           "SANDBOX_QUOTA_EXCEEDED",
@@ -50241,7 +50243,11 @@ export const openApiDocument = {
             ],
             "required": [
               "state",
-              "run_id"
+              "run_id",
+              "step",
+              "tail",
+              "prompt",
+              "model"
             ],
             "properties": {
               "state": {
@@ -50254,6 +50260,55 @@ export const openApiDocument = {
                 ]
               },
               "run_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "step": {
+                "anyOf": [
+                  {
+                    "const": "agent",
+                    "type": "string"
+                  },
+                  {
+                    "const": "config",
+                    "type": "string"
+                  },
+                  {
+                    "const": "git_auth",
+                    "type": "string"
+                  },
+                  {
+                    "const": "clone",
+                    "type": "string"
+                  },
+                  {
+                    "const": "checkout",
+                    "type": "string"
+                  },
+                  {
+                    "const": "toolchain",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tail": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "prompt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "model": {
                 "type": [
                   "string",
                   "null"
@@ -50381,6 +50436,10 @@ export const openApiDocument = {
                 "type": "string"
               },
               {
+                "const": "idle",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ]
@@ -50499,7 +50558,8 @@ export const openApiDocument = {
               "path",
               "level",
               "token_id",
-              "setup_run_id"
+              "setup_run_id",
+              "setup"
             ],
             "properties": {
               "agent": {
@@ -50534,6 +50594,55 @@ export const openApiDocument = {
               },
               "setup_run_id": {
                 "type": "string"
+              },
+              "setup": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "state",
+                  "step"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "step": {
+                    "anyOf": [
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "config",
+                        "type": "string"
+                      },
+                      {
+                        "const": "git_auth",
+                        "type": "string"
+                      },
+                      {
+                        "const": "clone",
+                        "type": "string"
+                      },
+                      {
+                        "const": "checkout",
+                        "type": "string"
+                      },
+                      {
+                        "const": "toolchain",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
               }
             }
           },
@@ -50695,6 +50804,10 @@ export const openApiDocument = {
                 "type": "string"
               },
               {
+                "const": "idle",
+                "type": "string"
+              },
+              {
                 "type": "null"
               }
             ]
@@ -50813,7 +50926,8 @@ export const openApiDocument = {
               "path",
               "level",
               "token_id",
-              "setup_run_id"
+              "setup_run_id",
+              "setup"
             ],
             "properties": {
               "agent": {
@@ -50848,6 +50962,55 @@ export const openApiDocument = {
               },
               "setup_run_id": {
                 "type": "string"
+              },
+              "setup": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "state",
+                  "step"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "step": {
+                    "anyOf": [
+                      {
+                        "const": "agent",
+                        "type": "string"
+                      },
+                      {
+                        "const": "config",
+                        "type": "string"
+                      },
+                      {
+                        "const": "git_auth",
+                        "type": "string"
+                      },
+                      {
+                        "const": "clone",
+                        "type": "string"
+                      },
+                      {
+                        "const": "checkout",
+                        "type": "string"
+                      },
+                      {
+                        "const": "toolchain",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
               }
             }
           },

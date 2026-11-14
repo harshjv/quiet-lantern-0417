@@ -2,9 +2,13 @@ import { and, eq, ne } from 'drizzle-orm'
 
 import { bytesText, fitSandboxMemory } from '@stationly/protocol'
 
+import { can } from '../api/access.ts'
 import { fail } from '../api/errors.ts'
+import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { sandbox, station } from '../db/schema.ts'
+import { environment, project, sandbox, station } from '../db/schema.ts'
+
+import { activityOf } from './activity.ts'
 
 type StationRow = typeof station.$inferSelect
 
@@ -46,10 +50,50 @@ export const sandboxMemory = (db: Db, st: StationRow) => {
   }
 }
 
-export const fittingMemory = (db: Db, st: StationRow) =>
-  fitSandboxMemory(sandboxMemory(db, st).free)
+export const fittingMemory = (db: Db, st: StationRow, wanted?: number) =>
+  fitSandboxMemory(sandboxMemory(db, st).free, wanted)
 
-export const requireQuota = (db: Db, st: StationRow, request: QuotaRequest) => {
+const holdersOf = (db: Db, rows: (typeof sandbox.$inferSelect)[], principal: Principal) => {
+  const named = (table: typeof project | typeof environment, id: string) =>
+    db
+      .select({
+        id: table.id,
+        name: table.name,
+      })
+      .from(table)
+      .where(eq(table.id, id))
+      .get()
+
+  return rows
+    .filter((row) =>
+      can(
+        principal,
+        {
+          project_id: row.project_id,
+          environment_id: row.environment_id,
+        },
+        'read',
+      ),
+    )
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      project: named(project, row.project_id) ?? null,
+      environment: named(environment, row.environment_id) ?? null,
+      workspace: row.workspace !== null,
+      repository: row.workspace?.repository ?? null,
+      status: row.status,
+      memory_bytes: row.size.memory_bytes,
+      last_activity_at: activityOf(db, row)?.toISOString() ?? null,
+    }))
+}
+
+export const requireQuota = (
+  db: Db,
+  st: StationRow,
+  request: QuotaRequest,
+  principal: Principal,
+) => {
   const rows = sandboxesOn(db, st, request.sandboxId)
   const exceeded = (
     limit: 'max_sandboxes' | 'max_running' | 'memory_bytes',
@@ -69,6 +113,7 @@ export const requireQuota = (db: Db, st: StationRow, request: QuotaRequest) => {
         allowed,
         used,
         requested,
+        holders: holdersOf(db, limit === 'max_sandboxes' ? rows : runningOf(rows), principal),
       },
     )
   }

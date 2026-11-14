@@ -96,6 +96,7 @@ import {
   volumeSnapshotTriggerValues,
   volumeStatusValues,
   workspaceAgentValues,
+  workspaceSetupStepValues,
 } from '@stationly/protocol'
 
 import { explanationVerdicts, hopNames, hopStatuses } from '../net/explain-values.ts'
@@ -1894,6 +1895,15 @@ const SandboxWorkspace = Type.Object(
     level: StringEnum(tokenLevelValues),
     token_id: Str,
     setup_run_id: Str,
+    setup: Type.Object(
+      {
+        state: StringEnum(['pending', 'succeeded', 'failed']),
+        step: NullableEnum(workspaceSetupStepValues),
+      },
+      {
+        additionalProperties: false,
+      },
+    ),
   },
   {
     additionalProperties: false,
@@ -2043,6 +2053,10 @@ export const AgentSession = component(
           {
             state: StringEnum(['creating', 'setting_up', 'starting', 'failed']),
             run_id: NStr,
+            step: NullableEnum(workspaceSetupStepValues),
+            tail: Type.Array(Str),
+            prompt: NStr,
+            model: NStr,
           },
           {
             additionalProperties: false,

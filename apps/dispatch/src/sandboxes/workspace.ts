@@ -2,6 +2,7 @@ import type { Static } from '@sinclair/typebox'
 import { isNotNull } from 'drizzle-orm'
 
 import {
+  setupFailedMarker,
   slugPattern,
   workspaceAgents,
   workspaceApiUrl,
@@ -13,6 +14,7 @@ import {
   type Actor,
   type SandboxVariableSet,
   type WorkspaceAgent,
+  type WorkspaceSetupStep,
 } from '@stationly/protocol'
 
 import { scopedTokenMaxSeconds, type AuthService } from '../auth/auth.ts'
@@ -42,14 +44,23 @@ const toolchainFiles = [
   '.tool-versions',
 ]
 
+const stepLine = (step: WorkspaceSetupStep) => `step=${step}`
+
 const setupScript = [
   'set -euo pipefail',
+  `trap 'code=$?; if [ "$code" -ne 0 ]; then echo "${setupFailedMarker}$step" >&2; fi' EXIT`,
+  stepLine('agent'),
   'export HOME="$5"',
   'npm install --global --prefix "$6" --no-fund --no-audit "$1"',
+  stepLine('config'),
   'if [ -n "$7" ] && [ ! -e "$HOME/$7" ]; then mkdir -p "$(dirname "$HOME/$7")" && printf \'%s\' "$8" >"$HOME/$7"; fi',
+  stepLine('git_auth'),
   'if [ -n "${GH_TOKEN:-}" ]; then gh auth setup-git; fi',
+  stepLine('clone'),
   'if [ ! -d "$3/.git" ]; then git clone "$2" "$3"; fi',
+  stepLine('checkout'),
   'if [ -n "$4" ]; then git -C "$3" checkout "$4"; fi',
+  stepLine('toolchain'),
   'toolchain=0',
   `for file in ${toolchainFiles.join(' ')}; do if [ -f "$3/$file" ]; then toolchain=1; fi; done`,
   'if [ "$toolchain" = 1 ]; then (cd "$3" && mise trust --all && mise install --yes); fi',

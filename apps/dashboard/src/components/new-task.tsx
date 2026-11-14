@@ -1,10 +1,17 @@
-import { useMutation, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowUp, Cpu, HardDrive, Loader2, MemoryStick, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
 
-import { modelLabel, workspaceAgents, type WorkspaceAgent } from '@stationly/protocol'
+import {
+  fitSandboxMemory,
+  modelLabel,
+  workspaceAgents,
+  workspaceSizeDefaults,
+  type WorkspaceAgent,
+} from '@stationly/protocol'
 
+import { CredentialField } from '@/components/credential-field'
 import { EmptyState } from '@/components/page'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -18,15 +25,18 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { api, ApiFailure, failureText, idempotency, send, unwrap } from '@/lib/api'
+import { failureText } from '@/lib/api'
 import { byName, bytes, repositoryName } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { readLastTask, writeLastTask } from '@/lib/last-task'
 import {
   credentialKey,
+  githubTokenHelp,
+  githubTokenKey,
+  githubTokenLabel,
   missingCredential,
+  needsGithubToken,
   repositoryUrl,
-  taskName,
   taskSentence,
 } from '@/lib/new-task'
 import {
@@ -36,12 +46,11 @@ import {
   sandboxesQuery,
   taskStationQuery,
 } from '@/lib/queries'
+import { startTask, storeProjectKey } from '@/lib/start-task'
 
 const agents = (Object.keys(workspaceAgents) as WorkspaceAgent[]).filter(
   (agent) => workspaceAgents[agent].runner,
 )
-
-const nameRetries = 3
 
 const chip =
   'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground tabular-nums'
@@ -69,7 +78,10 @@ export function NewTask() {
   const [model, setModel] = useState<string>(preset.models[0]?.id ?? '')
   const [repository, setRepository] = useState(last?.repository ?? '')
   const [prompt, setPrompt] = useState('')
+  const queryClient = useQueryClient()
   const [key, setKey] = useState('')
+  const [githubToken, setGithubToken] = useState('')
+  const [githubAsked, setGithubAsked] = useState(false)
   const [options, setOptions] = useState(false)
   const [reuse, setReuse] = useState(false)
   const [workspaceId, setWorkspaceId] = useState('')
@@ -86,7 +98,7 @@ export function NewTask() {
   const workspaces = (sandboxes?.items ?? []).filter(
     (candidate) =>
       candidate.workspace?.agent === agent &&
-      candidate.status === 'running' &&
+      (candidate.status === 'running' || candidate.status === 'stopped') &&
       (!url || candidate.workspace.repository === url),
   )
   const reused = reuse ? workspaces.find((candidate) => candidate.id === workspaceId) : undefined
@@ -97,82 +109,46 @@ export function NewTask() {
       variables.data.items.map((variable) => variable.key),
     )
   const keyName = credentialKey(preset.keys, key)
+  const fitted = fitSandboxMemory(
+    station?.sandbox_memory?.free ?? null,
+    workspaceSizeDefaults.memory_bytes,
+  )
   const create = useMutation({
     mutationFn: async () => {
       if (!project || !environment || !url) {
         throw new Error('Choose a project, an environment and a repository first.')
       }
 
+      const scope = {
+        project: project.id,
+        environment: environment.name,
+      }
+
       if (needsKey) {
-        await send(
-          api.v1
-            .projects({
-              project: project.id,
-            })
-            .variables.patch(
-              {
-                environment: environment.name,
-                set: [
-                  {
-                    key: keyName,
-                    kind: 'sealed',
-                    value: key.trim(),
-                  },
-                ],
-              },
-              idempotency(),
-            ),
-        )
+        await storeProjectKey(scope, keyName, key)
       }
 
-      let workspace = reused?.id
-
-      for (let attempt = 0; !workspace; attempt += 1) {
-        const made = await api.v1
-          .environments({
-            environment: environment.id,
-          })
-          .sandboxes.post(
-            {
-              name: taskName(prompt),
-              workspace: {
-                agent,
-                repository: url,
-              },
-            },
-            idempotency(),
-          )
-
-        if (made.error) {
-          const taken = made.error.value as { error?: { code?: string } }
-
-          if (taken.error?.code === 'NAME_TAKEN' && attempt < nameRetries) {
-            continue
-          }
-
-          throw new ApiFailure(made.status, (made.error.value as { error: never }).error)
-        }
-
-        if (made.status === 202) {
-          throw new Error(
-            'This environment is protected, so creating the workspace waits for your review.',
-          )
-        }
-
-        workspace = (made.data as { id: string }).id
+      if (githubAsked && githubToken.trim()) {
+        await storeProjectKey(scope, githubTokenKey, githubToken)
       }
 
-      return unwrap(
-        api.v1['agent-sessions'].post(
-          {
-            workspace,
-            prompt: prompt.trim(),
-            model,
-          },
-          idempotency(),
-        ),
-      )
+      if (needsKey || githubAsked) {
+        await queryClient.invalidateQueries({
+          queryKey: ['variables'],
+        })
+      }
+
+      return startTask({
+        environment: environment.id,
+        agent,
+        repository: url,
+        prompt: prompt.trim(),
+        model,
+        memory: fitted,
+        workspace: reused?.id,
+      })
     },
+    onError: (error) => setGithubAsked(needsGithubToken(error)),
     onSuccess: (session) => {
       writeLastTask({
         project: project?.id ?? null,
@@ -191,13 +167,14 @@ export function NewTask() {
   const ready =
     Boolean(prompt.trim() && url && project && environment) &&
     (!needsKey || key.trim() !== '') &&
+    (!githubAsked || githubToken.trim() !== '') &&
     (!reuse || Boolean(reused))
   const submit = () => {
     if (ready && !create.isPending) {
       create.mutate()
     }
   }
-  const memory = station?.sandbox_memory
+  const stationMemory = station?.sandbox_memory
 
   if (sorted.length === 0) {
     return (
@@ -219,20 +196,22 @@ export function NewTask() {
       <h1 className="text-center text-3xl font-semibold tracking-tight">What should run?</h1>
       <div className="space-y-3 rounded-2xl border bg-card p-3">
         {needsKey && (
-          <div className="space-y-1 px-1">
-            <Input
-              type="password"
-              value={key}
-              onChange={(event) => setKey(event.target.value)}
-              placeholder={preset.keyLabel}
-              aria-label={`${preset.keyLabel} for ${project?.name}`}
-              autoComplete="off"
-            />
-            <p className="text-xs text-muted-foreground">
-              {project?.name} has no {preset.keyLabel.toLowerCase()}. {preset.keyHelp} Stationly
-              stores it sealed for the whole project.
-            </p>
-          </div>
+          <CredentialField
+            label={preset.keyLabel}
+            project={project?.name ?? ''}
+            value={key}
+            onChange={setKey}
+            help={`${project?.name} has no ${preset.keyLabel.toLowerCase()}. ${preset.keyHelp} Stationly stores it sealed for the whole project.`}
+          />
+        )}
+        {githubAsked && (
+          <CredentialField
+            label={githubTokenLabel}
+            project={project?.name ?? ''}
+            value={githubToken}
+            onChange={setGithubToken}
+            help={githubTokenHelp(project?.name ?? '', repositoryName(url ?? repository))}
+          />
         )}
         <Textarea
           value={prompt}
@@ -356,14 +335,12 @@ export function NewTask() {
             </Select>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <Switch checked={reuse} onCheckedChange={setReuse} />
-              Use a running workspace of this repository
+              Use a workspace of this repository
             </label>
             {reuse && (
               <Select value={workspaceId} onValueChange={setWorkspaceId}>
                 <SelectTrigger size="sm" aria-label="Workspace" className="sm:col-span-2">
-                  <SelectValue
-                    placeholder={workspaces.length ? 'Pick a workspace' : 'None is running'}
-                  />
+                  <SelectValue placeholder={workspaces.length ? 'Pick a workspace' : 'None yet'} />
                 </SelectTrigger>
                 <SelectContent>
                   {workspaces.map((entry) => (
@@ -392,11 +369,11 @@ export function NewTask() {
               {station.resources.cpu_millis / 1000} cores
             </span>
           )}
-          {memory && (
+          {stationMemory && (
             <span className={chip}>
               <MemoryStick className="size-3" aria-hidden />
-              {bytes(memory.used)}
-              {memory.limit !== null && ` of ${bytes(memory.limit)}`} sandbox memory
+              {bytes(stationMemory.used)}
+              {stationMemory.limit !== null && ` of ${bytes(stationMemory.limit)}`} sandbox memory
             </span>
           )}
           {station.resources && (

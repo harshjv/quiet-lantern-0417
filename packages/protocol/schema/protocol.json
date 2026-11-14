@@ -7925,7 +7925,8 @@
         "exited",
         "oom",
         "created_stopped",
-        "station_restart"
+        "station_restart",
+        "idle"
       ]
     },
     "SandboxStorageGrowBody": {

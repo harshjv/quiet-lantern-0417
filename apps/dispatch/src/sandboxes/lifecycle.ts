@@ -3,6 +3,7 @@ import { and, count, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 
 import { runActiveStatuses, type Actor, type MessageBody, type Observed } from '@stationly/protocol'
 
+import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
 import {
   agent_event,
@@ -19,6 +20,7 @@ import { every } from '../schedule.ts'
 import { emitEvent } from '../station/events.ts'
 
 import { applyAgentReset } from './agent-status.ts'
+import { requireQuota } from './limits.ts'
 import { sandboxSubject } from './subject.ts'
 import { revokeWorkspaceToken } from './workspace.ts'
 
@@ -32,6 +34,64 @@ export const systemActor: ActorValue = {
 }
 
 export const expiringLeadS = 86400
+
+type StationRow = typeof station.$inferSelect
+
+export const stopAtFrom = (ttl: number | null) =>
+  ttl === null ? null : new Date(Date.now() + ttl * 1000)
+
+export const startSandbox = (
+  db: Db,
+  st: StationRow,
+  principal: Principal,
+  row: SandboxRow,
+  ttl_s: number | null,
+) => {
+  requireQuota(
+    db,
+    st,
+    {
+      sandboxId: row.id,
+      newSandbox: false,
+      running: true,
+      memoryBytes: row.size.memory_bytes,
+    },
+    principal,
+  )
+  db.update(sandbox)
+    .set({
+      ttl_s,
+      desired_state: 'running',
+      stop_at: stopAtFrom(ttl_s),
+      status: 'starting',
+      status_reason: null,
+      failure: null,
+      exit_code: null,
+      expiring_notified_at: null,
+    })
+    .where(eq(sandbox.id, row.id))
+    .run()
+}
+
+export const stopSandbox = (db: Db, row: SandboxRow, reason: 'idle' | null = null) => {
+  if (row.status === 'stopped' || row.status === 'failed') {
+    return
+  }
+
+  db.update(sandbox)
+    .set({
+      desired_state: 'stopped',
+      stop_at: null,
+      status: 'stopping',
+      ...(reason
+        ? {
+            status_reason: reason,
+          }
+        : {}),
+    })
+    .where(eq(sandbox.id, row.id))
+    .run()
+}
 
 export const retentionSeconds = (db: Db) => readSetting(db, 'sandbox.stopped_retention_s')
 
@@ -201,7 +261,8 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
     }
 
     case 'stopped': {
-      const reason = body.reason ?? 'user'
+      const reported = body.reason ?? 'user'
+      const reason = row.status_reason === 'idle' && reported === 'user' ? 'idle' : reported
       const ended = reason === 'ttl' || reason === 'exited' || reason === 'oom'
       const stoppedAt = date(body.stopped_at) ?? now
 

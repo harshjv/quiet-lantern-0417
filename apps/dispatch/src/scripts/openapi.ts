@@ -51,6 +51,7 @@ export const openApiDocument = async () => {
       stations,
       blobDir: dir,
       github,
+      readRepository: () => Promise.resolve('unknown' as const),
     })
     const response = await app.handle(new Request(`${origin}/openapi/json`))
 

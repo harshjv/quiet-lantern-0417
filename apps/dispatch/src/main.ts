@@ -22,7 +22,9 @@ import { recordDispatchComponent } from './platform/lockfile.ts'
 import { createUpgradeDriver } from './platform/upgrade.ts'
 import { startAgentEventSweep } from './sandboxes/agent-events.ts'
 import { startAgentRunners } from './sandboxes/agent-runner.ts'
+import { startIdleStop } from './sandboxes/idle-stop.ts'
 import { startSandboxRetention } from './sandboxes/lifecycle.ts'
+import { readRepository } from './sandboxes/repository-access.ts'
 import { startWorkspaceTokenRenewal } from './sandboxes/workspace.ts'
 import { Keyring, masterKeyFromEnv } from './secrets/keyring.ts'
 import { createStationServer, HostAdminError, type HostAdmin } from './station/server.ts'
@@ -166,6 +168,7 @@ const deps = {
   stations,
   blobDir,
   github,
+  readRepository,
   upgrades,
 }
 const app = createApp(deps)
@@ -191,6 +194,13 @@ const backupSchedule = startBackupScheduler(
   log,
 )
 const sandboxRetention = startSandboxRetention(
+  {
+    db,
+    stations,
+  },
+  log,
+)
+const idleStop = startIdleStop(
   {
     db,
     stations,
@@ -240,6 +250,7 @@ const shutdown = async () => {
   sandboxRetention.stop()
   agentEventSweep.stop()
   agentRunners.stop()
+  idleStop.stop()
   workspaceTokens.stop()
   github.stop()
   attach.close()

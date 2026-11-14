@@ -12,6 +12,7 @@ import { ensureInstanceId, setupInstance } from '../../src/auth/bootstrap.ts'
 import { createMetadataFetch } from '../../src/auth/metadata-fetch.ts'
 import { openDb, type Db } from '../../src/db/client.ts'
 import { createGitHub } from '../../src/github/service.ts'
+import type { ReadRepository } from '../../src/sandboxes/repository-access.ts'
 import { Keyring } from '../../src/secrets/keyring.ts'
 import { createStationServer } from '../../src/station/server.ts'
 
@@ -33,7 +34,9 @@ export type CallOptions = {
 
 export type Dispatch = Awaited<ReturnType<typeof startDispatch>>
 
-export const startDispatch = async (options: { version?: string; setup?: boolean } = {}) => {
+export const startDispatch = async (
+  options: { version?: string; setup?: boolean; readRepository?: ReadRepository } = {},
+) => {
   const dir = mkdtempSync(join(tmpdir(), 'sly-dispatch-'))
   const databasePath = join(dir, 'dispatch.sqlite')
   const blobDir = join(dir, 'blobs')
@@ -69,6 +72,7 @@ export const startDispatch = async (options: { version?: string; setup?: boolean
     stations,
     blobDir,
     github,
+    readRepository: options.readRepository ?? (() => Promise.resolve('readable' as const)),
   }
   const app = createApp(deps)
   const fetchHandler = createFetch(deps, app)

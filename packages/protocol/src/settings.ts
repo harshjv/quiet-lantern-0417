@@ -153,6 +153,17 @@ export const settings = {
       default: 604800,
     },
   ),
+  'sandbox.workspace_idle_stop_s': define(
+    Type.Union([
+      Type.Literal(0),
+      Type.Integer({
+        minimum: 300,
+      }),
+    ]),
+    {
+      default: 1800,
+    },
+  ),
   'sandbox.agent_events_output': define(Bool, {
     default: false,
   }),

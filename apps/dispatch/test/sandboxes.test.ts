@@ -1115,13 +1115,19 @@ describe('station limits', () => {
       refused.body.error.explanation,
       `Station station-1 allows ${bytesText(limit)} for memory_bytes; ${bytesText(busy)} is used and this change needs 4 GiB more.`,
     )
-    assert.deepEqual(refused.body.error.details, {
+    const { holders, ...details } = refused.body.error.details
+
+    assert.deepEqual(details, {
       station: station.stationId,
       limit: 'memory_bytes',
       allowed: limit,
       used: busy,
       requested: 4 * gibibyte,
     })
+    const mine = holders.find((holder: { id: string }) => holder.id === fitted.id)
+
+    assert.equal(mine.memory_bytes, 3 * gibibyte)
+    assert.equal(mine.workspace, false)
     assert.equal((await api('DELETE', `/v1/sandboxes/${fitted.id}`)).status, 200)
     await api('PATCH', '/v1/stations/station-1', {
       sandbox_limits: {

@@ -95,7 +95,7 @@ export function SessionThread({
               </div>
             </div>
           )}
-          <TaskSetup setup={session.setup} />
+          <TaskSetup setup={session.setup} session={session} sandbox={sandbox} />
         </div>
       ) : (
         <AgentThread

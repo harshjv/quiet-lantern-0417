@@ -270,6 +270,7 @@ export const sandboxReason: Record<NonNullable<Sandbox['status_reason']>, string
   oom: 'out of memory',
   created_stopped: 'created stopped',
   station_restart: 'station restarted',
+  idle: 'idle',
 }
 
 export const sandboxRuntime: Record<SandboxRuntimeKind, string> = {

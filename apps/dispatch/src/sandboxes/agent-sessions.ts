@@ -4,6 +4,7 @@ import {
   agentStatusValues,
   type AgentStatusRecord,
   type AgentStatusValue,
+  type WorkspaceSetupStep,
 } from '@stationly/protocol'
 
 import { invalid } from '../api/errors.ts'
@@ -21,6 +22,7 @@ import {
 
 import { humanOf, startTimeoutMs } from './agent-runner.ts'
 import { agentStatusOf } from './agent-status.ts'
+import { setupFailureOf } from './setup-failure.ts'
 
 export const titleLength = 120
 
@@ -52,7 +54,14 @@ export type AgentSessionItem = {
   last_event_at: string
   mode: 'runner' | 'observed'
   started_by: { type: string; id: string | null } | null
-  setup: { state: 'creating' | 'setting_up' | 'starting' | 'failed'; run_id: string | null } | null
+  setup: {
+    state: 'creating' | 'setting_up' | 'starting' | 'failed'
+    run_id: string | null
+    step: WorkspaceSetupStep | null
+    tail: string[]
+    prompt: string | null
+    model: string | null
+  } | null
 }
 
 type Position = { last: number; sandbox: string; session: string }
@@ -156,16 +165,26 @@ const firstInput = (db: Db, sandboxId: string, session: string) =>
     .limit(1)
     .get()?.text
 
+const pending = (
+  state: 'creating' | 'setting_up' | 'starting',
+  run_id: string | null,
+): NonNullable<AgentSessionItem['setup']> => ({
+  state,
+  run_id,
+  step: null,
+  tail: [],
+  prompt: null,
+  model: null,
+})
+
 const setupOf = (
   db: Db,
   workspace: Workspace,
   now: number,
+  first: { text: string | null | undefined; model: string | null; redact: Redactor },
 ): NonNullable<AgentSessionItem['setup']> => {
   if (workspace.status !== 'running') {
-    return {
-      state: 'creating',
-      run_id: workspace.setup_run_id,
-    }
+    return pending('creating', workspace.setup_run_id)
   }
 
   const setup = workspace.setup_run_id
@@ -173,17 +192,21 @@ const setupOf = (
     : undefined
 
   if (!setup || setup.status === 'queued' || setup.status === 'running') {
-    return {
-      state: 'setting_up',
-      run_id: workspace.setup_run_id,
-    }
+    return pending('setting_up', workspace.setup_run_id)
   }
 
   const finished = setup.finished_at?.getTime() ?? now
 
+  if (setup.status === 'succeeded' && now - finished <= startTimeoutMs) {
+    return pending('starting', workspace.setup_run_id)
+  }
+
   return {
-    state: setup.status !== 'succeeded' || now - finished > startTimeoutMs ? 'failed' : 'starting',
+    state: 'failed',
     run_id: workspace.setup_run_id,
+    ...setupFailureOf(setup, first.redact),
+    prompt: first.text ? first.redact(first.text) : null,
+    model: first.model,
   }
 }
 
@@ -330,7 +353,14 @@ export const listAgentSessions = (
       last_event_at: new Date(row.last).toISOString(),
       mode: runner ? 'runner' : 'observed',
       started_by: runner ? humanOf(runner.started_by) : null,
-      setup: row.events || !runner ? null : setupOf(db, workspace, now),
+      setup:
+        row.events || !runner
+          ? null
+          : setupOf(db, workspace, now, {
+              text: firstInput(db, row.sandbox_id, row.session_id),
+              model: runner?.model ?? null,
+              redact: redactors.get(row.sandbox_id)!,
+            }),
     }
   })
   const last = page.at(-1)

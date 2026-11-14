@@ -3,6 +3,7 @@ import type { Principal } from '../auth/principal.ts'
 import { mintRequestId, recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import type { GitHub } from '../github/service.ts'
+import type { ReadRepository } from '../sandboxes/repository-access.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { emitEvent } from '../station/events.ts'
 import type { StationServer } from '../station/server.ts'
@@ -15,6 +16,7 @@ export type Deps = {
   stations: StationServer
   blobDir: string
   github: GitHub
+  readRepository: ReadRepository
   upgrades?: { kick(): void }
 }
 

@@ -415,6 +415,18 @@ export const errorCatalog = [
     close: null,
   },
   {
+    code: 'REPO_ACCESS_REQUIRED',
+    http: 422,
+    area: 'sandbox',
+    close: null,
+  },
+  {
+    code: 'REPO_ACCESS_DENIED',
+    http: 422,
+    area: 'sandbox',
+    close: null,
+  },
+  {
     code: 'SANDBOX_NOT_RUNNING',
     http: 409,
     area: 'sandbox',
