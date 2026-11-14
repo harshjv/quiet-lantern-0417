@@ -29,6 +29,9 @@ export const variablesOf = (db: Pick<Db, 'select'>, owner: VariableOwner) =>
         : and(eq(variable.scope, owner.scope), eq(ownerColumn[owner.scope], owner.id)),
     )
 
+export const isClone = (env: { ephemeral: boolean; source_environment_id: string | null }) =>
+  env.ephemeral || env.source_environment_id !== null
+
 export const inEnvironment = (environmentId: string | null) =>
   environmentId === null
     ? isNull(secret_value.environment_id)

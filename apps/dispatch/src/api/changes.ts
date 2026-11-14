@@ -624,6 +624,7 @@ const applyChanges = (
             sealed: kind === 'sealed',
             injection: after.injection as 'env' | 'file' | undefined,
             build: after.build as boolean | undefined,
+            copy_to_clones: after.copy_to_clones as boolean | undefined,
             allow_unresolved: Boolean(after.allow_unresolved),
             actor: call.principal.actor,
             request_id: call.request_id,
@@ -873,6 +874,7 @@ const applyChanges = (
               .set({
                 injection: (after.injection as 'env' | 'file' | undefined) ?? row.injection,
                 build: (after.build as boolean | undefined) ?? row.build,
+                copy_to_clones: (after.copy_to_clones as boolean | undefined) ?? row.copy_to_clones,
               })
               .where(eq(variable.id, id))
               .run()
@@ -895,6 +897,7 @@ const applyChanges = (
             sealed: kind === 'sealed',
             injection: after.injection as 'env' | 'file' | undefined,
             build: after.build as boolean | undefined,
+            copy_to_clones: after.copy_to_clones as boolean | undefined,
             allow_unresolved: Boolean(after.allow_unresolved),
             actor: call.principal.actor,
             request_id: call.request_id,

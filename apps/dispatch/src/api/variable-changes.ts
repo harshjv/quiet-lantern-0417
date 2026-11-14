@@ -8,7 +8,7 @@ import type { Keyring } from '../secrets/keyring.ts'
 import { hasReference, parseValue } from '../secrets/reference.ts'
 import { decryptValue, headValue, nextValueVersion, variablesOf } from '../secrets/values.ts'
 
-import { requireInstance, requireLevel } from './access.ts'
+import { requireHuman, requireInstance, requireLevel } from './access.ts'
 import type { ChangeSet } from './changes.ts'
 import { fail, invalid } from './errors.ts'
 import type { VariableRow } from './lookup.ts'
@@ -20,6 +20,7 @@ export type VariableItem = {
   reference?: string
   injection?: 'env' | 'file'
   build?: boolean
+  copy_to_clones?: boolean
 }
 
 export type VariableScope =
@@ -179,7 +180,8 @@ const unchanged = (
 
   if (
     (item.injection ?? prior.injection) !== prior.injection ||
-    (item.build ?? prior.build) !== prior.build
+    (item.build ?? prior.build) !== prior.build ||
+    (item.copy_to_clones ?? prior.copy_to_clones) !== prior.copy_to_clones
   ) {
     return false
   }
@@ -253,7 +255,8 @@ export const planVariables = (
       }
     } else if (
       item.value === undefined &&
-      !(item.kind === 'literal' && item.reference !== undefined)
+      !(item.kind === 'literal' && item.reference !== undefined) &&
+      !(item.kind === 'sealed' && existing.get(item.key)?.kind === 'sealed')
     ) {
       issues.push({
         path: `${path}/value`,
@@ -288,6 +291,13 @@ export const planVariables = (
     }
 
     const prior = existing.get(item.key)
+
+    if (item.copy_to_clones !== undefined && item.kind !== 'sealed') {
+      issues.push({
+        path: `${path}/copy_to_clones`,
+        message: 'only a sealed variable can be copied to clones',
+      })
+    }
 
     if (prior?.kind === 'sealed' && item.kind !== 'sealed') {
       issues.push({
@@ -324,6 +334,13 @@ export const planVariables = (
     levelFor(principal, scope, item.kind)
     const prior = existing.get(item.key)
 
+    if (
+      item.copy_to_clones !== undefined &&
+      item.copy_to_clones !== (prior?.copy_to_clones ?? false)
+    ) {
+      requireHuman(principal, `Changing copy_to_clones of ${item.key}`, scope.target)
+    }
+
     if (unchanged(db, keyring, prior, item, environmentId)) {
       continue
     }
@@ -334,7 +351,7 @@ export const planVariables = (
         : item.kind === 'literal'
           ? (item.reference ?? null)
           : null
-    const plaintext = item.kind === 'reference' || reference !== null ? null : item.value!
+    const plaintext = item.kind === 'reference' || reference !== null ? null : (item.value ?? null)
     const after: Record<string, unknown> = {
       scope: scope.scope,
       key: item.key,
@@ -342,6 +359,7 @@ export const planVariables = (
       reference,
       injection: item.injection ?? prior?.injection ?? 'env',
       build: item.build ?? prior?.build ?? false,
+      copy_to_clones: item.copy_to_clones ?? prior?.copy_to_clones ?? false,
       value_length: plaintext === null ? null : Buffer.byteLength(plaintext, 'utf8'),
       version:
         plaintext === null && reference === null

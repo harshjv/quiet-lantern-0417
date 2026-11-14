@@ -198,6 +198,7 @@ describe('starting a session from the browser', () => {
 
     assert.equal(h.db.select().from(run).all().length, before + 1)
     assert.equal(started.length, 1)
+    assert.deepEqual(started[0]!.command.slice(0, 2), ['bash', '-lc'])
     assert.equal(started[0]!.command[5], 'claude')
     assert.equal(started[0]!.command[6], 'claude-opus-5-5')
     assert.equal(started[0]!.command[7], '')

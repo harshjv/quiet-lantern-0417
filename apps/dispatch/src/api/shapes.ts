@@ -720,6 +720,7 @@ export const Variable = component(
       reference: NStr,
       injection: StringEnum(injectionValues),
       build: Bool,
+      copy_to_clones: Bool,
       head_version: NInt,
       bytes: NInt,
       sealed: Bool,
@@ -727,7 +728,18 @@ export const Variable = component(
       environments: Type.Array(Str),
       versions: Type.Array(SecretValue),
     },
-    ['id', 'scope', 'key', 'kind', 'reference', 'injection', 'build', 'head_version', 'bytes'],
+    [
+      'id',
+      'scope',
+      'key',
+      'kind',
+      'reference',
+      'injection',
+      'build',
+      'copy_to_clones',
+      'head_version',
+      'bytes',
+    ],
   ),
 )
 

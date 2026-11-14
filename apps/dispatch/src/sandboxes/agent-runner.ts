@@ -44,7 +44,7 @@ const runnerScript = [
 
 export const runnerCommand = (session: AgentSessionRow, path: string) => [
   'bash',
-  '-c',
+  '-lc',
   runnerScript,
   'agent-runner',
   session.session_id,

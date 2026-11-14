@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { GitBranch } from 'lucide-react'
+import { CircleAlert, GitBranch } from 'lucide-react'
 
 import { agentLabel, modelLabel } from '@stationly/protocol'
 
@@ -11,6 +11,7 @@ import { Code } from '@/components/code'
 import { EmptyState } from '@/components/page'
 import { ReplyBox } from '@/components/reply-box'
 import { TaskSetup } from '@/components/task-setup'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { modelOf } from '@/lib/agent-session'
 import { sessionShell, sessionTitle } from '@/lib/agent-sessions'
 import type { AgentSession } from '@/lib/api'
@@ -36,6 +37,12 @@ export function SessionThread({
   const station = stations?.items.find((item) => item.id === sandbox?.station_id)?.name
   const workspace = sandbox?.workspace
   const model = modelOf(state, session.session_id)
+  const neverStarted =
+    session.status === 'ended' &&
+    state.events.some(
+      (event) => event.type === 'session.ended' && event.data.reason === 'process_exited',
+    ) &&
+    !state.events.some((event) => event.type === 'session.started' || event.type === 'message')
   const shell = sessionShell(session)
   const startedLine = [
     station && `Started on ${station}`,
@@ -84,6 +91,17 @@ export function SessionThread({
       {session.status === 'waiting' && (
         <div className={column}>
           <WaitingNotice kind={session.kind} state={state} />
+        </div>
+      )}
+      {neverStarted && (
+        <div className={cn(column, 'pt-4')}>
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>
+              The agent exited before it started, so this task did nothing. Start a new task; if it
+              happens again, the agent is not installed correctly in this workspace.
+            </AlertDescription>
+          </Alert>
         </div>
       )}
       {session.setup ? (

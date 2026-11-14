@@ -98,8 +98,8 @@ test('a clone refuses a source value that needs re-entry and creates no environm
   const project = await projectWith('clone-reentry', [
     {
       key: 'TOKEN',
-      kind: 'sealed',
-      value: 'sealed-clone-value',
+      kind: 'literal',
+      value: 'clone-value',
     },
   ])
   const clone = (name: string) =>

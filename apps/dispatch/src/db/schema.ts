@@ -728,6 +728,7 @@ export const variable = sqliteTable(
       .notNull()
       .default('env'),
     build: bool('build').notNull().default(false),
+    copy_to_clones: bool('copy_to_clones').notNull().default(false),
     current_value_id: text('current_value_id'),
   },
   (table) => [

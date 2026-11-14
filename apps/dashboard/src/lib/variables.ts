@@ -15,6 +15,11 @@ export const variableKeyTitle = 'Upper case letters, digits and underscores'
 export const sealedNote =
   'Sealed values are write-only. No endpoint returns them, including to you.'
 
+export const noValueLabel = 'No value in this environment'
+
+export const hasNoValue = (variable: Pick<Variable, 'kind' | 'head_version'>) =>
+  variable.kind === 'sealed' && !variable.head_version
+
 export const buildNote =
   'Build-time variables reach the Dockerfile as BuildKit secrets: read one with RUN --mount=type=secret,id=KEY. They never become build arguments or image layers.'
 
@@ -64,6 +69,7 @@ export const draftVariable = (
     id: `draft-${entry.key}`,
     head_version: null,
     bytes: null,
+    copy_to_clones: false,
     ...existing,
     scope,
     key: entry.key,

@@ -3499,6 +3499,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -4182,6 +4186,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -4864,6 +4872,10 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
+                          "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -5839,6 +5851,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -6503,6 +6519,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -7166,6 +7186,10 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
+                          "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -30186,6 +30210,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -30252,6 +30280,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -30317,6 +30349,10 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
+                          "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -30733,6 +30769,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -30805,6 +30845,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -30876,6 +30920,10 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
+                          "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -31254,6 +31302,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -31320,6 +31372,10 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
+                          "type": "boolean"
                         }
                       }
                     }
@@ -31385,6 +31441,10 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
+                          "type": "boolean"
+                        },
+                        "copy_to_clones": {
+                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -44691,6 +44751,7 @@ export const openApiDocument = {
           "reference",
           "injection",
           "build",
+          "copy_to_clones",
           "head_version",
           "bytes"
         ],
@@ -44751,6 +44812,9 @@ export const openApiDocument = {
             ]
           },
           "build": {
+            "type": "boolean"
+          },
+          "copy_to_clones": {
             "type": "boolean"
           },
           "head_version": {

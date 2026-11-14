@@ -109,14 +109,21 @@ const pairs = async (options: { file?: string; sealed?: true }, assignments: str
 }
 
 const toSet = (
-  options: { sealed?: true; build?: true },
+  options: { sealed?: true; build?: true; copyToClones?: boolean },
   [key, value]: readonly [string, string],
 ) => {
-  const build = options.build
-    ? {
-        build: true,
-      }
-    : {}
+  const build = {
+    ...(options.build
+      ? {
+          build: true,
+        }
+      : {}),
+    ...(options.copyToClones === undefined
+      ? {}
+      : {
+          copy_to_clones: options.copyToClones,
+        }),
+  }
 
   if (options.sealed) {
     return {
@@ -196,12 +203,31 @@ export const variableCommands = (program: Program) => {
     .option('--sealed', 'store as sealed: write-only, never returned')
     .option('--file <path>', 'read KEY=VALUE lines from a file, or - for stdin')
     .option('--build', 'also pass to the build')
+    .option(
+      '--copy-to-clones',
+      'sealed only: copy the value into clones of this environment; a bare KEY changes only this flag',
+    )
+    .option('--no-copy-to-clones', 'sealed only: keep the value out of clones, the default')
     .option('--apply', 'redeploy stale dependents')
     .option('--allow-unresolved', 'accept references whose target does not exist yet')
     .action(
       call(async (run, options, assignments) => {
         const scope = scopeOf(run, options.scope)
-        const set = (await pairs(options, assignments)).map((pair) => toSet(options, pair))
+        const flagOnly = options.copyToClones !== undefined && !options.file
+        const bare = flagOnly ? assignments.filter((assignment) => !assignmentOf(assignment)) : []
+        const given = flagOnly
+          ? assignments.filter((assignment) => assignmentOf(assignment))
+          : assignments
+        const set = [
+          ...bare.map((key) => ({
+            key,
+            kind: 'sealed' as const,
+            copy_to_clones: options.copyToClones,
+          })),
+          ...(given.length || options.file || !bare.length ? await pairs(options, given) : []).map(
+            (pair) => toSet(options, pair),
+          ),
+        ]
 
         return patch(run, scope, {
           set,

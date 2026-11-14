@@ -199,6 +199,27 @@ describe('the repository check at workspace create', () => {
     assert.equal(seen.at(-1)!.token, guarded)
   })
 
+  test('a project token set for every environment is not read inside a clone of production', async () => {
+    const made = await asAdmin('POST', `/v1/projects/${project.id}/environments`, {
+      name: 'preview',
+      source_environment_id: envId,
+      deploy_on_create: false,
+    })
+
+    assert.equal(made.status, 201, made.text)
+
+    const reply = await asAdmin('POST', `/v1/environments/${made.body.id}/sandboxes`, {
+      name: 'in-preview',
+      workspace: {
+        agent: 'claude',
+        repository: privateUrl,
+      },
+    })
+
+    assert.equal(reply.status, 422, reply.text)
+    assert.equal(reply.body.error.code, 'REPO_ACCESS_REQUIRED')
+  })
+
   test('a repository that is not on github.com is not checked', async () => {
     const before = seen.length
     const reply = await create('elsewhere', 'https://git.example.com/acme/thing')

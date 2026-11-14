@@ -1,13 +1,15 @@
 import type { Static } from '@sinclair/typebox'
+import { eq } from 'drizzle-orm'
 
 import type { SandboxVariableSet } from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
+import { environment } from '../db/schema.ts'
 import { githubWeb } from '../github/client.ts'
 import { http, transientRetry, userAgent } from '../net/http.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { decryptValue, headValue, variablesOf } from '../secrets/values.ts'
+import { decryptValue, headValue, isClone, variablesOf } from '../secrets/values.ts'
 
 export type RepositoryAccess = 'readable' | 'unreadable' | 'unknown'
 
@@ -68,8 +70,13 @@ const projectToken = (
   })
     .all()
     .find((variable) => variable.key === tokenKey)
+  const env = db.select().from(environment).where(eq(environment.id, scope.environment)).get()
+  const cloned = env ? isClone(env) : false
   const head = found
-    ? (headValue(db, found.id, scope.environment) ?? headValue(db, found.id, null))
+    ? (headValue(db, found.id, scope.environment) ??
+      (cloned && found.kind === 'sealed' && !found.copy_to_clones
+        ? undefined
+        : headValue(db, found.id, null)))
     : undefined
 
   return head ? decryptValue(keyring, head) : null

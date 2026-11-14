@@ -38,6 +38,8 @@ export type VariableInput = {
   sealed?: boolean
   injection?: 'env' | 'file'
   build?: boolean
+  copy_to_clones?: boolean
+  empty?: boolean
   allow_unresolved?: boolean
   actor: ActorValue
   request_id: string
@@ -162,7 +164,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
     plaintext = randomBytes(sealedGenerator.bytes).toString('base64url')
   } else if (input.sealed) {
     kind = 'sealed'
-    plaintext = input.value
+    plaintext = input.empty ? null : input.value
   } else {
     const segments = parseValue(input.value)
     const generator =
@@ -218,6 +220,7 @@ export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
       reference,
       injection: input.injection ?? existing?.injection ?? 'env',
       build: input.build ?? existing?.build ?? false,
+      copy_to_clones: input.copy_to_clones ?? existing?.copy_to_clones ?? false,
     }
 
     if (existing) {

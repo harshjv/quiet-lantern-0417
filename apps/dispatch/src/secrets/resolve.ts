@@ -13,7 +13,7 @@ import {
 
 import { SecretsError } from './errors.ts'
 import { parseValue, type Segment } from './reference.ts'
-import { headValue, type SecretValueRow } from './values.ts'
+import { headValue, isClone, type SecretValueRow } from './values.ts'
 
 export const maxHops = 8
 
@@ -212,6 +212,32 @@ export class Resolver {
     return this.valueNode(v, row, 'sandbox', null)
   }
 
+  private missing(label: string, v: VariableRow, details: Record<string, unknown>) {
+    const source = this.env.source_environment_id
+      ? this.db
+          .select({
+            name: environment.name,
+          })
+          .from(environment)
+          .where(eq(environment.id, this.env.source_environment_id))
+          .get()?.name
+      : undefined
+    const set = `Set a value for ${v.key} in ${this.env.name}`
+
+    return new SecretsError(
+      'VARIABLE_UNRESOLVED',
+      `${label} has no value in environment ${this.env.name}`,
+      {
+        key: v.key,
+        environment: this.env.name,
+        ...details,
+      },
+      v.kind === 'sealed' && source
+        ? `${set}, or mark it to be copied to new environments in ${source}.`
+        : `${set}.`,
+    )
+  }
+
   private label(v: VariableRow, owner: ServiceRow) {
     return `${owner.name}.${v.key}`
   }
@@ -264,8 +290,7 @@ export class Resolver {
     const row = headValue(this.db, v.id, null)
 
     if (!row) {
-      throw new SecretsError('VARIABLE_UNRESOLVED', `${this.label(v, owner)} has no value`, {
-        key: v.key,
+      throw this.missing(this.label(v, owner), v, {
         service_id: owner.id,
       })
     }
@@ -420,6 +445,10 @@ export class Resolver {
       return this.valueNode(v, own, `project:${this.env.name}`, null)
     }
 
+    if (isClone(this.env) && v.kind === 'sealed' && !v.copy_to_clones) {
+      throw this.missing(`project variable ${key}`, v, {})
+    }
+
     const protectedValues = this.env.protected
       ? []
       : this.db
@@ -446,11 +475,7 @@ export class Resolver {
       )
     }
 
-    throw new SecretsError(
-      'VARIABLE_UNRESOLVED',
-      `project variable ${key} has no value for environment ${this.env.name} and no default`,
-      {},
-    )
+    throw this.missing(`project variable ${key}`, v, {})
   }
 
   private resolveGlobal(key: string): ValueNode {

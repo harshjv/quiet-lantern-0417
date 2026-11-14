@@ -1,0 +1,1 @@
+ALTER TABLE `variable` ADD `copy_to_clones` integer DEFAULT false NOT NULL;

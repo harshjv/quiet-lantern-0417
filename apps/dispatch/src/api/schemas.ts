@@ -222,6 +222,12 @@ export const VariableSet = t.Object(
     reference: t.Optional(t.String()),
     injection: t.Optional(input(StringEnum(injectionValues))),
     build: t.Optional(t.Boolean()),
+    copy_to_clones: t.Optional(
+      t.Boolean({
+        description:
+          'Sealed values only: copy the value into clones of this environment, by default false',
+      }),
+    ),
   },
   {
     additionalProperties: false,

@@ -43,6 +43,8 @@ import {
 import { highlight, useFresh } from '@/lib/use-fresh'
 import { cn } from '@/lib/utils'
 import {
+  hasNoValue,
+  noValueLabel,
   toSandboxVariableInput,
   toVariableInput,
   withDraft,
@@ -357,18 +359,36 @@ function RemoveVariable({ target, variable }: { target: VariableTarget; variable
   )
 }
 
-function ValueCell({ variable, revealed }: { variable: Variable; revealed: string | undefined }) {
+function ValueCell({
+  variable,
+  revealed,
+  onSet,
+}: {
+  variable: Variable
+  revealed: string | undefined
+  onSet: () => void
+}) {
   if (isOptimistic(variable)) {
     return <Saving />
+  }
+
+  if (hasNoValue(variable)) {
+    return (
+      <span className="inline-flex items-center gap-2 text-muted-foreground" data-sealed="true">
+        <Lock className="size-3.5" aria-hidden />
+        {noValueLabel}
+        <Button size="xs" variant="outline" onClick={onSet}>
+          Set a value
+        </Button>
+      </span>
+    )
   }
 
   if (variable.kind === 'sealed') {
     return (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-sealed="true">
         <Lock className="size-3.5" aria-hidden />
-        {variable.head_version
-          ? `Hidden · ${variable.bytes} bytes · version ${variable.head_version}`
-          : 'Not set'}
+        {`Hidden · ${variable.bytes} bytes · version ${variable.head_version}`}
       </span>
     )
   }
@@ -470,7 +490,11 @@ function VariableRows({
               </Badge>
             </TableCell>
             <TableCell className="max-w-0 whitespace-normal">
-              <ValueCell variable={variable} revealed={values.get(variable.id)} />
+              <ValueCell
+                variable={variable}
+                revealed={values.get(variable.id)}
+                onSet={() => onEdit(variable)}
+              />
             </TableCell>
             {target.kind !== 'sandbox' && (
               <TableCell className="hidden text-muted-foreground md:table-cell">

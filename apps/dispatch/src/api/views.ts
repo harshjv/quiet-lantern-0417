@@ -502,6 +502,7 @@ export const createViews = (db: Db) => {
         reference: row.reference,
         injection: row.injection,
         build: row.build,
+        copy_to_clones: row.copy_to_clones,
         head_version: headVersion(row),
         bytes:
           row.kind === 'sealed' && row.current_value_id
@@ -549,6 +550,7 @@ export const createViews = (db: Db) => {
       'reference',
       'injection',
       'build',
+      'copy_to_clones',
       'head_version',
       'bytes',
       'environments',

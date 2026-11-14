@@ -128,8 +128,9 @@ export const cloneInto = (
         id: svc.id,
       }).all()) {
         let value = v.reference ?? ''
+        const withheld = v.reference === null && v.kind === 'sealed' && !v.copy_to_clones
 
-        if (v.reference === null) {
+        if (v.reference === null && !withheld) {
           const head = headValue(tdb, v.id, null)
 
           if (!head) {
@@ -146,6 +147,8 @@ export const cloneInto = (
           key: v.key,
           value,
           sealed: v.kind === 'sealed',
+          empty: withheld,
+          copy_to_clones: v.copy_to_clones,
           injection: v.injection,
           build: v.build,
           allow_unresolved: true,
@@ -164,7 +167,8 @@ export const cloneInto = (
         scope: 'project',
         id: proj.id,
       }).all()) {
-        const head = headValue(tdb, v.id, source.id)
+        const head =
+          v.kind === 'sealed' && !v.copy_to_clones ? undefined : headValue(tdb, v.id, source.id)
 
         if (!head) {
           continue
@@ -178,6 +182,7 @@ export const cloneInto = (
           key: v.key,
           value: copyable(v, head),
           sealed: v.kind === 'sealed',
+          copy_to_clones: v.copy_to_clones,
           injection: v.injection,
           build: v.build,
           actor: call.principal.actor,
