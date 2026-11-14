@@ -43,6 +43,14 @@ export function SessionThread({
       (event) => event.type === 'session.ended' && event.data.reason === 'process_exited',
     ) &&
     !state.events.some((event) => event.type === 'session.started' || event.type === 'message')
+  const firstMessage =
+    session.title && !state.events.some((event) => event.type === 'prompt') ? (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2">
+          <AgentMarkdown text={session.title} />
+        </div>
+      </div>
+    ) : null
   const shell = sessionShell(session)
   const startedLine = [
     station && `Started on ${station}`,
@@ -106,30 +114,29 @@ export function SessionThread({
       )}
       {session.setup ? (
         <div className={cn(column, 'space-y-6 py-4', fill && 'min-h-0 flex-1 overflow-y-auto')}>
-          {session.title && (
-            <div className="flex justify-end">
-              <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2">
-                <AgentMarkdown text={session.title} />
-              </div>
-            </div>
-          )}
+          {firstMessage}
           <TaskSetup setup={session.setup} session={session} sandbox={sandbox} />
         </div>
       ) : (
-        <AgentThread
-          state={state}
-          stream={stream}
-          session={session.session_id}
-          className={cn(column, 'space-y-6 py-4', fill ? 'h-full' : 'max-h-[70vh]')}
-          frameClassName={fill ? 'min-h-0 flex-1' : undefined}
-          empty={
-            <EmptyState
-              icon={entityIcon.session}
-              title="Nothing to show yet"
-              description="This session has no events in the view."
-            />
-          }
-        />
+        <>
+          {firstMessage && <div className={cn(column, 'pt-4')}>{firstMessage}</div>}
+          <AgentThread
+            state={state}
+            stream={stream}
+            session={session.session_id}
+            className={cn(column, 'space-y-6 py-4', fill ? 'h-full' : 'max-h-[70vh]')}
+            frameClassName={fill ? 'min-h-0 flex-1' : undefined}
+            empty={
+              neverStarted ? null : (
+                <EmptyState
+                  icon={entityIcon.session}
+                  title="Waiting for the agent"
+                  description="Your message is on its way. The agent's reply appears here."
+                />
+              )
+            }
+          />
+        </>
       )}
       <div className={cn(column, 'shrink-0 pb-4')}>
         <ReplyBox session={session} sandbox={sandbox} model={model} />
