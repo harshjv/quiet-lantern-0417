@@ -39,6 +39,12 @@ const agentEventData = {
   prompt: Type.Object({
     text: Text,
     truncated: Truncated,
+    by: Type.Optional(
+      Type.Object({
+        type: Text,
+        id: Type.Union([Text, Type.Null()]),
+      }),
+    ),
   }),
   'message.part': Type.Object({
     message_id: Text,
@@ -68,6 +74,10 @@ const agentEventData = {
     output: Type.Optional(Text),
     truncated: Truncated,
   }),
+  'tool.denied': Type.Object({
+    tool: Type.Optional(Text),
+    summary: Type.Optional(Text),
+  }),
   attention: Type.Object({
     kind: StringEnum(agentAttentionKindValues),
     tool: Type.Optional(Text),
@@ -76,6 +86,7 @@ const agentEventData = {
   }),
   'turn.ended': Type.Object({
     text: Type.Optional(Text),
+    reason: Type.Optional(Text),
     truncated: Truncated,
   }),
   'turn.failed': Type.Object({
@@ -204,3 +215,38 @@ export const AgentStatus = Type.Object(
 )
 
 export type AgentStatusRecord = Static<typeof AgentStatus>
+
+export const AgentInboxItem = Type.Object(
+  {
+    id: Type.String(),
+    seq: Type.Integer(),
+    kind: StringEnum(['prompt', 'interrupt']),
+    text: Type.Union([Type.String(), Type.Null()]),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
+export const AgentInbox = Type.Object(
+  {
+    items: Type.Array(AgentInboxItem),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
+export const AgentInboxAck = Type.Object(
+  {
+    ids: Type.Array(Type.String(), {
+      minItems: 1,
+      maxItems: 100,
+    }),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
+export const agentPromptLimit = 32768

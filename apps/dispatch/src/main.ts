@@ -21,6 +21,7 @@ import { startBaseImageChecker } from './platform/base-images.ts'
 import { recordDispatchComponent } from './platform/lockfile.ts'
 import { createUpgradeDriver } from './platform/upgrade.ts'
 import { startAgentEventSweep } from './sandboxes/agent-events.ts'
+import { startAgentRunners } from './sandboxes/agent-runner.ts'
 import { startSandboxRetention } from './sandboxes/lifecycle.ts'
 import { startWorkspaceTokenRenewal } from './sandboxes/workspace.ts'
 import { Keyring, masterKeyFromEnv } from './secrets/keyring.ts'
@@ -197,6 +198,7 @@ const sandboxRetention = startSandboxRetention(
   log,
 )
 const agentEventSweep = startAgentEventSweep(db, log)
+const agentRunners = startAgentRunners(db, (station) => stations.reconcile(station), log)
 const workspaceTokens = startWorkspaceTokenRenewal(
   {
     db,
@@ -237,6 +239,7 @@ const shutdown = async () => {
   backupSchedule.stop()
   sandboxRetention.stop()
   agentEventSweep.stop()
+  agentRunners.stop()
   workspaceTokens.stop()
   github.stop()
   attach.close()

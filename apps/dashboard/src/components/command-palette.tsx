@@ -91,7 +91,7 @@ const serviceHere = (client: QueryClient, serviceId: string): Here => {
 
 const locate = (client: QueryClient, routeId: string, params: Record<string, string>): Here => {
   switch (routeId) {
-    case '/_app/':
+    case '/_app/projects/':
       return {
         environment: null,
         page: {
@@ -258,7 +258,7 @@ const goTo: { label: string; icon: LucideIcon; link: LinkOptions; shortcut?: Sho
     label: 'Projects',
     icon: entityIcon.project,
     link: {
-      to: '/',
+      to: '/projects',
     },
     shortcut: 'projects',
   },

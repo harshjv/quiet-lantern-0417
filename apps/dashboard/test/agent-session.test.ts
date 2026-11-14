@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { agentEventTypeValues, type AgentEventValue } from '@stationly/protocol'
+import { agentEventTypeValues, modelLabel, type AgentEventValue } from '@stationly/protocol'
 
 import {
   agentStatusView,
   applyPart,
   applyStored,
+  deniedCalls,
   emptyAgentState,
   failedCalls,
   isInstanceAdmin,
+  modelOf,
   runningCalls,
   sessionsOf,
   toolSentence,
@@ -399,4 +401,67 @@ test('a working status with background agents says how many are running', () => 
   assert.equal(agentStatusView(record(['a']), now).label, 'Working, 1 background agent')
   assert.equal(agentStatusView(record(['a', 'b']), now).label, 'Working, 2 background agents')
   assert.equal(agentStatusView(record([]), now).label, 'Working')
+})
+
+test('the model of a session comes from its session.started event', () => {
+  seq = 0
+  const state = fold([
+    stored(
+      'session.started',
+      {
+        model: 'claude-sonnet-5-5',
+      },
+      'a',
+    ),
+    stored('session.started', {}, 'b'),
+  ])
+
+  assert.equal(modelOf(state, 'a'), 'claude-sonnet-5-5')
+  assert.equal(modelOf(state, 'b'), null)
+  assert.equal(modelOf(state, 'c'), null)
+})
+
+test('a model shows by name, and an id it does not know shows as it is', () => {
+  assert.equal(modelLabel('claude-opus-5-5'), 'Opus 5.5')
+  assert.equal(modelLabel('claude-opus-5-5[1m]'), 'Opus 5.5')
+  assert.equal(modelLabel('other-model'), 'other-model')
+})
+
+test('a denied call shows in its turn, counted in the sentence and apart from the ran commands', () => {
+  seq = 0
+  const state = fold([
+    stored('prompt', {
+      text: 'clean up',
+      by: {
+        type: 'user',
+        id: 'usr_1',
+      },
+    }),
+    stored('tool.started', {
+      tool_use_id: 't1',
+      name: 'Bash',
+      summary: 'ls',
+    }),
+    stored('tool.denied', {
+      tool: 'Bash',
+      summary: 'rm -rf build',
+    }),
+  ])
+  const turns = turnsOf(state, 's1')
+  const calls = (turns[0].items[0] as { calls: ToolCall[] }).calls
+
+  assert.deepEqual(turns[0].by, {
+    type: 'user',
+    id: 'usr_1',
+  })
+  assert.deepEqual(
+    calls.map((entry) => [entry.name, entry.state, entry.summary]),
+    [
+      ['Bash', 'running', 'ls'],
+      ['Bash', 'denied', 'rm -rf build'],
+    ],
+  )
+  assert.equal(toolSentence(calls), 'Ran 1 command, 1 denied')
+  assert.equal(deniedCalls(calls), 1)
+  assert.equal(toolSentence([calls[1]]), '1 denied')
 })

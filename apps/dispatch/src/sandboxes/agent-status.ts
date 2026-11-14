@@ -19,7 +19,7 @@ type StatusEvent = {
   at: string
 }
 
-const afterTurnTypes: AgentEventType[] = ['tool.started', 'tool.finished', 'message']
+const afterTurnTypes: AgentEventType[] = ['tool.started', 'tool.finished', 'tool.denied', 'message']
 
 const endTypes: AgentEventType[] = ['turn.ended', 'turn.failed']
 
@@ -65,6 +65,7 @@ const transitions: Partial<Record<AgentEventType, AgentStatusValue>> = {
   message: 'working',
   'tool.started': 'working',
   'tool.finished': 'working',
+  'tool.denied': 'working',
   'subagent.started': 'working',
   attention: 'waiting',
   'turn.ended': 'ready',

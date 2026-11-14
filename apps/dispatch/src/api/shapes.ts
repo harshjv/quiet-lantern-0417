@@ -52,6 +52,8 @@ import {
   probeTcpResults,
   AgentEvent as ProtocolAgentEvent,
   AgentEventsAccepted as ProtocolAgentEventsAccepted,
+  AgentInbox as ProtocolAgentInbox,
+  AgentInboxAck as ProtocolAgentInboxAck,
   AgentStatus as ProtocolAgentStatus,
   refusedPaths,
   repoAuthValues,
@@ -955,6 +957,7 @@ export const Project = component(
       service_count: Int,
       status_counts: StatusCounts,
       sandbox_count: Int,
+      workspace_count: Int,
       environments: Type.Array(Environment),
       variables: Type.Array(Variable),
     },
@@ -966,6 +969,7 @@ export const Project = component(
       'service_count',
       'status_counts',
       'sandbox_count',
+      'workspace_count',
     ],
   ),
 )
@@ -1962,6 +1966,34 @@ export const AgentEvent = component('AgentEvent', ProtocolAgentEvent)
 
 export const AgentEventsAccepted = component('AgentEventsAccepted', ProtocolAgentEventsAccepted)
 
+export const AgentInbox = component('AgentInbox', ProtocolAgentInbox)
+
+export const AgentInboxAck = component('AgentInboxAck', ProtocolAgentInboxAck)
+
+export const AgentInterruptAccepted = component(
+  'AgentInterruptAccepted',
+  Type.Object(
+    {
+      accepted: Type.Boolean(),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const AgentInboxAcked = component(
+  'AgentInboxAcked',
+  Type.Object(
+    {
+      acked: Type.Integer(),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
 export const AgentEventPage = component(
   'AgentEventPage',
   Type.Object(
@@ -1994,6 +2026,42 @@ export const AgentSession = component(
       title: NStr,
       started_at: Str,
       last_event_at: Str,
+      mode: StringEnum(['runner', 'observed']),
+      started_by: Nullable(
+        Type.Object(
+          {
+            type: Str,
+            id: NStr,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+      setup: Nullable(
+        Type.Object(
+          {
+            state: StringEnum(['creating', 'setting_up', 'starting', 'failed']),
+            run_id: NStr,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const AgentInputAccepted = component(
+  'AgentInputAccepted',
+  Type.Object(
+    {
+      id: Str,
+      seq: Type.Integer(),
     },
     {
       additionalProperties: false,

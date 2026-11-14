@@ -3,18 +3,21 @@ import { useQuery } from '@tanstack/react-query'
 import { Section } from '@/components/page'
 import { Panel } from '@/components/panel'
 import { SessionRow } from '@/components/session-row'
+import { SessionThread } from '@/components/session-thread'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Sandbox } from '@/lib/api'
 import { agentSessionsQuery } from '@/lib/queries'
 
-function Rows({ sandbox }: { sandbox: Sandbox }) {
+function Sessions({ sandbox }: { sandbox: Sandbox }) {
   const { data, isPending } = useQuery(agentSessionsQuery(sandbox.id))
 
   if (isPending) {
-    return <Skeleton className="h-12 w-full" />
+    return <Skeleton className="h-24 w-full" />
   }
 
-  if (!data?.items.length) {
+  const [latest, ...others] = data?.items ?? []
+
+  if (!latest) {
     return (
       <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
         No session yet. Start the agent in this workspace and it appears here.
@@ -23,20 +26,25 @@ function Rows({ sandbox }: { sandbox: Sandbox }) {
   }
 
   return (
-    <div className="space-y-0.5 rounded-lg border p-1">
-      {data.items.map((session) => (
-        <SessionRow key={session.session_id} session={session} />
-      ))}
+    <div className="space-y-6">
+      <SessionThread key={latest.session_id} session={latest} fill={false} own />
+      {others.length > 0 && (
+        <Section title="Earlier sessions">
+          <div className="space-y-0.5">
+            {others.map((session) => (
+              <SessionRow key={session.session_id} session={session} />
+            ))}
+          </div>
+        </Section>
+      )}
     </div>
   )
 }
 
 export function WorkspaceSessions({ sandbox }: { sandbox: Sandbox }) {
   return (
-    <Section title="Sessions" description="What the agent in this workspace has worked on.">
-      <Panel rows={2} title="Couldn’t load sessions">
-        <Rows sandbox={sandbox} />
-      </Panel>
-    </Section>
+    <Panel rows={2} title="Couldn’t load sessions">
+      <Sessions sandbox={sandbox} />
+    </Panel>
   )
 }

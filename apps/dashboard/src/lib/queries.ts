@@ -418,6 +418,12 @@ export const inventoryQuery = queryOptions({
   queryFn: () => unwrap(api.v1.inventory.get()),
 })
 
+export const releasesQuery = queryOptions({
+  queryKey: ['platform', 'releases'],
+  queryFn: () => unwrap(api.v1.platform.releases.get()),
+  staleTime: 300_000,
+})
+
 export const stationQuery = (station: string) =>
   queryOptions({
     queryKey: ['stations', station],
@@ -675,3 +681,20 @@ export const agentTokensQuery = queryOptions({
 
 export const withoutToken = (id: string): Edit =>
   on(agentTokensQuery, (tokens) => tokens?.filter((t) => t.id !== id))
+
+export const taskStationQuery = queryOptions({
+  queryKey: ['stations', 'online', 'task'],
+  queryFn: async () => {
+    const page = await unwrap(
+      api.v1.stations.get({
+        query: {
+          status: 'online',
+          limit: 2,
+          fields: 'name,resources,sandbox_memory',
+        },
+      }),
+    )
+
+    return page.items.length === 1 ? page.items[0]! : null
+  },
+})

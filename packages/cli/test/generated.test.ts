@@ -267,10 +267,12 @@ test(
     const hidden = endpoints(openApiDocument).filter((e) => e.meta.cli === false)
 
     assert.deepEqual(hidden.map((e) => e.name).sort(), [
+      'ack_agent_inbox',
       'apply_manifest',
       'backup_volume',
       'explain_network',
       'export_manifest',
+      'get_agent_inbox',
       'open_sandbox_shell',
       'open_shell',
       'platform_upgrade',

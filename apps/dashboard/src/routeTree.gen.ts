@@ -17,6 +17,7 @@ import { Route as AppConnectRouteImport } from './routes/_app/connect'
 import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
 import { Route as AppStationsRouteImport } from './routes/_app/stations'
 import { Route as AppDeploymentsDeploymentRouteImport } from './routes/_app/deployments/$deployment'
+import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppSandboxesSandboxRouteImport } from './routes/_app/sandboxes/$sandbox'
 import { Route as AppServicesServiceRouteImport } from './routes/_app/services/$service'
 import { Route as AppSessionsIndexRouteImport } from './routes/_app/sessions/index'
@@ -66,6 +67,11 @@ const AppDeploymentsDeploymentRoute =
     path: '/deployments/$deployment',
     getParentRoute: () => AppRoute,
   } as any)
+const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSandboxesSandboxRoute = AppSandboxesSandboxRouteImport.update({
   id: '/sandboxes/$sandbox',
   path: '/sandboxes/$sandbox',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/services/$service': typeof AppServicesServiceRoute
   '/staged/$change': typeof AppStagedChangeRoute
+  '/projects/': typeof AppProjectsIndexRoute
   '/sessions/': typeof AppSessionsIndexRoute
   '/staged/': typeof AppStagedIndexRoute
   '/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/services/$service': typeof AppServicesServiceRoute
   '/staged/$change': typeof AppStagedChangeRoute
+  '/projects': typeof AppProjectsIndexRoute
   '/sessions': typeof AppSessionsIndexRoute
   '/staged': typeof AppStagedIndexRoute
   '/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/_app/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/_app/services/$service': typeof AppServicesServiceRoute
   '/_app/staged/$change': typeof AppStagedChangeRoute
+  '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/sessions/': typeof AppSessionsIndexRoute
   '/_app/staged/': typeof AppStagedIndexRoute
   '/_app/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
@@ -174,6 +183,7 @@ export interface FileRouteTypes {
     | '/sandboxes/$sandbox'
     | '/services/$service'
     | '/staged/$change'
+    | '/projects/'
     | '/sessions/'
     | '/staged/'
     | '/projects/$project/$environment'
@@ -190,6 +200,7 @@ export interface FileRouteTypes {
     | '/sandboxes/$sandbox'
     | '/services/$service'
     | '/staged/$change'
+    | '/projects'
     | '/sessions'
     | '/staged'
     | '/projects/$project/$environment'
@@ -208,6 +219,7 @@ export interface FileRouteTypes {
     | '/_app/sandboxes/$sandbox'
     | '/_app/services/$service'
     | '/_app/staged/$change'
+    | '/_app/projects/'
     | '/_app/sessions/'
     | '/_app/staged/'
     | '/_app/projects/$project/$environment'
@@ -276,6 +288,13 @@ declare module '@tanstack/react-router' {
       path: '/deployments/$deployment'
       fullPath: '/deployments/$deployment'
       preLoaderRoute: typeof AppDeploymentsDeploymentRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/projects/': {
+      id: '/_app/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AppProjectsIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/sandboxes/$sandbox': {
@@ -361,6 +380,7 @@ interface AppRouteChildren {
   AppSandboxesSandboxRoute: typeof AppSandboxesSandboxRoute
   AppServicesServiceRoute: typeof AppServicesServiceRoute
   AppStagedChangeRoute: typeof AppStagedChangeRoute
+  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
   AppStagedIndexRoute: typeof AppStagedIndexRoute
   AppProjectsProjectEnvironmentRoute: typeof AppProjectsProjectEnvironmentRoute
   AppProjectsProjectIndexRoute: typeof AppProjectsProjectIndexRoute
@@ -376,6 +396,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSandboxesSandboxRoute: AppSandboxesSandboxRoute,
   AppServicesServiceRoute: AppServicesServiceRoute,
   AppStagedChangeRoute: AppStagedChangeRoute,
+  AppProjectsIndexRoute: AppProjectsIndexRoute,
   AppStagedIndexRoute: AppStagedIndexRoute,
   AppProjectsProjectEnvironmentRoute: AppProjectsProjectEnvironmentRoute,
   AppProjectsProjectIndexRoute: AppProjectsProjectIndexRoute,

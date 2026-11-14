@@ -237,8 +237,13 @@ export const setupInstance = async (
             })
             .where(and(isNull(component.station_id), eq(component.name, 'dispatch')))
             .run()
-        } else {
-          tx.insert(component).values(values).run()
+        } else if (host) {
+          tx.insert(component)
+            .values({
+              ...values,
+              station_id: host.id,
+            })
+            .run()
         }
       }
     }

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 
 import { serviceStatusValues } from '@stationly/protocol'
 
@@ -87,6 +87,17 @@ type SandboxRow = typeof sandbox.$inferSelect
 type SandboxSnapshotRow = typeof sandbox_snapshot.$inferSelect
 type EventRow = typeof event.$inferSelect
 type ChannelRow = typeof notification_channel.$inferSelect
+
+const countSandboxes = (db: Db, environments: string[], where: SQL) =>
+  environments.length
+    ? (db
+        .select({
+          n: count(),
+        })
+        .from(sandbox)
+        .where(and(inArray(sandbox.environment_id, environments), where))
+        .get()?.n ?? 0)
+    : 0
 
 export const exportsOf = (db: Db, svc: ServiceRow) => {
   const host = `${svc.name}.internal`
@@ -864,15 +875,8 @@ export const createViews = (db: Db) => {
         environment_count: envIds.length,
         service_count: services.length,
         status_counts,
-        sandbox_count: envIds.length
-          ? (db
-              .select({
-                n: count(),
-              })
-              .from(sandbox)
-              .where(inArray(sandbox.environment_id, envIds))
-              .get()?.n ?? 0)
-          : 0,
+        sandbox_count: countSandboxes(db, envIds, isNull(sandbox.workspace)),
+        workspace_count: countSandboxes(db, envIds, isNotNull(sandbox.workspace)),
       }
     },
     summary: [
@@ -883,6 +887,7 @@ export const createViews = (db: Db) => {
       'service_count',
       'status_counts',
       'sandbox_count',
+      'workspace_count',
     ],
     expand: {
       environments: (row, sub) =>

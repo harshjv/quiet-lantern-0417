@@ -20,6 +20,7 @@ import {
   sessionQuery,
 } from '@/lib/auth'
 import { commands } from '@/lib/commands'
+import { nextLocation } from '@/lib/next-location'
 import { titled } from '@/lib/title'
 import { z } from '@/lib/zod'
 
@@ -32,9 +33,13 @@ export const Route = createFileRoute('/login')({
     const next = safeNext(search.next)
 
     if (session && !(next && serverPage(next))) {
-      throw redirect({
-        to: next ?? '/',
-      })
+      throw redirect(
+        next
+          ? nextLocation(next)
+          : {
+              to: '/',
+            },
+      )
     }
   },
   head: () => titled('Sign in'),
@@ -83,9 +88,13 @@ function Login() {
       return
     }
 
-    await navigate({
-      to: target ?? '/',
-    })
+    await navigate(
+      target
+        ? nextLocation(target)
+        : {
+            to: '/',
+          },
+    )
   }
 
   const withPasskey = async () => {

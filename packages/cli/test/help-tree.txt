@@ -6,6 +6,8 @@ sly agent
   Agent session commands that run inside a workspace
 sly agent relay
   Post the agent session events that the workspace hook spooled to Dispatch, then exit when the spool stays empty
+sly agent run
+  Run the agent for one session headless and feed it the operator's prompts from Dispatch
 sly apply
   Plan or apply a Manifest (alias of sly manifest apply)
 sly audit
@@ -186,6 +188,8 @@ sly sandboxes
   Persistent Linux machines for agents, isolated with gVisor
 sly sandboxes agent [sandbox]
   Events of a workspace's agent session, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
+sly sandboxes ask
+  Start an agent session in a workspace from a first prompt; the runner starts once the workspace is running and set up. Needs a human actor
 sly sandboxes create [name]
   Create a sandbox, or fork one from a snapshot or a live sandbox disk with from
 sly sandboxes delete [sandbox]
@@ -210,6 +214,8 @@ sly sandboxes get-snapshot <id>
   Get a sandbox snapshot
 sly sandboxes grow-storage <station>
   Grow a station's sandbox filesystem to size_bytes while sandboxes run; staged for a non-human actor under platform.protected
+sly sandboxes interrupt <session> [sandbox]
+  End the running turn of a session Stationly started; the workspace stays. Needs a human actor
 sly sandboxes list
   List the sandboxes of an environment
 sly sandboxes list-environment-snapshots
@@ -222,6 +228,8 @@ sly sandboxes list-variables [sandbox]
   List the variables of a sandbox; values are never listed
 sly sandboxes probe-network [sandbox]
   Ask the sandbox's resolver as the sandbox, or judge one TCP handshake with the sandbox ruleset and send it from the station when the ruleset accepts the destination
+sly sandboxes reply <session> [sandbox]
+  Send the next prompt to a session Stationly started; only a human actor may send one
 sly sandboxes sessions
   Agent sessions of every workspace, newest first, with status, attention kind and the first prompt as the title; for an instance admin
 sly sandboxes set-variables [sandbox]

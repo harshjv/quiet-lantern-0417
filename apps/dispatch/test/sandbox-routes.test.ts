@@ -243,7 +243,7 @@ describe('the OpenAPI document', () => {
 })
 
 describe('the project summary', () => {
-  test('sandbox_count counts the sandboxes across every environment of the project', async () => {
+  test('sandbox_count and workspace_count count plain sandboxes and workspaces across every environment of the project', async () => {
     const counted = await createProject(h, 'counted')
     const empty = await createProject(h, 'uncounted')
     const staging = await createEnvironment(h, counted.id, 'staging')
@@ -253,19 +253,27 @@ describe('the project summary', () => {
       const listed = list.body.items.find((p: any) => p.id === id)
 
       assert.equal(listed.sandbox_count, one.body.sandbox_count)
+      assert.equal(listed.workspace_count, one.body.workspace_count)
 
-      return one.body.sandbox_count
+      return [one.body.sandbox_count, one.body.workspace_count]
     }
 
-    assert.equal(await count(counted.id), 0)
+    assert.deepEqual(await count(counted.id), [0, 0])
     await createSandbox(h, counted.default_environment_id, {
       name: 'first',
     })
     await createSandbox(h, staging.id, {
       name: 'second',
     })
-    assert.equal(await count(counted.id), 2)
-    assert.equal(await count(empty.id), 0)
+    await createSandbox(h, staging.id, {
+      name: 'third',
+      workspace: {
+        agent: 'claude',
+        repository: 'https://github.com/acme/third',
+      },
+    })
+    assert.deepEqual(await count(counted.id), [2, 1])
+    assert.deepEqual(await count(empty.id), [0, 0])
   })
 })
 

@@ -506,6 +506,12 @@ const effects: {
       .where(and(scope, eq(component.name, name)))
       .get()
 
+    if (name !== 'dispatch') {
+      db.delete(component)
+        .where(and(isNull(component.station_id), eq(component.name, name)))
+        .run()
+    }
+
     if (row) {
       db.update(component).set(values).where(eq(component.id, row.id)).run()
     } else {

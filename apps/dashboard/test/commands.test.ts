@@ -63,7 +63,7 @@ const built: Record<keyof typeof commands, string[]> = {
   startService: [commands.startService(service)],
   rollback: [commands.rollback(service, 'dep_01')],
   createWorkspace: [commands.createWorkspace(scope)],
-  openWorkspace: [commands.openWorkspace('my-ws')],
+  openWorkspace: [commands.openWorkspace(scope, 'my-ws')],
   setMemory: [commands.setMemory(service, 1073741824)],
   setHealth: [commands.setHealth(service, 3000), commands.setHealth(service, null)],
   logs: [commands.logs(service, 'dep_01', null), commands.logs(service, 'dep_01', 'bld_01')],

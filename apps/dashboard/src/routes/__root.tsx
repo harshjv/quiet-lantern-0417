@@ -34,7 +34,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         description="Check the address, or start again from your projects."
         action={
           <Button asChild size="sm" variant="outline">
-            <Link to="/">Go to projects</Link>
+            <Link to="/projects">Go to projects</Link>
           </Button>
         }
       />

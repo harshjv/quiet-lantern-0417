@@ -401,6 +401,49 @@ export const agent_event = sqliteTable(
   ],
 )
 
+export const agent_session = sqliteTable(
+  'agent_session',
+  {
+    sandbox_id: text('sandbox_id').notNull(),
+    session_id: text('session_id').notNull(),
+    adapter: text('adapter').notNull(),
+    model: text('model'),
+    started_by: json<ActorValue>('started_by').notNull(),
+    created_at: timestamp('created_at').notNull(),
+    runner_wanted: bool('runner_wanted').notNull().default(true),
+    runner_run_id: text('runner_run_id'),
+    runner_seen_at: timestamp('runner_seen_at'),
+    resume: bool('resume').notNull().default(false),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.sandbox_id, table.session_id],
+    }),
+  ],
+)
+
+export const agent_input = sqliteTable(
+  'agent_input',
+  {
+    id: text('id').primaryKey(),
+    sandbox_id: text('sandbox_id').notNull(),
+    session_id: text('session_id').notNull(),
+    seq: integer('seq').notNull(),
+    kind: text('kind', {
+      enum: ['prompt', 'interrupt'],
+    }).notNull(),
+    text: text('text'),
+    actor: json<ActorValue>('actor').notNull(),
+    created_at: timestamp('created_at').notNull(),
+    delivered_at: timestamp('delivered_at'),
+    event_seq: integer('event_seq'),
+  },
+  (table) => [
+    uniqueIndex('agent_input_sandbox_seq_unique').on(table.sandbox_id, table.seq),
+    index('agent_input_session').on(table.sandbox_id, table.session_id, table.seq),
+  ],
+)
+
 export const sandbox_snapshot = sqliteTable(
   'sandbox_snapshot',
   {

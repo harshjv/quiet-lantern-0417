@@ -1,6 +1,12 @@
 import { t } from 'elysia'
 
-import { agentEventLimits, AgentEventsInput } from '@stationly/protocol'
+import {
+  agentEventLimits,
+  AgentEventsInput,
+  AgentInboxAck,
+  agentPromptLimit,
+  workspaceAgents,
+} from '@stationly/protocol'
 
 import {
   chargeTokenWindow,
@@ -18,14 +24,40 @@ import {
   shownAgentEvent,
   type AgentEventLive,
 } from '../../sandboxes/agent-events.ts'
+import {
+  ackInputs,
+  addInput,
+  createRunnerSession,
+  inboxItems,
+  runnerLive,
+  runnerSessionOf,
+  touchRunner,
+  wantRunner,
+} from '../../sandboxes/agent-runner.ts'
 import { filterStatuses, listAgentSessions } from '../../sandboxes/agent-sessions.ts'
+import { variablesOf } from '../../secrets/values.ts'
+import { requireHuman } from '../access.ts'
 import { fail, invalid } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import { sandboxById, type SandboxRow } from '../lookup.ts'
 import { filterMany } from '../pagination.ts'
 import { input } from '../schemas.ts'
-import { AgentEventPage, AgentEventsAccepted, AgentSessionPage, replies } from '../shapes.ts'
+import {
+  AgentEventPage,
+  AgentEventsAccepted,
+  AgentInbox,
+  AgentInboxAcked,
+  AgentInputAccepted,
+  AgentInterruptAccepted,
+  AgentSession,
+  AgentSessionPage,
+  replies,
+} from '../shapes.ts'
 import { createSse } from '../sse.ts'
+
+const inboxPollMs = 500
+
+const maxInboxWaitS = 25
 
 const drainSize = 200
 const fallbackPollMs = 1000
@@ -253,6 +285,330 @@ export const agentEventRoutes = (kit: Kit) => {
         }),
         response: replies({
           200: AgentSessionPage,
+        }),
+      },
+    )
+    .post(
+      '/agent-sessions',
+      async ({ request, body, set }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Starting an agent session')
+
+        const row = sandboxById(db, body.workspace).sandbox
+        const agent = row.workspace?.agent
+
+        if (!agent) {
+          invalid([
+            {
+              path: '/workspace',
+              message: `${row.name} is not a workspace`,
+            },
+          ])
+        }
+
+        const preset = workspaceAgents[agent!]
+
+        if (!preset.runner) {
+          invalid([
+            {
+              path: '/workspace',
+              message: `${preset.label} has no runner yet`,
+            },
+          ])
+        }
+
+        if (body.model !== undefined && !preset.models.some((model) => model.id === body.model)) {
+          invalid([
+            {
+              path: '/model',
+              message: `not a model of ${preset.label}`,
+            },
+          ])
+        }
+
+        const keys = new Set(
+          variablesOf(db, {
+            scope: 'project',
+            id: row.project_id,
+          })
+            .all()
+            .map((variable) => variable.key),
+        )
+
+        if (!preset.keys.some((key) => keys.has(key))) {
+          invalid([
+            {
+              path: '/workspace',
+              message: `the project defines none of ${preset.keys.join(', ')} for ${preset.label}`,
+            },
+          ])
+        }
+
+        if (row.status !== 'running' && row.status !== 'creating') {
+          fail(
+            'SANDBOX_NOT_RUNNING',
+            `Workspace ${row.name} is ${row.status}, so no session can start in it.`,
+            'Start the workspace with start_sandbox, then start the session.',
+            {
+              status: row.status,
+            },
+          )
+        }
+
+        const session = createRunnerSession(db, row, {
+          model: body.model ?? preset.models[0]?.id ?? null,
+          prompt: body.prompt,
+          actor: call.principal.actor,
+        })
+
+        set.status = 202
+
+        return listAgentSessions(db, {
+          limit: 200,
+          cursor: undefined,
+          status: null,
+          workspace: row.id,
+          redactor: (sandboxId) =>
+            kit.sandboxRedaction([sandboxId], call.principal.actor, call.request_id),
+        }).items.find((item) => item.session_id === session)!
+      },
+      {
+        operation: {
+          id: 'create_agent_session',
+          summary:
+            'Start an agent session in a workspace from a first prompt; the runner starts once the workspace is running and set up. Needs a human actor',
+          level: 'instance admin',
+          mcp: false,
+          cli: {
+            path: ['sandboxes', 'ask'],
+          },
+        },
+        body: t.Object({
+          workspace: t.String({
+            description: 'The workspace, a sandbox id, running or still being set up',
+          }),
+          prompt: t.String({
+            minLength: 1,
+            maxLength: agentPromptLimit,
+          }),
+          model: t.Optional(
+            t.String({
+              description: "One of the agent's models, default the first",
+            }),
+          ),
+        }),
+        response: replies({
+          202: AgentSession,
+        }),
+      },
+    )
+    .post(
+      '/sandboxes/:sandbox/agent/sessions/:session/prompts',
+      async ({ params, request, body, set }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Sending a prompt to an agent session')
+
+        const row = sandboxById(db, params.sandbox).sandbox
+        const session = runnerSessionOf(db, row.id, params.session)
+
+        if (!session) {
+          invalid([
+            {
+              path: '/session',
+              message: 'not a session Stationly started, so it has no process to take a prompt',
+            },
+          ])
+        }
+
+        if (row.status !== 'running') {
+          fail(
+            'SANDBOX_NOT_RUNNING',
+            `Workspace ${row.name} is ${row.status}, so its session cannot take a prompt.`,
+            'Start the workspace with start_sandbox, then send the prompt again.',
+            {
+              status: row.status,
+            },
+          )
+        }
+
+        const stored = addInput(
+          db,
+          row.id,
+          params.session,
+          {
+            kind: 'prompt',
+            text: body.text,
+          },
+          call.principal.actor,
+        )
+
+        if (!runnerLive(session!)) {
+          wantRunner(db, row.id, params.session)
+        }
+
+        set.status = 202
+
+        return stored
+      },
+      {
+        operation: {
+          id: 'send_agent_prompt',
+          summary:
+            'Send the next prompt to a session Stationly started; only a human actor may send one',
+          level: 'instance admin',
+          mcp: false,
+          cli: {
+            path: ['sandboxes', 'reply'],
+          },
+        },
+        body: t.Object({
+          text: t.String({
+            minLength: 1,
+            maxLength: agentPromptLimit,
+          }),
+        }),
+        response: replies({
+          202: AgentInputAccepted,
+        }),
+      },
+    )
+    .post(
+      '/sandboxes/:sandbox/agent/sessions/:session/interrupt',
+      async ({ params, request, set }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Interrupting an agent session')
+
+        const row = sandboxById(db, params.sandbox).sandbox
+        const session = runnerSessionOf(db, row.id, params.session)
+
+        if (!session || !runnerLive(session)) {
+          invalid([
+            {
+              path: '/session',
+              message: 'has no live runner to interrupt',
+            },
+          ])
+        }
+
+        addInput(
+          db,
+          row.id,
+          params.session,
+          {
+            kind: 'interrupt',
+            text: null,
+          },
+          call.principal.actor,
+        )
+        set.status = 202
+
+        return {
+          accepted: true,
+        }
+      },
+      {
+        operation: {
+          id: 'interrupt_agent_session',
+          summary:
+            'End the running turn of a session Stationly started; the workspace stays. Needs a human actor',
+          level: 'instance admin',
+          mcp: false,
+          cli: {
+            path: ['sandboxes', 'interrupt'],
+          },
+        },
+        response: replies({
+          202: AgentInterruptAccepted,
+        }),
+      },
+    )
+    .get(
+      '/sandboxes/:sandbox/agent/inbox',
+      async ({ ctx, request, query }) => {
+        const call = await kit.call(request)
+        const row = ctx.sandbox
+
+        requireWorkspaceToken(row, call.principal)
+
+        const after = query.after ?? 0
+        const deadline = Date.now() + Math.min(query.wait_s ?? 0, maxInboxWaitS) * 1000
+
+        for (;;) {
+          touchRunner(db, row.id, query.session)
+
+          const items = inboxItems(db, row.id, query.session, after)
+
+          if (items.length || Date.now() >= deadline || request.signal.aborted) {
+            return {
+              items: items.map((item) => ({
+                id: item.id,
+                seq: item.seq,
+                kind: item.kind,
+                text: item.text,
+              })),
+            }
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, inboxPollMs))
+        }
+      },
+      {
+        sandbox: {
+          id: 'get_agent_inbox',
+          summary:
+            "The operator's undelivered prompts and interrupts for a session, waiting up to wait_s; only the workspace token is accepted",
+          level: 'read',
+          mcp: false,
+          cli: false,
+          deferTokenWindow: true,
+        },
+        query: t.Object({
+          session: t.String(),
+          after: t.Optional(
+            t.Integer({
+              minimum: 0,
+            }),
+          ),
+          wait_s: t.Optional(
+            t.Integer({
+              minimum: 0,
+              maximum: maxInboxWaitS,
+            }),
+          ),
+        }),
+        response: replies({
+          200: AgentInbox,
+        }),
+      },
+    )
+    .post(
+      '/sandboxes/:sandbox/agent/inbox/ack',
+      async ({ ctx, request, body, set }) => {
+        const call = await kit.call(request)
+
+        requireWorkspaceToken(ctx.sandbox, call.principal)
+        set.status = 202
+
+        return {
+          acked: ackInputs(db, ctx.sandbox.id, body.ids),
+        }
+      },
+      {
+        sandbox: {
+          id: 'ack_agent_inbox',
+          summary:
+            'Mark inbox items as delivered to the agent process; only the workspace token is accepted',
+          level: 'read',
+          mcp: false,
+          cli: false,
+          deferTokenWindow: true,
+        },
+        body: input(AgentInboxAck),
+        response: replies({
+          202: AgentInboxAcked,
         }),
       },
     )

@@ -18,7 +18,7 @@ export function useEnvironmentTrail(environmentId: string) {
   const crumbs: Crumb[] = [
     {
       label: 'Projects',
-      to: '/',
+      to: '/projects',
     },
     {
       label: project.name,

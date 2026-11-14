@@ -12,11 +12,12 @@ import {
 import { invalid } from '../api/errors.ts'
 import type { Redactor } from '../api/redaction.ts'
 import type { Db } from '../db/client.ts'
-import { agent_event, sandbox } from '../db/schema.ts'
+import { agent_event, agent_input, sandbox } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 
+import { shapeEvent } from './agent-runner.ts'
 import { applyAgentStatus } from './agent-status.ts'
 
 type SandboxRow = typeof sandbox.$inferSelect
@@ -207,7 +208,8 @@ const storeEvent = (
   now: Date,
 ) => {
   const at = toIso(event.at, index)
-  const data = prepareData(event.type, event.data, redact, outputEnabled)
+  const shaped = shapeEvent(db, row, event)
+  const data = prepareData(shaped.type, shaped.data, redact, outputEnabled)
   const seq = nextSeq(db, row.id)
   const inserted = db
     .insert(agent_event)
@@ -219,7 +221,7 @@ const storeEvent = (
       prompt_id: event.prompt_id ?? null,
       turn_id: event.turn_id ?? null,
       agent_id: event.agent_id ?? null,
-      type: event.type,
+      type: shaped.type,
       at,
       received_at: now,
       data,
@@ -232,10 +234,19 @@ const storeEvent = (
     return null
   }
 
+  if (shaped.input) {
+    db.update(agent_input)
+      .set({
+        event_seq: seq,
+      })
+      .where(eq(agent_input.id, shaped.input.id))
+      .run()
+  }
+
   return {
     seq,
     row: applyAgentStatus(db, row, {
-      type: event.type,
+      type: shaped.type,
       at: at.toISOString(),
       session_id: event.session_id,
       prompt_id: event.prompt_id,

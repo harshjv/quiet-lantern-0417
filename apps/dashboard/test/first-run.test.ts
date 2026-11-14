@@ -11,6 +11,7 @@ const project = (name: string, counts: Partial<Project> = {}): Project => ({
   environment_count: 1,
   service_count: 0,
   sandbox_count: 0,
+  workspace_count: 0,
   status_counts: {
     green: 0,
     amber: 0,
@@ -43,6 +44,7 @@ test('a fresh instance has every step to do', () => {
     project: false,
     service: false,
     sandbox: false,
+    workspace: false,
     agent: false,
   })
 })
@@ -133,6 +135,7 @@ test('sandboxes count across projects', () => {
       project('web'),
       project('api', {
         sandbox_count: 2,
+        workspace_count: 1,
       }),
     ],
   })
@@ -140,6 +143,8 @@ test('sandboxes count across projects', () => {
   assert.equal(progress.done.project, true)
   assert.equal(progress.done.sandbox, true)
   assert.equal(progress.sandboxes, 2)
+  assert.equal(progress.done.workspace, true)
+  assert.equal(progress.workspaces, 1)
 })
 
 test('an agent is connected once its token makes a call', () => {

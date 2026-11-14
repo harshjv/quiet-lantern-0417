@@ -16,7 +16,14 @@ const domains = (...names: string[]): Entry[] =>
     domain,
   }))
 
+type AgentModel = { id: string; label: string }
+
 type AgentPreset = {
+  label: string
+  keyLabel: string
+  keyHelp: string
+  models: AgentModel[]
+  runner: boolean
   package: string
   keys: string[]
   env: Record<string, string>
@@ -26,6 +33,28 @@ type AgentPreset = {
 
 export const workspaceAgents: Record<WorkspaceAgent, AgentPreset> = {
   claude: {
+    label: 'Claude Code',
+    keyLabel: 'Claude key',
+    keyHelp: 'Run claude setup-token to get one, or paste an Anthropic API key.',
+    models: [
+      {
+        id: 'claude-sonnet-5-5',
+        label: 'Sonnet 5.5',
+      },
+      {
+        id: 'claude-opus-5-5',
+        label: 'Opus 5.5',
+      },
+      {
+        id: 'claude-fable-5-2',
+        label: 'Fable 5.2',
+      },
+      {
+        id: 'claude-haiku-5-5',
+        label: 'Haiku 5.5',
+      },
+    ],
+    runner: true,
     package: '@anthropic-ai/claude-code',
     keys: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
     env: {
@@ -35,6 +64,11 @@ export const workspaceAgents: Record<WorkspaceAgent, AgentPreset> = {
     domains: domains('api.anthropic.com', 'claude.ai', 'platform.claude.com'),
   },
   codex: {
+    label: 'Codex',
+    keyLabel: 'Codex key',
+    keyHelp: 'Paste an OpenAI API key for Codex.',
+    models: [],
+    runner: false,
     package: '@openai/codex',
     keys: ['CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'],
     env: {},
@@ -55,6 +89,14 @@ export const workspaceAgents: Record<WorkspaceAgent, AgentPreset> = {
     domains: domains('api.openai.com', 'chatgpt.com', 'auth.openai.com'),
   },
 }
+
+export const agentLabel = (agent: string) =>
+  agent in workspaceAgents ? workspaceAgents[agent as WorkspaceAgent].label : agent
+
+export const modelLabel = (model: string) =>
+  Object.values(workspaceAgents)
+    .flatMap((agent) => agent.models)
+    .find((entry) => model.startsWith(entry.id))?.label ?? model
 
 export const workspaceSharedKeys = ['GH_TOKEN']
 

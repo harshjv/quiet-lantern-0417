@@ -1,49 +1,11 @@
-import { useSyncExternalStore } from 'react'
+import type { Project } from './api.ts'
+import { persistedFlag } from './persisted-flag.ts'
 
-import type { Project } from '@/lib/api'
+const guideHidden = persistedFlag('stationly.get-started.hidden')
 
-const key = 'stationly.get-started.hidden'
-const changed = 'stationly:get-started'
+export const setGuideHidden = guideHidden.set
 
-let fallback = false
-
-const read = () => {
-  try {
-    return window.localStorage.getItem(key) === '1'
-  } catch {
-    return fallback
-  }
-}
-
-const subscribe = (notify: () => void) => {
-  window.addEventListener('storage', notify)
-  window.addEventListener(changed, notify)
-
-  return () => {
-    window.removeEventListener('storage', notify)
-    window.removeEventListener(changed, notify)
-  }
-}
-
-const store = (hidden: boolean) => {
-  try {
-    if (hidden) {
-      window.localStorage.setItem(key, '1')
-    } else {
-      window.localStorage.removeItem(key)
-    }
-  } catch {
-    return
-  }
-}
-
-export const setGuideHidden = (hidden: boolean) => {
-  fallback = hidden
-  store(hidden)
-  window.dispatchEvent(new Event(changed))
-}
-
-export const useGuideHidden = () => useSyncExternalStore(subscribe, read)
+export const useGuideHidden = guideHidden.use
 
 type GuideToken = {
   last_used_at?: string | null
@@ -63,6 +25,7 @@ const total = (projects: Project[], count: (project: Project) => number) =>
 export const guideProgress = <T extends GuideToken>(input: GuideInput<T>) => {
   const healthy = total(input.projects, (p) => p.status_counts.green)
   const sandboxes = total(input.projects, (p) => p.sandbox_count)
+  const workspaces = total(input.projects, (p) => p.workspace_count)
   const used = input.tokens?.find((token) => token.last_used_at)
   const secured =
     input.totp || Boolean(input.passkeys)
@@ -76,6 +39,7 @@ export const guideProgress = <T extends GuideToken>(input: GuideInput<T>) => {
     starting: total(input.projects, (p) => p.status_counts.amber),
     services: total(input.projects, (p) => p.service_count),
     sandboxes,
+    workspaces,
     used,
     waiting: input.tokens?.find((token) => !token.last_used_at),
     done: {
@@ -83,6 +47,7 @@ export const guideProgress = <T extends GuideToken>(input: GuideInput<T>) => {
       project: input.projects.length > 0,
       service: healthy > 0,
       sandbox: sandboxes > 0,
+      workspace: workspaces > 0,
       agent: input.tokens ? Boolean(used) : undefined,
     },
   }

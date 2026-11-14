@@ -415,7 +415,7 @@ function EnvironmentPage() {
           items={[
             {
               label: 'Projects',
-              to: '/',
+              to: '/projects',
             },
             {
               label: project,

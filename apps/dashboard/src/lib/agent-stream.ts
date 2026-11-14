@@ -8,6 +8,7 @@ export const agentStreamTypes: readonly (AgentEventValue['type'] | 'message.part
   'message',
   'tool.started',
   'tool.finished',
+  'tool.denied',
   'attention',
   'turn.ended',
   'turn.failed',

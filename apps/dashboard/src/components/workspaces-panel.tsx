@@ -1,6 +1,8 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 
+import { agentLabel } from '@stationly/protocol'
+
 import { AgentStatusBadge } from '@/components/agent-status'
 import { AlsoWith } from '@/components/code'
 import { EmptyState, Section } from '@/components/page'
@@ -104,7 +106,9 @@ function WorkspaceTable({ environment, scope }: { environment: Environment; scop
                 newest={sessions?.items.find((item) => item.sandbox.id === workspace.id)}
               />
             </TableCell>
-            <TableCell className="text-muted-foreground">{workspace.workspace?.agent}</TableCell>
+            <TableCell className="text-muted-foreground">
+              {workspace.workspace && agentLabel(workspace.workspace.agent)}
+            </TableCell>
             <TableCell>
               <span className="inline-flex flex-wrap items-center gap-1.5">
                 <SandboxStatusBadge status={workspace.status} reason={workspace.status_reason} />

@@ -103,7 +103,7 @@ export type ToolCall = {
   id: string
   name: string
   summary: string
-  state: 'running' | 'done' | 'failed'
+  state: 'running' | 'done' | 'failed' | 'denied'
   output: string | null
   durationMs: number | null
 }
@@ -116,15 +116,22 @@ export type TurnItem =
 export type Turn = {
   key: string
   prompt: string | null
+  by: { type: string; id: string | null } | null
   startedAt: string | null
   endedAt: string | null
   failure: string | null
   items: TurnItem[]
 }
 
-const newTurn = (key: string, prompt: string | null, startedAt: string | null): Turn => ({
+const newTurn = (
+  key: string,
+  prompt: string | null,
+  startedAt: string | null,
+  by: Turn['by'] = null,
+): Turn => ({
   key,
   prompt,
+  by,
   startedAt,
   endedAt: null,
   failure: null,
@@ -171,7 +178,7 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
 
     switch (event.type) {
       case 'prompt':
-        turns.push(newTurn(event.id, event.data.text, event.at))
+        turns.push(newTurn(event.id, event.data.text, event.at, event.data.by ?? null))
         break
       case 'message':
         current(event).items.push({
@@ -222,6 +229,21 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
 
         break
       }
+
+      case 'tool.denied':
+        addCall(
+          current(event),
+          {
+            id: event.id,
+            name: event.data.tool ?? 'tool',
+            summary: event.data.summary ?? '',
+            state: 'denied',
+            output: null,
+            durationMs: null,
+          },
+          event.id,
+        )
+        break
 
       case 'turn.ended':
         current(event).endedAt ??= event.at
@@ -303,17 +325,24 @@ const objectOf = (verb: string, count: number) => {
 
 export const toolSentence = (calls: readonly ToolCall[]) => {
   const counts = new Map<string, number>()
+  const denied = deniedCalls(calls)
 
-  for (const call of calls) {
+  for (const call of calls.filter((entry) => entry.state !== 'denied')) {
     const verb = verbOf(call.name)
 
     counts.set(verb, (counts.get(verb) ?? 0) + 1)
   }
 
-  const text = [...counts].map(([verb, count]) => `${verb} ${objectOf(verb, count)}`).join(', ')
+  const text = [
+    ...[...counts].map(([verb, count]) => `${verb} ${objectOf(verb, count)}`),
+    ...(denied ? [`${denied} denied`] : []),
+  ].join(', ')
 
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
+
+export const deniedCalls = (calls: readonly ToolCall[]) =>
+  calls.filter((call) => call.state === 'denied').length
 
 export const failedCalls = (calls: readonly ToolCall[]) =>
   calls.filter((call) => call.state === 'failed').length
@@ -417,3 +446,13 @@ export const isInstanceAdmin = (scopes: readonly Scope[]) =>
   scopes.some(
     (scope) => scope.level === 'admin' && scope.project_id === '*' && scope.environment_id === '*',
   )
+
+export const modelOf = (state: AgentState, sessionId: string) => {
+  for (const event of state.events) {
+    if (event.type === 'session.started' && event.session_id === sessionId) {
+      return event.data.model ?? null
+    }
+  }
+
+  return null
+}

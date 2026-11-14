@@ -520,7 +520,10 @@ function EnvironmentSnapshots({
           description="A snapshot saves a sandbox’s disk so you can fork new sandboxes from it. Take one from a sandbox’s page."
           also={
             <AlsoWith
-              cli={commands.snapshotSandbox(scope, sandboxes.items[0]?.name ?? '<sandbox>')}
+              cli={commands.snapshotSandbox(
+                scope,
+                sandboxes.items.find((item) => !item.workspace)?.name ?? '<sandbox>',
+              )}
               tool="snapshot_sandbox"
             />
           }

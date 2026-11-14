@@ -56,6 +56,11 @@ export const shortcuts = {
     label: 'Go to connect an agent',
     place: 'Anywhere',
   },
+  sidebar: {
+    keys: ['mod+b'],
+    label: 'Show or hide the sidebar',
+    place: 'Anywhere',
+  },
   tab: {
     keys: tabKeys,
     label: 'Switch to a tab by its position',

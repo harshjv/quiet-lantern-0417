@@ -120,7 +120,7 @@ export const commands = {
       '--workspace',
       'agent=claude,repository=<repository-url>',
     ),
-  openWorkspace: (name: string) => sly('sandboxes', 'shell', name),
+  openWorkspace: (scope: Scope, name: string) => sly('sandboxes', 'shell', name, ...scoped(scope)),
   createSandbox: (scope: Scope) =>
     sly(...scoped(scope), 'sandboxes', 'create', '<name>', '--ttl-s', '2h'),
   snapshotSandbox: (scope: Scope, sandbox: string) =>

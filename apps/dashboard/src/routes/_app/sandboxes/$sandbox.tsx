@@ -1,7 +1,9 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { CircleAlert } from 'lucide-react'
-import { lazy } from 'react'
+import { ChevronRight, CircleAlert, Ellipsis } from 'lucide-react'
+import { lazy, useState, type ReactNode } from 'react'
+
+import { agentLabel } from '@stationly/protocol'
 
 import { AgentStatusBadge } from '@/components/agent-status'
 import { AlsoWith, Code } from '@/components/code'
@@ -24,13 +26,15 @@ import { ProtectedNotice } from '@/components/sandboxes-panel'
 import { SnapshotsTable } from '@/components/snapshots-table'
 import { SandboxStatusBadge } from '@/components/status'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
 import { WorkspaceSessions } from '@/components/workspace-sessions'
 import { isInstanceAdmin } from '@/lib/agent-session'
 import type { Sandbox } from '@/lib/api'
 import { commands } from '@/lib/commands'
-import { blank, bytes } from '@/lib/format'
+import { blank, bytes, repositoryName } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { sandboxNetwork, sandboxRuntime, snapshotSource } from '@/lib/labels'
 import { load, meQuery, sandboxOwnSnapshotsQuery, sandboxQuery } from '@/lib/queries'
@@ -41,19 +45,13 @@ import { loaderTitle } from '@/lib/title'
 import { toneBorder, toneText } from '@/lib/tone'
 import { loadTrail, useEnvironmentTrail } from '@/lib/use-trail'
 
-const AgentTab = lazy(() =>
-  import('@/components/agent-tab').then((m) => ({
-    default: m.AgentTab,
-  })),
-)
-
 const SandboxTerminal = lazy(() =>
   import('@/components/sandbox-terminal').then((m) => ({
     default: m.SandboxTerminal,
   })),
 )
 
-const tabs = ['agent', 'terminal', 'variables', 'logs', 'snapshots', 'network'] as const
+const tabs = ['terminal', 'variables', 'logs', 'snapshots', 'network'] as const
 
 export const Route = createFileRoute('/_app/sandboxes/$sandbox')({
   validateSearch: tabSearch(tabs),
@@ -118,6 +116,16 @@ function Snapshots({
 
 function Overview({ sandbox }: { sandbox: Sandbox }) {
   const metrics = sandbox.metrics
+  const workspaceRow: [string, ReactNode][] = sandbox.workspace
+    ? [
+        [
+          'Workspace',
+          <Code key="w" copy={sandbox.workspace.path}>
+            {`${sandbox.workspace.agent} in ${sandbox.workspace.path}`}
+          </Code>,
+        ],
+      ]
+    : []
 
   return (
     <KeyValue
@@ -126,16 +134,7 @@ function Overview({ sandbox }: { sandbox: Sandbox }) {
         ['Image', <Code key="i">{imageText(sandbox.image)}</Code>],
         ['Size', sizeText(sandbox.size)],
         ['Runtime', sandboxRuntime[sandbox.runtime]],
-        [
-          'Workspace',
-          sandbox.workspace ? (
-            <Code key="w" copy={sandbox.workspace.path}>
-              {`${sandbox.workspace.agent} in ${sandbox.workspace.path}`}
-            </Code>
-          ) : (
-            'no'
-          ),
-        ],
+        ...workspaceRow,
         [
           'Network',
           `${sandbox.network ? sandboxNetwork[sandbox.network] : blank}${sandbox.docker ? ' · Docker inside' : ''}`,
@@ -164,18 +163,251 @@ function Overview({ sandbox }: { sandbox: Sandbox }) {
   )
 }
 
-function SandboxPage() {
-  const { sandbox: id } = Route.useParams()
-  const { tab } = Route.useSearch()
+function Actions({
+  s,
+  project,
+  environment,
+}: {
+  s: Sandbox
+  project: string
+  environment: string
+}) {
   const navigate = useNavigate()
-  const { data: s } = useSuspenseQuery(sandboxQuery(id))
-  const { data: me } = useQuery(meQuery)
-  const showAgent = Boolean(s.workspace) && isInstanceAdmin(me?.scopes ?? [])
-  const selectTab = useSearchTab(showAgent ? tabs : tabs.filter((name) => name !== 'agent'))
-  const shown = tab === 'agent' && !showAgent ? 'terminal' : tab
+
+  return (
+    <>
+      {isIdle(s.status) ? (
+        <StartSandbox sandbox={s} />
+      ) : isLive(s.status) ? (
+        <StopSandbox sandbox={s} />
+      ) : null}
+      <ExtendSandbox sandbox={s} />
+      <SnapshotSandbox sandbox={s} />
+      <ForkButton
+        source={{
+          kind: 'sandbox',
+          sandbox: s,
+        }}
+        project={project}
+        environment={environment}
+      />
+      <DeleteSandbox
+        sandbox={s}
+        after={() =>
+          void navigate({
+            to: '/projects/$project/$environment',
+            params: {
+              project,
+              environment,
+            },
+            search: {
+              tab: s.workspace ? 'workspaces' : 'sandboxes',
+            },
+          })
+        }
+      />
+    </>
+  )
+}
+
+function Failure({ s }: { s: Sandbox }) {
+  return (
+    s.failure && (
+      <Alert className={toneBorder.danger}>
+        <CircleAlert className={toneText.danger} />
+        <AlertTitle className="font-medium">{s.name} failed</AlertTitle>
+        <AlertDescription className="space-y-1 [&_p:not(:last-child)]:mb-0">
+          <p className="text-foreground">{s.failure.summary}</p>
+          <p className="font-mono text-xs text-muted-foreground">{s.failure.code}</p>
+        </AlertDescription>
+      </Alert>
+    )
+  )
+}
+
+function MachineTabs({
+  s,
+  project,
+  environment,
+}: {
+  s: Sandbox
+  project: string
+  environment: string
+}) {
+  const { tab } = Route.useSearch()
+  const selectTab = useSearchTab(tabs)
+
+  return (
+    <Tabs value={tab} onValueChange={selectTab}>
+      <TabsList>
+        <TabsTrigger value="terminal">Terminal</TabsTrigger>
+        <TabsTrigger value="variables">Variables</TabsTrigger>
+        <TabsTrigger value="logs">Logs</TabsTrigger>
+        <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
+        <TabsTrigger value="network">Network</TabsTrigger>
+      </TabsList>
+      <TabsContent value="terminal" className="mt-4">
+        <Panel rows={4} title="Couldn’t open the terminal">
+          <SandboxTerminal sandbox={s} />
+        </Panel>
+      </TabsContent>
+      <TabsContent value="variables" className="mt-4">
+        <VariablesPanel
+          target={{
+            kind: 'sandbox',
+            sandbox: s.id,
+          }}
+          also={<AlsoWith cli={commands.setSandboxVariable(s.id)} tool="set_sandbox_variables" />}
+        />
+      </TabsContent>
+      <TabsContent value="logs" className="mt-4">
+        <Section
+          title="Startup log"
+          description="What the sandbox’s startup process printed since its last start."
+        >
+          <Panel title="Couldn’t load the startup log">
+            <LogViewer
+              key={`${s.id}-${s.status === 'running'}`}
+              selector={{
+                sandbox: s.id,
+                role: 'init',
+              }}
+              follow={s.status === 'running'}
+              label="Sandbox startup log"
+            />
+          </Panel>
+        </Section>
+      </TabsContent>
+      <TabsContent value="snapshots" className="mt-4">
+        <Panel rows={2} title="Couldn’t load snapshots">
+          <Snapshots sandbox={s} project={project} environment={environment} />
+        </Panel>
+      </TabsContent>
+      <TabsContent value="network" className="mt-4">
+        <SandboxNetwork sandbox={s} />
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+function Machine({
+  s,
+  project,
+  environment,
+}: {
+  s: Sandbox
+  project: string
+  environment: string
+}) {
+  return (
+    <div className="space-y-6">
+      <Overview sandbox={s} />
+      <MachineTabs s={s} project={project} environment={environment} />
+    </div>
+  )
+}
+
+function WorkspaceHeader({
+  s,
+  trail,
+}: {
+  s: Sandbox
+  trail: ReturnType<typeof useEnvironmentTrail>
+}) {
+  const [managing, setManaging] = useState(false)
+  const shell = commands.openWorkspace(
+    {
+      project: trail.project.name,
+      environment: trail.environment.name,
+    },
+    s.name,
+  )
+
+  return (
+    <div>
+      <Crumbs
+        items={[
+          ...trail.crumbs,
+          {
+            label: s.name,
+          },
+        ]}
+      />
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
+            <entityIcon.workspace className="size-5 text-muted-foreground" aria-hidden />
+            {s.name}
+          </span>
+        }
+        meta={
+          <>
+            <AgentStatusBadge status={s.agent_status} announce />
+            <SandboxStatusBadge status={s.status} reason={s.status_reason} />
+            {s.workspace && (
+              <span className="font-mono text-xs">{repositoryName(s.workspace.repository)}</span>
+            )}
+            {s.workspace?.branch && <Code copy={s.workspace.branch}>{s.workspace.branch}</Code>}
+            {s.workspace && <span>{agentLabel(s.workspace.agent)}</span>}
+          </>
+        }
+        actions={
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Workspace actions"
+            aria-expanded={managing}
+            onClick={() => setManaging((open) => !open)}
+          >
+            <Ellipsis />
+          </Button>
+        }
+      >
+        <p className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+          Open a terminal on it
+          <Code copy={shell}>{shell}</Code>
+        </p>
+      </PageHeader>
+      {managing && (
+        <div className="flex flex-wrap items-center gap-2 border-b py-3">
+          <Actions s={s} project={trail.project.name} environment={trail.environment.name} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WorkspacePage({ s, admin }: { s: Sandbox; admin: boolean }) {
   const trail = useEnvironmentTrail(s.environment_id)
-  const projectName = trail.project.name
-  const environmentName = trail.environment.name
+
+  return (
+    <div className="space-y-6">
+      <WorkspaceHeader s={s} trail={trail} />
+      <ProtectedNotice environment={trail.environment} />
+      <Failure s={s} />
+      {admin && <WorkspaceSessions sandbox={s} />}
+      {admin ? (
+        <Collapsible className="group/machine">
+          <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+            <ChevronRight
+              className="size-4 text-muted-foreground transition-transform group-data-[state=open]/machine:rotate-90 motion-reduce:transition-none"
+              aria-hidden
+            />
+            Machine
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-4">
+            <Machine s={s} project={trail.project.name} environment={trail.environment.name} />
+          </CollapsibleContent>
+        </Collapsible>
+      ) : (
+        <Machine s={s} project={trail.project.name} environment={trail.environment.name} />
+      )}
+    </div>
+  )
+}
+
+function PlainSandboxPage({ s }: { s: Sandbox }) {
+  const trail = useEnvironmentTrail(s.environment_id)
 
   return (
     <div className="space-y-6">
@@ -202,119 +434,31 @@ function SandboxPage() {
                 <TimeLeft sandbox={s} />
               </span>
               {s.forked_from && <span>Fork</span>}
-              {s.workspace && <span>Workspace</span>}
-              {s.workspace && <AgentStatusBadge status={s.agent_status} announce />}
               <Code copy={s.id} className="text-muted-foreground">
                 {s.id}
               </Code>
             </>
           }
           actions={
-            <>
-              {isIdle(s.status) ? (
-                <StartSandbox sandbox={s} />
-              ) : isLive(s.status) ? (
-                <StopSandbox sandbox={s} />
-              ) : null}
-              <ExtendSandbox sandbox={s} />
-              <SnapshotSandbox sandbox={s} />
-              <ForkButton
-                source={{
-                  kind: 'sandbox',
-                  sandbox: s,
-                }}
-                project={projectName}
-                environment={environmentName}
-              />
-              <DeleteSandbox
-                sandbox={s}
-                after={() =>
-                  void navigate({
-                    to: '/projects/$project/$environment',
-                    params: {
-                      project: projectName,
-                      environment: environmentName,
-                    },
-                    search: {
-                      tab: s.workspace ? 'workspaces' : 'sandboxes',
-                    },
-                  })
-                }
-              />
-            </>
+            <Actions s={s} project={trail.project.name} environment={trail.environment.name} />
           }
         />
       </div>
       <ProtectedNotice environment={trail.environment} />
-      {s.failure && (
-        <Alert className={toneBorder.danger}>
-          <CircleAlert className={toneText.danger} />
-          <AlertTitle className="font-medium">{s.name} failed</AlertTitle>
-          <AlertDescription className="space-y-1 [&_p:not(:last-child)]:mb-0">
-            <p className="text-foreground">{s.failure.summary}</p>
-            <p className="font-mono text-xs text-muted-foreground">{s.failure.code}</p>
-          </AlertDescription>
-        </Alert>
-      )}
-      {showAgent && <WorkspaceSessions sandbox={s} />}
-      <Overview sandbox={s} />
-      <Tabs value={shown} onValueChange={selectTab}>
-        <TabsList>
-          {showAgent && <TabsTrigger value="agent">Agent</TabsTrigger>}
-          <TabsTrigger value="terminal">Terminal</TabsTrigger>
-          <TabsTrigger value="variables">Variables</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-          <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
-          <TabsTrigger value="network">Network</TabsTrigger>
-        </TabsList>
-        {showAgent && (
-          <TabsContent value="agent" className="mt-4">
-            <Panel rows={4} title="Couldn’t open the agent view">
-              <AgentTab sandbox={s} onOpenTerminal={() => selectTab('terminal')} />
-            </Panel>
-          </TabsContent>
-        )}
-        <TabsContent value="terminal" className="mt-4">
-          <Panel rows={4} title="Couldn’t open the terminal">
-            <SandboxTerminal sandbox={s} />
-          </Panel>
-        </TabsContent>
-        <TabsContent value="variables" className="mt-4">
-          <VariablesPanel
-            target={{
-              kind: 'sandbox',
-              sandbox: s.id,
-            }}
-            also={<AlsoWith cli={commands.setSandboxVariable(s.id)} tool="set_sandbox_variables" />}
-          />
-        </TabsContent>
-        <TabsContent value="logs" className="mt-4">
-          <Section
-            title="Startup log"
-            description="What the sandbox’s startup process printed since its last start."
-          >
-            <Panel title="Couldn’t load the startup log">
-              <LogViewer
-                key={`${s.id}-${s.status === 'running'}`}
-                selector={{
-                  sandbox: s.id,
-                  role: 'init',
-                }}
-                follow={s.status === 'running'}
-                label="Sandbox startup log"
-              />
-            </Panel>
-          </Section>
-        </TabsContent>
-        <TabsContent value="snapshots" className="mt-4">
-          <Panel rows={2} title="Couldn’t load snapshots">
-            <Snapshots sandbox={s} project={projectName} environment={environmentName} />
-          </Panel>
-        </TabsContent>
-        <TabsContent value="network" className="mt-4">
-          <SandboxNetwork sandbox={s} />
-        </TabsContent>
-      </Tabs>
+      <Failure s={s} />
+      <Machine s={s} project={trail.project.name} environment={trail.environment.name} />
     </div>
+  )
+}
+
+function SandboxPage() {
+  const { sandbox: id } = Route.useParams()
+  const { data: s } = useSuspenseQuery(sandboxQuery(id))
+  const { data: me } = useQuery(meQuery)
+
+  return s.workspace ? (
+    <WorkspacePage s={s} admin={isInstanceAdmin(me?.scopes ?? [])} />
+  ) : (
+    <PlainSandboxPage s={s} />
   )
 }

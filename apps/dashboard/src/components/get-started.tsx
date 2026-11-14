@@ -52,13 +52,15 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
   })
   const first = [...projects].sort(byName)[0]
   const keys = passkeys.data?.length
-  const { healthy, starting, services, sandboxes, used, waiting, done } = guideProgress({
-    projects,
-    totp: session.data ? Boolean(session.data.user.twoFactorEnabled) : undefined,
-    passkeys: keys,
-    passkeysSettled: Boolean(passkeys.data) || passkeys.isError,
-    tokens: tokens.data,
-  })
+  const { healthy, starting, services, sandboxes, workspaces, used, waiting, done } = guideProgress(
+    {
+      projects,
+      totp: session.data ? Boolean(session.data.user.twoFactorEnabled) : undefined,
+      passkeys: keys,
+      passkeysSettled: Boolean(passkeys.data) || passkeys.isError,
+      tokens: tokens.data,
+    },
+  )
   const needsProject = 'Create a project first.'
 
   const steps: Step[] = [
@@ -159,6 +161,24 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         ? (next) => (
             <Button size="sm" variant={variant(next)} onClick={() => open('sandbox')}>
               Create sandbox
+            </Button>
+          )
+        : undefined,
+    },
+    {
+      id: 'workspace',
+      title: 'Start an agent session',
+      done: done.workspace,
+      detail:
+        workspaces > 0
+          ? plural(workspaces, 'workspace')
+          : first
+            ? 'Run Claude Code in a workspace and follow its sessions here.'
+            : needsProject,
+      action: first
+        ? (next) => (
+            <Button asChild size="sm" variant={variant(next)}>
+              <Link to="/sessions">Open Sessions</Link>
             </Button>
           )
         : undefined,
@@ -295,7 +315,7 @@ export function GetStarted({ guide }: { guide: ReturnType<typeof useGetStarted> 
           </h2>
           <p className="text-sm text-muted-foreground">
             {guide.complete
-              ? 'Your first service is live, you have a sandbox and an agent is connected.'
+              ? 'Your first service is live, you have a sandbox, an agent session and a connected agent.'
               : 'From a fresh instance to a live URL, a shell and an agent that deploys.'}
           </p>
         </div>

@@ -128,3 +128,42 @@ export const changeSummary = (summary: {
     `${summary.remove} removed`,
     ...(summary.deployments ? [`starts ${plural(summary.deployments, 'deployment')}`] : []),
   ].join(' · ')
+
+export const repositoryName = (url: string) => {
+  const parts = url
+    .replace(/\.git$/, '')
+    .split('/')
+    .filter(Boolean)
+
+  return parts.length >= 2 ? parts.slice(-2).join('/') : url
+}
+
+export const shortAgo = (value: string | null | undefined, now = new Date()) => {
+  const date = parsed(value)
+
+  if (!date) {
+    return ''
+  }
+
+  const seconds = Math.max(0, differenceInSeconds(now, date))
+
+  if (seconds < 60) {
+    return 'now'
+  }
+
+  const minutes = Math.floor(seconds / 60)
+
+  if (minutes < 60) {
+    return `${minutes}m`
+  }
+
+  const hours = Math.floor(minutes / 60)
+
+  if (hours < 24) {
+    return `${hours}h`
+  }
+
+  const days = Math.floor(hours / 24)
+
+  return days < 7 ? `${days}d` : `${Math.floor(days / 7)}w`
+}

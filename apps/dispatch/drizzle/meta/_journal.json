@@ -176,6 +176,13 @@
       "when": 1794522575688,
       "tag": "0024_petite_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1794611995615,
+      "tag": "0025_lumpy_pixie",
+      "breakpoints": true
     }
   ]
 }
