@@ -6,6 +6,17 @@ export const agentStatusValues = ['none', 'working', 'waiting', 'ready', 'failed
 
 export const agentAttentionKindValues = ['permission', 'question', 'plan'] as const
 
+export const taskStatusValues = [
+  'setting_up',
+  'working',
+  'waiting',
+  'finished',
+  'failed',
+  'stopped',
+] as const
+
+export type TaskStatusValue = (typeof taskStatusValues)[number]
+
 export const agentEventLimits = {
   batch: 100,
   string: 4096,
@@ -31,6 +42,7 @@ const agentEventData = {
     source: Type.Optional(Text),
     model: Type.Optional(Text),
     cwd: Type.Optional(Text),
+    branch: Type.Optional(Text),
     version: Type.Optional(Text),
   }),
   'session.ended': Type.Object({
@@ -156,10 +168,11 @@ export const AgentEvent = Type.Union(
   agentStoredEventTypeValues.map((type) =>
     eventSchema(type, {
       seq: Type.Integer(),
+      conversation_id: Type.String(),
     }),
   ),
   {
-    description: 'One stored event of an agent session; seq is the sandbox cursor',
+    description: "One stored event of a task's conversation; seq is the task cursor",
   },
 )
 
@@ -171,6 +184,7 @@ export type AgentEventValue = {
   [K in AgentStoredEventType]: Static<typeof AgentEventEnvelope> & {
     type: K
     seq: number
+    conversation_id: string
     data: Static<(typeof agentEventData)[K]>
   }
 }[AgentStoredEventType]

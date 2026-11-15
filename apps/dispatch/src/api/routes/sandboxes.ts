@@ -80,6 +80,7 @@ import {
   snapshotById,
   stationByRef,
   type EnvironmentRow,
+  type ProjectRow,
   type SandboxContext,
   type SandboxRow,
   type SandboxSnapshotRow,
@@ -406,7 +407,342 @@ export const sandboxRoutes = (kit: Kit) => {
   const defaultShell = (row: SandboxRow) =>
     row.image.ref === null ? ['/bin/bash', '-l'] : ['/bin/sh']
 
-  return kit
+  const createSandbox = async (
+    call: Call,
+    ctx: { project: ProjectRow; environment: EnvironmentRow; target: SandboxContext['target'] },
+    body: Static<typeof SandboxCreateBody>,
+    taskBranch: string | null = null,
+  ) => {
+    requireHumanIn(call, ctx.environment)
+    const source = body.from ? sourceOf(call, ctx, body.from) : null
+    const st = body.from ? stationRow(source!.stationId) : pickStation(body.station_id)
+
+    if (source && body.station_id !== undefined && stationByRef(db, body.station_id).id !== st.id) {
+      invalid([
+        {
+          path: '/station_id',
+          message: `a fork runs on its source's station ${st.name}`,
+        },
+      ])
+    }
+
+    requireStationReady(db, st.id)
+
+    if (!st.capabilities?.sandboxes) {
+      fail(
+        'STATION_CAPABILITY_MISSING',
+        `Station ${st.name} reports no sandbox capability.`,
+        'Install sandbox support on the station, then retry.',
+        {
+          missing: 'sandboxes',
+          station_id: st.id,
+        },
+      )
+    }
+
+    const runtime = requireRuntime(st, body.runtime ?? source?.runtime)
+    const inherited = source?.settings
+    const size = {
+      ...sandboxSizeDefaults,
+      memory_bytes: fittingMemory(
+        db,
+        st,
+        body.workspace ? workspaceSizeDefaults.memory_bytes : undefined,
+      ),
+      ...source?.size,
+      ...body.size,
+    }
+
+    if (source?.usedBytes != null && size.disk_bytes < source.usedBytes) {
+      invalid([
+        {
+          path: '/size/disk_bytes',
+          message: `the source uses ${source.usedBytes} bytes, more than ${size.disk_bytes}`,
+        },
+      ])
+    }
+
+    const wanted = body.workspace
+
+    noTtl(wanted, body.ttl_s)
+
+    if (wanted && !isRepositoryName(repositoryName(wanted.repository))) {
+      invalid([
+        {
+          path: '/workspace/repository',
+          message: 'the last path segment, without .git, must be a lowercase slug',
+        },
+      ])
+    }
+
+    if (wanted) {
+      await requireRepositoryAccess(kit.deps, {
+        project: ctx.project,
+        environment: ctx.environment.id,
+        repository: wanted.repository,
+        variables: body.variables,
+      })
+    }
+
+    const scopes = wanted
+      ? [
+          {
+            project_id: ctx.project.id,
+            environment_id: ctx.environment.id,
+            level: wanted.level ?? ('deploy' as const),
+          },
+        ]
+      : []
+
+    requireMintable(call.principal, scopes)
+    const caller = workspaceHeldBy(db, call.principal)
+    const egress = body.egress
+      ? normalizeEgress(body.egress)
+      : wanted
+        ? normalizeEgress(workspaceEgress(wanted.agent))
+        : (inherited?.egress ?? caller?.egress ?? openEgress())
+    const network = body.network ?? inherited?.network ?? 'isolated'
+    const docker = body.docker ?? inherited?.docker ?? false
+
+    requireHumanToWiden(
+      call.principal,
+      caller,
+      caller && !egressWithin(egress, caller.egress)
+        ? 'cannot create a sandbox with wider egress than its own'
+        : network === 'environment'
+          ? 'cannot create a sandbox on the environment network'
+          : docker
+            ? 'cannot create a sandbox with docker'
+            : null,
+    )
+    const command = body.command !== undefined ? body.command : (inherited?.command ?? null)
+    const ttl_s = wanted ? null : (body.ttl_s ?? inherited?.ttl_s ?? sandboxTtl.default)
+    const start = body.start ?? true
+    const image = body.image
+      ? await imageFor(st, body.image.ref)
+      : (source?.image ?? (await imageFor(st, undefined)))
+
+    requireQuota(
+      db,
+      st,
+      {
+        sandboxId: null,
+        newSandbox: true,
+        running: start,
+        memoryBytes: size.memory_bytes,
+      },
+      call.principal,
+    )
+    requireDiskRoom(st)
+    const id = newId('sandbox')
+    const name = body.name ?? `sandbox-${id.slice(-6).toLowerCase()}`
+
+    if (sandboxInEnvironment(db, ctx.environment.id, name)) {
+      fail(
+        'NAME_TAKEN',
+        `Environment ${ctx.environment.name} already has a sandbox named ${name}.`,
+        undefined,
+        {
+          name,
+        },
+      )
+    }
+
+    if (network === 'environment') {
+      ensureNetwork(db, ctx.environment.id, st.id)
+    } else {
+      ensureSandboxNetwork(db, st.id)
+    }
+
+    const now = new Date()
+    const minted = wanted
+      ? await mintToken(kit.deps.auth, db, {
+          userId: call.principal.user_id,
+          name: `workspace/${name}`,
+          kind: 'scoped',
+          scopes,
+          seconds: scopedTokenMaxSeconds,
+        })
+      : null
+    const workspace =
+      wanted && minted
+        ? {
+            agent: wanted.agent,
+            repository: wanted.repository,
+            branch: wanted.branch ?? null,
+            path: workspacePath(wanted.repository),
+            level: scopes[0]!.level,
+            token_id: minted.row.id,
+            setup_run_id: newId('run'),
+            task_branch: taskBranch,
+          }
+        : null
+    const variables = [
+      ...(body.variables ?? []),
+      ...(wanted && minted
+        ? workspaceVariableSets(
+            db,
+            {
+              project: ctx.project.id,
+              environment: ctx.environment.id,
+            },
+            wanted.agent,
+            minted.key,
+            (body.variables ?? []).map((v) => v.key),
+          )
+        : []),
+    ]
+
+    try {
+      db.transaction((tx) => {
+        const tdb = tx as unknown as Db
+
+        tdb
+          .insert(sandbox)
+          .values({
+            id,
+            environment_id: ctx.environment.id,
+            project_id: ctx.project.id,
+            station_id: st.id,
+            name,
+            image,
+            command,
+            size,
+            runtime,
+            network,
+            docker,
+            egress,
+            ttl_s,
+            desired_state: start ? 'running' : 'stopped',
+            stop_at: start ? stopAtFrom(ttl_s) : null,
+            status: start ? 'creating' : 'stopped',
+            status_reason: start ? null : 'created_stopped',
+            stopped_at: start ? null : now,
+            forked_from: source?.forkedFrom ?? null,
+            disk_from: source?.diskFrom ?? null,
+            workspace,
+            created_by: call.principal.actor,
+          })
+          .run()
+
+        if (variables.length) {
+          const changes = new ChangeSet()
+
+          planVariables(
+            tdb,
+            keyring,
+            call.principal,
+            changes,
+            {
+              scope: 'sandbox',
+              parent: id,
+              sandboxId: id,
+              target: ctx.target,
+            },
+            {
+              set: variables,
+            },
+          )
+          commit(
+            {
+              ...kit.deps,
+              db: tdb,
+            },
+            call,
+            {
+              environment: ctx.environment,
+              protect: false,
+            },
+            changes,
+          )
+        }
+
+        if (workspace && minted) {
+          audit(
+            tdb,
+            call,
+            'token.create',
+            {
+              entity: 'token',
+              id: minted.row.id,
+            },
+            {
+              after: {
+                name: minted.row.name,
+                kind: minted.row.kind,
+                scopes: minted.row.scopes,
+                expires_at: minted.row.expires_at.toISOString(),
+              },
+            },
+          )
+          tdb
+            .insert(run)
+            .values({
+              id: workspace.setup_run_id,
+              service_id: null,
+              sandbox_id: id,
+              deployment_id: null,
+              kind: 'exec',
+              command: setupCommand(workspace),
+              status: 'queued',
+              log_ref: `logs/sandboxes/${id}/${workspace.setup_run_id}`,
+              tty: false,
+              actor: call.principal.actor,
+              exec: {
+                cwd: workspaceUser.home,
+                user: workspaceUser.name,
+                timeout_s: sandboxExecLimits.timeoutS.default,
+                stdin: null,
+                env_keys: [],
+                attach: false,
+              },
+            })
+            .run()
+        }
+
+        audit(
+          tdb,
+          call,
+          'sandbox.create',
+          {
+            entity: 'sandbox',
+            id,
+          },
+          {
+            after: {
+              name,
+              environment_id: ctx.environment.id,
+              station_id: st.id,
+              image,
+              size,
+              network,
+              docker,
+              ttl_s,
+              start,
+              forked_from: source?.forkedFrom ?? null,
+              workspace,
+              variables: variables.map((v) => v.key),
+            },
+          },
+        )
+      })
+    } catch (error) {
+      if (minted) {
+        dropToken(db, minted.row)
+      }
+
+      throw error
+    }
+
+    stations.reconcile(st.id)
+
+    return {
+      id,
+      warnings: source?.warnings ?? [],
+    }
+  }
+
+  const routes = kit
     .router('sandboxes', '/v1')
     .get(
       '/environments/:environment/sandboxes',
@@ -483,336 +819,13 @@ export const sandboxRoutes = (kit: Kit) => {
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const source = body.from ? sourceOf(call, ctx, body.from) : null
-        const st = body.from ? stationRow(source!.stationId) : pickStation(body.station_id)
+        const created = await createSandbox(call, ctx, body)
 
-        if (
-          source &&
-          body.station_id !== undefined &&
-          stationByRef(db, body.station_id).id !== st.id
-        ) {
-          invalid([
-            {
-              path: '/station_id',
-              message: `a fork runs on its source's station ${st.name}`,
-            },
-          ])
-        }
-
-        requireStationReady(db, st.id)
-
-        if (!st.capabilities?.sandboxes) {
-          fail(
-            'STATION_CAPABILITY_MISSING',
-            `Station ${st.name} reports no sandbox capability.`,
-            'Install sandbox support on the station, then retry.',
-            {
-              missing: 'sandboxes',
-              station_id: st.id,
-            },
-          )
-        }
-
-        const runtime = requireRuntime(st, body.runtime ?? source?.runtime)
-        const inherited = source?.settings
-        const size = {
-          ...sandboxSizeDefaults,
-          memory_bytes: fittingMemory(
-            db,
-            st,
-            body.workspace ? workspaceSizeDefaults.memory_bytes : undefined,
-          ),
-          ...source?.size,
-          ...body.size,
-        }
-
-        if (source?.usedBytes != null && size.disk_bytes < source.usedBytes) {
-          invalid([
-            {
-              path: '/size/disk_bytes',
-              message: `the source uses ${source.usedBytes} bytes, more than ${size.disk_bytes}`,
-            },
-          ])
-        }
-
-        const wanted = body.workspace
-
-        noTtl(wanted, body.ttl_s)
-
-        if (wanted && !isRepositoryName(repositoryName(wanted.repository))) {
-          invalid([
-            {
-              path: '/workspace/repository',
-              message: 'the last path segment, without .git, must be a lowercase slug',
-            },
-          ])
-        }
-
-        if (wanted) {
-          await requireRepositoryAccess(kit.deps, {
-            project: ctx.project,
-            environment: ctx.environment.id,
-            repository: wanted.repository,
-            variables: body.variables,
-          })
-        }
-
-        const scopes = wanted
-          ? [
-              {
-                project_id: ctx.project.id,
-                environment_id: ctx.environment.id,
-                level: wanted.level ?? ('deploy' as const),
-              },
-            ]
-          : []
-
-        requireMintable(call.principal, scopes)
-        const caller = workspaceHeldBy(db, call.principal)
-        const egress = body.egress
-          ? normalizeEgress(body.egress)
-          : wanted
-            ? normalizeEgress(workspaceEgress(wanted.agent))
-            : (inherited?.egress ?? caller?.egress ?? openEgress())
-        const network = body.network ?? inherited?.network ?? 'isolated'
-        const docker = body.docker ?? inherited?.docker ?? false
-
-        requireHumanToWiden(
-          call.principal,
-          caller,
-          caller && !egressWithin(egress, caller.egress)
-            ? 'cannot create a sandbox with wider egress than its own'
-            : network === 'environment'
-              ? 'cannot create a sandbox on the environment network'
-              : docker
-                ? 'cannot create a sandbox with docker'
-                : null,
-        )
-        const command = body.command !== undefined ? body.command : (inherited?.command ?? null)
-        const ttl_s = wanted ? null : (body.ttl_s ?? inherited?.ttl_s ?? sandboxTtl.default)
-        const start = body.start ?? true
-        const image = body.image
-          ? await imageFor(st, body.image.ref)
-          : (source?.image ?? (await imageFor(st, undefined)))
-
-        requireQuota(
-          db,
-          st,
-          {
-            sandboxId: null,
-            newSandbox: true,
-            running: start,
-            memoryBytes: size.memory_bytes,
-          },
-          call.principal,
-        )
-        requireDiskRoom(st)
-        const id = newId('sandbox')
-        const name = body.name ?? `sandbox-${id.slice(-6).toLowerCase()}`
-
-        if (sandboxInEnvironment(db, ctx.environment.id, name)) {
-          fail(
-            'NAME_TAKEN',
-            `Environment ${ctx.environment.name} already has a sandbox named ${name}.`,
-            undefined,
-            {
-              name,
-            },
-          )
-        }
-
-        if (network === 'environment') {
-          ensureNetwork(db, ctx.environment.id, st.id)
-        } else {
-          ensureSandboxNetwork(db, st.id)
-        }
-
-        const now = new Date()
-        const minted = wanted
-          ? await mintToken(kit.deps.auth, db, {
-              userId: call.principal.user_id,
-              name: `workspace/${name}`,
-              kind: 'scoped',
-              scopes,
-              seconds: scopedTokenMaxSeconds,
-            })
-          : null
-        const workspace =
-          wanted && minted
-            ? {
-                agent: wanted.agent,
-                repository: wanted.repository,
-                branch: wanted.branch ?? null,
-                path: workspacePath(wanted.repository),
-                level: scopes[0]!.level,
-                token_id: minted.row.id,
-                setup_run_id: newId('run'),
-              }
-            : null
-        const variables = [
-          ...(body.variables ?? []),
-          ...(wanted && minted
-            ? workspaceVariableSets(
-                db,
-                {
-                  project: ctx.project.id,
-                  environment: ctx.environment.id,
-                },
-                wanted.agent,
-                minted.key,
-                (body.variables ?? []).map((v) => v.key),
-              )
-            : []),
-        ]
-
-        try {
-          db.transaction((tx) => {
-            const tdb = tx as unknown as Db
-
-            tdb
-              .insert(sandbox)
-              .values({
-                id,
-                environment_id: ctx.environment.id,
-                project_id: ctx.project.id,
-                station_id: st.id,
-                name,
-                image,
-                command,
-                size,
-                runtime,
-                network,
-                docker,
-                egress,
-                ttl_s,
-                desired_state: start ? 'running' : 'stopped',
-                stop_at: start ? stopAtFrom(ttl_s) : null,
-                status: start ? 'creating' : 'stopped',
-                status_reason: start ? null : 'created_stopped',
-                stopped_at: start ? null : now,
-                forked_from: source?.forkedFrom ?? null,
-                disk_from: source?.diskFrom ?? null,
-                workspace,
-                created_by: call.principal.actor,
-              })
-              .run()
-
-            if (variables.length) {
-              const changes = new ChangeSet()
-
-              planVariables(
-                tdb,
-                keyring,
-                call.principal,
-                changes,
-                {
-                  scope: 'sandbox',
-                  parent: id,
-                  sandboxId: id,
-                  target: ctx.target,
-                },
-                {
-                  set: variables,
-                },
-              )
-              commit(
-                {
-                  ...kit.deps,
-                  db: tdb,
-                },
-                call,
-                {
-                  environment: ctx.environment,
-                  protect: false,
-                },
-                changes,
-              )
-            }
-
-            if (workspace && minted) {
-              audit(
-                tdb,
-                call,
-                'token.create',
-                {
-                  entity: 'token',
-                  id: minted.row.id,
-                },
-                {
-                  after: {
-                    name: minted.row.name,
-                    kind: minted.row.kind,
-                    scopes: minted.row.scopes,
-                    expires_at: minted.row.expires_at.toISOString(),
-                  },
-                },
-              )
-              tdb
-                .insert(run)
-                .values({
-                  id: workspace.setup_run_id,
-                  service_id: null,
-                  sandbox_id: id,
-                  deployment_id: null,
-                  kind: 'exec',
-                  command: setupCommand(workspace),
-                  status: 'queued',
-                  log_ref: `logs/sandboxes/${id}/${workspace.setup_run_id}`,
-                  tty: false,
-                  actor: call.principal.actor,
-                  exec: {
-                    cwd: workspaceUser.home,
-                    user: workspaceUser.name,
-                    timeout_s: sandboxExecLimits.timeoutS.default,
-                    stdin: null,
-                    env_keys: [],
-                    attach: false,
-                  },
-                })
-                .run()
-            }
-
-            audit(
-              tdb,
-              call,
-              'sandbox.create',
-              {
-                entity: 'sandbox',
-                id,
-              },
-              {
-                after: {
-                  name,
-                  environment_id: ctx.environment.id,
-                  station_id: st.id,
-                  image,
-                  size,
-                  network,
-                  docker,
-                  ttl_s,
-                  start,
-                  forked_from: source?.forkedFrom ?? null,
-                  workspace,
-                  variables: variables.map((v) => v.key),
-                },
-              },
-            )
-          })
-        } catch (error) {
-          if (minted) {
-            dropToken(db, minted.row)
-          }
-
-          throw error
-        }
-
-        stations.reconcile(st.id)
         set.status = 201
 
         return {
-          ...shown(rowOf(id), undefined),
-          warnings: source?.warnings ?? [],
+          ...shown(rowOf(created.id), undefined),
+          warnings: created.warnings,
         }
       },
       {
@@ -2092,6 +2105,11 @@ export const sandboxRoutes = (kit: Kit) => {
         }),
       },
     )
+
+  return {
+    routes,
+    createSandbox,
+  }
 
   function listSnapshots(
     query: { limit?: number; cursor?: string; fields?: string; status?: string },

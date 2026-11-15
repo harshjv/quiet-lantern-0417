@@ -36,6 +36,7 @@ import { serviceRoutes } from './routes/services.ts'
 import { settingRoutes } from './routes/settings.ts'
 import { stagedRoutes } from './routes/staged.ts'
 import { stationRoutes } from './routes/stations.ts'
+import { taskRoutes } from './routes/tasks.ts'
 import { tokenRoutes } from './routes/tokens.ts'
 import { variableRoutes } from './routes/variables.ts'
 import { volumeRoutes } from './routes/volumes.ts'
@@ -126,6 +127,7 @@ const toApiError = (code: string | number, error: unknown): ApiError => {
 
 export const createApi = (deps: Deps) => {
   const kit = createKit(deps)
+  const sandboxes = sandboxRoutes(kit)
   const idempotencyKeys = new WeakMap<Request, string>()
 
   return new Elysia({
@@ -243,8 +245,9 @@ export const createApi = (deps: Deps) => {
     .use(deploymentRoutes(kit))
     .use(deployActionRoutes(kit))
     .use(runRoutes(kit))
-    .use(sandboxRoutes(kit))
+    .use(sandboxes.routes)
     .use(agentEventRoutes(kit))
+    .use(taskRoutes(kit, sandboxes.createSandbox))
     .use(blobRoutes(kit))
     .use(logRoutes(kit))
     .use(eventRoutes(kit))

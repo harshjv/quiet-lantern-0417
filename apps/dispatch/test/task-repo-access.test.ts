@@ -323,6 +323,7 @@ describe('setup steps', () => {
       repository: privateUrl,
       branch: null,
       path: join(bin, 'clone'),
+      task_branch: null,
     })
     const result = spawnSync(command[0]!, command.slice(1), {
       env: {
@@ -334,87 +335,6 @@ describe('setup steps', () => {
 
     assert.equal(result.status, 128)
     assert.equal(result.stderr.trim().split('\n').at(-1), 'setup-failed:clone')
-  })
-})
-
-describe('failed setup in the session list and the workspace view', () => {
-  test('the list carries the step, tail, whole prompt and model, and the workspace says setup failed', async () => {
-    const made = await create('broken', publicUrl)
-
-    await waitForSandbox(h, made.body.id, 'running')
-
-    const set = await asHuman('PATCH', `/v1/projects/${project.id}/variables`, {
-      environment: 'default',
-      set: [
-        {
-          key: 'CLAUDE_CODE_OAUTH_TOKEN',
-          kind: 'sealed',
-          value: 'oauth-token-0123456789abcdef',
-        },
-      ],
-    })
-
-    assert.equal(set.status, 200, set.text)
-
-    const prompt = `${'long '.repeat(60)}end`
-    const started = await asHuman('POST', '/v1/agent-sessions', {
-      workspace: made.body.id,
-      prompt,
-      model: 'claude-opus-5-5',
-    })
-
-    assert.equal(started.status, 202, started.text)
-
-    const row = h.db.select().from(sandbox).where(eq(sandbox.id, made.body.id)).get()!
-
-    for (
-      let waited = 0;
-      ['queued', 'running'].includes(
-        h.db.select().from(run).where(eq(run.id, row.workspace!.setup_run_id)).get()!.status,
-      ) && waited < 100;
-      waited += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    }
-
-    h.db
-      .update(run)
-      .set({
-        status: 'failed',
-        failure: {
-          phase: 'run',
-          code: 'EXIT_NONZERO',
-          summary: 'failed',
-          logs: {
-            source: 'run',
-            untrusted: {
-              source: 'run log',
-              text: 'fatal: could not read Username\nsetup-failed:clone',
-            },
-            truncated: false,
-            cursor: null,
-          },
-        },
-        finished_at: new Date(),
-      })
-      .where(eq(run.id, row.workspace!.setup_run_id))
-      .run()
-
-    const list = await asHuman('GET', `/v1/agent-sessions?workspace=${made.body.id}`)
-    const item = list.body.items[0]
-
-    assert.equal(item.setup.state, 'failed')
-    assert.equal(item.setup.step, 'clone')
-    assert.deepEqual(item.setup.tail, ['fatal: could not read Username'])
-    assert.equal(item.setup.prompt, prompt)
-    assert.equal(item.setup.model, 'claude-opus-5-5')
-
-    const view = await asAdmin('GET', `/v1/sandboxes/${made.body.id}`)
-
-    assert.deepEqual(view.body.workspace.setup, {
-      state: 'failed',
-      step: 'clone',
-    })
   })
 })
 
@@ -462,39 +382,6 @@ describe('idle stop', () => {
         .all()
         .some((entry) => entry.action === 'sandbox.stop' && entry.target.id === id),
     )
-  })
-
-  test('a session that is working or waiting never counts as idle', async () => {
-    const id = await running('idle-busy')
-
-    for (const status of ['working', 'waiting'] as const) {
-      h.db
-        .update(sandbox)
-        .set({
-          agent_status: {
-            status,
-            since: new Date().toISOString(),
-            session_id: 's',
-            kind: null,
-            agents: [],
-            last_event_at: null,
-          },
-        })
-        .where(eq(sandbox.id, id))
-        .run()
-
-      assert.equal(
-        runIdleStop(
-          {
-            db: h.db,
-            stations: statuses(),
-          },
-          later(0),
-        ).includes(id),
-        false,
-        status,
-      )
-    }
   })
 
   test('recent activity keeps it, and so does turning the setting off', async () => {
@@ -552,45 +439,5 @@ describe('idle stop', () => {
       ).includes(plain.id),
       false,
     )
-  })
-})
-
-describe('replying to a stopped workspace', () => {
-  test('starts it and stores the prompt', async () => {
-    const made = await create('sleeper', publicUrl)
-
-    await waitForSandbox(h, made.body.id, 'running')
-
-    const started = await asHuman('POST', '/v1/agent-sessions', {
-      workspace: made.body.id,
-      prompt: 'first',
-    })
-
-    assert.equal(started.status, 202, started.text)
-
-    h.db
-      .update(sandbox)
-      .set({
-        status: 'stopped',
-        desired_state: 'stopped',
-        status_reason: 'idle',
-      })
-      .where(eq(sandbox.id, made.body.id))
-      .run()
-
-    const reply = await asHuman(
-      'POST',
-      `/v1/sandboxes/${made.body.id}/agent/sessions/${started.body.items?.[0]?.session_id ?? started.body.session_id}/prompts`,
-      {
-        text: 'second',
-      },
-    )
-
-    assert.equal(reply.status, 202, reply.text)
-
-    const row = h.db.select().from(sandbox).where(eq(sandbox.id, made.body.id)).get()!
-
-    assert.equal(row.desired_state, 'running')
-    assert.equal(row.status_reason, null)
   })
 })

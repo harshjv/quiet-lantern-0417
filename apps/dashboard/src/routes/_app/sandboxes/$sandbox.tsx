@@ -5,7 +5,6 @@ import { lazy, useState, type ReactNode } from 'react'
 
 import { agentLabel } from '@stationly/protocol'
 
-import { AgentStatusBadge } from '@/components/agent-status'
 import { AlsoWith, Code } from '@/components/code'
 import { Crumbs } from '@/components/crumbs'
 import { LogViewer } from '@/components/log-viewer'
@@ -30,7 +29,6 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { VariablesPanel } from '@/components/variables-panel'
-import { WorkspaceSessions } from '@/components/workspace-sessions'
 import { isInstanceAdmin } from '@/lib/agent-session'
 import type { Sandbox } from '@/lib/api'
 import { commands } from '@/lib/commands'
@@ -342,7 +340,6 @@ function WorkspaceHeader({
         }
         meta={
           <>
-            <AgentStatusBadge status={s.agent_status} announce />
             <SandboxStatusBadge status={s.status} reason={s.status_reason} />
             {s.workspace && (
               <span className="font-mono text-xs">{repositoryName(s.workspace.repository)}</span>
@@ -385,7 +382,6 @@ function WorkspacePage({ s, admin }: { s: Sandbox; admin: boolean }) {
       <WorkspaceHeader s={s} trail={trail} />
       <ProtectedNotice environment={trail.environment} />
       <Failure s={s} />
-      {admin && <WorkspaceSessions sandbox={s} />}
       {admin ? (
         <Collapsible className="group/machine">
           <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">

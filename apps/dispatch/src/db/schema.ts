@@ -81,6 +81,8 @@ import {
   type SandboxLimits,
   type SandboxSize,
   type StationCapabilities,
+  type WorkspaceAgent as TaskAgent,
+  type TaskStatusValue,
   type tokenLevelValues,
   type WorkspaceAgent,
 } from '@stationly/protocol'
@@ -304,6 +306,7 @@ export type SandboxWorkspace = {
   level: Level
   token_id: string
   setup_run_id: string
+  task_branch: string | null
 }
 
 export const sandbox = sqliteTable(
@@ -357,8 +360,6 @@ export const sandbox = sqliteTable(
       requested_at: string
     }>('deletion'),
     workspace: json<SandboxWorkspace>('workspace'),
-    agent_status: json<AgentStatusRecord>('agent_status'),
-    agent_seq: integer('agent_seq').notNull().default(0),
     created_by: json<ActorValue>('created_by').notNull(),
   },
   (table) => [
@@ -375,13 +376,72 @@ export type SandboxSnapshotSettings = {
   ttl_s: number | null
 }
 
-export const agent_event = sqliteTable(
-  'agent_event',
+export const task = sqliteTable(
+  'task',
   {
+    ...entity('task'),
+    project_id: text('project_id').notNull(),
+    environment_id: text('environment_id').notNull(),
+    owner: json<{ type: string; id: string | null }>('owner').notNull(),
+    title: text('title').notNull(),
+    repository: text('repository').notNull(),
+    base_branch: text('base_branch'),
+    branch: text('branch').notNull(),
+    agent: text('agent').$type<TaskAgent>().notNull(),
+    model: text('model'),
     sandbox_id: text('sandbox_id').notNull(),
+    status: text('status').$type<TaskStatusValue>().notNull().default('setting_up'),
+    attention: json<{ kind: NonNullable<AgentStatusRecord['kind']>; since: string }>('attention'),
+    activity: json<AgentStatusRecord>('activity'),
+    event_seq: integer('event_seq').notNull().default(0),
+    archived_at: timestamp('archived_at'),
+  },
+  (table) => [
+    uniqueIndex('task_sandbox_unique').on(table.sandbox_id),
+    index('task_project').on(table.project_id),
+  ],
+)
+
+export const conversation = sqliteTable(
+  'conversation',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => newId('conversation')),
+    task_id: text('task_id')
+      .notNull()
+      .references(() => task.id, {
+        onDelete: 'cascade',
+      }),
+    agent_session_id: text('agent_session_id').notNull(),
+    adapter: text('adapter').notNull(),
+    model: text('model'),
+    origin: text('origin', {
+      enum: ['dashboard', 'terminal'],
+    }).notNull(),
+    started_by: json<ActorValue>('started_by'),
+    created_at: timestamp('created_at').notNull(),
+    runner_wanted: bool('runner_wanted').notNull().default(false),
+    runner_run_id: text('runner_run_id'),
+    runner_seen_at: timestamp('runner_seen_at'),
+    resume: bool('resume').notNull().default(false),
+  },
+  (table) => [
+    uniqueIndex('conversation_task_session_unique').on(table.task_id, table.agent_session_id),
+  ],
+)
+
+export const conversation_event = sqliteTable(
+  'conversation_event',
+  {
+    task_id: text('task_id')
+      .notNull()
+      .references(() => task.id, {
+        onDelete: 'cascade',
+      }),
     seq: integer('seq').notNull(),
     event_id: text('event_id').notNull(),
-    session_id: text('session_id').notNull(),
+    conversation_id: text('conversation_id').notNull(),
     prompt_id: text('prompt_id'),
     turn_id: text('turn_id'),
     agent_id: text('agent_id'),
@@ -393,41 +453,24 @@ export const agent_event = sqliteTable(
   },
   (table) => [
     primaryKey({
-      columns: [table.sandbox_id, table.seq],
+      columns: [table.task_id, table.seq],
     }),
-    uniqueIndex('agent_event_sandbox_event_unique').on(table.sandbox_id, table.event_id),
-    index('agent_event_session').on(table.sandbox_id, table.session_id, table.seq),
-    index('agent_event_received_at').on(table.received_at),
+    uniqueIndex('conversation_event_task_event_unique').on(table.task_id, table.event_id),
+    index('conversation_event_conversation').on(table.task_id, table.conversation_id, table.seq),
+    index('conversation_event_received_at').on(table.received_at),
   ],
 )
 
-export const agent_session = sqliteTable(
-  'agent_session',
-  {
-    sandbox_id: text('sandbox_id').notNull(),
-    session_id: text('session_id').notNull(),
-    adapter: text('adapter').notNull(),
-    model: text('model'),
-    started_by: json<ActorValue>('started_by').notNull(),
-    created_at: timestamp('created_at').notNull(),
-    runner_wanted: bool('runner_wanted').notNull().default(true),
-    runner_run_id: text('runner_run_id'),
-    runner_seen_at: timestamp('runner_seen_at'),
-    resume: bool('resume').notNull().default(false),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.sandbox_id, table.session_id],
-    }),
-  ],
-)
-
-export const agent_input = sqliteTable(
-  'agent_input',
+export const task_inbox = sqliteTable(
+  'task_inbox',
   {
     id: text('id').primaryKey(),
-    sandbox_id: text('sandbox_id').notNull(),
-    session_id: text('session_id').notNull(),
+    task_id: text('task_id')
+      .notNull()
+      .references(() => task.id, {
+        onDelete: 'cascade',
+      }),
+    conversation_id: text('conversation_id').notNull(),
     seq: integer('seq').notNull(),
     kind: text('kind', {
       enum: ['prompt', 'interrupt'],
@@ -439,8 +482,8 @@ export const agent_input = sqliteTable(
     event_seq: integer('event_seq'),
   },
   (table) => [
-    uniqueIndex('agent_input_sandbox_seq_unique').on(table.sandbox_id, table.seq),
-    index('agent_input_session').on(table.sandbox_id, table.session_id, table.seq),
+    uniqueIndex('task_inbox_task_seq_unique').on(table.task_id, table.seq),
+    index('task_inbox_conversation').on(table.task_id, table.conversation_id, table.seq),
   ],
 )
 

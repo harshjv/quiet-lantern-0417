@@ -60,6 +60,8 @@ const setupScript = [
   'if [ ! -d "$3/.git" ]; then git clone "$2" "$3"; fi',
   stepLine('checkout'),
   'if [ -n "$4" ]; then git -C "$3" checkout "$4"; fi',
+  stepLine('branch'),
+  'if [ -n "$9" ] && [ "$(git -C "$3" branch --show-current)" != "$9" ] && ! git -C "$3" symbolic-ref -q HEAD | grep -q "^refs/heads/$9-[0-9]*$"; then name="$9"; n=2; while git -C "$3" show-ref --verify --quiet "refs/heads/$name" || git -C "$3" ls-remote --exit-code --heads origin "$name" >/dev/null 2>&1; do name="$9-$n"; n=$((n + 1)); done; git -C "$3" switch -c "$name"; fi',
   stepLine('toolchain'),
   'toolchain=0',
   `for file in ${toolchainFiles.join(' ')}; do if [ -f "$3/$file" ]; then toolchain=1; fi; done`,
@@ -79,7 +81,7 @@ export const workspacePath = (repository: string) =>
   `${workspaceRoot}/${repositoryName(repository)}`
 
 export const setupCommand = (
-  workspace: Pick<SandboxWorkspace, 'agent' | 'repository' | 'branch' | 'path'>,
+  workspace: Pick<SandboxWorkspace, 'agent' | 'repository' | 'branch' | 'path' | 'task_branch'>,
 ) => [
   'bash',
   '-c',
@@ -93,6 +95,7 @@ export const setupCommand = (
   workspacePrefix,
   workspaceAgents[workspace.agent].config?.path ?? '',
   workspaceAgents[workspace.agent].config?.text ?? '',
+  workspace.task_branch ?? '',
 ]
 
 export const workspaceVariableSets = (

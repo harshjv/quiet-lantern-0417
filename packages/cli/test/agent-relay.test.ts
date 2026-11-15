@@ -51,6 +51,7 @@ const run = (answers: (PostResult | Error)[] = []) => {
   const deps: RelayDeps = {
     dir,
     version: () => Promise.resolve('2.1.322'),
+    branch: () => Promise.resolve(undefined),
     now: () => clock,
     sleep: (ms) => {
       sleeps.push(ms)

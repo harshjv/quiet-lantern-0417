@@ -46,11 +46,6 @@ export const shortcuts = {
     label: 'Go to staged changes',
     place: 'Anywhere',
   },
-  sessions: {
-    keys: ['g>a'],
-    label: 'Go to agent sessions',
-    place: 'Anywhere',
-  },
   connect: {
     keys: ['g>c'],
     label: 'Go to connect an agent',

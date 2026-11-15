@@ -5,21 +5,13 @@ import { runActiveStatuses, type Actor, type MessageBody, type Observed } from '
 
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import {
-  agent_event,
-  run,
-  sandbox,
-  sandbox_snapshot,
-  secret_value,
-  station,
-  variable,
-} from '../db/schema.ts'
+import { run, sandbox, sandbox_snapshot, secret_value, station, variable } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 import { emitEvent } from '../station/events.ts'
+import { stopSandboxTask } from '../tasks/status.ts'
 
-import { applyAgentReset } from './agent-status.ts'
 import { requireQuota } from './limits.ts'
 import { sandboxSubject } from './subject.ts'
 import { revokeWorkspaceToken } from './workspace.ts'
@@ -181,7 +173,7 @@ export const removeSandbox = (db: Db, row: SandboxRow) => {
     const tdb = tx as unknown as Db
 
     dropVariables(tdb, row.id)
-    tdb.delete(agent_event).where(eq(agent_event.sandbox_id, row.id)).run()
+    stopSandboxTask(tdb, row.id)
     tdb.delete(sandbox).where(eq(sandbox.id, row.id)).run()
     emitEvent(tdb, 'sandbox.deleted', sandboxSubject(row), {
       sandbox: row.id,
@@ -283,7 +275,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
         .where(eq(sandbox.id, row.id))
         .run()
       endRuns(db, row.id)
-      applyAgentReset(db, row)
+      stopSandboxTask(db, row.id)
 
       if (row.status !== 'stopped') {
         emitEvent(db, 'sandbox.stopped', subject, {
@@ -313,7 +305,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
         .where(eq(sandbox.id, row.id))
         .run()
       endRuns(db, row.id)
-      applyAgentReset(db, row)
+      stopSandboxTask(db, row.id)
 
       if (row.status !== 'failed') {
         emitEvent(db, 'sandbox.failed', subject, {

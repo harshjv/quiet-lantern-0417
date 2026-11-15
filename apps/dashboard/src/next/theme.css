@@ -1,0 +1,46 @@
+@import '@fontsource/geist-pixel';
+
+.workbench {
+  --radius: 0rem;
+  --sidebar-border: var(--border);
+}
+
+.workbench.dark {
+  color-scheme: dark;
+}
+
+.workbench body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.workbench *,
+.workbench *::before,
+.workbench *::after {
+  border-radius: 0 !important;
+}
+
+.workbench {
+  --primary: oklch(0.44 0.19 277);
+  --primary-foreground: oklch(0.98 0.01 277);
+  --ring: oklch(0.6 0.16 277);
+  --sidebar-primary: oklch(0.44 0.19 277);
+  --brand-1: oklch(0.97 0.015 277);
+  --brand-2: oklch(0.9 0.05 277);
+  --brand-3: oklch(0.76 0.11 277);
+  --brand-4: oklch(0.6 0.17 277);
+  --brand-5: oklch(0.44 0.19 277);
+  --brand-6: oklch(0.3 0.13 277);
+}
+
+.dark.workbench {
+  --primary: oklch(0.7 0.15 277);
+  --primary-foreground: oklch(0.18 0.05 277);
+  --sidebar-primary: oklch(0.7 0.15 277);
+  --brand-1: oklch(0.2 0.04 277);
+  --brand-2: oklch(0.28 0.08 277);
+  --brand-3: oklch(0.38 0.13 277);
+  --brand-4: oklch(0.52 0.17 277);
+  --brand-5: oklch(0.7 0.15 277);
+  --brand-6: oklch(0.88 0.07 277);
+}

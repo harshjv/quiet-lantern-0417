@@ -66,6 +66,9 @@ export const safeNext = (next: string | undefined) =>
 export const serverPage = (path: string) =>
   path === '/device' || path.startsWith('/device?') || path.startsWith('/github/')
 
+export const workbenchPage = (path: string) =>
+  path === '/next.html' || path.startsWith('/next.html?')
+
 export const authMessage = (
   error: { message?: string; code?: string; status?: number } | null | undefined,
   fallback: string,

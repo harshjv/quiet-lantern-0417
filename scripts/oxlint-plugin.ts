@@ -1,3 +1,5 @@
+import { separators, spaceScale, typeScale } from '../apps/dashboard/src/next/tokens.ts'
+
 type Range = [number, number]
 
 type Node = {
@@ -9,6 +11,10 @@ type Node = {
   expressions?: unknown[]
   arguments?: Node[]
   properties?: Node[]
+  name?: { name?: string }
+  key?: { name?: string; value?: unknown }
+  expression?: Node
+  callee?: { name?: string }
 }
 
 type Fix = { range: Range; text: string }
@@ -118,6 +124,133 @@ const multilineObjectLiteral = {
   },
 }
 
+const spaces = new Set<string>([...spaceScale.map(([step]) => step), 'px', 'auto'])
+const sizes = new Set<string>(typeScale.map(([name]) => name))
+const palette =
+  /^-?(text|bg|border|ring|fill|stroke|outline|from|to|via|decoration|divide|shadow)-(red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|white|black)(-\d+)?(\/\d+)?$/
+const spacing = /^-?(gap-[xy]|space-[xy]|gap|p[xytblrse]?|m[xytblrse]?)-(.+)$/
+const fontSize = /^text-(xs|sm|base|lg|xl|\dxl)$/
+const rawColor = /\b(rgba?|hsla?|oklch|oklab)\(/i
+
+const classProblem = (token: string) => {
+  const name = token.replace(/^!/, '').split(':').at(-1)!
+
+  if (name.includes('[')) {
+    return `${token} is a one-off value; pick one from the design catalogue`
+  }
+
+  if (/^rounded(-|$)/.test(name) && name !== 'rounded-none') {
+    return `${token} rounds a corner; everything in the workbench is square`
+  }
+
+  const space = spacing.exec(name)
+
+  if (space && !spaces.has(space[2]!)) {
+    return `${token} is off the spacing scale (${[...spaces].join(', ')})`
+  }
+
+  if (fontSize.test(name) && !sizes.has(name)) {
+    return `${token} is off the type scale (${[...sizes].join(', ')})`
+  }
+
+  if (palette.test(name)) {
+    return `${token} is a raw palette colour; use a tone or brand token`
+  }
+
+  return null
+}
+
+const classCallees = new Set(['cn', 'cva', 'clsx'])
+
+const inClassContext = (node: Node) => {
+  for (let at = node.parent; at; at = at.parent) {
+    if (at.type === 'JSXAttribute') {
+      return at.name?.name === 'className'
+    }
+
+    if (at.type === 'CallExpression' && classCallees.has(at.callee?.name ?? '')) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const designTokens = {
+  meta: {
+    type: 'problem',
+    schema: [],
+  },
+  create(context: Context) {
+    const checkText = (node: Node, text: string) => {
+      if (rawColor.test(text)) {
+        context.report({
+          node,
+          message: 'A raw colour; use a tone or brand token',
+        })
+      }
+
+      const tokens = inClassContext(node) ? text.split(/\s+/).filter(Boolean) : []
+
+      for (const token of tokens) {
+        const problem = classProblem(token)
+
+        if (problem) {
+          context.report({
+            node,
+            message: problem,
+          })
+        }
+      }
+
+      const typed = separators.find((mark) =>
+        mark === '|' ? text.trim() === mark : text.includes(mark),
+      )
+
+      if (typed) {
+        context.report({
+          node,
+          message: `${typed} is a typed separator; set items apart with layout and icon facts`,
+        })
+      }
+    }
+
+    return {
+      Literal(node: Node) {
+        if (typeof node.value === 'string') {
+          checkText(node, node.value)
+        }
+      },
+      TemplateLiteral(node: Node) {
+        for (const quasi of node.quasis!) {
+          checkText(node, quasi.value.cooked)
+        }
+      },
+      JSXText(node: Node) {
+        checkText(node, String(node.value))
+      },
+      JSXAttribute(node: Node) {
+        if (node.name?.name !== 'style') {
+          return
+        }
+
+        const value = node.value as Node | undefined
+        const style = value?.expression
+        const heightOnly =
+          style?.type === 'ObjectExpression' &&
+          style.properties!.every((property) => property.key?.name === 'height')
+
+        if (!heightOnly) {
+          context.report({
+            node,
+            message: 'Inline styles bypass the catalogue; only a data-driven height may be inline',
+          })
+        }
+      },
+    }
+  },
+}
+
 export default {
   meta: {
     name: 'stationly',
@@ -125,5 +258,6 @@ export default {
   rules: {
     'no-literal-api-path': noLiteralApiPath,
     'multiline-object-literal': multilineObjectLiteral,
+    'design-tokens': designTokens,
   },
 }

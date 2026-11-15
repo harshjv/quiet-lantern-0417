@@ -3,20 +3,24 @@ import { and, desc, eq, inArray, max, notInArray } from 'drizzle-orm'
 import { runActiveStatuses } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { agent_event, agent_input, agent_session, run, sandbox } from '../db/schema.ts'
+import { conversation, conversation_event, run, sandbox, task, task_inbox } from '../db/schema.ts'
 
 type SandboxRow = typeof sandbox.$inferSelect
 
 const latest = (...times: (Date | null | undefined)[]) =>
   times.reduce<Date | null>((best, time) => (time && (!best || time > best) ? time : best), null)
 
+const taskOf = (db: Db, sandboxId: string) =>
+  db.select().from(task).where(eq(task.sandbox_id, sandboxId)).get()
+
 const runnerRunIds = (db: Db, sandboxId: string) =>
   db
     .select({
-      id: agent_session.runner_run_id,
+      id: conversation.runner_run_id,
     })
-    .from(agent_session)
-    .where(eq(agent_session.sandbox_id, sandboxId))
+    .from(conversation)
+    .innerJoin(task, eq(task.id, conversation.task_id))
+    .where(eq(task.sandbox_id, sandboxId))
     .all()
     .flatMap((row) => (row.id ? [row.id] : []))
 
@@ -35,26 +39,31 @@ export const activityOf = (db: Db, row: SandboxRow) => {
     .orderBy(desc(run.created_at))
     .limit(1)
     .get()?.at
-  const lastEvent = db
-    .select({
-      at: max(agent_event.at),
-    })
-    .from(agent_event)
-    .where(eq(agent_event.sandbox_id, row.id))
-    .get()?.at
-  const lastInput = db
-    .select({
-      at: max(agent_input.created_at),
-    })
-    .from(agent_input)
-    .where(eq(agent_input.sandbox_id, row.id))
-    .get()?.at
+  const owner = taskOf(db, row.id)
+  const lastEvent = owner
+    ? db
+        .select({
+          at: max(conversation_event.at),
+        })
+        .from(conversation_event)
+        .where(eq(conversation_event.task_id, owner.id))
+        .get()?.at
+    : null
+  const lastInput = owner
+    ? db
+        .select({
+          at: max(task_inbox.created_at),
+        })
+        .from(task_inbox)
+        .where(eq(task_inbox.task_id, owner.id))
+        .get()?.at
+    : null
 
   return latest(row.started_at, lastRun, lastEvent, lastInput)
 }
 
 export const inUse = (db: Db, row: SandboxRow) => {
-  const status = row.agent_status?.status
+  const status = taskOf(db, row.id)?.status
 
   if (status === 'working' || status === 'waiting') {
     return true

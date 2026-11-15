@@ -23632,783 +23632,6 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/agent-sessions": {
-      "get": {
-        "tags": [
-          "sandboxes"
-        ],
-        "operationId": "list_agent_sessions",
-        "summary": "Agent sessions of every workspace, newest first, with status, attention kind and the first prompt as the title; for an instance admin",
-        "x-stationly": {
-          "level": "instance admin",
-          "mcp": false,
-          "cli": {
-            "path": [
-              "sandboxes",
-              "sessions"
-            ]
-          }
-        },
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "Page size, default 100",
-              "anyOf": [
-                {
-                  "format": "integer",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "Page size, default 100",
-                  "type": "integer"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "The next_cursor of the previous page",
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One or more of working, waiting, ready, failed, ended, comma separated",
-              "type": "string"
-            }
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Only the sessions of this workspace, a sandbox id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentSessionPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "sandboxes"
-        ],
-        "operationId": "create_agent_session",
-        "summary": "Start an agent session in a workspace from a first prompt; the runner starts once the workspace is running and set up. Needs a human actor",
-        "x-stationly": {
-          "level": "instance admin",
-          "mcp": false,
-          "cli": {
-            "path": [
-              "sandboxes",
-              "ask"
-            ]
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "workspace",
-                  "prompt"
-                ],
-                "properties": {
-                  "workspace": {
-                    "description": "The workspace, a sandbox id, running or still being set up",
-                    "type": "string"
-                  },
-                  "prompt": {
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "type": "string"
-                  },
-                  "model": {
-                    "description": "One of the agent's models, default the first",
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "workspace",
-                  "prompt"
-                ],
-                "properties": {
-                  "workspace": {
-                    "description": "The workspace, a sandbox id, running or still being set up",
-                    "type": "string"
-                  },
-                  "prompt": {
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "type": "string"
-                  },
-                  "model": {
-                    "description": "One of the agent's models, default the first",
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "workspace",
-                  "prompt"
-                ],
-                "properties": {
-                  "workspace": {
-                    "description": "The workspace, a sandbox id, running or still being set up",
-                    "type": "string"
-                  },
-                  "prompt": {
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "type": "string"
-                  },
-                  "model": {
-                    "description": "One of the agent's models, default the first",
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentSession"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sandboxes/{sandbox}/agent/sessions/{session}/prompts": {
-      "post": {
-        "tags": [
-          "sandboxes"
-        ],
-        "operationId": "send_agent_prompt",
-        "summary": "Send the next prompt to a session Stationly started; only a human actor may send one",
-        "x-stationly": {
-          "level": "instance admin",
-          "mcp": false,
-          "cli": {
-            "path": [
-              "sandboxes",
-              "reply"
-            ]
-          }
-        },
-        "parameters": [
-          {
-            "name": "sandbox",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "session",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "text"
-                ],
-                "properties": {
-                  "text": {
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "text"
-                ],
-                "properties": {
-                  "text": {
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "text"
-                ],
-                "properties": {
-                  "text": {
-                    "minLength": 1,
-                    "maxLength": 32768,
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentInputAccepted"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/sandboxes/{sandbox}/agent/sessions/{session}/interrupt": {
-      "post": {
-        "tags": [
-          "sandboxes"
-        ],
-        "operationId": "interrupt_agent_session",
-        "summary": "End the running turn of a session Stationly started; the workspace stays. Needs a human actor",
-        "x-stationly": {
-          "level": "instance admin",
-          "mcp": false,
-          "cli": {
-            "path": [
-              "sandboxes",
-              "interrupt"
-            ]
-          }
-        },
-        "parameters": [
-          {
-            "name": "sandbox",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "session",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentInterruptAccepted"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/sandboxes/{sandbox}/agent/inbox": {
       "get": {
         "tags": [
@@ -24902,6 +24125,9 @@ export const openApiDocument = {
                                 "cwd": {
                                   "type": "string"
                                 },
+                                "branch": {
+                                  "type": "string"
+                                },
                                 "version": {
                                   "type": "string"
                                 }
@@ -25718,6 +24944,9 @@ export const openApiDocument = {
                                 "cwd": {
                                   "type": "string"
                                 },
+                                "branch": {
+                                  "type": "string"
+                                },
                                 "version": {
                                   "type": "string"
                                 }
@@ -26532,6 +25761,9 @@ export const openApiDocument = {
                                   "type": "string"
                                 },
                                 "cwd": {
+                                  "type": "string"
+                                },
+                                "branch": {
                                   "type": "string"
                                 },
                                 "version": {
@@ -27409,27 +26641,804 @@ export const openApiDocument = {
             }
           }
         }
-      },
+      }
+    },
+    "/v1/tasks": {
       "get": {
         "tags": [
-          "sandboxes"
+          "tasks"
         ],
-        "operationId": "get_agent_events",
-        "summary": "Events of a workspace's agent session, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID",
+        "operationId": "list_tasks",
+        "summary": "Tasks, newest first, with their status and setup; for an instance admin",
         "x-stationly": {
           "level": "instance admin",
           "mcp": false,
           "cli": {
             "path": [
-              "sandboxes",
-              "agent"
+              "tasks",
+              "list"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Page size, default 100",
+              "anyOf": [
+                {
+                  "format": "integer",
+                  "default": 0,
+                  "type": "string"
+                },
+                {
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Page size, default 100",
+                  "type": "integer"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "The next_cursor of the previous page",
+              "type": "string"
+            }
+          },
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Include archived tasks",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "create_task",
+        "summary": "Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "create"
+            ]
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project",
+                  "repository",
+                  "agent",
+                  "prompt"
+                ],
+                "properties": {
+                  "project": {
+                    "description": "The project, an id or a name",
+                    "type": "string"
+                  },
+                  "environment": {
+                    "description": "Where the task's workspace lives; the project's default environment by default",
+                    "type": "string"
+                  },
+                  "repository": {
+                    "description": "An https git URL",
+                    "type": "string"
+                  },
+                  "base_branch": {
+                    "description": "The branch to start from; the repository's default branch by default",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "default": "claude",
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "codex"
+                    ]
+                  },
+                  "model": {
+                    "description": "One of the agent's models, default the first",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project",
+                  "repository",
+                  "agent",
+                  "prompt"
+                ],
+                "properties": {
+                  "project": {
+                    "description": "The project, an id or a name",
+                    "type": "string"
+                  },
+                  "environment": {
+                    "description": "Where the task's workspace lives; the project's default environment by default",
+                    "type": "string"
+                  },
+                  "repository": {
+                    "description": "An https git URL",
+                    "type": "string"
+                  },
+                  "base_branch": {
+                    "description": "The branch to start from; the repository's default branch by default",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "default": "claude",
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "codex"
+                    ]
+                  },
+                  "model": {
+                    "description": "One of the agent's models, default the first",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project",
+                  "repository",
+                  "agent",
+                  "prompt"
+                ],
+                "properties": {
+                  "project": {
+                    "description": "The project, an id or a name",
+                    "type": "string"
+                  },
+                  "environment": {
+                    "description": "Where the task's workspace lives; the project's default environment by default",
+                    "type": "string"
+                  },
+                  "repository": {
+                    "description": "An https git URL",
+                    "type": "string"
+                  },
+                  "base_branch": {
+                    "description": "The branch to start from; the repository's default branch by default",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "default": "claude",
+                    "type": "string",
+                    "enum": [
+                      "claude",
+                      "codex"
+                    ]
+                  },
+                  "model": {
+                    "description": "One of the agent's models, default the first",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Response for status 202",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "get_task",
+        "summary": "A task with its status and setup; for an instance admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "get"
+            ],
+            "args": [
+              "task"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "delete_task",
+        "summary": "Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "delete"
+            ],
+            "args": [
+              "task"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}/events": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "get_task_events",
+        "summary": "Events of every conversation of a task, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "events"
+            ],
+            "args": [
+              "task"
             ]
           },
           "stream": true
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "task",
             "in": "path",
             "required": true,
             "schema": {
@@ -27441,16 +27450,16 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Resume after this seq, the id of an event of this sandbox",
+              "description": "Resume after this seq, the id of an event of this task",
               "type": "string"
             }
           },
           {
-            "name": "session",
+            "name": "conversation",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only the events of this Claude Code session",
+              "description": "Only the events of this conversation",
               "type": "string"
             }
           },
@@ -27485,6 +27494,364 @@ export const openApiDocument = {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}/prompts": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "send_task_prompt",
+        "summary": "Send the next prompt to a task; only a human actor may send one",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "reply"
+            ],
+            "args": [
+              "task"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Response for status 202",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInputAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}/interrupt": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "interrupt_task",
+        "summary": "End the running turn of a task's agent; the task stays. Needs a human actor",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "interrupt"
+            ],
+            "args": [
+              "task"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Response for status 202",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInterruptAccepted"
                 }
               }
             }
@@ -49180,66 +49547,8 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/SandboxMetricSample"
       },
-      "AgentStatus": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "status",
-          "since",
-          "session_id",
-          "kind",
-          "agents",
-          "last_event_at"
-        ],
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "none",
-              "working",
-              "waiting",
-              "ready",
-              "failed",
-              "ended"
-            ]
-          },
-          "since": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "kind": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "permission",
-              "question",
-              "plan"
-            ]
-          },
-          "agents": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "last_event_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "$id": "#/components/schemas/AgentStatus"
-      },
       "AgentEvent": {
-        "description": "One stored event of an agent session; seq is the sandbox cursor",
+        "description": "One stored event of a task's conversation; seq is the task cursor",
         "anyOf": [
           {
             "additionalProperties": false,
@@ -49249,6 +49558,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49277,6 +49587,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "session.started",
@@ -49294,6 +49607,9 @@ export const openApiDocument = {
                   "cwd": {
                     "type": "string"
                   },
+                  "branch": {
+                    "type": "string"
+                  },
                   "version": {
                     "type": "string"
                   }
@@ -49309,6 +49625,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49337,6 +49654,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "session.ended",
@@ -49360,6 +49680,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49388,6 +49709,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "prompt",
@@ -49435,6 +49759,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49463,6 +49788,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "message",
@@ -49496,6 +49824,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49524,6 +49853,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "tool.started",
@@ -49561,6 +49893,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49589,6 +49922,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "tool.finished",
@@ -49636,6 +49972,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49664,6 +50001,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "tool.denied",
@@ -49690,6 +50030,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49718,6 +50059,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "attention",
@@ -49758,6 +50102,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49786,6 +50131,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "turn.ended",
@@ -49815,6 +50163,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49843,6 +50192,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "turn.failed",
@@ -49875,6 +50227,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49903,6 +50256,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "subagent.started",
@@ -49926,6 +50282,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -49954,6 +50311,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "subagent.stopped",
@@ -49977,6 +50337,7 @@ export const openApiDocument = {
               "at",
               "session_id",
               "seq",
+              "conversation_id",
               "type",
               "data"
             ],
@@ -50005,6 +50366,9 @@ export const openApiDocument = {
               },
               "seq": {
                 "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
               },
               "type": {
                 "const": "omitted",
@@ -50155,49 +50519,34 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AgentEventPage"
       },
-      "AgentSession": {
+      "Task": {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "session_id",
-          "sandbox",
-          "agent",
+          "id",
           "project",
           "environment",
-          "status",
-          "kind",
+          "owner",
           "title",
-          "started_at",
+          "repository",
+          "base_branch",
+          "branch",
+          "agent",
+          "model",
+          "sandbox",
+          "status",
+          "attention",
+          "failure",
+          "setup",
+          "prompt",
           "last_event_at",
-          "mode",
-          "started_by",
-          "setup"
+          "created_at",
+          "updated_at",
+          "archived_at"
         ],
         "properties": {
-          "session_id": {
+          "id": {
             "type": "string"
-          },
-          "sandbox": {
-            "type": "object",
-            "required": [
-              "id",
-              "name"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            }
-          },
-          "agent": {
-            "type": "string",
-            "enum": [
-              "claude",
-              "codex"
-            ]
           },
           "project": {
             "type": "object",
@@ -50229,60 +50578,9 @@ export const openApiDocument = {
               }
             }
           },
-          "status": {
-            "type": "string",
-            "enum": [
-              "working",
-              "waiting",
-              "ready",
-              "failed",
-              "ended"
-            ]
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "const": "permission",
-                "type": "string"
-              },
-              {
-                "const": "question",
-                "type": "string"
-              },
-              {
-                "const": "plan",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "started_at": {
-            "type": "string"
-          },
-          "last_event_at": {
-            "type": "string"
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "runner",
-              "observed"
-            ]
-          },
-          "started_by": {
+          "owner": {
             "additionalProperties": false,
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": "object",
             "required": [
               "type",
               "id"
@@ -50299,36 +50597,95 @@ export const openApiDocument = {
               }
             }
           },
-          "setup": {
+          "title": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "base_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sandbox": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "setting_up",
+              "working",
+              "waiting",
+              "finished",
+              "failed",
+              "stopped"
+            ]
+          },
+          "attention": {
             "additionalProperties": false,
             "type": [
               "object",
               "null"
             ],
             "required": [
-              "state",
-              "run_id",
-              "step",
-              "tail",
-              "prompt",
-              "model"
+              "kind",
+              "since"
             ],
             "properties": {
-              "state": {
+              "kind": {
                 "type": "string",
                 "enum": [
-                  "creating",
-                  "setting_up",
-                  "starting",
-                  "failed"
+                  "permission",
+                  "question",
+                  "plan"
                 ]
               },
-              "run_id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
+              "since": {
+                "type": "string"
+              }
+            }
+          },
+          "failure": {
+            "additionalProperties": false,
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "step",
+              "tail"
+            ],
+            "properties": {
               "step": {
                 "anyOf": [
                   {
@@ -50352,6 +50709,10 @@ export const openApiDocument = {
                     "type": "string"
                   },
                   {
+                    "const": "branch",
+                    "type": "string"
+                  },
+                  {
                     "const": "toolchain",
                     "type": "string"
                   },
@@ -50365,23 +50726,63 @@ export const openApiDocument = {
                 "items": {
                   "type": "string"
                 }
-              },
-              "prompt": {
-                "type": [
-                  "string",
-                  "null"
+              }
+            }
+          },
+          "setup": {
+            "additionalProperties": false,
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "state",
+              "run_id"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "creating",
+                  "setting_up",
+                  "starting",
+                  "failed"
                 ]
               },
-              "model": {
+              "run_id": {
                 "type": [
                   "string",
                   "null"
                 ]
               }
             }
+          },
+          "prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_event_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
-        "$id": "#/components/schemas/AgentSession"
+        "$id": "#/components/schemas/Task"
       },
       "AgentInputAccepted": {
         "additionalProperties": false,
@@ -50400,7 +50801,21 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AgentInputAccepted"
       },
-      "AgentSessionPage": {
+      "TaskDeleted": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "$id": "#/components/schemas/TaskDeleted"
+      },
+      "TaskPage": {
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -50411,7 +50826,7 @@ export const openApiDocument = {
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AgentSession"
+              "$ref": "#/components/schemas/Task"
             }
           },
           "next_cursor": {
@@ -50421,7 +50836,7 @@ export const openApiDocument = {
             ]
           }
         },
-        "$id": "#/components/schemas/AgentSessionPage"
+        "$id": "#/components/schemas/TaskPage"
       },
       "Sandbox": {
         "title": "Sandbox",
@@ -50448,8 +50863,7 @@ export const openApiDocument = {
           "address",
           "disk_used_bytes",
           "forked_from",
-          "workspace",
-          "agent_status"
+          "workspace"
         ],
         "properties": {
           "id": {
@@ -50659,6 +51073,12 @@ export const openApiDocument = {
               "setup_run_id": {
                 "type": "string"
               },
+              "task_branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "setup": {
                 "additionalProperties": false,
                 "type": "object",
@@ -50698,6 +51118,10 @@ export const openApiDocument = {
                         "type": "string"
                       },
                       {
+                        "const": "branch",
+                        "type": "string"
+                      },
+                      {
                         "const": "toolchain",
                         "type": "string"
                       },
@@ -50709,16 +51133,6 @@ export const openApiDocument = {
                 }
               }
             }
-          },
-          "agent_status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "command": {
             "type": [
@@ -50816,7 +51230,6 @@ export const openApiDocument = {
           "disk_used_bytes",
           "forked_from",
           "workspace",
-          "agent_status",
           "warnings"
         ],
         "properties": {
@@ -51027,6 +51440,12 @@ export const openApiDocument = {
               "setup_run_id": {
                 "type": "string"
               },
+              "task_branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "setup": {
                 "additionalProperties": false,
                 "type": "object",
@@ -51066,6 +51485,10 @@ export const openApiDocument = {
                         "type": "string"
                       },
                       {
+                        "const": "branch",
+                        "type": "string"
+                      },
+                      {
                         "const": "toolchain",
                         "type": "string"
                       },
@@ -51077,16 +51500,6 @@ export const openApiDocument = {
                 }
               }
             }
-          },
-          "agent_status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "command": {
             "type": [

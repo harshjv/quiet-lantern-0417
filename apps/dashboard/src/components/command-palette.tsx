@@ -247,14 +247,6 @@ function Item({
 
 const goTo: { label: string; icon: LucideIcon; link: LinkOptions; shortcut?: ShortcutId }[] = [
   {
-    label: 'Sessions',
-    icon: entityIcon.session,
-    link: {
-      to: '/sessions',
-    },
-    shortcut: 'sessions',
-  },
-  {
     label: 'Projects',
     icon: entityIcon.project,
     link: {

@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import {
-  Bell,
   ChevronsLeft,
   FolderKanban,
   GitPullRequestArrow,
@@ -10,23 +9,14 @@ import {
   Radio,
   Search,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { Logo } from '@/components/logo'
-import { useNow } from '@/components/sandbox-clock'
-import { SessionsList } from '@/components/sessions-list'
 import { LiveIndicator, ThemeMenu, UserMenu } from '@/components/shell-menus'
 import { Button } from '@/components/ui/button'
 import { isInstanceAdmin } from '@/lib/agent-session'
-import { groupSessions } from '@/lib/agent-sessions'
 import type { StreamState } from '@/lib/event-stream'
-import {
-  agentSessionsQuery,
-  meQuery,
-  releasesQuery,
-  stagedQuery,
-  stationsQuery,
-} from '@/lib/queries'
+import { meQuery, releasesQuery, stagedQuery, stationsQuery } from '@/lib/queries'
 import { setSidebarCollapsed } from '@/lib/sidebar'
 import { countPill, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -108,29 +98,6 @@ function StagedRow({ onOpen }: { onOpen?: () => void }) {
   )
 }
 
-function Sessions({ onOpen, onlyWaiting }: { onOpen?: () => void; onlyWaiting: boolean }) {
-  const { data } = useQuery(agentSessionsQuery())
-  const open = useParams({
-    strict: false,
-    select: (params) =>
-      'sandbox' in params && 'session' in params
-        ? {
-            sandbox: params.sandbox as string,
-            session: params.session as string,
-          }
-        : null,
-  })
-
-  return (
-    <SessionsList
-      sessions={data?.items ?? []}
-      selected={open}
-      onlyWaiting={onlyWaiting}
-      onOpen={onOpen}
-    />
-  )
-}
-
 export function AppSidebar({
   live,
   onPalette,
@@ -146,15 +113,6 @@ export function AppSidebar({
 }) {
   const { data: me } = useQuery(meQuery)
   const admin = isInstanceAdmin(me?.scopes ?? [])
-  const { data: sessions } = useQuery({
-    ...agentSessionsQuery(),
-    enabled: admin,
-  })
-  const [onlyWaiting, setOnlyWaiting] = useState(false)
-  const now = useNow(60_000)
-  const waiting =
-    groupSessions(sessions?.items ?? [], new Date(now)).find((entry) => entry.group === 'waiting')
-      ?.items.length ?? 0
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-muted/30">
@@ -168,23 +126,6 @@ export function AppSidebar({
           <Logo className="size-5" />
           Stationly
         </Link>
-        {admin && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="relative"
-            aria-label={waiting > 0 ? `${waiting} waiting on you` : 'Nothing waiting on you'}
-            aria-pressed={onlyWaiting}
-            onClick={() => setOnlyWaiting((value) => !value)}
-          >
-            <Bell />
-            {waiting > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-medium text-white">
-                {waiting}
-              </span>
-            )}
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -208,13 +149,13 @@ export function AppSidebar({
       {admin && (
         <div className="shrink-0 px-2 pb-2">
           <Button asChild variant="outline" className="w-full justify-start" onClick={onOpen}>
-            <Link to="/">
+            <a href="/next.html">
               <Plus /> New task
-            </Link>
+            </a>
           </Button>
         </div>
       )}
-      {admin ? <Sessions onOpen={onOpen} onlyWaiting={onlyWaiting} /> : <div className="flex-1" />}
+      <div className="flex-1" />
       <nav aria-label="Main" className="shrink-0 space-y-0.5 border-t p-2">
         <NavRow
           to="/projects"

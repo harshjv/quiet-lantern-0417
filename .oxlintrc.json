@@ -166,6 +166,12 @@
       }
     },
     {
+      "files": ["apps/dashboard/src/next/**/*.tsx"],
+      "rules": {
+        "stationly/design-tokens": "error"
+      }
+    },
+    {
       "files": ["packages/cli/src/**", "apps/dashboard/src/**"],
       "rules": {
         "stationly/no-literal-api-path": [

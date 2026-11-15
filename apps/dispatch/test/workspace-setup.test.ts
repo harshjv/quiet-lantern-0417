@@ -21,6 +21,7 @@ const workspace = (path: string) => ({
   repository: 'https://github.com/acme/app',
   branch: null,
   path,
+  task_branch: null,
 })
 
 const stub = (name: string, body: string) => {

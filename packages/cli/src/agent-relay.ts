@@ -19,6 +19,7 @@ export type RelayDeps = {
   dir: string
   post: (events: AgentEventInputValue[]) => Promise<PostResult>
   version: (sessionId: string) => Promise<string | undefined>
+  branch: (cwd: string) => Promise<string | undefined>
   now: () => number
   sleep: (ms: number) => Promise<void>
 }
@@ -88,11 +89,14 @@ const batchOf = async (deps: RelayDeps, files: string[]): Promise<Batch> => {
     }
 
     const payload = await payloadOf(deps.dir, name)
-    const version =
-      payload && needsVersion(payload) ? await deps.version(String(payload.session_id)) : undefined
+    const starting = payload !== null && needsVersion(payload)
+    const version = starting ? await deps.version(String(payload.session_id)) : undefined
+    const branch =
+      starting && typeof payload.cwd === 'string' ? await deps.branch(payload.cwd) : undefined
     const event = payload
       ? eventOf(name, payload, {
           version,
+          branch,
         })
       : null
 
@@ -239,6 +243,14 @@ export const claudeVersion = () => {
   }
 }
 
+export const gitBranch = (cwd: string) =>
+  execFileAsync('git', ['-C', cwd, 'branch', '--show-current'], {
+    timeout: 5000,
+  }).then(
+    ({ stdout }) => stdout.trim() || undefined,
+    () => undefined,
+  )
+
 export const realDeps = async (post: RelayDeps['post'], dir = spoolDir()): Promise<RelayDeps> => {
   await mkdir(dir, {
     recursive: true,
@@ -248,6 +260,7 @@ export const realDeps = async (post: RelayDeps['post'], dir = spoolDir()): Promi
     dir,
     post,
     version: claudeVersion(),
+    branch: gitBranch,
     now: () => Date.now(),
     sleep: (ms) => sleep(ms),
   }

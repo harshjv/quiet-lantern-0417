@@ -54,7 +54,6 @@ import {
   AgentEventsAccepted as ProtocolAgentEventsAccepted,
   AgentInbox as ProtocolAgentInbox,
   AgentInboxAck as ProtocolAgentInboxAck,
-  AgentStatus as ProtocolAgentStatus,
   refusedPaths,
   repoAuthValues,
   Resources as ResourcesSchema,
@@ -85,6 +84,7 @@ import {
   stationStatusValues,
   strategyValues,
   StringEnum,
+  taskStatusValues,
   tokenKindValues,
   tokenLevelValues,
   variableKindValues,
@@ -1907,6 +1907,7 @@ const SandboxWorkspace = Type.Object(
     level: StringEnum(tokenLevelValues),
     token_id: Str,
     setup_run_id: Str,
+    task_branch: Type.Optional(NStr),
     setup: Type.Object(
       {
         state: StringEnum(['pending', 'succeeded', 'failed']),
@@ -1982,8 +1983,6 @@ export const SandboxMetricSample = component(
   ),
 )
 
-export const AgentStatus = component('AgentStatus', ProtocolAgentStatus)
-
 export const AgentEvent = component('AgentEvent', ProtocolAgentEvent)
 
 export const AgentEventsAccepted = component('AgentEventsAccepted', ProtocolAgentEventsAccepted)
@@ -2034,26 +2033,46 @@ const NamedRef = Type.Object({
   name: Str,
 })
 
-export const AgentSession = component(
-  'AgentSession',
+export const Task = component(
+  'Task',
   Type.Object(
     {
-      session_id: Str,
-      sandbox: NamedRef,
-      agent: StringEnum(workspaceAgentValues),
+      id: Str,
       project: NamedRef,
       environment: NamedRef,
-      status: StringEnum(['working', 'waiting', 'ready', 'failed', 'ended']),
-      kind: NullableEnum(agentAttentionKindValues),
-      title: NStr,
-      started_at: Str,
-      last_event_at: Str,
-      mode: StringEnum(['runner', 'observed']),
-      started_by: Nullable(
+      owner: Type.Object(
+        {
+          type: Str,
+          id: NStr,
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+      title: Str,
+      repository: Str,
+      base_branch: NStr,
+      branch: Str,
+      agent: StringEnum(workspaceAgentValues),
+      model: NStr,
+      sandbox: NamedRef,
+      status: StringEnum(taskStatusValues),
+      attention: Nullable(
         Type.Object(
           {
-            type: Str,
-            id: NStr,
+            kind: StringEnum(agentAttentionKindValues),
+            since: Str,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+      failure: Nullable(
+        Type.Object(
+          {
+            step: NullableEnum(workspaceSetupStepValues),
+            tail: Type.Array(Str),
           },
           {
             additionalProperties: false,
@@ -2065,16 +2084,17 @@ export const AgentSession = component(
           {
             state: StringEnum(['creating', 'setting_up', 'starting', 'failed']),
             run_id: NStr,
-            step: NullableEnum(workspaceSetupStepValues),
-            tail: Type.Array(Str),
-            prompt: NStr,
-            model: NStr,
           },
           {
             additionalProperties: false,
           },
         ),
       ),
+      prompt: NStr,
+      last_event_at: NStr,
+      created_at: Str,
+      updated_at: Str,
+      archived_at: NStr,
     },
     {
       additionalProperties: false,
@@ -2095,11 +2115,23 @@ export const AgentInputAccepted = component(
   ),
 )
 
-export const AgentSessionPage = component(
-  'AgentSessionPage',
+export const TaskDeleted = component(
+  'TaskDeleted',
   Type.Object(
     {
-      items: Type.Array(AgentSession),
+      deleted: Type.Literal(true),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const TaskPage = component(
+  'TaskPage',
+  Type.Object(
+    {
+      items: Type.Array(Task),
       next_cursor: NStr,
     },
     {
@@ -2133,7 +2165,6 @@ export const Sandbox = component(
       disk_used_bytes: Int,
       forked_from: Nullable(SandboxForkedFrom),
       workspace: Nullable(SandboxWorkspace),
-      agent_status: Nullable(AgentStatus),
       command: Nullable(Type.Array(Str)),
       exit_code: NInt,
       failure: Nullable(Diagnosis),
@@ -2165,7 +2196,6 @@ export const Sandbox = component(
       'disk_used_bytes',
       'forked_from',
       'workspace',
-      'agent_status',
       'created_at',
     ],
   ),

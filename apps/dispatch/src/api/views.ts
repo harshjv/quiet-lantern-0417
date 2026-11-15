@@ -30,7 +30,6 @@ import {
   volume_snapshot,
 } from '../db/schema.ts'
 import { effectiveHealth, type StoredHealth } from '../generation/health.ts'
-import { agentStatusOf } from '../sandboxes/agent-status.ts'
 import { deleteAt, retentionSeconds } from '../sandboxes/lifecycle.ts'
 import { sandboxMemory } from '../sandboxes/limits.ts'
 import { sandboxRuntimeAdvice } from '../sandboxes/runtime.ts'
@@ -1236,7 +1235,6 @@ export const createViews = (db: Db) => {
       disk_used_bytes: row.disk_used_bytes,
       forked_from: row.forked_from,
       workspace: workspaceSetupOf(db, row),
-      agent_status: agentStatusOf(row),
       exit_code: row.exit_code,
       started_at: iso(row.started_at),
       stopped_at: iso(row.stopped_at),
@@ -1262,7 +1260,6 @@ export const createViews = (db: Db) => {
       'disk_used_bytes',
       'forked_from',
       'workspace',
-      'agent_status',
       'created_at',
     ],
     expand: {

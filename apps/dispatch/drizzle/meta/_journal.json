@@ -190,6 +190,13 @@
       "when": 1794631943513,
       "tag": "0026_odd_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1794707780134,
+      "tag": "0027_unusual_mathemanic",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ type Mapped = Pick<AgentEventInputValue, 'type' | 'data'>
 
 type Context = {
   version?: string
+  branch?: string
 }
 
 export const transportCapBytes = 32 * 1024
@@ -249,6 +250,11 @@ const mappers: Record<string, (payload: HookPayload, context: Context) => Mapped
       source: text(payload.source),
       model: text(payload.model),
       cwd: text(payload.cwd),
+      ...(context.branch
+        ? {
+            branch: context.branch,
+          }
+        : {}),
       version: context.version,
     },
   }),

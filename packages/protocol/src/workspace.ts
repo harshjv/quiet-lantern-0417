@@ -146,6 +146,7 @@ export const workspaceSetupStepValues = [
   'git_auth',
   'clone',
   'checkout',
+  'branch',
   'toolchain',
 ] as const
 
@@ -157,6 +158,7 @@ export const workspaceSetupSteps: Record<WorkspaceSetupStep, string> = {
   git_auth: 'set up git sign-in',
   clone: 'clone the repository',
   checkout: 'check out the branch',
+  branch: "create the task's branch",
   toolchain: "install the repository's toolchain",
 }
 

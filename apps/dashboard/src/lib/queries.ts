@@ -490,19 +490,30 @@ export const stagedChangeQuery = (id: string) =>
   })
 
 const sandboxFields =
-  'id,environment_id,station_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,workspace,agent_status,created_at,failure,exit_code'
+  'id,environment_id,station_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,workspace,created_at,failure,exit_code'
 
-export const agentSessionsQuery = (workspace?: string) =>
+export const tasksQuery = queryOptions({
+  queryKey: ['tasks'],
+  queryFn: () =>
+    unwrap(
+      api.v1.tasks.get({
+        query: {
+          limit: 200,
+        },
+      }),
+    ),
+})
+
+export const taskQuery = (task: string) =>
   queryOptions({
-    queryKey: workspace ? ['agent-sessions', 'of', workspace] : ['agent-sessions'],
+    queryKey: ['tasks', task],
     queryFn: () =>
       unwrap(
-        api.v1['agent-sessions'].get({
-          query: {
-            limit: 200,
-            workspace,
-          },
-        }),
+        api.v1
+          .tasks({
+            task,
+          })
+          .get(),
       ),
   })
 

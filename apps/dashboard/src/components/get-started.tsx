@@ -173,12 +173,12 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         workspaces > 0
           ? plural(workspaces, 'workspace')
           : first
-            ? 'Run Claude Code in a workspace and follow its sessions here.'
+            ? 'Start a task: Claude Code works on it in a workspace of its own.'
             : needsProject,
       action: first
         ? (next) => (
             <Button asChild size="sm" variant={variant(next)}>
-              <Link to="/sessions">Open Sessions</Link>
+              <a href="/next.html">New task</a>
             </Button>
           )
         : undefined,

@@ -18,6 +18,7 @@ import {
   safeNext,
   serverPage,
   sessionQuery,
+  workbenchPage,
 } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { nextLocation } from '@/lib/next-location'
@@ -31,6 +32,12 @@ export const Route = createFileRoute('/login')({
   beforeLoad: async ({ context, search }) => {
     const session = await context.queryClient.query(sessionQuery)
     const next = safeNext(search.next)
+
+    if (session && next && workbenchPage(next)) {
+      window.location.assign(next)
+
+      return
+    }
 
     if (session && !(next && serverPage(next))) {
       throw redirect(
@@ -66,7 +73,7 @@ function Login() {
     })
     const target = safeNext(next)
 
-    if (target && serverPage(target)) {
+    if (target && (serverPage(target) || workbenchPage(target))) {
       window.location.assign(target)
 
       return

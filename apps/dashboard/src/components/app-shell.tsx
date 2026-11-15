@@ -42,13 +42,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       }),
   )
   useShortcut(
-    'sessions',
-    () =>
-      void navigate({
-        to: '/sessions',
-      }),
-  )
-  useShortcut(
     'connect',
     () =>
       void navigate({

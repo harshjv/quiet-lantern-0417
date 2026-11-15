@@ -19,6 +19,7 @@ const watched = [
   'secret.changed',
   'station.*',
   'sandbox.*',
+  'task.*',
 ]
 
 const listened = [
@@ -44,7 +45,9 @@ const listened = [
   'sandbox.stopped',
   'sandbox.failed',
   'sandbox.deleted',
-  'sandbox.agent_status',
+  'task.created',
+  'task.changed',
+  'task.deleted',
 ]
 
 const groupsFor = (event: EventRow): Group[] => {
@@ -58,6 +61,10 @@ const groupsFor = (event: EventRow): Group[] => {
 
   if (event.type.startsWith('sandbox.')) {
     return ['sandboxes']
+  }
+
+  if (event.type.startsWith('task.')) {
+    return ['tasks']
   }
 
   if (event.type === 'health.changed' || event.type.startsWith('station.')) {
