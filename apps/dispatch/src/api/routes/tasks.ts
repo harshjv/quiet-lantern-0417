@@ -33,7 +33,7 @@ import {
   startConversation,
   wantRunner,
 } from '../../tasks/runner.ts'
-import { taskSubject, type TaskRow } from '../../tasks/status.ts'
+import { taskSubject, wakeTask, type TaskRow } from '../../tasks/status.ts'
 import { branchSlug, listTasks, taskItem, titleOf } from '../../tasks/views.ts'
 import { requireHuman } from '../access.ts'
 import { audit, type Call } from '../context.ts'
@@ -196,7 +196,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       )
       kit.deps.stations.reconcile(box!.station_id)
 
-      return
+      return true
     }
 
     if (!['creating', 'starting', 'running'].includes(box!.status)) {
@@ -209,6 +209,8 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
         },
       )
     }
+
+    return false
   }
 
   const start = (row: TaskRow, since: number | undefined, conversationId: string | undefined) => {
@@ -618,7 +620,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           ])
         }
 
-        wake(call, row, 'it cannot take a prompt')
+        const woke = wake(call, row, 'it cannot take a prompt')
 
         const stored = addInput(
           db,
@@ -630,8 +632,17 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           call.principal.actor,
         )
 
-        if (!runnerLive(session!)) {
+        if (woke || !runnerLive(session!)) {
           wantRunner(db, session!.id)
+        }
+
+        if (
+          woke ||
+          row.status === 'stopped' ||
+          row.status === 'finished' ||
+          row.status === 'failed'
+        ) {
+          wakeTask(db, row, session!.agent_session_id)
         }
 
         set.status = 202

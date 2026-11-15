@@ -54,6 +54,7 @@ import {
   AgentEventsAccepted as ProtocolAgentEventsAccepted,
   AgentInbox as ProtocolAgentInbox,
   AgentInboxAck as ProtocolAgentInboxAck,
+  AgentRunnerExit as ProtocolAgentRunnerExit,
   refusedPaths,
   repoAuthValues,
   Resources as ResourcesSchema,
@@ -1990,6 +1991,20 @@ export const AgentEventsAccepted = component('AgentEventsAccepted', ProtocolAgen
 export const AgentInbox = component('AgentInbox', ProtocolAgentInbox)
 
 export const AgentInboxAck = component('AgentInboxAck', ProtocolAgentInboxAck)
+
+export const AgentRunnerExit = component('AgentRunnerExit', ProtocolAgentRunnerExit)
+
+export const AgentRunnerExited = component(
+  'AgentRunnerExited',
+  Type.Object(
+    {
+      restarting: Type.Boolean(),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
 
 export const AgentInterruptAccepted = component(
   'AgentInterruptAccepted',

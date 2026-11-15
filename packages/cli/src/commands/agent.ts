@@ -106,17 +106,18 @@ const holdLock = (session: string) => {
 
 const inboxOf = (run: Run, sandbox: string, session: string) => {
   const api = clientOf(run)
-  const box = api.v1.sandboxes({
+  const agentApi = api.v1.sandboxes({
     sandbox,
-  }).agent.inbox
+  }).agent
+  const box = agentApi.inbox
 
   return {
-    inbox: async (after: number): Promise<InboxItem[]> => {
+    inbox: async (after: number, waitS: number): Promise<InboxItem[]> => {
       const { data, error } = await box.get({
         query: {
           session,
           after,
-          wait_s: 25,
+          wait_s: waitS,
         },
       })
 
@@ -130,6 +131,16 @@ const inboxOf = (run: Run, sandbox: string, session: string) => {
       await box.ack.post({
         ids,
       })
+    },
+    exited: async (failed: boolean) => {
+      const { error } = await agentApi.runner.exit.post({
+        session,
+        failed,
+      })
+
+      if (error) {
+        throw new Error('the exit report did not go through')
+      }
     },
   }
 }

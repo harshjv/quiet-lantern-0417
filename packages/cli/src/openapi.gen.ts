@@ -24034,6 +24034,208 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/sandboxes/{sandbox}/agent/runner/exit": {
+      "post": {
+        "tags": [
+          "sandboxes"
+        ],
+        "operationId": "report_runner_exit",
+        "summary": "Report that a session's runner exited, so a prompt waiting for it starts the next one; only the workspace token is accepted",
+        "x-stationly": {
+          "level": "read",
+          "mcp": false,
+          "cli": false
+        },
+        "parameters": [
+          {
+            "name": "sandbox",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "session"
+                ],
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  },
+                  "failed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "session"
+                ],
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  },
+                  "failed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "session"
+                ],
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  },
+                  "failed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Response for status 202",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunnerExited"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sandboxes/{sandbox}/agent/events": {
       "post": {
         "tags": [
@@ -50469,6 +50671,35 @@ export const openApiDocument = {
           }
         },
         "$id": "#/components/schemas/AgentInboxAck"
+      },
+      "AgentRunnerExit": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session"
+        ],
+        "properties": {
+          "session": {
+            "type": "string"
+          },
+          "failed": {
+            "type": "boolean"
+          }
+        },
+        "$id": "#/components/schemas/AgentRunnerExit"
+      },
+      "AgentRunnerExited": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "restarting"
+        ],
+        "properties": {
+          "restarting": {
+            "type": "boolean"
+          }
+        },
+        "$id": "#/components/schemas/AgentRunnerExited"
       },
       "AgentInterruptAccepted": {
         "additionalProperties": false,

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 
 import type { AgentAdapter, AgentExit } from './adapter.ts'
 
@@ -55,6 +56,14 @@ export const interruptLine = (requestId: string = randomUUID()) =>
 
 const graceMs = 5000
 
+export const isResult = (line: string) => {
+  try {
+    return (JSON.parse(line) as { type?: unknown }).type === 'result'
+  } catch {
+    return false
+  }
+}
+
 export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapter => ({
   agent: 'claude',
   start: (options) => {
@@ -75,8 +84,30 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
       stdio: ['pipe', 'pipe', 'inherit'],
     })
 
-    child.stdout.resume()
     child.stdin.on('error', () => undefined)
+
+    let results = 0
+    let waiters: { at: number; resolve: () => void }[] = []
+    let taken = 0
+
+    createInterface({
+      input: child.stdout,
+    }).on('line', (line) => {
+      if (!isResult(line)) {
+        return
+      }
+
+      results += 1
+      waiters = waiters.filter((waiter) => {
+        if (waiter.at <= results) {
+          waiter.resolve()
+
+          return false
+        }
+
+        return true
+      })
+    })
 
     const exit = new Promise<AgentExit>((resolve) => {
       child.on('error', () =>
@@ -96,6 +127,24 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
     return {
       send: (text) => void child.stdin.write(userLine(text)),
       interrupt: () => void child.stdin.write(interruptLine()),
+      close: () => void child.stdin.end(),
+      halt: () => {
+        child.kill('SIGINT')
+        setTimeout(() => child.kill('SIGTERM'), graceMs).unref()
+      },
+      nextResult: () => {
+        taken += 1
+        const at = taken
+
+        return at <= results
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              waiters.push({
+                at,
+                resolve,
+              })
+            })
+      },
       stop: () => {
         child.stdin.end()
         setTimeout(() => child.kill('SIGTERM'), graceMs).unref()

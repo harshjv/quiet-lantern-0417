@@ -8,7 +8,7 @@ import type {
 } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { conversation_event, task } from '../db/schema.ts'
+import { conversation, conversation_event, task } from '../db/schema.ts'
 import { emitEvent } from '../station/events.ts'
 
 export type TaskRow = typeof task.$inferSelect
@@ -233,7 +233,28 @@ export const applyActivity = (db: Db, row: TaskRow, event: StatusEvent, conversa
 export const stopSandboxTask = (db: Db, sandboxId: string, now = new Date()) => {
   const row = db.select().from(task).where(eq(task.sandbox_id, sandboxId)).get()
 
-  if (row && row.status !== 'stopped') {
+  if (!row) {
+    return
+  }
+
+  db.update(conversation)
+    .set({
+      runner_seen_at: null,
+    })
+    .where(eq(conversation.task_id, row.id))
+    .run()
+
+  if (row.status !== 'stopped') {
     saveActivity(db, row, noAgentSession(now))
   }
 }
+
+export const wakeTask = (db: Db, row: TaskRow, sessionId: string, now = new Date()) =>
+  saveActivity(db, row, {
+    status: 'working',
+    since: now.toISOString(),
+    session_id: sessionId,
+    last_event_at: null,
+    kind: null,
+    agents: [],
+  })

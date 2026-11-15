@@ -263,4 +263,14 @@ export const AgentInboxAck = Type.Object(
   },
 )
 
+export const AgentRunnerExit = Type.Object(
+  {
+    session: Type.String(),
+    failed: Type.Optional(Type.Boolean()),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
 export const agentPromptLimit = 32768

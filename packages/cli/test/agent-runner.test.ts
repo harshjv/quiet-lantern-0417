@@ -16,9 +16,10 @@ import {
 } from '../src/agent/claude.ts'
 import { runSession, type InboxItem, type RunnerDeps } from '../src/agent/runner.ts'
 
-const fakeAdapter = () => {
+const fakeAdapter = (code: number) => {
   const sent: string[] = []
   const calls: string[] = []
+  const waiters: (() => void)[] = []
   let finish: (exit: AgentExit) => void = () => undefined
   const exit = new Promise<AgentExit>((resolve) => {
     finish = resolve
@@ -28,6 +29,15 @@ const fakeAdapter = () => {
     start: () => ({
       send: (text) => void sent.push(text),
       interrupt: () => void calls.push('interrupt'),
+      close: () => {
+        calls.push('close')
+        finish({
+          code,
+          signal: null,
+        })
+      },
+      halt: () => void calls.push('halt'),
+      nextResult: () => new Promise<void>((resolve) => void waiters.push(resolve)),
       stop: () => void calls.push('stop'),
       events: null,
       exit,
@@ -38,7 +48,7 @@ const fakeAdapter = () => {
     adapter,
     sent,
     calls,
-    finish,
+    result: () => waiters.shift()?.(),
   }
 }
 
@@ -47,7 +57,8 @@ const deps = (
   batches: InboxItem[][],
   posted: AgentEventInputValue[],
   acked: string[][],
-  onEmpty: () => void,
+  calls: string[],
+  onWaiting: () => void = () => undefined,
 ): RunnerDeps => ({
   adapter,
   start: {
@@ -56,25 +67,30 @@ const deps = (
     model: null,
     cwd: '/tmp',
   },
-  inbox: () => {
+  inbox: (_after, waitS) => {
     const next = batches.shift()
 
     if (next) {
       return Promise.resolve(next)
     }
 
-    onEmpty()
+    if (waitS === 0) {
+      return Promise.resolve([])
+    }
+
+    onWaiting()
 
     return new Promise<InboxItem[]>(() => undefined)
   },
   ack: (ids) => Promise.resolve(void acked.push(ids)),
+  exited: () => Promise.resolve(void calls.push('exited')),
   post: (events) => Promise.resolve(void posted.push(...events)),
   now: () => new Date('2026-11-13T10:00:00.000Z'),
   sleep: () => Promise.resolve(),
 })
 
-test('the runner sends prompts to the one process, acknowledges them, and reports the exit as the session ending', async () => {
-  const fake = fakeAdapter()
+test('the runner runs one turn: it sends the prompt, acknowledges it at the result, closes stdin and reports its exit', async () => {
+  const fake = fakeAdapter(0)
   const posted: AgentEventInputValue[] = []
   const acked: string[][] = []
   const code = runSession(
@@ -89,39 +105,23 @@ test('the runner sends prompts to the one process, acknowledges them, and report
             text: 'first',
           },
         ],
-        [
-          {
-            id: 'b',
-            seq: 2,
-            kind: 'prompt',
-            text: 'second',
-          },
-        ],
       ],
       posted,
       acked,
-      () =>
-        fake.finish({
-          code: 0,
-          signal: null,
-        }),
+      fake.calls,
+      () => fake.result(),
     ),
   )
 
   assert.equal(await code, 0)
-  assert.deepEqual(fake.sent, ['first', 'second'])
-  assert.deepEqual(acked, [['a'], ['b']])
-  assert.equal(posted.length, 1)
-  assert.equal(posted[0]!.type, 'session.ended')
-  assert.equal(posted[0]!.session_id, 'sess-1')
-  assert.deepEqual(posted[0]!.data, {
-    reason: 'process_exited',
-    code: 0,
-  })
+  assert.deepEqual(fake.sent, ['first'])
+  assert.deepEqual(acked, [['a']])
+  assert.deepEqual(fake.calls, ['close', 'exited'])
+  assert.deepEqual(posted, [])
 })
 
-test('an interrupt reaches the process and settles the turn as interrupted', async () => {
-  const fake = fakeAdapter()
+test('an interrupt reaches the process, settles the turn as interrupted and ends the run', async () => {
+  const fake = fakeAdapter(1)
   const posted: AgentEventInputValue[] = []
   const done = runSession(
     deps(
@@ -138,16 +138,12 @@ test('an interrupt reaches the process and settles the turn as interrupted', asy
       ],
       posted,
       [],
-      () =>
-        fake.finish({
-          code: 1,
-          signal: null,
-        }),
+      fake.calls,
     ),
   )
 
   assert.equal(await done, 1)
-  assert.deepEqual(fake.calls, ['interrupt'])
+  assert.deepEqual(fake.calls, ['interrupt', 'close', 'exited'])
   assert.deepEqual(
     posted.map((event) => [event.type, (event.data as { reason?: string }).reason]),
     [
@@ -214,7 +210,7 @@ test('the Claude adapter feeds a real child process its stdin lines and reports 
     [
       '#!/usr/bin/env node',
       "const fs = require('node:fs')",
-      `process.stdin.on('data', (chunk) => fs.appendFileSync(${JSON.stringify(log)}, chunk))`,
+      `process.stdin.on('data', (chunk) => { fs.appendFileSync(${JSON.stringify(log)}, chunk); process.stdout.write(JSON.stringify({ type: 'result' }) + '\\n') })`,
       "process.stdin.on('end', () => process.exit(7))",
       '',
     ].join('\n'),
@@ -229,6 +225,7 @@ test('the Claude adapter feeds a real child process its stdin lines and reports 
   })
 
   process_.send('hello')
+  await process_.nextResult()
   process_.interrupt()
   process_.stop()
 

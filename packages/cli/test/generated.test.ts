@@ -277,6 +277,7 @@ test(
       'open_shell',
       'platform_upgrade',
       'post_agent_events',
+      'report_runner_exit',
       'run_command',
       'sandbox_exec',
       'upload_blob',

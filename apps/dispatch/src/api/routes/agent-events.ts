@@ -1,7 +1,12 @@
 import { eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { agentEventLimits, AgentEventsInput, AgentInboxAck } from '@stationly/protocol'
+import {
+  agentEventLimits,
+  AgentEventsInput,
+  AgentInboxAck,
+  AgentRunnerExit,
+} from '@stationly/protocol'
 
 import {
   chargeTokenWindow,
@@ -12,12 +17,24 @@ import {
 import { task } from '../../db/schema.ts'
 import { log } from '../../log.ts'
 import { ingestAgentEvents } from '../../tasks/events.ts'
-import { ackInputs, conversationOf, inboxItems, touchRunner } from '../../tasks/runner.ts'
+import {
+  ackInputs,
+  conversationOf,
+  inboxItems,
+  runnerExited,
+  touchRunner,
+} from '../../tasks/runner.ts'
 import { fail } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import type { SandboxRow } from '../lookup.ts'
 import { input } from '../schemas.ts'
-import { AgentEventsAccepted, AgentInbox, AgentInboxAcked, replies } from '../shapes.ts'
+import {
+  AgentEventsAccepted,
+  AgentInbox,
+  AgentInboxAcked,
+  AgentRunnerExited,
+  replies,
+} from '../shapes.ts'
 
 const inboxPollMs = 500
 
@@ -170,6 +187,37 @@ export const agentEventRoutes = (kit: Kit) => {
         body: input(AgentInboxAck),
         response: replies({
           202: AgentInboxAcked,
+        }),
+      },
+    )
+    .post(
+      '/sandboxes/:sandbox/agent/runner/exit',
+      async ({ ctx, request, body, set }) => {
+        const call = await kit.call(request)
+
+        requireWorkspaceToken(ctx.sandbox, call.principal)
+
+        const session = conversationOf(db, taskOf(ctx.sandbox).id, body.session)
+
+        set.status = 202
+
+        return {
+          restarting: session ? runnerExited(db, session, body.failed ?? false) : false,
+        }
+      },
+      {
+        sandbox: {
+          id: 'report_runner_exit',
+          summary:
+            "Report that a session's runner exited, so a prompt waiting for it starts the next one; only the workspace token is accepted",
+          level: 'read',
+          mcp: false,
+          cli: false,
+          deferTokenWindow: true,
+        },
+        body: input(AgentRunnerExit),
+        response: replies({
+          202: AgentRunnerExited,
         }),
       },
     )

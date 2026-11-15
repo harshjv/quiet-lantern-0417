@@ -5,6 +5,9 @@ export type AgentExit = { code: number | null; signal: string | null }
 export type AgentProcess = {
   send: (text: string) => void
   interrupt: () => void
+  close: () => void
+  halt: () => void
+  nextResult: () => Promise<void>
   stop: () => void
   events: AsyncIterable<AgentEventInputValue> | null
   exit: Promise<AgentExit>

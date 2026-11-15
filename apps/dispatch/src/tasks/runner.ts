@@ -211,6 +211,35 @@ export const ackInputs = (db: Db, taskId: string, ids: string[], now = new Date(
 export const runnerLive = (session: Pick<ConversationRow, 'runner_seen_at'>, now = new Date()) =>
   session.runner_seen_at !== null && now.getTime() - session.runner_seen_at.getTime() < runnerLiveMs
 
+export const runnerExited = (
+  db: Db,
+  conversationRow: ConversationRow,
+  failed: boolean,
+  now = new Date(),
+) => {
+  db.update(conversation)
+    .set({
+      runner_seen_at: null,
+    })
+    .where(eq(conversation.id, conversationRow.id))
+    .run()
+
+  const items = inboxItems(db, conversationRow, 0)
+  const stale = items.filter((item) => item.kind === 'interrupt').map((item) => item.id)
+
+  if (stale.length) {
+    ackInputs(db, conversationRow.task_id, stale, now)
+  }
+
+  const waiting = !failed && items.some((item) => item.kind === 'prompt')
+
+  if (waiting) {
+    wantRunner(db, conversationRow.id)
+  }
+
+  return waiting
+}
+
 export const wantRunner = (db: Db, conversationId: string) => {
   db.update(conversation)
     .set({
@@ -276,7 +305,7 @@ export const shapeEvent = (
       )
       .orderBy(asc(task_inbox.seq))
       .all()
-      .find((candidate) => candidate.delivered_at !== null)
+      .at(0)
 
     if (input) {
       return {
@@ -293,7 +322,51 @@ export const shapeEvent = (
   return plain
 }
 
+const settledRun = (db: Db, runId: string | null) =>
+  !runId ||
+  ['succeeded', 'failed', 'cancelled', 'skipped'].includes(
+    db
+      .select({
+        status: run.status,
+      })
+      .from(run)
+      .where(eq(run.id, runId))
+      .get()?.status ?? 'failed',
+  )
+
+export const wantStrandedRunners = (db: Db, now = new Date()) => {
+  const stranded = db
+    .select({
+      session: conversation,
+      status: task.status,
+      sandboxStatus: sandbox.status,
+    })
+    .from(conversation)
+    .innerJoin(task, eq(task.id, conversation.task_id))
+    .innerJoin(sandbox, eq(sandbox.id, task.sandbox_id))
+    .where(
+      and(
+        eq(conversation.runner_wanted, false),
+        eq(conversation.origin, 'dashboard'),
+        eq(sandbox.status, 'running'),
+      ),
+    )
+    .all()
+
+  for (const { session, status } of stranded) {
+    if (status === 'failed' || runnerLive(session, now) || !settledRun(db, session.runner_run_id)) {
+      continue
+    }
+
+    if (inboxItems(db, session, 0).some((item) => item.kind === 'prompt')) {
+      wantRunner(db, session.id)
+    }
+  }
+}
+
 export const startPendingRunners = (db: Db, reconcile: (station: string) => void) => {
+  wantStrandedRunners(db)
+
   const wanted = db
     .select({
       session: conversation,
