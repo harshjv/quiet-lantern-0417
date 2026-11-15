@@ -112,6 +112,7 @@ export type TurnItem =
   | { kind: 'message'; id: string; text: string }
   | { kind: 'live'; id: string; text: string }
   | { kind: 'tools'; id: string; calls: ToolCall[] }
+  | { kind: 'note'; id: string; text: string }
 
 export type Turn = {
   key: string
@@ -120,7 +121,16 @@ export type Turn = {
   startedAt: string | null
   endedAt: string | null
   failure: string | null
+  stopped: boolean
   items: TurnItem[]
+}
+
+const notificationTag = '<task-notification>'
+
+const notificationNote = (text: string) => {
+  const summary = /<summary>([\s\S]*?)<\/summary>/.exec(text)?.[1]?.trim()
+
+  return summary || 'Background work finished'
 }
 
 const newTurn = (
@@ -135,6 +145,7 @@ const newTurn = (
   startedAt,
   endedAt: null,
   failure: null,
+  stopped: false,
   items: [],
 })
 
@@ -178,6 +189,15 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
 
     switch (event.type) {
       case 'prompt':
+        if (event.data.text.trimStart().startsWith(notificationTag)) {
+          current(event).items.push({
+            kind: 'note',
+            id: event.id,
+            text: notificationNote(event.data.text),
+          })
+          break
+        }
+
         turns.push(newTurn(event.id, event.data.text, event.at, event.data.by ?? null))
         break
       case 'message':
@@ -245,9 +265,17 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
         )
         break
 
-      case 'turn.ended':
-        current(event).endedAt ??= event.at
+      case 'turn.ended': {
+        const turn = current(event)
+
+        turn.endedAt ??= event.at
+
+        if (event.data.reason === 'interrupted') {
+          turn.stopped = true
+        }
+
         break
+      }
 
       case 'turn.failed': {
         const turn = current(event)

@@ -470,7 +470,7 @@ export const sandboxRoutes = (kit: Kit) => {
       invalid([
         {
           path: '/workspace/repository',
-          message: 'the last path segment, without .git, must be a lowercase slug',
+          message: 'the last path segment, without .git, needs at least one letter or digit',
         },
       ])
     }

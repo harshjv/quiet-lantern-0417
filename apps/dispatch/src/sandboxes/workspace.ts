@@ -74,6 +74,9 @@ export const repositoryName = (repository: string) =>
     .at(-1)!
     .replace(/\.git$/, '')
     .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63)
 
 export const isRepositoryName = (name: string) => new RegExp(slugPattern).test(name)
 

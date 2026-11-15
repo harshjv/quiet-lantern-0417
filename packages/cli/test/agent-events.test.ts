@@ -102,7 +102,7 @@ test('a prompt, a message batch and a turn end map their text', () => {
   )
 })
 
-test('tool events carry a one line summary of the input', () => {
+test('tool events carry the whole input as their summary', () => {
   assert.deepEqual(
     map({
       hook_event_name: 'PreToolUse',
@@ -115,7 +115,7 @@ test('tool events carry a one line summary of the input', () => {
     {
       tool_use_id: 'tu1',
       name: 'Bash',
-      summary: 'ls -la',
+      summary: 'ls -la\necho second line',
     },
   )
   assert.equal(

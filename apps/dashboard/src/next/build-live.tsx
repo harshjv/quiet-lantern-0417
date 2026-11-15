@@ -188,17 +188,24 @@ function ToolCallView({ call }: { call: ToolCall }) {
       <ToolHeader
         type="dynamic-tool"
         toolName={call.name}
-        title={call.summary}
+        title={call.summary.split('\n', 1)[0]}
         state={toolState[call.state]}
       />
-      {call.output && (
-        <ToolContent>
+      <ToolContent className="flex flex-col gap-3 p-3">
+        <pre className="bg-muted p-3 font-mono text-xs break-all whitespace-pre-wrap">
+          {call.summary}
+        </pre>
+        {call.output ? (
           <ToolOutput
             output={call.state === 'failed' ? undefined : call.output}
             errorText={call.state === 'failed' ? call.output : undefined}
           />
-        </ToolContent>
-      )}
+        ) : (
+          <p className="font-mono text-xs text-muted-foreground">
+            {call.state === 'running' ? 'Running' : 'Output is kept only for calls that fail.'}
+          </p>
+        )}
+      </ToolContent>
     </Tool>
   )
 }
@@ -214,12 +221,17 @@ function TurnView({ turn }: { turn: Turn }) {
       {turn.items.map((item) =>
         item.kind === 'tools' ? (
           item.calls.map((call) => <ToolCallView key={call.id} call={call} />)
+        ) : item.kind === 'note' ? (
+          <p key={item.id} className="font-mono text-xs text-muted-foreground">
+            {item.text}
+          </p>
         ) : (
           <AgentSays key={`${item.kind}-${item.id}`}>
             <MessageResponse>{item.text}</MessageResponse>
           </AgentSays>
         ),
       )}
+      {turn.stopped && <p className="font-mono text-xs text-muted-foreground">Stopped</p>}
       {turn.failure && (
         <Notice tone="danger" title="This turn failed">
           {turn.failure}
@@ -457,13 +469,33 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
   const preset = workspaceAgents[agent]
   const url = repositoryUrl(repository)
   const chosen = project || projects[0]?.id || ''
+  const projectKeys = useQuery({
+    queryKey: ['variables', 'project', chosen],
+    queryFn: () =>
+      unwrap(
+        api.v1
+          .projects({
+            project: chosen,
+          })
+          .variables.get(),
+      ),
+    enabled: Boolean(chosen),
+  })
+  const keyMissing =
+    projectKeys.data !== undefined &&
+    !preset.keys.some((key) => projectKeys.data.items.some((item) => item.key === key))
+  const asking =
+    blocked?.kind === 'token' ? 'token' : blocked?.kind === 'key' || keyMissing ? 'key' : null
   const start = useMutation({
     mutationFn: async (prompt: string) => {
-      if (blocked?.kind === 'key' && secret.trim()) {
+      if (asking === 'key' && secret.trim()) {
         await storeProjectKey(chosen, credentialKey(preset.keys, secret), secret)
+        void queries.invalidateQueries({
+          queryKey: ['variables', 'project', chosen],
+        })
       }
 
-      if (blocked?.kind === 'token' && secret.trim()) {
+      if (asking === 'token' && secret.trim()) {
         await storeProjectKey(chosen, githubTokenKey, secret)
       }
 
@@ -527,22 +559,20 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
           />
         </div>
       </div>
-      {(blocked?.kind === 'key' || blocked?.kind === 'token') && (
+      {asking && (
         <Notice
           tone="warning"
           title={
-            blocked.kind === 'key'
-              ? `${chosen} has no ${preset.keyLabel}`
-              : `${githubTokenLabel} needed`
+            asking === 'key' ? `${chosen} has no ${preset.keyLabel}` : `${githubTokenLabel} needed`
           }
         >
           <span className="flex flex-col gap-2">
-            {blocked.kind === 'key'
+            {asking === 'key'
               ? `${preset.keyHelp} Stationly stores it sealed for the whole project.`
               : githubTokenHelp(chosen, repositoryName(url ?? repository))}
             <Input
               type="password"
-              aria-label={blocked.kind === 'key' ? preset.keyLabel : githubTokenLabel}
+              aria-label={asking === 'key' ? preset.keyLabel : githubTokenLabel}
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
             />

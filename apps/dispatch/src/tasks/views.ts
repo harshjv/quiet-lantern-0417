@@ -19,7 +19,16 @@ export const titleOf = (text: string) => {
   const line = text.split('\n').find((part) => part.trim()) ?? text
   const flat = line.replace(/\s+/g, ' ').trim()
 
-  return Array.from(flat).slice(0, titleLength).join('') || 'Untitled task'
+  const chars = Array.from(flat)
+
+  if (chars.length <= titleLength) {
+    return flat || 'Untitled task'
+  }
+
+  const cut = chars.slice(0, titleLength - 1).join('')
+  const space = cut.lastIndexOf(' ')
+
+  return `${(space > titleLength / 2 ? cut.slice(0, space) : cut).trimEnd()}…`
 }
 
 export const branchSlug = (title: string) =>

@@ -47,14 +47,12 @@ const text = (value: unknown) => {
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
 
-const firstLine = (value: string) => value.split('\n', 1)[0]!
-
 export const summaryOf = (tool: string, input: unknown) => {
   const fields = record(input)
   const named = text(fields[summaryKeys[tool] ?? ''])
   const first = named ?? Object.values(fields).find((value) => typeof value === 'string')
 
-  return clipped(firstLine(typeof first === 'string' ? first : '')).text
+  return clipped(typeof first === 'string' ? first : '').text
 }
 
 export const attentionKindOf = (tool: string | undefined) => {
