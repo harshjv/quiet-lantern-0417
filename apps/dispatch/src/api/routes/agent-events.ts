@@ -114,9 +114,9 @@ export const agentEventRoutes = (kit: Kit) => {
         const after = query.after ?? 0
         const deadline = Date.now() + Math.min(query.wait_s ?? 0, maxInboxWaitS) * 1000
 
-        for (;;) {
-          touchRunner(db, session.id)
+        touchRunner(db, session.id)
 
+        for (;;) {
           const items = inboxItems(db, session, after)
 
           if (items.length || Date.now() >= deadline || request.signal.aborted) {
