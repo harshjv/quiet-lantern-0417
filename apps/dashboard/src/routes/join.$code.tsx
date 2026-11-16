@@ -85,7 +85,7 @@ function Join() {
       return
     }
 
-    window.location.assign('/next.html')
+    window.location.assign('/')
   }
 
   return (

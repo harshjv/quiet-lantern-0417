@@ -179,7 +179,7 @@ function Previews({ scope }: { scope: string | null }) {
     <Section title="Previews" count={previews.length}>
       {previews.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No previews. A pull request on a connected repository opens one.
+          No previews. Make a preview from a task, or open a pull request on a connected repository.
         </p>
       ) : (
         <ItemList>

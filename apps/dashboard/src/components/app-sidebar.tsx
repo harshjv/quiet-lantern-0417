@@ -149,7 +149,7 @@ export function AppSidebar({
       {admin && (
         <div className="shrink-0 px-2 pb-2">
           <Button asChild variant="outline" className="w-full justify-start" onClick={onOpen}>
-            <a href="/next.html">
+            <a href="/">
               <Plus /> New task
             </a>
           </Button>

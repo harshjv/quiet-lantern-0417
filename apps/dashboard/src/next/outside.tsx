@@ -1,12 +1,4 @@
-import {
-  Bell,
-  Bot,
-  KeyRound,
-  Server,
-  Settings as SettingsIcon,
-  Users,
-  type LucideIcon,
-} from 'lucide-react'
+import { Bell, KeyRound, Users, type LucideIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import {
@@ -21,15 +13,12 @@ import { toneText } from '@/lib/tone'
 
 import { Account } from './account'
 import type { Place } from './app'
-import { Assistants } from './assistants'
 import { Inbox, useInboxCount } from './inbox'
-import { Servers } from './servers'
-import { Settings } from './settings'
-import { Team } from './team'
+import { LiveTeam } from './team-live'
 
 type Go = (next: Partial<Place>) => void
 
-export type Page = 'inbox' | 'account' | 'team' | 'assistants' | 'servers' | 'settings'
+export type Page = 'inbox' | 'account' | 'team'
 
 export const pages: {
   id: Page
@@ -57,28 +46,7 @@ export const pages: {
     title: 'Team',
     icon: Users,
     group: 'team',
-    body: Team,
-  },
-  {
-    id: 'assistants',
-    title: 'Assistants',
-    icon: Bot,
-    group: 'team',
-    body: Assistants,
-  },
-  {
-    id: 'servers',
-    title: 'Servers',
-    icon: Server,
-    group: 'team',
-    body: Servers,
-  },
-  {
-    id: 'settings',
-    title: 'Settings',
-    icon: SettingsIcon,
-    group: 'team',
-    body: Settings,
+    body: LiveTeam,
   },
 ]
 

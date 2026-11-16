@@ -39,14 +39,14 @@ export const Route = createFileRoute('/login')({
       return
     }
 
-    if (session && !(next && serverPage(next))) {
-      throw redirect(
-        next
-          ? nextLocation(next)
-          : {
-              to: '/',
-            },
-      )
+    if (session && !next) {
+      window.location.assign('/')
+
+      return
+    }
+
+    if (session && next && !serverPage(next)) {
+      throw redirect(nextLocation(next))
     }
   },
   head: () => titled('Sign in'),
@@ -95,13 +95,13 @@ function Login() {
       return
     }
 
-    await navigate(
-      target
-        ? nextLocation(target)
-        : {
-            to: '/',
-          },
-    )
+    if (!target) {
+      window.location.assign('/')
+
+      return
+    }
+
+    await navigate(nextLocation(target))
   }
 
   const withPasskey = async () => {
@@ -126,7 +126,7 @@ function Login() {
     setError(null)
     const result = await authClient.signIn.social({
       provider: 'github',
-      callbackURL: '/next.html',
+      callbackURL: '/',
       errorCallbackURL: '/login?github=failed',
     })
 

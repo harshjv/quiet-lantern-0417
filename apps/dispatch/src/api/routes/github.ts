@@ -152,7 +152,7 @@ export const githubRoutes = (kit: Kit) => {
     .router('github', '')
     .get(
       '/github/connect',
-      async ({ request, query, set }) => {
+      async ({ request, query }) => {
         const principal = await human(request, 'Connecting a GitHub App')
         const state = randomBytes(32).toString('base64url')
         const origin = dashboardOrigin(request)
@@ -192,10 +192,15 @@ export const githubRoutes = (kit: Kit) => {
         }
         const action = `${githubWeb()}${query.org ? `/organizations/${encodeURIComponent(query.org)}` : ''}/settings/apps/new?state=${state}`
 
-        set.headers['content-type'] = 'text/html; charset=utf-8'
-        set.headers['cache-control'] = 'no-store'
-
-        return `<!doctype html><html><head><meta charset="utf-8"><title>Connect GitHub</title></head><body><form id="f" method="post" action="${escapeHtml(action)}"><input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}"><button type="submit">Create the GitHub App</button></form><script>document.getElementById('f').submit()</script></body></html>`
+        return new Response(
+          `<!doctype html><html><head><meta charset="utf-8"><title>Connect GitHub</title></head><body><form id="f" method="post" action="${escapeHtml(action)}"><input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}"><button type="submit">Create the GitHub App</button></form><script>document.getElementById('f').submit()</script></body></html>`,
+          {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'cache-control': 'no-store',
+            },
+          },
+        )
       },
       {
         operation: {
@@ -381,7 +386,7 @@ export const githubRoutes = (kit: Kit) => {
               },
             )
             set.status = 302
-            set.headers.location = `${dashboardOrigin(request)}/github?installation=${row.id}`
+            set.headers.location = `${dashboardOrigin(request)}/#outside/account`
 
             return ''
           } catch (error) {

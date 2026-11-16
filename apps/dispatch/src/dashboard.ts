@@ -148,6 +148,7 @@ const respond = (request: Request, asset: Asset, version: string) => {
 export const createDashboard = (dir: string, version: string) => {
   const assets = load(dir)
   const index = assets.get('/index.html')
+  const workbench = assets.get('/next.html')
 
   return {
     built: Boolean(index),
@@ -177,6 +178,10 @@ export const createDashboard = (dir: string, version: string) => {
 
       if (!index) {
         return null
+      }
+
+      if (path === '/' && workbench) {
+        return respond(request, workbench, version)
       }
 
       const asset = assets.get(path)

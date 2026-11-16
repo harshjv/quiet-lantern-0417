@@ -178,7 +178,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
       action: first
         ? (next) => (
             <Button asChild size="sm" variant={variant(next)}>
-              <a href="/next.html">New task</a>
+              <a href="/">New task</a>
             </Button>
           )
         : undefined,

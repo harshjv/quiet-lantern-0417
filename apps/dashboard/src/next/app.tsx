@@ -41,18 +41,15 @@ import { inventoryQuery, meQuery } from '@/lib/queries'
 import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
-import { BuildScreen } from './build'
-import { Catalogue } from './catalogue'
-import { useLive, useProjectList, useTaskRows } from './data'
-import { projects, taskTone, type TaskState } from './fixtures'
+import { LiveBuild } from './build-live'
+import { taskTone, useProjectList, useTaskRows, type TaskState } from './data'
 import { useInboxCount } from './inbox'
-import { ObserveScreen } from './observe'
+import { LiveObserve } from './observe-live'
 import { failedApps, troubledApps, useLiveApps } from './ops-live'
 import { OutsideNav, OutsideScreen, pages } from './outside'
-import { ShipScreen } from './ship'
-import { StoryGuide, useWorld } from './story'
+import { LiveShip } from './ship-live'
 
-export type Mode = 'build' | 'ship' | 'observe' | 'outside' | 'catalogue'
+export type Mode = 'build' | 'ship' | 'observe' | 'outside'
 export type Place = { mode: Mode; project: string | null; view: string | null; fix?: string | null }
 
 const read = (): Place => {
@@ -61,18 +58,15 @@ const read = (): Place => {
   const project = new URLSearchParams(query).get('p')
 
   return {
-    mode:
-      (['build', 'ship', 'observe', 'outside', 'catalogue'] as const).find((m) => m === mode) ??
-      'build',
-    project: projects.some((p) => p.id === project) ? project : null,
-    view: view || (path ? null : 'paise'),
+    mode: (['build', 'ship', 'observe', 'outside'] as const).find((m) => m === mode) ?? 'build',
+    project: project || null,
+    view: view || null,
   }
 }
 
 export function App() {
   const [place, setPlace] = useState(read)
   const projectList = useProjectList()
-  const live = useLive()
 
   useEffect(() => {
     document.documentElement.classList.add('workbench')
@@ -118,10 +112,10 @@ export function App() {
         </SidebarHeader>
         <SidebarContent>
           {place.mode === 'build' && <TaskList place={place} go={go} />}
-          {place.mode === 'ship' && <ProjectList place={place} go={go} kind="ship" />}
-          {place.mode === 'observe' && <ProjectList place={place} go={go} kind="observe" />}
+          {(place.mode === 'ship' || place.mode === 'observe') && (
+            <ProjectList place={place} go={go} />
+          )}
           {place.mode === 'outside' && <OutsideNav place={place} go={go} />}
-          {place.mode === 'catalogue' && <ProjectList place={place} go={go} kind="ship" />}
         </SidebarContent>
         <SidebarFooter>
           <AccountMenu go={go} />
@@ -154,7 +148,7 @@ export function App() {
             variant="outline"
             spacing={0}
             className="justify-self-center"
-            value={place.mode === 'catalogue' || place.mode === 'outside' ? '' : place.mode}
+            value={place.mode === 'outside' ? '' : place.mode}
             onValueChange={(v) =>
               v &&
               go({
@@ -177,13 +171,11 @@ export function App() {
             <InboxButton go={go} />
           </div>
         </header>
-        {place.mode !== 'catalogue' && !live && <StoryGuide go={go} />}
         <div className="min-h-0 flex-1 overflow-auto">
-          {place.mode === 'build' && <BuildScreen place={place} go={go} />}
-          {place.mode === 'ship' && <ShipScreen place={place} go={go} />}
-          {place.mode === 'observe' && <ObserveScreen place={place} go={go} />}
+          {place.mode === 'build' && <LiveBuild place={place} go={go} />}
+          {place.mode === 'ship' && <LiveShip place={place} go={go} />}
+          {place.mode === 'observe' && <LiveObserve place={place} go={go} />}
           {place.mode === 'outside' && <OutsideScreen place={place} go={go} />}
-          {place.mode === 'catalogue' && <Catalogue />}
         </div>
       </SidebarInset>
     </SidebarProvider>
@@ -265,29 +257,13 @@ function TaskList({ place, go }: Nav) {
   })
 }
 
-function ProjectList({ place, go, kind }: Nav & { kind: 'ship' | 'observe' }) {
-  const { apps, incidents } = useWorld()
-  const live = useLive()
+function ProjectList({ place, go }: Nav) {
   const listed = useProjectList()
   const liveApps = useLiveApps(null)
   const toneOf = (id: string) => {
-    if (live) {
-      const own = liveApps.filter((app) => app.environment.project.name === id)
+    const own = liveApps.filter((app) => app.environment.project.name === id)
 
-      return failedApps(own).length ? 'danger' : troubledApps(own).length ? 'warning' : 'success'
-    }
-
-    const found = incidents.filter((i) => i.project === id)
-
-    return kind === 'ship'
-      ? apps.some((a) => a.project === id && a.state === 'failed')
-        ? 'danger'
-        : 'success'
-      : found.some((i) => i.tone === 'danger')
-        ? 'danger'
-        : found.length
-          ? 'warning'
-          : 'success'
+    return failedApps(own).length ? 'danger' : troubledApps(own).length ? 'warning' : 'success'
   }
 
   return (
@@ -339,30 +315,10 @@ const initialsOf = (name: string) =>
     .join('') || '?'
 
 function useAccount() {
-  const live = useLive()
-  const session = useQuery({
-    ...sessionQuery,
-    enabled: live,
-  })
-  const inventory = useQuery({
-    ...inventoryQuery,
-    enabled: live,
-  })
-  const me = useQuery({
-    ...meQuery,
-    enabled: live,
-  })
+  const session = useQuery(sessionQuery)
+  const inventory = useQuery(inventoryQuery)
+  const me = useQuery(meQuery)
   const admin = isInstanceAdmin(me.data?.scopes ?? [])
-
-  if (!live) {
-    return {
-      name: 'Harsh',
-      detail: '@harshjv',
-      role: 'Admin',
-      version: '0.1.3-rc.9',
-    }
-  }
-
   const user = session.data?.user
 
   return {
@@ -375,7 +331,6 @@ function useAccount() {
 
 function AccountMenu({ go }: { go: (next: Partial<Place>) => void }) {
   const account = useAccount()
-  const live = useLive()
 
   return (
     <DropdownMenu>
@@ -413,29 +368,16 @@ function AccountMenu({ go }: { go: (next: Partial<Place>) => void }) {
             </DropdownMenuItem>
           ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() =>
-            go({
-              mode: 'catalogue',
-            })
-          }
-        >
-          <Blocks /> Design catalogue
-        </DropdownMenuItem>
         {account.version && (
           <DropdownMenuItem className="text-muted-foreground">
             Stationly {account.version}
           </DropdownMenuItem>
         )}
-        {live && (
-          <DropdownMenuItem
-            onClick={() =>
-              void authClient.signOut().then(() => window.location.assign('/login?next=/next.html'))
-            }
-          >
-            <LogOut /> Sign out
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem
+          onClick={() => void authClient.signOut().then(() => window.location.assign('/login'))}
+        >
+          <LogOut /> Sign out
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

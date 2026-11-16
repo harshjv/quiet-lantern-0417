@@ -20,7 +20,6 @@ import type { ReactNode } from 'react'
 import { Message, MessageContent } from '@/components/ai-elements/message'
 import { StateIcon, type State } from '@/components/state-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -131,7 +130,7 @@ export function Section({
   )
 }
 
-export function IconTile({ icon: Icon, tone = 'neutral' }: { icon: LucideIcon; tone?: Tone }) {
+function IconTile({ icon: Icon, tone = 'neutral' }: { icon: LucideIcon; tone?: Tone }) {
   return (
     <span
       className={cn(
@@ -173,47 +172,6 @@ export function ItemRow({
   )
 }
 
-export function Stats({ items }: { items: { value: string; label: string }[] }) {
-  return (
-    <div className="grid grid-cols-3 divide-x border-t">
-      {items.map((item) => (
-        <div key={item.label} className="flex flex-col gap-1 px-4 py-3 first:pl-0">
-          <span className="font-display text-lg leading-none tabular-nums">{item.value}</span>
-          <span className="font-mono text-xs text-muted-foreground uppercase">{item.label}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-export function PixelBars({
-  values,
-  tone,
-  tall,
-  max,
-}: {
-  values: number[]
-  tone?: Tone
-  tall?: boolean
-  max?: number
-}) {
-  const top = max ?? Math.max(...values)
-
-  return (
-    <div className={cn('flex items-end gap-0.5', tall ? 'h-24' : 'h-8')} aria-hidden>
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className={cn('flex-1', tone ? 'bg-current ' + toneText[tone] : 'bg-brand-4')}
-          style={{
-            height: `${Math.max(1, Math.round((v / top) * 8)) * 12.5}%`,
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
 export function Meta({
   icon: Icon,
   label,
@@ -237,7 +195,7 @@ export function Meta({
   )
 }
 
-export type FactKind =
+type FactKind =
   | 'via'
   | 'project'
   | 'user'
@@ -309,7 +267,7 @@ const fact: Record<FactKind, { icon: LucideIcon; label: string }> = {
   },
 }
 
-export function Facts({ facts }: { facts: Fact[] }) {
+function Facts({ facts }: { facts: Fact[] }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
       {facts.map((f) => (
@@ -317,56 +275,6 @@ export function Facts({ facts }: { facts: Fact[] }) {
           {f.text}
         </Meta>
       ))}
-    </div>
-  )
-}
-
-export function SettingsCard({ children }: { children: ReactNode }) {
-  return <Card className="gap-0 px-6 py-2">{children}</Card>
-}
-
-export function SettingRow({
-  label,
-  why,
-  children,
-}: {
-  label: string
-  why?: string
-  children: ReactNode
-}) {
-  return (
-    <div className="grid gap-3 border-b py-4 last:border-b-0 sm:grid-cols-3">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm font-medium">{label}</span>
-        {why && <span className="text-xs text-muted-foreground">{why}</span>}
-      </div>
-      <div className="sm:col-span-2">{children}</div>
-    </div>
-  )
-}
-
-export function Chips({ items }: { items: string[] }) {
-  return (
-    <div className="flex gap-1">
-      {items.map((p) => (
-        <span key={p} className="border px-1.5 font-mono text-xs">
-          {p}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-export function Person({ name, sub }: { name: string; sub?: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <Avatar className="size-6">
-        <AvatarFallback className="text-xs">{name.slice(0, 1)}</AvatarFallback>
-      </Avatar>
-      <div className="flex flex-col">
-        <span>{name}</span>
-        {sub && <span className="font-mono text-xs text-muted-foreground">{sub}</span>}
-      </div>
     </div>
   )
 }

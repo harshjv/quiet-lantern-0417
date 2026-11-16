@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { agentLabel } from '@stationly/protocol'
 
@@ -8,13 +8,31 @@ import { api, ApiFailure, unwrap, type Task as LiveTask } from '@/lib/api'
 import { useEventStream } from '@/lib/event-stream'
 import { shortAgo } from '@/lib/format'
 import { projectsQuery, tasksQuery } from '@/lib/queries'
+import type { Tone } from '@/lib/tone'
 
-import { projects as mockProjects, type Project, type Task, type TaskState } from './fixtures'
-import { useWorld } from './story'
+export type Project = { id: string; name: string }
 
-type Source = 'probing' | 'live' | 'mock'
+export type TaskState = 'working' | 'waiting' | 'finished' | 'queued' | 'failed' | 'setup'
 
-const SourceContext = createContext<Source>('probing')
+export type Task = {
+  id: string
+  title: string
+  project: string
+  state: TaskState
+  reason: string
+  age: string
+}
+
+export const taskTone: Record<TaskState, Tone> = {
+  working: 'info',
+  setup: 'info',
+  waiting: 'warning',
+  finished: 'success',
+  queued: 'neutral',
+  failed: 'danger',
+}
+
+type Source = 'probing' | 'ready' | 'unreachable'
 
 const client = new QueryClient({
   defaultOptions: {
@@ -29,15 +47,15 @@ const probe = async (): Promise<Source> => {
   try {
     await unwrap(api.v1.me.get())
 
-    return 'live'
+    return 'ready'
   } catch (error) {
     if (error instanceof ApiFailure && error.status === 401) {
-      window.location.assign(`/login?next=${encodeURIComponent('/next.html')}`)
+      window.location.assign(`/login?next=${encodeURIComponent(location.pathname)}`)
 
       return 'probing'
     }
 
-    return 'mock'
+    return 'unreachable'
   }
 }
 
@@ -86,17 +104,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return null
   }
 
+  if (source === 'unreachable') {
+    return (
+      <p className="p-6 text-sm text-muted-foreground">
+        Stationly could not be reached. Reload the page to try again.
+      </p>
+    )
+  }
+
   return (
     <QueryClientProvider client={client}>
-      <SourceContext.Provider value={source}>
-        {source === 'live' && <LiveEvents />}
-        {children}
-      </SourceContext.Provider>
+      <LiveEvents />
+      {children}
     </QueryClientProvider>
   )
 }
-
-export const useLive = () => useContext(SourceContext) === 'live'
 
 const liveState: Record<LiveTask['status'], TaskState> = {
   queued: 'queued',
@@ -134,32 +156,19 @@ export const asRow = (task: LiveTask): Task => ({
   state: liveState[task.status],
   reason: reasonOf(task),
   age: shortAgo(task.last_event_at ?? task.created_at),
-  owner: 'you',
 })
 
 export function useTaskRows(): Task[] {
-  const live = useLive()
-  const world = useWorld()
-  const { data } = useQuery({
-    ...tasksQuery,
-    enabled: live,
-  })
+  const { data } = useQuery(tasksQuery)
 
-  return live ? (data?.items ?? []).map(asRow) : world.tasks
+  return (data?.items ?? []).map(asRow)
 }
 
 export function useProjectList(): Project[] {
-  const live = useLive()
-  const { data } = useQuery({
-    ...projectsQuery,
-    enabled: live,
-  })
+  const { data } = useQuery(projectsQuery)
 
-  return live
-    ? (data?.items ?? []).map((p) => ({
-        id: p.name,
-        name: p.name,
-        repos: [],
-      }))
-    : mockProjects
+  return (data?.items ?? []).map((p) => ({
+    id: p.name,
+    name: p.name,
+  }))
 }

@@ -1,35 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, GitBranch, KeyRound, Laptop, Mail, Terminal } from 'lucide-react'
+import { GitBranch, KeyRound } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
+import { isInstanceAdmin } from '@/lib/agent-session'
 import { api, idempotency, unwrap } from '@/lib/api'
 import { authClient, authMessage } from '@/lib/auth'
 import { plural } from '@/lib/format'
+import { meQuery } from '@/lib/queries'
 
-import { useLive } from './data'
-import { yourKeys } from './fixtures'
-import { devices, emailWhen } from './fixtures-outside'
 import { ItemList, ItemRow, Notice, Page, Section, StatusPill } from './parts'
-
-const keys = [
-  {
-    icon: KeyRound,
-    name: 'Claude',
-    set: yourKeys.claude,
-    why: 'every Claude Code task you start',
-  },
-  {
-    icon: Bot,
-    name: 'Codex',
-    set: yourKeys.codex,
-    why: 'every Codex task you start',
-  },
-]
 
 function KeyRow({ name, set }: { name: string; set: boolean }) {
   const queries = useQueryClient()
@@ -164,7 +145,7 @@ function GitHubConnection() {
     setProblem(null)
     const result = await authClient.linkSocial({
       provider: 'github',
-      callbackURL: '/next.html',
+      callbackURL: '/',
     })
 
     if (result.error) {
@@ -237,128 +218,91 @@ function GitHubConnection() {
   )
 }
 
-export function Account() {
-  const live = useLive()
+function GitHubApp() {
+  const me = useQuery(meQuery)
+  const admin = isInstanceAdmin(me.data?.scopes ?? [])
+  const connection = useQuery({
+    queryKey: ['github', 'connection'],
+    queryFn: () => unwrap(api.v1.github.get()),
+    enabled: admin,
+  })
+
+  if (!admin || !connection.data) {
+    return null
+  }
+
+  const apps = connection.data.apps
 
   return (
-    <Page title="Your account">
-      {live && <GitHubConnection />}
-      {live ? (
-        <LiveKeys />
-      ) : (
-        <Section
-          title="Your keys"
-          count={keys.length + 1}
-          note="Tasks run on your own keys. Nobody else's task ever uses them, unless you invite someone to reply in yours."
-        >
-          <ItemList>
-            {keys.map((k) => (
-              <ItemRow
-                key={k.name}
-                icon={k.icon}
-                tone={k.set ? 'neutral' : 'warning'}
-                title={
-                  <>
-                    {k.name}
-                    <StatusPill tone={k.set ? 'success' : 'warning'}>
-                      {k.set ? 'Set' : 'Not set'}
-                    </StatusPill>
-                  </>
-                }
-                meta={[
-                  {
-                    kind: 'via',
-                    text: k.why,
-                  },
-                ]}
-                action={
-                  k.set ? (
-                    <>
-                      <Button size="sm" variant="outline">
-                        Replace
-                      </Button>
-                      <Button size="sm" variant="ghost">
-                        Remove
-                      </Button>
-                    </>
-                  ) : (
-                    <Button size="sm">Add key</Button>
-                  )
-                }
-              />
-            ))}
+    <Section
+      title="GitHub App"
+      note="Stationly reads, pushes and opens pull requests through this App, on the repositories it is installed on. Install it only where tasks should ship."
+    >
+      <ItemList>
+        {apps.length === 0 ? (
+          <ItemRow
+            icon={GitBranch}
+            tone="warning"
+            title="No GitHub App connected"
+            meta={[]}
+            action={
+              <Button asChild size="sm">
+                <a href="/github/connect">Connect the GitHub App</a>
+              </Button>
+            }
+          />
+        ) : (
+          apps.map((app) => (
             <ItemRow
+              key={app.id}
               icon={GitBranch}
+              tone={app.installation ? 'neutral' : 'warning'}
               title={
                 <>
-                  GitHub
-                  <StatusPill tone="success">@harshjv</StatusPill>
+                  {app.slug}
+                  <StatusPill tone={app.installation ? 'success' : 'warning'}>
+                    {app.installation ? 'Installed' : 'Not installed'}
+                  </StatusPill>
                 </>
               }
-              meta={[
-                {
-                  kind: 'via',
-                  text: 'your tasks clone and push as you',
-                },
-              ]}
+              meta={
+                app.installation
+                  ? [
+                      {
+                        kind: 'user',
+                        text: app.installation.account,
+                      },
+                      {
+                        kind: 'files',
+                        text:
+                          app.installation.repository_selection === 'all'
+                            ? 'Every repository of the account'
+                            : 'Selected repositories',
+                      },
+                    ]
+                  : []
+              }
               action={
-                <Button size="sm" variant="outline">
-                  Manage on GitHub
+                <Button asChild size="sm" variant="outline">
+                  <a href={app.install_url} target="_blank" rel="noreferrer">
+                    {app.installation ? 'Change repositories' : 'Install'}
+                  </a>
                 </Button>
               }
             />
-          </ItemList>
-        </Section>
-      )}
+          ))
+        )}
+      </ItemList>
+    </Section>
+  )
+}
 
-      <Section icon={Mail} title="Email me when">
-        <Card className="gap-0 divide-y py-0">
-          {emailWhen.map((e, i) => (
-            <Label key={e.text} className="flex items-center gap-3 px-4 py-3 font-normal">
-              <span className="flex-1 text-sm">{e.text}</span>
-              <Switch id={`email-${i}`} defaultChecked={e.on} />
-            </Label>
-          ))}
-        </Card>
-      </Section>
-
-      <Section title="Signed in" count={devices.length}>
-        <ItemList>
-          {devices.map((d) => (
-            <ItemRow
-              key={d.name}
-              icon={d.name.startsWith('sly') ? Terminal : Laptop}
-              title={
-                <>
-                  {d.name}
-                  {d.current && <StatusPill tone="info">This device</StatusPill>}
-                </>
-              }
-              meta={[
-                {
-                  kind: 'time',
-                  text: d.used === 'now' ? 'active now' : `last used ${d.used}`,
-                },
-              ]}
-              action={
-                !d.current && (
-                  <Button size="sm" variant="outline">
-                    Sign out
-                  </Button>
-                )
-              }
-            />
-          ))}
-        </ItemList>
-      </Section>
-
-      <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
-        Stationly 0.1.3-rc.9
-        <span className="flex-1" />
-        <Button size="sm" variant="outline">
-          Sign out everywhere
-        </Button>
-      </div>
+export function Account() {
+  return (
+    <Page title="Your account">
+      <GitHubApp />
+      <GitHubConnection />
+      <LiveKeys />
     </Page>
   )
 }

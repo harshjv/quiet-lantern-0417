@@ -15,11 +15,7 @@ export const shipRequestsQuery = {
   queryFn: listShipRequests,
 }
 
-export const useShipRequests = (enabled: boolean) =>
-  useQuery({
-    ...shipRequestsQuery,
-    enabled,
-  }).data?.items ?? []
+export const useShipRequests = () => useQuery(shipRequestsQuery).data?.items ?? []
 
 export const shipStatusText: Record<ShipRequest['status'], string> = {
   pushing: 'Pushing the branch and opening the pull request',

@@ -184,15 +184,14 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
     return source.repo !== undefined && repoKey(source.repo) === wanted
   }
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
+  const originals = db
+    .select()
+    .from(service)
+    .where(eq(service.environment_id, proj.default_environment_id))
+    .all()
+    .filter(builtFrom)
 
-  if (
-    !db
-      .select()
-      .from(service)
-      .where(eq(service.environment_id, proj.default_environment_id))
-      .all()
-      .some(builtFrom)
-  ) {
+  if (!originals.length) {
     fail(
       'NOT_FOUND',
       `No app of project ${proj.name} is built from ${row.repository}.`,
@@ -209,7 +208,27 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
     .from(service)
     .where(eq(service.environment_id, preview.id))
     .all()
-    .filter(builtFrom)
+    .filter((entry) => originals.some((original) => original.name === entry.name))
+
+  for (const entry of targets) {
+    const source = entry.source as RepoSource & { type: string; dockerfile?: string }
+
+    if (source.type !== 'local') {
+      db.update(service)
+        .set({
+          source: {
+            type: 'local',
+            ...(source.dockerfile
+              ? {
+                  dockerfile: source.dockerfile,
+                }
+              : {}),
+          },
+        })
+        .where(eq(service.id, entry.id))
+        .run()
+    }
+  }
 
   const member = machineUserOf(db, row)
   const user = member?.name ?? workspaceUser.name
@@ -230,7 +249,10 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
     seconds: previewTokenSeconds,
   })
   const id = newId('run')
-  const pushArgs = targets.flatMap((entry) => [entry.id, (entry.source as RepoSource).path || '.'])
+  const pushArgs = targets.flatMap((entry) => [
+    entry.id,
+    (originals.find((original) => original.name === entry.name)!.source as RepoSource).path || '.',
+  ])
   const entries: [string, string][] = [
     ['STATIONLY_TOKEN', minted.key],
     ...(member ? ([['STATIONLY_MEMBER', member.name]] as [string, string][]) : []),

@@ -6,7 +6,7 @@ import { emit } from '../api/context.ts'
 import { fail } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { environment, run, sandbox, service, ship_request, task } from '../db/schema.ts'
+import { environment, project, run, sandbox, service, ship_request, task } from '../db/schema.ts'
 import { GitHubError, repoOf } from '../github/client.ts'
 import type { GitHub } from '../github/service.ts'
 import type { Log } from '../log.ts'
@@ -200,7 +200,7 @@ const pullRequestBody = (row: TaskRow, dashboardOrigin: string) =>
   [
     `Work from the Stationly task "${row.title}".`,
     '',
-    `Task: ${dashboardOrigin}/next.html#build/${row.id}`,
+    `Task: ${dashboardOrigin}/#build/${row.id}`,
   ]
     .join('\n')
     .trim()
@@ -222,18 +222,26 @@ const linkPreview = (db: Db, row: TaskRow, repo: string, number: number) => {
     .where(eq(environment.id, row.preview_environment_id))
     .run()
 
+  const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
+  const originals = db
+    .select()
+    .from(service)
+    .where(eq(service.environment_id, proj.default_environment_id))
+    .all()
+    .filter((entry) => (entry.source as RepoSource).repo === repo)
+
   for (const entry of db
     .select()
     .from(service)
     .where(eq(service.environment_id, row.preview_environment_id))
     .all()) {
-    const source = entry.source as RepoSource
+    const original = originals.find((candidate) => candidate.name === entry.name)
 
-    if (source.repo === repo) {
+    if (original) {
       db.update(service)
         .set({
           source: {
-            ...(entry.source as object),
+            ...(original.source as object),
             branch: row.branch,
           },
         })

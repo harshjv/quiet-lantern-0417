@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, Clock, ExternalLink, Eye, Folder, GitBranch, Rocket, Share2 } from 'lucide-react'
+import { Bot, Clock, ExternalLink, Eye, Folder, GitBranch, Rocket } from 'lucide-react'
 import { useReducer, useState } from 'react'
 
 import {
@@ -65,12 +65,11 @@ import { setupFailure } from '@/lib/setup-failure'
 import { toneText } from '@/lib/tone'
 
 import type { Place } from './app'
-import { TaskMenu } from './build-task'
-import { asRow, useProjectList } from './data'
+import { asRow, taskTone, useProjectList } from './data'
 import { fixTarget, useFixPrefill, type FixTarget } from './fix-live'
-import { taskTone } from './fixtures'
 import { AgentSays, Checklist, Meta, Notice, StatusPill, type Step } from './parts'
 import { PullRequestLink, ShipDecision, shipStatusText, type ShipRequest } from './ship-request'
+import { TaskMenu } from './task-menu'
 
 type Go = (next: Partial<Place>) => void
 
@@ -675,10 +674,7 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
             <Rocket /> {task.ship ? 'Ship again' : 'Ship it'}
           </Button>
         )}
-        <Button variant="ghost" size="sm" disabled>
-          <Share2 /> Share
-        </Button>
-        <TaskMenu branch={task.branch} own remove={() => remove.mutate()} />
+        <TaskMenu branch={task.branch} remove={() => remove.mutate()} />
       </div>
 
       <Conversation className="min-h-0 flex-1">
