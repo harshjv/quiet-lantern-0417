@@ -82,8 +82,10 @@ import {
   type SandboxSize,
   type StationCapabilities,
   type WorkspaceAgent as TaskAgent,
+  type TaskMachineValue,
   type TaskStatusValue,
   type tokenLevelValues,
+  type ToolApprovalStatusValue,
   type WorkspaceAgent,
 } from '@stationly/protocol'
 
@@ -212,6 +214,7 @@ export const project = sqliteTable(
     pr_environments: json<{ enabled: boolean; source_environment_id: string | null }>(
       'pr_environments',
     ).notNull(),
+    machine: json<{ slots: number; sandbox_id: string | null }>('machine'),
   },
   (table) => [
     uniqueIndex('project_name_unique').on(table.name),
@@ -298,15 +301,19 @@ export const service = sqliteTable(
 
 export type SandboxFailure = DiagnosisValue
 
+export type WorkspaceCleanup = { clone: string; worktree: string; branch: string; user?: string }
+
 export type SandboxWorkspace = {
+  kind?: TaskMachineValue
   agent: WorkspaceAgent
-  repository: string
+  repository: string | null
   branch: string | null
   path: string
   level: Level
   token_id: string
   setup_run_id: string
   task_branch: string | null
+  cleanup?: WorkspaceCleanup[]
 }
 
 export const sandbox = sqliteTable(
@@ -390,6 +397,11 @@ export const task = sqliteTable(
     agent: text('agent').$type<TaskAgent>().notNull(),
     model: text('model'),
     sandbox_id: text('sandbox_id').notNull(),
+    machine: text('machine').$type<TaskMachineValue>().notNull().default('own'),
+    worktree: text('worktree'),
+    port: integer('port'),
+    setup_run_id: text('setup_run_id'),
+    queued_at: timestamp('queued_at'),
     status: text('status').$type<TaskStatusValue>().notNull().default('setting_up'),
     attention: json<{ kind: NonNullable<AgentStatusRecord['kind']>; since: string }>('attention'),
     activity: json<AgentStatusRecord>('activity'),
@@ -397,7 +409,7 @@ export const task = sqliteTable(
     archived_at: timestamp('archived_at'),
   },
   (table) => [
-    uniqueIndex('task_sandbox_unique').on(table.sandbox_id),
+    index('task_sandbox').on(table.sandbox_id),
     index('task_project').on(table.project_id),
   ],
 )
@@ -484,6 +496,123 @@ export const task_inbox = sqliteTable(
   (table) => [
     uniqueIndex('task_inbox_task_seq_unique').on(table.task_id, table.seq),
     index('task_inbox_conversation').on(table.task_id, table.conversation_id, table.seq),
+  ],
+)
+
+export const member = sqliteTable('member', {
+  user_id: text('user_id').primaryKey(),
+  role: text('role', {
+    enum: ['admin', 'member'],
+  }).notNull(),
+  joined_by: text('joined_by'),
+  created_at: timestamp('created_at').notNull(),
+  removed_at: timestamp('removed_at'),
+})
+
+export const project_member = sqliteTable(
+  'project_member',
+  {
+    project_id: text('project_id')
+      .notNull()
+      .references(() => project.id, {
+        onDelete: 'cascade',
+      }),
+    user_id: text('user_id').notNull(),
+    added_by: json<ActorValue>('added_by').notNull(),
+    created_at: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.project_id, table.user_id],
+    }),
+    index('project_member_user').on(table.user_id),
+  ],
+)
+
+export const invite = sqliteTable(
+  'invite',
+  {
+    id: text('id').primaryKey(),
+    code_sha256: text('code_sha256').notNull(),
+    role: text('role', {
+      enum: ['admin', 'member'],
+    }).notNull(),
+    projects: json<string[]>('projects').notNull(),
+    created_by: json<ActorValue>('created_by').notNull(),
+    created_at: timestamp('created_at').notNull(),
+    expires_at: timestamp('expires_at').notNull(),
+    used_by: text('used_by'),
+    used_at: timestamp('used_at'),
+    revoked_at: timestamp('revoked_at'),
+  },
+  (table) => [uniqueIndex('invite_code_unique').on(table.code_sha256)],
+)
+
+export const member_key = sqliteTable(
+  'member_key',
+  {
+    user_id: text('user_id').notNull(),
+    name: text('name').notNull(),
+    ciphertext: bytes('ciphertext').notNull(),
+    data_key_id: text('data_key_id')
+      .notNull()
+      .references(() => data_key.id),
+    created_at: timestamp('created_at').notNull(),
+    updated_at: timestamp('updated_at').notNull(),
+    last_used_at: timestamp('last_used_at'),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.user_id, table.name],
+    }),
+  ],
+)
+
+export const machine_user = sqliteTable(
+  'machine_user',
+  {
+    sandbox_id: text('sandbox_id').notNull(),
+    user_id: text('user_id').notNull(),
+    uid: integer('uid').notNull(),
+    name: text('name').notNull(),
+    token_id: text('token_id'),
+    token_key: bytes('token_key'),
+    data_key_id: text('data_key_id').references(() => data_key.id),
+    created_at: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.sandbox_id, table.user_id],
+    }),
+    uniqueIndex('machine_user_uid_unique').on(table.sandbox_id, table.uid),
+  ],
+)
+
+export const tool_approval = sqliteTable(
+  'tool_approval',
+  {
+    task_id: text('task_id')
+      .notNull()
+      .references(() => task.id, {
+        onDelete: 'cascade',
+      }),
+    id: text('id').notNull(),
+    conversation_id: text('conversation_id').notNull(),
+    agent_id: text('agent_id'),
+    tool_name: text('tool_name').notNull(),
+    tool_input: json<Record<string, unknown>>('tool_input').notNull(),
+    status: text('status').$type<ToolApprovalStatusValue>().notNull().default('pending'),
+    decision: json<{ behavior: 'allow' | 'deny'; message: string | null }>('decision'),
+    decided_by: json<ActorValue>('decided_by'),
+    created_at: timestamp('created_at').notNull(),
+    expires_at: timestamp('expires_at').notNull(),
+    closed_at: timestamp('closed_at'),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.task_id, table.id],
+    }),
+    index('tool_approval_status').on(table.status, table.expires_at),
   ],
 )
 

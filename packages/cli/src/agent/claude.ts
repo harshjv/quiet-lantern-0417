@@ -1,18 +1,49 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { EventEmitter, on } from 'node:events'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 
+import { runnerAskRules, toolApprovalWaitS, type AgentEventInputValue } from '@stationly/protocol'
+
 import type { AgentAdapter, AgentExit } from './adapter.ts'
+import { claudeProgress } from './claude-progress.ts'
 
 export const runnerDir = () => join(homedir(), '.local', 'state', 'stationly', 'runner')
+
+export const approveHookTimeoutS = toolApprovalWaitS + 30
 
 export const claudeSettings = {
   permissions: {
     defaultMode: 'auto',
     denyInsteadOfPrompting: true,
+    ask: [...runnerAskRules],
+  },
+  hooks: {
+    PermissionRequest: [
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: '/usr/local/bin/sly agent approve',
+            timeout: approveHookTimeoutS,
+          },
+        ],
+      },
+    ],
+    PermissionDenied: [
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: '/usr/local/bin/sandbox-agent-hook',
+            timeout: 5,
+          },
+        ],
+      },
+    ],
   },
 } as const
 
@@ -27,6 +58,7 @@ export const claudeArgs = (
   'stream-json',
   '--verbose',
   '--replay-user-messages',
+  '--include-partial-messages',
   options.resume ? '--resume' : '--session-id',
   options.sessionId,
   ...(options.model ? ['--model', options.model] : []),
@@ -55,6 +87,14 @@ export const interruptLine = (requestId: string = randomUUID()) =>
   })}\n`
 
 const graceMs = 5000
+
+async function* progressEvents(live: EventEmitter): AsyncIterable<AgentEventInputValue> {
+  for await (const [event] of on(live, 'progress', {
+    close: ['end'],
+  })) {
+    yield event as AgentEventInputValue
+  }
+}
 
 export const isResult = (line: string) => {
   try {
@@ -86,6 +126,8 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
 
     child.stdin.on('error', () => undefined)
 
+    const progress = claudeProgress()
+    const live = new EventEmitter()
     let results = 0
     let waiters: { at: number; resolve: () => void }[] = []
     let taken = 0
@@ -93,6 +135,18 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
     createInterface({
       input: child.stdout,
     }).on('line', (line) => {
+      const data = progress(line)
+
+      if (data) {
+        live.emit('progress', {
+          id: `progress-${randomUUID()}`,
+          type: 'progress',
+          at: new Date().toISOString(),
+          session_id: options.sessionId,
+          data,
+        } satisfies AgentEventInputValue)
+      }
+
       if (!isResult(line)) {
         return
       }
@@ -110,18 +164,20 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
     })
 
     const exit = new Promise<AgentExit>((resolve) => {
-      child.on('error', () =>
+      child.on('error', () => {
+        live.emit('end')
         resolve({
           code: 127,
           signal: null,
-        }),
-      )
-      child.on('close', (code, signal) =>
+        })
+      })
+      child.on('close', (code, signal) => {
+        live.emit('end')
         resolve({
           code,
           signal,
-        }),
-      )
+        })
+      })
     })
 
     return {
@@ -149,7 +205,7 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
         child.stdin.end()
         setTimeout(() => child.kill('SIGTERM'), graceMs).unref()
       },
-      events: null,
+      events: progressEvents(live),
       exit,
     }
   },

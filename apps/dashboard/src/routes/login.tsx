@@ -122,6 +122,24 @@ function Login() {
     await finish()
   }
 
+  const withGitHub = async () => {
+    setError(null)
+    const result = await authClient.signIn.social({
+      provider: 'github',
+      callbackURL: '/next.html',
+      errorCallbackURL: '/login?github=failed',
+    })
+
+    if (result.error) {
+      setError(
+        authMessage(
+          result.error,
+          'GitHub sign-in is not set up yet, or your GitHub account is not connected. Sign in with your password, then connect GitHub from Your account.',
+        ),
+      )
+    }
+  }
+
   const withPassword = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
@@ -209,6 +227,16 @@ function Login() {
           )}
           {step === 'credentials' ? (
             <>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                size="lg"
+                onClick={() => void withGitHub()}
+                disabled={busy !== null}
+              >
+                Continue with GitHub
+              </Button>
               {passkeys && (
                 <>
                   <Button

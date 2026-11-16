@@ -71,6 +71,7 @@ const (
 	ErrorCodeStationCapabilityMissing    ErrorCode = "STATION_CAPABILITY_MISSING"
 	ErrorCodeRepoAccessRequired          ErrorCode = "REPO_ACCESS_REQUIRED"
 	ErrorCodeRepoAccessDenied            ErrorCode = "REPO_ACCESS_DENIED"
+	ErrorCodeApprovalClosed              ErrorCode = "APPROVAL_CLOSED"
 	ErrorCodeSandboxNotRunning           ErrorCode = "SANDBOX_NOT_RUNNING"
 	ErrorCodeSandboxStateConflict        ErrorCode = "SANDBOX_STATE_CONFLICT"
 	ErrorCodeSandboxQuotaExceeded        ErrorCode = "SANDBOX_QUOTA_EXCEEDED"
@@ -182,6 +183,7 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeStationCapabilityMissing:    {HTTPStatus: 422, Area: "station", CloseCode: 0},
 	ErrorCodeRepoAccessRequired:          {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
 	ErrorCodeRepoAccessDenied:            {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
+	ErrorCodeApprovalClosed:              {HTTPStatus: 409, Area: "sandbox", CloseCode: 0},
 	ErrorCodeSandboxNotRunning:           {HTTPStatus: 409, Area: "sandbox", CloseCode: 0},
 	ErrorCodeSandboxStateConflict:        {HTTPStatus: 409, Area: "sandbox", CloseCode: 0},
 	ErrorCodeSandboxQuotaExceeded:        {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},

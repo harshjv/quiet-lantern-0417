@@ -1,4 +1,5 @@
-import { Bell, Blocks, Folder, LayoutGrid, Plus, Search } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Bell, Blocks, Folder, LayoutGrid, LogOut, Plus, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { StateIcon, type State } from '@/components/state-icon'
@@ -34,6 +35,9 @@ import {
   SidebarProvider,
 } from '@/components/ui/sidebar'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { isInstanceAdmin } from '@/lib/agent-session'
+import { authClient, sessionQuery } from '@/lib/auth'
+import { inventoryQuery, meQuery } from '@/lib/queries'
 import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
@@ -312,24 +316,72 @@ function ProjectList({ place, go, kind }: Nav & { kind: 'ship' | 'observe' }) {
   )
 }
 
+const initialsOf = (name: string) =>
+  name
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('') || '?'
+
+function useAccount() {
+  const live = useLive()
+  const session = useQuery({
+    ...sessionQuery,
+    enabled: live,
+  })
+  const inventory = useQuery({
+    ...inventoryQuery,
+    enabled: live,
+  })
+  const me = useQuery({
+    ...meQuery,
+    enabled: live,
+  })
+  const admin = isInstanceAdmin(me.data?.scopes ?? [])
+
+  if (!live) {
+    return {
+      name: 'Harsh',
+      detail: '@harshjv',
+      role: 'Admin',
+      version: '0.1.3-rc.9',
+    }
+  }
+
+  const user = session.data?.user
+
+  return {
+    name: user?.name || user?.email || 'Signed in',
+    detail: user?.email ?? '',
+    role: admin ? 'Admin' : 'Member',
+    version: inventory.data?.release?.version ?? null,
+  }
+}
+
 function AccountMenu({ go }: { go: (next: Partial<Place>) => void }) {
+  const account = useAccount()
+  const live = useLive()
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <SidebarMenuButton size="lg">
           <Avatar className="size-7">
-            <AvatarFallback>HV</AvatarFallback>
+            <AvatarFallback>{initialsOf(account.name)}</AvatarFallback>
           </Avatar>
-          <span className="flex flex-col">
-            <span className="text-sm">Harsh</span>
-            <span className="text-xs text-muted-foreground">Admin</span>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm">{account.name}</span>
+            <span className="text-xs text-muted-foreground">{account.role}</span>
           </span>
         </SidebarMenuButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
         <DropdownMenuLabel className="flex flex-col">
-          <span>Harsh</span>
-          <span className="font-mono text-xs font-normal text-muted-foreground">@harshjv</span>
+          <span className="truncate">{account.name}</span>
+          <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+            {account.detail}
+          </span>
         </DropdownMenuLabel>
         {pages
           .filter((p) => p.id !== 'inbox')
@@ -356,7 +408,20 @@ function AccountMenu({ go }: { go: (next: Partial<Place>) => void }) {
         >
           <Blocks /> Design catalogue
         </DropdownMenuItem>
-        <DropdownMenuItem className="text-muted-foreground">Stationly 0.1.3-rc.9</DropdownMenuItem>
+        {account.version && (
+          <DropdownMenuItem className="text-muted-foreground">
+            Stationly {account.version}
+          </DropdownMenuItem>
+        )}
+        {live && (
+          <DropdownMenuItem
+            onClick={() =>
+              void authClient.signOut().then(() => window.location.assign('/login?next=/next.html'))
+            }
+          >
+            <LogOut /> Sign out
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

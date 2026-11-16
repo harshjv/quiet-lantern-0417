@@ -6,6 +6,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Tone } from '@/lib/tone'
 
 import type { Place } from './app'
+import { useLive, useTaskRows } from './data'
+import type { Task } from './fixtures'
 import { ItemList, ItemRow, Page, Section, type Fact } from './parts'
 import { PixelScene } from './scene'
 import { useWorld } from './story'
@@ -42,9 +44,77 @@ const groups: { id: Group; title: string; tab: string }[] = [
   },
 ]
 
+const liveGroups: Partial<
+  Record<Task['state'], { group: Group; icon: typeof Rocket; tone: Tone }>
+> = {
+  waiting: {
+    group: 'decide',
+    icon: MessageCircleQuestion,
+    tone: 'warning',
+  },
+  failed: {
+    group: 'broken',
+    icon: CircleX,
+    tone: 'danger',
+  },
+  finished: {
+    group: 'done',
+    icon: CircleCheck,
+    tone: 'success',
+  },
+}
+
+const liveItems = (rows: Task[]) =>
+  rows.flatMap((t): Item[] => {
+    const shape = liveGroups[t.state]
+
+    return shape
+      ? [
+          {
+            id: t.id,
+            ...shape,
+            title: t.title,
+            meta: [
+              {
+                kind: 'status',
+                text: t.reason,
+              },
+              {
+                kind: 'project',
+                text: t.project,
+              },
+              {
+                kind: 'time',
+                text: t.age,
+              },
+            ],
+            action: (go) => (
+              <Button
+                size="sm"
+                onClick={() =>
+                  go({
+                    mode: 'build',
+                    view: t.id,
+                  })
+                }
+              >
+                Open
+              </Button>
+            ),
+          },
+        ]
+      : []
+  })
+
 export function useInbox(): Item[] {
   const { tasks, approvals, incidents } = useWorld()
+  const live = useLive()
+  const rows = useTaskRows()
   const mine = tasks.filter((t) => t.owner === 'you')
+
+  if (live) {
+    return liveItems(rows)
+  }
 
   return [
     ...approvals.map((a): Item => ({

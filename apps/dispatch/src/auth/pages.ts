@@ -10,11 +10,12 @@ import { tokenLevelValues } from '@stationly/protocol'
 import { audit, requestIdOf, type Deps } from '../api/context.ts'
 import { newId } from '../db/ids.ts'
 import { environment, passkey, project, token, user } from '../db/schema.ts'
+import { userScopes } from '../team/members.ts'
 
 import { canonicalOrigin, type Auth } from './auth.ts'
 import { levelOfScope, levelScopes, oauthRefreshSeconds, withPendingGrant } from './grants.ts'
 import { surfaceOf, type Principal } from './principal.ts'
-import { fullAdmin, type Level, type Scope } from './scopes.ts'
+import { type Level, type Scope } from './scopes.ts'
 
 const escape = (value: string | null | undefined) =>
   (value ?? '').replace(
@@ -376,7 +377,7 @@ export const createAuthPages = (deps: Deps) => {
       token_kind: 'session',
       token_id: null,
       credential: `page:${userId}`,
-      scopes: fullAdmin,
+      scopes: userScopes(db, userId),
       expires_at: new Date(),
       resource: null,
     }

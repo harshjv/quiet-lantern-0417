@@ -1,5 +1,5 @@
 import type { Static } from '@sinclair/typebox'
-import { and, asc, desc, eq, isNull, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm'
 
 import { invalid } from '../api/errors.ts'
 import type { Redactor } from '../api/redaction.ts'
@@ -8,6 +8,7 @@ import type { Db } from '../db/client.ts'
 import { conversation, environment, project, run, sandbox, task, task_inbox } from '../db/schema.ts'
 import { setupFailureOf } from '../sandboxes/setup-failure.ts'
 
+import { queuePosition } from './machine.ts'
 import { startTimeoutMs } from './runner.ts'
 import type { TaskRow } from './status.ts'
 
@@ -41,7 +42,95 @@ export const branchSlug = (title: string) =>
       .replace(/-+$/g, '') || 'work'
   }`
 
+export const uniqueBranch = (db: Db, repository: string, wanted: string) => {
+  const taken = new Set(
+    db
+      .select({
+        branch: task.branch,
+      })
+      .from(task)
+      .where(eq(task.repository, repository))
+      .all()
+      .map((row) => row.branch),
+  )
+  let name = wanted
+
+  for (let n = 2; taken.has(name); n += 1) {
+    name = `${wanted}-${n}`
+  }
+
+  return name
+}
+
 type Setup = NonNullable<TaskItem['setup']>
+
+type RunRow = typeof run.$inferSelect
+
+const runOf = (db: Db, id: string | null | undefined) =>
+  id ? db.select().from(run).where(eq(run.id, id)).get() : undefined
+
+const pendingRun = (setup: RunRow | undefined) =>
+  !setup || setup.status === 'queued' || setup.status === 'running'
+
+const projectSetupOf = (
+  db: Db,
+  row: TaskRow,
+  box: typeof sandbox.$inferSelect | undefined,
+  now: number,
+) => {
+  const machineRun = runOf(db, box?.workspace?.setup_run_id)
+  const ownRun = runOf(db, row.setup_run_id)
+
+  if (!box || box.status !== 'running') {
+    return {
+      setup: {
+        state: 'creating',
+        run_id: row.setup_run_id,
+      } satisfies Setup,
+      failed: null,
+    }
+  }
+
+  for (const step of [machineRun, ownRun]) {
+    if (step && !pendingRun(step) && step.status !== 'succeeded') {
+      return {
+        setup: {
+          state: 'failed',
+          run_id: step.id,
+        } satisfies Setup,
+        failed: step,
+      }
+    }
+  }
+
+  if (pendingRun(machineRun) || pendingRun(ownRun)) {
+    return {
+      setup: {
+        state: 'setting_up',
+        run_id: ownRun?.id ?? machineRun?.id ?? null,
+      } satisfies Setup,
+      failed: null,
+    }
+  }
+
+  const finished = ownRun!.finished_at?.getTime() ?? now
+
+  return now - finished <= startTimeoutMs
+    ? {
+        setup: {
+          state: 'starting',
+          run_id: ownRun!.id,
+        } satisfies Setup,
+        failed: null,
+      }
+    : {
+        setup: {
+          state: 'failed',
+          run_id: ownRun!.id,
+        } satisfies Setup,
+        failed: ownRun!,
+      }
+}
 
 const setupOf = (db: Db, box: typeof sandbox.$inferSelect | undefined, now: number) => {
   const runId = box?.workspace?.setup_run_id ?? null
@@ -115,7 +204,12 @@ export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now(
   const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()
   const env = db.select().from(environment).where(eq(environment.id, row.environment_id)).get()
-  const pending = row.status === 'setting_up' ? setupOf(db, box, now) : null
+  const pending =
+    row.status === 'setting_up'
+      ? row.machine === 'project'
+        ? projectSetupOf(db, row, box, now)
+        : setupOf(db, box, now)
+      : null
   const prompt = firstPrompt(db, row.id)
 
   return {
@@ -142,6 +236,9 @@ export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now(
       id: row.sandbox_id,
       name: box?.name ?? row.sandbox_id,
     },
+    machine: row.machine,
+    port: row.port,
+    queued_ahead: queuePosition(db, row),
     status: pending?.failed ? 'failed' : row.status,
     attention: row.attention,
     failure: pending?.failed ? setupFailureOf(pending.failed, redact) : null,
@@ -172,6 +269,7 @@ const decodeCursor = (cursor: string) => {
 export const listTasks = (
   db: Db,
   options: {
+    owner: string | null
     limit: number
     cursor: string | undefined
     archived: boolean
@@ -185,6 +283,9 @@ export const listTasks = (
     .where(
       and(
         options.archived ? undefined : isNull(task.archived_at),
+        options.owner !== null
+          ? sql`json_extract(${task.owner}, '$.id') = ${options.owner}`
+          : undefined,
         after ? lt(task.id, after) : undefined,
       ),
     )

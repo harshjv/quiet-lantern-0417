@@ -1,6 +1,7 @@
 import {
   Activity,
   CircleAlert,
+  CircleDot,
   Clock,
   ExternalLink,
   FileCode,
@@ -249,6 +250,7 @@ export type FactKind =
   | 'version'
   | 'branch'
   | 'link'
+  | 'status'
 
 export type Fact = { kind: FactKind; text: string }
 
@@ -300,6 +302,10 @@ const fact: Record<FactKind, { icon: LucideIcon; label: string }> = {
   link: {
     icon: ExternalLink,
     label: 'Link',
+  },
+  status: {
+    icon: CircleDot,
+    label: 'Status',
   },
 }
 
@@ -365,10 +371,21 @@ export function Person({ name, sub }: { name: string; sub?: string }) {
   )
 }
 
-export function Page({ title, children }: { title: string; children: ReactNode }) {
+export function Page({
+  title,
+  actions,
+  children,
+}: {
+  title: string
+  actions?: ReactNode
+  children: ReactNode
+}) {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-8 p-6">
-      <h1 className="font-display text-xl">{title}</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-display text-xl">{title}</h1>
+        {actions}
+      </div>
       {children}
     </div>
   )

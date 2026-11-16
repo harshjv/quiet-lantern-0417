@@ -176,11 +176,13 @@ export const githubRoutes = (kit: Kit) => {
             active: webhooks,
           },
           redirect_url: `${origin}/github/manifest/callback`,
+          callback_urls: [`${auth.surface.dashboardOrigin}/auth/callback/github`],
+          request_oauth_on_install: false,
           setup_url: `${origin}/github/setup`,
           setup_on_update: true,
           public: false,
           default_permissions: {
-            contents: 'read',
+            contents: 'write',
             metadata: 'read',
             pull_requests: 'read',
             statuses: 'write',
@@ -283,6 +285,8 @@ export const githubRoutes = (kit: Kit) => {
           })
           .run()
         const app = db.select().from(github_app).where(eq(github_app.id, id)).get()!
+
+        auth.rebuild()
 
         if (app.webhooks) {
           await gh('/app/hook/config', {

@@ -81,6 +81,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 export const useLive = () => useContext(SourceContext) === 'live'
 
 const liveState: Record<LiveTask['status'], TaskState> = {
+  queued: 'queued',
   setting_up: 'setup',
   working: 'working',
   waiting: 'waiting',
@@ -91,6 +92,8 @@ const liveState: Record<LiveTask['status'], TaskState> = {
 
 const reasonOf = (task: LiveTask) => {
   switch (task.status) {
+    case 'queued':
+      return task.queued_ahead ? `Queued, ${task.queued_ahead} ahead` : 'Queued, next to start'
     case 'setting_up':
       return 'Setting up'
     case 'working':

@@ -37,6 +37,7 @@ import { settingRoutes } from './routes/settings.ts'
 import { stagedRoutes } from './routes/staged.ts'
 import { stationRoutes } from './routes/stations.ts'
 import { taskRoutes } from './routes/tasks.ts'
+import { teamRoutes } from './routes/team.ts'
 import { tokenRoutes } from './routes/tokens.ts'
 import { variableRoutes } from './routes/variables.ts'
 import { volumeRoutes } from './routes/volumes.ts'
@@ -248,6 +249,7 @@ export const createApi = (deps: Deps) => {
     .use(sandboxes.routes)
     .use(agentEventRoutes(kit))
     .use(taskRoutes(kit, sandboxes.createSandbox))
+    .use(teamRoutes(kit))
     .use(blobRoutes(kit))
     .use(logRoutes(kit))
     .use(eventRoutes(kit))

@@ -60,6 +60,7 @@ export const idPrefixes = {
   sandbox_snapshot: 'sbs',
   task: 'tsk',
   conversation: 'cnv',
+  invite: 'inv',
 } as const
 
 export type IdEntity = keyof typeof idPrefixes

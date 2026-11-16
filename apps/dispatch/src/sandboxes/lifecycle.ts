@@ -10,7 +10,7 @@ import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 import { emitEvent } from '../station/events.ts'
-import { stopSandboxTask } from '../tasks/status.ts'
+import { stopMachineTasks } from '../tasks/machine.ts'
 
 import { requireQuota } from './limits.ts'
 import { sandboxSubject } from './subject.ts'
@@ -173,7 +173,7 @@ export const removeSandbox = (db: Db, row: SandboxRow) => {
     const tdb = tx as unknown as Db
 
     dropVariables(tdb, row.id)
-    stopSandboxTask(tdb, row.id)
+    stopMachineTasks(tdb, row.id, new Date())
     tdb.delete(sandbox).where(eq(sandbox.id, row.id)).run()
     emitEvent(tdb, 'sandbox.deleted', sandboxSubject(row), {
       sandbox: row.id,
@@ -275,7 +275,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
         .where(eq(sandbox.id, row.id))
         .run()
       endRuns(db, row.id)
-      stopSandboxTask(db, row.id)
+      stopMachineTasks(db, row.id, new Date())
 
       if (row.status !== 'stopped') {
         emitEvent(db, 'sandbox.stopped', subject, {
@@ -305,7 +305,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
         .where(eq(sandbox.id, row.id))
         .run()
       endRuns(db, row.id)
-      stopSandboxTask(db, row.id)
+      stopMachineTasks(db, row.id, new Date())
 
       if (row.status !== 'failed') {
         emitEvent(db, 'sandbox.failed', subject, {

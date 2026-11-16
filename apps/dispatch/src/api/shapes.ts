@@ -50,6 +50,8 @@ import {
   portProtocolValues,
   probeKinds,
   probeTcpResults,
+  AgentApprovalRequest as ProtocolAgentApprovalRequest,
+  AgentApprovalState as ProtocolAgentApprovalState,
   AgentEvent as ProtocolAgentEvent,
   AgentEventsAccepted as ProtocolAgentEventsAccepted,
   AgentInbox as ProtocolAgentInbox,
@@ -85,6 +87,7 @@ import {
   stationStatusValues,
   strategyValues,
   StringEnum,
+  taskMachineValues,
   taskStatusValues,
   tokenKindValues,
   tokenLevelValues,
@@ -1901,8 +1904,9 @@ const SandboxForkedFrom = Type.Object(
 
 const SandboxWorkspace = Type.Object(
   {
+    kind: Type.Optional(StringEnum(taskMachineValues)),
     agent: StringEnum(workspaceAgentValues),
-    repository: Str,
+    repository: NStr,
     branch: NStr,
     path: Str,
     level: StringEnum(tokenLevelValues),
@@ -1994,6 +1998,10 @@ export const AgentInboxAck = component('AgentInboxAck', ProtocolAgentInboxAck)
 
 export const AgentRunnerExit = component('AgentRunnerExit', ProtocolAgentRunnerExit)
 
+export const AgentApprovalRequest = component('AgentApprovalRequest', ProtocolAgentApprovalRequest)
+
+export const AgentApprovalState = component('AgentApprovalState', ProtocolAgentApprovalState)
+
 export const AgentRunnerExited = component(
   'AgentRunnerExited',
   Type.Object(
@@ -2071,6 +2079,9 @@ export const Task = component(
       agent: StringEnum(workspaceAgentValues),
       model: NStr,
       sandbox: NamedRef,
+      machine: StringEnum(taskMachineValues),
+      port: Nullable(Type.Integer()),
+      queued_ahead: Nullable(Type.Integer()),
       status: StringEnum(taskStatusValues),
       attention: Nullable(
         Type.Object(
@@ -2320,6 +2331,154 @@ export const SandboxSnapshotDeleted = component(
     },
     {
       title: 'SandboxSnapshotDeleted',
+      additionalProperties: false,
+    },
+  ),
+)
+
+const InviteFields = {
+  id: Str,
+  role: StringEnum(['admin', 'member']),
+  projects: Type.Array(Str),
+  status: StringEnum(['open', 'used', 'revoked', 'expired']),
+  created_at: Str,
+  expires_at: Str,
+  used_by: NStr,
+}
+
+export const InviteView = component(
+  'Invite',
+  Type.Object(InviteFields, {
+    additionalProperties: false,
+  }),
+)
+
+export const InviteCreated = component(
+  'InviteCreated',
+  Type.Object(
+    {
+      ...InviteFields,
+      url: Type.Optional(Str),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const InvitePage = component(
+  'InvitePage',
+  Type.Object(
+    {
+      items: Type.Array(InviteView),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const JoinInfo = component(
+  'JoinInfo',
+  Type.Object(
+    {
+      team: Str,
+      invited_by: Str,
+      role: StringEnum(['admin', 'member']),
+      expires_at: Str,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const Joined = component(
+  'Joined',
+  Type.Object(
+    {
+      user_id: Str,
+      email: Str,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const MemberView = component(
+  'Member',
+  Type.Object(
+    {
+      user_id: Str,
+      name: Str,
+      email: Str,
+      role: StringEnum(['admin', 'member']),
+      projects: Type.Array(Str),
+      joined_at: Str,
+      removed_at: NStr,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const MemberPage = component(
+  'MemberPage',
+  Type.Object(
+    {
+      items: Type.Array(MemberView),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const MyRepositories = component(
+  'MyRepositories',
+  Type.Object(
+    {
+      github: StringEnum(['connected', 'not_connected', 'reconnect']),
+      items: Type.Array(
+        Type.Object(
+          {
+            full_name: Str,
+            clone_url: Str,
+            private: Type.Boolean(),
+            default_branch: Str,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const MyKeys = component(
+  'MyKeys',
+  Type.Object(
+    {
+      items: Type.Array(
+        Type.Object(
+          {
+            name: Str,
+            set: Type.Boolean(),
+            updated_at: NStr,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+    },
+    {
       additionalProperties: false,
     },
   ),

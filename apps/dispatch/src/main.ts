@@ -13,7 +13,7 @@ import { createMetadataFetch } from './auth/metadata-fetch.ts'
 import { createDashboard, dashboardDir } from './dashboard.ts'
 import { openDb } from './db/client.ts'
 import { env } from './env.ts'
-import { createGitHub } from './github/service.ts'
+import { createGitHub, signInApp } from './github/service.ts'
 import { log, logError } from './log.ts'
 import { routeFetchThroughStation } from './net/resolver.ts'
 import { startNotifier } from './notify/webhooks.ts'
@@ -24,10 +24,13 @@ import { startIdleStop } from './sandboxes/idle-stop.ts'
 import { startSandboxRetention } from './sandboxes/lifecycle.ts'
 import { readRepository } from './sandboxes/repository-access.ts'
 import { startWorkspaceTokenRenewal } from './sandboxes/workspace.ts'
+import { ephemeralDelivery } from './secrets/deliver.ts'
 import { Keyring, masterKeyFromEnv } from './secrets/keyring.ts'
 import { createStationServer, HostAdminError, type HostAdmin } from './station/server.ts'
+import { startApprovalExpiry } from './tasks/approvals.ts'
 import { startAgentEventSweep } from './tasks/events.ts'
 import { startAgentRunners } from './tasks/runner.ts'
+import { ensureFirstAdmins } from './team/members.ts'
 import { pruneBackups, startBackupScheduler } from './volumes/backups.ts'
 
 const {
@@ -55,6 +58,7 @@ const db = openDb(databasePath, {
 })
 
 ensureInstanceId(db)
+ensureFirstAdmins(db)
 const masterKey = masterKeyFromEnv()
 const keyring = new Keyring(db, masterKey)
 const auth = new AuthService(
@@ -62,6 +66,7 @@ const auth = new AuthService(
   masterKey,
   `http://${networkLayout.dispatchHostAddress}:${port}`,
   createMetadataFetch(resolver),
+  () => signInApp(db, keyring),
 )
 const blobDir = join(dirname(databasePath), 'blobs')
 const github = createGitHub({
@@ -208,7 +213,29 @@ const idleStop = startIdleStop(
   log,
 )
 const agentEventSweep = startAgentEventSweep(db, log)
-const agentRunners = startAgentRunners(db, (station) => stations.reconcile(station), log)
+const agentRunners = startAgentRunners(
+  db,
+  {
+    reconcile: (station) => stations.reconcile(station),
+    deliver: async (station, runId, entries) => {
+      await stations.ask(
+        station,
+        'secrets.deliver',
+        ephemeralDelivery(
+          {
+            run_id: runId,
+          },
+          'run',
+          entries,
+        ),
+      )
+    },
+    auth,
+    keyring,
+  },
+  log,
+)
+const approvalExpiry = startApprovalExpiry(db, log)
 const workspaceTokens = startWorkspaceTokenRenewal(
   {
     db,
@@ -250,6 +277,7 @@ const shutdown = async () => {
   sandboxRetention.stop()
   agentEventSweep.stop()
   agentRunners.stop()
+  approvalExpiry.stop()
   idleStop.stop()
   workspaceTokens.stop()
   github.stop()

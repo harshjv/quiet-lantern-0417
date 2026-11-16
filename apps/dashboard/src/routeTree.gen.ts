@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AppConnectRouteImport } from './routes/_app/connect'
 import { Route as AppStationsRouteImport } from './routes/_app/stations'
+import { Route as JoinCodeRouteImport } from './routes/join.$code'
 import { Route as AppDeploymentsDeploymentRouteImport } from './routes/_app/deployments/$deployment'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
 import { Route as AppSandboxesSandboxRouteImport } from './routes/_app/sandboxes/$sandbox'
@@ -52,6 +53,11 @@ const AppStationsRoute = AppStationsRouteImport.update({
   id: '/stations',
   path: '/stations',
   getParentRoute: () => AppRoute,
+} as any)
+const JoinCodeRoute = JoinCodeRouteImport.update({
+  id: '/join/$code',
+  path: '/join/$code',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppDeploymentsDeploymentRoute =
   AppDeploymentsDeploymentRouteImport.update({
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/connect': typeof AppConnectRoute
   '/stations': typeof AppStationsRoute
+  '/join/$code': typeof JoinCodeRoute
   '/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
   '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
   '/services/$service': typeof AppServicesServiceRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountRoute
   '/connect': typeof AppConnectRoute
   '/stations': typeof AppStationsRoute
+  '/join/$code': typeof JoinCodeRoute
   '/': typeof AppIndexRoute
   '/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
   '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/_app/connect': typeof AppConnectRoute
   '/_app/stations': typeof AppStationsRoute
+  '/join/$code': typeof JoinCodeRoute
   '/_app/': typeof AppIndexRoute
   '/_app/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
   '/_app/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/connect'
     | '/stations'
+    | '/join/$code'
     | '/deployments/$deployment'
     | '/sandboxes/$sandbox'
     | '/services/$service'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/connect'
     | '/stations'
+    | '/join/$code'
     | '/'
     | '/deployments/$deployment'
     | '/sandboxes/$sandbox'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/_app/connect'
     | '/_app/stations'
+    | '/join/$code'
     | '/_app/'
     | '/_app/deployments/$deployment'
     | '/_app/sandboxes/$sandbox'
@@ -195,6 +207,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  JoinCodeRoute: typeof JoinCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -240,6 +253,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/stations'
       preLoaderRoute: typeof AppStationsRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/join/$code': {
+      id: '/join/$code'
+      path: '/join/$code'
+      fullPath: '/join/$code'
+      preLoaderRoute: typeof JoinCodeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/deployments/$deployment': {
       id: '/_app/deployments/$deployment'
@@ -335,6 +355,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  JoinCodeRoute: JoinCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEventInputValue } from '@stationly/protocol'
 
 import type { AgentAdapter, AgentExit, StartOptions } from './adapter.ts'
+import type { ChangeReader, Snapshot } from './changes.ts'
 
 export type InboxItem = {
   id: string
@@ -18,6 +19,7 @@ export type RunnerDeps = {
   ack: (ids: string[]) => Promise<void>
   exited: (failed: boolean) => Promise<void>
   post: (events: AgentEventInputValue[]) => Promise<void>
+  changes?: ChangeReader
   now: () => Date
   sleep: (ms: number) => Promise<void>
 }
@@ -28,7 +30,7 @@ export const inboxWaitS = 25
 
 const event = (
   deps: RunnerDeps,
-  type: 'turn.ended' | 'turn.failed' | 'session.ended',
+  type: 'turn.ended' | 'turn.failed' | 'session.ended' | 'turn.changes',
   data: Record<string, unknown>,
 ) =>
   ({
@@ -39,9 +41,38 @@ const event = (
     data,
   }) as AgentEventInputValue
 
+export const progressMs = 1000
+
 const pump = async (deps: RunnerDeps, events: AsyncIterable<AgentEventInputValue>) => {
-  for await (const next of events) {
-    await deps.post([next])
+  let latest: AgentEventInputValue | null = null
+  let ended = false
+  let wake: () => void = () => undefined
+
+  void (async () => {
+    try {
+      for await (const next of events) {
+        latest = next
+        wake()
+      }
+    } finally {
+      ended = true
+      wake()
+    }
+  })()
+
+  while (!ended) {
+    if (!latest) {
+      await new Promise<void>((resolve) => {
+        wake = resolve
+      })
+      continue
+    }
+
+    const next: AgentEventInputValue = latest
+
+    latest = null
+    await deps.post([next]).catch(() => undefined)
+    await deps.sleep(progressMs)
   }
 }
 
@@ -76,11 +107,35 @@ const report = async (deps: RunnerDeps, failed: boolean) => {
 }
 
 export const runSession = async (deps: RunnerDeps) => {
+  let before: Snapshot | null = deps.changes ? await deps.changes.snapshot() : null
+  const recordChanges = async () => {
+    if (!deps.changes || !before) {
+      return
+    }
+
+    const after = await deps.changes.snapshot()
+
+    if (!after) {
+      return
+    }
+
+    const changed = await deps.changes.between(before, after)
+
+    before = after
+
+    if (changed) {
+      await deps.post([event(deps, 'turn.changes', changed)]).catch(() => undefined)
+    }
+  }
   const process = deps.adapter.start(deps.start)
   const done = process.exit.then((exit) => ({
     exit,
   }))
-  const piped = process.events ? pump(deps, process.events) : null
+
+  if (process.events) {
+    void pump(deps, process.events)
+  }
+
   const nextResult = () =>
     process.nextResult().then(() => ({
       result: true as const,
@@ -183,8 +238,6 @@ export const runSession = async (deps: RunnerDeps) => {
     const next = await Promise.race([done, result, polling])
 
     if (next && 'exit' in next) {
-      await piped
-
       const failed = !settled && !halted && next.exit.code !== 0
 
       if (failed) {
@@ -208,6 +261,7 @@ export const runSession = async (deps: RunnerDeps) => {
     if (next && 'result' in next) {
       settled = true
       result = nextResult()
+      await recordChanges()
       await settle()
       continue
     }

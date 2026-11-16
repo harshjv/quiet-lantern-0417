@@ -342,7 +342,11 @@ function WorkspaceHeader({
           <>
             <SandboxStatusBadge status={s.status} reason={s.status_reason} />
             {s.workspace && (
-              <span className="font-mono text-xs">{repositoryName(s.workspace.repository)}</span>
+              <span className="font-mono text-xs">
+                {s.workspace.repository
+                  ? repositoryName(s.workspace.repository)
+                  : 'Project machine'}
+              </span>
             )}
             {s.workspace?.branch && <Code copy={s.workspace.branch}>{s.workspace.branch}</Code>}
             {s.workspace && <span>{agentLabel(s.workspace.agent)}</span>}

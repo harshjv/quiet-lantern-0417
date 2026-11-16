@@ -26,17 +26,23 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
+import { Shimmer } from '@/components/ai-elements/shimmer'
 import { Tool, ToolContent, ToolHeader, ToolOutput } from '@/components/ai-elements/tool'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   applyPart,
+  applyProgress,
   applyStored,
   emptyAgentState,
+  isInstanceAdmin,
+  runningTool,
   sessionsOf,
   turnsOf,
+  typedPromptCount,
   type AgentLivePart,
+  type AgentProgress,
   type AgentState,
   type ToolCall,
   type Turn,
@@ -44,7 +50,7 @@ import {
 import { agentStreamTypes, taskStreamUrl } from '@/lib/agent-stream'
 import { api, ApiFailure, failureText, idempotency, send, unwrap, type Task } from '@/lib/api'
 import { useEventStream } from '@/lib/event-stream'
-import { repositoryName, shortAgo } from '@/lib/format'
+import { plural, repositoryName, shortAgo } from '@/lib/format'
 import {
   credentialKey,
   githubTokenHelp,
@@ -54,8 +60,9 @@ import {
   needsGithubToken,
   repositoryUrl,
 } from '@/lib/new-task'
-import { tasksQuery } from '@/lib/queries'
+import { meQuery, tasksQuery } from '@/lib/queries'
 import { setupFailure } from '@/lib/setup-failure'
+import { toneText } from '@/lib/tone'
 
 import type { Place } from './app'
 import { TaskMenu } from './build-task'
@@ -65,25 +72,31 @@ import { AgentSays, Checklist, Meta, Notice, StatusPill, type Step } from './par
 
 type Go = (next: Partial<Place>) => void
 
-type Action = { stored: AgentEventValue } | { part: AgentLivePart }
+type Action = { stored: AgentEventValue } | { part: AgentLivePart } | { progress: AgentProgress }
 
 const reduce = (state: AgentState, action: Action) =>
-  'stored' in action ? applyStored(state, action.stored) : applyPart(state, action.part)
+  'stored' in action
+    ? applyStored(state, action.stored)
+    : 'part' in action
+      ? applyPart(state, action.part)
+      : applyProgress(state, action.progress)
+
+const liveAction = (type: string, data: unknown): Action =>
+  type === 'message.part'
+    ? {
+        part: data as AgentLivePart,
+      }
+    : type === 'progress'
+      ? {
+          progress: data as AgentProgress,
+        }
+      : {
+          stored: data as AgentEventValue,
+        }
 
 const handlers = (dispatch: (action: Action) => void) =>
   Object.fromEntries(
-    agentStreamTypes.map((type) => [
-      type,
-      type === 'message.part'
-        ? (data: unknown) =>
-            dispatch({
-              part: data as AgentLivePart,
-            })
-        : (data: unknown) =>
-            dispatch({
-              stored: data as AgentEventValue,
-            }),
-    ]),
+    agentStreamTypes.map((type) => [type, (data: unknown) => dispatch(liveAction(type, data))]),
   )
 
 const submitting =
@@ -210,7 +223,221 @@ function ToolCallView({ call }: { call: ToolCall }) {
   )
 }
 
-function TurnView({ turn }: { turn: Turn }) {
+function ProgressView({ progress }: { progress: AgentProgress }) {
+  const { data } = progress
+
+  if (data.kind === 'writing') {
+    return (
+      <AgentSays>
+        <MessageResponse>{data.text ?? ''}</MessageResponse>
+      </AgentSays>
+    )
+  }
+
+  if (data.kind === 'retrying') {
+    return (
+      <p className="font-mono text-xs text-muted-foreground">
+        Retrying after an API error{data.attempt ? ` (attempt ${data.attempt})` : ''}
+      </p>
+    )
+  }
+
+  return (
+    <Shimmer className="font-mono text-xs">
+      {data.tokens ? `Thinking, about ${data.tokens} tokens` : 'Thinking'}
+    </Shimmer>
+  )
+}
+
+type ThreadActions = {
+  decide: (approval: string, behavior: 'allow' | 'deny', message?: string) => void
+  allow: (summary: string) => void
+  busy: boolean
+}
+
+type ApprovalItem = Extract<Turn['items'][number], { kind: 'approval' }>
+type BlockedItem = Extract<Turn['items'][number], { kind: 'blocked' }>
+
+const field = (input: Record<string, unknown>, key: string) => {
+  const value = input[key]
+
+  return typeof value === 'string' ? value : null
+}
+
+const approvalBody = (item: ApprovalItem) => {
+  const command = field(item.input, 'command')
+  const path = field(item.input, 'file_path')
+  const content = field(item.input, 'content') ?? field(item.input, 'new_string')
+
+  if (command !== null) {
+    return command
+  }
+
+  if (path !== null) {
+    return content === null ? path : `${path}\n\n${content}`
+  }
+
+  return JSON.stringify(item.input, null, 2)
+}
+
+const closedText = {
+  allowed: 'Allowed by you',
+  denied: 'Denied by you',
+  expired: 'Expired, the agent was told no',
+}
+
+function ApprovalCard({ item, actions }: { item: ApprovalItem; actions: ThreadActions }) {
+  const [denying, setDenying] = useState(false)
+  const [reason, setReason] = useState('')
+  const until = new Date(item.expiresAt).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  return (
+    <div className="flex flex-col gap-3 border border-border p-4">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium">Claude asks to use {item.tool}</span>
+        {item.status === 'pending' && (
+          <span className="font-mono text-xs text-muted-foreground">Waits until {until}</span>
+        )}
+      </div>
+      <pre className="max-h-64 overflow-auto bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
+        {approvalBody(item)}
+      </pre>
+      {item.truncated && (
+        <p className={`text-xs ${toneText.warning}`}>
+          Cut to fit: the agent asks to run more than this shows. Deny it and ask for a smaller step
+          if you cannot tell what it does.
+        </p>
+      )}
+      {item.status !== 'pending' ? (
+        <p className="font-mono text-xs text-muted-foreground">
+          {closedText[item.status]}
+          {item.message ? `: ${item.message}` : ''}
+        </p>
+      ) : denying ? (
+        <div className="flex items-center gap-2">
+          <Input
+            autoFocus
+            value={reason}
+            placeholder="Tell the agent why (optional)"
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <Button
+            variant="destructive"
+            disabled={actions.busy}
+            onClick={() => actions.decide(item.approvalId, 'deny', reason.trim() || undefined)}
+          >
+            Deny
+          </Button>
+          <Button variant="ghost" onClick={() => setDenying(false)}>
+            Back
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button disabled={actions.busy} onClick={() => actions.decide(item.approvalId, 'allow')}>
+            Allow
+          </Button>
+          <Button variant="outline" disabled={actions.busy} onClick={() => setDenying(true)}>
+            Deny
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BlockedLine({ item, actions }: { item: BlockedItem; actions: ThreadActions }) {
+  const [sent, setSent] = useState(false)
+
+  return (
+    <div className="flex flex-col gap-2 border border-border p-3">
+      <p className="text-sm">
+        Auto mode blocked {item.tool}
+        {item.reason ? <span className="text-muted-foreground"> {item.reason}</span> : null}
+      </p>
+      {item.summary && (
+        <pre className="max-h-40 overflow-auto bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
+          {item.summary}
+        </pre>
+      )}
+      <div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={sent || actions.busy || !item.summary}
+          onClick={() => {
+            setSent(true)
+            actions.allow(item.summary)
+          }}
+        >
+          {sent ? 'Approval sent' : 'Allow it'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+type ChangesItem = Extract<Turn['items'][number], { kind: 'changes' }>
+
+const changesLine = (item: ChangesItem) => {
+  const count = item.files.length + item.moreFiles
+  const added = item.files.reduce((sum, file) => sum + (file.added ?? 0), 0)
+  const removed = item.files.reduce((sum, file) => sum + (file.removed ?? 0), 0)
+
+  return [
+    count ? `${plural(count, 'file')} changed, +${added} −${removed}` : null,
+    item.commits.length ? plural(item.commits.length, 'commit') : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+function ChangesView({ item }: { item: ChangesItem }) {
+  return (
+    <details className="border border-border text-sm">
+      <summary className="cursor-pointer px-3 py-2 font-mono text-xs text-muted-foreground">
+        {changesLine(item)}
+      </summary>
+      <div className="flex flex-col gap-2 border-t border-border p-3">
+        {item.commits.map((commit) => (
+          <p key={commit.sha} className="font-mono text-xs">
+            <span className="text-muted-foreground">{commit.sha.slice(0, 7)}</span> {commit.subject}
+          </p>
+        ))}
+        {item.files.map((file) => (
+          <details key={file.path}>
+            <summary className="cursor-pointer font-mono text-xs">
+              {file.path}{' '}
+              <span className="text-muted-foreground">
+                {file.added === null ? 'binary' : `+${file.added} −${file.removed}`}
+              </span>
+            </summary>
+            {file.diff ? (
+              <pre className="mt-1 max-h-72 overflow-auto bg-muted p-2 font-mono text-xs whitespace-pre">
+                {file.diff}
+              </pre>
+            ) : null}
+          </details>
+        ))}
+        {item.moreFiles > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {plural(item.moreFiles, 'more file')} not listed.
+          </p>
+        )}
+        {item.truncated && (
+          <p className="text-xs text-muted-foreground">
+            Some diffs are cut. Run git diff in the task's worktree for the whole change.
+          </p>
+        )}
+      </div>
+    </details>
+  )
+}
+
+function TurnView({ turn, actions }: { turn: Turn; actions: ThreadActions }) {
   return (
     <>
       {turn.prompt !== null && (
@@ -225,6 +452,12 @@ function TurnView({ turn }: { turn: Turn }) {
           <p key={item.id} className="font-mono text-xs text-muted-foreground">
             {item.text}
           </p>
+        ) : item.kind === 'approval' ? (
+          <ApprovalCard key={item.id} item={item} actions={actions} />
+        ) : item.kind === 'blocked' ? (
+          <BlockedLine key={item.id} item={item} actions={actions} />
+        ) : item.kind === 'changes' ? (
+          <ChangesView key={item.id} item={item} />
         ) : (
           <AgentSays key={`${item.kind}-${item.id}`}>
             <MessageResponse>{item.text}</MessageResponse>
@@ -252,7 +485,15 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
 
   useEventStream(taskStreamUrl(task.id), handlers(dispatch))
 
+  const [sent, setSent] = useState<{ text: string; place: number }[]>([])
   const turns = sessionsOf(state.events).flatMap((session) => turnsOf(state, session.id))
+  const prompted = typedPromptCount(state)
+  const unseen = sent.filter((item) => item.place >= prompted)
+  const last = turns.at(-1)
+  const open = !!last && last.endedAt === null
+  const progress = open && unseen.length === 0 ? state.progress : null
+  const busy =
+    !progress && (unseen.length > 0 || (task.status === 'working' && open && !runningTool(last)))
   const refresh = () =>
     void queries.invalidateQueries({
       queryKey: ['tasks'],
@@ -267,9 +508,53 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
           idempotency(),
         ),
       ),
+    onMutate: (text) =>
+      setSent([
+        ...unseen,
+        {
+          text,
+          place: prompted + unseen.length,
+        },
+      ]),
+    onSuccess: () => setProblem(null),
+    onError: (error, text) => {
+      setSent((list) => list.filter((item) => item.text !== text))
+      setProblem(failureText(error))
+    },
+  })
+  const decide = useMutation({
+    mutationFn: (input: { approval: string; behavior: 'allow' | 'deny'; message?: string }) =>
+      unwrap(
+        target
+          .approvals({
+            approval: input.approval,
+          })
+          .decision.post(
+            {
+              decision: input.behavior,
+              ...(input.message
+                ? {
+                    message: input.message,
+                  }
+                : {}),
+            },
+            idempotency(),
+          ),
+      ),
     onSuccess: () => setProblem(null),
     onError: (error) => setProblem(failureText(error)),
   })
+  const actions: ThreadActions = {
+    decide: (approval, behavior, message) =>
+      decide.mutate({
+        approval,
+        behavior,
+        message,
+      }),
+    allow: (summary) =>
+      reply.mutate(`I approve this exact action, and you may run it now: ${summary}`),
+    busy: decide.isPending || reply.isPending,
+  }
   const stop = useMutation({
     mutationFn: () => unwrap(target.interrupt.post({}, idempotency())),
     onError: (error) => setProblem(failureText(error)),
@@ -285,7 +570,7 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
     onError: (error) => setProblem(failureText(error)),
   })
   const restart = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (machine?: 'own') => {
       const next = await unwrap(
         api.v1.tasks.post(
           {
@@ -295,6 +580,11 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
             agent: task.agent,
             model: task.model ?? undefined,
             prompt: task.prompt ?? task.title,
+            ...(machine
+              ? {
+                  machine,
+                }
+              : {}),
           },
           idempotency(),
         ),
@@ -349,8 +639,19 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
           )}
           <SetupProgress task={task} />
           {turns.map((turn) => (
-            <TurnView key={turn.key} turn={turn} />
+            <TurnView key={turn.key} turn={turn} actions={actions} />
           ))}
+          {unseen.map((item) => (
+            <Message key={`sent-${item.place}`} from="user">
+              <MessageContent>{item.text}</MessageContent>
+            </Message>
+          ))}
+          {progress && <ProgressView progress={progress} />}
+          {busy && (
+            <Shimmer className="font-mono text-xs">
+              {unseen.length ? 'Starting the agent' : 'Working'}
+            </Shimmer>
+          )}
         </ConversationContent>
       </Conversation>
 
@@ -365,8 +666,27 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
           <span className="flex-1 text-sm text-muted-foreground">
             This task cannot continue. A new task starts over with the same prompt.
           </span>
-          <Button disabled={restart.isPending} onClick={() => restart.mutate()}>
+          <Button disabled={restart.isPending} onClick={() => restart.mutate(undefined)}>
             Start a new task
+          </Button>
+        </div>
+      ) : task.status === 'queued' ? (
+        <div className="mb-6 flex items-center gap-3">
+          <span className="flex-1 text-sm text-muted-foreground">
+            Every slot on this project's machine is busy. This task starts when one frees
+            {task.queued_ahead ? `, after ${task.queued_ahead} more` : ''}.
+          </span>
+          {turns.length === 0 && (
+            <Button
+              variant="outline"
+              disabled={restart.isPending}
+              onClick={() => restart.mutate('own')}
+            >
+              Run on its own machine
+            </Button>
+          )}
+          <Button variant="ghost" disabled={stop.isPending} onClick={() => stop.mutate()}>
+            Cancel
           </Button>
         </div>
       ) : (
@@ -464,6 +784,11 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
   const [agent, setAgent] = useState<WorkspaceAgent>(runnerAgents[0] ?? 'claude')
   const [model, setModel] = useState(workspaceAgents[agent].models[0]?.id ?? '')
   const [repository, setRepository] = useState('')
+  const reachable = useQuery({
+    queryKey: ['me', 'repositories'],
+    queryFn: () => unwrap(api.v1.me.repositories.get()),
+    staleTime: 300_000,
+  })
   const [secret, setSecret] = useState('')
   const [blocked, setBlocked] = useState<Blocked | null>(null)
   const preset = workspaceAgents[agent]
@@ -481,21 +806,51 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
       ),
     enabled: Boolean(chosen),
   })
+  const me = useQuery(meQuery)
+  const admin = isInstanceAdmin(me.data?.scopes ?? [])
+  const myKeys = useQuery({
+    queryKey: ['me', 'keys'],
+    queryFn: () => unwrap(api.v1.me.keys.get()),
+  })
   const keyMissing =
     projectKeys.data !== undefined &&
-    !preset.keys.some((key) => projectKeys.data.items.some((item) => item.key === key))
+    myKeys.data !== undefined &&
+    !preset.keys.some(
+      (key) =>
+        projectKeys.data.items.some((item) => item.key === key) ||
+        myKeys.data.items.some((item) => item.name === key && item.set),
+    )
   const asking =
     blocked?.kind === 'token' ? 'token' : blocked?.kind === 'key' || keyMissing ? 'key' : null
   const start = useMutation({
     mutationFn: async (prompt: string) => {
       if (asking === 'key' && secret.trim()) {
-        await storeProjectKey(chosen, credentialKey(preset.keys, secret), secret)
+        if (admin) {
+          await storeProjectKey(chosen, credentialKey(preset.keys, secret), secret)
+        } else {
+          await unwrap(
+            api.v1.me
+              .keys({
+                name: credentialKey(preset.keys, secret),
+              })
+              .put(
+                {
+                  value: secret,
+                },
+                idempotency(),
+              ),
+          )
+          void queries.invalidateQueries({
+            queryKey: ['me', 'keys'],
+          })
+        }
+
         void queries.invalidateQueries({
           queryKey: ['variables', 'project', chosen],
         })
       }
 
-      if (asking === 'token' && secret.trim()) {
+      if (asking === 'token' && admin && secret.trim()) {
         await storeProjectKey(chosen, githubTokenKey, secret)
       }
 
@@ -552,30 +907,48 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
           <Label htmlFor="live-repository">Repository</Label>
           <Input
             id="live-repository"
+            list="live-repositories"
             value={repository}
             onChange={(event) => setRepository(event.target.value)}
             placeholder="https://github.com/owner/name"
             aria-invalid={repository !== '' && !url}
           />
+          <datalist id="live-repositories">
+            {(reachable.data?.items ?? []).map((repo) => (
+              <option key={repo.full_name} value={repo.clone_url.replace(/\.git$/, '')}>
+                {repo.full_name}
+              </option>
+            ))}
+          </datalist>
         </div>
       </div>
       {asking && (
         <Notice
           tone="warning"
           title={
-            asking === 'key' ? `${chosen} has no ${preset.keyLabel}` : `${githubTokenLabel} needed`
+            asking === 'key'
+              ? admin
+                ? `${chosen} has no ${preset.keyLabel}`
+                : `You have no ${preset.keyLabel}`
+              : `${githubTokenLabel} needed`
           }
         >
           <span className="flex flex-col gap-2">
             {asking === 'key'
-              ? `${preset.keyHelp} Stationly stores it sealed for the whole project.`
-              : githubTokenHelp(chosen, repositoryName(url ?? repository))}
-            <Input
-              type="password"
-              aria-label={asking === 'key' ? preset.keyLabel : githubTokenLabel}
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-            />
+              ? admin
+                ? `${preset.keyHelp} Stationly stores it sealed for the whole project.`
+                : `${preset.keyHelp} Stationly stores it sealed as your own key; only your tasks use it.`
+              : admin
+                ? githubTokenHelp(chosen, repositoryName(url ?? repository))
+                : 'Stationly cannot read this repository. Connect GitHub in Your account with an account that can, or ask an admin for a project token.'}
+            {(asking === 'key' || admin) && (
+              <Input
+                type="password"
+                aria-label={asking === 'key' ? preset.keyLabel : githubTokenLabel}
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+              />
+            )}
           </span>
         </Notice>
       )}

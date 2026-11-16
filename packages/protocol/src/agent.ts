@@ -6,7 +6,28 @@ export const agentStatusValues = ['none', 'working', 'waiting', 'ready', 'failed
 
 export const agentAttentionKindValues = ['permission', 'question', 'plan'] as const
 
+export const agentProgressKindValues = ['thinking', 'writing', 'retrying'] as const
+
+export const toolApprovalStatusValues = ['pending', 'allowed', 'denied', 'expired'] as const
+
+export const toolApprovalClosedValues = ['allowed', 'denied', 'expired'] as const
+
+export type ToolApprovalStatusValue = (typeof toolApprovalStatusValues)[number]
+
+export const toolApprovalWaitS = 600
+
+export const runnerAskRules = [
+  'Bash(git push --force*)',
+  'Bash(git push -f*)',
+  'Bash(git push * main)',
+  'Bash(git push * master)',
+  'Bash(gh pr merge*)',
+  'Bash(gh release*)',
+  'Bash(npm publish*)',
+] as const
+
 export const taskStatusValues = [
+  'queued',
   'setting_up',
   'working',
   'waiting',
@@ -16,6 +37,21 @@ export const taskStatusValues = [
 ] as const
 
 export type TaskStatusValue = (typeof taskStatusValues)[number]
+
+export const taskMachineValues = ['project', 'own'] as const
+
+export type TaskMachineValue = (typeof taskMachineValues)[number]
+
+export const taskSlotMemoryBytes = 2 * 1024 ** 3
+
+export const taskSlotsDefault = 2
+
+export const taskPortRange = {
+  first: 3000,
+  last: 3099,
+} as const
+
+export const taskWorktreeRoot = '/home/agent/tasks'
 
 export const agentEventLimits = {
   batch: 100,
@@ -29,7 +65,8 @@ export const agentEventLimits = {
   partsIdleS: 60,
   perSandboxBytes: 64 * 1024 * 1024,
   perSandboxCount: 100000,
-  requestsPerMinute: 120,
+  requestsPerMinute: 240,
+  requestsPerExtraSlot: 60,
   staleWorkingS: 300,
 } as const
 
@@ -66,6 +103,22 @@ const agentEventData = {
     final: Type.Boolean(),
     text: Text,
   }),
+  progress: Type.Object({
+    key: Text,
+    kind: StringEnum(agentProgressKindValues),
+    text: Type.Optional(Text),
+    tokens: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+      }),
+    ),
+    attempt: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+      }),
+    ),
+    error: Type.Optional(Text),
+  }),
   message: Type.Object({
     message_id: Text,
     text: Text,
@@ -90,6 +143,31 @@ const agentEventData = {
     tool: Type.Optional(Text),
     summary: Type.Optional(Text),
   }),
+  'tool.blocked': Type.Object({
+    tool_use_id: Type.Optional(Text),
+    tool: Text,
+    summary: Type.Optional(Text),
+    reason: Type.Optional(Text),
+    truncated: Truncated,
+  }),
+  'approval.requested': Type.Object({
+    approval_id: Text,
+    tool: Text,
+    input: Type.Record(Type.String(), Type.Unknown()),
+    expires_at: Text,
+    truncated: Truncated,
+  }),
+  'approval.decided': Type.Object({
+    approval_id: Text,
+    status: StringEnum(toolApprovalClosedValues),
+    by: Type.Optional(
+      Type.Object({
+        type: Text,
+        id: Type.Union([Text, Type.Null()]),
+      }),
+    ),
+    message: Type.Optional(Text),
+  }),
   attention: Type.Object({
     kind: StringEnum(agentAttentionKindValues),
     tool: Type.Optional(Text),
@@ -99,6 +177,24 @@ const agentEventData = {
   'turn.ended': Type.Object({
     text: Type.Optional(Text),
     reason: Type.Optional(Text),
+    truncated: Truncated,
+  }),
+  'turn.changes': Type.Object({
+    files: Type.Array(
+      Type.Object({
+        path: Text,
+        added: Type.Union([Type.Integer(), Type.Null()]),
+        removed: Type.Union([Type.Integer(), Type.Null()]),
+        diff: Type.Optional(Text),
+      }),
+    ),
+    more_files: Type.Optional(Type.Integer()),
+    commits: Type.Array(
+      Type.Object({
+        sha: Text,
+        subject: Text,
+      }),
+    ),
     truncated: Truncated,
   }),
   'turn.failed': Type.Object({
@@ -123,9 +219,23 @@ export type AgentEventType = keyof typeof agentEventData
 
 export const agentEventTypeValues = Object.keys(agentEventData) as AgentEventType[]
 
+export const agentLiveEventTypeValues = ['message.part', 'progress'] as const
+
+export const agentDispatchEventTypeValues = ['approval.requested', 'approval.decided'] as const
+
+export const isDispatchAgentEvent = (type: string) =>
+  (agentDispatchEventTypeValues as readonly string[]).includes(type)
+
+export type AgentLiveEventType = (typeof agentLiveEventTypeValues)[number]
+
+export const isLiveAgentEvent = (type: string): type is AgentLiveEventType =>
+  (agentLiveEventTypeValues as readonly string[]).includes(type)
+
 export const agentStoredEventTypeValues = agentEventTypeValues.filter(
-  (type) => type !== 'message.part',
+  (type): type is Exclude<AgentEventType, AgentLiveEventType> => !isLiveAgentEvent(type),
 )
+
+export type AgentProgressData = Static<(typeof agentEventData)['progress']>
 
 const agentEventBase = {
   id: Type.String({
@@ -156,7 +266,9 @@ const eventSchema = <T extends AgentEventType>(type: T, extra: Record<string, TS
   )
 
 export const AgentEventInput = Type.Union(
-  agentEventTypeValues.map((type) => eventSchema(type)),
+  agentEventTypeValues
+    .filter((type) => !isDispatchAgentEvent(type))
+    .map((type) => eventSchema(type)),
   {
     description: 'One event a workspace relay reports about its agent session',
   },
@@ -257,6 +369,40 @@ export const AgentInboxAck = Type.Object(
       minItems: 1,
       maxItems: 100,
     }),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
+export const AgentApprovalRequest = Type.Object(
+  {
+    id: Type.String({
+      minLength: 1,
+      maxLength: 128,
+    }),
+    session_id: Type.String({
+      minLength: 1,
+      maxLength: 128,
+    }),
+    agent_id: Type.Optional(Type.String()),
+    tool_name: Type.String({
+      minLength: 1,
+    }),
+    tool_input: Type.Record(Type.String(), Type.Unknown()),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
+export const AgentApprovalState = Type.Object(
+  {
+    id: Type.String(),
+    status: StringEnum(toolApprovalStatusValues),
+    behavior: Type.Union([StringEnum(['allow', 'deny']), Type.Null()]),
+    message: Type.Union([Type.String(), Type.Null()]),
+    expires_at: Type.String(),
   },
   {
     additionalProperties: false,

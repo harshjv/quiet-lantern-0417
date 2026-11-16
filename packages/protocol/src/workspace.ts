@@ -147,6 +147,7 @@ export const workspaceSetupStepValues = [
   'clone',
   'checkout',
   'branch',
+  'worktree',
   'toolchain',
 ] as const
 
@@ -159,6 +160,7 @@ export const workspaceSetupSteps: Record<WorkspaceSetupStep, string> = {
   clone: 'clone the repository',
   checkout: 'check out the branch',
   branch: "create the task's branch",
+  worktree: "create the task's worktree",
   toolchain: "install the repository's toolchain",
 }
 

@@ -4,6 +4,7 @@ import { and, asc, count, eq, gt, inArray, lt, sql, sum } from 'drizzle-orm'
 
 import {
   agentEventLimits,
+  isLiveAgentEvent,
   type AgentEventInputValue,
   type AgentEventType,
   type AgentEventValue,
@@ -17,14 +18,14 @@ import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 
-import { shapeEvent, terminalConversation, type ConversationRow } from './runner.ts'
+import { conversationOf, shapeEvent, terminalConversation, type ConversationRow } from './runner.ts'
 import { applyActivity, type TaskRow } from './status.ts'
 
 type Input = AgentEventInputValue
 type Caps = { perSandboxCount: number; perSandboxBytes: number }
 type Data = Record<string, unknown>
 
-export type AgentEventLive = Omit<AgentEventValue, 'seq' | 'conversation_id'>
+export type AgentEventLive = AgentEventInputValue
 
 export const agentBus = new EventEmitter()
 agentBus.setMaxListeners(0)
@@ -282,11 +283,10 @@ const storeEvent = (
   }
 }
 
-const liveOf = (event: Input, redact: Redactor): AgentEventLive =>
-  ({
-    ...event,
-    data: cutStrings(mapStrings(event.data, redact) as Data, () => agentEventLimits.message),
-  }) as AgentEventLive
+const liveOf = (event: Input, redact: Redactor): AgentEventLive => ({
+  ...event,
+  data: cutStrings(mapStrings(event.data, redact) as Data, () => agentEventLimits.message),
+})
 
 const joined = (held: Held): Input => {
   const { last } = held
@@ -434,6 +434,18 @@ const flushIdle = (db: Db, taskId: string, key: string, log: Log, now: () => Dat
   }
 }
 
+export const recordEvents = (db: Db, row: TaskRow, events: Data[], redact: Redactor) =>
+  store(
+    db,
+    row,
+    events.map((event, index) => ({
+      event: event as unknown as Input,
+      index,
+    })),
+    redact,
+    new Date(),
+  )
+
 export const ingestAgentEvents = (
   db: Db,
   row: TaskRow,
@@ -448,7 +460,15 @@ export const ingestAgentEvents = (
   const storing: { event: Input; index: number }[] = []
 
   for (const [index, event] of events.entries()) {
-    if (event.type !== 'message.part') {
+    if (
+      event.type === 'attention' &&
+      conversationOf(db, row.id, event.session_id)?.origin === 'dashboard'
+    ) {
+      live += 1
+      continue
+    }
+
+    if (!isLiveAgentEvent(event.type)) {
       storing.push({
         event,
         index,
@@ -460,6 +480,10 @@ export const ingestAgentEvents = (
     toIso(event.at, index)
     live += 1
     agentBus.emit('part', row.id, liveOf(event, redact))
+
+    if (event.type !== 'message.part') {
+      continue
+    }
 
     const message = holdPart(
       db,

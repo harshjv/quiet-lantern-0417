@@ -7,6 +7,7 @@ import { tokenLevelValues, tokenPrefix, type Actor } from '@stationly/protocol'
 import { ApiError } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
 import { token } from '../db/schema.ts'
+import { capScopes, inTeam, projectMachineToken, userScopes } from '../team/members.ts'
 
 import { apiKeyFromHeaders, canonicalOrigin, v1Permission, type AuthService } from './auth.ts'
 import { liveGrant } from './grants.ts'
@@ -111,7 +112,7 @@ export const rateLimited = (explanation: string, retry: number) =>
     },
   )
 
-const ipOf = (request: Request) =>
+export const ipOf = (request: Request) =>
   request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
 
 export const recordUnauthenticated = (request: Request) => {
@@ -323,6 +324,28 @@ export const gateAuthRequest = async (auth: AuthService, request: Request) => {
   return null
 }
 
+const withTeamScopes = (db: Db, principal: Principal): Principal => {
+  if (principal.actor.type === 'station' || principal.actor.type === 'system') {
+    return principal
+  }
+
+  if (principal.token_kind === 'scoped' && projectMachineToken(db, principal.token_id)) {
+    return principal
+  }
+
+  if (!inTeam(db, principal.user_id)) {
+    throw unauthenticated('This person is no longer in the team.')
+  }
+
+  const held = userScopes(db, principal.user_id)
+  const own = principal.token_kind === 'session' || principal.token_kind === 'personal'
+
+  return {
+    ...principal,
+    scopes: own ? held : capScopes(principal.scopes, held),
+  }
+}
+
 export const authenticate = async (
   db: Db,
   auth: AuthService,
@@ -330,7 +353,7 @@ export const authenticate = async (
   options: AuthenticateOptions = {},
 ): Promise<Principal> => {
   try {
-    return await identify(db, auth, request, options)
+    return withTeamScopes(db, await identify(db, auth, request, options))
   } catch (error) {
     if (error instanceof ApiError && error.code === 'UNAUTHENTICATED') {
       checkUnauthenticatedLimit(request)

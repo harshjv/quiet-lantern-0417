@@ -12,7 +12,7 @@ import {
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { component, station } from '../db/schema.ts'
+import { component, member, station } from '../db/schema.ts'
 import { readSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { DomainError } from '../errors.ts'
 import { cidrProblem } from '../net/cidr.ts'
@@ -208,6 +208,16 @@ export const setupInstance = async (
     for (const [key, value] of Object.entries(settings)) {
       writeSetting(tx, key as SettingKey, value, actor)
     }
+
+    tx.insert(member)
+      .values({
+        user_id: userId,
+        role: 'admin',
+        joined_by: null,
+        created_at: new Date(),
+      })
+      .onConflictDoNothing()
+      .run()
 
     if (release && manifest) {
       storeRelease(tx, {

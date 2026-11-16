@@ -24,8 +24,10 @@ import {
   SandboxVariablesPatchBody,
   StringEnum,
   workspaceEgress,
+  workspaceRoot,
   workspaceSizeDefaults,
   workspaceUser,
+  type TaskMachineValue,
 } from '@stationly/protocol'
 import { releaseRepositories } from '@stationly/protocol/release-config'
 
@@ -59,6 +61,7 @@ import { requireRuntime } from '../../sandboxes/runtime.ts'
 import { growStorage, requireGrowable } from '../../sandboxes/storage.ts'
 import {
   isRepositoryName,
+  machineSetupAs,
   repositoryName,
   setupCommand,
   workspacePath,
@@ -407,12 +410,22 @@ export const sandboxRoutes = (kit: Kit) => {
   const defaultShell = (row: SandboxRow) =>
     row.image.ref === null ? ['/bin/bash', '-l'] : ['/bin/sh']
 
+  type WorkspaceOptions = {
+    taskBranch?: string | null
+    kind?: TaskMachineValue
+    memoryBytes?: number
+    repositoryReadable?: boolean
+  }
+
   const createSandbox = async (
     call: Call,
     ctx: { project: ProjectRow; environment: EnvironmentRow; target: SandboxContext['target'] },
     body: Static<typeof SandboxCreateBody>,
-    taskBranch: string | null = null,
+    options: WorkspaceOptions = {},
   ) => {
+    const taskBranch = options.taskBranch ?? null
+    const kind = options.kind ?? 'own'
+
     requireHumanIn(call, ctx.environment)
     const source = body.from ? sourceOf(call, ctx, body.from) : null
     const st = body.from ? stationRow(source!.stationId) : pickStation(body.station_id)
@@ -447,7 +460,7 @@ export const sandboxRoutes = (kit: Kit) => {
       memory_bytes: fittingMemory(
         db,
         st,
-        body.workspace ? workspaceSizeDefaults.memory_bytes : undefined,
+        body.workspace ? (options.memoryBytes ?? workspaceSizeDefaults.memory_bytes) : undefined,
       ),
       ...source?.size,
       ...body.size,
@@ -475,7 +488,7 @@ export const sandboxRoutes = (kit: Kit) => {
       ])
     }
 
-    if (wanted) {
+    if (wanted && !options.repositoryReadable) {
       await requireRepositoryAccess(kit.deps, {
         project: ctx.project,
         environment: ctx.environment.id,
@@ -567,10 +580,11 @@ export const sandboxRoutes = (kit: Kit) => {
     const workspace =
       wanted && minted
         ? {
+            kind,
             agent: wanted.agent,
-            repository: wanted.repository,
-            branch: wanted.branch ?? null,
-            path: workspacePath(wanted.repository),
+            repository: kind === 'project' ? null : wanted.repository,
+            branch: kind === 'project' ? null : (wanted.branch ?? null),
+            path: kind === 'project' ? workspaceRoot : workspacePath(wanted.repository),
             level: scopes[0]!.level,
             token_id: minted.row.id,
             setup_run_id: newId('run'),
@@ -689,8 +703,8 @@ export const sandboxRoutes = (kit: Kit) => {
               tty: false,
               actor: call.principal.actor,
               exec: {
-                cwd: workspaceUser.home,
-                user: workspaceUser.name,
+                cwd: machineSetupAs(workspace).home,
+                user: machineSetupAs(workspace).user,
                 timeout_s: sandboxExecLimits.timeoutS.default,
                 stdin: null,
                 env_keys: [],

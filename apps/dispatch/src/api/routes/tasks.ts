@@ -7,17 +7,25 @@ import { t } from 'elysia'
 import {
   agentPromptLimit,
   SandboxCreateBody,
+  taskMachineValues,
+  taskSlotMemoryBytes,
+  taskSlotsDefault,
   workspaceAgents,
   workspaceAgentValues,
+  type TaskMachineValue,
 } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
+import { fullAdmin, isInstanceAdmin } from '../../auth/scopes.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { sandbox, station, task } from '../../db/schema.ts'
+import { project, sandbox, station, task } from '../../db/schema.ts'
 import { requestDeletion, startSandbox } from '../../sandboxes/lifecycle.ts'
+import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
+import { isRepositoryName, repositoryName } from '../../sandboxes/workspace.ts'
 import { variablesOf } from '../../secrets/values.ts'
 import { emitEvent } from '../../station/events.ts'
+import { approvalOf, approvalState, decideApproval } from '../../tasks/approvals.ts'
 import {
   agentBus,
   firstConversationEvent,
@@ -27,21 +35,39 @@ import {
   type AgentEventLive,
 } from '../../tasks/events.ts'
 import {
+  claimSlot,
+  freeSlots,
+  homeOf,
+  machineSetupRerun,
+  machineUserFor,
+  nextPort,
+  projectMachine,
+  removeWorktree,
+  resumeTask,
+  slotsFor,
+  stopTask,
+  worktreeOf,
+} from '../../tasks/machine.ts'
+import {
   addInput,
+  conversationById,
   latestConversation,
   runnerLive,
   startConversation,
   wantRunner,
 } from '../../tasks/runner.ts'
-import { taskSubject, wakeTask, type TaskRow } from '../../tasks/status.ts'
-import { branchSlug, listTasks, taskItem, titleOf } from '../../tasks/views.ts'
-import { requireHuman } from '../access.ts'
+import { taskChanged, taskSubject, type TaskRow } from '../../tasks/status.ts'
+import { branchSlug, listTasks, taskItem, titleOf, uniqueBranch } from '../../tasks/views.ts'
+import { githubTokenOf, listKeys } from '../../team/keys.ts'
+import { memberLevel } from '../../team/members.ts'
+import { requireHuman, requireLevel, seesProject } from '../access.ts'
 import { audit, type Call } from '../context.ts'
 import { requireConnected } from '../deployments.ts'
 import { ApiError, fail, invalid, notFound } from '../errors.ts'
 import type { Kit } from '../kit.ts'
 import { environmentById, environmentInProject, projectByRef } from '../lookup.ts'
 import {
+  AgentApprovalState,
   AgentEventPage,
   AgentInputAccepted,
   AgentInterruptAccepted,
@@ -56,7 +82,12 @@ type CreateSandbox = (
   call: Call,
   ctx: ReturnType<typeof environmentById>,
   body: Static<typeof SandboxCreateBody>,
-  taskBranch: string | null,
+  options?: {
+    taskBranch?: string | null
+    kind?: TaskMachineValue
+    memoryBytes?: number
+    repositoryReadable?: boolean
+  },
 ) => Promise<{ id: string }>
 
 const drainSize = 200
@@ -120,10 +151,23 @@ const cursorOf = (request: Request, query: EventsQuery) => {
   return Number(text)
 }
 
+const onBehalf = (call: Call): Call => ({
+  ...call,
+  principal: {
+    ...call.principal,
+    scopes: fullAdmin,
+  },
+})
+
 const taskById = (db: Db, id: string) =>
   db.select().from(task).where(eq(task.id, id)).get() ?? notFound('task', id)
 
-const requireKey = (db: Db, projectId: string, agent: keyof typeof workspaceAgents) => {
+const requireKey = (
+  db: Db,
+  projectId: string,
+  agent: keyof typeof workspaceAgents,
+  userId: string,
+) => {
   const preset = workspaceAgents[agent]
   const keys = new Set(
     variablesOf(db, {
@@ -134,11 +178,17 @@ const requireKey = (db: Db, projectId: string, agent: keyof typeof workspaceAgen
       .map((variable) => variable.key),
   )
 
+  for (const own of listKeys(db, userId)) {
+    if (own.set) {
+      keys.add(own.name)
+    }
+  }
+
   if (!preset.keys.some((key) => keys.has(key))) {
     invalid([
       {
         path: '/agent',
-        message: `the project defines none of ${preset.keys.join(', ')} for ${preset.label}`,
+        message: `neither you nor the project has ${preset.keys.join(' or ')} for ${preset.label}`,
       },
     ])
   }
@@ -150,6 +200,27 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
   const redactor = (row: TaskRow, principal: Principal, requestId: string) => () =>
     kit.sandboxRedaction([row.sandbox_id], principal.actor, requestId)
 
+  const personOf = (principal: Principal) =>
+    principal.token_kind === 'session' || principal.token_kind === 'personal'
+      ? principal.user_id
+      : null
+
+  const sees = (principal: Principal, row: Pick<TaskRow, 'owner' | 'project_id'>) =>
+    isInstanceAdmin(principal.scopes) ||
+    (personOf(principal) !== null &&
+      row.owner.id === personOf(principal) &&
+      seesProject(principal, row.project_id))
+
+  const visibleTask = (call: Call, id: string) => {
+    const row = taskById(db, id)
+
+    if (!sees(call.principal, row)) {
+      notFound('task', id)
+    }
+
+    return row
+  }
+
   const shown = (row: TaskRow, call: Call) =>
     taskItem(
       db,
@@ -160,10 +231,19 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
   const wake = (call: Call, row: TaskRow, refusal: string) => {
     const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
 
+    return wakeBox(call, box, `task ${row.title}`, refusal)
+  }
+
+  const wakeBox = (
+    call: Call,
+    box: typeof sandbox.$inferSelect | undefined,
+    owner: string,
+    refusal: string,
+  ) => {
     if (!box) {
       fail(
         'SANDBOX_NOT_RUNNING',
-        `The workspace of task ${row.title} is gone, so ${refusal}.`,
+        `The workspace of ${owner} is gone, so ${refusal}.`,
         'Start a new task.',
         {
           status: 'deleted',
@@ -202,7 +282,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     if (!['creating', 'starting', 'running'].includes(box!.status)) {
       fail(
         'SANDBOX_NOT_RUNNING',
-        `The workspace of task ${row.title} is ${box!.status}, so ${refusal}.`,
+        `The workspace of ${owner} is ${box!.status}, so ${refusal}.`,
         'Start a new task.',
         {
           status: box!.status,
@@ -211,6 +291,104 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     }
 
     return false
+  }
+
+  const createMachine = async (
+    call: Call,
+    ctx: ReturnType<typeof environmentById>,
+    proj: typeof project.$inferSelect,
+    body: { agent: (typeof workspaceAgentValues)[number]; repository: string },
+    readable: boolean,
+  ) => {
+    const names = [
+      proj.name,
+      `${proj.name}-tasks`,
+      `${proj.name}-${randomBytes(2).toString('hex')}`,
+    ]
+    let created: { id: string } | null = null
+
+    for (const [attempt, name] of names.entries()) {
+      try {
+        created = await createSandbox(
+          call,
+          ctx,
+          {
+            name,
+            workspace: {
+              agent: body.agent,
+              repository: body.repository,
+              level: 'read',
+            },
+          },
+          {
+            kind: 'project',
+            memoryBytes: taskSlotsDefault * taskSlotMemoryBytes,
+            repositoryReadable: readable,
+          },
+        )
+        break
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.code !== 'NAME_TAKEN' ||
+          attempt + 1 >= names.length
+        ) {
+          throw error
+        }
+      }
+    }
+
+    const box = db.select().from(sandbox).where(eq(sandbox.id, created!.id)).get()!
+
+    db.update(project)
+      .set({
+        machine: {
+          slots: Math.min(taskSlotsDefault, slotsFor(box.size.memory_bytes)),
+          sandbox_id: box.id,
+        },
+      })
+      .where(eq(project.id, proj.id))
+      .run()
+
+    return box
+  }
+
+  const machineFor = async (
+    call: Call,
+    ctx: ReturnType<typeof environmentById>,
+    proj: typeof project.$inferSelect,
+    body: { agent: (typeof workspaceAgentValues)[number]; repository: string },
+    readable: boolean,
+  ) => {
+    const found = projectMachine(db, proj)
+
+    if (!found) {
+      return createMachine(call, ctx, proj, body, readable)
+    }
+
+    if (!isRepositoryName(repositoryName(body.repository))) {
+      invalid([
+        {
+          path: '/repository',
+          message: 'the last path segment, without .git, needs at least one letter or digit',
+        },
+      ])
+    }
+
+    if (!readable) {
+      await requireRepositoryAccess(kit.deps, {
+        project: proj,
+        environment: ctx.environment.id,
+        repository: body.repository,
+        variables: undefined,
+      })
+    }
+
+    wakeBox(call, found, `project ${proj.name}`, 'it cannot start a task')
+    machineSetupRerun(db, found)
+    kit.deps.stations.reconcile(found.station_id)
+
+    return db.select().from(sandbox).where(eq(sandbox.id, found.id)).get()!
   }
 
   const start = (row: TaskRow, since: number | undefined, conversationId: string | undefined) => {
@@ -318,19 +496,30 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       async ({ request, query }) => {
         const call = await kit.call(request)
 
-        return listTasks(db, {
+        const page = listTasks(db, {
+          owner: isInstanceAdmin(call.principal.scopes) ? null : (personOf(call.principal) ?? ''),
           limit: query.limit ?? defaultPageSize,
           cursor: query.cursor,
           archived: query.archived ?? false,
           redactor: (sandboxId) =>
             kit.sandboxRedaction([sandboxId], call.principal.actor, call.request_id),
         })
+
+        return {
+          ...page,
+          items: page.items.filter((item) =>
+            sees(call.principal, {
+              owner: item.owner,
+              project_id: item.project.id,
+            }),
+          ),
+        }
       },
       {
         operation: {
           id: 'list_tasks',
           summary: 'Tasks, newest first, with their status and setup; for an instance admin',
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'list'],
@@ -368,9 +557,35 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
         requireHuman(call.principal, 'Starting a task')
 
         const proj = projectByRef(db, body.project)
+        const onProject = (body.machine ?? 'project') === 'project'
         const env = body.environment
           ? environmentInProject(db, proj, body.environment)
           : environmentById(db, proj.default_environment_id).environment
+
+        requireLevel(
+          call.principal,
+          {
+            project_id: proj.id,
+            environment_id: env.id,
+          },
+          memberLevel,
+        )
+
+        const actingCall = onBehalf(call)
+        const ownToken = await githubTokenOf(kit.deps.auth, db, call.principal.user_id)
+        const readable =
+          !!ownToken && (await kit.deps.readRepository(body.repository, ownToken)) === 'readable'
+
+        if (onProject && env.id !== proj.default_environment_id) {
+          invalid([
+            {
+              path: '/environment',
+              message:
+                "a task on the project machine runs in the project's default environment; ask for machine own to use another",
+            },
+          ])
+        }
+
         const ctx = environmentById(db, env.id)
         const preset = workspaceAgents[body.agent]
 
@@ -392,17 +607,34 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           ])
         }
 
-        requireKey(db, proj.id, body.agent)
+        requireKey(db, proj.id, body.agent, call.principal.user_id)
 
         const title = titleOf(body.prompt)
-        const branch = branchSlug(title)
+        const branch = uniqueBranch(db, body.repository, branchSlug(title))
         const model = body.model ?? preset.models[0]?.id ?? null
-        let created: { id: string } | null = null
+        const id = newId('task')
+        let created: { id: string } | null = onProject
+          ? await machineFor(actingCall, ctx, proj, body, readable)
+          : null
+        const port = onProject ? nextPort(db, created!.id) : null
+
+        if (onProject && port === null) {
+          invalid([
+            {
+              path: '/machine',
+              message: `the machine of project ${proj.name} has no free port for another task; delete finished tasks or ask for machine own`,
+            },
+          ])
+        }
+
+        const queued =
+          onProject &&
+          freeSlots(db, db.select().from(sandbox).where(eq(sandbox.id, created!.id)).get()!) <= 0
 
         for (let attempt = 0; !created; attempt += 1) {
           try {
             created = await createSandbox(
-              call,
+              actingCall,
               ctx,
               {
                 name: workspaceName(title),
@@ -417,7 +649,10 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
                   level: 'read',
                 },
               },
-              branch,
+              {
+                taskBranch: branch,
+                repositoryReadable: readable,
+              },
             )
           } catch (error) {
             if (
@@ -430,7 +665,14 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           }
         }
 
-        const id = newId('task')
+        const member = onProject
+          ? await machineUserFor(
+              db,
+              kit.deps,
+              db.select().from(sandbox).where(eq(sandbox.id, created.id)).get()!,
+              call.principal.user_id,
+            )
+          : null
         const now = new Date()
 
         db.transaction((tx) => {
@@ -453,6 +695,11 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
               agent: body.agent,
               model,
               sandbox_id: created.id,
+              machine: onProject ? 'project' : 'own',
+              worktree: member ? worktreeOf(branch, id, homeOf(member.name)) : null,
+              port,
+              status: queued ? 'queued' : 'setting_up',
+              queued_at: queued ? now : null,
               created_at: now,
               updated_at: now,
             })
@@ -494,6 +741,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
                 repository: body.repository,
                 branch,
                 agent: body.agent,
+                machine: onProject ? 'project' : 'own',
                 sandbox_id: created.id,
               },
             },
@@ -509,7 +757,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           id: 'create_task',
           summary:
             'Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor',
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'create'],
@@ -543,6 +791,12 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
             minLength: 1,
             maxLength: agentPromptLimit,
           }),
+          machine: t.Optional(
+            t.UnionEnum([...taskMachineValues], {
+              description:
+                "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
+            }),
+          ),
         }),
         response: replies({
           202: Task,
@@ -554,13 +808,13 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       async ({ params, request }) => {
         const call = await kit.call(request)
 
-        return shown(taskById(db, params.task), call)
+        return shown(visibleTask(call, params.task), call)
       },
       {
         operation: {
           id: 'get_task',
           summary: 'A task with its status and setup; for an instance admin',
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'get'],
@@ -575,7 +829,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     .get(
       '/tasks/:task/events',
       async ({ params, request, query }) => {
-        const row = taskById(db, params.task)
+        const row = visibleTask(await kit.call(request), params.task)
 
         return (request.headers.get('accept') ?? '').includes('text/event-stream')
           ? ((await stream(row, request, query)) as never)
@@ -586,7 +840,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           id: 'get_task_events',
           summary:
             'Events of every conversation of a task, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID',
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'events'],
@@ -607,7 +861,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
         requireHuman(call.principal, 'Sending a prompt to a task')
 
-        const row = taskById(db, params.task)
+        const row = visibleTask(call, params.task)
         const session = latestConversation(db, row.id)
 
         if (!session || session.origin === 'terminal') {
@@ -632,17 +886,21 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           call.principal.actor,
         )
 
-        if (woke || !runnerLive(session!)) {
-          wantRunner(db, session!.id)
+        const idle =
+          woke || row.status === 'stopped' || row.status === 'finished' || row.status === 'failed'
+
+        if (row.status === 'queued') {
+          set.status = 202
+
+          return stored
         }
 
-        if (
-          woke ||
-          row.status === 'stopped' ||
-          row.status === 'finished' ||
-          row.status === 'failed'
-        ) {
-          wakeTask(db, row, session!.agent_session_id)
+        if (idle) {
+          if (claimSlot(db, row)) {
+            resumeTask(db, row)
+          }
+        } else if (!runnerLive(session!)) {
+          wantRunner(db, session!.id)
         }
 
         set.status = 202
@@ -653,7 +911,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
         operation: {
           id: 'send_task_prompt',
           summary: 'Send the next prompt to a task; only a human actor may send one',
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'reply'],
@@ -672,14 +930,112 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       },
     )
     .post(
+      '/tasks/:task/approvals/:approval/decision',
+      async ({ params, request, body }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Deciding a tool approval')
+
+        const row = visibleTask(call, params.task)
+        const approval =
+          approvalOf(db, row.id, params.approval) ?? notFound('approval', params.approval)
+        const session = conversationById(db, approval.conversation_id)
+        const decided = decideApproval(
+          db,
+          approval,
+          session ?? {
+            agent_session_id: '',
+          },
+          {
+            behavior: body.decision,
+            message: body.message ?? null,
+          },
+          call.principal.actor,
+          redactor(row, call.principal, call.request_id)(),
+        )
+
+        audit(
+          db,
+          call,
+          'task.approval.decide',
+          {
+            entity: 'task',
+            id: row.id,
+          },
+          {
+            after: {
+              approval: approval.id,
+              tool: approval.tool_name,
+              decision: body.decision,
+            },
+          },
+        )
+
+        return approvalState(decided)
+      },
+      {
+        operation: {
+          id: 'decide_tool_approval',
+          summary: "Allow or deny a tool call the task's agent asked for; needs a human actor",
+          level: 'any',
+          mcp: false,
+          cli: {
+            path: ['tasks', 'decide'],
+            args: ['task', 'approval'],
+          },
+        },
+        body: t.Object({
+          decision: t.UnionEnum(['allow', 'deny']),
+          message: t.Optional(
+            t.String({
+              maxLength: 2000,
+              description: 'For a deny: the reason the agent reads',
+            }),
+          ),
+        }),
+        response: replies({
+          200: AgentApprovalState,
+        }),
+      },
+    )
+    .post(
       '/tasks/:task/interrupt',
       async ({ params, request, set }) => {
         const call = await kit.call(request)
 
         requireHuman(call.principal, 'Interrupting a task')
 
-        const row = taskById(db, params.task)
+        const row = visibleTask(call, params.task)
         const session = latestConversation(db, row.id)
+
+        if (row.status === 'queued') {
+          db.update(task)
+            .set({
+              status: 'stopped',
+              queued_at: null,
+            })
+            .where(eq(task.id, row.id))
+            .run()
+          taskChanged(db, row)
+          set.status = 202
+
+          return {
+            accepted: true,
+          }
+        }
+
+        if (
+          session &&
+          !runnerLive(session) &&
+          (row.status === 'working' || row.status === 'setting_up' || row.status === 'waiting')
+        ) {
+          stopTask(db, row)
+          set.status = 202
+
+          return {
+            accepted: true,
+          }
+        }
 
         if (!session || !runnerLive(session)) {
           invalid([
@@ -709,7 +1065,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
         operation: {
           id: 'interrupt_task',
           summary: "End the running turn of a task's agent; the task stays. Needs a human actor",
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'interrupt'],
@@ -728,7 +1084,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
         requireHuman(call.principal, 'Deleting a task')
 
-        const row = taskById(db, params.task)
+        const row = visibleTask(call, params.task)
         const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
 
         db.transaction((tx) => {
@@ -756,7 +1112,9 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           )
         })
 
-        if (box) {
+        if (box && row.machine === 'project') {
+          removeWorktree(db, row, (station) => kit.deps.stations.reconcile(station))
+        } else if (box) {
           requestDeletion(db, box, {
             actor: call.principal.actor,
             reason: 'user',
@@ -773,7 +1131,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           id: 'delete_task',
           summary:
             'Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor',
-          level: 'instance admin',
+          level: 'any',
           mcp: false,
           cli: {
             path: ['tasks', 'delete'],

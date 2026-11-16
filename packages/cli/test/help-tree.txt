@@ -4,6 +4,8 @@ sly admin recovery-key
   Print the recovery key again; the display is audited
 sly agent
   Agent session commands that run inside a workspace
+sly agent approve
+  Ask the task's owner in Stationly to allow or deny a tool call; run as Claude Code's PermissionRequest hook in a runner session
 sly agent relay
   Post the agent session events that the workspace hook spooled to Dispatch, then exit when the spool stays empty
 sly agent run
@@ -80,6 +82,14 @@ sly github list-repositories <id>
   Repositories an installation covers
 sly github sync-installations
   Re-read every installation from GitHub
+sly invites
+  invites
+sly invites create
+  Invite someone to the team as an admin or a member; the link is shown once. Needs a human admin
+sly invites list
+  Invites, newest first, without their codes; for an admin
+sly invites revoke <invite>
+  Revoke an invite so its link stops working; needs a human admin
 sly link
   Write .stationly/context.json in the working directory: the instance, project, environment and service later commands default to
 sly login
@@ -100,6 +110,26 @@ sly mcp
   Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client
 sly mcp install <client>
   
+sly me
+  me
+sly me keys
+  keys
+sly me keys delete <name>
+  Delete one of your own agent keys; your tasks go back to the project key
+sly me keys list
+  Your own agent keys: which are set, never their values
+sly me keys set <name>
+  Set one of your own agent keys; your tasks use it instead of the project key
+sly me repositories
+  The repositories you can reach through the GitHub App with your own GitHub account, newest push first
+sly members
+  members
+sly members list
+  The people in the team with their role and projects
+sly members remove <user>
+  Remove someone from the team: their sessions end, their running tasks stop, and their tasks stay for an admin; needs a human admin
+sly members update <user>
+  Change a member's role or projects; needs a human admin
 sly metrics
   Live metrics of services
 sly metrics get
@@ -292,6 +322,8 @@ sly tasks
   tasks
 sly tasks create
   Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor
+sly tasks decide <task> <approval>
+  Allow or deny a tool call the task's agent asked for; needs a human actor
 sly tasks delete <task>
   Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor
 sly tasks events <task>

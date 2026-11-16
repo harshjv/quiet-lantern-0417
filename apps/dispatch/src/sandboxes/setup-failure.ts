@@ -48,8 +48,10 @@ export const workspaceSetupOf = (db: Db, row: typeof sandbox.$inferSelect) => {
         ? 'succeeded'
         : 'failed'
 
+  const { cleanup: _cleanup, ...workspace } = row.workspace
+
   return {
-    ...row.workspace,
+    ...workspace,
     setup: {
       state,
       step: state === 'failed' ? setupFailureOf(setup!, (text) => text).step : null,

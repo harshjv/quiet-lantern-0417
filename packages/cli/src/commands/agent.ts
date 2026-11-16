@@ -3,9 +3,10 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { createApiClient } from '@stationly/api-client'
-import type { AgentEventInputValue } from '@stationly/protocol'
+import { toolApprovalWaitS, type AgentEventInputValue } from '@stationly/protocol'
 
 import { realDeps, relay, type PostResult } from '../agent-relay.ts'
+import { gitChanges } from '../agent/changes.ts'
 import { claudeAdapter, runnerDir } from '../agent/claude.ts'
 import { runSession, type InboxItem } from '../agent/runner.ts'
 import { action, type Program } from '../command.ts'
@@ -145,6 +146,82 @@ const inboxOf = (run: Run, sandbox: string, session: string) => {
   }
 }
 
+const readStdin = async () => {
+  const chunks: Buffer[] = []
+
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer)
+  }
+
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+const decisionLine = (behavior: 'allow' | 'deny', message: string | null) =>
+  JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PermissionRequest',
+      decision:
+        behavior === 'allow'
+          ? {
+              behavior,
+            }
+          : {
+              behavior,
+              message: message ?? 'The task owner denied this in Stationly.',
+            },
+    },
+  })
+
+const textOf = (value: unknown) => (typeof value === 'string' ? value : '')
+
+const approve = async (run: Run, sandbox: string, hook: Record<string, unknown>) => {
+  const api = clientOf(run).v1.sandboxes({
+    sandbox,
+  }).agent.approvals
+  const id = `${process.hrtime.bigint()}-${process.pid}`
+  const posted = await api.post({
+    id,
+    session_id: textOf(hook.session_id),
+    ...(typeof hook.agent_id === 'string'
+      ? {
+          agent_id: hook.agent_id,
+        }
+      : {}),
+    tool_name: textOf(hook.tool_name),
+    tool_input: (hook.tool_input ?? {}) as Record<string, unknown>,
+  })
+
+  if (posted.error || !posted.data) {
+    return null
+  }
+
+  const deadline = Date.now() + toolApprovalWaitS * 1000
+
+  for (let state = posted.data; Date.now() < deadline;) {
+    if (state.status !== 'pending') {
+      return state.behavior ? decisionLine(state.behavior, state.message) : null
+    }
+
+    const next = await api({
+      approval: id,
+    })
+      .get({
+        query: {
+          wait_s: 25,
+        },
+      })
+      .catch(() => null)
+
+    if (next?.data) {
+      state = next.data
+    } else {
+      await sleep(2000)
+    }
+  }
+
+  return null
+}
+
 export const agentCommands = (program: Program) => {
   const agent = program
     .command('agent', {
@@ -173,6 +250,40 @@ export const agentCommands = (program: Program) => {
         const run = await connect(options)
 
         await relay(await realDeps(poster(run, sandbox)))
+
+        return exitCodes.ok
+      }),
+    )
+
+  agent
+    .command('approve', {
+      hidden: true,
+    })
+    .description(
+      "Ask the task's owner in Stationly to allow or deny a tool call; run as Claude Code's PermissionRequest hook in a runner session",
+    )
+    .action(
+      action(async (options) => {
+        const sandbox = env[sandboxIdEnv]
+        const input = await readStdin()
+
+        if (!sandbox || process.env.STATIONLY_RUNNER !== '1') {
+          return exitCodes.ok
+        }
+
+        try {
+          const line = await approve(
+            await connect(options),
+            sandbox,
+            JSON.parse(input) as Record<string, unknown>,
+          )
+
+          if (line) {
+            process.stdout.write(line)
+          }
+        } catch {
+          return exitCodes.ok
+        }
 
         return exitCodes.ok
       }),
@@ -226,6 +337,7 @@ export const agentCommands = (program: Program) => {
             post: async (events) => {
               await post(events)
             },
+            changes: gitChanges(process.cwd()),
             now: () => new Date(),
             sleep: (ms) => sleep(ms),
           })

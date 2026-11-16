@@ -8,7 +8,7 @@ import type {
 } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { conversation, conversation_event, task } from '../db/schema.ts'
+import { conversation_event, task, tool_approval } from '../db/schema.ts'
 import { emitEvent } from '../station/events.ts'
 
 export type TaskRow = typeof task.$inferSelect
@@ -71,6 +71,9 @@ const transitions: Partial<Record<AgentEventType, AgentStatusValue>> = {
   'tool.denied': 'working',
   'subagent.started': 'working',
   attention: 'waiting',
+  'approval.requested': 'waiting',
+  'approval.decided': 'working',
+  'tool.blocked': 'working',
   'turn.ended': 'ready',
   'turn.failed': 'failed',
   'session.ended': 'ended',
@@ -160,7 +163,9 @@ export const nextAgentStatus = (
     target === 'waiting'
       ? holdsKind
         ? current.kind
-        : ((event.data as { kind?: AgentStatusRecord['kind'] }).kind ?? null)
+        : event.type === 'approval.requested'
+          ? 'permission'
+          : ((event.data as { kind?: AgentStatusRecord['kind'] }).kind ?? null)
       : null
   const unchanged = current.status === target && sameSession
 
@@ -218,8 +223,22 @@ export const saveActivity = (db: Db, row: TaskRow, next: AgentStatusRecord) => {
   }
 }
 
+const stillPending = (db: Db, row: TaskRow) =>
+  db
+    .select({
+      id: tool_approval.id,
+    })
+    .from(tool_approval)
+    .where(and(eq(tool_approval.task_id, row.id), eq(tool_approval.status, 'pending')))
+    .limit(1)
+    .get() !== undefined
+
 export const applyActivity = (db: Db, row: TaskRow, event: StatusEvent, conversationId: string) => {
   if (endedTurn(db, row, event, conversationId)) {
+    return row
+  }
+
+  if (event.type === 'approval.decided' && (row.status !== 'waiting' || stillPending(db, row))) {
     return row
   }
 
@@ -228,25 +247,6 @@ export const applyActivity = (db: Db, row: TaskRow, event: StatusEvent, conversa
   })
 
   return next ? saveActivity(db, row, next) : row
-}
-
-export const stopSandboxTask = (db: Db, sandboxId: string, now = new Date()) => {
-  const row = db.select().from(task).where(eq(task.sandbox_id, sandboxId)).get()
-
-  if (!row) {
-    return
-  }
-
-  db.update(conversation)
-    .set({
-      runner_seen_at: null,
-    })
-    .where(eq(conversation.task_id, row.id))
-    .run()
-
-  if (row.status !== 'stopped') {
-    saveActivity(db, row, noAgentSession(now))
-  }
 }
 
 export const wakeTask = (db: Db, row: TaskRow, sessionId: string, now = new Date()) =>

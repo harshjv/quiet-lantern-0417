@@ -145,9 +145,12 @@ export const userExists = (db: Db) =>
 
 const dynamicRegistrationEnabled = (db: Db) => readSetting(db, 'oauth.dynamic_registration')
 
+export type GitHubSignIn = { clientId: string; clientSecret: string }
+
 export type AuthOptions = {
   dynamicRegistration: boolean
   fetchMetadata: ClientMetadataResourceFetch
+  github?: GitHubSignIn | null
 }
 
 export const createAuth = (db: Db, surface: AuthSurface, secret: string, options: AuthOptions) =>
@@ -173,6 +176,26 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
       disableSignUp: true,
       minPasswordLength,
       requireEmailVerification: false,
+    },
+    ...(options.github
+      ? {
+          socialProviders: {
+            github: {
+              clientId: options.github.clientId,
+              clientSecret: options.github.clientSecret,
+              redirectURI: `${surface.dashboardOrigin}/auth/callback/github`,
+              disableImplicitSignUp: true,
+            },
+          },
+        }
+      : {}),
+    account: {
+      encryptOAuthTokens: true,
+      accountLinking: {
+        enabled: true,
+        allowDifferentEmails: true,
+        disableImplicitLinking: true,
+      },
     },
     session: {
       expiresIn: 7 * 24 * 3600,
@@ -330,12 +353,16 @@ export class AuthService {
   readonly localOrigin: string
   surface: AuthSurface
 
+  private readonly github: () => GitHubSignIn | null
+
   constructor(
     db: Db,
     masterKey: Buffer,
     localOrigin: string,
     fetchMetadata: ClientMetadataResourceFetch,
+    github: () => GitHubSignIn | null = () => null,
   ) {
+    this.github = github
     this.db = db
     this.localOrigin = localOrigin
     this.secret = authSecret(masterKey)
@@ -349,6 +376,7 @@ export class AuthService {
     return createAuth(this.db, this.surface, this.secret, {
       dynamicRegistration: dynamicRegistrationEnabled(this.db),
       fetchMetadata: this.fetchMetadata,
+      github: this.github(),
     })
   }
 

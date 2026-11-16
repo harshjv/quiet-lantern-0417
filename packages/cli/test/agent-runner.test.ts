@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import type { AgentEventInputValue } from '@stationly/protocol'
+import { runnerAskRules, type AgentEventInputValue } from '@stationly/protocol'
 
 import type { AgentAdapter, AgentExit } from '../src/agent/adapter.ts'
 import {
@@ -189,6 +189,7 @@ test('the Claude Code process is one headless stream-json session in auto mode t
   assert.deepEqual(claudeSettings.permissions, {
     defaultMode: 'auto',
     denyInsteadOfPrompting: true,
+    ask: [...runnerAskRules],
   })
   assert.deepEqual(JSON.parse(userLine('hi')), {
     type: 'user',

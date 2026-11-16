@@ -1,4 +1,9 @@
-import type { AgentEventValue, AgentStatusRecord, AgentStatusValue } from '@stationly/protocol'
+import type {
+  AgentEventValue,
+  AgentProgressData,
+  AgentStatusRecord,
+  AgentStatusValue,
+} from '@stationly/protocol'
 
 import { plural } from './format.ts'
 import type { Tone } from './tone.ts'
@@ -18,6 +23,13 @@ export type AgentLivePart = {
   }
 }
 
+export type AgentProgress = {
+  type: 'progress'
+  at: string
+  session_id: string
+  data: AgentProgressData
+}
+
 export type HeldParts = {
   session_id: string
   texts: Record<number, string>
@@ -27,13 +39,44 @@ export type AgentState = {
   events: AgentEventValue[]
   lastSeq: number
   parts: Record<string, HeldParts>
+  progress: AgentProgress | null
+  closedAt: string
 }
 
 export const emptyAgentState: AgentState = {
   events: [],
   lastSeq: 0,
   parts: {},
+  progress: null,
+  closedAt: '',
 }
+
+const closesProgress = new Set<AgentEventValue['type']>([
+  'message',
+  'tool.started',
+  'turn.ended',
+  'turn.failed',
+  'session.ended',
+])
+
+const closing = (state: AgentState, event: AgentEventValue) => {
+  if (event.agent_id || !closesProgress.has(event.type) || event.at <= state.closedAt) {
+    return {}
+  }
+
+  return {
+    closedAt: event.at,
+    progress: state.progress && state.progress.at <= event.at ? null : state.progress,
+  }
+}
+
+export const applyProgress = (state: AgentState, progress: AgentProgress): AgentState =>
+  progress.at <= state.closedAt
+    ? state
+    : {
+        ...state,
+        progress,
+      }
 
 export const applyStored = (state: AgentState, event: AgentEventValue): AgentState => {
   if (event.seq <= state.lastSeq) {
@@ -49,9 +92,11 @@ export const applyStored = (state: AgentState, event: AgentEventValue): AgentSta
   }
 
   return {
+    ...state,
     events: [...state.events, event].slice(-maxAgentEvents),
     lastSeq: event.seq,
     parts,
+    ...closing(state, event),
   }
 }
 
@@ -113,6 +158,26 @@ export type TurnItem =
   | { kind: 'live'; id: string; text: string }
   | { kind: 'tools'; id: string; calls: ToolCall[] }
   | { kind: 'note'; id: string; text: string }
+  | {
+      kind: 'approval'
+      id: string
+      approvalId: string
+      tool: string
+      input: Record<string, unknown>
+      expiresAt: string
+      truncated: boolean
+      status: 'pending' | 'allowed' | 'denied' | 'expired'
+      message: string | null
+    }
+  | { kind: 'blocked'; id: string; tool: string; summary: string; reason: string | null }
+  | {
+      kind: 'changes'
+      id: string
+      files: { path: string; added: number | null; removed: number | null; diff?: string }[]
+      moreFiles: number
+      commits: { sha: string; subject: string }[]
+      truncated: boolean
+    }
 
 export type Turn = {
   key: string
@@ -126,6 +191,16 @@ export type Turn = {
 }
 
 const notificationTag = '<task-notification>'
+
+const isNotification = (text: string) => text.trimStart().startsWith(notificationTag)
+
+export const typedPromptCount = (state: AgentState) =>
+  state.events.filter((event) => event.type === 'prompt' && !isNotification(event.data.text)).length
+
+export const runningTool = (turn: Turn | undefined) =>
+  turn?.items.some(
+    (item) => item.kind === 'tools' && item.calls.some((call) => call.state === 'running'),
+  ) ?? false
 
 const notificationNote = (text: string) => {
   const summary = /<summary>([\s\S]*?)<\/summary>/.exec(text)?.[1]?.trim()
@@ -148,6 +223,21 @@ const newTurn = (
   stopped: false,
   items: [],
 })
+
+const inputKeys = ['command', 'file_path', 'pattern', 'url', 'path']
+
+const refuseCall = (calls: Map<string, ToolCall>, tool: string, input: Record<string, unknown>) => {
+  const shown = inputKeys.flatMap((key) => (typeof input[key] === 'string' ? [input[key]] : []))
+  const call = [...calls.values()]
+    .reverse()
+    .find(
+      (entry) => entry.state === 'running' && entry.name === tool && shown.includes(entry.summary),
+    )
+
+  if (call) {
+    call.state = 'denied'
+  }
+}
 
 export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
   const turns: Turn[] = []
@@ -189,7 +279,7 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
 
     switch (event.type) {
       case 'prompt':
-        if (event.data.text.trimStart().startsWith(notificationTag)) {
+        if (isNotification(event.data.text)) {
           current(event).items.push({
             kind: 'note',
             id: event.id,
@@ -263,6 +353,64 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
           },
           event.id,
         )
+        break
+
+      case 'tool.blocked': {
+        const call = event.data.tool_use_id ? calls.get(event.data.tool_use_id) : undefined
+
+        if (call?.state === 'running') {
+          call.state = 'denied'
+        }
+
+        current(event).items.push({
+          kind: 'blocked',
+          id: event.id,
+          tool: event.data.tool,
+          summary: event.data.summary ?? '',
+          reason: event.data.reason ?? null,
+        })
+        break
+      }
+
+      case 'turn.changes':
+        current(event).items.push({
+          kind: 'changes',
+          id: event.id,
+          files: event.data.files,
+          moreFiles: event.data.more_files ?? 0,
+          commits: event.data.commits,
+          truncated: event.data.truncated === true,
+        })
+        break
+
+      case 'approval.requested':
+        current(event).items.push({
+          kind: 'approval',
+          id: event.id,
+          approvalId: event.data.approval_id,
+          tool: event.data.tool,
+          input: event.data.input,
+          expiresAt: event.data.expires_at,
+          truncated: event.data.truncated === true,
+          status: 'pending',
+          message: null,
+        })
+        break
+
+      case 'approval.decided':
+        for (const turn of turns) {
+          for (const item of turn.items) {
+            if (item.kind === 'approval' && item.approvalId === event.data.approval_id) {
+              item.status = event.data.status
+              item.message = event.data.message ?? null
+
+              if (event.data.status !== 'allowed') {
+                refuseCall(calls, item.tool, item.input)
+              }
+            }
+          }
+        }
+
         break
 
       case 'turn.ended': {

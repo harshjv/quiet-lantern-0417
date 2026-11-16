@@ -152,6 +152,22 @@ const permission = (payload: HookPayload): Mapped | null => {
     : null
 }
 
+const blocked = (payload: HookPayload): Mapped | null => {
+  const tool = text(payload.tool_name)
+
+  return tool
+    ? {
+        type: 'tool.blocked',
+        data: {
+          tool_use_id: text(payload.tool_use_id),
+          tool,
+          summary: summaryOf(tool, payload.tool_input),
+          reason: text(payload.reason),
+        },
+      }
+    : null
+}
+
 const elicitation = (payload: HookPayload): Mapped | null => {
   const server = text(payload.mcp_server_name)
 
@@ -281,6 +297,7 @@ const mappers: Record<string, (payload: HookPayload, context: Context) => Mapped
   PostToolUse: (payload) => finished(payload, false),
   PostToolUseFailure: (payload) => finished(payload, true),
   PermissionRequest: permission,
+  PermissionDenied: blocked,
   Notification: notification,
   Elicitation: elicitation,
   SubagentStart: subagent('subagent.started'),

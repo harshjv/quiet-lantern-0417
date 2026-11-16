@@ -56,6 +56,21 @@ export type GitHubDeps = { db: Db; keyring: Keyring; auth: AuthService }
 
 const aad = (app: { id: string }, field: string) => `github_app:${app.id}:${field}`
 
+export const signInApp = (db: Db, keyring: Keyring) => {
+  const app = db.select().from(github_app).orderBy(desc(github_app.created_at)).limit(1).get()
+
+  return app?.data_key_id
+    ? {
+        clientId: app.client_id,
+        clientSecret: keyring.decrypt(
+          aad(app, 'client_secret'),
+          app.data_key_id,
+          app.client_secret,
+        ),
+      }
+    : null
+}
+
 export const repoServices = (db: Db) =>
   db
     .select({

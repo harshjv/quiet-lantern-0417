@@ -43,9 +43,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
+import { useLive } from './data'
 import { projects } from './fixtures'
 import { invites, members, type Member } from './fixtures-outside'
 import { Chips, ItemList, ItemRow, Page, Section } from './parts'
+import { LiveTeam } from './team-live'
 
 function Role({ value }: { value: string }) {
   return (
@@ -165,6 +167,10 @@ function Invite({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boole
 }
 
 export function Team() {
+  return useLive() ? <LiveTeam /> : <MockTeam />
+}
+
+function MockTeam() {
   const [editing, setEditing] = useState<Member | null>(null)
   const [removing, setRemoving] = useState<Member | null>(null)
   const [inviting, setInviting] = useState(false)

@@ -15,6 +15,21 @@ import { newId } from '../db/ids.ts'
 import { conversation, run, sandbox, task, task_inbox } from '../db/schema.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
+import { githubTokenOf, keyEnvFor } from '../team/keys.ts'
+
+import { closePendingApprovals } from './approvals.ts'
+import {
+  claimSlot,
+  deliveredRun,
+  homeOf,
+  machineUserOf,
+  memberEnv,
+  promoteQueued,
+  startTaskSetups,
+  taskSetupReady,
+  type MachineDeps,
+} from './machine.ts'
+import { saveActivity } from './status.ts'
 
 type ActorValue = Static<typeof Actor>
 
@@ -36,11 +51,19 @@ const runnerScript = [
   'set -eu',
   'state="$HOME/.local/state/stationly/runner"',
   'mkdir -p "$state"',
+  'if [ -n "$7" ] && [ "${STATIONLY_MEMBER:-}" != "$7" ]; then echo "The run did not receive its member values" >&2; exit 1; fi',
+  'for name in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN CODEX_API_KEY CODEX_ACCESS_TOKEN; do if [ -z "$(printenv "$name")" ]; then unset "$name"; fi; done',
   'cd "$5"',
+  'if [ -n "$6" ]; then export PORT="$6"; fi',
   'setsid sly agent run --session "$1" --adapter "$2" ${3:+--model "$3"} ${4:+--resume} >>"$state/$1.log" 2>&1 </dev/null &',
 ].join('\n')
 
-export const runnerCommand = (session: ConversationRow, path: string) => [
+export const runnerCommand = (
+  session: ConversationRow,
+  path: string,
+  port: number | null,
+  member: string | null = null,
+) => [
   'bash',
   '-lc',
   runnerScript,
@@ -50,6 +73,8 @@ export const runnerCommand = (session: ConversationRow, path: string) => [
   session.model ?? '',
   session.resume ? '1' : '',
   path,
+  port === null ? '' : String(port),
+  member ?? '',
 ]
 
 export const humanOf = (actor: ActorValue) => ({
@@ -65,6 +90,9 @@ const nextInputSeq = (db: Db, taskId: string) =>
     .from(task_inbox)
     .where(eq(task_inbox.task_id, taskId))
     .get()?.value ?? 0) + 1
+
+export const conversationById = (db: Db, id: string) =>
+  db.select().from(conversation).where(eq(conversation.id, id)).get()
 
 export const conversationOf = (db: Db, taskId: string, agentSessionId: string) =>
   db
@@ -208,6 +236,35 @@ export const ackInputs = (db: Db, taskId: string, ids: string[], now = new Date(
     .where(and(eq(task_inbox.task_id, taskId), inArray(task_inbox.id, ids)))
     .run().changes
 
+export const ackSandboxInputs = (
+  db: Db,
+  sandboxId: string,
+  ids: string[],
+  owner: string | null = null,
+  now = new Date(),
+) => {
+  const owners = db
+    .select({
+      id: task.id,
+      owner: task.owner,
+    })
+    .from(task)
+    .where(eq(task.sandbox_id, sandboxId))
+    .all()
+    .filter((row) => owner === null || row.owner.id === owner)
+    .map((row) => row.id)
+
+  return owners.length && ids.length
+    ? db
+        .update(task_inbox)
+        .set({
+          delivered_at: now,
+        })
+        .where(and(inArray(task_inbox.task_id, owners), inArray(task_inbox.id, ids)))
+        .run().changes
+    : 0
+}
+
 export const runnerLive = (session: Pick<ConversationRow, 'runner_seen_at'>, now = new Date()) =>
   session.runner_seen_at !== null && now.getTime() - session.runner_seen_at.getTime() < runnerLiveMs
 
@@ -224,6 +281,8 @@ export const runnerExited = (
     .where(eq(conversation.id, conversationRow.id))
     .run()
 
+  closePendingApprovals(db, conversationRow.task_id, now)
+
   const items = inboxItems(db, conversationRow, 0)
   const stale = items.filter((item) => item.kind === 'interrupt').map((item) => item.id)
 
@@ -231,10 +290,21 @@ export const runnerExited = (
     ackInputs(db, conversationRow.task_id, stale, now)
   }
 
-  const waiting = !failed && items.some((item) => item.kind === 'prompt')
+  const row = db.select().from(task).where(eq(task.id, conversationRow.task_id)).get()
+  const waiting =
+    !failed && items.some((item) => item.kind === 'prompt') && !!row && claimSlot(db, row, now)
 
   if (waiting) {
     wantRunner(db, conversationRow.id)
+  } else if (row && (row.status === 'working' || row.status === 'waiting')) {
+    saveActivity(db, row, {
+      status: 'ready',
+      since: now.toISOString(),
+      session_id: conversationRow.agent_session_id,
+      last_event_at: now.toISOString(),
+      kind: null,
+      agents: [],
+    })
   }
 
   return waiting
@@ -265,27 +335,6 @@ export const shapeEvent = (
 
   if (session.origin !== 'dashboard') {
     return plain
-  }
-
-  if (event.type === 'attention') {
-    const { tool, summary } = event.data as { tool?: string; summary?: string }
-
-    return {
-      type: 'tool.denied',
-      data: {
-        ...(tool === undefined
-          ? {}
-          : {
-              tool,
-            }),
-        ...(summary === undefined
-          ? {}
-          : {
-              summary,
-            }),
-      },
-      input: null,
-    }
   }
 
   if (event.type === 'prompt') {
@@ -338,8 +387,7 @@ export const wantStrandedRunners = (db: Db, now = new Date()) => {
   const stranded = db
     .select({
       session: conversation,
-      status: task.status,
-      sandboxStatus: sandbox.status,
+      row: task,
     })
     .from(conversation)
     .innerJoin(task, eq(task.id, conversation.task_id))
@@ -353,23 +401,35 @@ export const wantStrandedRunners = (db: Db, now = new Date()) => {
     )
     .all()
 
-  for (const { session, status } of stranded) {
-    if (status === 'failed' || runnerLive(session, now) || !settledRun(db, session.runner_run_id)) {
+  for (const { session, row } of stranded) {
+    if (
+      row.status === 'failed' ||
+      row.status === 'queued' ||
+      row.status === 'stopped' ||
+      runnerLive(session, now) ||
+      !settledRun(db, session.runner_run_id)
+    ) {
       continue
     }
 
-    if (inboxItems(db, session, 0).some((item) => item.kind === 'prompt')) {
+    if (
+      inboxItems(db, session, 0).some((item) => item.kind === 'prompt') &&
+      claimSlot(db, row, now)
+    ) {
       wantRunner(db, session.id)
     }
   }
 }
 
-export const startPendingRunners = (db: Db, reconcile: (station: string) => void) => {
+export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
+  promoteQueued(db)
+  await startTaskSetups(db, deps)
   wantStrandedRunners(db)
 
   const wanted = db
     .select({
       session: conversation,
+      row: task,
       sandbox,
     })
     .from(conversation)
@@ -378,10 +438,15 @@ export const startPendingRunners = (db: Db, reconcile: (station: string) => void
     .where(eq(conversation.runner_wanted, true))
     .all()
 
-  for (const { session, sandbox: row } of wanted) {
+  for (const { session, row: owner, sandbox: row } of wanted) {
     const workspace = row.workspace
 
-    if (row.status !== 'running' || !workspace) {
+    if (
+      row.status !== 'running' ||
+      !workspace ||
+      owner.status === 'queued' ||
+      !taskSetupReady(db, owner)
+    ) {
       continue
     }
 
@@ -392,6 +457,36 @@ export const startPendingRunners = (db: Db, reconcile: (station: string) => void
     }
 
     const id = newId('run')
+    const member = machineUserOf(db, owner)
+    const as = member
+      ? {
+          user: member.name,
+          home: homeOf(member.name),
+        }
+      : {
+          user: workspaceUser.name,
+          home: workspaceUser.home,
+        }
+
+    db.update(conversation)
+      .set({
+        runner_wanted: false,
+      })
+      .where(eq(conversation.id, session.id))
+      .run()
+
+    const token = await githubTokenOf(deps.auth, db, owner.owner.id)
+    const envKeys = await deliveredRun(deps, row, id, [
+      ['HOME', as.home],
+      ...(member ? memberEnv(deps.keyring, member) : []),
+      ...keyEnvFor(db, deps.keyring, owner.owner.id, owner.agent),
+      ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : []),
+    ]).catch(() => null)
+
+    if (!envKeys) {
+      wantRunner(db, session.id)
+      continue
+    }
 
     db.transaction((tx) => {
       const tdb = tx as unknown as Db
@@ -404,17 +499,22 @@ export const startPendingRunners = (db: Db, reconcile: (station: string) => void
           sandbox_id: row.id,
           deployment_id: null,
           kind: 'exec',
-          command: runnerCommand(session, workspace.path),
+          command: runnerCommand(
+            session,
+            owner.worktree ?? workspace.path,
+            owner.port,
+            member?.name ?? null,
+          ),
           status: 'queued',
           log_ref: `logs/sandboxes/${row.id}/${id}`,
           tty: false,
           actor: runnerActor,
           exec: {
-            cwd: workspaceUser.home,
-            user: workspaceUser.name,
+            cwd: as.home,
+            user: as.user,
             timeout_s: 60,
             stdin: null,
-            env_keys: [],
+            env_keys: envKeys,
             attach: false,
           },
         })
@@ -428,9 +528,9 @@ export const startPendingRunners = (db: Db, reconcile: (station: string) => void
         .where(eq(conversation.id, session.id))
         .run()
     })
-    reconcile(row.station_id)
+    deps.reconcile(row.station_id)
   }
 }
 
-export const startAgentRunners = (db: Db, reconcile: (station: string) => void, log: Log) =>
-  every(2, 'sandbox.agent_runner_failed', log, () => startPendingRunners(db, reconcile))
+export const startAgentRunners = (db: Db, deps: MachineDeps, log: Log) =>
+  every(2, 'sandbox.agent_runner_failed', log, () => startPendingRunners(db, deps))

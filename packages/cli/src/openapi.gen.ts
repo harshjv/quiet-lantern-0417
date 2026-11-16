@@ -24034,6 +24034,347 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/sandboxes/{sandbox}/agent/approvals": {
+      "post": {
+        "tags": [
+          "sandboxes"
+        ],
+        "operationId": "request_tool_approval",
+        "summary": "Ask the task's owner to allow or deny a tool call of a runner session; only the workspace token is accepted",
+        "x-stationly": {
+          "level": "read",
+          "mcp": false,
+          "cli": false
+        },
+        "parameters": [
+          {
+            "name": "sandbox",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentApprovalRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentApprovalRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response for status 201",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApprovalState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{sandbox}/agent/approvals/{approval}": {
+      "get": {
+        "tags": [
+          "sandboxes"
+        ],
+        "operationId": "get_tool_approval",
+        "summary": "An approval of a runner session, waiting up to wait_s for a decision; only the workspace token is accepted",
+        "x-stationly": {
+          "level": "read",
+          "mcp": false,
+          "cli": false
+        },
+        "parameters": [
+          {
+            "name": "sandbox",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "approval",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait_s",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "maximum": 25,
+              "anyOf": [
+                {
+                  "format": "integer",
+                  "default": 0,
+                  "type": "string"
+                },
+                {
+                  "minimum": 0,
+                  "maximum": 25,
+                  "type": "integer"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApprovalState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sandboxes/{sandbox}/agent/runner/exit": {
       "post": {
         "tags": [
@@ -24552,6 +24893,79 @@ export const openApiDocument = {
                               "type": "string"
                             },
                             "type": {
+                              "const": "progress",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "kind"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "thinking",
+                                    "writing",
+                                    "retrying"
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "tokens": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "attempt": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "error": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
                               "const": "message",
                               "type": "string"
                             },
@@ -24791,6 +25205,68 @@ export const openApiDocument = {
                               "type": "string"
                             },
                             "type": {
+                              "const": "tool.blocked",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
                               "const": "attention",
                               "type": "string"
                             },
@@ -24866,6 +25342,109 @@ export const openApiDocument = {
                                 },
                                 "reason": {
                                   "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.changes",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "files",
+                                "commits"
+                              ],
+                              "properties": {
+                                "files": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "path",
+                                      "added",
+                                      "removed"
+                                    ],
+                                    "properties": {
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "added": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
+                                      },
+                                      "removed": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
+                                      },
+                                      "diff": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                },
+                                "more_files": {
+                                  "type": "integer"
+                                },
+                                "commits": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "sha",
+                                      "subject"
+                                    ],
+                                    "properties": {
+                                      "sha": {
+                                        "type": "string"
+                                      },
+                                      "subject": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
                                 },
                                 "truncated": {
                                   "type": "boolean"
@@ -25371,6 +25950,79 @@ export const openApiDocument = {
                               "type": "string"
                             },
                             "type": {
+                              "const": "progress",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "kind"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "thinking",
+                                    "writing",
+                                    "retrying"
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "tokens": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "attempt": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "error": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
                               "const": "message",
                               "type": "string"
                             },
@@ -25610,6 +26262,68 @@ export const openApiDocument = {
                               "type": "string"
                             },
                             "type": {
+                              "const": "tool.blocked",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
                               "const": "attention",
                               "type": "string"
                             },
@@ -25685,6 +26399,109 @@ export const openApiDocument = {
                                 },
                                 "reason": {
                                   "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.changes",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "files",
+                                "commits"
+                              ],
+                              "properties": {
+                                "files": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "path",
+                                      "added",
+                                      "removed"
+                                    ],
+                                    "properties": {
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "added": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
+                                      },
+                                      "removed": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
+                                      },
+                                      "diff": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                },
+                                "more_files": {
+                                  "type": "integer"
+                                },
+                                "commits": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "sha",
+                                      "subject"
+                                    ],
+                                    "properties": {
+                                      "sha": {
+                                        "type": "string"
+                                      },
+                                      "subject": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
                                 },
                                 "truncated": {
                                   "type": "boolean"
@@ -26190,6 +27007,79 @@ export const openApiDocument = {
                               "type": "string"
                             },
                             "type": {
+                              "const": "progress",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "kind"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "thinking",
+                                    "writing",
+                                    "retrying"
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "tokens": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "attempt": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "error": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
                               "const": "message",
                               "type": "string"
                             },
@@ -26429,6 +27319,68 @@ export const openApiDocument = {
                               "type": "string"
                             },
                             "type": {
+                              "const": "tool.blocked",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "tool"
+                              ],
+                              "properties": {
+                                "tool_use_id": {
+                                  "type": "string"
+                                },
+                                "tool": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
                               "const": "attention",
                               "type": "string"
                             },
@@ -26504,6 +27456,109 @@ export const openApiDocument = {
                                 },
                                 "reason": {
                                   "type": "string"
+                                },
+                                "truncated": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "at",
+                            "session_id",
+                            "type",
+                            "data"
+                          ],
+                          "properties": {
+                            "id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "type": "string"
+                            },
+                            "prompt_id": {
+                              "type": "string"
+                            },
+                            "turn_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "turn.changes",
+                              "type": "string"
+                            },
+                            "data": {
+                              "type": "object",
+                              "required": [
+                                "files",
+                                "commits"
+                              ],
+                              "properties": {
+                                "files": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "path",
+                                      "added",
+                                      "removed"
+                                    ],
+                                    "properties": {
+                                      "path": {
+                                        "type": "string"
+                                      },
+                                      "added": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
+                                      },
+                                      "removed": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
+                                      },
+                                      "diff": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                },
+                                "more_files": {
+                                  "type": "integer"
+                                },
+                                "commits": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "sha",
+                                      "subject"
+                                    ],
+                                    "properties": {
+                                      "sha": {
+                                        "type": "string"
+                                      },
+                                      "subject": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
                                 },
                                 "truncated": {
                                   "type": "boolean"
@@ -26853,7 +27908,7 @@ export const openApiDocument = {
         "operationId": "list_tasks",
         "summary": "Tasks, newest first, with their status and setup; for an instance admin",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -27035,7 +28090,7 @@ export const openApiDocument = {
         "operationId": "create_task",
         "summary": "Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -27089,6 +28144,15 @@ export const openApiDocument = {
                     "minLength": 1,
                     "maxLength": 32768,
                     "type": "string"
+                  },
+                  "machine": {
+                    "default": "project",
+                    "description": "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "own"
+                    ]
                   }
                 }
               }
@@ -27135,6 +28199,15 @@ export const openApiDocument = {
                     "minLength": 1,
                     "maxLength": 32768,
                     "type": "string"
+                  },
+                  "machine": {
+                    "default": "project",
+                    "description": "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "own"
+                    ]
                   }
                 }
               }
@@ -27181,6 +28254,15 @@ export const openApiDocument = {
                     "minLength": 1,
                     "maxLength": 32768,
                     "type": "string"
+                  },
+                  "machine": {
+                    "default": "project",
+                    "description": "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "own"
+                    ]
                   }
                 }
               }
@@ -27319,7 +28401,7 @@ export const openApiDocument = {
         "operationId": "get_task",
         "summary": "A task with its status and setup; for an instance admin",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -27471,7 +28553,7 @@ export const openApiDocument = {
         "operationId": "delete_task",
         "summary": "Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -27625,7 +28707,7 @@ export const openApiDocument = {
         "operationId": "get_task_events",
         "summary": "Events of every conversation of a task, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -27821,7 +28903,7 @@ export const openApiDocument = {
         "operationId": "send_task_prompt",
         "summary": "Send the next prompt to a task; only a human actor may send one",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -28017,6 +29099,243 @@ export const openApiDocument = {
         }
       }
     },
+    "/v1/tasks/{task}/approvals/{approval}/decision": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "decide_tool_approval",
+        "summary": "Allow or deny a tool call the task's agent asked for; needs a human actor",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "decide"
+            ],
+            "args": [
+              "task",
+              "approval"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "approval",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "default": "allow",
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "deny"
+                    ]
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "description": "For a deny: the reason the agent reads",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "default": "allow",
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "deny"
+                    ]
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "description": "For a deny: the reason the agent reads",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "default": "allow",
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "deny"
+                    ]
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "description": "For a deny: the reason the agent reads",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApprovalState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/tasks/{task}/interrupt": {
       "post": {
         "tags": [
@@ -28025,7 +29344,7 @@ export const openApiDocument = {
         "operationId": "interrupt_task",
         "summary": "End the running turn of a task's agent; the task stays. Needs a human actor",
         "x-stationly": {
-          "level": "instance admin",
+          "level": "any",
           "mcp": false,
           "cli": {
             "path": [
@@ -28054,6 +29373,1730 @@ export const openApiDocument = {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentInterruptAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/keys": {
+      "get": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "list_my_keys",
+        "summary": "Your own agent keys: which are set, never their values",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "me",
+              "keys",
+              "list"
+            ]
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyKeys"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/keys/{name}": {
+      "put": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "set_my_key",
+        "summary": "Set one of your own agent keys; your tasks use it instead of the project key",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "me",
+              "keys",
+              "set"
+            ],
+            "args": [
+              "name"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyKeys"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "delete_my_key",
+        "summary": "Delete one of your own agent keys; your tasks go back to the project key",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "me",
+              "keys",
+              "delete"
+            ],
+            "args": [
+              "name"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyKeys"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/repositories": {
+      "get": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "list_my_repositories",
+        "summary": "The repositories you can reach through the GitHub App with your own GitHub account, newest push first",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "me",
+              "repositories"
+            ]
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyRepositories"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/invites": {
+      "post": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "create_invite",
+        "summary": "Invite someone to the team as an admin or a member; the link is shown once. Needs a human admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "invites",
+              "create"
+            ]
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "default": "admin",
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "projects": {
+                    "maxItems": 200,
+                    "description": "Project ids the person joins",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "expires_in_days": {
+                    "minimum": 1,
+                    "maximum": 30,
+                    "anyOf": [
+                      {
+                        "format": "integer",
+                        "default": 0,
+                        "type": "string"
+                      },
+                      {
+                        "minimum": 1,
+                        "maximum": 30,
+                        "type": "integer"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "default": "admin",
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "projects": {
+                    "maxItems": 200,
+                    "description": "Project ids the person joins",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "expires_in_days": {
+                    "minimum": 1,
+                    "maximum": 30,
+                    "anyOf": [
+                      {
+                        "format": "integer",
+                        "default": 0,
+                        "type": "string"
+                      },
+                      {
+                        "minimum": 1,
+                        "maximum": 30,
+                        "type": "integer"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "default": "admin",
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "projects": {
+                    "maxItems": 200,
+                    "description": "Project ids the person joins",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "expires_in_days": {
+                    "minimum": 1,
+                    "maximum": 30,
+                    "anyOf": [
+                      {
+                        "format": "integer",
+                        "default": 0,
+                        "type": "string"
+                      },
+                      {
+                        "minimum": 1,
+                        "maximum": 30,
+                        "type": "integer"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Response for status 201",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "list_invites",
+        "summary": "Invites, newest first, without their codes; for an admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "invites",
+              "list"
+            ]
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/invites/{invite}": {
+      "delete": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "revoke_invite",
+        "summary": "Revoke an invite so its link stops working; needs a human admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "invites",
+              "revoke"
+            ],
+            "args": [
+              "invite"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "invite",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/members": {
+      "get": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "list_members",
+        "summary": "The people in the team with their role and projects",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "members",
+              "list"
+            ]
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/members/{user}": {
+      "patch": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "update_member",
+        "summary": "Change a member's role or projects; needs a human admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "members",
+              "update"
+            ],
+            "args": [
+              "user"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "default": "admin",
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "projects": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "default": "admin",
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "projects": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "default": "admin",
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "projects": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "team"
+        ],
+        "operationId": "remove_member",
+        "summary": "Remove someone from the team: their sessions end, their running tasks stop, and their tasks stay for an admin; needs a human admin",
+        "x-stationly": {
+          "level": "instance admin",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "members",
+              "remove"
+            ],
+            "args": [
+              "user"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
                 }
               }
             }
@@ -43829,6 +46872,7 @@ export const openApiDocument = {
           "STATION_CAPABILITY_MISSING",
           "REPO_ACCESS_REQUIRED",
           "REPO_ACCESS_DENIED",
+          "APPROVAL_CLOSED",
           "SANDBOX_NOT_RUNNING",
           "SANDBOX_STATE_CONFLICT",
           "SANDBOX_QUOTA_EXCEEDED",
@@ -50266,6 +53310,240 @@ export const openApiDocument = {
                 "type": "string"
               },
               "type": {
+                "const": "tool.blocked",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "tool"
+                ],
+                "properties": {
+                  "tool_use_id": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "conversation_id",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "type": {
+                "const": "approval.requested",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "approval_id",
+                  "tool",
+                  "input",
+                  "expires_at"
+                ],
+                "properties": {
+                  "approval_id": {
+                    "type": "string"
+                  },
+                  "tool": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "expires_at": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "conversation_id",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "type": {
+                "const": "approval.decided",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "approval_id",
+                  "status"
+                ],
+                "properties": {
+                  "approval_id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "allowed",
+                      "denied",
+                      "expired"
+                    ]
+                  },
+                  "by": {
+                    "type": "object",
+                    "required": [
+                      "type",
+                      "id"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "conversation_id",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "type": {
                 "const": "attention",
                 "type": "string"
               },
@@ -50349,6 +53627,117 @@ export const openApiDocument = {
                   },
                   "reason": {
                     "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "session_id",
+              "seq",
+              "conversation_id",
+              "type",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "session_id": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "type": {
+                "const": "turn.changes",
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "required": [
+                  "files",
+                  "commits"
+                ],
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "added",
+                        "removed"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "added": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "removed": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "diff": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "more_files": {
+                    "type": "integer"
+                  },
+                  "commits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "sha",
+                        "subject"
+                      ],
+                      "properties": {
+                        "sha": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        }
+                      }
+                    }
                   },
                   "truncated": {
                     "type": "boolean"
@@ -50688,6 +54077,87 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AgentRunnerExit"
       },
+      "AgentApprovalRequest": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "tool_name",
+          "tool_input"
+        ],
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "session_id": {
+            "minLength": 1,
+            "maxLength": 128,
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "tool_name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "tool_input": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          }
+        },
+        "$id": "#/components/schemas/AgentApprovalRequest"
+      },
+      "AgentApprovalState": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "behavior",
+          "message",
+          "expires_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "allowed",
+              "denied",
+              "expired"
+            ]
+          },
+          "behavior": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        },
+        "$id": "#/components/schemas/AgentApprovalState"
+      },
       "AgentRunnerExited": {
         "additionalProperties": false,
         "type": "object",
@@ -50765,6 +54235,9 @@ export const openApiDocument = {
           "agent",
           "model",
           "sandbox",
+          "machine",
+          "port",
+          "queued_ahead",
           "status",
           "attention",
           "failure",
@@ -50871,9 +54344,29 @@ export const openApiDocument = {
               }
             }
           },
+          "machine": {
+            "type": "string",
+            "enum": [
+              "project",
+              "own"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "queued_ahead": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "status": {
             "type": "string",
             "enum": [
+              "queued",
               "setting_up",
               "working",
               "waiting",
@@ -50941,6 +54434,10 @@ export const openApiDocument = {
                   },
                   {
                     "const": "branch",
+                    "type": "string"
+                  },
+                  {
+                    "const": "worktree",
                     "type": "string"
                   },
                   {
@@ -51271,6 +54768,13 @@ export const openApiDocument = {
               "setup"
             ],
             "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "own"
+                ]
+              },
               "agent": {
                 "type": "string",
                 "enum": [
@@ -51279,7 +54783,10 @@ export const openApiDocument = {
                 ]
               },
               "repository": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "branch": {
                 "type": [
@@ -51350,6 +54857,10 @@ export const openApiDocument = {
                       },
                       {
                         "const": "branch",
+                        "type": "string"
+                      },
+                      {
+                        "const": "worktree",
                         "type": "string"
                       },
                       {
@@ -51638,6 +55149,13 @@ export const openApiDocument = {
               "setup"
             ],
             "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "own"
+                ]
+              },
               "agent": {
                 "type": "string",
                 "enum": [
@@ -51646,7 +55164,10 @@ export const openApiDocument = {
                 ]
               },
               "repository": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "branch": {
                 "type": [
@@ -51717,6 +55238,10 @@ export const openApiDocument = {
                       },
                       {
                         "const": "branch",
+                        "type": "string"
+                      },
+                      {
+                        "const": "worktree",
                         "type": "string"
                       },
                       {
@@ -52490,6 +56015,322 @@ export const openApiDocument = {
           }
         },
         "$id": "#/components/schemas/SandboxSnapshotDeleted"
+      },
+      "Invite": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "projects",
+          "status",
+          "created_at",
+          "expires_at",
+          "used_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "used",
+              "revoked",
+              "expired"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "used_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "$id": "#/components/schemas/Invite"
+      },
+      "InviteCreated": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "projects",
+          "status",
+          "created_at",
+          "expires_at",
+          "used_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "used",
+              "revoked",
+              "expired"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "used_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "$id": "#/components/schemas/InviteCreated"
+      },
+      "InvitePage": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Invite"
+            }
+          }
+        },
+        "$id": "#/components/schemas/InvitePage"
+      },
+      "JoinInfo": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "team",
+          "invited_by",
+          "role",
+          "expires_at"
+        ],
+        "properties": {
+          "team": {
+            "type": "string"
+          },
+          "invited_by": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        },
+        "$id": "#/components/schemas/JoinInfo"
+      },
+      "Joined": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "$id": "#/components/schemas/Joined"
+      },
+      "Member": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "email",
+          "role",
+          "projects",
+          "joined_at",
+          "removed_at"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ]
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "joined_at": {
+            "type": "string"
+          },
+          "removed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "$id": "#/components/schemas/Member"
+      },
+      "MemberPage": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            }
+          }
+        },
+        "$id": "#/components/schemas/MemberPage"
+      },
+      "MyRepositories": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "github",
+          "items"
+        ],
+        "properties": {
+          "github": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "not_connected",
+              "reconnect"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "full_name",
+                "clone_url",
+                "private",
+                "default_branch"
+              ],
+              "properties": {
+                "full_name": {
+                  "type": "string"
+                },
+                "clone_url": {
+                  "type": "string"
+                },
+                "private": {
+                  "type": "boolean"
+                },
+                "default_branch": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "$id": "#/components/schemas/MyRepositories"
+      },
+      "MyKeys": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "name",
+                "set",
+                "updated_at"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "set": {
+                  "type": "boolean"
+                },
+                "updated_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "$id": "#/components/schemas/MyKeys"
       },
       "ServiceWritten": {
         "additionalProperties": false,

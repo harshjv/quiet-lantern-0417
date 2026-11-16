@@ -6,6 +6,7 @@ import { logError } from '../log.ts'
 import { redactionKnown } from '../secrets/deploy.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { sandboxEnv, sandboxKnown } from '../secrets/sandbox.ts'
+import { memberSecrets } from '../team/keys.ts'
 
 const cacheMs = 60_000
 const excluded = new RegExp(redaction.excludedPattern)
@@ -151,7 +152,7 @@ export const createSandboxRedaction = (db: Db, keyring: Keyring) => {
         cache.set(id, entry)
       }
 
-      known.push(...entry.known)
+      known.push(...entry.known, ...memberSecrets(db, keyring, id))
     }
 
     return buildRedactor(known)
