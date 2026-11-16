@@ -28,7 +28,9 @@ import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 import type { Place } from './app'
+import { useLive } from './data'
 import { activity, logs, metricsOf, type ActivityRow } from './fixtures'
+import { LiveObserve } from './observe-live'
 import { Checklist, Facts, ItemList, ItemRow, Notice, PixelBars, Section } from './parts'
 import { PixelScene } from './scene'
 import { after, changes, phaseOf } from './stages'
@@ -60,6 +62,10 @@ const via: Record<ActivityRow['via'], string> = {
 }
 
 export function ObserveScreen({ place, go }: Props) {
+  return useLive() ? <LiveObserve place={place} go={go} /> : <MockObserve place={place} go={go} />
+}
+
+function MockObserve({ place, go }: Props) {
   const { apps } = useWorld()
   const scopedApp = place.view?.startsWith('app:') ? place.view.split(':')[1]! : null
   const tab: Tab = scopedApp

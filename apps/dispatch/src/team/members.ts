@@ -1,8 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
 
 import { atLeast, fullAdmin, type Level, type Scope } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
-import { member, project_member, sandbox, user } from '../db/schema.ts'
+import { member, project_member, sandbox, task, user } from '../db/schema.ts'
 
 export const memberLevel: Level = 'read'
 
@@ -34,11 +34,34 @@ export const userScopes = (db: Db, userId: string | null): Scope[] => {
     return fullAdmin
   }
 
-  return projectsOf(db, userId).map((projectId) => ({
-    project_id: projectId,
-    environment_id: '*',
-    level: memberLevel,
-  }))
+  const projects = projectsOf(db, userId)
+  const previews = db
+    .select({
+      project_id: task.project_id,
+      environment_id: task.preview_environment_id,
+    })
+    .from(task)
+    .where(
+      and(
+        isNotNull(task.preview_environment_id),
+        sql`json_extract(${task.owner}, '$.id') = ${userId}`,
+      ),
+    )
+    .all()
+    .filter((row) => projects.includes(row.project_id))
+
+  return [
+    ...projects.map((projectId) => ({
+      project_id: projectId,
+      environment_id: '*',
+      level: memberLevel,
+    })),
+    ...previews.map((row) => ({
+      project_id: row.project_id,
+      environment_id: row.environment_id!,
+      level: 'deploy' as const,
+    })),
+  ]
 }
 
 const lower = (a: Level, b: Level) => (atLeast(a, b) ? b : a)
@@ -118,4 +141,15 @@ export const ensureFirstAdmins = (db: Db, now = new Date()) => {
       .onConflictDoNothing()
       .run()
   }
+}
+
+export const gitIdentityOf = (db: Db, userId: string | null) => {
+  const person = userId ? db.select().from(user).where(eq(user.id, userId)).get() : undefined
+
+  return person
+    ? {
+        name: person.name || person.email,
+        email: person.email,
+      }
+    : null
 }

@@ -80,6 +80,7 @@ import {
   type SandboxEgress,
   type SandboxLimits,
   type SandboxSize,
+  type ShipRequestStatusValue,
   type StationCapabilities,
   type WorkspaceAgent as TaskAgent,
   type TaskMachineValue,
@@ -402,6 +403,8 @@ export const task = sqliteTable(
     port: integer('port'),
     setup_run_id: text('setup_run_id'),
     queued_at: timestamp('queued_at'),
+    preview_environment_id: text('preview_environment_id'),
+    pull_request: json<{ repo: string; number: number; url: string }>('pull_request'),
     status: text('status').$type<TaskStatusValue>().notNull().default('setting_up'),
     attention: json<{ kind: NonNullable<AgentStatusRecord['kind']>; since: string }>('attention'),
     activity: json<AgentStatusRecord>('activity'),
@@ -613,6 +616,30 @@ export const tool_approval = sqliteTable(
       columns: [table.task_id, table.id],
     }),
     index('tool_approval_status').on(table.status, table.expires_at),
+  ],
+)
+
+export const ship_request = sqliteTable(
+  'ship_request',
+  {
+    ...entity('ship_request'),
+    task_id: text('task_id')
+      .notNull()
+      .references(() => task.id, {
+        onDelete: 'cascade',
+      }),
+    project_id: text('project_id').notNull(),
+    status: text('status').$type<ShipRequestStatusValue>().notNull(),
+    requested_by: text('requested_by').notNull(),
+    run_id: text('run_id').notNull(),
+    head_sha: text('head_sha'),
+    reason: text('reason'),
+    decided_by: text('decided_by'),
+    decided_at: timestamp('decided_at'),
+  },
+  (table) => [
+    index('ship_request_task').on(table.task_id),
+    index('ship_request_status').on(table.status),
   ],
 )
 

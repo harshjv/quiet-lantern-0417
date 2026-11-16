@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import type { Cron } from 'croner'
-import { and, asc, desc, eq, isNull, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm'
 
 import { ChangeSet, commit } from '../api/changes.ts'
 import type { Call } from '../api/context.ts'
@@ -21,10 +21,12 @@ import {
   project,
   service,
   source_poll,
+  task,
 } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import { env } from '../env.ts'
 import { log } from '../log.ts'
+import { repositoryLabel } from '../sandboxes/repository-access.ts'
 import { every } from '../schedule.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { eventBus } from '../station/events.ts'
@@ -778,6 +780,22 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const prEnvironmentName = (number: number) => `pr-${number}`
 
+  const taskPreviewFor = (projectId: string, repo: string, branch: string) => {
+    const owner = db
+      .select({
+        environment_id: task.preview_environment_id,
+        repository: task.repository,
+      })
+      .from(task)
+      .where(and(eq(task.project_id, projectId), eq(task.branch, branch)))
+      .all()
+      .find((row) => row.environment_id && repoOf(repositoryLabel(row.repository)) === repo)
+
+    return owner
+      ? db.select().from(environment).where(eq(environment.id, owner.environment_id!)).get()
+      : undefined
+  }
+
   const onPullRequest = async (app: AppRow, payload: Json, guid: string) => {
     const action = payload.action as string
     const pr = payload.pull_request as {
@@ -815,11 +833,24 @@ export const createGitHub = (deps: GitHubDeps) => {
       }
 
       const name = prEnvironmentName(pr.number)
-      const existing = db
-        .select()
-        .from(environment)
-        .where(and(eq(environment.project_id, proj.id), eq(environment.name, name)))
-        .get()
+      const existing =
+        db
+          .select()
+          .from(environment)
+          .where(and(eq(environment.project_id, proj.id), eq(environment.name, name)))
+          .get() ??
+        db
+          .select()
+          .from(environment)
+          .where(
+            and(
+              eq(environment.project_id, proj.id),
+              sql`json_extract(${environment.pull_request}, '$.repo') = ${base}`,
+              sql`json_extract(${environment.pull_request}, '$.number') = ${pr.number}`,
+            ),
+          )
+          .get() ??
+        taskPreviewFor(proj.id, base, pr.head.ref)
       const call = systemCall(`github/${app.slug}`, `gh_${guid}`)
 
       if (action === 'closed') {
@@ -1496,7 +1527,117 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
   }
 
+  const tokenOrRefuse = async (repo: string, permission: Record<string, string>) => {
+    const found = await repoToken(repo, permission)
+
+    if (!found) {
+      throw new GitHubError(
+        403,
+        `The GitHub App is not installed on ${splitRepo(repo).full_name}, or lacks ${Object.entries(
+          permission,
+        )
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(', ')}.`,
+        null,
+      )
+    }
+
+    return found.token
+  }
+
+  const pushToken = (repo: string) =>
+    tokenOrRefuse(repo, {
+      contents: 'write',
+    })
+
+  const refusal = (response: { status: number; data: unknown }) =>
+    (response.data as { message?: string } | null)?.message ?? `GitHub answered ${response.status}`
+
+  const openPullRequest = async (
+    repo: string,
+    pull: { branch: string; title: string; body: string },
+  ) => {
+    const token = await tokenOrRefuse(repo, {
+      contents: 'read',
+      pull_requests: 'write',
+    })
+    const { owner, full_name } = splitRepo(repo)
+    const open = await gh<{ number: number; html_url: string; head: { sha: string } }[]>(
+      `/repos/${full_name}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pull.branch}`)}`,
+      {
+        token,
+      },
+    )
+
+    if (open.status === 200 && open.data[0]) {
+      return {
+        number: open.data[0].number,
+        url: open.data[0].html_url,
+        head_sha: open.data[0].head.sha,
+      }
+    }
+
+    const about = await gh<{ default_branch: string }>(`/repos/${full_name}`, {
+      token,
+    })
+
+    if (about.status !== 200) {
+      throw new GitHubError(about.status, refusal(about), about.data)
+    }
+
+    const made = await gh<{ number: number; html_url: string; head: { sha: string } }>(
+      `/repos/${full_name}/pulls`,
+      {
+        method: 'POST',
+        token,
+        body: {
+          title: pull.title,
+          body: pull.body,
+          head: pull.branch,
+          base: about.data.default_branch,
+        },
+      },
+    )
+
+    if (made.status !== 201) {
+      throw new GitHubError(made.status, refusal(made), made.data)
+    }
+
+    return {
+      number: made.data.number,
+      url: made.data.html_url,
+      head_sha: made.data.head.sha,
+    }
+  }
+
+  const mergePullRequest = async (repo: string, number: number, sha: string) => {
+    const token = await tokenOrRefuse(repo, {
+      contents: 'write',
+      pull_requests: 'write',
+    })
+    const merged = await gh<{ sha: string; merged: boolean }>(
+      `/repos/${splitRepo(repo).full_name}/pulls/${number}/merge`,
+      {
+        method: 'PUT',
+        token,
+        body: {
+          merge_method: 'squash',
+          sha,
+        },
+      },
+    )
+
+    if (merged.status !== 200 || !merged.data.merged) {
+      throw new GitHubError(merged.status, refusal(merged), merged.data)
+    }
+
+    return merged.data.sha
+  }
+
   return {
+    pushToken,
+    openPullRequest,
+    mergePullRequest,
     resolveRepo,
     branchHead,
     cloneCredential,

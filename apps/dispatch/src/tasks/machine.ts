@@ -32,7 +32,8 @@ import {
   taskSetupCommand,
 } from '../sandboxes/workspace.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { githubTokenOf } from '../team/keys.ts'
+import { runGitHubToken } from '../team/keys.ts'
+import { gitIdentityOf } from '../team/members.ts'
 
 import { closePendingApprovals } from './approvals.ts'
 import { latestConversation, runnerLive, startTimeoutMs, wantRunner } from './runner.ts'
@@ -335,7 +336,7 @@ export const cloneOf = (repository: string, home: string) =>
 
 type RunAs = { user: string; cwd: string; envKeys?: string[] }
 
-const execRun = (
+export const execRun = (
   box: SandboxRow,
   id: string,
   command: string[],
@@ -447,7 +448,15 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
     const id = newId('run')
     const home = homeOf(member.name)
     const cleanup = (box.workspace?.cleanup ?? []).filter((entry) => entry.user === member.name)
-    const token = await githubTokenOf(deps.auth, db, row.owner.id)
+
+    if (!member.token_id) {
+      continue
+    }
+
+    const token = await runGitHubToken(deps.auth, db, deps.keyring, row.owner.id, {
+      project: box.project_id,
+      environment: box.environment_id,
+    })
     const envKeys = await deliveredRun(deps, box, id, [
       ...memberEnv(deps.keyring, member),
       ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : []),
@@ -475,6 +484,7 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
                 baseBranch: row.base_branch,
                 branch: row.branch,
                 cleanup,
+                identity: gitIdentityOf(db, row.owner.id),
               }),
             ),
             {

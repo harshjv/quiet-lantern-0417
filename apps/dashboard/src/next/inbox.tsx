@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { shortAgo } from '@/lib/format'
 import type { Tone } from '@/lib/tone'
 
 import type { Place } from './app'
@@ -10,6 +11,7 @@ import { useLive, useTaskRows } from './data'
 import type { Task } from './fixtures'
 import { ItemList, ItemRow, Page, Section, type Fact } from './parts'
 import { PixelScene } from './scene'
+import { ShipDecision, shipStatusText, useShipRequests, type ShipRequest } from './ship-request'
 import { useWorld } from './story'
 
 type Go = (next: Partial<Place>) => void
@@ -106,14 +108,51 @@ const liveItems = (rows: Task[]) =>
       : []
   })
 
+const shipItems = (requests: ShipRequest[]) =>
+  requests.map((request): Item => ({
+    id: request.id,
+    group: 'decide',
+    icon: Rocket,
+    tone: 'warning',
+    title: `Ship ${request.title}`,
+    meta: [
+      {
+        kind: 'status',
+        text: request.reason ?? shipStatusText[request.status],
+      },
+      {
+        kind: 'time',
+        text: shortAgo(request.created_at),
+      },
+    ],
+    action: (go) => (
+      <>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            go({
+              mode: 'build',
+              view: request.task_id,
+            })
+          }
+        >
+          Open
+        </Button>
+        <ShipDecision request={request} />
+      </>
+    ),
+  }))
+
 export function useInbox(): Item[] {
   const { tasks, approvals, incidents } = useWorld()
   const live = useLive()
   const rows = useTaskRows()
+  const ships = useShipRequests(live)
   const mine = tasks.filter((t) => t.owner === 'you')
 
   if (live) {
-    return liveItems(rows)
+    return [...shipItems(ships), ...liveItems(rows)]
   }
 
   return [

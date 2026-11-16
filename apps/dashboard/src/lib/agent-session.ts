@@ -321,9 +321,16 @@ export const turnsOf = (state: AgentState, sessionId: string): Turn[] => {
         }
 
         if (existing) {
+          const failedBefore = existing.state === 'failed'
+
           Object.assign(existing, finished, {
             summary: event.data.summary || existing.summary,
           })
+
+          if (failedBefore) {
+            existing.state = 'failed'
+            existing.output = existing.output ?? finished.output
+          }
         } else {
           addCall(
             current(event),

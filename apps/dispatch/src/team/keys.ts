@@ -5,6 +5,7 @@ import { workspaceAgents, workspaceAgentValues, type WorkspaceAgent } from '@sta
 import type { AuthService } from '../auth/auth.ts'
 import type { Db } from '../db/client.ts'
 import { account, machine_user, member_key } from '../db/schema.ts'
+import { projectSecret } from '../sandboxes/repository-access.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 
 export const memberKeyNames = workspaceAgentValues.flatMap((agent) => workspaceAgents[agent].keys)
@@ -148,3 +149,39 @@ export const memberSecrets = (db: Db, keyring: Keyring, sandboxId: string) => {
 
   return found
 }
+
+type Scope = { project: string; environment: string }
+
+export const projectKeyEnv = (
+  db: Db,
+  keyring: Keyring,
+  scope: Scope,
+  agent: WorkspaceAgent,
+): [string, string][] =>
+  workspaceAgents[agent].keys.flatMap((name) => {
+    const value = projectSecret(db, keyring, scope, name)
+
+    return value ? [[name, value] as [string, string]] : []
+  })
+
+export const runKeyEnv = (
+  db: Db,
+  keyring: Keyring,
+  userId: string | null,
+  agent: WorkspaceAgent,
+  shared: Scope | null,
+) => {
+  const own = keyEnvFor(db, keyring, userId, agent)
+
+  return own.length || !shared ? own : projectKeyEnv(db, keyring, shared, agent)
+}
+
+export const runGitHubToken = async (
+  auth: AuthService,
+  db: Db,
+  keyring: Keyring,
+  userId: string | null,
+  shared: Scope | null,
+) =>
+  (await githubTokenOf(auth, db, userId)) ??
+  (shared ? projectSecret(db, keyring, shared, 'GH_TOKEN') : null)

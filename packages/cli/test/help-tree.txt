@@ -294,6 +294,12 @@ sly setup
   First-admin bootstrap on the station host, as root, through stationd's root socket
 sly shell
   Interactive shell in a fresh run of the service; a human actor is required in protected environments
+sly ship-requests
+  ship-requests
+sly ship-requests decide <request>
+  Approve a ship request, which merges its pull request and deploys production, or reject it with a reason; an admin and a human
+sly ship-requests list
+  List ship requests waiting for a decision; admins see all, others their own
 sly staged-changes
   Changes that wait for a human in a protected environment or platform
 sly staged-changes accept <id>
@@ -334,8 +340,12 @@ sly tasks interrupt <task>
   End the running turn of a task's agent; the task stays. Needs a human actor
 sly tasks list
   Tasks, newest first, with their status and setup; for an instance admin
+sly tasks preview <task>
+  Deploy a task's worktree into its own preview environment, made the first time; needs a human, the task's owner or an admin
 sly tasks reply <task>
   Send the next prompt to a task; only a human actor may send one
+sly tasks ship <task>
+  Push a task's branch, open its pull request and ask an admin to merge it; needs a human, the task's owner or an admin
 sly tokens
   Personal and scoped tokens
 sly tokens create <name>

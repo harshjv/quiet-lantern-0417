@@ -54,7 +54,11 @@ export const agentEventRoutes = (kit: Kit) => {
   const { db } = kit.deps
 
   const holderOf = (row: SandboxRow, principal: Principal) => {
-    if (row.workspace && principal.token_id === row.workspace.token_id) {
+    if (
+      row.workspace &&
+      row.workspace.kind !== 'project' &&
+      principal.token_id === row.workspace.token_id
+    ) {
       return {
         owner: null,
       }

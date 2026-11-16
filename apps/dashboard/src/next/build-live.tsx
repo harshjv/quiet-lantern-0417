@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, Clock, Folder, GitBranch, Share2 } from 'lucide-react'
+import { Bot, Clock, ExternalLink, Eye, Folder, GitBranch, Rocket, Share2 } from 'lucide-react'
 import { useReducer, useState } from 'react'
 
 import {
@@ -67,8 +67,10 @@ import { toneText } from '@/lib/tone'
 import type { Place } from './app'
 import { TaskMenu } from './build-task'
 import { asRow, useProjectList } from './data'
+import { fixTarget, useFixPrefill, type FixTarget } from './fix-live'
 import { taskTone } from './fixtures'
 import { AgentSays, Checklist, Meta, Notice, StatusPill, type Step } from './parts'
+import { PullRequestLink, ShipDecision, shipStatusText, type ShipRequest } from './ship-request'
 
 type Go = (next: Partial<Place>) => void
 
@@ -125,6 +127,10 @@ export function LiveBuild({ place, go }: { place: Place; go: Go }) {
   )
   const task =
     place.view === 'new' ? undefined : (shown.find((t) => t.id === place.view) ?? shown[0])
+
+  if (place.view === 'fix') {
+    return <FixComposer target={fixTarget(place.fix ?? null)} go={go} />
+  }
 
   if (!task) {
     return <LiveComposer project={place.project} go={go} />
@@ -555,6 +561,26 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
       reply.mutate(`I approve this exact action, and you may run it now: ${summary}`),
     busy: decide.isPending || reply.isPending,
   }
+  const [previewNote, setPreviewNote] = useState<string | null>(null)
+  const preview = useMutation({
+    mutationFn: () => unwrap(target.preview.post(undefined, idempotency())),
+    onSuccess: (made) => {
+      setProblem(null)
+      setPreviewNote(
+        `Deploying this task's worktree to ${made.environment.name}${made.url ? ` at ${made.url}` : ''}. It takes a few minutes to build.`,
+      )
+      refresh()
+    },
+    onError: (error) => setProblem(failureText(error)),
+  })
+  const ship = useMutation({
+    mutationFn: () => unwrap(target.ship.post(undefined, idempotency())),
+    onSuccess: () => {
+      setProblem(null)
+      refresh()
+    },
+    onError: (error) => setProblem(failureText(error)),
+  })
   const stop = useMutation({
     mutationFn: () => unwrap(target.interrupt.post({}, idempotency())),
     onError: (error) => setProblem(failureText(error)),
@@ -624,6 +650,31 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
             </Meta>
           </div>
         </div>
+        {task.preview?.url && (
+          <Button asChild variant="outline" size="sm">
+            <a href={task.preview.url} target="_blank" rel="noreferrer">
+              <ExternalLink /> Preview
+            </a>
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={preview.isPending}
+          onClick={() => preview.mutate()}
+        >
+          <Eye /> {task.preview ? 'Update preview' : 'Make a preview'}
+        </Button>
+        {task.ship?.status !== 'merged' && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={ship.isPending || task.ship?.status === 'pushing'}
+            onClick={() => ship.mutate()}
+          >
+            <Rocket /> {task.ship ? 'Ship again' : 'Ship it'}
+          </Button>
+        )}
         <Button variant="ghost" size="sm" disabled>
           <Share2 /> Share
         </Button>
@@ -658,6 +709,21 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
       {problem && (
         <Notice tone="danger" title="That did not go through">
           {problem}
+        </Notice>
+      )}
+      {task.ship && (
+        <ShipNotice
+          request={task.ship}
+          fix={(reason) =>
+            reply.mutate(
+              `Shipping this task did not go through: ${reason} Find the cause, fix it on this branch, and say what you changed.`,
+            )
+          }
+        />
+      )}
+      {previewNote && (
+        <Notice tone="info" title="Preview on its way">
+          {previewNote}
         </Notice>
       )}
 
@@ -777,13 +843,48 @@ const storeProjectKey = (project: string, key: string, value: string) =>
       ),
   )
 
-function LiveComposer({ project: preferred, go }: { project: string | null; go: Go }) {
+function FixComposer({ target, go }: { target: FixTarget | null; go: Go }) {
+  const prefill = useFixPrefill(target)
+
+  if (!target) {
+    return <LiveComposer project={null} go={go} />
+  }
+
+  if (!prefill) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <Shimmer className="font-mono text-xs">Reading what failed</Shimmer>
+      </div>
+    )
+  }
+
+  return (
+    <LiveComposer
+      project={prefill.project}
+      go={go}
+      prefill={{
+        prompt: prefill.prompt,
+        repository: prefill.repository ?? '',
+      }}
+    />
+  )
+}
+
+function LiveComposer({
+  project: preferred,
+  go,
+  prefill,
+}: {
+  project: string | null
+  go: Go
+  prefill?: { prompt: string; repository: string }
+}) {
   const queries = useQueryClient()
   const projects = useProjectList()
   const [project, setProject] = useState(preferred ?? projects[0]?.id ?? '')
   const [agent, setAgent] = useState<WorkspaceAgent>(runnerAgents[0] ?? 'claude')
   const [model, setModel] = useState(workspaceAgents[agent].models[0]?.id ?? '')
-  const [repository, setRepository] = useState('')
+  const [repository, setRepository] = useState(prefill?.repository ?? '')
   const reachable = useQuery({
     queryKey: ['me', 'repositories'],
     queryFn: () => unwrap(api.v1.me.repositories.get()),
@@ -957,7 +1058,7 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
           {blocked.text}
         </Notice>
       )}
-      <PromptInputProvider>
+      <PromptInputProvider initialInput={prefill?.prompt}>
         <PromptInput onSubmit={submitting(start.mutateAsync, Boolean(url && chosen))}>
           <PromptInputBody>
             <PromptInputTextarea placeholder="Describe the task. An agent works on it on a new branch and shows you what it changed." />
@@ -1009,5 +1110,42 @@ function LiveComposer({ project: preferred, go }: { project: string | null; go: 
         that needs approval is stopped and shown to you.
       </p>
     </div>
+  )
+}
+
+const shipTone: Record<ShipRequest['status'], 'info' | 'warning' | 'danger' | 'success'> = {
+  pushing: 'info',
+  pending: 'warning',
+  rejected: 'danger',
+  merged: 'success',
+  failed: 'danger',
+}
+
+function ShipNotice({ request, fix }: { request: ShipRequest; fix: (reason: string) => void }) {
+  const me = useQuery(meQuery)
+  const admin = isInstanceAdmin(me.data?.scopes ?? [])
+  const broken = request.reason && request.status !== 'merged' && request.status !== 'pushing'
+
+  return (
+    <Notice
+      tone={broken ? 'danger' : shipTone[request.status]}
+      title={shipStatusText[request.status]}
+    >
+      <span className="flex flex-col gap-2">
+        {request.reason && <span>{request.reason}</span>}
+        <span className="flex flex-wrap items-center gap-2">
+          {request.status === 'pending' && admin ? (
+            <ShipDecision request={request} />
+          ) : (
+            <PullRequestLink request={request} />
+          )}
+          {broken && (
+            <Button size="sm" variant="outline" onClick={() => fix(request.reason!)}>
+              Fix with an agent
+            </Button>
+          )}
+        </span>
+      </span>
+    </Notice>
   )
 }

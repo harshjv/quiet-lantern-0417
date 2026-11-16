@@ -13,6 +13,7 @@ import {
   workspaceUser,
   type Actor,
   type SandboxVariableSet,
+  type TaskMachineValue,
   type WorkspaceAgent,
   type WorkspaceSetupStep,
 } from '@stationly/protocol'
@@ -51,6 +52,11 @@ const toolchainFiles = [
 
 const stepLine = (step: WorkspaceSetupStep) => `step=${step}`
 
+const gitIdentity = (name: string, email: string) =>
+  `if [ -n ${name} ] && [ -z "$(git config --global user.name || true)" ]; then git config --global user.name ${name}; git config --global user.email ${email}; fi`
+
+export type GitIdentity = { name: string; email: string }
+
 const setupScript = [
   'set -euo pipefail',
   `trap 'code=$?; if [ "$code" -ne 0 ]; then echo "${setupFailedMarker}$step" >&2; fi' EXIT`,
@@ -61,6 +67,7 @@ const setupScript = [
   'if [ -n "$7" ] && [ ! -e "$HOME/$7" ]; then mkdir -p "$(dirname "$HOME/$7")" && printf \'%s\' "$8" >"$HOME/$7"; fi',
   stepLine('git_auth'),
   'if [ -n "${GH_TOKEN:-}" ]; then gh auth setup-git; fi',
+  gitIdentity('"${10:-}"', '"${11:-}"'),
   stepLine('clone'),
   'if [ -n "$2" ] && [ ! -d "$3/.git" ]; then git clone "$2" "$3"; fi',
   stepLine('checkout'),
@@ -85,9 +92,10 @@ const cleanupLoop = [
 const taskSetupScript = [
   'set -euo pipefail',
   `trap 'code=$?; if [ "$code" -ne 0 ]; then echo "${setupFailedMarker}$step" >&2; fi' EXIT`,
-  'repository="$1" clone="$2" worktree="$3" base="$4" wanted="$5" cleanup="$6" lock="$7"',
+  'repository="$1" clone="$2" worktree="$3" base="$4" wanted="$5" cleanup="$6" lock="$7" author="$8" email="$9"',
   stepLine('git_auth'),
   'if [ -n "${GH_TOKEN:-}" ]; then gh auth setup-git >/dev/null 2>&1 || true; fi',
+  gitIdentity('"$author"', '"$email"'),
   stepLine('clone'),
   'mkdir -p "$(dirname "$worktree")" "$(dirname "$lock")"',
   'exec 9>"$lock"',
@@ -125,6 +133,7 @@ export const taskSetupCommand = (options: {
   baseBranch: string | null
   branch: string
   cleanup: WorkspaceCleanup[]
+  identity: GitIdentity | null
 }) => [
   'bash',
   '-c',
@@ -137,6 +146,8 @@ export const taskSetupCommand = (options: {
   options.branch,
   cleanupLines(options.cleanup),
   repositoryLock(options.clone),
+  options.identity?.name ?? '',
+  options.identity?.email ?? '',
 ]
 
 export const cleanupCommand = (entries: WorkspaceCleanup[]) => [
@@ -201,6 +212,7 @@ export const setupCommand = (
     SandboxWorkspace,
     'agent' | 'repository' | 'branch' | 'path' | 'task_branch' | 'kind'
   >,
+  identity: GitIdentity | null = null,
 ) => [
   'bash',
   '-c',
@@ -215,6 +227,8 @@ export const setupCommand = (
   workspaceAgents[workspace.agent].config?.path ?? '',
   workspaceAgents[workspace.agent].config?.text ?? '',
   workspace.task_branch ?? '',
+  identity?.name ?? '',
+  identity?.email ?? '',
 ]
 
 export const workspaceVariableSets = (
@@ -223,7 +237,9 @@ export const workspaceVariableSets = (
   agent: WorkspaceAgent,
   key: string,
   taken: string[],
+  kind: TaskMachineValue = 'own',
 ): Static<typeof SandboxVariableSet>[] => {
+  const shared = kind === 'own'
   const defined = new Set(
     variablesOf(db, {
       scope: 'project',
@@ -234,11 +250,15 @@ export const workspaceVariableSets = (
   )
 
   return [
-    {
-      key: workspaceEnv.token,
-      kind: 'sealed',
-      value: key,
-    },
+    ...(shared
+      ? [
+          {
+            key: workspaceEnv.token,
+            kind: 'sealed' as const,
+            value: key,
+          },
+        ]
+      : []),
     {
       key: workspaceEnv.apiUrl,
       kind: 'literal',
@@ -262,7 +282,7 @@ export const workspaceVariableSets = (
         value,
       })),
     ...[...workspaceAgents[agent].keys, ...workspaceSharedKeys]
-      .filter((name) => defined.has(name) && !taken.includes(name))
+      .filter((name) => shared && defined.has(name) && !taken.includes(name))
       .map((name) => ({
         key: name,
         kind: 'reference' as const,
@@ -362,3 +382,37 @@ export const startWorkspaceTokenRenewal = (deps: { db: Db; auth: AuthService }, 
       })
     }
   })
+
+const shipScript = [
+  'set -euo pipefail',
+  'name="$1" worktree="$2" branch="$3" remote="$4" message="$5" author="$6" email="$7"',
+  'gid="$(id -g "$name")"',
+  'env -i HOME="/home/$name" PATH="$PATH" setpriv --reuid="$name" --regid="$gid" --init-groups sh -c \'cd "$1" && git add -A && { git diff --cached --quiet || git -c user.name="$3" -c user.email="$4" commit -q -m "$2"; }\' commit "$worktree" "$message" "$author" "$email"',
+  'work="$(mktemp -d)"',
+  'trap \'rm -rf "$work"\' EXIT',
+  'git -c core.hooksPath=/dev/null clone -q --no-hardlinks --single-branch --branch "$branch" --upload-pack="git -c safe.directory=* upload-pack" "file://$worktree" "$work/repo"',
+  'cd "$work/repo"',
+  'git -c core.hooksPath=/dev/null -c credential.helper= -c credential.helper=\'!f() { echo username=x-access-token; echo "password=$GITHUB_PUSH_TOKEN"; }; f\' push -q "$remote" "+HEAD:refs/heads/$branch"',
+  'git rev-parse HEAD',
+].join('\n')
+
+export const shipCommand = (options: {
+  user: string
+  worktree: string
+  branch: string
+  remote: string
+  message: string
+  identity: GitIdentity | null
+}) => [
+  'bash',
+  '-c',
+  shipScript,
+  'task-ship',
+  options.user,
+  options.worktree,
+  options.branch,
+  options.remote,
+  options.message,
+  options.identity?.name ?? 'Stationly',
+  options.identity?.email ?? 'stationly@localhost',
+]

@@ -116,6 +116,10 @@ const targetStatus = (current: AgentStatusRecord, event: StatusEvent, context: C
     return agents.length > 0 ? 'working' : 'ready'
   }
 
+  if (event.type === 'session.ended' && current.status === 'failed') {
+    return 'failed'
+  }
+
   if (event.type === 'subagent.stopped') {
     return current.status === 'working' && agents.length === 0 && !context.mainOpen
       ? 'ready'
@@ -239,6 +243,10 @@ export const applyActivity = (db: Db, row: TaskRow, event: StatusEvent, conversa
   }
 
   if (event.type === 'approval.decided' && (row.status !== 'waiting' || stillPending(db, row))) {
+    return row
+  }
+
+  if (event.type === 'session.started' && row.status === 'setting_up') {
     return row
   }
 

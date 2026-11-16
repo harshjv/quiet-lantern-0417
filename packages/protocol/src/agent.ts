@@ -14,6 +14,16 @@ export const toolApprovalClosedValues = ['allowed', 'denied', 'expired'] as cons
 
 export type ToolApprovalStatusValue = (typeof toolApprovalStatusValues)[number]
 
+export const shipRequestStatusValues = [
+  'pushing',
+  'pending',
+  'rejected',
+  'merged',
+  'failed',
+] as const
+
+export type ShipRequestStatusValue = (typeof shipRequestStatusValues)[number]
+
 export const toolApprovalWaitS = 600
 
 export const runnerAskRules = [

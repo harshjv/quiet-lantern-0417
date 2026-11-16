@@ -184,7 +184,7 @@ export const githubRoutes = (kit: Kit) => {
           default_permissions: {
             contents: 'write',
             metadata: 'read',
-            pull_requests: 'read',
+            pull_requests: 'write',
             statuses: 'write',
             deployments: 'write',
           },

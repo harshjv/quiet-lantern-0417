@@ -9,7 +9,9 @@ import { conversation, environment, project, run, sandbox, task, task_inbox } fr
 import { setupFailureOf } from '../sandboxes/setup-failure.ts'
 
 import { queuePosition } from './machine.ts'
+import { previewAddress, previewOf } from './preview.ts'
 import { startTimeoutMs } from './runner.ts'
+import { latestShip, shipView } from './ship.ts'
 import type { TaskRow } from './status.ts'
 
 export type TaskItem = Static<typeof Task>
@@ -200,6 +202,24 @@ const modelOf = (db: Db, row: TaskRow) =>
     .limit(1)
     .get()?.model ?? row.model
 
+const shipOf = (db: Db, taskId: string) => {
+  const found = latestShip(db, taskId)
+
+  return found ? shipView(db, found) : null
+}
+
+const previewView = (db: Db, row: TaskRow) => {
+  const preview = previewOf(db, row)
+
+  return preview
+    ? {
+        environment_id: preview.id,
+        name: preview.name,
+        url: previewAddress(db, preview.id),
+      }
+    : null
+}
+
 export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now()): TaskItem => {
   const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()
@@ -238,6 +258,8 @@ export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now(
     },
     machine: row.machine,
     port: row.port,
+    ship: shipOf(db, row.id),
+    preview: previewView(db, row),
     queued_ahead: queuePosition(db, row),
     status: pending?.failed ? 'failed' : row.status,
     attention: row.attention,

@@ -15,7 +15,7 @@ import { newId } from '../db/ids.ts'
 import { conversation, run, sandbox, task, task_inbox } from '../db/schema.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
-import { githubTokenOf, keyEnvFor } from '../team/keys.ts'
+import { runGitHubToken, runKeyEnv } from '../team/keys.ts'
 
 import { closePendingApprovals } from './approvals.ts'
 import {
@@ -475,11 +475,21 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
       .where(eq(conversation.id, session.id))
       .run()
 
-    const token = await githubTokenOf(deps.auth, db, owner.owner.id)
+    if (member && !member.token_id) {
+      continue
+    }
+
+    const shared = member
+      ? {
+          project: row.project_id,
+          environment: row.environment_id,
+        }
+      : null
+    const token = await runGitHubToken(deps.auth, db, deps.keyring, owner.owner.id, shared)
     const envKeys = await deliveredRun(deps, row, id, [
       ['HOME', as.home],
       ...(member ? memberEnv(deps.keyring, member) : []),
-      ...keyEnvFor(db, deps.keyring, owner.owner.id, owner.agent),
+      ...runKeyEnv(db, deps.keyring, owner.owner.id, owner.agent, shared),
       ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : []),
     ]).catch(() => null)
 

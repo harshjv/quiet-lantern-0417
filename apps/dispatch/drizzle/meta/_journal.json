@@ -232,6 +232,27 @@
       "when": 1794805691261,
       "tag": "0032_orange_pet_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1794811484065,
+      "tag": "0033_violet_calypso",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1794846507554,
+      "tag": "0034_colorful_the_liberteens",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1794847205591,
+      "tag": "0035_lying_masque",
+      "breakpoints": true
     }
   ]
 }

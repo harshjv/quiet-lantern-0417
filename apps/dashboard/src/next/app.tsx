@@ -47,12 +47,13 @@ import { useLive, useProjectList, useTaskRows } from './data'
 import { projects, taskTone, type TaskState } from './fixtures'
 import { useInboxCount } from './inbox'
 import { ObserveScreen } from './observe'
+import { failedApps, troubledApps, useLiveApps } from './ops-live'
 import { OutsideNav, OutsideScreen, pages } from './outside'
 import { ShipScreen } from './ship'
 import { StoryGuide, useWorld } from './story'
 
 export type Mode = 'build' | 'ship' | 'observe' | 'outside' | 'catalogue'
-export type Place = { mode: Mode; project: string | null; view: string | null }
+export type Place = { mode: Mode; project: string | null; view: string | null; fix?: string | null }
 
 const read = (): Place => {
   const [path, query] = location.hash.replace(/^#/, '').split('?')
@@ -81,6 +82,7 @@ export function App() {
     setPlace((current) => ({
       ...current,
       view: null,
+      fix: null,
       ...next,
     }))
   }
@@ -265,6 +267,28 @@ function TaskList({ place, go }: Nav) {
 
 function ProjectList({ place, go, kind }: Nav & { kind: 'ship' | 'observe' }) {
   const { apps, incidents } = useWorld()
+  const live = useLive()
+  const listed = useProjectList()
+  const liveApps = useLiveApps(null)
+  const toneOf = (id: string) => {
+    if (live) {
+      const own = liveApps.filter((app) => app.environment.project.name === id)
+
+      return failedApps(own).length ? 'danger' : troubledApps(own).length ? 'warning' : 'success'
+    }
+
+    const found = incidents.filter((i) => i.project === id)
+
+    return kind === 'ship'
+      ? apps.some((a) => a.project === id && a.state === 'failed')
+        ? 'danger'
+        : 'success'
+      : found.some((i) => i.tone === 'danger')
+        ? 'danger'
+        : found.length
+          ? 'warning'
+          : 'success'
+  }
 
   return (
     <SidebarGroup>
@@ -282,18 +306,8 @@ function ProjectList({ place, go, kind }: Nav & { kind: 'ship' | 'observe' }) {
             <LayoutGrid /> All projects
           </SidebarMenuButton>
         </SidebarMenuItem>
-        {projects.map((p) => {
-          const found = incidents.filter((i) => i.project === p.id)
-          const tone =
-            kind === 'ship'
-              ? apps.some((a) => a.project === p.id && a.state === 'failed')
-                ? 'danger'
-                : 'success'
-              : found.some((i) => i.tone === 'danger')
-                ? 'danger'
-                : found.length
-                  ? 'warning'
-                  : 'success'
+        {listed.map((p) => {
+          const tone = toneOf(p.id)
 
           return (
             <SidebarMenuItem key={p.id}>

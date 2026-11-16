@@ -1,0 +1,1 @@
+ALTER TABLE `ship_request` ADD `head_sha` text;

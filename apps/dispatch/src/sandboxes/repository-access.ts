@@ -59,17 +59,18 @@ export const repositoryLabel = (repository: string) =>
     .join('/')
     .replace(/\.git$/, '')
 
-const projectToken = (
+export const projectSecret = (
   db: Db,
   keyring: Keyring,
   scope: { project: string; environment: string },
+  key: string,
 ) => {
   const found = variablesOf(db, {
     scope: 'project',
     id: scope.project,
   })
     .all()
-    .find((variable) => variable.key === tokenKey)
+    .find((variable) => variable.key === key)
   const env = db.select().from(environment).where(eq(environment.id, scope.environment)).get()
   const cloned = env ? isClone(env) : false
   const head = found
@@ -102,10 +103,15 @@ export const requireRepositoryAccess = async (
   const supplied = request.variables?.find(
     (variable) => variable.key === tokenKey && variable.kind !== 'reference',
   )?.value
-  const stored = projectToken(deps.db, deps.keyring, {
-    project: request.project.id,
-    environment: request.environment,
-  })
+  const stored = projectSecret(
+    deps.db,
+    deps.keyring,
+    {
+      project: request.project.id,
+      environment: request.environment,
+    },
+    tokenKey,
+  )
   const token = supplied ?? stored
   const name = repositoryLabel(request.repository)
   const details = {

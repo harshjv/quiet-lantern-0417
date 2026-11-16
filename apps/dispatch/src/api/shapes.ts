@@ -78,6 +78,7 @@ import {
   serviceKindValues,
   serviceStatusReasonValues,
   serviceStatusValues,
+  shipRequestStatusValues,
   stagedChangeSourceValues,
   stagedChangeStatusValues,
   staleReasonCodeValues,
@@ -2056,6 +2057,53 @@ const NamedRef = Type.Object({
   name: Str,
 })
 
+export const ShipRequest = component(
+  'ShipRequest',
+  Type.Object(
+    {
+      id: Str,
+      task_id: Str,
+      project_id: Str,
+      title: Str,
+      status: StringEnum(shipRequestStatusValues),
+      pull_request: Nullable(
+        Type.Object(
+          {
+            repo: Str,
+            number: Type.Integer(),
+            url: Str,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+      preview_environment_id: NStr,
+      head_sha: NStr,
+      reason: NStr,
+      requested_by: Str,
+      decided_by: NStr,
+      decided_at: NStr,
+      created_at: Str,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const ShipRequestList = component(
+  'ShipRequestList',
+  Type.Object(
+    {
+      items: Type.Array(ShipRequest),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
 export const Task = component(
   'Task',
   Type.Object(
@@ -2081,6 +2129,19 @@ export const Task = component(
       sandbox: NamedRef,
       machine: StringEnum(taskMachineValues),
       port: Nullable(Type.Integer()),
+      ship: Nullable(ShipRequest),
+      preview: Nullable(
+        Type.Object(
+          {
+            environment_id: Str,
+            name: Str,
+            url: NStr,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
       queued_ahead: Nullable(Type.Integer()),
       status: StringEnum(taskStatusValues),
       attention: Nullable(
@@ -2477,6 +2538,29 @@ export const MyKeys = component(
           },
         ),
       ),
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const TaskPreview = component(
+  'TaskPreview',
+  Type.Object(
+    {
+      environment: Type.Object(
+        {
+          id: Str,
+          name: Str,
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+      run_id: Str,
+      services: Type.Array(Str),
+      url: NStr,
     },
     {
       additionalProperties: false,

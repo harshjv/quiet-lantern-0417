@@ -43,15 +43,33 @@ const probe = async (): Promise<Source> => {
 
 function LiveEvents() {
   const queries = useQueryClient()
-  const refresh = () =>
+  const refresh = () => {
     void queries.invalidateQueries({
       queryKey: ['tasks'],
     })
+    void queries.invalidateQueries({
+      queryKey: ['ship-requests'],
+    })
+  }
 
-  useEventStream(`/v1/events?types=${encodeURIComponent('task.*')}`, {
+  const refreshApps = () => {
+    void queries.invalidateQueries({
+      queryKey: ['services'],
+    })
+    void queries.invalidateQueries({
+      queryKey: ['deployments'],
+    })
+  }
+
+  useEventStream(`/v1/events?types=${encodeURIComponent('task.*,deployment.*,health.changed')}`, {
     'task.created': refresh,
     'task.changed': refresh,
     'task.deleted': refresh,
+    'deployment.started': refreshApps,
+    'deployment.active': refreshApps,
+    'deployment.failed': refreshApps,
+    'deployment.cancelled': refreshApps,
+    'health.changed': refreshApps,
   })
 
   return null

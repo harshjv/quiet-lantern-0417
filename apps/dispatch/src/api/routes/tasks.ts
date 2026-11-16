@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 
 import type { Static } from '@sinclair/typebox'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
 import {
@@ -19,10 +19,11 @@ import type { Principal } from '../../auth/principal.ts'
 import { fullAdmin, isInstanceAdmin } from '../../auth/scopes.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { project, sandbox, station, task } from '../../db/schema.ts'
+import { project, sandbox, ship_request, station, task } from '../../db/schema.ts'
 import { requestDeletion, startSandbox } from '../../sandboxes/lifecycle.ts'
 import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
 import { isRepositoryName, repositoryName } from '../../sandboxes/workspace.ts'
+import { ephemeralDelivery } from '../../secrets/deliver.ts'
 import { variablesOf } from '../../secrets/values.ts'
 import { emitEvent } from '../../station/events.ts'
 import { approvalOf, approvalState, decideApproval } from '../../tasks/approvals.ts'
@@ -48,6 +49,7 @@ import {
   stopTask,
   worktreeOf,
 } from '../../tasks/machine.ts'
+import { previewAddress } from '../../tasks/preview.ts'
 import {
   addInput,
   conversationById,
@@ -56,6 +58,7 @@ import {
   startConversation,
   wantRunner,
 } from '../../tasks/runner.ts'
+import { decideShip, shipView, startShip } from '../../tasks/ship.ts'
 import { taskChanged, taskSubject, type TaskRow } from '../../tasks/status.ts'
 import { branchSlug, listTasks, taskItem, titleOf, uniqueBranch } from '../../tasks/views.ts'
 import { githubTokenOf, listKeys } from '../../team/keys.ts'
@@ -72,11 +75,16 @@ import {
   AgentInputAccepted,
   AgentInterruptAccepted,
   replies,
+  ShipRequest,
+  ShipRequestList,
   Task,
   TaskDeleted,
   TaskPage,
+  TaskPreview,
 } from '../shapes.ts'
 import { createSse } from '../sse.ts'
+
+import { deployPreview, removePreview } from './task-preview.ts'
 
 type CreateSandbox = (
   call: Call,
@@ -999,6 +1007,245 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       },
     )
     .post(
+      '/tasks/:task/preview',
+      async ({ params, request, set }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Making a preview')
+
+        const row = visibleTask(call, params.task)
+        const deployed = await deployPreview(kit, onBehalf(call), row)
+
+        audit(
+          db,
+          call,
+          'task.preview',
+          {
+            entity: 'task',
+            id: row.id,
+          },
+          {
+            after: {
+              environment: deployed.environment.id,
+              run_id: deployed.run_id,
+            },
+          },
+        )
+        set.status = 202
+
+        return {
+          ...deployed,
+          url: previewAddress(db, deployed.environment.id),
+        }
+      },
+      {
+        operation: {
+          id: 'deploy_task_preview',
+          summary:
+            "Deploy a task's worktree into its own preview environment, made the first time; needs a human, the task's owner or an admin",
+          level: 'any',
+          mcp: false,
+          cli: {
+            path: ['tasks', 'preview'],
+            args: ['task'],
+          },
+        },
+        response: replies({
+          202: TaskPreview,
+        }),
+      },
+    )
+    .post(
+      '/tasks/:task/ship',
+      async ({ params, request, set }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Shipping a task')
+
+        const row = visibleTask(call, params.task)
+        const shipped = await startShip(
+          {
+            db,
+            github: kit.deps.github,
+            deliver: async (station, runId, entries) => {
+              await kit.deps.stations.ask(
+                station,
+                'secrets.deliver',
+                ephemeralDelivery(
+                  {
+                    run_id: runId,
+                  },
+                  'run',
+                  entries,
+                ),
+              )
+            },
+            reconcile: (station) => kit.deps.stations.reconcile(station),
+          },
+          row,
+          call.principal.user_id,
+        )
+
+        audit(
+          db,
+          call,
+          'task.ship',
+          {
+            entity: 'task',
+            id: row.id,
+          },
+          {
+            after: {
+              ship_request: shipped.id,
+              run_id: shipped.run_id,
+            },
+          },
+        )
+        set.status = 202
+
+        return shipView(db, shipped)
+      },
+      {
+        operation: {
+          id: 'ship_task',
+          summary:
+            "Push a task's branch, open its pull request and ask an admin to merge it; needs a human, the task's owner or an admin",
+          level: 'any',
+          mcp: false,
+          cli: {
+            path: ['tasks', 'ship'],
+            args: ['task'],
+          },
+        },
+        response: replies({
+          202: ShipRequest,
+        }),
+      },
+    )
+    .get(
+      '/ship-requests',
+      async ({ request }) => {
+        const call = await kit.call(request)
+        const admin = isInstanceAdmin(call.principal.scopes)
+
+        return {
+          items: db
+            .select()
+            .from(ship_request)
+            .where(eq(ship_request.status, 'pending'))
+            .orderBy(desc(ship_request.created_at))
+            .all()
+            .filter((entry) => admin || entry.requested_by === call.principal.user_id)
+            .map((entry) => shipView(db, entry)),
+        }
+      },
+      {
+        operation: {
+          id: 'list_ship_requests',
+          summary: 'List ship requests waiting for a decision; admins see all, others their own',
+          level: 'any',
+          mcp: false,
+          cli: {
+            path: ['ship-requests', 'list'],
+          },
+        },
+        response: replies({
+          200: ShipRequestList,
+        }),
+      },
+    )
+    .post(
+      '/ship-requests/:request/decision',
+      async ({ params, request, body }) => {
+        const call = await kit.call(request)
+
+        requireHuman(call.principal, 'Deciding a ship request')
+
+        if (!isInstanceAdmin(call.principal.scopes)) {
+          throw new ApiError(
+            'FORBIDDEN_SCOPE',
+            'Only an admin approves shipping to production.',
+            'Ask an admin to decide.',
+            {
+              required: fullAdmin[0],
+            },
+          )
+        }
+
+        const found = db
+          .select()
+          .from(ship_request)
+          .where(eq(ship_request.id, params.request))
+          .get()
+
+        if (!found) {
+          notFound('ship request', params.request)
+        }
+
+        await decideShip(
+          {
+            db,
+            github: kit.deps.github,
+          },
+          found!,
+          {
+            approve: body.decision === 'approve',
+            reason: body.reason ?? null,
+          },
+          call.principal.user_id,
+        )
+        audit(
+          db,
+          call,
+          'ship.decide',
+          {
+            entity: 'task',
+            id: found!.task_id,
+          },
+          {
+            after: {
+              ship_request: found!.id,
+              decision: body.decision,
+            },
+          },
+        )
+
+        return shipView(
+          db,
+          db.select().from(ship_request).where(eq(ship_request.id, found!.id)).get()!,
+        )
+      },
+      {
+        operation: {
+          id: 'decide_ship_request',
+          summary:
+            'Approve a ship request, which merges its pull request and deploys production, or reject it with a reason; an admin and a human',
+          level: 'any',
+          mcp: false,
+          cli: {
+            path: ['ship-requests', 'decide'],
+            args: ['request'],
+          },
+        },
+        body: t.Object(
+          {
+            decision: t.Union([t.Literal('approve'), t.Literal('reject')]),
+            reason: t.Optional(
+              t.String({
+                maxLength: 2000,
+              }),
+            ),
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+        response: replies({
+          200: ShipRequest,
+        }),
+      },
+    )
+    .post(
       '/tasks/:task/interrupt',
       async ({ params, request, set }) => {
         const call = await kit.call(request)
@@ -1111,6 +1358,8 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
             },
           )
         })
+
+        removePreview(kit, onBehalf(call), row)
 
         if (box && row.machine === 'project') {
           removeWorktree(db, row, (station) => kit.deps.stations.reconcile(station))

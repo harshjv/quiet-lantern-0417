@@ -28,6 +28,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import type { Place } from './app'
+import { useLive } from './data'
 import { previews, projects } from './fixtures'
 import {
   Checklist,
@@ -45,6 +46,7 @@ import {
 } from './parts'
 import { AppPage } from './ship-app'
 import { Keys } from './ship-keys'
+import { LiveShip } from './ship-live'
 import { NewApp } from './ship-new'
 import { activeChange, phaseOf } from './stages'
 import { useStory, useWorld } from './story'
@@ -59,6 +61,10 @@ const appIcon: Record<string, LucideIcon> = {
 type Props = { place: Place; go: (next: Partial<Place>) => void }
 
 export function ShipScreen({ place, go }: Props) {
+  return useLive() ? <LiveShip place={place} go={go} /> : <MockShip place={place} go={go} />
+}
+
+function MockShip({ place, go }: Props) {
   const { apps, approvals } = useWorld()
   const [adding, setAdding] = useState(false)
 

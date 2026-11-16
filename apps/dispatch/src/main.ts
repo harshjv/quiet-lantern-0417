@@ -30,6 +30,7 @@ import { createStationServer, HostAdminError, type HostAdmin } from './station/s
 import { startApprovalExpiry } from './tasks/approvals.ts'
 import { startAgentEventSweep } from './tasks/events.ts'
 import { startAgentRunners } from './tasks/runner.ts'
+import { startShipAdvance } from './tasks/ship.ts'
 import { ensureFirstAdmins } from './team/members.ts'
 import { pruneBackups, startBackupScheduler } from './volumes/backups.ts'
 
@@ -236,6 +237,14 @@ const agentRunners = startAgentRunners(
   log,
 )
 const approvalExpiry = startApprovalExpiry(db, log)
+const shipAdvance = startShipAdvance(
+  {
+    db,
+    github,
+    dashboardOrigin: auth.surface.dashboardOrigin,
+  },
+  log,
+)
 const workspaceTokens = startWorkspaceTokenRenewal(
   {
     db,
@@ -277,6 +286,7 @@ const shutdown = async () => {
   sandboxRetention.stop()
   agentEventSweep.stop()
   agentRunners.stop()
+  shipAdvance.stop()
   approvalExpiry.stop()
   idleStop.stop()
   workspaceTokens.stop()

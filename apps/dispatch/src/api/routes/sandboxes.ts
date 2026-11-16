@@ -69,6 +69,7 @@ import {
 } from '../../sandboxes/workspace.ts'
 import { ephemeralDelivery } from '../../secrets/deliver.ts'
 import { variablesOf } from '../../secrets/values.ts'
+import { gitIdentityOf } from '../../team/members.ts'
 import { can, requireHuman, requireLevel } from '../access.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
@@ -603,6 +604,7 @@ export const sandboxRoutes = (kit: Kit) => {
             wanted.agent,
             minted.key,
             (body.variables ?? []).map((v) => v.key),
+            kind,
           )
         : []),
     ]
@@ -697,7 +699,10 @@ export const sandboxRoutes = (kit: Kit) => {
               sandbox_id: id,
               deployment_id: null,
               kind: 'exec',
-              command: setupCommand(workspace),
+              command: setupCommand(
+                workspace,
+                kind === 'own' ? gitIdentityOf(db, call.principal.user_id) : null,
+              ),
               status: 'queued',
               log_ref: `logs/sandboxes/${id}/${workspace.setup_run_id}`,
               tty: false,

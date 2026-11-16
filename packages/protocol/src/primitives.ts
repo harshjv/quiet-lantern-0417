@@ -61,6 +61,7 @@ export const idPrefixes = {
   task: 'tsk',
   conversation: 'cnv',
   invite: 'inv',
+  ship_request: 'shp',
 } as const
 
 export type IdEntity = keyof typeof idPrefixes
