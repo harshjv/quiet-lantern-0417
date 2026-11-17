@@ -1,14 +1,13 @@
 import { Type } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 
-import { injectionValues, Nullable, StringEnum } from '@stationly/protocol'
+import { injectionValues, Nullable, StringEnum, targetKindValues } from '@stationly/protocol'
 
-import { deployment, environment, variable } from '../db/schema.ts'
+import { deployment, key } from '../db/schema.ts'
 import type { EnvSnapshot } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { parseValue } from '../secrets/reference.ts'
 import {
-  isFallback,
   isSealed,
   leaves,
   render,
@@ -21,8 +20,8 @@ import { decryptLeaf, storedBytes } from '../secrets/variables.ts'
 import { audit, type Call } from './context.ts'
 import { fail } from './errors.ts'
 import type { Kit } from './kit.ts'
-import type { SandboxContext, ServiceContext } from './lookup.ts'
-import { definitionOf, Export, VariableKind } from './shapes.ts'
+import { previewIdOf, type AppContext, type MachineContext } from './lookup.ts'
+import { definitionOf, Export, KeyKind } from './shapes.ts'
 import { exportsOf } from './views.ts'
 
 const NStr = Nullable(Type.String())
@@ -45,17 +44,16 @@ export const ResolvedPart = Type.Recursive(
             Type.Union([
               Type.Object(
                 {
-                  scope: StringEnum(['project', 'global', 'service', 'sandbox']),
-                  service_id: Type.Optional(NStr),
-                  environment: Type.Optional(Type.String()),
-                  key: Type.String(),
-                  variable_id: Type.String(),
-                  kind: definitionOf(VariableKind),
+                  scope: StringEnum(['project', 'global', 'app', 'machine']),
+                  app_id: Type.Optional(NStr),
+                  target: Type.Optional(StringEnum(targetKindValues)),
+                  name: Type.String(),
+                  key_id: Type.String(),
+                  kind: definitionOf(KeyKind),
                   secret_value_id: Type.String(),
                   version: Type.Integer(),
                   bytes: Type.Optional(Nullable(Type.Integer())),
                   pinned_version: Nullable(Type.Integer()),
-                  fallback_from_protected: Type.Optional(Type.Literal(true)),
                 },
                 {
                   additionalProperties: false,
@@ -64,7 +62,7 @@ export const ResolvedPart = Type.Recursive(
               Type.Object(
                 {
                   scope: Type.Literal('export'),
-                  service_id: Type.String(),
+                  app_id: Type.String(),
                   key: Type.String(),
                   value: Type.String(),
                 },
@@ -74,10 +72,10 @@ export const ResolvedPart = Type.Recursive(
               ),
               Type.Object(
                 {
-                  scope: StringEnum(['service', 'sandbox']),
-                  service_id: NStr,
-                  key: NStr,
-                  variable_id: Type.String(),
+                  scope: StringEnum(['app', 'machine']),
+                  app_id: NStr,
+                  name: NStr,
+                  key_id: Type.String(),
                   kind: Type.Literal('reference'),
                   reference: Type.String(),
                   parts: Type.Optional(Type.Array(Part)),
@@ -99,17 +97,16 @@ export const ResolvedPart = Type.Recursive(
   },
 )
 
-export const ResolvedVariable = Type.Object(
+export const ResolvedKey = Type.Object(
   {
-    key: Type.String(),
-    variable_id: Type.String(),
-    kind: VariableKind,
+    name: Type.String(),
+    key_id: Type.String(),
+    kind: KeyKind,
     reference: NStr,
     injection: StringEnum(injectionValues),
     build: Type.Boolean(),
     sealed: Type.Boolean(),
     stale: Type.Boolean(),
-    fallback_from_protected: Type.Boolean(),
     parts: Type.Optional(Type.Array(ResolvedPart)),
     secret_value_id: Type.Optional(Type.String()),
     version: Type.Optional(Type.Integer()),
@@ -129,29 +126,31 @@ export const ResolvedVariable = Type.Object(
     value: Type.Optional(Type.String()),
   },
   {
-    title: 'ResolvedVariable',
+    title: 'ResolvedKey',
     additionalProperties: false,
   },
 )
 
-export const SandboxResolved = Type.Object(
+export const MachineResolved = Type.Object(
   {
-    sandbox_id: Type.String(),
-    environment_id: Type.String(),
-    variables: Type.Array(ResolvedVariable),
+    machine_id: Type.String(),
+    project_id: Type.String(),
+    preview_id: NStr,
+    keys: Type.Array(ResolvedKey),
   },
   {
-    title: 'SandboxResolved',
+    title: 'MachineResolved',
     additionalProperties: false,
   },
 )
 
 export const Resolved = Type.Object(
   {
-    service_id: Type.String(),
-    environment_id: Type.String(),
+    app_id: Type.String(),
+    project_id: Type.String(),
+    preview_id: NStr,
     compared_with: NStr,
-    variables: Type.Array(ResolvedVariable),
+    keys: Type.Array(ResolvedKey),
     exports: Type.Array(Export),
   },
   {
@@ -163,25 +162,22 @@ export const Resolved = Type.Object(
 type Hop = Record<string, unknown>
 
 type Subject =
-  | { kind: 'service'; ctx: ServiceContext; compareWith?: string }
-  | { kind: 'sandbox'; ctx: SandboxContext }
+  { kind: 'app'; ctx: AppContext; compareWith?: string } | { kind: 'machine'; ctx: MachineContext }
 
-const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { admin: boolean }) => {
+const describeKeys = (kit: Kit, call: Call, subject: Subject, options: { admin: boolean }) => {
   const { db, keyring } = kit.deps
   const comparedId =
-    subject.kind === 'service'
-      ? (subject.compareWith ?? subject.ctx.service.current_deployment_id)
-      : null
+    subject.kind === 'app' ? (subject.compareWith ?? subject.ctx.app.current_deployment_id) : null
   const compared = comparedId
     ? db.select().from(deployment).where(eq(deployment.id, comparedId)).get()
     : undefined
 
   if (
-    subject.kind === 'service' &&
+    subject.kind === 'app' &&
     comparedId &&
-    (!compared || compared.service_id !== subject.ctx.service.id)
+    (!compared || compared.app_id !== subject.ctx.app.id)
   ) {
-    fail('NOT_FOUND', `deployment ${comparedId} is not a deployment of this service`)
+    fail('NOT_FOUND', `deployment ${comparedId} is not a deployment of this app`)
   }
 
   const pinned = new Map<string, number>()
@@ -189,22 +185,12 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
   for (const entry of (compared?.env_snapshot as EnvSnapshot | undefined)?.entries ?? []) {
     for (const leaf of leaves(entry.node)) {
       if (leaf.kind === 'value') {
-        pinned.set(`${leaf.variable_id}:${leaf.environment_id}`, leaf.version)
+        pinned.set(`${leaf.key_id}:${leaf.target}`, leaf.version)
       }
     }
   }
 
-  const envNames = new Map(
-    db
-      .select({
-        id: environment.id,
-        name: environment.name,
-      })
-      .from(environment)
-      .all()
-      .map((e) => [e.id, e.name]),
-  )
-  const variableRow = (id: string) => db.select().from(variable).where(eq(variable.id, id)).get()
+  const keyRow = (id: string) => db.select().from(key).where(eq(key.id, id)).get()
   let stale = false
 
   const valueHop = (leaf: ValueNode): Hop => {
@@ -212,12 +198,10 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       ? 'project'
       : leaf.from === 'global'
         ? 'global'
-        : leaf.from === 'sandbox'
-          ? 'sandbox'
-          : 'service'
-    const pinnedVersion = compared
-      ? (pinned.get(`${leaf.variable_id}:${leaf.environment_id}`) ?? null)
-      : null
+        : leaf.from === 'machine'
+          ? 'machine'
+          : 'app'
+    const pinnedVersion = compared ? (pinned.get(`${leaf.key_id}:${leaf.target}`) ?? null) : null
 
     if (compared && pinnedVersion !== leaf.version) {
       stale = true
@@ -225,21 +209,19 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
 
     return {
       scope,
-      ...(scope === 'service'
+      ...(scope === 'app'
         ? {
-            service_id: leaf.service_id,
+            app_id: leaf.app_id,
           }
         : {}),
       ...(scope === 'project'
         ? {
-            environment: leaf.environment_id
-              ? (envNames.get(leaf.environment_id) ?? leaf.environment_id)
-              : 'default',
+            target: leaf.target,
           }
         : {}),
-      key: leaf.key,
-      variable_id: leaf.variable_id,
-      kind: variableRow(leaf.variable_id)?.kind ?? (leaf.sealed ? 'sealed' : 'literal'),
+      name: leaf.key,
+      key_id: leaf.key_id,
+      kind: keyRow(leaf.key_id)?.kind ?? (leaf.sealed ? 'sealed' : 'literal'),
       secret_value_id: leaf.secret_value_id,
       version: leaf.version,
       ...(leaf.sealed
@@ -248,11 +230,6 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
           }
         : {}),
       pinned_version: pinnedVersion,
-      ...(leaf.fallback_from_protected
-        ? {
-            fallback_from_protected: true,
-          }
-        : {}),
     }
   }
 
@@ -284,19 +261,19 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       return [
         {
           scope: 'export',
-          service_id: node.service_id,
+          app_id: node.app_id,
           key: node.key,
           value: node.value,
         },
       ]
     }
 
-    const row = variableRow(node.variable_id)
+    const row = keyRow(node.key_id)
     const hop: Hop = {
-      scope: row?.scope === 'sandbox' ? 'sandbox' : 'service',
-      service_id: row?.service_id ?? null,
-      key: row?.key ?? null,
-      variable_id: node.variable_id,
+      scope: row?.scope === 'machine' ? 'machine' : 'app',
+      app_id: row?.app_id ?? null,
+      name: row?.name ?? null,
+      key_id: node.key_id,
       kind: 'reference',
       reference: node.template,
     }
@@ -316,25 +293,24 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
 
   const decrypted: string[] = []
   const owner =
-    subject.kind === 'service'
+    subject.kind === 'app'
       ? {
-          entity: 'service',
-          id: subject.ctx.service.id,
+          entity: 'app',
+          id: subject.ctx.app.id,
         }
       : {
-          entity: 'sandbox',
-          id: subject.ctx.sandbox.id,
+          entity: 'machine',
+          id: subject.ctx.machine.id,
         }
   const resolver =
-    subject.kind === 'service'
-      ? Resolver.forService(db, subject.ctx.service.id)
-      : Resolver.forSandbox(db, subject.ctx.sandbox.id)
-  const listed =
-    subject.kind === 'service' ? resolver.serviceVariables() : resolver.sandboxVariables()
-  const variables = listed.map((v) => {
+    subject.kind === 'app'
+      ? Resolver.forApp(db, subject.ctx.app.id)
+      : Resolver.forMachine(db, subject.ctx.machine.id)
+  const listed = subject.kind === 'app' ? resolver.appKeys() : resolver.machineKeys()
+  const keys = listed.map((v) => {
     const base = {
-      key: v.key,
-      variable_id: v.id,
+      name: v.name,
+      key_id: v.id,
       kind: v.kind,
       reference: v.reference,
       injection: v.injection,
@@ -343,7 +319,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
     let node: SourceNode
 
     try {
-      node = subject.kind === 'service' ? resolver.resolve(v) : resolver.resolveSandbox(v)
+      node = subject.kind === 'app' ? resolver.resolve(v) : resolver.resolveMachine(v)
     } catch (error) {
       if (!(error instanceof SecretsError)) {
         throw error
@@ -353,7 +329,6 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
         ...base,
         sealed: v.kind === 'sealed',
         stale: false,
-        fallback_from_protected: false,
         parts: [],
         error: {
           code: error.code,
@@ -407,7 +382,6 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       ...base,
       sealed,
       stale: entryStale,
-      fallback_from_protected: isFallback(node),
       ...shape,
       error: null,
       ...(value === undefined
@@ -428,7 +402,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
   }
 
   return {
-    variables,
+    keys,
     compared,
   }
 }
@@ -436,14 +410,14 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
 export const resolvedView = (
   kit: Kit,
   call: Call,
-  ctx: ServiceContext,
+  ctx: AppContext,
   options: { admin: boolean; compareWith?: string },
 ) => {
-  const { variables, compared } = describeVariables(
+  const { keys, compared } = describeKeys(
     kit,
     call,
     {
-      kind: 'service',
+      kind: 'app',
       ctx,
       compareWith: options.compareWith,
     },
@@ -451,29 +425,31 @@ export const resolvedView = (
   )
 
   return {
-    service_id: ctx.service.id,
-    environment_id: ctx.environment.id,
+    app_id: ctx.app.id,
+    project_id: ctx.project.id,
+    preview_id: previewIdOf(ctx.target_row),
     compared_with: compared?.id ?? null,
-    variables,
-    exports: exportsOf(kit.deps.db, ctx.service),
+    keys,
+    exports: exportsOf(kit.deps.db, ctx.app),
   }
 }
 
-export const sandboxResolvedView = (
+export const machineResolvedView = (
   kit: Kit,
   call: Call,
-  ctx: SandboxContext,
+  ctx: MachineContext,
   options: { admin: boolean },
 ) => ({
-  sandbox_id: ctx.sandbox.id,
-  environment_id: ctx.environment.id,
-  variables: describeVariables(
+  machine_id: ctx.machine.id,
+  project_id: ctx.project.id,
+  preview_id: previewIdOf(ctx.target_row),
+  keys: describeKeys(
     kit,
     call,
     {
-      kind: 'sandbox',
+      kind: 'machine',
       ctx,
     },
     options,
-  ).variables,
+  ).keys,
 })

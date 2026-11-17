@@ -1,8 +1,8 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 
 import { atLeast, fullAdmin, type Level, type Scope } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
-import { member, project_member, sandbox, task, user } from '../db/schema.ts'
+import { machine, member, project_member, task, user } from '../db/schema.ts'
 
 export const memberLevel: Level = 'read'
 
@@ -38,27 +38,23 @@ export const userScopes = (db: Db, userId: string | null): Scope[] => {
   const previews = db
     .select({
       project_id: task.project_id,
-      environment_id: task.preview_environment_id,
+      preview_id: task.preview_id,
     })
     .from(task)
-    .where(
-      and(
-        isNotNull(task.preview_environment_id),
-        sql`json_extract(${task.owner}, '$.id') = ${userId}`,
-      ),
-    )
+    .where(and(isNotNull(task.preview_id), sql`json_extract(${task.owner}, '$.id') = ${userId}`))
     .all()
     .filter((row) => projects.includes(row.project_id))
 
   return [
     ...projects.map((projectId) => ({
       project_id: projectId,
-      environment_id: '*',
+      target: '*',
       level: memberLevel,
     })),
     ...previews.map((row) => ({
       project_id: row.project_id,
-      environment_id: row.environment_id!,
+      target: 'previews',
+      preview_id: row.preview_id!,
       level: 'deploy' as const,
     })),
   ]
@@ -75,24 +71,34 @@ export const capScopes = (scopes: Scope[], held: Scope[]): Scope[] =>
           : grant.project_id === '*'
             ? scope.project_id
             : null
-      const environment =
-        scope.environment_id === '*'
-          ? grant.environment_id
-          : grant.environment_id === '*'
-            ? scope.environment_id
-            : null
+      const place = scope.target === '*' ? grant.target : grant.target === '*' ? scope.target : null
 
       if (
         (project === null && scope.project_id !== grant.project_id) ||
-        (environment === null && scope.environment_id !== grant.environment_id)
+        (place === null && scope.target !== grant.target)
       ) {
         return []
       }
 
+      if (
+        scope.preview_id !== undefined &&
+        grant.preview_id !== undefined &&
+        scope.preview_id !== grant.preview_id
+      ) {
+        return []
+      }
+
+      const preview = scope.preview_id ?? grant.preview_id
+
       return [
         {
           project_id: project ?? scope.project_id,
-          environment_id: environment ?? scope.environment_id,
+          target: place ?? scope.target,
+          ...(preview === undefined
+            ? {}
+            : {
+                preview_id: preview,
+              }),
           level: lower(scope.level, grant.level),
         },
       ]
@@ -109,13 +115,13 @@ export const projectMachineToken = (db: Db, tokenId: string | null) =>
   !!tokenId &&
   db
     .select({
-      id: sandbox.id,
+      id: machine.id,
     })
-    .from(sandbox)
+    .from(machine)
     .where(
       and(
-        sql`json_extract(${sandbox.workspace}, '$.token_id') = ${tokenId}`,
-        sql`json_extract(${sandbox.workspace}, '$.kind') = 'project'`,
+        sql`json_extract(${machine.workspace}, '$.token_id') = ${tokenId}`,
+        sql`json_extract(${machine.workspace}, '$.kind') = 'project'`,
       ),
     )
     .get() !== undefined
@@ -153,3 +159,13 @@ export const gitIdentityOf = (db: Db, userId: string | null) => {
       }
     : null
 }
+
+export const activeAdminIds = (db: Db) =>
+  db
+    .select({
+      user_id: member.user_id,
+    })
+    .from(member)
+    .where(and(eq(member.role, 'admin'), isNull(member.removed_at)))
+    .all()
+    .map((row) => row.user_id)

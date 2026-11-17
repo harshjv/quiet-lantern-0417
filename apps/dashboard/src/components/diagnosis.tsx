@@ -67,7 +67,7 @@ function Changes({ diff }: { diff: NonNullable<Diagnosis['diff_from_last_good']>
       )}
       {diff.variables?.map((v) => (
         <li key={v.key}>
-          Variable <Code>{v.key}</Code> from version {v.from_version ?? 'none'} to{' '}
+          Key <Code>{v.key}</Code> from version {v.from_version ?? 'none'} to{' '}
           {v.to_version ?? 'none'}
         </li>
       ))}

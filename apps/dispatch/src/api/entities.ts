@@ -2,43 +2,52 @@ import { volumeDockerName } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { service, service_port, volume } from '../db/schema.ts'
+import { app, app_port, volume } from '../db/schema.ts'
 
+import { appStatusOf } from './app-status.ts'
 import { ensureNetwork, ensureVirtualIp } from './ipam.ts'
 
-type ServiceInsert = typeof service.$inferInsert
-type PortInsert = typeof service_port.$inferInsert
+type AppInsert = typeof app.$inferInsert
+type PortInsert = typeof app_port.$inferInsert
 
 const exportNames = (kind: string) => (kind === 'web' ? ['HOST', 'PORT', 'URL'] : ['HOST', 'PORT'])
 
-export const createService = (db: Db, values: Omit<ServiceInsert, 'id' | 'exports' | 'status'>) => {
-  const id = newId('service')
+export const createApp = (
+  db: Db,
+  values: Omit<AppInsert, 'id' | 'exports' | 'status' | 'status_reason'>,
+) => {
+  const id = newId('app')
 
-  db.insert(service)
+  db.insert(app)
     .values({
       ...values,
       id,
       exports: exportNames(values.kind),
-      status: values.desired_state === 'stopped' ? 'stopped' : 'amber',
+      ...appStatusOf(db, {
+        id,
+        desired_state: values.desired_state ?? 'running',
+        server_id: values.server_id,
+        current_deployment_id: null,
+      }),
     })
     .run()
-  ensureNetwork(db, values.environment_id, values.station_id)
-  ensureVirtualIp(db, id, values.environment_id)
+  ensureNetwork(db, values.target_id, values.server_id)
+  ensureVirtualIp(db, id, values.target_id)
 
   return id
 }
 
-export const createServicePort = (
+export const createAppPort = (
   db: Db,
-  serviceId: string,
+  appId: string,
   port: Pick<PortInsert, 'port' | 'protocol' | 'grpc'>,
 ) => {
-  const id = newId('service_port')
+  const id = newId('app_port')
 
-  db.insert(service_port)
+  db.insert(app_port)
     .values({
       id,
-      service_id: serviceId,
+      app_id: appId,
       port: port.port,
       protocol: port.protocol,
       grpc: port.grpc,
@@ -50,7 +59,7 @@ export const createServicePort = (
 
 export const createVolume = (
   db: Db,
-  owner: { id: string; station_id: string; project_id: string },
+  owner: { id: string; server_id: string; project_id: string },
   mountPath: string,
 ) => {
   const id = newId('volume')
@@ -59,10 +68,10 @@ export const createVolume = (
     .values({
       id,
       owner: 'service',
-      service_id: owner.id,
+      app_id: owner.id,
       project_id: owner.project_id,
       mount_path: mountPath,
-      station_id: owner.station_id,
+      server_id: owner.server_id,
       docker_name: volumeDockerName(id),
     })
     .run()

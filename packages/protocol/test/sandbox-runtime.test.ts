@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { adviseSandboxRuntime, gibibyte, sandboxRuntimeChoice } from '../src/index.ts'
+import { adviseMachineRuntime, gibibyte, machineRuntimeChoice } from '../src/index.ts'
 
 const host = {
   kvm_present: true,
@@ -24,7 +24,7 @@ const cases = [
       hypervisor: 'kvm',
     },
     reason:
-      'This host is a kvm virtual machine without nested virtualization, so sandboxes run on gVisor',
+      'This host is a kvm virtual machine without nested virtualization, so machines run on gVisor',
     options: ['gvisor'],
     recommended: 'gvisor',
   },
@@ -35,7 +35,7 @@ const cases = [
       kvm_present: false,
       kvm_usable: false,
     },
-    reason: 'No KVM on this host, so sandboxes run on gVisor',
+    reason: 'No KVM on this host, so machines run on gVisor',
     options: ['gvisor'],
     recommended: 'gvisor',
   },
@@ -45,7 +45,7 @@ const cases = [
       ...host,
       kvm_usable: false,
     },
-    reason: '/dev/kvm exists but cannot be opened, so sandboxes run on gVisor',
+    reason: '/dev/kvm exists but cannot be opened, so machines run on gVisor',
     options: ['gvisor'],
     recommended: 'gvisor',
   },
@@ -65,7 +65,7 @@ const cases = [
       ...host,
       memory_bytes: 16 * gibibyte,
     },
-    reason: 'This host has 16 GiB of memory, and gVisor fits more sandboxes into it',
+    reason: 'This host has 16 GiB of memory, and gVisor fits more machines into it',
     options: ['gvisor', 'microvm'],
     recommended: 'gvisor',
   },
@@ -79,8 +79,8 @@ const cases = [
 ]
 
 for (const c of cases) {
-  test(`adviseSandboxRuntime: ${c.name}`, () => {
-    const advice = adviseSandboxRuntime(c.host, ['gvisor'])!
+  test(`adviseMachineRuntime: ${c.name}`, () => {
+    const advice = adviseMachineRuntime(c.host, ['gvisor'])!
 
     assert.equal(advice.default, 'gvisor')
     assert.equal(advice.reasons[0], c.reason)
@@ -92,12 +92,12 @@ for (const c of cases) {
       advice.options.filter((option) => option.recommended).map((option) => option.runtime),
       [c.recommended],
     )
-    assert.equal(sandboxRuntimeChoice(advice), false)
+    assert.equal(machineRuntimeChoice(advice), false)
   })
 }
 
-test('adviseSandboxRuntime marks micro-VMs as not installed and falls back to gVisor', () => {
-  const advice = adviseSandboxRuntime(host, ['gvisor'])!
+test('adviseMachineRuntime marks micro-VMs as not installed and falls back to gVisor', () => {
+  const advice = adviseMachineRuntime(host, ['gvisor'])!
   const microvm = advice.options.find((option) => option.runtime === 'microvm')!
 
   assert.equal(microvm.installed, false)
@@ -105,10 +105,10 @@ test('adviseSandboxRuntime marks micro-VMs as not installed and falls back to gV
   assert.ok(microvm.pros.length > 0 && microvm.cons.length > 0)
   assert.equal(
     advice.reasons[1],
-    'Micro-VM sandboxes are not installed in this release, so sandboxes run on gVisor',
+    'Micro-VM machines are not installed in this release, so machines run on gVisor',
   )
 })
 
-test('adviseSandboxRuntime has no advice for a station without sandboxes', () => {
-  assert.equal(adviseSandboxRuntime(host, []), null)
+test('adviseMachineRuntime has no advice for a station without machines', () => {
+  assert.equal(adviseMachineRuntime(host, []), null)
 })

@@ -2,8 +2,9 @@ import { and, desc, eq } from 'drizzle-orm'
 
 import { remedy, type MessageBody } from '@stationly/protocol'
 
+import { refreshDeploymentApp } from '../api/app-status.ts'
 import type { Db } from '../db/client.ts'
-import { deployment, drift, service, station, station_generation } from '../db/schema.ts'
+import { app, deployment, drift, server, station_generation } from '../db/schema.ts'
 import {
   buildContent,
   contentDigest,
@@ -18,7 +19,7 @@ import {
   type Skip,
 } from '../generation/build.ts'
 
-import { emitEvent, serviceSubject } from './events.ts'
+import { appSubject, emitEvent } from './events.ts'
 import { deploymentSubject, failedPayload } from './outbox.ts'
 
 type GenerationRow = typeof station_generation.$inferSelect
@@ -27,7 +28,7 @@ export const latestGeneration = (db: Db, stationId: string) =>
   db
     .select()
     .from(station_generation)
-    .where(eq(station_generation.station_id, stationId))
+    .where(eq(station_generation.server_id, stationId))
     .orderBy(desc(station_generation.generation))
     .limit(1)
     .get()
@@ -37,7 +38,7 @@ export const generationNumbered = (db: Db, stationId: string, number: number) =>
     .select()
     .from(station_generation)
     .where(
-      and(eq(station_generation.station_id, stationId), eq(station_generation.generation, number)),
+      and(eq(station_generation.server_id, stationId), eq(station_generation.generation, number)),
     )
     .get()
 
@@ -88,18 +89,18 @@ export const buildDesired = (db: Db, stationId: string): Built => {
   }
 
   throw new GenerationError(
-    `more than ${maxExclusionPasses} objects of station ${stationId} fail the generation schema`,
+    `more than ${maxExclusionPasses} objects of server ${stationId} fail the generation schema`,
   )
 }
 
-const imageFix = (serviceId: string) =>
+const imageFix = (appId: string) =>
   remedy(
     'RESOLVE_IMAGE',
     'The image reference is not pinned to a digest. Set the image source again so Dispatch resolves the tag to its digest, then deploy.',
     {
-      tool: 'update_service',
+      tool: 'update_app',
       input: {
-        service: serviceId,
+        app: appId,
       },
     },
   )
@@ -120,10 +121,10 @@ const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
 
     const svc = db
       .select({
-        name: service.name,
+        name: app.name,
       })
-      .from(service)
-      .where(eq(service.id, dep.service_id))
+      .from(app)
+      .where(eq(app.id, dep.app_id))
       .get()
     const failure = {
       entity: {
@@ -132,17 +133,17 @@ const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
       },
       phase: 'preflight' as const,
       code: 'GENERATION_INVALID',
-      summary: `Deployment ${dep.number} of ${svc?.name ?? dep.service_id} cannot be sent to station ${stationId}, so Dispatch failed it and sent the station's other changes without it: ${e.explanation}`,
+      summary: `Deployment ${dep.number} of ${svc?.name ?? dep.app_id} cannot be sent to server ${stationId}, so Dispatch failed it and sent the server's other changes without it: ${e.explanation}`,
       fixes: [
         e.explanation.includes('/image_ref')
-          ? imageFix(dep.service_id)
+          ? imageFix(dep.app_id)
           : remedy(
               'FIX_CONFIGURATION',
-              'Correct the service setting the summary names, then deploy again.',
+              'Correct the app setting the summary names, then deploy again.',
               {
-                tool: 'update_service',
+                tool: 'update_app',
                 input: {
-                  service: dep.service_id,
+                  app: dep.app_id,
                 },
               },
             ),
@@ -158,6 +159,7 @@ const failExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
         })
         .where(eq(deployment.id, dep.id))
         .run()
+      refreshDeploymentApp(tx, dep.id)
       emitEvent(
         tx,
         'deployment.failed',
@@ -191,24 +193,24 @@ const reportExcluded = (db: Db, stationId: string, excluded: Exclusion[]) => {
     emitEvent(
       db,
       'doctor.finding',
-      e.object === 'service'
+      e.object === 'app'
         ? {
-            ...serviceSubject(db, e.id),
+            ...appSubject(db, e.id),
           }
         : {
-            entity: 'station',
+            entity: 'server',
             id: stationId,
           },
       {
         check: 'generation',
-        station: stationId,
+        server: stationId,
         severity: 'fail',
         previous: seen.has(e.key) ? 'fail' : 'ok',
         code: 'GENERATION_INVALID',
-        detail: `${e.object} ${e.id} ${e.carried ? 'keeps its last applied version' : 'is left out'} of station ${stationId}'s desired state: ${e.explanation}`,
+        detail: `${e.object} ${e.id} ${e.carried ? 'keeps its last applied version' : 'is left out'} of server ${stationId}'s desired state: ${e.explanation}`,
         fix: e.explanation.includes('/image_ref')
-          ? imageFix(e.object === 'service' ? e.id : '').text
-          : 'Correct the object the detail names; the station keeps receiving every other change meanwhile.',
+          ? imageFix(e.object === 'app' ? e.id : '').text
+          : 'Correct the object the detail names; the server keeps receiving every other change meanwhile.',
       },
     )
   }
@@ -239,10 +241,10 @@ export const ensureDesired = (
   return db.transaction(() => {
     const st = db
       .select({
-        generation: station.generation,
+        generation: server.generation,
       })
-      .from(station)
-      .where(eq(station.id, stationId))
+      .from(server)
+      .where(eq(server.id, stationId))
       .get()!
     const number = Math.max(latest?.generation ?? 0, st.generation, floor) + 1
     const doc = seal(content, {
@@ -254,7 +256,7 @@ export const ensureDesired = (
     const row = db
       .insert(station_generation)
       .values({
-        station_id: stationId,
+        server_id: stationId,
         generation: number,
         document: doc,
         hash: doc.hash,
@@ -291,19 +293,19 @@ export const recordAck = (db: Db, stationId: string, ack: MessageBody<'generatio
   if (ack.status !== 'rejected') {
     const st = db
       .select({
-        generation: station.generation,
+        generation: server.generation,
       })
-      .from(station)
-      .where(eq(station.id, stationId))
+      .from(server)
+      .where(eq(server.id, stationId))
       .get()!
 
     if (ack.number >= st.generation) {
-      db.update(station)
+      db.update(server)
         .set({
           generation: ack.number,
           generation_hash: ack.status === 'applied' ? ack.hash : null,
         })
-        .where(eq(station.id, stationId))
+        .where(eq(server.id, stationId))
         .run()
     }
   }
@@ -352,11 +354,7 @@ export const reconnectRule = (
     .select()
     .from(drift)
     .where(
-      and(
-        eq(drift.station_id, stationId),
-        eq(drift.object, 'generation'),
-        eq(drift.status, 'open'),
-      ),
+      and(eq(drift.server_id, stationId), eq(drift.object, 'generation'), eq(drift.status, 'open')),
     )
     .get()
 
@@ -376,7 +374,7 @@ export const reconnectRule = (
   const inserted = db
     .insert(drift)
     .values({
-      station_id: stationId,
+      server_id: stationId,
       object: 'generation',
       observed: applied,
       desired,
@@ -388,9 +386,9 @@ export const reconnectRule = (
 
   emitEvent(
     db,
-    'station.drift',
+    'server.drift',
     {
-      entity: 'station',
+      entity: 'server',
       id: stationId,
     },
     {
@@ -399,8 +397,8 @@ export const reconnectRule = (
       desired,
       observed: applied,
       reason: row
-        ? 'the station applied a generation whose hash differs from the one Dispatch issued'
-        : 'the station reports a generation number Dispatch did not issue',
+        ? 'the server applied a generation whose hash differs from the one Dispatch issued'
+        : 'the server reports a generation number Dispatch did not issue',
     },
   )
 

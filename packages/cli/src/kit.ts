@@ -8,7 +8,7 @@ import { createApiClient, type ApiClient } from '@stationly/api-client'
 import { idPrefixes, type IdEntity } from '@stationly/protocol'
 
 import { currentInstance, normalizeInstance, readCredentials, type Credentials } from './config.ts'
-import { apiUrlEnv, env, environmentEnv, projectEnv, tokenEnv, version } from './env.ts'
+import { apiUrlEnv, env, previewEnv, projectEnv, tokenEnv, version } from './env.ts'
 import { apiFailure, inputRequired, notFound, notLoggedIn } from './errors.ts'
 import { createHttp, waitingHttp } from './http.ts'
 import { choose, interactive, need } from './prompt.ts'
@@ -18,16 +18,16 @@ export type Globals = {
   dryRun?: boolean
   instance?: string
   project?: string
-  environment?: string
-  service?: string
-  sandbox?: string
+  preview?: string
+  app?: string
+  machine?: string
 }
 
 export type Context = {
   instance?: string
   project?: string
-  environment?: string
-  service?: string
+  preview?: string
+  app?: string
 }
 
 export const userAgent = `sly/${version}`
@@ -57,9 +57,9 @@ export const writeContext = async (context: Context) => {
 
 export type Selection = {
   project?: string
-  environment?: string
-  service?: string
-  sandbox?: string
+  preview?: string
+  app?: string
+  machine?: string
 }
 
 export type Client = { http: KyInstance; api: ApiClient }
@@ -127,10 +127,10 @@ const defaultSelection = (globals: Globals, context: Context): Context => {
     return {}
   }
 
-  if (env[projectEnv] || env[environmentEnv]) {
+  if (env[projectEnv] || env[previewEnv]) {
     return {
       project: env[projectEnv],
-      environment: env[environmentEnv],
+      preview: env[previewEnv],
     }
   }
 
@@ -157,9 +157,9 @@ export const connectWith = (
     globals,
     selection: {
       project: globals.project ?? defaults.project,
-      environment: globals.environment ?? defaults.environment,
-      service: globals.service ?? defaults.service,
-      sandbox: globals.sandbox,
+      preview: globals.preview ?? defaults.preview,
+      app: globals.app ?? defaults.app,
+      machine: globals.machine,
     },
     credentials,
     userAgent: agent,
@@ -280,72 +280,72 @@ export const projectRef = async (run: Run) =>
 
 export const projectId = (run: Run, ref: string) => slugId(run, ref)
 
-export const environmentId = async (run: Run, ref = run.selection.environment): Promise<string> => {
-  if (ref && isId('environment', ref)) {
-    return ref
+export const previewId = async (
+  run: Run,
+  ref = run.selection.preview,
+): Promise<string | undefined> => {
+  if (!ref || isId('target', ref)) {
+    return ref || undefined
   }
 
-  const project = await projectRef(run)
-
-  if (!ref) {
-    return (
-      await send(
-        run.api.v1
-          .projects({
-            project: encodeURIComponent(project),
-          })
-          .get(),
-      )
-    ).data.default_environment_id
-  }
-
-  return slugId(run, project, 'environments', ref)
+  return slugId(run, await projectRef(run), 'previews', ref)
 }
 
-const inEnvironment = async (run: Run, collection: 'services' | 'sandboxes', ref: string) =>
-  slugId(run, await projectRef(run), 'environments', await environmentId(run), collection, ref)
+const inTarget = async (run: Run, collection: 'apps' | 'machines', ref: string) => {
+  const preview = run.selection.preview
 
-export const serviceId = async (run: Run): Promise<string> => {
-  const ref = await need(run.selection.service, {
-    what: 'Service',
-    flag: '--service <id or name>',
+  return slugId(
+    run,
+    await projectRef(run),
+    ...(preview ? ['previews', preview] : []),
+    collection,
+    ref,
+  )
+}
+
+export const appId = async (run: Run): Promise<string> => {
+  const ref = await need(run.selection.app, {
+    what: 'App',
+    flag: '--app <id or name>',
   })
 
-  return isId('service', ref) ? ref : inEnvironment(run, 'services', ref)
+  return isId('app', ref) ? ref : inTarget(run, 'apps', ref)
 }
 
-export const sandboxRef = async (run: Run): Promise<string> => {
-  const given = run.selection.sandbox
+export const machineRef = async (run: Run): Promise<string> => {
+  const given = run.selection.machine
 
   if (given !== undefined && given !== '') {
     return given
   }
 
   if (!interactive()) {
-    throw inputRequired('Sandbox', '--sandbox <id or name>, or the sandbox as an argument')
+    throw inputRequired('Machine', '--machine <id or name>, or the machine as an argument')
   }
 
   const { items } = (
     await send(
       run.api.v1
-        .environments({
-          environment: await environmentId(run),
+        .projects({
+          project: await projectRef(run),
         })
-        .sandboxes.get({
-          query: {},
+        .machines.get({
+          query: {
+            preview: await previewId(run),
+          },
         }),
     )
   ).data
 
   if (items.length === 0) {
     throw notFound(
-      'This environment has no sandboxes.',
-      'Create one with sly sandboxes create <name>.',
+      run.selection.preview ? 'This preview has no machines.' : 'Production has no machines.',
+      'Create one with sly machines create <name>.',
     )
   }
 
   return choose(
-    'Which sandbox?',
+    'Which machine?',
     items.map((item) => ({
       value: item.name,
       label: item.name,
@@ -355,32 +355,32 @@ export const sandboxRef = async (run: Run): Promise<string> => {
   )
 }
 
-export const withSandbox = (run: Run, sandbox: string | undefined): Run =>
-  sandbox === undefined
+export const withMachine = (run: Run, machine: string | undefined): Run =>
+  machine === undefined
     ? run
     : {
         ...run,
         selection: {
           ...run.selection,
-          sandbox,
+          machine,
         },
       }
 
-export const sandboxId = async (run: Run, ref: string) =>
-  isId('sandbox', ref) ? ref : inEnvironment(run, 'sandboxes', ref)
+export const machineId = async (run: Run, ref: string) =>
+  isId('machine', ref) ? ref : inTarget(run, 'machines', ref)
 
-export const portId = async (run: Run, service: string, port: number) =>
+export const portId = async (run: Run, app: string, port: number) =>
   found(
     (
       await send(
         run.api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           .ports.get(),
       )
     ).data.items,
     (p) => p.port === port,
-    `The service has no port ${port}.`,
-    'Run sly services describe to list its ports.',
+    `The app has no port ${port}.`,
+    'Run sly apps describe to list its ports.',
   ).id

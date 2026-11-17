@@ -1,12 +1,6 @@
 import { useHotkeys } from 'react-hotkeys-hook'
 
-export const places = [
-  'Anywhere',
-  'Pages with tabs',
-  'Lists',
-  'Service',
-  'Logs and sessions',
-] as const
+export const places = ['Anywhere', 'Pages with tabs', 'Lists', 'App', 'Logs and sessions'] as const
 
 export type Place = (typeof places)[number]
 
@@ -36,19 +30,44 @@ export const shortcuts = {
     label: 'Show keyboard shortcuts',
     place: 'Anywhere',
   },
-  projects: {
-    keys: ['g>p'],
-    label: 'Go to projects',
+  newTask: {
+    keys: ['n'],
+    label: 'Start a new task',
     place: 'Anywhere',
   },
-  staged: {
+  build: {
+    keys: ['g>b'],
+    label: 'Go to Build',
+    place: 'Anywhere',
+  },
+  ship: {
     keys: ['g>s'],
-    label: 'Go to staged changes',
+    label: 'Go to Ship',
+    place: 'Anywhere',
+  },
+  observe: {
+    keys: ['g>o'],
+    label: 'Go to Observe',
+    place: 'Anywhere',
+  },
+  inbox: {
+    keys: ['g>i'],
+    label: 'Go to the Inbox',
     place: 'Anywhere',
   },
   connect: {
     keys: ['g>c'],
     label: 'Go to connect an agent',
+    place: 'Anywhere',
+  },
+  account: {
+    keys: ['g>a'],
+    label: 'Go to your account',
+    place: 'Anywhere',
+  },
+  team: {
+    keys: ['g>t'],
+    label: 'Go to the team',
     place: 'Anywhere',
   },
   sidebar: {
@@ -63,13 +82,13 @@ export const shortcuts = {
   },
   create: {
     keys: ['c'],
-    label: 'Create a project, service or sandbox',
+    label: 'Create a project, app or machine',
     place: 'Lists',
   },
   deploy: {
     keys: ['d'],
-    label: 'Deploy this service',
-    place: 'Service',
+    label: 'Deploy this app',
+    place: 'App',
   },
   filter: {
     keys: ['slash'],

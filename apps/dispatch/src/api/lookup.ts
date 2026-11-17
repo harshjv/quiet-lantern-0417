@@ -1,151 +1,195 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, or, sql } from 'drizzle-orm'
 
 import { anyTarget, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 import {
+  app,
+  app_port,
+  approval,
   build,
   deployment,
   domain,
-  environment,
+  key,
+  machine,
+  machine_snapshot,
   port_allocation,
   project,
   run,
-  sandbox,
-  sandbox_snapshot,
   secret_value,
-  service,
-  service_port,
-  staged_change,
-  station,
-  variable,
+  server,
+  target,
   volume,
 } from '../db/schema.ts'
 
 import { notFound } from './errors.ts'
 
 export type ProjectRow = typeof project.$inferSelect
-export type EnvironmentRow = typeof environment.$inferSelect
-export type ServiceRow = typeof service.$inferSelect
-export type PortRow = typeof service_port.$inferSelect
+export type TargetRow = typeof target.$inferSelect
+export type AppRow = typeof app.$inferSelect
+export type PortRow = typeof app_port.$inferSelect
 export type VolumeRow = typeof volume.$inferSelect
 export type DomainRow = typeof domain.$inferSelect
 export type AllocationRow = typeof port_allocation.$inferSelect
 export type DeploymentRow = typeof deployment.$inferSelect
-export type VariableRow = typeof variable.$inferSelect
-export type StagedRow = typeof staged_change.$inferSelect
-export type StationRow = typeof station.$inferSelect
-export type SandboxRow = typeof sandbox.$inferSelect
-export type SandboxSnapshotRow = typeof sandbox_snapshot.$inferSelect
+export type KeyRow = typeof key.$inferSelect
+export type ApprovalRow = typeof approval.$inferSelect
 
-export type ServiceContext = {
-  service: ServiceRow
-  environment: EnvironmentRow
+export const decidable = () =>
+  and(
+    eq(approval.status, 'waiting'),
+    or(isNull(approval.ship), sql`json_extract(${approval.ship}, '$.phase') = 'open'`),
+  )
+export type StationRow = typeof server.$inferSelect
+export type MachineRow = typeof machine.$inferSelect
+export type MachineSnapshotRow = typeof machine_snapshot.$inferSelect
+
+export type AppContext = {
+  app: AppRow
+  target_row: TargetRow
   project: ProjectRow
   target: Target
 }
+
+const isProjectId = (ref: string) => ref.startsWith('prj_')
 
 export const projectByRef = (db: Db, ref: string) => {
   const row = db
     .select()
     .from(project)
-    .where(ref.startsWith('prj_') ? eq(project.id, ref) : eq(project.name, ref))
+    .where(isProjectId(ref) ? eq(project.id, ref) : eq(project.name, ref))
     .get()
 
   return row ?? notFound('project', ref)
 }
+
+export const projectIdByRef = (db: Db, ref: string) =>
+  isProjectId(ref) ? ref : projectByRef(db, ref).id
+
+export const projectTarget = (projectId: string): Target => ({
+  project_id: projectId,
+  target: '*',
+})
+
+export const scopeOf = (row: TargetRow): Target =>
+  row.kind === 'production'
+    ? {
+        project_id: row.project_id,
+        target: 'production',
+      }
+    : {
+        project_id: row.project_id,
+        target: 'previews',
+        preview_id: row.id,
+      }
+
+export const isProduction = (row: TargetRow) => row.kind === 'production'
+
+export const placeName = (row: TargetRow) =>
+  row.kind === 'production' ? 'production' : `preview ${row.name}`
+
+export const previewIdOf = (row: TargetRow) => (row.kind === 'preview' ? row.id : null)
 
 export const projectContext = (db: Db, ref: string) => {
   const row = projectByRef(db, ref)
 
   return {
     project: row,
-    target: {
-      project_id: row.id,
-      environment_id: '*',
-    },
+    target: projectTarget(row.id),
   }
 }
 
-export const environmentById = (db: Db, id: string) => {
-  const row =
-    db.select().from(environment).where(eq(environment.id, id)).get() ?? notFound('environment', id)
+export const productionOf = (db: Db, projectId: string) =>
+  db
+    .select()
+    .from(target)
+    .where(and(eq(target.project_id, projectId), eq(target.kind, 'production')))
+    .get()!
+
+export const targetById = (db: Db, id: string) => {
+  const row = db.select().from(target).where(eq(target.id, id)).get() ?? notFound('preview', id)
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
 
   return {
-    environment: row,
+    target_row: row,
     project: proj,
-    target: {
-      project_id: proj.id,
-      environment_id: row.id,
-    },
+    target: scopeOf(row),
   }
 }
 
-export const environmentInProject = (db: Db, proj: ProjectRow, ref: string) => {
-  const row =
-    db
-      .select()
-      .from(environment)
-      .where(
-        and(
-          eq(environment.project_id, proj.id),
-          ref.startsWith('env_') ? eq(environment.id, ref) : eq(environment.name, ref),
-        ),
-      )
-      .get() ?? notFound('environment', ref)
+export const previewById = (db: Db, id: string) => {
+  const ctx = targetById(db, id)
 
-  return row
+  return ctx.target_row.kind === 'preview' ? ctx : notFound('preview', id)
 }
 
-export const serviceById = (db: Db, id: string): ServiceContext => {
-  const row = db.select().from(service).where(eq(service.id, id)).get() ?? notFound('service', id)
-  const ctx = environmentById(db, row.environment_id)
+export const previewInProject = (db: Db, proj: ProjectRow, ref: string) =>
+  db
+    .select()
+    .from(target)
+    .where(
+      and(
+        eq(target.project_id, proj.id),
+        eq(target.kind, 'preview'),
+        ref.startsWith('env_') ? eq(target.id, ref) : eq(target.name, ref),
+      ),
+    )
+    .get() ?? notFound('preview', ref)
+
+export const targetInProject = (db: Db, proj: ProjectRow, preview: string | undefined | null) =>
+  preview ? previewInProject(db, proj, preview) : productionOf(db, proj.id)
+
+export const placeContext = (db: Db, projectRef: string, preview: string | undefined | null) => {
+  const proj = projectByRef(db, projectRef)
+  const row = targetInProject(db, proj, preview)
 
   return {
-    service: row,
-    environment: ctx.environment,
+    target_row: row,
+    project: proj,
+    target: scopeOf(row),
+  }
+}
+
+export const appById = (db: Db, id: string): AppContext => {
+  const row = db.select().from(app).where(eq(app.id, id)).get() ?? notFound('app', id)
+  const ctx = targetById(db, row.target_id)
+
+  return {
+    app: row,
+    target_row: ctx.target_row,
     project: ctx.project,
     target: ctx.target,
   }
 }
 
-export const serviceInEnvironment = (db: Db, environmentId: string, ref: string) =>
+export const appInTarget = (db: Db, targetId: string, ref: string) =>
   db
     .select()
-    .from(service)
+    .from(app)
     .where(
       and(
-        eq(service.environment_id, environmentId),
-        ref.startsWith('svc_') ? eq(service.id, ref) : eq(service.name, ref),
+        eq(app.target_id, targetId),
+        ref.startsWith('svc_') ? eq(app.id, ref) : eq(app.name, ref),
       ),
     )
     .get()
 
 export const portById = (db: Db, id: string) => {
-  const row =
-    db.select().from(service_port).where(eq(service_port.id, id)).get() ?? notFound('port', id)
+  const row = db.select().from(app_port).where(eq(app_port.id, id)).get() ?? notFound('port', id)
 
   return {
     port: row,
-    ...serviceById(db, row.service_id),
+    ...appById(db, row.app_id),
   }
 }
 
 export const volumeById = (db: Db, id: string) => {
   const row = db.select().from(volume).where(eq(volume.id, id)).get() ?? notFound('volume', id)
-  const owner = row.service_id ? serviceById(db, row.service_id) : null
+  const owner = row.app_id ? appById(db, row.app_id) : null
 
   return {
     volume: row,
     owner,
-    target:
-      owner?.target ??
-      (row.project_id
-        ? {
-            project_id: row.project_id,
-            environment_id: '*',
-          }
-        : anyTarget),
+    target: owner?.target ?? (row.project_id ? projectTarget(row.project_id) : anyTarget),
   }
 }
 
@@ -154,7 +198,7 @@ export const domainById = (db: Db, id: string) => {
 
   return {
     domain: row,
-    ...portById(db, row.service_port_id),
+    ...portById(db, row.app_port_id),
   }
 }
 
@@ -165,7 +209,7 @@ export const allocationById = (db: Db, id: string) => {
 
   return {
     allocation: row,
-    ...portById(db, row.service_port_id),
+    ...portById(db, row.app_port_id),
   }
 }
 
@@ -175,7 +219,7 @@ export const deploymentById = (db: Db, id: string) => {
 
   return {
     deployment: row,
-    ...serviceById(db, row.service_id),
+    ...appById(db, row.app_id),
   }
 }
 
@@ -191,107 +235,101 @@ export const buildById = (db: Db, id: string) => {
 export const stationByRef = (db: Db, ref: string) =>
   db
     .select()
-    .from(station)
-    .where(ref.startsWith('stn_') ? eq(station.id, ref) : eq(station.name, ref))
-    .get() ?? notFound('station', ref)
+    .from(server)
+    .where(ref.startsWith('stn_') ? eq(server.id, ref) : eq(server.name, ref))
+    .get() ?? notFound('server', ref)
 
-export type SandboxContext = {
-  sandbox: SandboxRow
-  environment: EnvironmentRow
+export type MachineContext = {
+  machine: MachineRow
+  target_row: TargetRow
   project: ProjectRow
   target: Target
 }
 
-const sandboxContext = (db: Db, row: SandboxRow): SandboxContext => {
-  const env = db.select().from(environment).where(eq(environment.id, row.environment_id)).get()
+const machineContext = (db: Db, row: MachineRow): MachineContext => {
+  const env = db.select().from(target).where(eq(target.id, row.target_id)).get()
 
   if (!env) {
-    return notFound('sandbox', row.id)
+    return notFound('machine', row.id)
   }
 
   const proj = db.select().from(project).where(eq(project.id, env.project_id)).get()!
 
   return {
-    sandbox: row,
-    environment: env,
+    machine: row,
+    target_row: env,
     project: proj,
-    target: {
-      project_id: proj.id,
-      environment_id: env.id,
-    },
+    target: scopeOf(env),
   }
 }
 
-export const sandboxById = (db: Db, id: string): SandboxContext => {
-  const row = db.select().from(sandbox).where(eq(sandbox.id, id)).get() ?? notFound('sandbox', id)
+export const machineById = (db: Db, id: string): MachineContext => {
+  const row = db.select().from(machine).where(eq(machine.id, id)).get() ?? notFound('machine', id)
 
-  return sandboxContext(db, row)
+  return machineContext(db, row)
 }
 
-export const sandboxInEnvironment = (db: Db, environmentId: string, ref: string) =>
+export const machineInTarget = (db: Db, targetId: string, ref: string) =>
   db
     .select()
-    .from(sandbox)
+    .from(machine)
     .where(
       and(
-        eq(sandbox.environment_id, environmentId),
-        ref.startsWith('sbx_') ? eq(sandbox.id, ref) : eq(sandbox.name, ref),
+        eq(machine.target_id, targetId),
+        ref.startsWith('sbx_') ? eq(machine.id, ref) : eq(machine.name, ref),
       ),
     )
     .get()
 
 export type SnapshotContext = {
-  snapshot: SandboxSnapshotRow
-  environment: EnvironmentRow
+  snapshot: MachineSnapshotRow
+  target_row: TargetRow
   project: ProjectRow
   target: Target
 }
 
 export const snapshotById = (db: Db, id: string): SnapshotContext => {
   const row =
-    db.select().from(sandbox_snapshot).where(eq(sandbox_snapshot.id, id)).get() ??
-    notFound('sandbox_snapshot', id)
-  const env = db.select().from(environment).where(eq(environment.id, row.environment_id)).get()
+    db.select().from(machine_snapshot).where(eq(machine_snapshot.id, id)).get() ??
+    notFound('machine_snapshot', id)
+  const env = db.select().from(target).where(eq(target.id, row.target_id)).get()
 
   if (!env) {
-    return notFound('sandbox_snapshot', id)
+    return notFound('machine_snapshot', id)
   }
 
   const proj = db.select().from(project).where(eq(project.id, env.project_id)).get()!
 
   return {
     snapshot: row,
-    environment: env,
+    target_row: env,
     project: proj,
-    target: {
-      project_id: proj.id,
-      environment_id: env.id,
-    },
+    target: scopeOf(env),
   }
 }
 
-export type RunOwner = { target: Target; environment: EnvironmentRow; station_id: string }
+export type RunOwner = { target: Target; target_row: TargetRow; server_id: string }
 
 export const runOwner = (
   db: Db,
-  r: { service_id: string | null; sandbox_id: string | null },
+  r: { app_id: string | null; machine_id: string | null },
 ): RunOwner => {
-  if (r.sandbox_id) {
-    const ctx = sandboxById(db, r.sandbox_id)
+  if (r.machine_id) {
+    const ctx = machineById(db, r.machine_id)
 
     return {
       target: ctx.target,
-      environment: ctx.environment,
-      station_id: ctx.sandbox.station_id,
+      target_row: ctx.target_row,
+      server_id: ctx.machine.server_id,
     }
   }
 
-  const ctx = serviceById(db, r.service_id!)
+  const ctx = appById(db, r.app_id!)
 
   return {
     target: ctx.target,
-    environment: ctx.environment,
-    station_id: ctx.service.station_id,
+    target_row: ctx.target_row,
+    server_id: ctx.app.server_id,
   }
 }
 
@@ -304,32 +342,28 @@ export const runById = (db: Db, id: string) => {
   }
 }
 
-export const variableTarget = (db: Db, row: VariableRow): Target => {
-  if (row.scope === 'service') {
-    return serviceById(db, row.service_id!).target
+export const keyTarget = (db: Db, row: KeyRow): Target => {
+  if (row.scope === 'app') {
+    return appById(db, row.app_id!).target
   }
 
-  if (row.scope === 'sandbox') {
-    return sandboxById(db, row.sandbox_id!).target
+  if (row.scope === 'machine') {
+    return machineById(db, row.machine_id!).target
   }
 
   if (row.scope === 'project') {
-    return {
-      project_id: row.project_id!,
-      environment_id: '*',
-    }
+    return projectTarget(row.project_id!)
   }
 
   return anyTarget
 }
 
-export const variableById = (db: Db, id: string) => {
-  const row =
-    db.select().from(variable).where(eq(variable.id, id)).get() ?? notFound('variable', id)
+export const keyById = (db: Db, id: string) => {
+  const row = db.select().from(key).where(eq(key.id, id)).get() ?? notFound('key', id)
 
   return {
-    variable: row,
-    target: variableTarget(db, row),
+    key: row,
+    target: keyTarget(db, row),
   }
 }
 
@@ -337,60 +371,49 @@ export const secretValueById = (db: Db, id: string) => {
   const row =
     db.select().from(secret_value).where(eq(secret_value.id, id)).get() ??
     notFound('secret_value', id)
-  const owner = variableById(db, row.variable_id)
-  const target =
-    row.environment_id && owner.variable.scope === 'project'
-      ? {
-          project_id: owner.variable.project_id!,
-          environment_id: row.environment_id,
-        }
-      : owner.target
+  const owner = keyById(db, row.key_id)
 
   return {
     secretValue: row,
-    variable: owner.variable,
-    target,
+    key: owner.key,
+    target: owner.target,
   }
 }
 
-export const stagedById = (db: Db, id: string) => {
+export const approvalById = (db: Db, id: string) => {
   const row =
-    db.select().from(staged_change).where(eq(staged_change.id, id)).get() ??
-    notFound('staged_change', id)
-  const live = row.environment_id
+    db.select().from(approval).where(eq(approval.id, id)).get() ?? notFound('approval', id)
+  const production = row.project_id
     ? db
-        .select({
-          id: environment.id,
-        })
-        .from(environment)
-        .where(eq(environment.id, row.environment_id))
+        .select()
+        .from(target)
+        .where(and(eq(target.project_id, row.project_id), eq(target.kind, 'production')))
         .get()
     : undefined
-  const env = live ? environmentById(db, live.id) : null
 
   return {
-    staged: row,
-    environment: env,
-    target: env?.target ?? anyTarget,
+    approval: row,
+    production: production ?? null,
+    target: production ? scopeOf(production) : anyTarget,
   }
 }
 
 export const targets = {
   project: projectContext,
-  environment: environmentById,
-  service: serviceById,
-  service_port: portById,
+  preview: previewById,
+  app: appById,
+  app_port: portById,
   domain: domainById,
   port_allocation: allocationById,
   deployment: deploymentById,
   build: buildById,
   run: runById,
   volume: volumeById,
-  variable: variableById,
+  key: keyById,
   secret_value: secretValueById,
-  staged_change: stagedById,
-  sandbox: sandboxById,
-  sandbox_snapshot: snapshotById,
+  approval: approvalById,
+  machine: machineById,
+  machine_snapshot: snapshotById,
 } satisfies Record<string, (db: Db, id: string) => { target: Target }>
 
 export type TargetEntity = keyof typeof targets

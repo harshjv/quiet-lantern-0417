@@ -176,7 +176,7 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 	}
 	st, ok := s.sandboxRunning(id)
 	if !ok {
-		refuse(protocol.ErrorCodeSandboxNotRunning, "Start the sandbox first.", "sandbox %s is not running on this station", id)
+		refuse(protocol.ErrorCodeMachineNotRunning, "Start the sandbox first.", "sandbox %s is not running on this station", id)
 		return
 	}
 	if s.activeSandboxRuns(id) >= sandboxMaxRuns {
@@ -465,7 +465,7 @@ func (s *Station) openForward(ctx context.Context, m dispatch.Message, b protoco
 	}
 	st, ok := s.sandboxRunning(*b.SandboxId)
 	if !ok || st.pid <= 0 {
-		s.replyError(m, protocolError(protocol.ErrorCodeSandboxNotRunning, "Start the sandbox first.", "sandbox %s is not running on this station", *b.SandboxId))
+		s.replyError(m, protocolError(protocol.ErrorCodeMachineNotRunning, "Start the sandbox first.", "sandbox %s is not running on this station", *b.SandboxId))
 		return
 	}
 	pid, inode, set, id := st.pid, st.inode, st.forwards, *b.SandboxId
@@ -571,7 +571,7 @@ func (s *Station) openForward(ctx context.Context, m dispatch.Message, b protoco
 
 func (s *Station) growSandboxStorage(ctx context.Context, m dispatch.Message, b protocol.SandboxStorageGrowBody) {
 	if !s.sandboxStorageReady() {
-		s.replyError(m, protocolError(protocol.ErrorCodeStationCapabilityMissing, "Provision the sandbox filesystem with stationd install --sandbox-size or --sandbox-device.", "%s", s.sandboxUnavailable()))
+		s.replyError(m, protocolError(protocol.ErrorCodeServerCapabilityMissing, "Provision the sandbox filesystem with stationd install --sandbox-size or --sandbox-device.", "%s", s.sandboxUnavailable()))
 		return
 	}
 	ref := m.ID

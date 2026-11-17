@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import type { MessageBody } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { deployment, environment, project, service, station } from '../db/schema.ts'
+import { app, deployment, project, server, target } from '../db/schema.ts'
 
 type Item = MessageBody<'registry.delete'>['items'][number]
 
@@ -28,30 +28,30 @@ const split = (imageRef: string, registry: string) => {
 }
 
 export const retentionItems = (db: Db, stationId: string): Item[] => {
-  const st = db.select().from(station).where(eq(station.id, stationId)).get()
+  const st = db.select().from(server).where(eq(server.id, stationId)).get()
 
   if (!st?.registry_address) {
     return []
   }
 
-  const services = db
+  const apps = db
     .select({
-      id: service.id,
-      current: service.current_deployment_id,
+      id: app.id,
+      current: app.current_deployment_id,
       keep: project.image_retention_count,
     })
-    .from(service)
-    .innerJoin(environment, eq(environment.id, service.environment_id))
-    .innerJoin(project, eq(project.id, environment.project_id))
-    .where(eq(service.station_id, stationId))
+    .from(app)
+    .innerJoin(target, eq(target.id, app.target_id))
+    .innerJoin(project, eq(project.id, target.project_id))
+    .where(eq(app.server_id, stationId))
     .all()
   const items = new Map<string, Item>()
 
-  for (const svc of services) {
+  for (const svc of apps) {
     const deps = db
       .select()
       .from(deployment)
-      .where(and(eq(deployment.service_id, svc.id), isNotNull(deployment.image_ref)))
+      .where(and(eq(deployment.app_id, svc.id), isNotNull(deployment.image_ref)))
       .orderBy(desc(deployment.number))
       .all()
     const withImage = deps.filter((d) => split(d.image_ref!, st.registry_address!))
@@ -88,10 +88,10 @@ export const recordDeletes = (
 ) => {
   const st = db
     .select({
-      registry_address: station.registry_address,
+      registry_address: server.registry_address,
     })
-    .from(station)
-    .where(eq(station.id, stationId))
+    .from(server)
+    .where(eq(server.id, stationId))
     .get()
 
   if (!st?.registry_address) {

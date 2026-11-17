@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm'
 
 import { setupInstance } from '../src/auth/bootstrap.ts'
 import { openDb } from '../src/db/client.ts'
-import { audit_event, station } from '../src/db/schema.ts'
+import { audit_event, server } from '../src/db/schema.ts'
 
 import { adminEmail, adminPassword, startDispatch, type Dispatch } from './helpers/dispatch.ts'
 import { enrollFakeStation, FakeStation } from './helpers/fake-station.ts'
@@ -37,7 +37,7 @@ describe('a restored Dispatch takes the new host as its station', () => {
   const hosting = () =>
     h.db
       .select()
-      .from(station)
+      .from(server)
       .all()
       .filter((s) => s.hosts_dispatch && !s.revoked_at)
 
@@ -63,10 +63,19 @@ describe('a restored Dispatch takes the new host as its station', () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
   })
 
-  test('after a restore nothing is connected, so the bootstrap token replaces the dead hosting station', async () => {
+  test('after a restore nothing is connected, so the bootstrap token replaces the dead hosting server and keeps its address', async () => {
+    h.db
+      .update(server)
+      .set({
+        public_address: '198.51.100.4',
+      })
+      .where(eq(server.id, first.station_id))
+      .run()
     const fresh = await enrollFakeStation(url, bootstrapToken)
-    const rows = h.db.select().from(station).all()
+    const rows = h.db.select().from(server).all()
     const old = rows.find((s) => s.id === first.station_id)!
+
+    assert.equal(rows.find((s) => s.id === fresh.station_id)!.public_address, '198.51.100.4')
 
     assert.equal(old.hosts_dispatch, false)
     assert.equal(old.status, 'offline')
@@ -132,7 +141,7 @@ describe('setup stores the station public address', () => {
   test('an actor that is not the hosting station creates nothing', async () => {
     await assert.rejects(
       setup('203.0.113.7', 'stn_missing'),
-      /needs the station that hosts Dispatch/,
+      /needs the server that hosts Dispatch/,
     )
     assert.equal(created(), 0)
   })
@@ -142,7 +151,7 @@ describe('setup stores the station public address', () => {
 
     assert.equal(out.public_address, '203.0.113.7')
     assert.equal(
-      h.db.select().from(station).where(eq(station.id, hostId)).get()!.public_address,
+      h.db.select().from(server).where(eq(server.id, hostId)).get()!.public_address,
       '203.0.113.7',
     )
     assert.equal(created(), 1)

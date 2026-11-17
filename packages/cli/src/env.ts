@@ -11,8 +11,8 @@ import packageJson from '../package.json' with { type: 'json' }
 export const tokenEnv = workspaceEnv.token
 export const apiUrlEnv = workspaceEnv.apiUrl
 export const projectEnv = workspaceEnv.project
-export const environmentEnv = workspaceEnv.environment
-export const sandboxIdEnv = 'STATIONLY_SANDBOX_ID'
+export const previewEnv = workspaceEnv.preview
+export const machineIdEnv = 'STATIONLY_SANDBOX_ID'
 
 const optional = z.string().optional()
 const blankAsUnset = optional.transform((v) => v || undefined)
@@ -23,8 +23,8 @@ export const env = createEnv({
     [tokenEnv]: blankAsUnset,
     [apiUrlEnv]: blankAsUnset,
     [projectEnv]: blankAsUnset,
-    [environmentEnv]: blankAsUnset,
-    [sandboxIdEnv]: blankAsUnset,
+    [previewEnv]: blankAsUnset,
+    [machineIdEnv]: blankAsUnset,
     APPDATA: z.string().default(join(homedir(), 'AppData', 'Roaming')),
     XDG_CONFIG_HOME: optional.transform((v) => v || join(homedir(), '.config')),
     LITESTREAM_SECRET_ACCESS_KEY: optional,
@@ -34,8 +34,8 @@ export const env = createEnv({
     [tokenEnv]: process.env[tokenEnv],
     [apiUrlEnv]: process.env[apiUrlEnv],
     [projectEnv]: process.env[projectEnv],
-    [environmentEnv]: process.env[environmentEnv],
-    [sandboxIdEnv]: process.env[sandboxIdEnv],
+    [previewEnv]: process.env[previewEnv],
+    [machineIdEnv]: process.env[machineIdEnv],
     APPDATA: process.env.APPDATA,
     XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
     LITESTREAM_SECRET_ACCESS_KEY: process.env.LITESTREAM_SECRET_ACCESS_KEY,

@@ -1,18 +1,18 @@
 import { isIPv4, isIPv6 } from 'node:net'
 
-import { variableKeyPattern } from '@stationly/protocol'
+import { keyNamePattern } from '@stationly/protocol'
 
 export type S3Target = {
   type: 's3'
   endpoint: string
   bucket: string
   prefix: string
-  credentials_variable: string
+  credentials_key: string
 }
 
 const bucketPattern = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/
 const prefixPattern = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/
-const variablePattern = new RegExp(variableKeyPattern)
+const keyPattern = new RegExp(keyNamePattern)
 
 const privateIPv4 = (host: string) => {
   const [a, b] = host.split('.').map(Number) as [number, number]
@@ -77,10 +77,8 @@ export const s3TargetIssues = (target: S3Target): string[] => {
     )
   }
 
-  if (!variablePattern.test(target.credentials_variable)) {
-    issues.push(
-      `credentials_variable ${target.credentials_variable} must match ${variableKeyPattern}`,
-    )
+  if (!keyPattern.test(target.credentials_key)) {
+    issues.push(`credentials_key ${target.credentials_key} must match ${keyNamePattern}`)
   }
 
   return issues

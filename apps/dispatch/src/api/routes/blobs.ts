@@ -10,7 +10,7 @@ import { blobFile } from '../../station/blobs.ts'
 import { audit } from '../context.ts'
 import { fail } from '../errors.ts'
 import type { Kit } from '../kit.ts'
-import { serviceById } from '../lookup.ts'
+import { appById } from '../lookup.ts'
 import type { TargetInput } from '../route-meta.ts'
 import { replies } from '../shapes.ts'
 
@@ -31,33 +31,28 @@ const uploadTtlMs = 24 * 3600 * 1000
 
 export const blobRoutes = (kit: Kit) => {
   const { db, blobDir } = kit.deps
-  const uploadService = (headers: Headers) => {
-    const serviceRef = headers.get('x-stationly-service')
+  const uploadApp = (headers: Headers) => {
+    const appRef = headers.get('x-stationly-app')
 
-    if (!serviceRef) {
-      fail(
-        'VALIDATION_FAILED',
-        'X-Stationly-Service must name the service the upload is for.',
-        undefined,
-        {
-          issues: [
-            {
-              path: '/headers/x-stationly-service',
-              message: 'required',
-            },
-          ],
-        },
-      )
+    if (!appRef) {
+      fail('VALIDATION_FAILED', 'X-Stationly-App must name the app the upload is for.', undefined, {
+        issues: [
+          {
+            path: '/headers/x-stationly-app',
+            message: 'required',
+          },
+        ],
+      })
     }
 
-    return serviceById(db, serviceRef!)
+    return appById(db, appRef!)
   }
 
   return kit.router('deployments', '/v1').post(
     '/blobs',
     async ({ request, set }) => {
       const call = await kit.call(request)
-      const ctx = uploadService(request.headers)
+      const ctx = uploadApp(request.headers)
       const length = Number(request.headers.get('content-length'))
 
       if (!Number.isInteger(length) || length <= 0) {
@@ -142,7 +137,7 @@ export const blobRoutes = (kit: Kit) => {
           size_bytes: size,
           sha256,
           expires_at,
-          service_id: ctx.service.id,
+          app_id: ctx.app.id,
         })
         .run()
       audit(
@@ -155,7 +150,7 @@ export const blobRoutes = (kit: Kit) => {
         },
         {
           after: {
-            service_id: ctx.service.id,
+            app_id: ctx.app.id,
             size_bytes: size,
             sha256,
           },
@@ -177,7 +172,7 @@ export const blobRoutes = (kit: Kit) => {
         level: 'deploy',
         mcp: false,
         cli: false,
-        target: ({ headers }: TargetInput) => uploadService(headers).target,
+        target: ({ headers }: TargetInput) => uploadApp(headers).target,
       },
       parse: 'none',
       response: replies({

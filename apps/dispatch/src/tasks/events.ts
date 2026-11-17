@@ -22,7 +22,7 @@ import { conversationOf, shapeEvent, terminalConversation, type ConversationRow 
 import { applyActivity, type TaskRow } from './status.ts'
 
 type Input = AgentEventInputValue
-type Caps = { perSandboxCount: number; perSandboxBytes: number }
+type Caps = { perMachineCount: number; perMachineBytes: number }
 type Data = Record<string, unknown>
 
 export type AgentEventLive = AgentEventInputValue
@@ -360,7 +360,7 @@ const store = (
   redact: Redactor,
   now: Date,
 ) => {
-  const outputEnabled = readSetting(db, 'sandbox.agent_events_output')
+  const outputEnabled = readSetting(db, 'machine.agent_events_output')
   let current = row
   let accepted = 0
   let duplicates = 0
@@ -521,12 +521,12 @@ export const enforceAgentCaps = (db: Db, taskId: string, limits: Caps = agentEve
 
   if (
     !total ||
-    (total.n <= limits.perSandboxCount && Number(total.bytes ?? 0) <= limits.perSandboxBytes)
+    (total.n <= limits.perMachineCount && Number(total.bytes ?? 0) <= limits.perMachineBytes)
   ) {
     return 0
   }
 
-  let over = Math.max(0, total.n - limits.perSandboxCount)
+  let over = Math.max(0, total.n - limits.perMachineCount)
   let bytes = Number(total.bytes ?? 0)
   const doomed: number[] = []
 
@@ -539,7 +539,7 @@ export const enforceAgentCaps = (db: Db, taskId: string, limits: Caps = agentEve
     .where(eq(conversation_event.task_id, taskId))
     .orderBy(asc(conversation_event.seq))
     .all()) {
-    if (over <= 0 && bytes <= limits.perSandboxBytes) {
+    if (over <= 0 && bytes <= limits.perMachineBytes) {
       break
     }
 
@@ -564,7 +564,7 @@ export const enforceAgentCaps = (db: Db, taskId: string, limits: Caps = agentEve
 
 export const sweepAgentEvents = (db: Db, now = new Date()) => {
   const cutoff = new Date(
-    now.getTime() - readSetting(db, 'sandbox.agent_events_retention_s') * 1000,
+    now.getTime() - readSetting(db, 'machine.agent_events_retention_s') * 1000,
   )
   const expired = db
     .delete(conversation_event)
@@ -585,11 +585,11 @@ export const sweepAgentEvents = (db: Db, now = new Date()) => {
 }
 
 export const startAgentEventSweep = (db: Db, log: Log) =>
-  every(3600, 'sandbox.agent_events_sweep_failed', log, () => {
+  every(3600, 'machine.agent_events_sweep_failed', log, () => {
     const result = sweepAgentEvents(db)
 
     if (result.expired || result.trimmed) {
-      log('sandbox.agent_events_swept', result)
+      log('machine.agent_events_swept', result)
     }
   })
 

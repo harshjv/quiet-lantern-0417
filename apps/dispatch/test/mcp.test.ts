@@ -4,8 +4,11 @@ import { after, before, describe, test } from 'node:test'
 import { mintToken, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
+  createApp,
+  createPreview,
   createProject,
-  createService,
+  placed,
+  productionId,
   seedLockfile,
   waitForActive,
   waitForDeployment,
@@ -14,7 +17,7 @@ import {
 let h: Dispatch
 let registry: FakeRegistry
 let project: any
-let service: any
+let app: any
 let readToken: string
 let deployToken: string
 let adminToken: string
@@ -101,7 +104,9 @@ before(async () => {
   seedLockfile(h)
   await startFakeStation(h)
   project = await createProject(h, 'alpha')
-  service = await createService(h, project.default_environment_id, {
+  const stage = await createPreview(h, 'alpha', 'stage')
+
+  app = await createApp(h, stage.id, {
     name: 'web',
     ref: 'nginx:1.27',
     ports: [
@@ -111,10 +116,10 @@ before(async () => {
     ],
     deploy: true,
   })
-  await waitForDeployment(h, service.deployments[0].id, 'active')
+  await waitForDeployment(h, app.deployments[0].id, 'active')
   const all = {
     project_id: '*',
-    environment_id: '*',
+    target: '*',
   }
 
   readToken = await mintToken(
@@ -152,7 +157,7 @@ before(async () => {
     [
       {
         project_id: project.id,
-        environment_id: '*',
+        target: '*',
         level: 'admin',
       },
     ],
@@ -226,7 +231,7 @@ describe('mcp transport', () => {
       [
         {
           project_id: '*',
-          environment_id: '*',
+          target: '*',
           level: 'read',
         },
       ],
@@ -291,7 +296,7 @@ describe('generated catalog', () => {
 
     for (const name of [
       'whoami',
-      'describe_environment',
+      'describe_preview',
       'deploy',
       'wait_for_deployment',
       'get_deployment_diagnosis',
@@ -316,10 +321,10 @@ describe('generated catalog', () => {
   })
 
   test('a body schema reached through $ref is kept with its components under $defs', async () => {
-    const tool = (await toolsOf(adminToken)).find((t) => t.name === 'describe_service')!
+    const tool = (await toolsOf(adminToken)).find((t) => t.name === 'describe_app')!
 
-    assert.match(JSON.stringify(tool.outputSchema), /"\$ref":"#\/\$defs\/Service"/)
-    assert.ok(tool.outputSchema.$defs.Service)
+    assert.match(JSON.stringify(tool.outputSchema), /"\$ref":"#\/\$defs\/App"/)
+    assert.ok(tool.outputSchema.$defs.App)
     assert.ok(!JSON.stringify(tool.outputSchema).includes('#/components/'))
   })
 })
@@ -329,17 +334,15 @@ describe('tools per access level', () => {
     const names = await toolNames(readToken)
 
     assert.ok(
-      names.includes('whoami') &&
-        names.includes('list_projects') &&
-        names.includes('describe_service'),
+      names.includes('whoami') && names.includes('list_projects') && names.includes('describe_app'),
     )
 
     for (const hidden of [
-      'create_service',
+      'create_app',
       'deploy',
-      'restart_service',
+      'restart_app',
       'create_project',
-      'list_stations',
+      'list_servers',
     ]) {
       assert.ok(!names.includes(hidden), hidden)
     }
@@ -348,14 +351,9 @@ describe('tools per access level', () => {
   test('deploy adds deploy tools but not admin tools', async () => {
     const names = await toolNames(deployToken)
 
-    assert.ok(names.includes('restart_service') && names.includes('deploy'))
+    assert.ok(names.includes('restart_app') && names.includes('deploy'))
 
-    for (const hidden of [
-      'create_service',
-      'create_project',
-      'delete_service',
-      'set_project_variables',
-    ]) {
+    for (const hidden of ['create_app', 'create_project', 'delete_app', 'set_project_keys']) {
       assert.ok(!names.includes(hidden), hidden)
     }
   })
@@ -366,7 +364,7 @@ describe('tools per access level', () => {
     const admin = await toolNames(adminToken)
 
     assert.ok(
-      admin.includes('create_service') &&
+      admin.includes('create_app') &&
         admin.includes('create_project') &&
         admin.includes('create_token'),
     )
@@ -378,9 +376,9 @@ describe('tools per access level', () => {
     const instance = await toolNames(adminToken)
     const scoped = await toolNames(projectAdminToken)
 
-    assert.ok(instance.includes('grant_variable') && instance.includes('list_stations'))
-    assert.ok(!scoped.includes('grant_variable') && !scoped.includes('list_stations'))
-    assert.ok(scoped.includes('create_service'))
+    assert.ok(instance.includes('grant_key') && instance.includes('list_servers'))
+    assert.ok(!scoped.includes('grant_key') && !scoped.includes('list_servers'))
+    assert.ok(scoped.includes('create_app'))
   })
 })
 
@@ -405,29 +403,29 @@ describe('tool calls', () => {
     assert.equal(result.structuredContent.items[0].name, 'alpha')
   })
 
-  test('describe_service by id matches REST, with and without fields', async () => {
-    const plain = await callTool(readToken, 'describe_service', {
-      service: service.id,
+  test('describe_app by id matches REST, with and without fields', async () => {
+    const plain = await callTool(readToken, 'describe_app', {
+      app: app.id,
     })
 
     assert.deepEqual(
       plain.structuredContent,
       (
-        await h.call('GET', `/v1/services/${service.id}`, {
+        await h.call('GET', `/v1/apps/${app.id}`, {
           token: readToken,
         })
       ).body,
     )
-    const fields = 'ports,volumes,domains,port_allocations,current_deployment,variables'
-    const full = await callTool(readToken, 'describe_service', {
-      service: service.id,
+    const fields = 'ports,volumes,domains,port_allocations,current_deployment,keys'
+    const full = await callTool(readToken, 'describe_app', {
+      app: app.id,
       fields,
     })
 
     assert.deepEqual(
       full.structuredContent,
       (
-        await h.call('GET', `/v1/services/${service.id}?fields=${fields}`, {
+        await h.call('GET', `/v1/apps/${app.id}?fields=${fields}`, {
           token: readToken,
         })
       ).body,
@@ -435,40 +433,41 @@ describe('tool calls', () => {
   })
 
   test('an entity parameter takes a slug path, which the API resolves through the nested path', async () => {
-    const svc = await callTool(readToken, 'describe_service', {
-      service: 'alpha/production/web',
+    const svc = await callTool(readToken, 'describe_app', {
+      app: 'alpha/stage/web',
     })
 
-    assert.equal(svc.structuredContent.id, service.id)
-    const env = await callTool(readToken, 'list_services', {
-      environment: 'alpha/production',
+    assert.equal(svc.structuredContent.id, app.id)
+    const env = await callTool(readToken, 'list_apps', {
+      project: 'alpha',
+      preview: 'stage',
     })
 
     assert.deepEqual(
       env.structuredContent.items.map((s: any) => s.id),
-      [service.id],
+      [app.id],
     )
-    const missing = await callTool(readToken, 'describe_service', {
-      service: 'alpha/production/nope',
+    const missing = await callTool(readToken, 'describe_app', {
+      app: 'alpha/stage/nope',
     })
 
     assert.equal(textOf(missing).error.code, 'NOT_FOUND')
   })
 
   test('a deploy-level write goes through', async () => {
-    const result = await callTool(deployToken, 'stop_service', {
-      service: service.id,
+    const result = await callTool(deployToken, 'stop_app', {
+      app: app.id,
     })
 
     assert.equal(result.isError, undefined, JSON.stringify(result))
     assert.equal(result.structuredContent.desired_state, 'stopped')
-    const rest = await h.call('GET', `/v1/services/${service.id}?fields=desired_state`, {
+    const rest = await h.call('GET', `/v1/apps/${app.id}?fields=desired_state`, {
       token: h.admin.token,
     })
 
     assert.equal(rest.body.desired_state, 'stopped')
-    const started = await callTool(deployToken, 'start_service', {
-      service: service.id,
+    const started = await callTool(deployToken, 'start_app', {
+      app: app.id,
     })
 
     assert.equal(started.isError, undefined, JSON.stringify(started))
@@ -512,8 +511,8 @@ describe('tool calls', () => {
   })
 
   test('an API refusal comes back as an error result carrying the envelope', async () => {
-    const result = await callTool(readToken, 'describe_service', {
-      service: 'svc_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    const result = await callTool(readToken, 'describe_app', {
+      app: 'svc_01ARZ3NDEKTSV4RRFFQ69G5FAV',
     })
 
     assert.equal(result.isError, true)
@@ -522,8 +521,8 @@ describe('tool calls', () => {
 
   test('a scoped token cannot reach a project outside its scope through a visible tool', async () => {
     const other = await createProject(h, 'beta')
-    const result = await callTool(projectAdminToken, 'create_service', {
-      environment: 'beta/production',
+    const result = await callTool(projectAdminToken, 'create_app', {
+      project: 'beta',
       name: 'sneak',
       kind: 'worker',
       source: {
@@ -537,20 +536,16 @@ describe('tool calls', () => {
     const envelope = textOf(result).error
 
     assert.ok(['FORBIDDEN_SCOPE', 'NOT_FOUND'].includes(envelope.code))
-    const services = await h.call(
-      'GET',
-      `/v1/environments/${other.default_environment_id}/services`,
-      {
-        token: h.admin.token,
-      },
-    )
+    const apps = await h.call('GET', placed(h, productionId(h, other.id), `apps`), {
+      token: h.admin.token,
+    })
 
-    assert.deepEqual(services.body.items, [])
+    assert.deepEqual(apps.body.items, [])
   })
 
   test('get_logs returns its lines inside untrusted, as REST does', async () => {
     const result = await callTool(readToken, 'get_logs', {
-      service: service.id,
+      app: app.id,
     })
 
     assert.equal(result.isError, undefined, JSON.stringify(result))
@@ -562,7 +557,7 @@ describe('tool calls', () => {
 describe('polled tools', () => {
   test('wait_for_deployment repeats the wait until done and sends a first and a last progress notification', async () => {
     const created = await callTool(deployToken, 'deploy', {
-      service: service.id,
+      app: app.id,
       idempotency_key: 'mcp-poll-1',
     })
 
@@ -590,12 +585,12 @@ describe('polled tools', () => {
     assert.ok(progress.every((p) => p.progressToken === 'p1'))
     assert.match(progress[0].message, /waiting up to 30 s/)
     assert.match(progress.at(-1).message, /done/)
-    await waitForActive(h, service.id)
+    await waitForActive(h, app.id)
   })
 
   test('timeout_s 0 makes one call and returns done as the route reports it', async () => {
     const latest = (
-      await h.call('GET', `/v1/services/${service.id}/deployments?limit=1`, {
+      await h.call('GET', `/v1/apps/${app.id}/deployments?limit=1`, {
         token: readToken,
       })
     ).body.items[0]
@@ -610,7 +605,7 @@ describe('polled tools', () => {
 
   test('run_command returns the run and wait_for_run follows it to done', async () => {
     const created = await callTool(deployToken, 'run_command', {
-      service: service.id,
+      app: app.id,
       command: ['true'],
       wait_s: 0,
     })
@@ -630,12 +625,12 @@ describe('polled tools', () => {
   })
 })
 
-describe('update_station', () => {
-  test('takes every field PATCH /v1/stations accepts and returns the station', async () => {
-    const tool = (await toolsOf(adminToken)).find((t) => t.name === 'update_station')!
+describe('update_server', () => {
+  test('takes every field PATCH /v1/servers accepts and returns the station', async () => {
+    const tool = (await toolsOf(adminToken)).find((t) => t.name === 'update_server')!
 
     for (const field of [
-      'station',
+      'server',
       'public_address',
       'concurrency_cap',
       'draining',
@@ -644,8 +639,8 @@ describe('update_station', () => {
       assert.ok(field in tool.inputSchema.properties, field)
     }
 
-    const result = await callTool(adminToken, 'update_station', {
-      station: 'station-1',
+    const result = await callTool(adminToken, 'update_server', {
+      server: 'station-1',
       concurrency_cap: 4,
       intermittent: true,
       public_address: '203.0.113.7',
@@ -655,7 +650,7 @@ describe('update_station', () => {
     assert.equal(result.structuredContent.concurrency_cap, 4)
     assert.equal(result.structuredContent.intermittent, true)
     assert.equal(result.structuredContent.public_address, '203.0.113.7')
-    const rest = await h.call('GET', '/v1/stations/station-1?fields=*', {
+    const rest = await h.call('GET', '/v1/servers/station-1?fields=*', {
       token: adminToken,
     })
 
@@ -666,8 +661,8 @@ describe('update_station', () => {
   })
 
   test('draining flows through and an empty call is a validation error', async () => {
-    const drained = await callTool(adminToken, 'update_station', {
-      station: 'station-1',
+    const drained = await callTool(adminToken, 'update_server', {
+      server: 'station-1',
       draining: true,
     })
 
@@ -675,8 +670,8 @@ describe('update_station', () => {
       [drained.structuredContent.status, drained.structuredContent.draining],
       ['online', true],
     )
-    const ended = await callTool(adminToken, 'update_station', {
-      station: 'station-1',
+    const ended = await callTool(adminToken, 'update_server', {
+      server: 'station-1',
       draining: false,
     })
 
@@ -684,8 +679,8 @@ describe('update_station', () => {
       [ended.structuredContent.status, ended.structuredContent.draining],
       ['online', false],
     )
-    const empty = await callTool(adminToken, 'update_station', {
-      station: 'station-1',
+    const empty = await callTool(adminToken, 'update_server', {
+      server: 'station-1',
     })
 
     assert.equal(empty.isError, true)

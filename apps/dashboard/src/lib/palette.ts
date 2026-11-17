@@ -1,27 +1,26 @@
-import type { LinkOptions } from '@tanstack/react-router'
-
 import { agentHints } from './agent-hints.ts'
-import type { Deployment, Environment, Project, Sandbox, Service } from './api.ts'
-import { commands, type Scope, type ServiceScope } from './commands.ts'
+import type { App, Deployment, Machine, Preview, Project } from './api.ts'
+import { commands, type AppScope, type Scope } from './commands.ts'
 import { byName } from './format.ts'
+import { places, type Place } from './nav.ts'
 
 export type Space = {
   project: string
-  environment: Pick<Environment, 'id' | 'name'>
-  services: readonly Pick<Service, 'id' | 'name'>[]
-  sandboxes: readonly Pick<Sandbox, 'id' | 'name'>[]
-  deployments: readonly Pick<Deployment, 'id' | 'number' | 'service_id'>[]
+  preview: Pick<Preview, 'id' | 'name'> | null
+  apps: readonly Pick<App, 'id' | 'name'>[]
+  machines: readonly Pick<Machine, 'id' | 'name'>[]
+  deployments: readonly Pick<Deployment, 'id' | 'number' | 'app_id'>[]
 }
 
 export type Destination = {
   value: string
   label: string
   hint?: string
-  link: LinkOptions
+  to: Partial<Place>
 }
 
-export const spaceName = (space: Pick<Space, 'project' | 'environment'>) =>
-  `${space.project} / ${space.environment.name}`
+export const spaceName = (space: Pick<Space, 'project' | 'preview'>) =>
+  `${space.project} / ${space.preview?.name ?? 'production'}`
 
 const sorted = <T extends { name: string }>(items: readonly T[]) => [...items].sort(byName)
 
@@ -32,67 +31,52 @@ export const destinations = (
   projects: sorted(projects).map((project): Destination => ({
     value: project.id,
     label: project.name,
-    link: {
-      to: '/projects/$project',
-      params: {
-        project: project.name,
-      },
-    },
+    to: places.project(project.name),
   })),
-  environments: spaces.map((space): Destination => ({
-    value: space.environment.id,
+  places: spaces.map((space): Destination => ({
+    value: space.preview?.id ?? `${space.project}/production`,
     label: spaceName(space),
-    link: {
-      to: '/projects/$project/$environment',
-      params: {
-        project: space.project,
-        environment: space.environment.name,
-      },
-    },
+    to: space.preview
+      ? places.preview(space.project, space.preview.name)
+      : places.project(space.project),
   })),
-  services: spaces.flatMap((space) =>
-    sorted(space.services).map((service): Destination => ({
-      value: service.id,
-      label: service.name,
+  apps: spaces.flatMap((space) =>
+    sorted(space.apps).map((app): Destination => ({
+      value: app.id,
+      label: app.name,
       hint: spaceName(space),
-      link: {
-        to: '/services/$service',
-        params: {
-          service: service.id,
-        },
+      to: {
+        ...places.app(app.id),
+        project: space.project,
       },
     })),
   ),
-  sandboxes: spaces.flatMap((space) =>
-    sorted(space.sandboxes).map((sandbox): Destination => ({
-      value: sandbox.id,
-      label: sandbox.name,
+  machines: spaces.flatMap((space) =>
+    sorted(space.machines).map((machine): Destination => ({
+      value: machine.id,
+      label: machine.name,
       hint: spaceName(space),
-      link: {
-        to: '/sandboxes/$sandbox',
-        params: {
-          sandbox: sandbox.id,
-        },
+      to: {
+        ...places.machine(machine.id),
+        project: space.project,
       },
     })),
   ),
   deployments: spaces.flatMap((space) => {
-    const names = new Map(space.services.map((service) => [service.id, service.name]))
+    const names = new Map(space.apps.map((app) => [app.id, app.name]))
 
     return space.deployments.flatMap((deployment): Destination[] => {
-      const service = names.get(deployment.service_id)
+      const app = names.get(deployment.app_id)
 
-      return service
+      return app
         ? [
             {
               value: deployment.id,
-              label: `${service} #${deployment.number}`,
+              label: `${app} #${deployment.number}`,
               hint: spaceName(space),
-              link: {
-                to: '/deployments/$deployment',
-                params: {
-                  deployment: deployment.id,
-                },
+              to: {
+                ...places.deployment(deployment.id),
+                project: space.project,
               },
             },
           ]
@@ -104,9 +88,9 @@ export const destinations = (
 export type Page =
   | { kind: 'projects' }
   | { kind: 'project'; project: string }
-  | { kind: 'environment'; scope: Scope }
-  | { kind: 'service'; scope: ServiceScope }
-  | { kind: 'sandbox'; scope: Scope; sandbox: string }
+  | { kind: 'place'; scope: Scope }
+  | { kind: 'app'; scope: AppScope }
+  | { kind: 'machine'; scope: Scope; machine: string }
 
 export const pageProject = (page: Page) =>
   page.kind === 'project' ? page.project : 'scope' in page ? page.scope.project : null
@@ -121,11 +105,11 @@ export const pageText = (page: Page): PageText => {
       }
     case 'project':
       return {
-        command: commands.createEnvironment(page.project),
+        command: commands.createPreview(page.project),
       }
 
-    case 'environment': {
-      const hint = agentHints['/_app/projects/$project/$environment']
+    case 'place': {
+      const hint = agentHints[page.scope.preview ? 'preview' : 'production']
 
       return {
         command: hint.command(page.scope),
@@ -133,8 +117,8 @@ export const pageText = (page: Page): PageText => {
       }
     }
 
-    case 'service': {
-      const hint = agentHints['/_app/services/$service']
+    case 'app': {
+      const hint = agentHints.app
 
       return {
         command: hint.command(page.scope),
@@ -142,9 +126,9 @@ export const pageText = (page: Page): PageText => {
       }
     }
 
-    case 'sandbox':
+    case 'machine':
       return {
-        command: commands.startSandbox(page.scope, page.sandbox),
+        command: commands.startMachine(page.scope, page.machine),
       }
   }
 }

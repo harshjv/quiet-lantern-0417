@@ -319,12 +319,12 @@ test('status labels follow the spec and a stuck working status goes stale after 
   assert.equal(stale.pulse, false)
 })
 
-test('an instance admin holds admin on every project and environment', () => {
+test('an instance admin holds admin on every project, its production and previews', () => {
   assert.equal(
     isInstanceAdmin([
       {
         project_id: '*',
-        environment_id: '*',
+        target: '*',
         level: 'admin',
       },
     ]),
@@ -334,7 +334,7 @@ test('an instance admin holds admin on every project and environment', () => {
     isInstanceAdmin([
       {
         project_id: 'p',
-        environment_id: '*',
+        target: '*',
         level: 'admin',
       },
     ]),
@@ -344,7 +344,7 @@ test('an instance admin holds admin on every project and environment', () => {
     isInstanceAdmin([
       {
         project_id: '*',
-        environment_id: '*',
+        target: '*',
         level: 'deploy',
       },
     ]),

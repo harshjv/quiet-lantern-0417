@@ -5,11 +5,8 @@ import { destinations, pageProject, pageText, type Page, type Space } from '../s
 
 const space: Space = {
   project: 'shop',
-  environment: {
-    id: 'env_prod',
-    name: 'production',
-  },
-  services: [
+  preview: null,
+  apps: [
     {
       id: 'svc_web',
       name: 'web',
@@ -19,7 +16,7 @@ const space: Space = {
       name: 'api',
     },
   ],
-  sandboxes: [
+  machines: [
     {
       id: 'sbx_try',
       name: 'try',
@@ -29,12 +26,12 @@ const space: Space = {
     {
       id: 'dep_13',
       number: 13,
-      service_id: 'svc_web',
+      app_id: 'svc_web',
     },
     {
       id: 'dep_gone',
       number: 2,
-      service_id: 'svc_gone',
+      app_id: 'svc_gone',
     },
   ],
 }
@@ -53,13 +50,13 @@ const found = destinations(
   [space],
 )
 
-test('projects and services are sorted by name', () => {
+test('projects and apps are sorted by name', () => {
   assert.deepEqual(
     found.projects.map((entry) => entry.label),
     ['blog', 'shop'],
   )
   assert.deepEqual(
-    found.services.map((entry) => entry.label),
+    found.apps.map((entry) => entry.label),
     ['api', 'web'],
   )
 })
@@ -71,27 +68,24 @@ test('every destination has a unique value', () => {
 })
 
 test('entities carry where they live and link by id', () => {
-  assert.deepEqual(found.environments[0], {
-    value: 'env_prod',
+  assert.deepEqual(found.places[0], {
+    value: 'shop/production',
     label: 'shop / production',
-    link: {
-      to: '/projects/$project/$environment',
-      params: {
-        project: 'shop',
-        environment: 'production',
-      },
+    to: {
+      mode: 'ship',
+      project: 'shop',
+      view: null,
     },
   })
-  assert.equal(found.services[0].hint, 'shop / production')
-  assert.deepEqual(found.sandboxes[0].link, {
-    to: '/sandboxes/$sandbox',
-    params: {
-      sandbox: 'sbx_try',
-    },
+  assert.equal(found.apps[0].hint, 'shop / production')
+  assert.deepEqual(found.machines[0].to, {
+    mode: 'ship',
+    view: 'machine:sbx_try',
+    project: 'shop',
   })
 })
 
-test('deployments are named after their service and skip unknown services', () => {
+test('deployments are named after their app and skip unknown apps', () => {
   assert.deepEqual(
     found.deployments.map((entry) => entry.label),
     ['web #13'],
@@ -100,7 +94,7 @@ test('deployments are named after their service and skip unknown services', () =
 
 const scope = {
   project: 'shop',
-  environment: 'production',
+  preview: 'staging',
 }
 
 const pages: Page[] = [
@@ -112,20 +106,20 @@ const pages: Page[] = [
     project: 'shop',
   },
   {
-    kind: 'environment',
+    kind: 'place',
     scope,
   },
   {
-    kind: 'service',
+    kind: 'app',
     scope: {
       ...scope,
-      service: 'web',
+      app: 'web',
     },
   },
   {
-    kind: 'sandbox',
+    kind: 'machine',
     scope,
-    sandbox: 'try',
+    machine: 'try',
   },
 ]
 
@@ -135,13 +129,13 @@ test('every page has a sly command', () => {
   }
 })
 
-test('pages name their service, environment or sandbox in the command', () => {
-  const service = pageText(pages[3])
+test('pages name their app, preview or machine in the command', () => {
+  const app = pageText(pages[3])
 
-  assert.match(service.command, /--service web/)
-  assert.match(service.prompt ?? '', /web in shop\/production/)
-  assert.match(pageText(pages[2]).command, /--environment production/)
-  assert.match(pageText(pages[4]).command, /--sandbox try/)
+  assert.match(app.command, /--app web/)
+  assert.match(app.prompt ?? '', /web in the staging preview of shop/)
+  assert.match(pageText(pages[2]).command, /--preview staging/)
+  assert.match(pageText(pages[4]).command, /--machine try/)
 })
 
 test('the page project comes from its scope', () => {

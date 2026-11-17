@@ -35,7 +35,7 @@ after(async () => {
 })
 
 describe('the shared delivery builder', () => {
-  const serviceId = newId('service')
+  const appId = newId('app')
   const entries = [
     {
       key: 'API_URL',
@@ -43,7 +43,7 @@ describe('the shared delivery builder', () => {
       node: {
         kind: 'export' as const,
         from: 'export' as const,
-        service_id: serviceId,
+        app_id: appId,
         key: 'URL',
         value: 'https://api.internal',
       },
@@ -51,14 +51,14 @@ describe('the shared delivery builder', () => {
   ]
 
   test('renders each entry with its refs and audits the decrypt under the subject and purpose', () => {
-    const sandboxId = newId('sandbox')
+    const machineId = newId('machine')
     const body = renderedDelivery(h.db, h.deps.keyring, entries, {
       target: {
-        sandbox_id: sandboxId,
+        sandbox_id: machineId,
       },
       subject: {
-        entity: 'sandbox',
-        id: sandboxId,
+        entity: 'machine',
+        id: machineId,
       },
       env_digest: sha256Digest(['API_URL']),
       purpose: 'sandbox',
@@ -67,7 +67,7 @@ describe('the shared delivery builder', () => {
 
     assert.deepEqual(body, {
       target: {
-        sandbox_id: sandboxId,
+        sandbox_id: machineId,
       },
       env_digest: sha256Digest(['API_URL']),
       purpose: 'sandbox',
@@ -78,7 +78,7 @@ describe('the shared delivery builder', () => {
           refs: [
             {
               export: {
-                service_id: serviceId,
+                service_id: appId,
                 key: 'URL',
               },
             },
@@ -88,7 +88,7 @@ describe('the shared delivery builder', () => {
       ],
       redaction: [],
     })
-    const [audit] = auditsOf(sandboxId)
+    const [audit] = auditsOf(machineId)
 
     assert.deepEqual(
       [audit!.action, audit!.purpose, audit!.after],
@@ -104,15 +104,15 @@ describe('the shared delivery builder', () => {
   })
 
   test('refuses a body that does not match secrets.deliver and audits nothing', () => {
-    const sandboxId = newId('sandbox')
+    const machineId = newId('machine')
 
     assert.throws(
       () =>
         renderedDelivery(h.db, h.deps.keyring, entries, {
           target: {} as never,
           subject: {
-            entity: 'sandbox',
-            id: sandboxId,
+            entity: 'machine',
+            id: machineId,
           },
           env_digest: sha256Digest(['API_URL']),
           purpose: 'sandbox',
@@ -122,7 +122,7 @@ describe('the shared delivery builder', () => {
         code: 'PROTOCOL_INVALID_MESSAGE',
       },
     )
-    assert.deepEqual(auditsOf(sandboxId), [])
+    assert.deepEqual(auditsOf(machineId), [])
   })
 
   test('an ephemeral delivery carries its values without refs or redaction', () => {

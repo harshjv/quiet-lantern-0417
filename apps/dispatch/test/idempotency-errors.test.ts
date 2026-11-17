@@ -125,7 +125,7 @@ describe('idempotency', () => {
       },
     )
     const reply = await post(
-      `/v1/projects/${created.body.id}/environments`,
+      `/v1/projects/${created.body.id}/previews`,
       {
         name: 'qa',
       },
@@ -138,21 +138,24 @@ describe('idempotency', () => {
   })
 
   test('body key order does not change the request fingerprint', async () => {
+    const created = await post('/v1/projects', {
+      name: 'idem-order',
+    })
     const first = await post(
-      '/v1/projects',
+      `/v1/projects/${created.body.id}/previews`,
       {
-        name: 'idem-order',
-        default_environment_name: 'live',
+        name: 'live',
+        deploy_on_create: false,
       },
       {
         'idempotency-key': 'order-key',
       },
     )
     const second = await post(
-      '/v1/projects',
+      `/v1/projects/${created.body.id}/previews`,
       {
-        default_environment_name: 'live',
-        name: 'idem-order',
+        deploy_on_create: false,
+        name: 'live',
       },
       {
         'idempotency-key': 'order-key',
@@ -290,7 +293,7 @@ describe('idempotency', () => {
       [
         {
           project_id: '*',
-          environment_id: '*',
+          target: '*',
           level: 'admin',
         },
       ],
@@ -424,14 +427,14 @@ describe('error envelope', () => {
       [
         {
           project_id: created.body.id,
-          environment_id: created.body.default_environment_id,
+          target: 'production',
           level: 'read',
         },
       ],
       'reader',
     )
     const reply = await post(
-      `/v1/projects/${created.body.id}/environments`,
+      `/v1/projects/${created.body.id}/previews`,
       {
         name: 'extra',
       },
@@ -445,7 +448,7 @@ describe('error envelope', () => {
   })
 
   test('NOT_FOUND for an unknown entity and for an unknown route', async () => {
-    const entity = await h.call('GET', '/v1/services/svc_00000000000000000000000000', {
+    const entity = await h.call('GET', '/v1/apps/svc_00000000000000000000000000', {
       token: h.admin.token,
     })
 
@@ -462,22 +465,18 @@ describe('error envelope', () => {
     const created = await post('/v1/projects', {
       name: 'nested-missing',
     })
-    const path = `/v1/projects/${created.body.name}/environments/nope/services/web`
+    const path = `/v1/projects/${created.body.name}/previews/nope/apps/web`
     const missing = await h.call('GET', path, {
       token: h.admin.token,
     })
     const error = assertEnvelope(missing, 'NOT_FOUND')
 
-    assert.match(error.explanation, /environment nope/)
-    const service = await h.call(
-      'GET',
-      `/v1/projects/${created.body.name}/environments/production/services/nope`,
-      {
-        token: h.admin.token,
-      },
-    )
+    assert.match(error.explanation, /preview nope/)
+    const app = await h.call('GET', `/v1/projects/${created.body.name}/apps/nope`, {
+      token: h.admin.token,
+    })
 
-    assert.match(assertEnvelope(service, 'NOT_FOUND').explanation, /service nope/)
+    assert.match(assertEnvelope(app, 'NOT_FOUND').explanation, /app nope/)
     const anonymous = await h.call('GET', path, {
       token: null,
     })

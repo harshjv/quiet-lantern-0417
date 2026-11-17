@@ -1,11 +1,11 @@
-export const serviceFieldText = {
+export const appFieldText = {
   kind: 'Immutable after creation',
   command: 'Overrides the image CMD',
   build_args: 'Non-secret Dockerfile build arguments',
   ports: 'At least one for web, none for other kinds',
-  health: 'The Signal health check',
+  health: 'The health check',
   limits: 'Resource limits',
-  schedule: 'The Timetable for a cron service',
+  schedule: 'The Timetable for a cron app',
   strategy: 'replace when volumes is non-empty, else overlap; not for cron and one_off',
   multi_writer_safe: 'Allows overlap with a volume',
   drain_timeout_s: 'Seconds to drain the old container',
@@ -15,7 +15,7 @@ export const serviceFieldText = {
 } as const
 
 export const portFieldText = {
-  port: 'The container port, unique per service',
+  port: 'The container port, unique per app',
   protocol: 'http is routed by the Gateway, tcp only by exposure',
   grpc: 'The http port speaks gRPC',
 } as const
@@ -27,11 +27,11 @@ export const domainFieldText = {
 } as const
 
 export const volumeFieldText = {
-  mount_path: 'Absolute, unique per service, not /run/secrets',
+  mount_path: 'Absolute, unique per app, not /run/secrets',
 } as const
 
-export const variablePatchText = {
-  set: 'Variables to set: key, kind (literal, reference or sealed), and value or reference',
+export const keyPatchText = {
+  set: 'Keys to set: name, kind (literal, reference or sealed), and value or reference',
   unset: 'Keys to remove',
   allow_unresolved: 'Accept a reference whose target does not exist yet (default false)',
 } as const

@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 
-import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
+import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
-  createEnvironment,
+  approveWaiting,
+  createApp,
+  createPreview,
   createProject,
-  createService,
   pinPlatform,
+  placed,
+  productionId,
   waitForActive,
 } from './helpers/seed.ts'
 
@@ -32,8 +35,14 @@ const post = (path: string, body: unknown) =>
     token: h.admin.token,
     body,
   })
+const probe = (path: string, body: unknown) =>
+  h.call('POST', path, {
+    cookie: h.admin.cookie,
+    origin: localOrigin,
+    body,
+  })
 const explain = (query: Record<string, string>) =>
-  get(`/v1/environments/${prod}/network/explain?${new URLSearchParams(query).toString()}`)
+  get(placed(h, prod, `network/explain?${new URLSearchParams(query).toString()}`))
 
 before(async () => {
   registry = FakeRegistry.install()
@@ -43,9 +52,9 @@ before(async () => {
   pinPlatform(h)
   station = await startFakeStation(h)
   project = await createProject(h, 'net')
-  prod = project.default_environment_id
-  staging = (await createEnvironment(h, 'net', 'staging')).id
-  db = await createService(h, prod, {
+  prod = productionId(h, project.id)
+  staging = (await createPreview(h, 'net', 'staging')).id
+  db = await createApp(h, prod, {
     name: 'db',
     ref: 'postgres:16',
     ports: [
@@ -56,7 +65,7 @@ before(async () => {
     ],
     deploy: true,
   })
-  web = await createService(h, prod, {
+  web = await createApp(h, prod, {
     name: 'web',
     ref: 'traefik/whoami:v1',
     ports: [
@@ -64,16 +73,16 @@ before(async () => {
         port: 3000,
       },
     ],
-    variables: [
+    keys: [
       {
-        key: 'DATABASE_URL',
+        name: 'DATABASE_URL',
         kind: 'reference',
         reference: 'postgres://app@${{db.HOST}}:5432/app',
       },
     ],
     deploy: true,
   })
-  api = await createService(h, staging, {
+  api = await createApp(h, staging, {
     name: 'api',
     ref: 'traefik/whoami:v1',
     ports: [
@@ -83,7 +92,7 @@ before(async () => {
     ],
     deploy: true,
   })
-  stagingWeb = await createService(h, staging, {
+  stagingWeb = await createApp(h, staging, {
     name: 'web',
     ref: 'traefik/whoami:v1',
     ports: [
@@ -107,23 +116,24 @@ after(async () => {
 })
 
 describe('network map', () => {
-  test('lists services with <service>.internal names, unique virtual IPs, switch targets and the documented paths', async () => {
-    const reply = await get(`/v1/environments/${prod}/network`)
+  test('lists apps with <app>.internal names, unique virtual IPs, switch targets and the documented paths', async () => {
+    const reply = await get(placed(h, prod, `network`))
 
     assert.equal(reply.status, 200)
     const map = reply.body
 
-    assert.equal(map.environment.id, prod)
+    assert.equal(map.project_id, project.id)
+    assert.equal(map.preview, null)
     assert.equal(map.virtual_prefix, '100.64.0.0/16')
     assert.deepEqual(
-      map.services.map((s: any) => s.dns),
+      map.apps.map((s: any) => s.dns),
       ['db.internal', 'web.internal'],
     )
-    const vips = map.services.map((s: any) => s.virtual_ip)
+    const vips = map.apps.map((s: any) => s.virtual_ip)
 
     assert.equal(new Set(vips).size, 2)
 
-    for (const s of map.services) {
+    for (const s of map.apps) {
       assert.equal(s.switch.state, 'serving')
       assert.match(s.switch.deployment.address, /^10\.200\.\d+\.\d+$/)
     }
@@ -151,7 +161,7 @@ describe('network map', () => {
   })
 
   test('records the reference from web to db as an edge', async () => {
-    const map = (await get(`/v1/environments/${prod}/network`)).body
+    const map = (await get(placed(h, prod, `network`))).body
 
     assert.deepEqual(map.edges, [
       {
@@ -163,40 +173,44 @@ describe('network map', () => {
     ])
   })
 
-  test('the same service name in another environment has its own subnet and virtual IP', async () => {
-    const other = (await get(`/v1/environments/${staging}/network`)).body
-    const mine = (await get(`/v1/environments/${prod}/network`)).body
+  test('the same app name in a preview has its own subnet and virtual IP', async () => {
+    const other = (await get(placed(h, staging, `network`))).body
+    const mine = (await get(placed(h, prod, `network`))).body
 
     assert.notEqual(other.subnets[0].subnet, mine.subnets[0].subnet)
-    const stagedWeb = other.services.find((s: any) => s.name === 'web')
+    const stagedWeb = other.apps.find((s: any) => s.name === 'web')
 
     assert.equal(stagedWeb.dns, 'web.internal')
-    assert.notEqual(
-      stagedWeb.virtual_ip,
-      mine.services.find((s: any) => s.name === 'web').virtual_ip,
-    )
-    assert.ok(!other.services.some((s: any) => s.name === 'db'))
+    assert.notEqual(stagedWeb.virtual_ip, mine.apps.find((s: any) => s.name === 'web').virtual_ip)
+    assert.ok(!other.apps.some((s: any) => s.name === 'db'))
   })
 
-  test('is reachable by project and environment name and can be narrowed to one service', async () => {
-    const reply = await get('/v1/projects/net/environments/production/network?service=web')
+  test('is reachable by project and preview name and can be narrowed to one app', async () => {
+    const reply = await get('/v1/projects/net/network?app=web')
 
     assert.equal(reply.status, 200)
-    assert.equal(reply.body.environment.id, prod)
+    assert.equal(reply.body.project_id, project.id)
+    assert.equal(reply.body.preview, null)
+    const named = await get('/v1/projects/net/network?preview=staging')
+
+    assert.deepEqual(named.body.preview, {
+      id: staging,
+      name: 'staging',
+    })
     assert.deepEqual(
-      reply.body.services.map((s: any) => s.name),
+      reply.body.apps.map((s: any) => s.name),
       ['db', 'web'],
     )
-    const alone = await get(`/v1/projects/net/environments/production/network?service=db`)
+    const alone = await get(`/v1/projects/net/network?app=db`)
 
     assert.deepEqual(
-      alone.body.services.map((s: any) => s.name),
+      alone.body.apps.map((s: any) => s.name),
       ['db', 'web'],
     )
   })
 
-  test('an unknown environment is NOT_FOUND', async () => {
-    const reply = await get('/v1/environments/env_00000000000000000000000000/network')
+  test('an unknown preview is NOT_FOUND', async () => {
+    const reply = await get('/v1/projects/net/network?preview=env_00000000000000000000000000')
 
     assert.equal(reply.status, 404)
     assert.equal(reply.body.error.code, 'NOT_FOUND')
@@ -204,7 +218,7 @@ describe('network map', () => {
 })
 
 describe('network explain', () => {
-  test('a service reaching another by <service>.internal passes every hop', async () => {
+  test('an app reaching another by <app>.internal passes every hop', async () => {
     const reply = await explain({
       from: 'web',
       to: 'db.internal',
@@ -241,7 +255,7 @@ describe('network explain', () => {
     )
   })
 
-  test('a bare service name resolves to the same path as its .internal name', async () => {
+  test('a bare app name resolves to the same path as its .internal name', async () => {
     const reply = await explain({
       from: 'web',
       to: 'db:5432',
@@ -252,7 +266,7 @@ describe('network explain', () => {
     assert.equal(reply.body.entity.to, 'db:5432/tcp')
   })
 
-  test('a name that belongs to another environment fails at dns with NAME_NOT_IN_ENVIRONMENT', async () => {
+  test('a name that belongs to a preview fails at dns with NAME_NOT_IN_NETWORK', async () => {
     const reply = await explain({
       from: 'web',
       to: 'api.internal',
@@ -264,12 +278,12 @@ describe('network explain', () => {
     const dns = reply.body.hops.find((hop: any) => hop.hop === 'dns')
 
     assert.equal(dns.status, 'fail')
-    assert.equal(dns.code, 'NAME_NOT_IN_ENVIRONMENT')
+    assert.equal(dns.code, 'NAME_NOT_IN_NETWORK')
     assert.equal(dns.detail.rcode, 'NXDOMAIN')
     assert.ok(reply.body.fixes.some((f: any) => f.code === 'USE_INTERNAL_NAME'))
   })
 
-  test('a service of another environment named without .internal is NETWORK_TARGET_INVALID with candidates', async () => {
+  test('an app of a preview named without .internal is NETWORK_TARGET_INVALID with candidates', async () => {
     const reply = await explain({
       from: 'web',
       to: 'api',
@@ -281,7 +295,7 @@ describe('network explain', () => {
     assert.deepEqual(reply.body.error.details.candidates.sort(), ['db', 'web'])
   })
 
-  test('a source outside the environment is NETWORK_TARGET_INVALID', async () => {
+  test('a source outside production is NETWORK_TARGET_INVALID', async () => {
     const reply = await explain({
       from: 'api',
       to: 'db',
@@ -293,9 +307,9 @@ describe('network explain', () => {
     assert.equal(reply.body.error.details.field, 'from')
   })
 
-  test('a service with several ports needs one named', async () => {
+  test('an app with several ports needs one named', async () => {
     const project2 = await createProject(h, 'net-multi')
-    const multi = await createService(h, project2.default_environment_id, {
+    const multi = await createApp(h, productionId(h, project2.id), {
       name: 'multi',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -309,7 +323,7 @@ describe('network explain', () => {
       deploy: false,
     })
     const reply = await get(
-      `/v1/environments/${project2.default_environment_id}/network/explain?from=multi&to=multi`,
+      placed(h, productionId(h, project2.id), `network/explain?from=multi&to=multi`),
     )
 
     assert.equal(reply.status, 422)
@@ -356,11 +370,14 @@ describe('network explain', () => {
     pinPlatform(h, {
       gateway: true,
     })
-    const added = await post(`/v1/ports/${web.ports[0].id}/domains`, {
-      hostname: 'web.net.example.com',
-    })
+    const added = await approveWaiting(
+      h,
+      await post(`/v1/ports/${web.ports[0].id}/domains`, {
+        hostname: 'web.net.example.com',
+      }),
+    )
 
-    assert.equal(added.status, 201)
+    assert.equal(added.status, 200, added.text)
     const reply = await explain({
       from: 'internet',
       to: 'web.net.example.com',
@@ -410,10 +427,7 @@ describe('network explain', () => {
   })
 
   test('requires a credential', async () => {
-    const reply = await h.call(
-      'GET',
-      `/v1/environments/${prod}/network/explain?from=web&to=db:5432`,
-    )
+    const reply = await h.call('GET', placed(h, prod, `network/explain?from=web&to=db:5432`))
 
     assert.equal(reply.status, 401)
     assert.equal(reply.body.error.code, 'UNAUTHENTICATED')
@@ -421,14 +435,14 @@ describe('network explain', () => {
 })
 
 describe('network probe', () => {
-  test('a tcp probe from inside a service returns the station result and its firewall verdict', async () => {
-    const reply = await post(`/v1/services/${web.id}/network/probe`, {
+  test('a tcp probe from inside an app returns the station result and its firewall verdict', async () => {
+    const reply = await probe(`/v1/apps/${web.id}/network/probe`, {
       to: 'db.internal',
       port: 5432,
     })
 
     assert.equal(reply.status, 200)
-    assert.equal(reply.body.service, 'web')
+    assert.equal(reply.body.app, 'web')
     assert.equal(reply.body.kind, 'tcp')
     assert.equal(reply.body.to, 'db.internal')
     assert.equal(reply.body.port, 5432)
@@ -437,10 +451,17 @@ describe('network probe', () => {
       verdict: 'accept',
       path: 'same_environment',
     })
+    const asToken = await post(`/v1/apps/${web.id}/network/probe`, {
+      to: 'db.internal',
+      port: 5432,
+    })
+
+    assert.equal(asToken.status, 202, asToken.text)
+    assert.equal(asToken.body.status, 'waiting')
   })
 
   test('a dns probe returns the resolver answer', async () => {
-    const reply = await post(`/v1/services/${web.id}/network/probe`, {
+    const reply = await probe(`/v1/apps/${web.id}/network/probe`, {
       to: 'db.internal',
       kind: 'dns',
     })
@@ -459,7 +480,7 @@ describe('network probe', () => {
   })
 
   test('rejects an out-of-range timeout', async () => {
-    const reply = await post(`/v1/services/${web.id}/network/probe`, {
+    const reply = await probe(`/v1/apps/${web.id}/network/probe`, {
       to: 'db.internal',
       port: 5432,
       timeout_s: 9999,
@@ -474,11 +495,11 @@ describe('network probe', () => {
     const key = await mintToken(h, [
       {
         project_id: project.id,
-        environment_id: prod,
+        target: 'production',
         level: 'read',
       },
     ])
-    const reply = await h.call('POST', `/v1/services/${web.id}/network/probe`, {
+    const reply = await h.call('POST', `/v1/apps/${web.id}/network/probe`, {
       token: key,
       body: {
         to: 'db.internal',
@@ -490,8 +511,8 @@ describe('network probe', () => {
     assert.equal(reply.body.error.code, 'FORBIDDEN_SCOPE')
   })
 
-  test('probes are rate limited per service', async () => {
-    const limited = await createService(h, prod, {
+  test('probes are rate limited per app', async () => {
+    const limited = await createApp(h, prod, {
       name: 'limited',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -508,7 +529,7 @@ describe('network probe', () => {
     for (let i = 0; i < 8; i++) {
       statuses.push(
         (
-          await post(`/v1/services/${limited.id}/network/probe`, {
+          await probe(`/v1/apps/${limited.id}/network/probe`, {
             to: 'db.internal',
             port: 5432,
           })
@@ -518,7 +539,7 @@ describe('network probe', () => {
 
     assert.deepEqual(statuses.slice(0, 6), [200, 200, 200, 200, 200, 200])
     assert.equal(statuses[6], 429)
-    const again = await post(`/v1/services/${limited.id}/network/probe`, {
+    const again = await probe(`/v1/apps/${limited.id}/network/probe`, {
       to: 'db.internal',
       port: 5432,
     })
@@ -529,11 +550,11 @@ describe('network probe', () => {
 })
 
 describe('connections and dns log', () => {
-  test('connections group live flows by peer with service peers named', async () => {
-    const reply = await get(`/v1/services/${web.id}/connections`)
+  test('connections group live flows by peer with app peers named', async () => {
+    const reply = await get(`/v1/apps/${web.id}/connections`)
 
     assert.equal(reply.status, 200)
-    assert.deepEqual(reply.body.service, {
+    assert.deepEqual(reply.body.app, {
       id: web.id,
       name: 'web',
     })
@@ -544,7 +565,7 @@ describe('connections and dns log', () => {
   })
 
   test('the dns log carries the resolver ring as untrusted data', async () => {
-    const reply = await get(`/v1/services/${web.id}/dns-log?tail=5`)
+    const reply = await get(`/v1/apps/${web.id}/dns-log?tail=5`)
 
     assert.equal(reply.status, 200)
     assert.equal(reply.body.untrusted.source, 'resolver log')
@@ -553,29 +574,29 @@ describe('connections and dns log', () => {
   })
 
   test('tail is bounded', async () => {
-    assert.equal((await get(`/v1/services/${web.id}/dns-log?tail=0`)).status, 400)
-    assert.equal((await get(`/v1/services/${web.id}/dns-log?tail=201`)).status, 400)
+    assert.equal((await get(`/v1/apps/${web.id}/dns-log?tail=0`)).status, 400)
+    assert.equal((await get(`/v1/apps/${web.id}/dns-log?tail=201`)).status, 400)
   })
 })
 
 describe('station offline', () => {
-  test('connections, dns log and probe answer STATION_OFFLINE and the map and explain mark facts stale', async () => {
+  test('connections, dns log and probe answer SERVER_OFFLINE and the map and explain mark facts stale', async () => {
     await station.close()
     await station.waitFor(() => !h.deps.stations.isConnected(station.stationId), 3000, 'disconnect')
 
     for (const reply of [
-      await get(`/v1/services/${web.id}/connections`),
-      await get(`/v1/services/${web.id}/dns-log`),
-      await post(`/v1/services/${web.id}/network/probe`, {
+      await get(`/v1/apps/${web.id}/connections`),
+      await get(`/v1/apps/${web.id}/dns-log`),
+      await probe(`/v1/apps/${web.id}/network/probe`, {
         to: 'db.internal',
         port: 5432,
       }),
     ]) {
       assert.equal(reply.status, 503)
-      assert.equal(reply.body.error.code, 'STATION_OFFLINE')
+      assert.equal(reply.body.error.code, 'SERVER_OFFLINE')
     }
 
-    const map = await get(`/v1/environments/${prod}/network`)
+    const map = await get(placed(h, prod, `network`))
 
     assert.equal(map.status, 200)
     assert.equal(map.body.subnets[0].stale, true)
@@ -588,7 +609,7 @@ describe('station offline', () => {
     const source = reply.body.hops.find((hop: any) => hop.hop === 'source')
 
     assert.equal(source.status, 'unknown')
-    assert.equal(source.code, 'STATION_STALE')
+    assert.equal(source.code, 'SERVER_STALE')
     assert.notEqual(reply.body.verdict, 'reachable')
   })
 })

@@ -1,1 +1,0 @@
-ALTER TABLE `sandbox_snapshot` ADD `settings` text DEFAULT '{"network":"isolated","docker":false,"egress":{"mode":"open","domains":[]},"command":null,"ttl_s":3600}' NOT NULL;

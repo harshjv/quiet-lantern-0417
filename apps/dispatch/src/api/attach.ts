@@ -6,7 +6,7 @@ import { Value } from '@sinclair/typebox/value'
 import { eq } from 'drizzle-orm'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 
-import { runTerminalStatuses, sandboxExecLimits } from '@stationly/protocol'
+import { machineExecLimits, runTerminalStatuses } from '@stationly/protocol'
 
 import { authenticate, type Principal } from '../auth/principal.ts'
 import { run } from '../db/schema.ts'
@@ -17,11 +17,11 @@ import { can, requireHuman } from './access.ts'
 import { assignRequestId, audit, type Deps } from './context.ts'
 import { requireLink } from './deployments.ts'
 import { ApiError, envelope } from './errors.ts'
-import { runOwner, sandboxById } from './lookup.ts'
+import { isProduction, machineById, runOwner } from './lookup.ts'
 import { pollUntil, runRow } from './runs.ts'
 
 const attachPath = /^\/v1\/runs\/(run_[0-9A-HJKMNP-TV-Z]{26})\/attach$/
-const forwardPath = /^\/v1\/sandboxes\/(sbx_[0-9A-HJKMNP-TV-Z]{26})\/forward$/
+const forwardPath = /^\/v1\/machines\/(sbx_[0-9A-HJKMNP-TV-Z]{26})\/forward$/
 const exitWaitMs = 10_000
 
 const requestOf = (req: IncomingMessage) => {
@@ -127,7 +127,7 @@ export const createAttachServer = (deps: Deps) => {
     if (!can(principal, owner.target, 'deploy')) {
       throw new ApiError(
         'FORBIDDEN_SCOPE',
-        'Attaching to a shell needs deploy on its environment.',
+        'Attaching to a shell needs deploy on its production or preview.',
         undefined,
         {
           required: {
@@ -180,14 +180,14 @@ export const createAttachServer = (deps: Deps) => {
     const request = requestOf(req)
     const requestId = assignRequestId(request)
     const url = new URL(request.url)
-    const sandboxId = forwardPath.exec(url.pathname)![1]!
+    const machineId = forwardPath.exec(url.pathname)![1]!
     const principal: Principal = await authenticate(db, deps.auth, request)
-    const ctx = sandboxById(db, sandboxId)
+    const ctx = machineById(db, machineId)
 
     if (!can(principal, ctx.target, 'deploy')) {
       throw new ApiError(
         'FORBIDDEN_SCOPE',
-        'Forwarding a sandbox port needs deploy on its environment.',
+        'Forwarding a machine port needs deploy on its production or preview.',
         undefined,
         {
           required: {
@@ -198,19 +198,17 @@ export const createAttachServer = (deps: Deps) => {
       )
     }
 
-    if (ctx.environment.protected) {
-      requireHuman(principal, 'A port forward in a protected environment', {
-        environment_id: ctx.environment.id,
-      })
+    if (isProduction(ctx.target_row)) {
+      requireHuman(principal, 'A port forward in production', ctx.target)
     }
 
-    if (ctx.sandbox.status !== 'running') {
+    if (ctx.machine.status !== 'running') {
       throw new ApiError(
-        'SANDBOX_NOT_RUNNING',
-        `Sandbox ${ctx.sandbox.name} is ${ctx.sandbox.status}, so no port can be forwarded.`,
-        'Start the sandbox with start_sandbox, then forward again.',
+        'MACHINE_NOT_RUNNING',
+        `Machine ${ctx.machine.name} is ${ctx.machine.status}, so no port can be forwarded.`,
+        'Start the machine with start_machine, then forward again.',
         {
-          status: ctx.sandbox.status,
+          status: ctx.machine.status,
         },
       )
     }
@@ -233,18 +231,18 @@ export const createAttachServer = (deps: Deps) => {
       )
     }
 
-    if ((forwards.get(sandboxId) ?? 0) >= sandboxExecLimits.forwards) {
+    if ((forwards.get(machineId) ?? 0) >= machineExecLimits.forwards) {
       throw new ApiError(
         'RATE_LIMITED',
-        `Sandbox ${ctx.sandbox.name} already has ${sandboxExecLimits.forwards} forwards open.`,
+        `Machine ${ctx.machine.name} already has ${machineExecLimits.forwards} forwards open.`,
         'Close one forward, then open another.',
         {
-          limit: sandboxExecLimits.forwards,
+          limit: machineExecLimits.forwards,
         },
       )
     }
 
-    requireLink(stations, ctx.sandbox.station_id)
+    requireLink(stations, ctx.machine.server_id)
 
     return {
       request,
@@ -259,7 +257,7 @@ export const createAttachServer = (deps: Deps) => {
     const { run: r, principal, requestId } = admitted
 
     sessions.add(ws)
-    const stationId = admitted.owner.station_id
+    const stationId = admitted.owner.server_id
     let handle: StreamHandle | null = null
     let owed = 0
     let closed = false
@@ -384,7 +382,7 @@ export const createAttachServer = (deps: Deps) => {
 
       sendControl({
         type: 'error',
-        code: error instanceof StationRequestError ? error.code : 'STATION_OFFLINE',
+        code: error instanceof StationRequestError ? error.code : 'SERVER_OFFLINE',
         explanation,
       })
       ws.close(1011, 'run.start failed')
@@ -431,10 +429,10 @@ export const createAttachServer = (deps: Deps) => {
     admitted: Awaited<ReturnType<typeof admitForward>>,
   ) => {
     const { ctx, port, principal, requestId } = admitted
-    const sandboxId = ctx.sandbox.id
+    const machineId = ctx.machine.id
 
     sessions.add(ws)
-    forwards.set(sandboxId, (forwards.get(sandboxId) ?? 0) + 1)
+    forwards.set(machineId, (forwards.get(machineId) ?? 0) + 1)
     let handle: StreamHandle | null = null
     let owed = 0
     let closed = false
@@ -448,7 +446,7 @@ export const createAttachServer = (deps: Deps) => {
     ws.on('close', () => {
       closed = true
       sessions.delete(ws)
-      forwards.set(sandboxId, Math.max(0, (forwards.get(sandboxId) ?? 1) - 1))
+      forwards.set(machineId, Math.max(0, (forwards.get(machineId) ?? 1) - 1))
       handle?.cancel()
     })
     const inbox: Buffer[] = []
@@ -475,10 +473,10 @@ export const createAttachServer = (deps: Deps) => {
 
     try {
       handle = await stations.openStream(
-        ctx.sandbox.station_id,
+        ctx.machine.server_id,
         'forward.open',
         {
-          sandbox_id: sandboxId,
+          sandbox_id: machineId,
           port,
         },
         {
@@ -527,10 +525,10 @@ export const createAttachServer = (deps: Deps) => {
           request_id: requestId,
           idempotency_key: null,
         },
-        'sandbox.forward',
+        'machine.forward',
         {
-          entity: 'sandbox',
-          id: sandboxId,
+          entity: 'machine',
+          id: machineId,
         },
         {
           after: {
@@ -540,13 +538,13 @@ export const createAttachServer = (deps: Deps) => {
       )
       sendControl({
         type: 'forwarding',
-        sandbox_id: sandboxId,
+        machine_id: machineId,
         port,
       })
     } catch (error) {
       sendControl({
         type: 'error',
-        code: error instanceof StationRequestError ? error.code : 'STATION_OFFLINE',
+        code: error instanceof StationRequestError ? error.code : 'SERVER_OFFLINE',
         explanation: error instanceof Error ? error.message : String(error),
       })
       ws.close(1011, 'forward.open failed')

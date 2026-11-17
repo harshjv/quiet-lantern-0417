@@ -2,15 +2,18 @@ import { localOrigin, mintToken, startFakeStation, type Dispatch } from './dispa
 import type { FakeStation } from './fake-station.ts'
 import type { FakeRegistry } from './registry.ts'
 import {
-  createEnvironment,
+  approveWaiting,
+  createApp,
+  createMachine,
+  createPreview,
   createProject,
-  createSandbox,
-  createService,
+  placed,
+  productionId,
   rows,
   seedLockfile,
   waitForActive,
   waitForDeployment,
-  waitForSandbox,
+  waitForMachine,
 } from './seed.ts'
 
 export type World = {
@@ -19,12 +22,12 @@ export type World = {
   production: string
   staging: string
   locked: string
-  services: Record<string, string>
-  sandbox: string
+  apps: Record<string, string>
+  machine: string
   snapshot: string
-  lockedService: string
+  lockedApp: string
   scoped: string
-  staged: { id: string } | null
+  waiting: { id: string } | null
 }
 
 export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<World> => {
@@ -34,24 +37,14 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
   registry.publish('nginx:1.27')
   seedLockfile(h)
   const station = await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
   })
   const project = await createProject(h, 'shop')
-  const production = project.default_environment_id as string
-  const staging = (await createEnvironment(h, 'shop', 'staging')).id as string
-  const locked = (
-    await createEnvironment(
-      h,
-      'shop',
-      'locked',
-      {
-        protected: true,
-      },
-      true,
-    )
-  ).id as string
+  const production = productionId(h, project.id)
+  const staging = (await createPreview(h, 'shop', 'staging')).id as string
+  const locked = production
 
-  const db = await createService(h, production, {
+  const db = await createApp(h, production, {
     name: 'db',
     ref: 'postgres:17',
     ports: [
@@ -70,7 +63,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       strategy: 'replace',
     },
   })
-  const web = await createService(h, production, {
+  const web = await createApp(h, production, {
     name: 'web',
     ref: 'nginx:1.27',
     ports: [
@@ -79,31 +72,31 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       },
     ],
     deploy: true,
-    variables: [
+    keys: [
       {
-        key: 'DATABASE_URL',
+        name: 'DATABASE_URL',
         kind: 'reference',
         reference: 'postgres://app@${{db.HOST}}:5432/app',
       },
       {
-        key: 'API_KEY',
+        name: 'API_KEY',
         kind: 'sealed',
         value: 'hunter2',
       },
       {
-        key: 'MODE',
+        name: 'MODE',
         kind: 'literal',
         value: 'production',
       },
     ],
   })
-  const worker = await createService(h, production, {
+  const worker = await createApp(h, production, {
     name: 'worker',
     kind: 'worker',
     ref: 'nginx:1.27',
     deploy: true,
   })
-  const cron = await createService(h, production, {
+  const cron = await createApp(h, production, {
     name: 'nightly',
     kind: 'cron',
     ref: 'nginx:1.27',
@@ -116,7 +109,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       },
     },
   })
-  const stagingWeb = await createService(h, staging, {
+  const stagingWeb = await createApp(h, staging, {
     name: 'web',
     ref: 'nginx:1.27',
     ports: [
@@ -126,7 +119,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     ],
     deploy: true,
   })
-  const lockedCreate = await h.call('POST', `/v1/environments/${locked}/services`, {
+  const lockedCreate = await h.call('POST', placed(h, locked, 'apps'), {
     cookie: h.admin.cookie,
     origin: localOrigin,
     body: {
@@ -144,44 +137,58 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       deploy_on_create: false,
     },
   })
-  const accepted = await h.call('POST', `/v1/staged-changes/${lockedCreate.body.id}/accept`, {
+  const approved = await h.call('POST', `/v1/approvals/${lockedCreate.body.id}/decision`, {
+    body: {
+      decision: 'approve',
+    },
     cookie: h.admin.cookie,
     origin: localOrigin,
-    body: {},
   })
 
-  if (accepted.status !== 200) {
-    throw new Error(`could not accept the staged service: ${accepted.text}`)
+  if (approved.status !== 200) {
+    throw new Error(`could not approve the waiting app: ${approved.text}`)
   }
 
-  const lockedService = {
-    id: rows<{ id: string }>(h, 'select id from service where environment_id = ?', locked)[0]!.id,
+  const lockedApp = {
+    id: rows<{ id: string }>(
+      h,
+      "select id from app where target_id = ? and name = 'api'",
+      locked,
+    )[0]!.id,
   }
 
-  for (const created of [db, web, worker, stagingWeb]) {
-    await waitForDeployment(h, created.deployments[0].id, 'active')
+  await waitForDeployment(h, stagingWeb.deployments[0].id, 'active')
+
+  for (const created of [db, web, worker]) {
+    await waitForActive(h, created.id)
   }
 
   await waitForActive(h, db.id)
 
   const webPort = web.ports[0].id as string
 
-  await h.call('POST', `/v1/ports/${webPort}/domains`, {
-    token,
-    body: {
-      generated: true,
-    },
-  })
-  await h.call('POST', `/v1/ports/${db.ports[0].id}/port-allocations`, {
-    token,
-    body: {},
-  })
-  await h.call('PATCH', `/v1/services/${stagingWeb.id}/variables`, {
+  await approveWaiting(
+    h,
+    await h.call('POST', `/v1/ports/${webPort}/domains`, {
+      token,
+      body: {
+        generated: true,
+      },
+    }),
+  )
+  await approveWaiting(
+    h,
+    await h.call('POST', `/v1/ports/${db.ports[0].id}/port-allocations`, {
+      token,
+      body: {},
+    }),
+  )
+  await h.call('PATCH', `/v1/apps/${stagingWeb.id}/keys`, {
     token,
     body: {
       set: [
         {
-          key: 'MODE',
+          name: 'MODE',
           kind: 'literal',
           value: 'staging',
         },
@@ -190,7 +197,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     },
   })
 
-  const box = await createSandbox(h, production, {
+  const box = await createMachine(h, staging, {
     name: 'scratch',
     image: {
       ref: 'nginx:1.27',
@@ -207,15 +214,15 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     },
   })
 
-  await waitForSandbox(h, box.id, 'running')
-  const snapshot = await h.call('POST', `/v1/sandboxes/${box.id}/snapshots`, {
+  await waitForMachine(h, box.id, 'running')
+  const snapshot = await h.call('POST', `/v1/machines/${box.id}/snapshots`, {
     token,
     body: {
       name: 'seed',
     },
   })
 
-  await createSandbox(h, production, {
+  await createMachine(h, staging, {
     name: 'parked',
     image: {
       ref: 'nginx:1.27',
@@ -228,13 +235,13 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     [
       {
         project_id: project.id,
-        environment_id: locked,
+        target: 'production',
         level: 'deploy',
       },
     ],
     'agent',
   )
-  const stagedReply = await h.call('PATCH', `/v1/services/${lockedService.id}`, {
+  const waitingReply = await h.call('PATCH', `/v1/apps/${lockedApp.id}`, {
     token: scoped,
     body: {
       limits: {
@@ -252,17 +259,17 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     production,
     staging,
     locked,
-    sandbox: box.id,
+    machine: box.id,
     snapshot: snapshot.body.id,
-    services: {
+    apps: {
       db: db.id,
       web: web.id,
       worker: worker.id,
       cron: cron.id,
       stagingWeb: stagingWeb.id,
     },
-    lockedService: lockedService.id,
+    lockedApp: lockedApp.id,
     scoped,
-    staged: stagedReply.status === 202 ? stagedReply.body : null,
+    waiting: waitingReply.status === 202 ? waitingReply.body : null,
   }
 }

@@ -2,7 +2,7 @@ import type { ErrorCode, RemedyCode } from '@stationly/protocol'
 import { bytesText } from '@stationly/protocol/format'
 
 import type { NetworkMap } from './api.ts'
-import { commands, type Scope, type ServiceScope } from './commands.ts'
+import { commands, scopeLabel, type AppScope, type Scope } from './commands.ts'
 
 export type Fix = {
   code: string
@@ -14,7 +14,7 @@ export type Fix = {
 }
 
 export type Subject = {
-  kind: 'service' | 'sandbox'
+  kind: 'app' | 'machine'
   id: string
   name: string
 }
@@ -26,7 +26,7 @@ export type FixContext = Scope & {
     id: string
     build: string | null
   }
-  station?: string
+  server?: string
 }
 
 export type Run = {
@@ -34,25 +34,25 @@ export type Run = {
 } & (
   | {
       tool: 'deploy'
-      service: string
+      app: string
     }
   | {
-      tool: 'start_service'
-      service: string
+      tool: 'start_app'
+      app: string
     }
   | {
       tool: 'rollback'
-      service: string
+      app: string
       deployment: string
     }
   | {
-      tool: 'update_service'
-      service: string
+      tool: 'update_app'
+      app: string
       body: Record<string, unknown>
     }
   | {
-      tool: 'start_sandbox'
-      sandbox: string
+      tool: 'start_machine'
+      machine: string
     }
 )
 
@@ -69,7 +69,7 @@ export type FixPlan = {
 }
 
 type Target = Subject & {
-  scope: ServiceScope
+  scope: AppScope
 }
 
 type Input = {
@@ -104,39 +104,39 @@ const deployTarget: Remedy = {
     run: {
       tool: 'deploy',
       name: target.name,
-      service: target.id,
+      app: target.id,
     },
   }),
   command: ({ target }) => commands.deploy(target.scope),
 }
 
-const startService: Remedy = {
+const startApp: Remedy = {
   ask: ({ target }) => `start ${target.name} and check that it becomes healthy`,
   button: ({ target }) => ({
     label: `Start ${target.name}`,
     run: {
-      tool: 'start_service',
+      tool: 'start_app',
       name: target.name,
-      service: target.id,
+      app: target.id,
     },
   }),
-  command: ({ target }) => commands.startService(target.scope),
+  command: ({ target }) => commands.startApp(target.scope),
 }
 
-const startSandbox: Remedy = {
-  ask: ({ target }) => `start the sandbox ${target.name}`,
+const startMachine: Remedy = {
+  ask: ({ target }) => `start the machine ${target.name}`,
   button: ({ target }) => ({
     label: `Start ${target.name}`,
     run: {
-      tool: 'start_sandbox',
+      tool: 'start_machine',
       name: target.name,
-      sandbox: target.id,
+      machine: target.id,
     },
   }),
-  command: ({ target, context }) => commands.startSandbox(context, target.name),
+  command: ({ target, context }) => commands.startMachine(context, target.name),
 }
 
-const starter = ({ target }: Input) => (target.kind === 'sandbox' ? startSandbox : startService)
+const starter = ({ target }: Input) => (target.kind === 'machine' ? startMachine : startApp)
 
 const logsCommand = ({ target, context }: Input) =>
   context.deployment
@@ -159,9 +159,9 @@ export const remedies: Record<RemedyCode, Remedy> = {
         ? {
             label: `Raise memory to ${bytesText(memory)} and redeploy`,
             run: {
-              tool: 'update_service',
+              tool: 'update_app',
               name: target.name,
-              service: target.id,
+              app: target.id,
               body: {
                 limits: input.limits,
               },
@@ -205,7 +205,7 @@ export const remedies: Record<RemedyCode, Remedy> = {
             run: {
               tool: 'rollback',
               name: target.name,
-              service: target.id,
+              app: target.id,
               deployment,
             },
           }
@@ -243,15 +243,14 @@ export const remedies: Record<RemedyCode, Remedy> = {
     ask: ({ target }) => `declare the port ${target.name} listens on as one of its ports`,
   },
   USE_INTERNAL_NAME: {
-    ask: ({ context }) =>
-      `make ${context.subject.name} reach the other service by its .internal name`,
+    ask: ({ context }) => `make ${context.subject.name} reach the other app by its .internal name`,
   },
   ATTACH_SHARED: {
-    ask: ({ context }) => `attach the shared service ${context.subject.name} needs`,
+    ask: ({ context }) => `attach the shared app ${context.subject.name} needs`,
   },
   EXPOSE_TCP: {
     ask: ({ target, input }) =>
-      `expose ${target.name}’s TCP port${count(input.port) === null ? '' : ` ${count(input.port)}`} on the station`,
+      `expose ${target.name}’s TCP port${count(input.port) === null ? '' : ` ${count(input.port)}`} on the server`,
     command: ({ input }) => commands.exposeTcp(text(input.port_id)),
   },
   ADD_DOMAIN: {
@@ -260,15 +259,15 @@ export const remedies: Record<RemedyCode, Remedy> = {
   },
   WAIT_FOR_APPLY: {
     ask: ({ target }) =>
-      `find out why the station hasn’t applied ${target.name}’s latest settings and fix what blocks it`,
+      `find out why the server hasn’t applied ${target.name}’s latest settings and fix what blocks it`,
   },
   CHECK_DNS_RECORD: {
     ask: ({ target }) =>
-      `check the DNS records of ${target.name}’s domains and point them at the station’s public address`,
+      `check the DNS records of ${target.name}’s domains and point them at the server’s public address`,
   },
   SET_PUBLIC_ADDRESS: {
-    ask: () => 'set the station’s public address',
-    command: ({ context }) => (context.station ? commands.setPublicAddress(context.station) : null),
+    ask: () => 'set the server’s public address',
+    command: ({ context }) => (context.server ? commands.setPublicAddress(context.server) : null),
   },
   RUN_PROBE: {
     ask: ({ context, input }) =>
@@ -276,11 +275,11 @@ export const remedies: Record<RemedyCode, Remedy> = {
     command: ({ context, input }) => {
       const to = text(input.to)
 
-      return to && context.subject.kind === 'service'
+      return to && context.subject.kind === 'app'
         ? commands.probe(
             {
               ...context,
-              service: context.subject.name,
+              app: context.subject.name,
             },
             to,
             count(input.port),
@@ -290,11 +289,11 @@ export const remedies: Record<RemedyCode, Remedy> = {
   },
   ALLOW_DOMAIN: {
     ask: ({ context }) =>
-      `add the destination to the sandbox ${context.subject.name}’s outbound allowlist`,
+      `add the destination to the machine ${context.subject.name}’s outbound allowlist`,
   },
   JOIN_ENVIRONMENT: {
     ask: ({ context }) =>
-      `move the sandbox ${context.subject.name} onto the environment network so it can reach services`,
+      `move the machine ${context.subject.name} onto its network so it can reach apps`,
   },
 }
 
@@ -302,25 +301,25 @@ const isRemedy = (code: string): code is RemedyCode => Object.hasOwn(remedies, c
 
 const targetOf = (fix: Fix, context: FixContext): Target => {
   const input = fix.action?.input ?? {}
-  const sandbox = text(input.sandbox)
-  const id = text(input.service) ?? sandbox ?? context.subject.id
+  const machine = text(input.machine)
+  const id = text(input.app) ?? machine ?? context.subject.id
   const name =
     id === context.subject.id ? context.subject.name : (context.names?.[id] ?? context.subject.name)
 
   return {
-    kind: sandbox ? 'sandbox' : id === context.subject.id ? context.subject.kind : 'service',
+    kind: machine ? 'machine' : id === context.subject.id ? context.subject.kind : 'app',
     id,
     name,
     scope: {
       project: context.project,
-      environment: context.environment,
-      service: name,
+      preview: context.preview,
+      app: name,
     },
   }
 }
 
 const prompt = (ask: string, context: FixContext) =>
-  `In ${context.project}/${context.environment} on Stationly, ${ask}${/[.!?]$/.test(ask) ? '' : '.'}`
+  `In ${scopeLabel(context)} on Stationly, ${ask}${/[.!?]$/.test(ask) ? '' : '.'}`
 
 export const planFix = (fix: Fix, context: FixContext): FixPlan => {
   const target = targetOf(fix, context)
@@ -357,13 +356,13 @@ export const planFix = (fix: Fix, context: FixContext): FixPlan => {
 
 type Finding = NetworkMap['warnings'][number]
 type FindingCode = Finding['code']
-type MapService = NetworkMap['services'][number]
+type MapApp = NetworkMap['apps'][number]
 
 export const findingRemedy: Record<FindingCode, RemedyCode | null> = {
   SWITCH_NO_TARGET: 'DEPLOY_TARGET',
   SWITCH_PENDING: 'WAIT_FOR_APPLY',
   SWITCH_MISMATCH: 'WAIT_FOR_APPLY',
-  NAME_NOT_IN_ENVIRONMENT: 'USE_INTERNAL_NAME',
+  NAME_NOT_IN_NETWORK: 'USE_INTERNAL_NAME',
   PATH_BLOCKED: null,
   DOMAIN_NOT_ALLOWED: 'ALLOW_DOMAIN',
   TARGET_NOT_RUNNING: 'DEPLOY_TARGET',
@@ -376,17 +375,13 @@ export const findingRemedy: Record<FindingCode, RemedyCode | null> = {
   WEB_PORTS_CLOSED: 'ADD_DOMAIN',
   ROUTE_NOT_APPLIED: 'WAIT_FOR_APPLY',
   NO_PUBLIC_ADDRESS: 'SET_PUBLIC_ADDRESS',
-  STATION_STALE: null,
+  SERVER_STALE: null,
 }
 
-const startable = (code: RemedyCode, service: MapService): RemedyCode =>
-  code === 'DEPLOY_TARGET' && service.status === 'stopped' ? 'START_TARGET' : code
+const startable = (code: RemedyCode, app: MapApp): RemedyCode =>
+  code === 'DEPLOY_TARGET' && app.status === 'stopped' ? 'START_TARGET' : code
 
-export const findingPlan = (
-  finding: Finding,
-  services: MapService[],
-  scope: Scope,
-): FixPlan | null => {
+export const findingPlan = (finding: Finding, apps: MapApp[], scope: Scope): FixPlan | null => {
   const code = findingRemedy[finding.code]
 
   if (!code) {
@@ -394,32 +389,32 @@ export const findingPlan = (
   }
 
   const details = finding.details ?? {}
-  const service = services.find((s) => s.name === details.service)
+  const app = apps.find((s) => s.name === details.app)
 
-  if (!service) {
+  if (!app) {
     return null
   }
 
   return planFix(
     {
-      code: startable(code, service),
+      code: startable(code, app),
       text: finding.explanation,
     },
     {
       ...scope,
       subject: {
-        kind: 'service',
-        id: service.id,
-        name: service.name,
+        kind: 'app',
+        id: app.id,
+        name: app.name,
       },
-      station: text(details.station) ?? service.station_id,
+      server: text(details.server) ?? app.server_id,
     },
   )
 }
 
 export const errorRemedy: Partial<Record<ErrorCode, RemedyCode>> = {
   NO_CURRENT_DEPLOYMENT: 'DEPLOY_TARGET',
-  SANDBOX_NOT_RUNNING: 'START_TARGET',
+  MACHINE_NOT_RUNNING: 'START_TARGET',
 }
 
 const isErrorCode = (code: string): code is ErrorCode => Object.hasOwn(errorRemedy, code)

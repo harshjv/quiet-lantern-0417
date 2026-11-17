@@ -262,7 +262,7 @@ func Install(ctx context.Context, v *verify.Verifier, opts InstallOptions) (Inst
 	var dc *docker.Client
 	if opts.Pull {
 		if dc, err = docker.Connect(ctx); err != nil {
-			return fail(protocol.ErrorCodeStationOffline, "Start Docker.", "connect to Docker: %v", err)
+			return fail(protocol.ErrorCodeServerOffline, "Start Docker.", "connect to Docker: %v", err)
 		}
 		defer dc.Close()
 	}

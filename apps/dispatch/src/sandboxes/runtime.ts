@@ -1,25 +1,25 @@
-import { adviseSandboxRuntime, type sandboxRuntimeValues } from '@stationly/protocol'
+import { adviseMachineRuntime, type machineRuntimeValues } from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
-import type { station } from '../db/schema.ts'
+import type { server } from '../db/schema.ts'
 
-type StationRow = typeof station.$inferSelect
+type StationRow = typeof server.$inferSelect
 
-type SandboxRuntimeValue = (typeof sandboxRuntimeValues)[number]
+type MachineRuntimeValue = (typeof machineRuntimeValues)[number]
 
 export const offeredRuntimes = (st: Pick<StationRow, 'capabilities'>) =>
   st.capabilities?.sandboxes?.runtimes ?? []
 
-export const sandboxRuntimeAdvice = (st: Pick<StationRow, 'capabilities'>) => {
+export const machineRuntimeAdvice = (st: Pick<StationRow, 'capabilities'>) => {
   const host = st.capabilities?.host
 
-  return host ? adviseSandboxRuntime(host, offeredRuntimes(st)) : null
+  return host ? adviseMachineRuntime(host, offeredRuntimes(st)) : null
 }
 
 const isOffered = (
   st: Pick<StationRow, 'capabilities'>,
   runtime: string,
-): runtime is SandboxRuntimeValue => (offeredRuntimes(st) as string[]).includes(runtime)
+): runtime is MachineRuntimeValue => (offeredRuntimes(st) as string[]).includes(runtime)
 
 export const runtimeRefusal = (
   row: Pick<StationRow, 'name' | 'capabilities'>,
@@ -31,13 +31,13 @@ export const runtimeRefusal = (
 
   const offered = offeredRuntimes(row)
 
-  return `station ${row.name} does not offer the sandbox runtime ${runtime}; it offers ${offered.length ? offered.join(', ') : 'none'}`
+  return `server ${row.name} does not offer the machine runtime ${runtime}; it offers ${offered.length ? offered.join(', ') : 'none'}`
 }
 
 export const defaultRuntime = (st: StationRow) =>
-  st.default_sandbox_runtime ?? sandboxRuntimeAdvice(st)?.default ?? offeredRuntimes(st)[0]
+  st.default_machine_runtime ?? machineRuntimeAdvice(st)?.default ?? offeredRuntimes(st)[0]
 
-export const requireRuntime = (st: StationRow, requested: SandboxRuntimeValue | undefined) => {
+export const requireRuntime = (st: StationRow, requested: MachineRuntimeValue | undefined) => {
   const offered = offeredRuntimes(st)
   const runtime = requested ?? defaultRuntime(st)
 
@@ -46,15 +46,15 @@ export const requireRuntime = (st: StationRow, requested: SandboxRuntimeValue | 
   }
 
   return fail(
-    'SANDBOX_RUNTIME_UNAVAILABLE',
+    'MACHINE_RUNTIME_UNAVAILABLE',
     runtime === undefined
-      ? `Station ${st.name} offers no sandbox runtime.`
-      : `Station ${st.name} does not offer the sandbox runtime ${runtime}; it offers ${offered.length ? offered.join(', ') : 'none'}.`,
+      ? `Server ${st.name} offers no machine runtime.`
+      : `Server ${st.name} does not offer the machine runtime ${runtime}; it offers ${offered.length ? offered.join(', ') : 'none'}.`,
     offered.length
-      ? `Create the sandbox with runtime ${offered[0]}, or on a station that offers ${runtime}.`
-      : `Upgrade stationd on ${st.name} with sly platform upgrade so it reports its sandbox runtimes, then retry.`,
+      ? `Create the machine with runtime ${offered[0]}, or on a server that offers ${runtime}.`
+      : `Upgrade stationd on ${st.name} with sly platform upgrade so it reports its machine runtimes, then retry.`,
     {
-      station: st.id,
+      server: st.id,
       runtime: runtime ?? null,
       offered,
     },

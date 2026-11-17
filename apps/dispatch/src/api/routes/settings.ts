@@ -8,7 +8,7 @@ import { commit } from '../changes.ts'
 import { audit } from '../context.ts'
 import type { Kit } from '../kit.ts'
 import { listSettings, planSettings, resetPasskeys } from '../settings.ts'
-import { Actor, Page, replies, Staged } from '../shapes.ts'
+import { Actor, ApprovalDetail, Page, replies } from '../shapes.ts'
 
 const Setting = Type.Object(
   {
@@ -70,7 +70,7 @@ export const settingRoutes = (kit: Kit) => {
             kit.deps,
             call,
             {
-              environment: null,
+              target: null,
               protect,
             },
             plan.set,
@@ -98,7 +98,7 @@ export const settingRoutes = (kit: Kit) => {
         })
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         audit(
@@ -138,7 +138,7 @@ export const settingRoutes = (kit: Kit) => {
         }),
         response: replies({
           200: Page(Setting),
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )

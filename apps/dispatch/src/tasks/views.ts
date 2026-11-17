@@ -5,7 +5,7 @@ import { invalid } from '../api/errors.ts'
 import type { Redactor } from '../api/redaction.ts'
 import type { Task } from '../api/shapes.ts'
 import type { Db } from '../db/client.ts'
-import { conversation, environment, project, run, sandbox, task, task_inbox } from '../db/schema.ts'
+import { conversation, machine, project, run, task, task_inbox } from '../db/schema.ts'
 import { setupFailureOf } from '../sandboxes/setup-failure.ts'
 
 import { queuePosition } from './machine.ts'
@@ -77,7 +77,7 @@ const pendingRun = (setup: RunRow | undefined) =>
 const projectSetupOf = (
   db: Db,
   row: TaskRow,
-  box: typeof sandbox.$inferSelect | undefined,
+  box: typeof machine.$inferSelect | undefined,
   now: number,
 ) => {
   const machineRun = runOf(db, box?.workspace?.setup_run_id)
@@ -134,7 +134,7 @@ const projectSetupOf = (
       }
 }
 
-const setupOf = (db: Db, box: typeof sandbox.$inferSelect | undefined, now: number) => {
+const setupOf = (db: Db, box: typeof machine.$inferSelect | undefined, now: number) => {
   const runId = box?.workspace?.setup_run_id ?? null
 
   if (!box || box.status !== 'running') {
@@ -213,7 +213,7 @@ const previewView = (db: Db, row: TaskRow) => {
 
   return preview
     ? {
-        environment_id: preview.id,
+        id: preview.id,
         name: preview.name,
         url: previewAddress(db, preview.id),
       }
@@ -221,9 +221,8 @@ const previewView = (db: Db, row: TaskRow) => {
 }
 
 export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now()): TaskItem => {
-  const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+  const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()
-  const env = db.select().from(environment).where(eq(environment.id, row.environment_id)).get()
   const pending =
     row.status === 'setting_up'
       ? row.machine === 'project'
@@ -238,10 +237,7 @@ export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now(
       id: row.project_id,
       name: proj?.name ?? row.project_id,
     },
-    environment: {
-      id: row.environment_id,
-      name: env?.name ?? row.environment_id,
-    },
+    preview_id: row.preview_id,
     owner: {
       type: row.owner.type,
       id: row.owner.id,
@@ -252,11 +248,11 @@ export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now(
     branch: row.branch,
     agent: row.agent,
     model: modelOf(db, row),
-    sandbox: {
-      id: row.sandbox_id,
-      name: box?.name ?? row.sandbox_id,
+    machine: {
+      id: row.machine_id,
+      name: box?.name ?? row.machine_id,
+      kind: row.machine,
     },
-    machine: row.machine,
     port: row.port,
     ship: shipOf(db, row.id),
     preview: previewView(db, row),
@@ -295,7 +291,7 @@ export const listTasks = (
     limit: number
     cursor: string | undefined
     archived: boolean
-    redactor: (sandboxId: string) => Redactor
+    redactor: (machineId: string) => Redactor
   },
 ) => {
   const after = options.cursor ? decodeCursor(options.cursor) : null
@@ -318,7 +314,7 @@ export const listTasks = (
   const now = Date.now()
 
   return {
-    items: page.map((row) => taskItem(db, row, options.redactor(row.sandbox_id), now)),
+    items: page.map((row) => taskItem(db, row, options.redactor(row.machine_id), now)),
     next_cursor:
       rows.length > options.limit && page.length
         ? Buffer.from(page.at(-1)!.id).toString('base64url')

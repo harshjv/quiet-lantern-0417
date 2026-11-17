@@ -1,18 +1,11 @@
-import type {
-  DeploymentStatus,
-  Sandbox,
-  SandboxStatus,
-  Service,
-  ServiceStatus,
-  StagedChange,
-} from '@/lib/api'
+import type { App, Approval, AppStatus, DeploymentStatus, Machine, MachineStatus } from '@/lib/api'
 import {
+  approvalStatus,
+  appStatus,
+  appStatusReason,
   deploymentStatus,
-  sandboxReason,
-  sandboxStatus,
-  serviceStatus,
-  serviceStatusReason,
-  stagedStatus,
+  machineReason,
+  machineStatus,
   type Status,
 } from '@/lib/labels'
 import { isInFlight, isTransient } from '@/lib/status'
@@ -21,41 +14,40 @@ import { cn } from '@/lib/utils'
 
 const crossfade = 'motion-safe:transition-colors motion-safe:duration-200'
 
-export function ServiceStatusDot({
-  status,
-  className,
-}: {
-  status: ServiceStatus
-  className?: string
-}) {
+export function AppStatusDot({ status, className }: { status: AppStatus; className?: string }) {
   return (
     <span className={cn('relative inline-flex size-2 shrink-0', className)} aria-hidden>
-      {status === 'amber' && (
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-60 motion-reduce:hidden" />
+      {status === 'deploying' && (
+        <span
+          className={cn(
+            'absolute inline-flex size-full animate-ping rounded-full opacity-60 motion-reduce:hidden',
+            toneDot[appStatus[status].tone],
+          )}
+        />
       )}
       <span
         className={cn(
           'relative inline-flex size-2 rounded-full',
           crossfade,
-          toneDot[serviceStatus[status].tone],
+          toneDot[appStatus[status].tone],
         )}
       />
     </span>
   )
 }
 
-export function ServiceStatus({
+export function AppStatus({
   status,
   reason,
 }: {
-  status: ServiceStatus
-  reason?: Service['status_reason']
+  status: AppStatus
+  reason?: App['status_reason']
 }) {
   return (
     <span className="inline-flex items-center gap-2 text-sm">
-      <ServiceStatusDot status={status} />
-      <span>{serviceStatus[status].label}</span>
-      {reason && <span className="text-muted-foreground">{serviceStatusReason[reason]}</span>}
+      <AppStatusDot status={status} />
+      <span>{appStatus[status].label}</span>
+      {reason && <span className="text-muted-foreground">{appStatusReason[reason]}</span>}
     </span>
   )
 }
@@ -94,23 +86,23 @@ export function DeploymentStatusBadge({ status }: { status: DeploymentStatus }) 
   return <StatusBadge status={deploymentStatus[status]} busy={isInFlight(status)} />
 }
 
-export function StagedStatusBadge({ status }: { status: StagedChange['status'] }) {
-  return <StatusBadge status={stagedStatus[status]} />
+export function ApprovalStatusBadge({ status }: { status: Approval['status'] }) {
+  return <StatusBadge status={approvalStatus[status]} />
 }
 
-export function SandboxStatusBadge({
+export function MachineStatusBadge({
   status,
   reason,
 }: {
-  status: SandboxStatus
-  reason?: Sandbox['status_reason']
+  status: MachineStatus
+  reason?: Machine['status_reason']
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <StatusBadge status={sandboxStatus[status]} busy={isTransient(status)} />
+      <StatusBadge status={machineStatus[status]} busy={isTransient(status)} />
       {reason && status !== 'running' && (
         <span className="hidden text-xs text-muted-foreground sm:inline">
-          {sandboxReason[reason]}
+          {machineReason[reason]}
         </span>
       )}
     </span>

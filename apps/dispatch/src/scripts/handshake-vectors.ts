@@ -69,7 +69,7 @@ export const handshakeVectorsCommand = (program: Command) =>
   program
     .command('handshake-vectors')
     .description(
-      'Write the station handshake test vectors to packages/protocol/testdata/handshake-vectors.ts.json',
+      'Write the server handshake test vectors to packages/protocol/testdata/handshake-vectors.ts.json',
     )
     .action(() => {
       mkdirSync(vectorsDir, {

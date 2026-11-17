@@ -18,41 +18,41 @@ export type ErrorBody = Failure<V1['me']['get']>['value']['error']
 
 export type Me = Data<V1['me']['get']>
 export type Project = Data<ReturnType<V1['projects']>['get']>
-export type Environment = Data<ReturnType<V1['environments']>['get']>
-export type NetworkMap = Data<ReturnType<V1['environments']>['network']['get']>
-export type Connections = Data<ReturnType<V1['services']>['connections']['get']>
-export type Explanation = Data<ReturnType<V1['environments']>['network']['explain']['get']>
+export type Preview = Data<ReturnType<V1['previews']>['get']>
+export type NetworkMap = Data<ReturnType<V1['projects']>['network']['get']>
+export type Connections = Data<ReturnType<V1['apps']>['connections']['get']>
+export type Explanation = Data<ReturnType<V1['projects']>['network']['explain']['get']>
 export type Probe = Exclude<
-  Data<ReturnType<V1['services']>['network']['probe']['post']>,
+  Data<ReturnType<V1['apps']>['network']['probe']['post']>,
   {
     status: string
   }
 >
-export type DnsLog = Data<ReturnType<V1['services']>['dns-log']['get']>
-export type Service = Data<ReturnType<V1['services']>['get']>
-export type ServiceStatus = Service['status']
+export type DnsLog = Data<ReturnType<V1['apps']>['dns-log']['get']>
+export type App = Data<ReturnType<V1['apps']>['get']>
+export type AppStatus = App['status']
 export type Deployment = Data<ReturnType<V1['deployments']>['get']>
 export type DeploymentStatus = Deployment['status']
 export type DeploymentStep = NonNullable<Deployment['steps']>[number]
 export type Diagnosis = Data<ReturnType<V1['deployments']>['diagnosis']['get']>
 export type Domain = Data<ReturnType<V1['domains']>['get']>
-export type ServicePort = Item<Data<ReturnType<V1['services']>['ports']['get']>>
-export type PortAllocation = Item<Data<ReturnType<V1['services']>['port-allocations']['get']>>
-export type Variable = Data<ReturnType<V1['variables']>['get']>
-export type Sandbox = Data<ReturnType<V1['sandboxes']>['get']>
+export type AppPort = Item<Data<ReturnType<V1['apps']>['ports']['get']>>
+export type PortAllocation = Item<Data<ReturnType<V1['apps']>['port-allocations']['get']>>
+export type Key = Data<ReturnType<V1['keys']>['get']>
+export type Machine = Data<ReturnType<V1['machines']>['get']>
 export type Tasks = Data<V1['tasks']['get']>
 export type Task = Data<ReturnType<V1['tasks']>['get']>
 export type TaskEvents = Data<ReturnType<V1['tasks']>['events']['get']>
-export type SandboxStatus = Sandbox['status']
-export type SandboxSnapshot = Item<Data<ReturnType<V1['environments']>['sandbox-snapshots']['get']>>
-export type SandboxShell = Data<ReturnType<V1['sandboxes']>['shells']['post']>
-export type StagedChange = Data<ReturnType<V1['staged-changes']>['get']>
-export type Change = NonNullable<StagedChange['changes']>[number]
+export type MachineStatus = Machine['status']
+export type MachineSnapshot = Item<Data<ReturnType<V1['projects']>['machine-snapshots']['get']>>
+export type MachineShell = Data<ReturnType<V1['machines']>['shells']['post']>
+export type Approval = Data<ReturnType<V1['approvals']>['get']>
+export type Change = NonNullable<Approval['changes']>[number]
 export type LogPage = Data<V1['logs']['get']>
 export type LogLine = LogPage['untrusted']['lines'][number]
 export type Event = Item<Data<V1['events']['get']>>
 export type Token = Item<Data<V1['tokens']['get']>>
-export type Station = Item<Data<V1['stations']['get']>>
+export type Station = Item<Data<V1['servers']['get']>>
 export type Inventory = Data<V1['inventory']['get']>
 export type InventoryComponent = Item<Inventory>
 export type HostProbe = NonNullable<NonNullable<Station['capabilities']>['host']>
@@ -78,8 +78,8 @@ type EdenResult = { data: unknown; error: unknown; status: number }
 
 type Body<R extends EdenResult> = NonNullable<R['data']>
 
-type StagedShape = {
-  status: 'staged' | 'accepted' | 'rejected' | 'superseded'
+type WaitingShape = {
+  status: 'waiting' | 'approved' | 'rejected' | 'superseded'
   refs: Record<string, string>
 }
 
@@ -104,8 +104,8 @@ export const unwrap = async <R extends EdenResult>(call: Promise<R>): Promise<Bo
 }
 
 export type Sent<R extends EdenResult> =
-  | { body: Exclude<Body<R>, StagedShape>; staged: false }
-  | { body: Extract<Body<R>, StagedShape>; staged: true }
+  | { body: Exclude<Body<R>, WaitingShape>; waiting: false }
+  | { body: Extract<Body<R>, WaitingShape>; waiting: true }
 
 export const send = async <R extends EdenResult>(call: Promise<R>): Promise<Sent<R>> => {
   const result = await call
@@ -116,14 +116,14 @@ export const send = async <R extends EdenResult>(call: Promise<R>): Promise<Sent
 
   if (result.status === 202) {
     return {
-      body: result.data as Extract<Body<R>, StagedShape>,
-      staged: true,
+      body: result.data as Extract<Body<R>, WaitingShape>,
+      waiting: true,
     }
   }
 
   return {
-    body: result.data as Exclude<Body<R>, StagedShape>,
-    staged: false,
+    body: result.data as Exclude<Body<R>, WaitingShape>,
+    waiting: false,
   }
 }
 

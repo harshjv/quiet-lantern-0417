@@ -10,9 +10,9 @@ import { manifestCommands } from './commands/manifest.ts'
 import { mcpCommands } from './commands/mcp.ts'
 import { networkCommands } from './commands/network.ts'
 import { platformCommands } from './commands/platform.ts'
-import { sandboxCommands } from './commands/sandbox.ts'
-import { serviceCommands } from './commands/service.ts'
-import { variableCommands } from './commands/variables.ts'
+import { machineCommands } from './commands/sandbox.ts'
+import { appCommands } from './commands/service.ts'
+import { keyCommands } from './commands/variables.ts'
 import { volumeCommands } from './commands/volumes.ts'
 import { version } from './env.ts'
 import { registerGenerated } from './generated.ts'
@@ -23,8 +23,8 @@ export const handWrittenProgram = () => {
   agentCommands(program)
   authCommands(program)
   linkCommands(program)
-  serviceCommands(program)
-  variableCommands(program)
+  appCommands(program)
+  keyCommands(program)
   networkCommands(program)
   volumeCommands(program)
   platformCommands(program)
@@ -32,7 +32,7 @@ export const handWrittenProgram = () => {
   mcpCommands(program)
   hostCommands(program)
   adminHostCommands(program)
-  sandboxCommands(program)
+  machineCommands(program)
 
   program
     .command('version')

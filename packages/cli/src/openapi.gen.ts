@@ -12,16 +12,16 @@ export const openApiDocument = {
       "description": "Projects"
     },
     {
-      "name": "environments",
-      "description": "Environments of a project"
+      "name": "previews",
+      "description": "A project's previews: copies of production's apps at their own URLs"
     },
     {
-      "name": "services",
-      "description": "Services of an environment"
+      "name": "apps",
+      "description": "Apps in production or a preview"
     },
     {
       "name": "ports",
-      "description": "Ports of a service"
+      "description": "Ports of an app"
     },
     {
       "name": "volumes",
@@ -29,7 +29,7 @@ export const openApiDocument = {
     },
     {
       "name": "domains",
-      "description": "Domains and TCP exposures of a service"
+      "description": "Domains and TCP exposures of an app"
     },
     {
       "name": "network",
@@ -37,23 +37,23 @@ export const openApiDocument = {
     },
     {
       "name": "deployments",
-      "description": "Deployments, builds, redeploys and rollbacks of a service"
+      "description": "Deployments, builds, redeploys and rollbacks of an app"
     },
     {
       "name": "runs",
-      "description": "One-off runs of a service"
+      "description": "One-off runs of an app"
     },
     {
-      "name": "sandboxes",
+      "name": "machines",
       "description": "Persistent Linux machines for agents, isolated with gVisor"
     },
     {
       "name": "logs",
-      "description": "Logs of a service, deployment, build, run, sandbox or platform component"
+      "description": "Logs of an app, deployment, build, run, machine or platform component"
     },
     {
       "name": "metrics",
-      "description": "Live metrics of services"
+      "description": "Live metrics of apps"
     },
     {
       "name": "events",
@@ -64,12 +64,12 @@ export const openApiDocument = {
       "description": "Notification channels"
     },
     {
-      "name": "variables",
-      "description": "Variables, secret values and grants; sealed values are never shown"
+      "name": "keys",
+      "description": "Keys, secret values and grants; sealed values are never shown"
     },
     {
-      "name": "staged-changes",
-      "description": "Changes that wait for a human in a protected environment or platform"
+      "name": "approvals",
+      "description": "Changes to production that wait for a person: production, the platform and Ship it"
     },
     {
       "name": "settings",
@@ -80,8 +80,8 @@ export const openApiDocument = {
       "description": "Personal and scoped tokens"
     },
     {
-      "name": "stations",
-      "description": "Stations"
+      "name": "servers",
+      "description": "Servers"
     },
     {
       "name": "platform",
@@ -475,7 +475,7 @@ export const openApiDocument = {
           "projects"
         ],
         "operationId": "create_project",
-        "summary": "Create a project with its default environment",
+        "summary": "Create a project; its production comes with it",
         "x-stationly": {
           "level": "admin",
           "cli": {
@@ -499,11 +499,6 @@ export const openApiDocument = {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
                     "description": "The project name",
                     "type": "string"
-                  },
-                  "default_environment_name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The name of the environment created with it (default production)",
-                    "type": "string"
                   }
                 }
               }
@@ -520,11 +515,6 @@ export const openApiDocument = {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
                     "description": "The project name",
                     "type": "string"
-                  },
-                  "default_environment_name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The name of the environment created with it (default production)",
-                    "type": "string"
                   }
                 }
               }
@@ -540,11 +530,6 @@ export const openApiDocument = {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
                     "description": "The project name",
-                    "type": "string"
-                  },
-                  "default_environment_name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The name of the environment created with it (default production)",
                     "type": "string"
                   }
                 }
@@ -855,10 +840,6 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
-                  "default_environment_id": {
-                    "description": "The environment commands use when none is given",
-                    "type": "string"
-                  },
                   "manifest_path": {
                     "description": "The path of the Manifest in the connected repository",
                     "type": [
@@ -884,7 +865,7 @@ export const openApiDocument = {
                   },
                   "image_retention_count": {
                     "minimum": 1,
-                    "description": "Images kept per service in Depot, besides those of active deployments",
+                    "description": "Images kept per app in Depot, besides those of active deployments",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -893,7 +874,7 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 1,
-                        "description": "Images kept per service in Depot, besides those of active deployments",
+                        "description": "Images kept per app in Depot, besides those of active deployments",
                         "type": "integer"
                       }
                     ]
@@ -902,24 +883,9 @@ export const openApiDocument = {
                     "description": "Rebuild and deploy when a base image digest moves",
                     "type": "boolean"
                   },
-                  "pr_environments": {
-                    "description": "Pull request environments: enabled, and the environment they clone",
-                    "type": "object",
-                    "required": [
-                      "enabled",
-                      "source_environment_id"
-                    ],
-                    "properties": {
-                      "enabled": {
-                        "type": "boolean"
-                      },
-                      "source_environment_id": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
-                      }
-                    }
+                  "pull_request_previews": {
+                    "description": "A pull request on the project gets a preview",
+                    "type": "boolean"
                   }
                 }
               }
@@ -929,10 +895,6 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
-                  "default_environment_id": {
-                    "description": "The environment commands use when none is given",
-                    "type": "string"
-                  },
                   "manifest_path": {
                     "description": "The path of the Manifest in the connected repository",
                     "type": [
@@ -958,7 +920,7 @@ export const openApiDocument = {
                   },
                   "image_retention_count": {
                     "minimum": 1,
-                    "description": "Images kept per service in Depot, besides those of active deployments",
+                    "description": "Images kept per app in Depot, besides those of active deployments",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -967,7 +929,7 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 1,
-                        "description": "Images kept per service in Depot, besides those of active deployments",
+                        "description": "Images kept per app in Depot, besides those of active deployments",
                         "type": "integer"
                       }
                     ]
@@ -976,24 +938,9 @@ export const openApiDocument = {
                     "description": "Rebuild and deploy when a base image digest moves",
                     "type": "boolean"
                   },
-                  "pr_environments": {
-                    "description": "Pull request environments: enabled, and the environment they clone",
-                    "type": "object",
-                    "required": [
-                      "enabled",
-                      "source_environment_id"
-                    ],
-                    "properties": {
-                      "enabled": {
-                        "type": "boolean"
-                      },
-                      "source_environment_id": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
-                      }
-                    }
+                  "pull_request_previews": {
+                    "description": "A pull request on the project gets a preview",
+                    "type": "boolean"
                   }
                 }
               }
@@ -1003,10 +950,6 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
-                  "default_environment_id": {
-                    "description": "The environment commands use when none is given",
-                    "type": "string"
-                  },
                   "manifest_path": {
                     "description": "The path of the Manifest in the connected repository",
                     "type": [
@@ -1032,7 +975,7 @@ export const openApiDocument = {
                   },
                   "image_retention_count": {
                     "minimum": 1,
-                    "description": "Images kept per service in Depot, besides those of active deployments",
+                    "description": "Images kept per app in Depot, besides those of active deployments",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -1041,7 +984,7 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 1,
-                        "description": "Images kept per service in Depot, besides those of active deployments",
+                        "description": "Images kept per app in Depot, besides those of active deployments",
                         "type": "integer"
                       }
                     ]
@@ -1050,24 +993,9 @@ export const openApiDocument = {
                     "description": "Rebuild and deploy when a base image digest moves",
                     "type": "boolean"
                   },
-                  "pr_environments": {
-                    "description": "Pull request environments: enabled, and the environment they clone",
-                    "type": "object",
-                    "required": [
-                      "enabled",
-                      "source_environment_id"
-                    ],
-                    "properties": {
-                      "enabled": {
-                        "type": "boolean"
-                      },
-                      "source_environment_id": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
-                      }
-                    }
+                  "pull_request_previews": {
+                    "description": "A pull request on the project gets a preview",
+                    "type": "boolean"
                   }
                 }
               }
@@ -1350,13 +1278,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/projects/{project}/environments": {
+    "/v1/projects/{project}/previews": {
       "get": {
         "tags": [
-          "environments"
+          "previews"
         ],
-        "operationId": "list_environments",
-        "summary": "List the environments of a project",
+        "operationId": "list_previews",
+        "summary": "List the previews of a project",
         "x-stationly": {
           "level": "any"
         },
@@ -1409,44 +1337,6 @@ export const openApiDocument = {
               "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
               "type": "string"
             }
-          },
-          {
-            "name": "ephemeral",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Only ephemeral environments, or with false only lasting ones",
-              "anyOf": [
-                {
-                  "description": "Only ephemeral environments, or with false only lasting ones",
-                  "type": "boolean"
-                },
-                {
-                  "format": "boolean",
-                  "default": false,
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          {
-            "name": "protected",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Only protected environments, or with false only unprotected ones",
-              "anyOf": [
-                {
-                  "description": "Only protected environments, or with false only unprotected ones",
-                  "type": "boolean"
-                },
-                {
-                  "format": "boolean",
-                  "default": false,
-                  "type": "string"
-                }
-              ]
-            }
           }
         ],
         "responses": {
@@ -1465,7 +1355,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Environment"
+                        "$ref": "#/components/schemas/Preview"
                       }
                     },
                     "next_cursor": {
@@ -1593,10 +1483,10 @@ export const openApiDocument = {
       },
       "post": {
         "tags": [
-          "environments"
+          "previews"
         ],
-        "operationId": "create_environment",
-        "summary": "Create an environment, empty or as a clone of source_environment_id",
+        "operationId": "create_preview",
+        "summary": "Create a preview: a copy of production's apps, never its sealed values",
         "x-stationly": {
           "level": "deploy",
           "cli": {
@@ -1628,20 +1518,12 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The environment name",
+                    "description": "The preview name, such as staging",
                     "type": "string"
-                  },
-                  "source_environment_id": {
-                    "description": "Clone the services and variables of this environment",
-                    "type": "string"
-                  },
-                  "ephemeral": {
-                    "description": "Delete the environment after ttl_seconds without activity",
-                    "type": "boolean"
                   },
                   "ttl_seconds": {
                     "minimum": 60,
-                    "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                    "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -1650,17 +1532,13 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 60,
-                        "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                        "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                         "type": "integer"
                       }
                     ]
                   },
                   "deploy_on_create": {
-                    "description": "Deploy the cloned services at once (default true)",
-                    "type": "boolean"
-                  },
-                  "protected": {
-                    "description": "Stage changes by agents for a human to accept",
+                    "description": "Deploy the copies of production's apps at once (default true)",
                     "type": "boolean"
                   }
                 }
@@ -1676,20 +1554,12 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The environment name",
+                    "description": "The preview name, such as staging",
                     "type": "string"
-                  },
-                  "source_environment_id": {
-                    "description": "Clone the services and variables of this environment",
-                    "type": "string"
-                  },
-                  "ephemeral": {
-                    "description": "Delete the environment after ttl_seconds without activity",
-                    "type": "boolean"
                   },
                   "ttl_seconds": {
                     "minimum": 60,
-                    "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                    "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -1698,17 +1568,13 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 60,
-                        "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                        "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                         "type": "integer"
                       }
                     ]
                   },
                   "deploy_on_create": {
-                    "description": "Deploy the cloned services at once (default true)",
-                    "type": "boolean"
-                  },
-                  "protected": {
-                    "description": "Stage changes by agents for a human to accept",
+                    "description": "Deploy the copies of production's apps at once (default true)",
                     "type": "boolean"
                   }
                 }
@@ -1724,20 +1590,12 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The environment name",
+                    "description": "The preview name, such as staging",
                     "type": "string"
-                  },
-                  "source_environment_id": {
-                    "description": "Clone the services and variables of this environment",
-                    "type": "string"
-                  },
-                  "ephemeral": {
-                    "description": "Delete the environment after ttl_seconds without activity",
-                    "type": "boolean"
                   },
                   "ttl_seconds": {
                     "minimum": 60,
-                    "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                    "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -1746,17 +1604,13 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 60,
-                        "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                        "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                         "type": "integer"
                       }
                     ]
                   },
                   "deploy_on_create": {
-                    "description": "Deploy the cloned services at once (default true)",
-                    "type": "boolean"
-                  },
-                  "protected": {
-                    "description": "Stage changes by agents for a human to accept",
+                    "description": "Deploy the copies of production's apps at once (default true)",
                     "type": "boolean"
                   }
                 }
@@ -1776,12 +1630,9 @@ export const openApiDocument = {
                     "id",
                     "project_id",
                     "name",
-                    "protected",
-                    "ephemeral",
-                    "pull_request",
-                    "ttl_seconds",
-                    "service_count",
-                    "pending_staged_changes",
+                    "origin",
+                    "expires_at",
+                    "app_count",
                     "deployments",
                     "warnings"
                   ],
@@ -1801,44 +1652,22 @@ export const openApiDocument = {
                     "name": {
                       "type": "string"
                     },
-                    "protected": {
-                      "type": "boolean"
+                    "origin": {
+                      "$ref": "#/components/schemas/PreviewOrigin"
                     },
-                    "ephemeral": {
-                      "type": "boolean"
-                    },
-                    "source_environment_id": {
+                    "expires_at": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
-                    "pull_request": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/PullRequest"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "ttl_seconds": {
-                      "type": [
-                        "integer",
-                        "null"
-                      ]
-                    },
-                    "service_count": {
+                    "app_count": {
                       "type": "integer"
                     },
-                    "pending_staged_changes": {
-                      "type": "integer"
-                    },
-                    "services": {
+                    "apps": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Service"
+                        "$ref": "#/components/schemas/App"
                       }
                     },
                     "edges": {
@@ -1977,13 +1806,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}": {
+    "/v1/previews/{preview}": {
       "get": {
         "tags": [
-          "environments"
+          "previews"
         ],
-        "operationId": "describe_environment",
-        "summary": "Get an environment",
+        "operationId": "describe_preview",
+        "summary": "Get a preview",
         "x-stationly": {
           "level": "read",
           "mcp": {
@@ -1992,7 +1821,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "preview",
             "in": "path",
             "required": true,
             "schema": {
@@ -2015,7 +1844,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Environment"
+                  "$ref": "#/components/schemas/Preview"
                 }
               }
             }
@@ -2134,16 +1963,16 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "environments"
+          "previews"
         ],
-        "operationId": "update_environment",
-        "summary": "Update protected or ttl_seconds",
+        "operationId": "update_preview",
+        "summary": "Set when a preview expires",
         "x-stationly": {
-          "level": "admin"
+          "level": "deploy"
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "preview",
             "in": "path",
             "required": true,
             "schema": {
@@ -2158,13 +1987,12 @@ export const openApiDocument = {
               "schema": {
                 "additionalProperties": false,
                 "type": "object",
+                "required": [
+                  "ttl_seconds"
+                ],
                 "properties": {
-                  "protected": {
-                    "description": "Stage changes by agents for a human to accept",
-                    "type": "boolean"
-                  },
                   "ttl_seconds": {
-                    "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                    "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                     "anyOf": [
                       {
                         "minimum": 60,
@@ -2192,13 +2020,12 @@ export const openApiDocument = {
               "schema": {
                 "additionalProperties": false,
                 "type": "object",
+                "required": [
+                  "ttl_seconds"
+                ],
                 "properties": {
-                  "protected": {
-                    "description": "Stage changes by agents for a human to accept",
-                    "type": "boolean"
-                  },
                   "ttl_seconds": {
-                    "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                    "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                     "anyOf": [
                       {
                         "minimum": 60,
@@ -2226,13 +2053,12 @@ export const openApiDocument = {
               "schema": {
                 "additionalProperties": false,
                 "type": "object",
+                "required": [
+                  "ttl_seconds"
+                ],
                 "properties": {
-                  "protected": {
-                    "description": "Stage changes by agents for a human to accept",
-                    "type": "boolean"
-                  },
                   "ttl_seconds": {
-                    "description": "Inactivity before an ephemeral environment is deleted; required when ephemeral",
+                    "description": "Seconds until the preview is deleted; omit for a preview that never expires",
                     "anyOf": [
                       {
                         "minimum": 60,
@@ -2264,7 +2090,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Environment"
+                  "$ref": "#/components/schemas/Preview"
                 }
               }
             }
@@ -2383,16 +2209,16 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "environments"
+          "previews"
         ],
-        "operationId": "delete_environment",
-        "summary": "Delete an environment; staged when protected",
+        "operationId": "delete_preview",
+        "summary": "Delete a preview, its apps and its network",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "preview",
             "in": "path",
             "required": true,
             "schema": {
@@ -2424,16 +2250,6 @@ export const openApiDocument = {
                       ]
                     }
                   }
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Staged"
                 }
               }
             }
@@ -2551,19 +2367,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/services": {
+    "/v1/projects/{project}/apps": {
       "get": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "list_services",
-        "summary": "List the services of an environment",
+        "operationId": "list_apps",
+        "summary": "List the apps of production, or of a preview",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -2612,11 +2428,20 @@ export const openApiDocument = {
             }
           },
           {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
+              "type": "string"
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One of green, amber, red, stopped, asleep",
+              "description": "One of healthy, deploying, failing, stopped, asleep, not_deployed",
               "type": "string"
             }
           },
@@ -2630,11 +2455,11 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "station",
+            "name": "server",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only services on this station id",
+              "description": "Only apps on this server id",
               "type": "string"
             }
           },
@@ -2643,10 +2468,10 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only services whose current deployment is out of date, with stale_reasons",
+              "description": "Only apps whose current deployment is out of date, with stale_reasons",
               "anyOf": [
                 {
-                  "description": "Only services whose current deployment is out of date, with stale_reasons",
+                  "description": "Only apps whose current deployment is out of date, with stale_reasons",
                   "type": "boolean"
                 },
                 {
@@ -2674,7 +2499,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Service"
+                        "$ref": "#/components/schemas/App"
                       }
                     },
                     "next_cursor": {
@@ -2802,10 +2627,10 @@ export const openApiDocument = {
       },
       "post": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "create_service",
-        "summary": "Create a service",
+        "operationId": "create_app",
+        "summary": "Create an app in production, or in a preview",
         "x-stationly": {
           "level": "admin",
           "cli": {
@@ -2816,10 +2641,19 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
               "type": "string"
             }
           }
@@ -2839,7 +2673,7 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The service name and DNS label",
+                    "description": "The app name and DNS label",
                     "type": "string"
                   },
                   "kind": {
@@ -2966,8 +2800,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
-                    "description": "The station to run on; the only online station by default",
+                  "server_id": {
+                    "description": "The server to run on; the only online server by default",
                     "type": "string"
                   },
                   "command": {
@@ -3005,7 +2839,7 @@ export const openApiDocument = {
                         "port": {
                           "minimum": 1,
                           "maximum": 65535,
-                          "description": "The container port, unique per service",
+                          "description": "The container port, unique per app",
                           "anyOf": [
                             {
                               "format": "integer",
@@ -3015,7 +2849,7 @@ export const openApiDocument = {
                             {
                               "minimum": 1,
                               "maximum": 65535,
-                              "description": "The container port, unique per service",
+                              "description": "The container port, unique per app",
                               "type": "integer"
                             }
                           ]
@@ -3046,7 +2880,7 @@ export const openApiDocument = {
                       "properties": {
                         "mount_path": {
                           "pattern": "^/",
-                          "description": "Absolute, unique per service, not /run/secrets",
+                          "description": "Absolute, unique per app, not /run/secrets",
                           "type": "string"
                         }
                       }
@@ -3088,7 +2922,7 @@ export const openApiDocument = {
                     }
                   },
                   "health": {
-                    "description": "The Signal health check",
+                    "description": "The health check",
                     "anyOf": [
                       {
                         "anyOf": [
@@ -3432,7 +3266,7 @@ export const openApiDocument = {
                     }
                   },
                   "schedule": {
-                    "description": "The Timetable for a cron service",
+                    "description": "The Timetable for a cron app",
                     "additionalProperties": false,
                     "type": [
                       "object",
@@ -3461,18 +3295,18 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "variables": {
-                    "description": "Service variables to set: key, kind, and value or reference",
+                  "keys": {
+                    "description": "App keys to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -3499,16 +3333,12 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
-                          "type": "boolean"
                         }
                       }
                     }
                   },
                   "deploy_on_create": {
-                    "description": "Deploy the new service at once (default true)",
+                    "description": "Deploy the new app at once (default true)",
                     "type": "boolean"
                   }
                 }
@@ -3526,7 +3356,7 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The service name and DNS label",
+                    "description": "The app name and DNS label",
                     "type": "string"
                   },
                   "kind": {
@@ -3653,8 +3483,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
-                    "description": "The station to run on; the only online station by default",
+                  "server_id": {
+                    "description": "The server to run on; the only online server by default",
                     "type": "string"
                   },
                   "command": {
@@ -3692,7 +3522,7 @@ export const openApiDocument = {
                         "port": {
                           "minimum": 1,
                           "maximum": 65535,
-                          "description": "The container port, unique per service",
+                          "description": "The container port, unique per app",
                           "anyOf": [
                             {
                               "format": "integer",
@@ -3702,7 +3532,7 @@ export const openApiDocument = {
                             {
                               "minimum": 1,
                               "maximum": 65535,
-                              "description": "The container port, unique per service",
+                              "description": "The container port, unique per app",
                               "type": "integer"
                             }
                           ]
@@ -3733,7 +3563,7 @@ export const openApiDocument = {
                       "properties": {
                         "mount_path": {
                           "pattern": "^/",
-                          "description": "Absolute, unique per service, not /run/secrets",
+                          "description": "Absolute, unique per app, not /run/secrets",
                           "type": "string"
                         }
                       }
@@ -3775,7 +3605,7 @@ export const openApiDocument = {
                     }
                   },
                   "health": {
-                    "description": "The Signal health check",
+                    "description": "The health check",
                     "anyOf": [
                       {
                         "anyOf": [
@@ -4119,7 +3949,7 @@ export const openApiDocument = {
                     }
                   },
                   "schedule": {
-                    "description": "The Timetable for a cron service",
+                    "description": "The Timetable for a cron app",
                     "additionalProperties": false,
                     "type": [
                       "object",
@@ -4148,18 +3978,18 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "variables": {
-                    "description": "Service variables to set: key, kind, and value or reference",
+                  "keys": {
+                    "description": "App keys to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -4186,16 +4016,12 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
-                          "type": "boolean"
                         }
                       }
                     }
                   },
                   "deploy_on_create": {
-                    "description": "Deploy the new service at once (default true)",
+                    "description": "Deploy the new app at once (default true)",
                     "type": "boolean"
                   }
                 }
@@ -4213,7 +4039,7 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The service name and DNS label",
+                    "description": "The app name and DNS label",
                     "type": "string"
                   },
                   "kind": {
@@ -4340,8 +4166,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
-                    "description": "The station to run on; the only online station by default",
+                  "server_id": {
+                    "description": "The server to run on; the only online server by default",
                     "type": "string"
                   },
                   "command": {
@@ -4379,7 +4205,7 @@ export const openApiDocument = {
                         "port": {
                           "minimum": 1,
                           "maximum": 65535,
-                          "description": "The container port, unique per service",
+                          "description": "The container port, unique per app",
                           "anyOf": [
                             {
                               "format": "integer",
@@ -4389,7 +4215,7 @@ export const openApiDocument = {
                             {
                               "minimum": 1,
                               "maximum": 65535,
-                              "description": "The container port, unique per service",
+                              "description": "The container port, unique per app",
                               "type": "integer"
                             }
                           ]
@@ -4420,7 +4246,7 @@ export const openApiDocument = {
                       "properties": {
                         "mount_path": {
                           "pattern": "^/",
-                          "description": "Absolute, unique per service, not /run/secrets",
+                          "description": "Absolute, unique per app, not /run/secrets",
                           "type": "string"
                         }
                       }
@@ -4462,7 +4288,7 @@ export const openApiDocument = {
                     }
                   },
                   "health": {
-                    "description": "The Signal health check",
+                    "description": "The health check",
                     "anyOf": [
                       {
                         "anyOf": [
@@ -4806,7 +4632,7 @@ export const openApiDocument = {
                     }
                   },
                   "schedule": {
-                    "description": "The Timetable for a cron service",
+                    "description": "The Timetable for a cron app",
                     "additionalProperties": false,
                     "type": [
                       "object",
@@ -4835,18 +4661,18 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "variables": {
-                    "description": "Service variables to set: key, kind, and value or reference",
+                  "keys": {
+                    "description": "App keys to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -4873,16 +4699,12 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
-                          "type": "boolean"
                         }
                       }
                     }
                   },
                   "deploy_on_create": {
-                    "description": "Deploy the new service at once (default true)",
+                    "description": "Deploy the new app at once (default true)",
                     "type": "boolean"
                   }
                 }
@@ -4896,7 +4718,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServiceWritten"
+                  "$ref": "#/components/schemas/AppWritten"
                 }
               }
             }
@@ -4906,7 +4728,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -5024,19 +4846,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}": {
+    "/v1/apps/{app}": {
       "get": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "describe_service",
-        "summary": "Get a service",
+        "operationId": "describe_app",
+        "summary": "Get an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -5059,7 +4881,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Service"
+                  "$ref": "#/components/schemas/App"
                 }
               }
             }
@@ -5178,16 +5000,16 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "update_service",
-        "summary": "Update a service; deploys when deploy = true and the configuration changed",
+        "operationId": "update_app",
+        "summary": "Update an app; deploys when deploy = true and the configuration changed",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -5318,8 +5140,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
-                    "description": "The station to run on; the only online station by default",
+                  "server_id": {
+                    "description": "The server to run on; the only online server by default",
                     "type": "string"
                   },
                   "command": {
@@ -5357,7 +5179,7 @@ export const openApiDocument = {
                         "port": {
                           "minimum": 1,
                           "maximum": 65535,
-                          "description": "The container port, unique per service",
+                          "description": "The container port, unique per app",
                           "anyOf": [
                             {
                               "format": "integer",
@@ -5367,7 +5189,7 @@ export const openApiDocument = {
                             {
                               "minimum": 1,
                               "maximum": 65535,
-                              "description": "The container port, unique per service",
+                              "description": "The container port, unique per app",
                               "type": "integer"
                             }
                           ]
@@ -5398,7 +5220,7 @@ export const openApiDocument = {
                       "properties": {
                         "mount_path": {
                           "pattern": "^/",
-                          "description": "Absolute, unique per service, not /run/secrets",
+                          "description": "Absolute, unique per app, not /run/secrets",
                           "type": "string"
                         }
                       }
@@ -5440,7 +5262,7 @@ export const openApiDocument = {
                     }
                   },
                   "health": {
-                    "description": "The Signal health check",
+                    "description": "The health check",
                     "anyOf": [
                       {
                         "anyOf": [
@@ -5784,7 +5606,7 @@ export const openApiDocument = {
                     }
                   },
                   "schedule": {
-                    "description": "The Timetable for a cron service",
+                    "description": "The Timetable for a cron app",
                     "additionalProperties": false,
                     "type": [
                       "object",
@@ -5813,18 +5635,18 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "variables": {
-                    "description": "Service variables to set: key, kind, and value or reference",
+                  "keys": {
+                    "description": "App keys to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -5850,10 +5672,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -5986,8 +5804,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
-                    "description": "The station to run on; the only online station by default",
+                  "server_id": {
+                    "description": "The server to run on; the only online server by default",
                     "type": "string"
                   },
                   "command": {
@@ -6025,7 +5843,7 @@ export const openApiDocument = {
                         "port": {
                           "minimum": 1,
                           "maximum": 65535,
-                          "description": "The container port, unique per service",
+                          "description": "The container port, unique per app",
                           "anyOf": [
                             {
                               "format": "integer",
@@ -6035,7 +5853,7 @@ export const openApiDocument = {
                             {
                               "minimum": 1,
                               "maximum": 65535,
-                              "description": "The container port, unique per service",
+                              "description": "The container port, unique per app",
                               "type": "integer"
                             }
                           ]
@@ -6066,7 +5884,7 @@ export const openApiDocument = {
                       "properties": {
                         "mount_path": {
                           "pattern": "^/",
-                          "description": "Absolute, unique per service, not /run/secrets",
+                          "description": "Absolute, unique per app, not /run/secrets",
                           "type": "string"
                         }
                       }
@@ -6108,7 +5926,7 @@ export const openApiDocument = {
                     }
                   },
                   "health": {
-                    "description": "The Signal health check",
+                    "description": "The health check",
                     "anyOf": [
                       {
                         "anyOf": [
@@ -6452,7 +6270,7 @@ export const openApiDocument = {
                     }
                   },
                   "schedule": {
-                    "description": "The Timetable for a cron service",
+                    "description": "The Timetable for a cron app",
                     "additionalProperties": false,
                     "type": [
                       "object",
@@ -6481,18 +6299,18 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "variables": {
-                    "description": "Service variables to set: key, kind, and value or reference",
+                  "keys": {
+                    "description": "App keys to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -6518,10 +6336,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -6654,8 +6468,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
-                    "description": "The station to run on; the only online station by default",
+                  "server_id": {
+                    "description": "The server to run on; the only online server by default",
                     "type": "string"
                   },
                   "command": {
@@ -6693,7 +6507,7 @@ export const openApiDocument = {
                         "port": {
                           "minimum": 1,
                           "maximum": 65535,
-                          "description": "The container port, unique per service",
+                          "description": "The container port, unique per app",
                           "anyOf": [
                             {
                               "format": "integer",
@@ -6703,7 +6517,7 @@ export const openApiDocument = {
                             {
                               "minimum": 1,
                               "maximum": 65535,
-                              "description": "The container port, unique per service",
+                              "description": "The container port, unique per app",
                               "type": "integer"
                             }
                           ]
@@ -6734,7 +6548,7 @@ export const openApiDocument = {
                       "properties": {
                         "mount_path": {
                           "pattern": "^/",
-                          "description": "Absolute, unique per service, not /run/secrets",
+                          "description": "Absolute, unique per app, not /run/secrets",
                           "type": "string"
                         }
                       }
@@ -6776,7 +6590,7 @@ export const openApiDocument = {
                     }
                   },
                   "health": {
-                    "description": "The Signal health check",
+                    "description": "The health check",
                     "anyOf": [
                       {
                         "anyOf": [
@@ -7120,7 +6934,7 @@ export const openApiDocument = {
                     }
                   },
                   "schedule": {
-                    "description": "The Timetable for a cron service",
+                    "description": "The Timetable for a cron app",
                     "additionalProperties": false,
                     "type": [
                       "object",
@@ -7149,18 +6963,18 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "variables": {
-                    "description": "Service variables to set: key, kind, and value or reference",
+                  "keys": {
+                    "description": "App keys to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -7187,10 +7001,6 @@ export const openApiDocument = {
                         },
                         "build": {
                           "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
-                          "type": "boolean"
                         }
                       }
                     }
@@ -7210,7 +7020,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServiceWritten"
+                  "$ref": "#/components/schemas/AppWritten"
                 }
               }
             }
@@ -7220,7 +7030,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -7339,16 +7149,16 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "delete_service",
-        "summary": "Delete a service; volumes are retained",
+        "operationId": "delete_app",
+        "summary": "Delete an app; volumes are retained",
         "x-stationly": {
           "level": "admin"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -7389,7 +7199,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -7507,12 +7317,12 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/restart": {
+    "/v1/apps/{app}/restart": {
       "post": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "restart_service",
+        "operationId": "restart_app",
         "summary": "Restart: a redeploy of the current deployment",
         "x-stationly": {
           "level": "deploy",
@@ -7522,7 +7332,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -7546,7 +7356,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -7664,19 +7474,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/stop": {
+    "/v1/apps/{app}/stop": {
       "post": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "stop_service",
+        "operationId": "stop_app",
         "summary": "Stop: desired_state = stopped",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -7690,7 +7500,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Service"
+                  "$ref": "#/components/schemas/App"
                 }
               }
             }
@@ -7700,7 +7510,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -7818,19 +7628,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/start": {
+    "/v1/apps/{app}/start": {
       "post": {
         "tags": [
-          "services"
+          "apps"
         ],
-        "operationId": "start_service",
+        "operationId": "start_app",
         "summary": "Start: desired_state = running",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -7848,10 +7658,11 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "environment_id",
+                    "project_id",
+                    "preview_id",
                     "name",
                     "kind",
-                    "station_id",
+                    "server_id",
                     "source",
                     "current_deployment_id",
                     "status",
@@ -7871,8 +7682,14 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "environment_id": {
+                    "project_id": {
                       "type": "string"
+                    },
+                    "preview_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "name": {
                       "type": "string"
@@ -7886,11 +7703,11 @@ export const openApiDocument = {
                         "one_off"
                       ]
                     },
-                    "station_id": {
+                    "server_id": {
                       "type": "string"
                     },
                     "source": {
-                      "$ref": "#/components/schemas/ServiceSource"
+                      "$ref": "#/components/schemas/AppSource"
                     },
                     "command": {
                       "type": [
@@ -8053,12 +7870,12 @@ export const openApiDocument = {
                       ]
                     },
                     "status": {
-                      "$ref": "#/components/schemas/ServiceStatus"
+                      "$ref": "#/components/schemas/AppStatus"
                     },
                     "status_reason": {
                       "anyOf": [
                         {
-                          "const": "station_asleep",
+                          "const": "server_asleep",
                           "type": "string"
                         },
                         {
@@ -8093,7 +7910,7 @@ export const openApiDocument = {
                     "ports": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/ServicePort"
+                        "$ref": "#/components/schemas/AppPort"
                       }
                     },
                     "volumes": {
@@ -8124,10 +7941,10 @@ export const openApiDocument = {
                         }
                       ]
                     },
-                    "variables": {
+                    "keys": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Variable"
+                        "$ref": "#/components/schemas/Key"
                       }
                     },
                     "exports": {
@@ -8152,7 +7969,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -8270,19 +8087,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/ports": {
+    "/v1/apps/{app}/ports": {
       "get": {
         "tags": [
           "ports"
         ],
         "operationId": "list_ports",
-        "summary": "List the ports of a service",
+        "summary": "List the ports of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -8315,7 +8132,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/ServicePort"
+                        "$ref": "#/components/schemas/AppPort"
                       }
                     },
                     "next_cursor": {
@@ -8452,7 +8269,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -8474,7 +8291,7 @@ export const openApiDocument = {
                   "port": {
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The container port, unique per service",
+                    "description": "The container port, unique per app",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -8484,7 +8301,7 @@ export const openApiDocument = {
                       {
                         "minimum": 1,
                         "maximum": 65535,
-                        "description": "The container port, unique per service",
+                        "description": "The container port, unique per app",
                         "type": "integer"
                       }
                     ]
@@ -8514,7 +8331,7 @@ export const openApiDocument = {
                   "port": {
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The container port, unique per service",
+                    "description": "The container port, unique per app",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -8524,7 +8341,7 @@ export const openApiDocument = {
                       {
                         "minimum": 1,
                         "maximum": 65535,
-                        "description": "The container port, unique per service",
+                        "description": "The container port, unique per app",
                         "type": "integer"
                       }
                     ]
@@ -8554,7 +8371,7 @@ export const openApiDocument = {
                   "port": {
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The container port, unique per service",
+                    "description": "The container port, unique per app",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -8564,7 +8381,7 @@ export const openApiDocument = {
                       {
                         "minimum": 1,
                         "maximum": 65535,
-                        "description": "The container port, unique per service",
+                        "description": "The container port, unique per app",
                         "type": "integer"
                       }
                     ]
@@ -8595,7 +8412,7 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "service_id",
+                    "app_id",
                     "port",
                     "protocol",
                     "grpc",
@@ -8612,7 +8429,7 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "service_id": {
+                    "app_id": {
                       "type": "string"
                     },
                     "port": {
@@ -8662,7 +8479,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -8847,7 +8664,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServicePort"
+                  "$ref": "#/components/schemas/AppPort"
                 }
               }
             }
@@ -8857,7 +8674,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -9033,7 +8850,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -9213,20 +9030,20 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "station",
+            "name": "server",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only volumes on this station id",
+              "description": "Only volumes on this server id",
               "type": "string"
             }
           },
           {
-            "name": "service",
+            "name": "app",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only volumes of this service",
+              "description": "Only volumes of this app",
               "type": "string"
             }
           },
@@ -9383,19 +9200,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/volumes": {
+    "/v1/apps/{app}/volumes": {
       "get": {
         "tags": [
           "volumes"
         ],
-        "operationId": "list_service_volumes",
-        "summary": "List the volumes of a service",
+        "operationId": "list_app_volumes",
+        "summary": "List the volumes of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -9565,7 +9382,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -9586,7 +9403,7 @@ export const openApiDocument = {
                 "properties": {
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   }
                 }
@@ -9602,7 +9419,7 @@ export const openApiDocument = {
                 "properties": {
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   }
                 }
@@ -9618,7 +9435,7 @@ export const openApiDocument = {
                 "properties": {
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   }
                 }
@@ -9642,7 +9459,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -9967,7 +9784,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -10091,7 +9908,7 @@ export const openApiDocument = {
           "volumes"
         ],
         "operationId": "adopt_volume",
-        "summary": "Adopt a retained volume into a service",
+        "summary": "Adopt a retained volume into an app",
         "x-stationly": {
           "level": "admin"
         },
@@ -10113,17 +9930,17 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "required": [
-                  "service_id",
+                  "app_id",
                   "mount_path"
                 ],
                 "properties": {
-                  "service_id": {
-                    "description": "The service that mounts the volume",
+                  "app_id": {
+                    "description": "The app that mounts the volume",
                     "type": "string"
                   },
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   }
                 }
@@ -10134,17 +9951,17 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "required": [
-                  "service_id",
+                  "app_id",
                   "mount_path"
                 ],
                 "properties": {
-                  "service_id": {
-                    "description": "The service that mounts the volume",
+                  "app_id": {
+                    "description": "The app that mounts the volume",
                     "type": "string"
                   },
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   }
                 }
@@ -10155,17 +9972,17 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "required": [
-                  "service_id",
+                  "app_id",
                   "mount_path"
                 ],
                 "properties": {
-                  "service_id": {
-                    "description": "The service that mounts the volume",
+                  "app_id": {
+                    "description": "The app that mounts the volume",
                     "type": "string"
                   },
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   }
                 }
@@ -10189,7 +10006,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -10364,7 +10181,7 @@ export const openApiDocument = {
                           "endpoint",
                           "bucket",
                           "prefix",
-                          "credentials_variable"
+                          "credentials_key"
                         ],
                         "properties": {
                           "type": {
@@ -10382,7 +10199,7 @@ export const openApiDocument = {
                           "prefix": {
                             "type": "string"
                           },
-                          "credentials_variable": {
+                          "credentials_key": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -10429,7 +10246,7 @@ export const openApiDocument = {
                           "endpoint",
                           "bucket",
                           "prefix",
-                          "credentials_variable"
+                          "credentials_key"
                         ],
                         "properties": {
                           "type": {
@@ -10447,7 +10264,7 @@ export const openApiDocument = {
                           "prefix": {
                             "type": "string"
                           },
-                          "credentials_variable": {
+                          "credentials_key": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -10494,7 +10311,7 @@ export const openApiDocument = {
                           "endpoint",
                           "bucket",
                           "prefix",
-                          "credentials_variable"
+                          "credentials_key"
                         ],
                         "properties": {
                           "type": {
@@ -10512,7 +10329,7 @@ export const openApiDocument = {
                           "prefix": {
                             "type": "string"
                           },
-                          "credentials_variable": {
+                          "credentials_key": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -10539,7 +10356,7 @@ export const openApiDocument = {
                   "required": [
                     "id",
                     "volume_id",
-                    "station_id",
+                    "server_id",
                     "taken_at",
                     "finished_at",
                     "location",
@@ -10562,7 +10379,7 @@ export const openApiDocument = {
                     "volume_id": {
                       "type": "string"
                     },
-                    "station_id": {
+                    "server_id": {
                       "type": [
                         "string",
                         "null"
@@ -10628,7 +10445,7 @@ export const openApiDocument = {
                                 "endpoint",
                                 "bucket",
                                 "prefix",
-                                "credentials_variable"
+                                "credentials_key"
                               ],
                               "properties": {
                                 "type": {
@@ -10646,7 +10463,7 @@ export const openApiDocument = {
                                 "prefix": {
                                   "type": "string"
                                 },
-                                "credentials_variable": {
+                                "credentials_key": {
                                   "minLength": 1,
                                   "type": "string"
                                 }
@@ -10729,7 +10546,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -11023,7 +10840,7 @@ export const openApiDocument = {
           "volumes"
         ],
         "operationId": "restore_volume",
-        "summary": "Restore a complete backup into a new retained volume of the same project; completion arrives as volume.restore_done; staged for a non-human actor in a protected environment",
+        "summary": "Restore a complete backup into a new retained volume of the same project; completion arrives as volume.restore_done; needs approval for a non-human actor in production",
         "x-stationly": {
           "level": "admin",
           "mcp": {
@@ -11055,8 +10872,8 @@ export const openApiDocument = {
                     "description": "The id of a complete backup of this volume",
                     "type": "string"
                   },
-                  "station": {
-                    "description": "The station to restore an S3 backup on",
+                  "server": {
+                    "description": "The server to restore an S3 backup on",
                     "type": "string"
                   }
                 }
@@ -11074,8 +10891,8 @@ export const openApiDocument = {
                     "description": "The id of a complete backup of this volume",
                     "type": "string"
                   },
-                  "station": {
-                    "description": "The station to restore an S3 backup on",
+                  "server": {
+                    "description": "The server to restore an S3 backup on",
                     "type": "string"
                   }
                 }
@@ -11093,8 +10910,8 @@ export const openApiDocument = {
                     "description": "The id of a complete backup of this volume",
                     "type": "string"
                   },
-                  "station": {
-                    "description": "The station to restore an S3 backup on",
+                  "server": {
+                    "description": "The server to restore an S3 backup on",
                     "type": "string"
                   }
                 }
@@ -11114,7 +10931,7 @@ export const openApiDocument = {
                     "volume_id",
                     "docker_name",
                     "snapshot_id",
-                    "station_id",
+                    "server_id",
                     "status",
                     "adopt"
                   ],
@@ -11128,7 +10945,7 @@ export const openApiDocument = {
                     "snapshot_id": {
                       "type": "string"
                     },
-                    "station_id": {
+                    "server_id": {
                       "type": "string"
                     },
                     "status": {
@@ -11148,7 +10965,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -11266,19 +11083,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/domains": {
+    "/v1/apps/{app}/domains": {
       "get": {
         "tags": [
           "domains"
         ],
         "operationId": "list_domains",
-        "summary": "List the domains of a service",
+        "summary": "List the domains of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -11645,7 +11462,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -11876,7 +11693,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -11994,19 +11811,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/port-allocations": {
+    "/v1/apps/{app}/port-allocations": {
       "get": {
         "tags": [
           "domains"
         ],
         "operationId": "list_tcp_exposures",
-        "summary": "List the TCP exposures of a service",
+        "summary": "List the TCP exposures of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -12211,7 +12028,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -12365,7 +12182,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -12483,13 +12300,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/network": {
+    "/v1/projects/{project}/network": {
       "get": {
         "tags": [
           "network"
         ],
         "operationId": "describe_network",
-        "summary": "Get an environment's network map: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path",
+        "summary": "Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path",
         "x-stationly": {
           "level": "read",
           "cli": {
@@ -12498,10 +12315,19 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
               "type": "string"
             }
           },
@@ -12515,7 +12341,7 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "service",
+            "name": "app",
             "in": "query",
             "required": false,
             "schema": {
@@ -12648,13 +12474,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/connections": {
+    "/v1/apps/{app}/connections": {
       "get": {
         "tags": [
           "network"
         ],
         "operationId": "get_connections",
-        "summary": "Live connections of a service grouped by peer, and refused attempts with the path that refused them; one sample",
+        "summary": "Live connections of an app grouped by peer, and refused attempts with the path that refused them; one sample",
         "x-stationly": {
           "level": "read",
           "cli": {
@@ -12663,7 +12489,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -12807,13 +12633,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/network/live": {
+    "/v1/projects/{project}/network/live": {
       "get": {
         "tags": [
           "network"
         ],
         "operationId": "stream_connections",
-        "summary": "SSE: one connections sample per watched service every 5 s, as event network with { at, samples }",
+        "summary": "SSE: one connections sample per watched app every 5 s, as event network with { at, samples }",
         "x-stationly": {
           "level": "read",
           "mcp": false,
@@ -12824,7 +12650,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -12832,7 +12658,16 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "service",
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
+              "type": "string"
+            }
+          },
+          {
+            "name": "app",
             "in": "query",
             "required": false,
             "schema": {
@@ -12855,23 +12690,32 @@ export const openApiDocument = {
         ]
       }
     },
-    "/v1/environments/{environment}/network/explain": {
+    "/v1/projects/{project}/network/explain": {
       "get": {
         "tags": [
           "network"
         ],
         "operationId": "explain_network",
-        "summary": "Explain why a service can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes",
+        "summary": "Explain why an app can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes",
         "x-stationly": {
           "level": "read",
           "cli": false
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
               "type": "string"
             }
           },
@@ -12881,7 +12725,7 @@ export const openApiDocument = {
             "required": true,
             "schema": {
               "minLength": 1,
-              "description": "A service of the environment (id or name), or internet",
+              "description": "An app (id or name), or internet",
               "type": "string"
             }
           },
@@ -12892,7 +12736,7 @@ export const openApiDocument = {
             "schema": {
               "minLength": 1,
               "maxLength": 260,
-              "description": "A service, service:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port",
+              "description": "An app, app:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port",
               "type": "string"
             }
           },
@@ -13054,13 +12898,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/network/probe": {
+    "/v1/apps/{app}/network/probe": {
       "post": {
         "tags": [
           "network"
         ],
         "operationId": "probe_network",
-        "summary": "Send one TCP handshake or one DNS query from inside the service's own namespace, under its own rules; staged for a non-human actor in a protected environment",
+        "summary": "Send one TCP handshake or one DNS query from inside the app's own namespace, under its own rules; needs approval for a non-human actor in production",
         "x-stationly": {
           "level": "deploy",
           "cli": {
@@ -13069,7 +12913,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -13091,7 +12935,7 @@ export const openApiDocument = {
                   "to": {
                     "minLength": 1,
                     "maxLength": 260,
-                    "description": "A service, a <name>.internal, or a host or address with :port",
+                    "description": "An app, a <name>.internal, or a host or address with :port",
                     "type": "string"
                   },
                   "port": {
@@ -13151,7 +12995,7 @@ export const openApiDocument = {
                   "to": {
                     "minLength": 1,
                     "maxLength": 260,
-                    "description": "A service, a <name>.internal, or a host or address with :port",
+                    "description": "An app, a <name>.internal, or a host or address with :port",
                     "type": "string"
                   },
                   "port": {
@@ -13211,7 +13055,7 @@ export const openApiDocument = {
                   "to": {
                     "minLength": 1,
                     "maxLength": 260,
-                    "description": "A service, a <name>.internal, or a host or address with :port",
+                    "description": "An app, a <name>.internal, or a host or address with :port",
                     "type": "string"
                   },
                   "port": {
@@ -13278,7 +13122,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -13396,13 +13240,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/dns-log": {
+    "/v1/apps/{app}/dns-log": {
       "get": {
         "tags": [
           "network"
         ],
         "operationId": "get_dns_log",
-        "summary": "The service's recent DNS queries from the resolver's ring, newest first, as untrusted data",
+        "summary": "The app's recent DNS queries from the resolver's ring, newest first, as untrusted data",
         "x-stationly": {
           "level": "read",
           "cli": {
@@ -13411,7 +13255,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -13588,19 +13432,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/deployments": {
+    "/v1/apps/{app}/deployments": {
       "get": {
         "tags": [
           "deployments"
         ],
         "operationId": "list_deployments",
-        "summary": "List the deployments of a service",
+        "summary": "List the deployments of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -13662,7 +13506,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One or more of push, manual, rollback, variable_change, redeploy, base_image, agent, comma separated",
+              "description": "One or more of push, manual, rollback, key_change, redeploy, base_image, agent, comma separated",
               "type": "string"
             }
           },
@@ -13832,7 +13676,7 @@ export const openApiDocument = {
           "deployments"
         ],
         "operationId": "deploy",
-        "summary": "Create a deployment record (queued); execution belongs to the station",
+        "summary": "Create a deployment record (queued); execution belongs to the server",
         "x-stationly": {
           "level": "deploy",
           "mcp": {
@@ -13844,7 +13688,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -13867,7 +13711,7 @@ export const openApiDocument = {
                   },
                   "image": {
                     "minLength": 1,
-                    "description": "An image reference for an image source, in place of the service's ref",
+                    "description": "An image reference for an image source, in place of the app's ref",
                     "type": "string"
                   },
                   "blob_id": {
@@ -13893,7 +13737,7 @@ export const openApiDocument = {
                   },
                   "image": {
                     "minLength": 1,
-                    "description": "An image reference for an image source, in place of the service's ref",
+                    "description": "An image reference for an image source, in place of the app's ref",
                     "type": "string"
                   },
                   "blob_id": {
@@ -13919,7 +13763,7 @@ export const openApiDocument = {
                   },
                   "image": {
                     "minLength": 1,
-                    "description": "An image reference for an image source, in place of the service's ref",
+                    "description": "An image reference for an image source, in place of the app's ref",
                     "type": "string"
                   },
                   "blob_id": {
@@ -13951,7 +13795,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -14069,19 +13913,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/deployments": {
+    "/v1/projects/{project}/deployments": {
       "get": {
         "tags": [
           "deployments"
         ],
-        "operationId": "list_environment_deployments",
-        "summary": "List the deployments of an environment",
+        "operationId": "list_project_deployments",
+        "summary": "List the deployments of production, or of a preview",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14130,6 +13974,15 @@ export const openApiDocument = {
             }
           },
           {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
+              "type": "string"
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -14143,7 +13996,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One or more of push, manual, rollback, variable_change, redeploy, base_image, agent, comma separated",
+              "description": "One or more of push, manual, rollback, key_change, redeploy, base_image, agent, comma separated",
               "type": "string"
             }
           },
@@ -14166,7 +14019,7 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "service",
+            "name": "app",
             "in": "query",
             "required": false,
             "schema": {
@@ -14476,7 +14329,7 @@ export const openApiDocument = {
           "deployments"
         ],
         "operationId": "cancel_deployment",
-        "summary": "Cancel a deployment before cutover; never staged",
+        "summary": "Cancel a deployment before cutover; never needs approval",
         "x-stationly": {
           "level": "deploy"
         },
@@ -14697,7 +14550,7 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "service_id",
+                    "app_id",
                     "number",
                     "status",
                     "trigger",
@@ -14718,7 +14571,7 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "service_id": {
+                    "app_id": {
                       "type": "string"
                     },
                     "number": {
@@ -14740,7 +14593,7 @@ export const openApiDocument = {
                             "push",
                             "manual",
                             "rollback",
-                            "variable_change",
+                            "key_change",
                             "redeploy",
                             "base_image",
                             "agent"
@@ -15301,13 +15154,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/redeploy": {
+    "/v1/apps/{app}/redeploy": {
       "post": {
         "tags": [
           "deployments"
         ],
         "operationId": "redeploy",
-        "summary": "Redeploy the current image with current variables",
+        "summary": "Redeploy the current image with current keys",
         "x-stationly": {
           "level": "deploy",
           "cli": {
@@ -15316,7 +15169,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -15381,7 +15234,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -15499,18 +15352,18 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/rebuild": {
+    "/v1/apps/{app}/rebuild": {
       "post": {
         "tags": [
           "deployments"
         ],
-        "operationId": "rebuild_service",
+        "operationId": "rebuild_app",
         "summary": "Rebuild from the same source and deploy",
         "x-stationly": {
           "level": "deploy",
           "cli": {
             "path": [
-              "services",
+              "apps",
               "rebuild"
             ],
             "wait": "wait_for_deployment"
@@ -15518,7 +15371,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -15583,7 +15436,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -15701,7 +15554,7 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/rollback": {
+    "/v1/apps/{app}/rollback": {
       "post": {
         "tags": [
           "deployments"
@@ -15719,7 +15572,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -15796,7 +15649,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -15914,19 +15767,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/builds": {
+    "/v1/apps/{app}/builds": {
       "get": {
         "tags": [
           "deployments"
         ],
         "operationId": "list_builds",
-        "summary": "List the builds of a service",
+        "summary": "List the builds of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -16431,19 +16284,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/runs": {
+    "/v1/apps/{app}/runs": {
       "get": {
         "tags": [
           "runs"
         ],
         "operationId": "list_runs",
-        "summary": "List the runs of a service",
+        "summary": "List the runs of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -16666,14 +16519,14 @@ export const openApiDocument = {
           "runs"
         ],
         "operationId": "run_command",
-        "summary": "Run a one-off command in the service's current image and variables",
+        "summary": "Run a one-off command in the app's current image and keys",
         "x-stationly": {
           "level": "deploy",
           "cli": false
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -16804,7 +16657,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -16992,8 +16845,8 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "service_id",
-                    "sandbox_id",
+                    "app_id",
+                    "machine_id",
                     "deployment_id",
                     "kind",
                     "command",
@@ -17013,13 +16866,13 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "service_id": {
+                    "app_id": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
-                    "sandbox_id": {
+                    "machine_id": {
                       "type": [
                         "string",
                         "null"
@@ -17100,7 +16953,7 @@ export const openApiDocument = {
                       ]
                     },
                     "output": {
-                      "$ref": "#/components/schemas/SandboxRunOutput"
+                      "$ref": "#/components/schemas/MachineRunOutput"
                     },
                     "done": {
                       "type": "boolean"
@@ -17223,7 +17076,7 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/shells": {
+    "/v1/apps/{app}/shells": {
       "post": {
         "tags": [
           "runs"
@@ -17237,7 +17090,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -17314,8 +17167,8 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "service_id",
-                    "sandbox_id",
+                    "app_id",
+                    "machine_id",
                     "deployment_id",
                     "kind",
                     "command",
@@ -17336,13 +17189,13 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "service_id": {
+                    "app_id": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
-                    "sandbox_id": {
+                    "machine_id": {
                       "type": [
                         "string",
                         "null"
@@ -17423,7 +17276,7 @@ export const openApiDocument = {
                       ]
                     },
                     "output": {
-                      "$ref": "#/components/schemas/SandboxRunOutput"
+                      "$ref": "#/components/schemas/MachineRunOutput"
                     },
                     "attach_url": {
                       "type": "string"
@@ -17552,7 +17405,7 @@ export const openApiDocument = {
           "runs"
         ],
         "operationId": "cancel_run",
-        "summary": "Cancel a queued or running run; never staged",
+        "summary": "Cancel a queued or running run; never needs approval",
         "x-stationly": {
           "level": "deploy"
         },
@@ -17840,19 +17693,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/sandboxes": {
+    "/v1/projects/{project}/machines": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "list_sandboxes",
-        "summary": "List the sandboxes of an environment",
+        "operationId": "list_machines",
+        "summary": "List the machines of production or a preview",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -17901,6 +17754,15 @@ export const openApiDocument = {
             }
           },
           {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
+              "type": "string"
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -17910,11 +17772,11 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "station",
+            "name": "server",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only sandboxes on this station, by id or name",
+              "description": "Only machines on this server, by id or name",
               "type": "string"
             }
           },
@@ -17947,7 +17809,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Sandbox"
+                        "$ref": "#/components/schemas/Machine"
                       }
                     },
                     "next_cursor": {
@@ -18075,14 +17937,14 @@ export const openApiDocument = {
       },
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "create_sandbox",
-        "summary": "Create a sandbox, or fork one from a snapshot or a live sandbox disk with from",
-        "description": "Create a sandbox, or fork one from a snapshot or a live sandbox disk with from. A workspace token needs a human actor to create a sandbox with wider egress than its own workspace, on the environment network, or with docker.",
+        "operationId": "create_machine",
+        "summary": "Create a machine, or fork one from a snapshot or a live machine disk with from",
+        "description": "Create a machine, or fork one from a snapshot or a live machine disk with from. A workspace token needs a human actor to create a machine with wider egress than its own workspace, on its production or preview network, or with docker.",
         "x-stationly": {
           "level": "deploy",
-          "human_for_workspace_token": "create a sandbox with wider egress than its own workspace, on the environment network, or with docker",
+          "human_for_workspace_token": "create a machine with wider egress than its own workspace, on its production or preview network, or with docker",
           "cli": {
             "args": [
               "name"
@@ -18091,10 +17953,19 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
               "type": "string"
             }
           }
@@ -18127,16 +17998,16 @@ export const openApiDocument = {
                     }
                   },
                   "from": {
-                    "description": "Fork the disk of sandbox=<sandbox> or snapshot=<snapshot id>",
+                    "description": "Fork the disk of machine=<machine> or snapshot=<snapshot id>",
                     "anyOf": [
                       {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "sandbox"
+                          "machine"
                         ],
                         "properties": {
-                          "sandbox": {
+                          "machine": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -18157,9 +18028,9 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
+                  "server_id": {
                     "minLength": 1,
-                    "description": "The station to place it on; a sandbox never moves",
+                    "description": "The server to place it on; a machine never moves",
                     "type": "string"
                   },
                   "runtime": {
@@ -18259,18 +18130,18 @@ export const openApiDocument = {
                     "description": "Time to live after each start (default 3600 s)",
                     "type": "integer"
                   },
-                  "variables": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                  "keys": {
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -18293,7 +18164,7 @@ export const openApiDocument = {
                   },
                   "workspace": {
                     "additionalProperties": false,
-                    "description": "Make the sandbox a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
+                    "description": "Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
                     "type": "object",
                     "required": [
                       "agent",
@@ -18360,16 +18231,16 @@ export const openApiDocument = {
                     }
                   },
                   "from": {
-                    "description": "Fork the disk of sandbox=<sandbox> or snapshot=<snapshot id>",
+                    "description": "Fork the disk of machine=<machine> or snapshot=<snapshot id>",
                     "anyOf": [
                       {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "sandbox"
+                          "machine"
                         ],
                         "properties": {
-                          "sandbox": {
+                          "machine": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -18390,9 +18261,9 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
+                  "server_id": {
                     "minLength": 1,
-                    "description": "The station to place it on; a sandbox never moves",
+                    "description": "The server to place it on; a machine never moves",
                     "type": "string"
                   },
                   "runtime": {
@@ -18492,18 +18363,18 @@ export const openApiDocument = {
                     "description": "Time to live after each start (default 3600 s)",
                     "type": "integer"
                   },
-                  "variables": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                  "keys": {
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -18526,7 +18397,7 @@ export const openApiDocument = {
                   },
                   "workspace": {
                     "additionalProperties": false,
-                    "description": "Make the sandbox a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
+                    "description": "Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
                     "type": "object",
                     "required": [
                       "agent",
@@ -18593,16 +18464,16 @@ export const openApiDocument = {
                     }
                   },
                   "from": {
-                    "description": "Fork the disk of sandbox=<sandbox> or snapshot=<snapshot id>",
+                    "description": "Fork the disk of machine=<machine> or snapshot=<snapshot id>",
                     "anyOf": [
                       {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "sandbox"
+                          "machine"
                         ],
                         "properties": {
-                          "sandbox": {
+                          "machine": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -18623,9 +18494,9 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "station_id": {
+                  "server_id": {
                     "minLength": 1,
-                    "description": "The station to place it on; a sandbox never moves",
+                    "description": "The server to place it on; a machine never moves",
                     "type": "string"
                   },
                   "runtime": {
@@ -18725,18 +18596,18 @@ export const openApiDocument = {
                     "description": "Time to live after each start (default 3600 s)",
                     "type": "integer"
                   },
-                  "variables": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                  "keys": {
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -18759,7 +18630,7 @@ export const openApiDocument = {
                   },
                   "workspace": {
                     "additionalProperties": false,
-                    "description": "Make the sandbox a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
+                    "description": "Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
                     "type": "object",
                     "required": [
                       "agent",
@@ -18809,7 +18680,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxCreated"
+                  "$ref": "#/components/schemas/MachineCreated"
                 }
               }
             }
@@ -18927,19 +18798,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}": {
+    "/v1/machines/{machine}": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "get_sandbox",
-        "summary": "Get a sandbox",
+        "operationId": "get_machine",
+        "summary": "Get a machine",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -18962,7 +18833,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Sandbox"
+                  "$ref": "#/components/schemas/Machine"
                 }
               }
             }
@@ -19081,18 +18952,18 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "update_sandbox",
-        "summary": "Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start",
-        "description": "Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start. A workspace token needs a human actor to widen egress, move a sandbox to the environment network or turn docker on.",
+        "operationId": "update_machine",
+        "summary": "Change a machine: ttl_s extends from now, egress and disk size apply at once, the rest at the next start",
+        "description": "Change a machine: ttl_s extends from now, egress and disk size apply at once, the rest at the next start. A workspace token needs a human actor to widen egress, move a machine to its production or preview network or turn docker on.",
         "x-stationly": {
           "level": "deploy",
-          "human_for_workspace_token": "widen egress, move a sandbox to the environment network or turn docker on"
+          "human_for_workspace_token": "widen egress, move a machine to its production or preview network or turn docker on"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -19411,7 +19282,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxCreated"
+                  "$ref": "#/components/schemas/MachineCreated"
                 }
               }
             }
@@ -19530,16 +19401,16 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "delete_sandbox",
-        "summary": "Delete a sandbox and its disk; its snapshots stay",
+        "operationId": "delete_machine",
+        "summary": "Delete a machine and its disk; its snapshots stay",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -19553,7 +19424,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxDeleted"
+                  "$ref": "#/components/schemas/MachineDeleted"
                 }
               }
             }
@@ -19671,19 +19542,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/start": {
+    "/v1/machines/{machine}/start": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "start_sandbox",
-        "summary": "Start a stopped sandbox; ttl_s replaces the stored one",
+        "operationId": "start_machine",
+        "summary": "Start a stopped machine; ttl_s replaces the stored one",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -19744,7 +19615,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Sandbox"
+                  "$ref": "#/components/schemas/Machine"
                 }
               }
             }
@@ -19862,19 +19733,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/stop": {
+    "/v1/machines/{machine}/stop": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "stop_sandbox",
-        "summary": "Stop a sandbox and keep its disk",
+        "operationId": "stop_machine",
+        "summary": "Stop a machine and keep its disk",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -19888,7 +19759,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Sandbox"
+                  "$ref": "#/components/schemas/Machine"
                 }
               }
             }
@@ -20006,22 +19877,22 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/exec": {
+    "/v1/machines/{machine}/exec": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "sandbox_exec",
-        "summary": "Run a command in a running sandbox and wait up to wait_s for it; env values are never stored",
-        "description": "Run a command in a running sandbox and wait up to wait_s for it; env values are never stored. A workspace token needs a human actor to run a command in another sandbox with wider egress than its own workspace, on the environment network or with docker.",
+        "operationId": "machine_exec",
+        "summary": "Run a command in a running machine and wait up to wait_s for it; env values are never stored",
+        "description": "Run a command in a running machine and wait up to wait_s for it; env values are never stored. A workspace token needs a human actor to run a command in another machine with wider egress than its own workspace, on its production or preview network or with docker.",
         "x-stationly": {
           "level": "deploy",
-          "human_for_workspace_token": "run a command in another sandbox with wider egress than its own workspace, on the environment network or with docker",
+          "human_for_workspace_token": "run a command in another machine with wider egress than its own workspace, on its production or preview network or with docker",
           "cli": false
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -20196,7 +20067,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxExec"
+                  "$ref": "#/components/schemas/MachineExec"
                 }
               }
             }
@@ -20314,23 +20185,23 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/shells": {
+    "/v1/machines/{machine}/shells": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "open_sandbox_shell",
-        "summary": "Create a shell run in a sandbox; attach to it over the WebSocket at attach_url",
-        "description": "Create a shell run in a sandbox; attach to it over the WebSocket at attach_url. A workspace token needs a human actor to open a shell in another sandbox with wider egress than its own workspace, on the environment network or with docker.",
+        "operationId": "open_machine_shell",
+        "summary": "Create a shell run in a machine; attach to it over the WebSocket at attach_url",
+        "description": "Create a shell run in a machine; attach to it over the WebSocket at attach_url. A workspace token needs a human actor to open a shell in another machine with wider egress than its own workspace, on its production or preview network or with docker.",
         "x-stationly": {
           "level": "deploy",
-          "human_for_workspace_token": "open a shell in another sandbox with wider egress than its own workspace, on the environment network or with docker",
+          "human_for_workspace_token": "open a shell in another machine with wider egress than its own workspace, on its production or preview network or with docker",
           "mcp": false,
           "cli": false
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -20418,7 +20289,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxShell"
+                  "$ref": "#/components/schemas/MachineShell"
                 }
               }
             }
@@ -20536,20 +20407,20 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/runs": {
+    "/v1/machines/{machine}/runs": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "list_sandbox_runs",
-        "summary": "List the runs of a sandbox",
+        "operationId": "list_machine_runs",
+        "summary": "List the runs of a machine",
         "x-stationly": {
           "level": "read",
           "mcp": false
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -20768,20 +20639,20 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/metrics": {
+    "/v1/machines/{machine}/metrics": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "get_sandbox_metrics",
-        "summary": "Latest live metrics sample of a sandbox",
+        "operationId": "get_machine_metrics",
+        "summary": "Latest live metrics sample of a machine",
         "x-stationly": {
           "level": "read",
           "mcp": false
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -20795,7 +20666,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxMetricSample"
+                  "$ref": "#/components/schemas/MachineMetricSample"
                 }
               }
             }
@@ -20913,19 +20784,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/variables": {
+    "/v1/machines/{machine}/keys": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "list_sandbox_variables",
-        "summary": "List the variables of a sandbox; values are never listed",
+        "operationId": "list_machine_keys",
+        "summary": "List the keys of a machine; values are never listed",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -20958,7 +20829,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Variable"
+                        "$ref": "#/components/schemas/Key"
                       }
                     },
                     "next_cursor": {
@@ -21086,16 +20957,16 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "set_sandbox_variables",
-        "summary": "Set and unset a sandbox's variables; references to project and global variables keep values out of the agent's hands",
+        "operationId": "set_machine_keys",
+        "summary": "Set and unset a machine's keys; references to project and global keys keep values out of the agent's hands",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -21112,17 +20983,17 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -21164,17 +21035,17 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -21216,17 +21087,17 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -21270,7 +21141,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxVariablesOutcome"
+                  "$ref": "#/components/schemas/MachineKeysOutcome"
                 }
               }
             }
@@ -21388,19 +21259,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/variables/resolved": {
+    "/v1/machines/{machine}/keys/resolved": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "get_sandbox_resolved_variables",
-        "summary": "The resolved variables of a sandbox with their sources; a value only with admin and never a sealed one",
+        "operationId": "get_machine_resolved_keys",
+        "summary": "The resolved keys of a machine with their sources; a value only with admin and never a sealed one",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -21414,48 +21285,54 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "SandboxResolved",
+                  "title": "MachineResolved",
                   "additionalProperties": false,
                   "type": "object",
                   "required": [
-                    "sandbox_id",
-                    "environment_id",
-                    "variables"
+                    "machine_id",
+                    "project_id",
+                    "preview_id",
+                    "keys"
                   ],
                   "properties": {
-                    "sandbox_id": {
+                    "machine_id": {
                       "type": "string"
                     },
-                    "environment_id": {
+                    "project_id": {
                       "type": "string"
                     },
-                    "variables": {
+                    "preview_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
                       "type": "array",
                       "items": {
-                        "title": "ResolvedVariable",
+                        "title": "ResolvedKey",
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "key",
-                          "variable_id",
+                          "name",
+                          "key_id",
                           "kind",
                           "reference",
                           "injection",
                           "build",
                           "sealed",
                           "stale",
-                          "fallback_from_protected",
                           "error"
                         ],
                         "properties": {
-                          "key": {
+                          "name": {
                             "type": "string"
                           },
-                          "variable_id": {
+                          "key_id": {
                             "type": "string"
                           },
                           "kind": {
-                            "$ref": "#/components/schemas/VariableKind"
+                            "$ref": "#/components/schemas/KeyKind"
                           },
                           "reference": {
                             "type": [
@@ -21477,9 +21354,6 @@ export const openApiDocument = {
                             "type": "boolean"
                           },
                           "stale": {
-                            "type": "boolean"
-                          },
-                          "fallback_from_protected": {
                             "type": "boolean"
                           },
                           "parts": {
@@ -21522,8 +21396,8 @@ export const openApiDocument = {
                                             "type": "object",
                                             "required": [
                                               "scope",
-                                              "key",
-                                              "variable_id",
+                                              "name",
+                                              "key_id",
                                               "kind",
                                               "secret_value_id",
                                               "version",
@@ -21535,23 +21409,27 @@ export const openApiDocument = {
                                                 "enum": [
                                                   "project",
                                                   "global",
-                                                  "service",
-                                                  "sandbox"
+                                                  "app",
+                                                  "machine"
                                                 ]
                                               },
-                                              "service_id": {
+                                              "app_id": {
                                                 "type": [
                                                   "string",
                                                   "null"
                                                 ]
                                               },
-                                              "environment": {
+                                              "target": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "production",
+                                                  "preview"
+                                                ]
+                                              },
+                                              "name": {
                                                 "type": "string"
                                               },
-                                              "key": {
-                                                "type": "string"
-                                              },
-                                              "variable_id": {
+                                              "key_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -21579,10 +21457,6 @@ export const openApiDocument = {
                                                   "integer",
                                                   "null"
                                                 ]
-                                              },
-                                              "fallback_from_protected": {
-                                                "const": true,
-                                                "type": "boolean"
                                               }
                                             }
                                           },
@@ -21591,7 +21465,7 @@ export const openApiDocument = {
                                             "type": "object",
                                             "required": [
                                               "scope",
-                                              "service_id",
+                                              "app_id",
                                               "key",
                                               "value"
                                             ],
@@ -21600,7 +21474,7 @@ export const openApiDocument = {
                                                 "const": "export",
                                                 "type": "string"
                                               },
-                                              "service_id": {
+                                              "app_id": {
                                                 "type": "string"
                                               },
                                               "key": {
@@ -21616,9 +21490,9 @@ export const openApiDocument = {
                                             "type": "object",
                                             "required": [
                                               "scope",
-                                              "service_id",
-                                              "key",
-                                              "variable_id",
+                                              "app_id",
+                                              "name",
+                                              "key_id",
                                               "kind",
                                               "reference"
                                             ],
@@ -21626,23 +21500,23 @@ export const openApiDocument = {
                                               "scope": {
                                                 "type": "string",
                                                 "enum": [
-                                                  "service",
-                                                  "sandbox"
+                                                  "app",
+                                                  "machine"
                                                 ]
                                               },
-                                              "service_id": {
+                                              "app_id": {
                                                 "type": [
                                                   "string",
                                                   "null"
                                                 ]
                                               },
-                                              "key": {
+                                              "name": {
                                                 "type": [
                                                   "string",
                                                   "null"
                                                 ]
                                               },
-                                              "variable_id": {
+                                              "key_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -21829,19 +21703,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/connections": {
+    "/v1/machines/{machine}/connections": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "get_sandbox_connections",
-        "summary": "Live connections and refused attempts of a sandbox; one sample",
+        "operationId": "get_machine_connections",
+        "summary": "Live connections and refused attempts of a machine; one sample",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -21867,7 +21741,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxConnections"
+                  "$ref": "#/components/schemas/MachineConnections"
                 }
               }
             }
@@ -21985,13 +21859,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/dns-log": {
+    "/v1/machines/{machine}/dns-log": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "get_sandbox_dns_log",
-        "summary": "The sandbox's recent DNS queries from the resolver's ring, newest first, as untrusted data",
+        "operationId": "get_machine_dns_log",
+        "summary": "The machine's recent DNS queries from the resolver's ring, newest first, as untrusted data",
         "x-stationly": {
           "level": "read",
           "cli": {
@@ -22000,7 +21874,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -22177,13 +22051,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/network/probe": {
+    "/v1/machines/{machine}/network/probe": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "probe_sandbox_network",
-        "summary": "Ask the sandbox's resolver as the sandbox, or judge one TCP handshake with the sandbox ruleset and send it from the station when the ruleset accepts the destination",
+        "operationId": "probe_machine_network",
+        "summary": "Ask the machine's resolver as the machine, or judge one TCP handshake with the machine ruleset and send it from the server when the ruleset accepts the destination",
         "x-stationly": {
           "level": "deploy",
           "cli": {
@@ -22192,7 +22066,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -22214,7 +22088,7 @@ export const openApiDocument = {
                   "to": {
                     "minLength": 1,
                     "maxLength": 260,
-                    "description": "A service, a <name>.internal, or a host or address with :port",
+                    "description": "An app, a <name>.internal, or a host or address with :port",
                     "type": "string"
                   },
                   "port": {
@@ -22274,7 +22148,7 @@ export const openApiDocument = {
                   "to": {
                     "minLength": 1,
                     "maxLength": 260,
-                    "description": "A service, a <name>.internal, or a host or address with :port",
+                    "description": "An app, a <name>.internal, or a host or address with :port",
                     "type": "string"
                   },
                   "port": {
@@ -22334,7 +22208,7 @@ export const openApiDocument = {
                   "to": {
                     "minLength": 1,
                     "maxLength": 260,
-                    "description": "A service, a <name>.internal, or a host or address with :port",
+                    "description": "An app, a <name>.internal, or a host or address with :port",
                     "type": "string"
                   },
                   "port": {
@@ -22391,7 +22265,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxNetworkProbe"
+                  "$ref": "#/components/schemas/MachineNetworkProbe"
                 }
               }
             }
@@ -22509,19 +22383,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/snapshots": {
+    "/v1/machines/{machine}/snapshots": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "snapshot_sandbox",
-        "summary": "Take a read-only copy of a sandbox's disk; files on the disk, credentials included, are copied into every snapshot and fork",
+        "operationId": "snapshot_machine",
+        "summary": "Take a read-only copy of a machine's disk; files on the disk, credentials included, are copied into every snapshot and fork",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -22579,7 +22453,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxSnapshotCreated"
+                  "$ref": "#/components/schemas/MachineSnapshotCreated"
                 }
               }
             }
@@ -22698,16 +22572,16 @@ export const openApiDocument = {
       },
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "list_sandbox_snapshots",
-        "summary": "List the snapshots of a sandbox",
+        "operationId": "list_machine_snapshots",
+        "summary": "List the snapshots of a machine",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -22781,7 +22655,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/SandboxSnapshot"
+                        "$ref": "#/components/schemas/MachineSnapshot"
                       }
                     },
                     "next_cursor": {
@@ -22908,19 +22782,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/sandbox-snapshots": {
+    "/v1/projects/{project}/machine-snapshots": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "list_environment_sandbox_snapshots",
-        "summary": "List the sandbox snapshots of an environment",
+        "operationId": "list_project_machine_snapshots",
+        "summary": "List the machine snapshots of production or a preview",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -22969,7 +22843,16 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "sandbox",
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
+              "type": "string"
+            }
+          },
+          {
+            "name": "machine",
             "in": "query",
             "required": false,
             "schema": {
@@ -23002,7 +22885,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/SandboxSnapshot"
+                        "$ref": "#/components/schemas/MachineSnapshot"
                       }
                     },
                     "next_cursor": {
@@ -23129,13 +23012,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandbox-snapshots/{id}": {
+    "/v1/machine-snapshots/{id}": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "get_sandbox_snapshot",
-        "summary": "Get a sandbox snapshot",
+        "operationId": "get_machine_snapshot",
+        "summary": "Get a machine snapshot",
         "x-stationly": {
           "level": "read",
           "mcp": false
@@ -23165,7 +23048,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxSnapshot"
+                  "$ref": "#/components/schemas/MachineSnapshot"
                 }
               }
             }
@@ -23284,10 +23167,10 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "delete_sandbox_snapshot",
-        "summary": "Delete a sandbox snapshot",
+        "operationId": "delete_machine_snapshot",
+        "summary": "Delete a machine snapshot",
         "x-stationly": {
           "level": "deploy"
         },
@@ -23307,7 +23190,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SandboxSnapshotDeleted"
+                  "$ref": "#/components/schemas/MachineSnapshotDeleted"
                 }
               }
             }
@@ -23425,19 +23308,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/stations/{station}/sandbox-storage/grow": {
+    "/v1/servers/{server}/machine-storage/grow": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
-        "operationId": "grow_sandbox_storage",
-        "summary": "Grow a station's sandbox filesystem to size_bytes while sandboxes run; staged for a non-human actor under platform.protected",
+        "operationId": "grow_machine_storage",
+        "summary": "Grow a server's machine filesystem to size_bytes while machines run; needs approval for a non-human actor under platform.protected",
         "x-stationly": {
           "level": "instance admin"
         },
         "parameters": [
           {
-            "name": "station",
+            "name": "server",
             "in": "path",
             "required": true,
             "schema": {
@@ -23458,7 +23341,7 @@ export const openApiDocument = {
                 "properties": {
                   "size_bytes": {
                     "minimum": 1,
-                    "description": "The new size of the sandbox filesystem; it only grows",
+                    "description": "The new size of the machine filesystem; it only grows",
                     "type": "integer"
                   }
                 }
@@ -23474,7 +23357,7 @@ export const openApiDocument = {
                 "properties": {
                   "size_bytes": {
                     "minimum": 1,
-                    "description": "The new size of the sandbox filesystem; it only grows",
+                    "description": "The new size of the machine filesystem; it only grows",
                     "type": "integer"
                   }
                 }
@@ -23490,7 +23373,7 @@ export const openApiDocument = {
                 "properties": {
                   "size_bytes": {
                     "minimum": 1,
-                    "description": "The new size of the sandbox filesystem; it only grows",
+                    "description": "The new size of the machine filesystem; it only grows",
                     "type": "integer"
                   }
                 }
@@ -23514,7 +23397,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -23632,10 +23515,10 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/agent/inbox": {
+    "/v1/machines/{machine}/agent/inbox": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
         "operationId": "get_agent_inbox",
         "summary": "The operator's undelivered prompts and interrupts for a session, waiting up to wait_s; only the workspace token is accepted",
@@ -23646,7 +23529,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -23826,10 +23709,10 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/agent/inbox/ack": {
+    "/v1/machines/{machine}/agent/inbox/ack": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
         "operationId": "ack_agent_inbox",
         "summary": "Mark inbox items as delivered to the agent process; only the workspace token is accepted",
@@ -23840,7 +23723,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -24034,10 +23917,10 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/agent/approvals": {
+    "/v1/machines/{machine}/agent/approvals": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
         "operationId": "request_tool_approval",
         "summary": "Ask the task's owner to allow or deny a tool call of a runner session; only the workspace token is accepted",
@@ -24048,7 +23931,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -24200,10 +24083,10 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/agent/approvals/{approval}": {
+    "/v1/machines/{machine}/agent/approvals/{approval}": {
       "get": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
         "operationId": "get_tool_approval",
         "summary": "An approval of a runner session, waiting up to wait_s for a decision; only the workspace token is accepted",
@@ -24214,7 +24097,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -24375,10 +24258,10 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/agent/runner/exit": {
+    "/v1/machines/{machine}/agent/runner/exit": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
         "operationId": "report_runner_exit",
         "summary": "Report that a session's runner exited, so a prompt waiting for it starts the next one; only the workspace token is accepted",
@@ -24389,7 +24272,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -24577,10 +24460,10 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/sandboxes/{sandbox}/agent/events": {
+    "/v1/machines/{machine}/agent/events": {
       "post": {
         "tags": [
-          "sandboxes"
+          "machines"
         ],
         "operationId": "post_agent_events",
         "summary": "Report events of the agent session in a workspace; only the workspace token is accepted",
@@ -24591,7 +24474,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "path",
             "required": true,
             "schema": {
@@ -28116,8 +27999,8 @@ export const openApiDocument = {
                     "description": "The project, an id or a name",
                     "type": "string"
                   },
-                  "environment": {
-                    "description": "Where the task's workspace lives; the project's default environment by default",
+                  "preview": {
+                    "description": "A preview, by id or name, for the task's own machine to join; production by default",
                     "type": "string"
                   },
                   "repository": {
@@ -28171,8 +28054,8 @@ export const openApiDocument = {
                     "description": "The project, an id or a name",
                     "type": "string"
                   },
-                  "environment": {
-                    "description": "Where the task's workspace lives; the project's default environment by default",
+                  "preview": {
+                    "description": "A preview, by id or name, for the task's own machine to join; production by default",
                     "type": "string"
                   },
                   "repository": {
@@ -28226,8 +28109,8 @@ export const openApiDocument = {
                     "description": "The project, an id or a name",
                     "type": "string"
                   },
-                  "environment": {
-                    "description": "Where the task's workspace lives; the project's default environment by default",
+                  "preview": {
+                    "description": "A preview, by id or name, for the task's own machine to join; production by default",
                     "type": "string"
                   },
                   "repository": {
@@ -29342,7 +29225,7 @@ export const openApiDocument = {
           "tasks"
         ],
         "operationId": "deploy_task_preview",
-        "summary": "Deploy a task's worktree into its own preview environment, made the first time; needs a human, the task's owner or an admin",
+        "summary": "Deploy a task's worktree into its own preview, made the first time; needs a human, the task's owner or an admin",
         "x-stationly": {
           "level": "any",
           "mcp": false,
@@ -29496,7 +29379,7 @@ export const openApiDocument = {
           "tasks"
         ],
         "operationId": "ship_task",
-        "summary": "Push a task's branch, open its pull request and ask an admin to merge it; needs a human, the task's owner or an admin",
+        "summary": "Push a task's branch, open its pull request and ask an admin to approve merging it; needs a human, the task's owner or an admin",
         "x-stationly": {
           "level": "any",
           "mcp": false,
@@ -29526,373 +29409,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ShipRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/ship-requests": {
-      "get": {
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "list_ship_requests",
-        "summary": "List ship requests waiting for a decision; admins see all, others their own",
-        "x-stationly": {
-          "level": "any",
-          "mcp": false,
-          "cli": {
-            "path": [
-              "ship-requests",
-              "list"
-            ]
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShipRequestList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/ship-requests/{request}/decision": {
-      "post": {
-        "tags": [
-          "tasks"
-        ],
-        "operationId": "decide_ship_request",
-        "summary": "Approve a ship request, which merges its pull request and deploys production, or reject it with a reason; an admin and a human",
-        "x-stationly": {
-          "level": "any",
-          "mcp": false,
-          "cli": {
-            "path": [
-              "ship-requests",
-              "decide"
-            ],
-            "args": [
-              "request"
-            ]
-          }
-        },
-        "parameters": [
-          {
-            "name": "request",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "decision"
-                ],
-                "properties": {
-                  "decision": {
-                    "type": "string",
-                    "enum": [
-                      "approve",
-                      "reject"
-                    ]
-                  },
-                  "reason": {
-                    "maxLength": 2000,
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "decision"
-                ],
-                "properties": {
-                  "decision": {
-                    "type": "string",
-                    "enum": [
-                      "approve",
-                      "reject"
-                    ]
-                  },
-                  "reason": {
-                    "maxLength": 2000,
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "decision"
-                ],
-                "properties": {
-                  "decision": {
-                    "type": "string",
-                    "enum": [
-                      "approve",
-                      "reject"
-                    ]
-                  },
-                  "reason": {
-                    "maxLength": 2000,
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ShipRequest"
+                  "$ref": "#/components/schemas/Approval"
                 }
               }
             }
@@ -32060,11 +31577,11 @@ export const openApiDocument = {
             ],
             "render": "logs",
             "exclusive": [
-              "service",
+              "app",
               "deployment",
               "build",
               "run",
-              "sandbox",
+              "machine",
               "component"
             ]
           },
@@ -32072,11 +31589,11 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Logs of this service; exactly one selector is required",
+              "description": "Logs of this app; exactly one selector is required",
               "type": "string"
             }
           },
@@ -32108,11 +31625,11 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "sandbox",
+            "name": "machine",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Logs of this sandbox; exactly one selector is required",
+              "description": "Logs of this machine; exactly one selector is required",
               "type": "string"
             }
           },
@@ -32131,11 +31648,11 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "station",
+            "name": "server",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "The station of a component, by id or name",
+              "description": "The server of a component, by id or name",
               "type": "string"
             }
           },
@@ -32439,19 +31956,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/metrics": {
+    "/v1/apps/{app}/metrics": {
       "get": {
         "tags": [
           "metrics"
         ],
         "operationId": "get_metrics",
-        "summary": "Latest live metrics sample of a service",
+        "summary": "Latest live metrics sample of an app",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -32480,14 +31997,6 @@ export const openApiDocument = {
                     "restarts"
                   ],
                   "properties": {
-                    "service_id": {
-                      "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$",
-                      "type": "string"
-                    },
-                    "sandbox_id": {
-                      "pattern": "^sbx_[0-9A-HJKMNP-TV-Z]{26}$",
-                      "type": "string"
-                    },
                     "deployment_id": {
                       "pattern": "^dep_[0-9A-HJKMNP-TV-Z]{26}$",
                       "type": [
@@ -32544,6 +32053,14 @@ export const openApiDocument = {
                     "disk_limit_bytes": {
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "app_id": {
+                      "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$",
+                      "type": "string"
+                    },
+                    "machine_id": {
+                      "pattern": "^sbx_[0-9A-HJKMNP-TV-Z]{26}$",
+                      "type": "string"
                     }
                   }
                 }
@@ -32663,13 +32180,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/metrics": {
+    "/v1/projects/{project}/metrics": {
       "get": {
         "tags": [
           "metrics"
         ],
         "operationId": "stream_metrics",
-        "summary": "SSE: one metrics sample per running service every 5 s",
+        "summary": "SSE: one metrics sample per running app of production or a preview every 5 s",
         "x-stationly": {
           "level": "read",
           "mcp": false,
@@ -32680,10 +32197,19 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "environment",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "A preview by id or name; production when omitted",
               "type": "string"
             }
           }
@@ -32735,15 +32261,16 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "environment",
+            "name": "preview",
             "in": "query",
             "required": false,
             "schema": {
+              "description": "Only events of this preview id",
               "type": "string"
             }
           },
           {
-            "name": "service",
+            "name": "app",
             "in": "query",
             "required": false,
             "schema": {
@@ -34260,19 +33787,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/variables": {
+    "/v1/apps/{app}/keys": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "list_service_variables",
-        "summary": "List the variables of a service; values are never listed",
+        "operationId": "list_app_keys",
+        "summary": "List the keys of an app; values are never listed",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -34305,7 +33832,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Variable"
+                        "$ref": "#/components/schemas/Key"
                       }
                     },
                     "next_cursor": {
@@ -34433,16 +33960,16 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "set_service_variables",
-        "summary": "Set and unset service variables",
+        "operationId": "set_app_keys",
+        "summary": "Set and unset app keys",
         "x-stationly": {
           "level": "deploy"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -34458,18 +33985,25 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "preview"
+                    ]
+                  },
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -34495,10 +34029,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -34528,18 +34058,25 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "preview"
+                    ]
+                  },
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -34565,10 +34102,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -34598,18 +34131,25 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "preview"
+                    ]
+                  },
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -34635,10 +34175,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -34671,7 +34207,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VariablesOutcome"
+                  "$ref": "#/components/schemas/KeysOutcome"
                 }
               }
             }
@@ -34681,7 +34217,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -34799,18 +34335,18 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/projects/{project}/variables": {
+    "/v1/projects/{project}/keys": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "list_project_variables",
-        "summary": "List project variables",
+        "operationId": "list_project_keys",
+        "summary": "List project keys",
         "x-stationly": {
           "level": "read",
           "cli": {
             "path": [
-              "variables",
+              "keys",
               "list"
             ]
           }
@@ -34834,11 +34370,15 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "environment",
+            "name": "target",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "production",
+                "preview"
+              ]
             }
           }
         ],
@@ -34858,7 +34398,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Variable"
+                        "$ref": "#/components/schemas/Key"
                       }
                     },
                     "next_cursor": {
@@ -34986,10 +34526,10 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "set_project_variables",
-        "summary": "Set and unset project variables for one environment or the default",
+        "operationId": "set_project_keys",
+        "summary": "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads",
         "x-stationly": {
           "level": "admin"
         },
@@ -35010,25 +34550,26 @@ export const openApiDocument = {
               "schema": {
                 "additionalProperties": false,
                 "type": "object",
-                "required": [
-                  "environment"
-                ],
                 "properties": {
-                  "environment": {
-                    "type": "string"
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "preview"
+                    ]
                   },
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -35054,10 +34595,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -35086,25 +34623,26 @@ export const openApiDocument = {
               "schema": {
                 "additionalProperties": false,
                 "type": "object",
-                "required": [
-                  "environment"
-                ],
                 "properties": {
-                  "environment": {
-                    "type": "string"
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "preview"
+                    ]
                   },
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -35130,10 +34668,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -35162,25 +34696,26 @@ export const openApiDocument = {
               "schema": {
                 "additionalProperties": false,
                 "type": "object",
-                "required": [
-                  "environment"
-                ],
                 "properties": {
-                  "environment": {
-                    "type": "string"
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "preview"
+                    ]
                   },
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -35206,10 +34741,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -35242,7 +34773,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VariablesOutcome"
+                  "$ref": "#/components/schemas/KeysOutcome"
                 }
               }
             }
@@ -35252,7 +34783,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -35370,13 +34901,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/global-variables": {
+    "/v1/global-keys": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "list_global_variables",
-        "summary": "List global variables",
+        "operationId": "list_global_keys",
+        "summary": "List global keys",
         "x-stationly": {
           "level": "instance read"
         },
@@ -35407,7 +34938,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Variable"
+                        "$ref": "#/components/schemas/Key"
                       }
                     },
                     "next_cursor": {
@@ -35535,10 +35066,10 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "set_global_variables",
-        "summary": "Set and unset global variables",
+        "operationId": "set_global_keys",
+        "summary": "Set and unset global keys",
         "x-stationly": {
           "level": "instance admin"
         },
@@ -35551,17 +35082,17 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -35587,10 +35118,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -35621,17 +35148,17 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -35657,10 +35184,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -35691,17 +35214,17 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Variables to set: key, kind (literal, reference or sealed), and value or reference",
+                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
-                        "key",
+                        "name",
                         "kind"
                       ],
                       "properties": {
-                        "key": {
+                        "name": {
                           "pattern": "^[A-Z_][A-Z0-9_]*$",
                           "type": "string"
                         },
@@ -35727,10 +35250,6 @@ export const openApiDocument = {
                           ]
                         },
                         "build": {
-                          "type": "boolean"
-                        },
-                        "copy_to_clones": {
-                          "description": "Sealed values only: copy the value into clones of this environment, by default false",
                           "type": "boolean"
                         }
                       }
@@ -35763,7 +35282,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VariablesOutcome"
+                  "$ref": "#/components/schemas/KeysOutcome"
                 }
               }
             }
@@ -35773,7 +35292,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -35891,13 +35410,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/variables/{id}": {
+    "/v1/keys/{id}": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "get_variable",
-        "summary": "Get a variable; never its value",
+        "operationId": "get_key",
+        "summary": "Get a key; never its value",
         "x-stationly": {
           "level": "read"
         },
@@ -35926,7 +35445,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Variable"
+                  "$ref": "#/components/schemas/Key"
                 }
               }
             }
@@ -36045,10 +35564,10 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "delete_variable",
-        "summary": "Delete a variable",
+        "operationId": "delete_key",
+        "summary": "Delete a key",
         "x-stationly": {
           "level": "deploy"
         },
@@ -36085,20 +35604,23 @@ export const openApiDocument = {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "service_id",
-                          "environment_id",
-                          "protected",
+                          "app_id",
+                          "project_id",
+                          "preview_id",
                           "keys"
                         ],
                         "properties": {
-                          "service_id": {
+                          "app_id": {
                             "type": "string"
                           },
-                          "environment_id": {
+                          "project_id": {
                             "type": "string"
                           },
-                          "protected": {
-                            "type": "boolean"
+                          "preview_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "keys": {
                             "type": "array",
@@ -36119,7 +35641,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -36237,13 +35759,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/variables/{id}/versions": {
+    "/v1/keys/{id}/versions": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "list_variable_versions",
-        "summary": "List the versions of a variable; never their values",
+        "operationId": "list_key_versions",
+        "summary": "List the versions of a key; never their values",
         "x-stationly": {
           "level": "read"
         },
@@ -36266,11 +35788,15 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "environment",
+            "name": "target",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "production",
+                "preview"
+              ]
             }
           },
           {
@@ -36436,18 +35962,18 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/variables/{id}/apply": {
+    "/v1/keys/{id}/apply": {
       "post": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "apply_variable_changes",
-        "summary": "Redeploy every stale dependent of a variable",
+        "operationId": "apply_key_changes",
+        "summary": "Redeploy every stale dependent of a key",
         "x-stationly": {
           "level": "any",
           "cli": {
             "path": [
-              "variables",
+              "keys",
               "apply"
             ]
           }
@@ -36472,7 +35998,7 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "deployments",
-                    "staged_changes"
+                    "approvals"
                   ],
                   "properties": {
                     "deployments": {
@@ -36481,7 +36007,7 @@ export const openApiDocument = {
                         "type": "string"
                       }
                     },
-                    "staged_changes": {
+                    "approvals": {
                       "type": "array",
                       "items": {
                         "additionalProperties": false,
@@ -36489,10 +36015,19 @@ export const openApiDocument = {
                         "required": [
                           "id",
                           "created_at",
-                          "environment_id",
+                          "project_id",
+                          "task_id",
+                          "title",
                           "status",
                           "source",
-                          "actor",
+                          "requested_by",
+                          "requester",
+                          "requester_decides",
+                          "decided_by",
+                          "decided_at",
+                          "self_approved",
+                          "reason",
+                          "ship",
                           "summary",
                           "changes"
                         ],
@@ -36506,17 +36041,26 @@ export const openApiDocument = {
                           "updated_at": {
                             "type": "string"
                           },
-                          "environment_id": {
+                          "project_id": {
                             "type": [
                               "string",
                               "null"
                             ]
                           },
+                          "task_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
                           "status": {
                             "type": "string",
                             "enum": [
-                              "staged",
-                              "accepted",
+                              "waiting",
+                              "approved",
                               "rejected",
                               "superseded"
                             ]
@@ -36527,17 +36071,51 @@ export const openApiDocument = {
                               "api",
                               "manifest",
                               "compose_import",
-                              "agent",
+                              "task",
                               "ui"
                             ]
                           },
-                          "actor": {
+                          "requested_by": {
                             "$ref": "#/components/schemas/Actor"
                           },
-                          "accepted_by": {
+                          "requester": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "requester_decides": {
+                            "type": "boolean"
+                          },
+                          "decided_by": {
                             "anyOf": [
                               {
                                 "$ref": "#/components/schemas/Actor"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "decided_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "self_approved": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "ship": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/components/schemas/ApprovalShip"
                               },
                               {
                                 "type": "null"
@@ -36712,7 +36290,7 @@ export const openApiDocument = {
     "/v1/secret-values/{id}/revoke": {
       "post": {
         "tags": [
-          "variables"
+          "keys"
         ],
         "operationId": "revoke_secret_version",
         "summary": "Revoke a secret version",
@@ -36783,8 +36361,8 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "variable_id",
-                    "environment_id",
+                    "key_id",
+                    "target",
                     "version",
                     "bytes",
                     "created_by",
@@ -36798,13 +36376,14 @@ export const openApiDocument = {
                     "id": {
                       "type": "string"
                     },
-                    "variable_id": {
+                    "key_id": {
                       "type": "string"
                     },
-                    "environment_id": {
-                      "type": [
-                        "string",
-                        "null"
+                    "target": {
+                      "type": "string",
+                      "enum": [
+                        "production",
+                        "preview"
                       ]
                     },
                     "version": {
@@ -36961,7 +36540,7 @@ export const openApiDocument = {
     "/v1/secret-values/{id}/restore": {
       "post": {
         "tags": [
-          "variables"
+          "keys"
         ],
         "operationId": "restore_secret_version",
         "summary": "Undo a revocation",
@@ -37103,19 +36682,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/services/{service}/variables/resolved": {
+    "/v1/apps/{app}/keys/resolved": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "get_resolved_variables",
-        "summary": "The resolved variables of the next deployment; sealed values never appear",
+        "operationId": "get_resolved_keys",
+        "summary": "The resolved keys of the next deployment; sealed values never appear",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "service",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -37142,18 +36721,25 @@ export const openApiDocument = {
                   "additionalProperties": false,
                   "type": "object",
                   "required": [
-                    "service_id",
-                    "environment_id",
+                    "app_id",
+                    "project_id",
+                    "preview_id",
                     "compared_with",
-                    "variables",
+                    "keys",
                     "exports"
                   ],
                   "properties": {
-                    "service_id": {
+                    "app_id": {
                       "type": "string"
                     },
-                    "environment_id": {
+                    "project_id": {
                       "type": "string"
+                    },
+                    "preview_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "compared_with": {
                       "type": [
@@ -37161,33 +36747,32 @@ export const openApiDocument = {
                         "null"
                       ]
                     },
-                    "variables": {
+                    "keys": {
                       "type": "array",
                       "items": {
-                        "title": "ResolvedVariable",
+                        "title": "ResolvedKey",
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "key",
-                          "variable_id",
+                          "name",
+                          "key_id",
                           "kind",
                           "reference",
                           "injection",
                           "build",
                           "sealed",
                           "stale",
-                          "fallback_from_protected",
                           "error"
                         ],
                         "properties": {
-                          "key": {
+                          "name": {
                             "type": "string"
                           },
-                          "variable_id": {
+                          "key_id": {
                             "type": "string"
                           },
                           "kind": {
-                            "$ref": "#/components/schemas/VariableKind"
+                            "$ref": "#/components/schemas/KeyKind"
                           },
                           "reference": {
                             "type": [
@@ -37209,9 +36794,6 @@ export const openApiDocument = {
                             "type": "boolean"
                           },
                           "stale": {
-                            "type": "boolean"
-                          },
-                          "fallback_from_protected": {
                             "type": "boolean"
                           },
                           "parts": {
@@ -37254,8 +36836,8 @@ export const openApiDocument = {
                                             "type": "object",
                                             "required": [
                                               "scope",
-                                              "key",
-                                              "variable_id",
+                                              "name",
+                                              "key_id",
                                               "kind",
                                               "secret_value_id",
                                               "version",
@@ -37267,23 +36849,27 @@ export const openApiDocument = {
                                                 "enum": [
                                                   "project",
                                                   "global",
-                                                  "service",
-                                                  "sandbox"
+                                                  "app",
+                                                  "machine"
                                                 ]
                                               },
-                                              "service_id": {
+                                              "app_id": {
                                                 "type": [
                                                   "string",
                                                   "null"
                                                 ]
                                               },
-                                              "environment": {
+                                              "target": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "production",
+                                                  "preview"
+                                                ]
+                                              },
+                                              "name": {
                                                 "type": "string"
                                               },
-                                              "key": {
-                                                "type": "string"
-                                              },
-                                              "variable_id": {
+                                              "key_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -37311,10 +36897,6 @@ export const openApiDocument = {
                                                   "integer",
                                                   "null"
                                                 ]
-                                              },
-                                              "fallback_from_protected": {
-                                                "const": true,
-                                                "type": "boolean"
                                               }
                                             }
                                           },
@@ -37323,7 +36905,7 @@ export const openApiDocument = {
                                             "type": "object",
                                             "required": [
                                               "scope",
-                                              "service_id",
+                                              "app_id",
                                               "key",
                                               "value"
                                             ],
@@ -37332,7 +36914,7 @@ export const openApiDocument = {
                                                 "const": "export",
                                                 "type": "string"
                                               },
-                                              "service_id": {
+                                              "app_id": {
                                                 "type": "string"
                                               },
                                               "key": {
@@ -37348,9 +36930,9 @@ export const openApiDocument = {
                                             "type": "object",
                                             "required": [
                                               "scope",
-                                              "service_id",
-                                              "key",
-                                              "variable_id",
+                                              "app_id",
+                                              "name",
+                                              "key_id",
                                               "kind",
                                               "reference"
                                             ],
@@ -37358,23 +36940,23 @@ export const openApiDocument = {
                                               "scope": {
                                                 "type": "string",
                                                 "enum": [
-                                                  "service",
-                                                  "sandbox"
+                                                  "app",
+                                                  "machine"
                                                 ]
                                               },
-                                              "service_id": {
+                                              "app_id": {
                                                 "type": [
                                                   "string",
                                                   "null"
                                                 ]
                                               },
-                                              "key": {
+                                              "name": {
                                                 "type": [
                                                   "string",
                                                   "null"
                                                 ]
                                               },
-                                              "variable_id": {
+                                              "key_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -37567,13 +37149,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/variables/{id}/grants": {
+    "/v1/keys/{id}/grants": {
       "get": {
         "tags": [
-          "variables"
+          "keys"
         ],
         "operationId": "list_grants",
-        "summary": "List the grants of a global variable",
+        "summary": "List the grants of a global key",
         "x-stationly": {
           "level": "instance read"
         },
@@ -37608,7 +37190,7 @@ export const openApiDocument = {
                         "type": "object",
                         "required": [
                           "id",
-                          "variable_id",
+                          "key_id",
                           "project_id",
                           "alias",
                           "source"
@@ -37617,7 +37199,7 @@ export const openApiDocument = {
                           "id": {
                             "type": "string"
                           },
-                          "variable_id": {
+                          "key_id": {
                             "type": "string"
                           },
                           "project_id": {
@@ -37764,10 +37346,10 @@ export const openApiDocument = {
       },
       "post": {
         "tags": [
-          "variables"
+          "keys"
         ],
-        "operationId": "grant_variable",
-        "summary": "Grant a global variable to a project",
+        "operationId": "grant_key",
+        "summary": "Grant a global key to a project",
         "x-stationly": {
           "level": "instance admin"
         },
@@ -37793,7 +37375,7 @@ export const openApiDocument = {
                 ],
                 "properties": {
                   "project_id": {
-                    "description": "The project to grant the variable to",
+                    "description": "The project to grant the key to",
                     "type": "string"
                   },
                   "alias": {
@@ -37813,7 +37395,7 @@ export const openApiDocument = {
                 ],
                 "properties": {
                   "project_id": {
-                    "description": "The project to grant the variable to",
+                    "description": "The project to grant the key to",
                     "type": "string"
                   },
                   "alias": {
@@ -37833,7 +37415,7 @@ export const openApiDocument = {
                 ],
                 "properties": {
                   "project_id": {
-                    "description": "The project to grant the variable to",
+                    "description": "The project to grant the key to",
                     "type": "string"
                   },
                   "alias": {
@@ -37857,7 +37439,7 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "variable_id",
+                    "key_id",
                     "project_id",
                     "alias",
                     "source"
@@ -37866,7 +37448,7 @@ export const openApiDocument = {
                     "id": {
                       "type": "string"
                     },
-                    "variable_id": {
+                    "key_id": {
                       "type": "string"
                     },
                     "project_id": {
@@ -38006,7 +37588,7 @@ export const openApiDocument = {
     "/v1/grants/{id}": {
       "delete": {
         "tags": [
-          "variables"
+          "keys"
         ],
         "operationId": "revoke_grant",
         "summary": "Revoke a grant",
@@ -38046,20 +37628,23 @@ export const openApiDocument = {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "service_id",
-                          "environment_id",
-                          "protected",
+                          "app_id",
+                          "project_id",
+                          "preview_id",
                           "keys"
                         ],
                         "properties": {
-                          "service_id": {
+                          "app_id": {
                             "type": "string"
                           },
-                          "environment_id": {
+                          "project_id": {
                             "type": "string"
                           },
-                          "protected": {
-                            "type": "boolean"
+                          "preview_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "keys": {
                             "type": "array",
@@ -38188,241 +37773,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/environments/{environment}/staged-changes": {
+    "/v1/approvals": {
       "get": {
         "tags": [
-          "staged-changes"
+          "approvals"
         ],
-        "operationId": "list_staged_changes",
-        "summary": "List staged changes of an environment (default status staged; status=all for every row)",
+        "operationId": "list_approvals",
+        "summary": "List the approvals the caller can see (default status waiting; status=all for every row)",
         "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "environment",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "Items per page (default 50, at most 200)",
-              "anyOf": [
-                {
-                  "format": "numeric",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "Items per page (default 50, at most 200)",
-                  "type": "number"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "The next_cursor of the previous page",
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One of staged, accepted, rejected, superseded, or all (default staged)",
-              "type": "string"
-            }
-          },
-          {
-            "name": "source",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One of api, manifest, compose_import, agent, ui",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/StagedChange"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/staged-changes": {
-      "get": {
-        "tags": [
-          "staged-changes"
-        ],
-        "operationId": "list_instance_staged_changes",
-        "summary": "List staged changes across the instance",
-        "x-stationly": {
-          "level": "instance read",
+          "level": "any",
           "cli": {
             "path": [
-              "staged-changes",
-              "list-all"
+              "approvals",
+              "list"
             ]
           }
         },
@@ -38473,7 +37836,34 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One of staged, accepted, rejected, superseded",
+              "description": "One of waiting, approved, rejected, superseded, or all (default waiting)",
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "One of api, manifest, compose_import, task, ui",
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only the approvals of this project's production, by id or name",
+              "type": "string"
+            }
+          },
+          {
+            "name": "task",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only the approvals of this task id",
               "type": "string"
             }
           },
@@ -38503,7 +37893,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/StagedChange"
+                        "$ref": "#/components/schemas/Approval"
                       }
                     },
                     "next_cursor": {
@@ -38630,19 +38020,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/staged-changes/{id}": {
+    "/v1/approvals/{approval}": {
       "get": {
         "tags": [
-          "staged-changes"
+          "approvals"
         ],
-        "operationId": "get_staged_change",
-        "summary": "Get a staged change with its diff",
+        "operationId": "get_approval",
+        "summary": "Get an approval with its diff",
         "x-stationly": {
           "level": "read"
         },
         "parameters": [
           {
-            "name": "id",
+            "name": "approval",
             "in": "path",
             "required": true,
             "schema": {
@@ -38665,7 +38055,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StagedChange"
+                  "$ref": "#/components/schemas/Approval"
                 }
               }
             }
@@ -38783,19 +38173,26 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/staged-changes/{id}/accept": {
+    "/v1/approvals/{approval}/decision": {
       "post": {
         "tags": [
-          "staged-changes"
+          "approvals"
         ],
-        "operationId": "accept_staged_change",
-        "summary": "Accept a staged change and apply its diff",
+        "operationId": "decide_approval",
+        "summary": "Approve a change to production, which applies its diff or merges its task's pull request, or reject it with a reason; a human, and an admin in production",
         "x-stationly": {
-          "level": "deploy"
+          "level": "deploy",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "approvals",
+              "decide"
+            ]
+          }
         },
         "parameters": [
           {
-            "name": "id",
+            "name": "approval",
             "in": "path",
             "required": true,
             "schema": {
@@ -38803,6 +38200,80 @@ export const openApiDocument = {
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "reason": {
+                    "maxLength": 2000,
+                    "description": "Why the change is rejected, kept with the approval",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "reason": {
+                    "maxLength": 2000,
+                    "description": "Why the change is rejected, kept with the approval",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "decision"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "reason": {
+                    "maxLength": 2000,
+                    "description": "Why the change is rejected, kept with the approval",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Response for status 200",
@@ -38814,10 +38285,19 @@ export const openApiDocument = {
                   "required": [
                     "id",
                     "created_at",
-                    "environment_id",
+                    "project_id",
+                    "task_id",
+                    "title",
                     "status",
                     "source",
-                    "actor",
+                    "requested_by",
+                    "requester",
+                    "requester_decides",
+                    "decided_by",
+                    "decided_at",
+                    "self_approved",
+                    "reason",
+                    "ship",
                     "summary",
                     "changes",
                     "refs",
@@ -38833,17 +38313,26 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "environment_id": {
+                    "project_id": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
+                    "task_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
-                        "staged",
-                        "accepted",
+                        "waiting",
+                        "approved",
                         "rejected",
                         "superseded"
                       ]
@@ -38854,17 +38343,51 @@ export const openApiDocument = {
                         "api",
                         "manifest",
                         "compose_import",
-                        "agent",
+                        "task",
                         "ui"
                       ]
                     },
-                    "actor": {
+                    "requested_by": {
                       "$ref": "#/components/schemas/Actor"
                     },
-                    "accepted_by": {
+                    "requester": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "requester_decides": {
+                      "type": "boolean"
+                    },
+                    "decided_by": {
                       "anyOf": [
                         {
                           "$ref": "#/components/schemas/Actor"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "decided_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "self_approved": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ship": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ApprovalShip"
                         },
                         {
                           "type": "null"
@@ -38923,12 +38446,12 @@ export const openApiDocument = {
                             "additionalProperties": false,
                             "type": "object",
                             "required": [
-                              "station_id",
+                              "server_id",
                               "filesystem_bytes",
                               "filesystem_free_bytes"
                             ],
                             "properties": {
-                              "station_id": {
+                              "server_id": {
                                 "type": "string"
                               },
                               "filesystem_bytes": {
@@ -38943,11 +38466,11 @@ export const openApiDocument = {
                             "additionalProperties": false,
                             "type": "object",
                             "required": [
-                              "station_id",
+                              "server_id",
                               "failure"
                             ],
                             "properties": {
-                              "station_id": {
+                              "server_id": {
                                 "type": "string"
                               },
                               "failure": {
@@ -39137,11 +38660,11 @@ export const openApiDocument = {
                             "additionalProperties": false,
                             "type": "object",
                             "required": [
-                              "service_id",
+                              "app_id",
                               "result"
                             ],
                             "properties": {
-                              "service_id": {
+                              "app_id": {
                                 "type": "string"
                               },
                               "result": {
@@ -39153,11 +38676,11 @@ export const openApiDocument = {
                             "additionalProperties": false,
                             "type": "object",
                             "required": [
-                              "service_id",
+                              "app_id",
                               "failure"
                             ],
                             "properties": {
-                              "service_id": {
+                              "app_id": {
                                 "type": "string"
                               },
                               "failure": {
@@ -39189,191 +38712,6 @@ export const openApiDocument = {
                       }
                     }
                   }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/staged-changes/{id}/reject": {
-      "post": {
-        "tags": [
-          "staged-changes"
-        ],
-        "operationId": "reject_staged_change",
-        "summary": "Reject a staged change",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "reason": {
-                    "description": "Why the change is rejected, kept with the change",
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "reason": {
-                    "description": "Why the change is rejected, kept with the change",
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "reason": {
-                    "description": "Why the change is rejected, kept with the change",
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Staged"
                 }
               }
             }
@@ -39813,7 +39151,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -39988,7 +39326,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One of personal, scoped, station_enroll, oauth",
+              "description": "One of personal, scoped, server_enroll, oauth",
               "type": "string"
             }
           }
@@ -40174,22 +39512,27 @@ export const openApiDocument = {
                     ]
                   },
                   "scopes": {
-                    "description": "project_id, environment_id and level of each scope of a scoped token",
+                    "description": "project_id, target (production, previews or *) and level of each scope of a scoped token",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
                         "project_id",
-                        "environment_id",
+                        "target",
                         "level"
                       ],
                       "properties": {
                         "project_id": {
                           "type": "string"
                         },
-                        "environment_id": {
-                          "type": "string"
+                        "target": {
+                          "type": "string",
+                          "enum": [
+                            "production",
+                            "previews",
+                            "*"
+                          ]
                         },
                         "level": {
                           "type": "string",
@@ -40243,22 +39586,27 @@ export const openApiDocument = {
                     ]
                   },
                   "scopes": {
-                    "description": "project_id, environment_id and level of each scope of a scoped token",
+                    "description": "project_id, target (production, previews or *) and level of each scope of a scoped token",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
                         "project_id",
-                        "environment_id",
+                        "target",
                         "level"
                       ],
                       "properties": {
                         "project_id": {
                           "type": "string"
                         },
-                        "environment_id": {
-                          "type": "string"
+                        "target": {
+                          "type": "string",
+                          "enum": [
+                            "production",
+                            "previews",
+                            "*"
+                          ]
                         },
                         "level": {
                           "type": "string",
@@ -40312,22 +39660,27 @@ export const openApiDocument = {
                     ]
                   },
                   "scopes": {
-                    "description": "project_id, environment_id and level of each scope of a scoped token",
+                    "description": "project_id, target (production, previews or *) and level of each scope of a scoped token",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
                       "type": "object",
                       "required": [
                         "project_id",
-                        "environment_id",
+                        "target",
                         "level"
                       ],
                       "properties": {
                         "project_id": {
                           "type": "string"
                         },
-                        "environment_id": {
-                          "type": "string"
+                        "target": {
+                          "type": "string",
+                          "enum": [
+                            "production",
+                            "previews",
+                            "*"
+                          ]
                         },
                         "level": {
                           "type": "string",
@@ -40397,7 +39750,7 @@ export const openApiDocument = {
                       "enum": [
                         "personal",
                         "scoped",
-                        "station_enroll",
+                        "server_enroll",
                         "oauth"
                       ]
                     },
@@ -40422,7 +39775,7 @@ export const openApiDocument = {
                         "null"
                       ]
                     },
-                    "station_id": {
+                    "server_id": {
                       "type": [
                         "string",
                         "null"
@@ -40931,13 +40284,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/stations": {
+    "/v1/servers": {
       "get": {
         "tags": [
-          "stations"
+          "servers"
         ],
-        "operationId": "list_stations",
-        "summary": "List stations; removed stations only with revoked = true",
+        "operationId": "list_servers",
+        "summary": "List servers; removed servers only with revoked = true",
         "x-stationly": {
           "level": "instance read"
         },
@@ -40997,10 +40350,10 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Include removed stations",
+              "description": "Include removed servers",
               "anyOf": [
                 {
-                  "description": "Include removed stations",
+                  "description": "Include removed servers",
                   "type": "boolean"
                 },
                 {
@@ -41028,7 +40381,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Station"
+                        "$ref": "#/components/schemas/Server"
                       }
                     },
                     "next_cursor": {
@@ -41156,10 +40509,10 @@ export const openApiDocument = {
       },
       "post": {
         "tags": [
-          "stations"
+          "servers"
         ],
-        "operationId": "enroll_station",
-        "summary": "Create a station in enrolling state and a one-time enrollment token (15 minutes)",
+        "operationId": "enroll_server",
+        "summary": "Create a server in enrolling state and a one-time enrollment token (15 minutes)",
         "x-stationly": {
           "level": "instance admin",
           "cli": {
@@ -41181,11 +40534,11 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The station name",
+                    "description": "The server name",
                     "type": "string"
                   },
                   "intermittent": {
-                    "description": "The station sleeps at times: asleep instead of offline when heartbeats stop",
+                    "description": "The server sleeps at times: asleep instead of offline when heartbeats stop",
                     "type": "boolean"
                   }
                 }
@@ -41201,11 +40554,11 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The station name",
+                    "description": "The server name",
                     "type": "string"
                   },
                   "intermittent": {
-                    "description": "The station sleeps at times: asleep instead of offline when heartbeats stop",
+                    "description": "The server sleeps at times: asleep instead of offline when heartbeats stop",
                     "type": "boolean"
                   }
                 }
@@ -41221,11 +40574,11 @@ export const openApiDocument = {
                 "properties": {
                   "name": {
                     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "The station name",
+                    "description": "The server name",
                     "type": "string"
                   },
                   "intermittent": {
-                    "description": "The station sleeps at times: asleep instead of offline when heartbeats stop",
+                    "description": "The server sleeps at times: asleep instead of offline when heartbeats stop",
                     "type": "boolean"
                   }
                 }
@@ -41242,15 +40595,15 @@ export const openApiDocument = {
                   "additionalProperties": false,
                   "type": "object",
                   "required": [
-                    "station",
+                    "server",
                     "enroll_token",
                     "enroll_token_id",
                     "expires_at",
                     "command"
                   ],
                   "properties": {
-                    "station": {
-                      "$ref": "#/components/schemas/Station"
+                    "server": {
+                      "$ref": "#/components/schemas/Server"
                     },
                     "enroll_token": {
                       "type": "string"
@@ -41382,19 +40735,19 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/stations/{station}": {
+    "/v1/servers/{server}": {
       "get": {
         "tags": [
-          "stations"
+          "servers"
         ],
-        "operationId": "get_station",
-        "summary": "Get a station by id or name",
+        "operationId": "get_server",
+        "summary": "Get a server by id or name",
         "x-stationly": {
           "level": "instance read"
         },
         "parameters": [
           {
-            "name": "station",
+            "name": "server",
             "in": "path",
             "required": true,
             "schema": {
@@ -41417,7 +40770,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Station"
+                  "$ref": "#/components/schemas/Server"
                 }
               }
             }
@@ -41536,16 +40889,16 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "stations"
+          "servers"
         ],
-        "operationId": "update_station",
-        "summary": "Change a station: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, sandbox_limits and default_sandbox_runtime; sleep_schedule is phase 2",
+        "operationId": "update_server",
+        "summary": "Change a server: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2",
         "x-stationly": {
           "level": "instance admin"
         },
         "parameters": [
           {
-            "name": "station",
+            "name": "server",
             "in": "path",
             "required": true,
             "schema": {
@@ -41562,12 +40915,12 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "public_address": {
-                    "description": "The IPv4 address domains and TCP exposures reach the station on",
+                    "description": "The IPv4 address domains and TCP exposures reach the server on",
                     "type": "string"
                   },
                   "concurrency_cap": {
                     "minimum": 1,
-                    "description": "Deployments the station runs at once",
+                    "description": "Deployments the server runs at once",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -41576,24 +40929,24 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 1,
-                        "description": "Deployments the station runs at once",
+                        "description": "Deployments the server runs at once",
                         "type": "integer"
                       }
                     ]
                   },
                   "draining": {
-                    "description": "Place no new deployments on it; running services stay",
+                    "description": "Place no new deployments on it; running apps stay",
                     "type": "boolean"
                   },
                   "intermittent": {
-                    "description": "The station sleeps at times: asleep instead of offline when heartbeats stop",
+                    "description": "The server sleeps at times: asleep instead of offline when heartbeats stop",
                     "type": "boolean"
                   },
-                  "sandbox_limits": {
+                  "machine_limits": {
                     "additionalProperties": false,
                     "type": "object",
                     "properties": {
-                      "max_sandboxes": {
+                      "max_machines": {
                         "minimum": 0,
                         "anyOf": [
                           {
@@ -41665,9 +41018,9 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "default_sandbox_runtime": {
+                  "default_machine_runtime": {
                     "nullable": true,
-                    "description": "a runtime the station offers in capabilities.sandboxes.runtimes, or null to follow the recommendation from its host probe",
+                    "description": "a runtime the server offers in capabilities.machines.runtimes, or null to follow the recommendation from its host probe",
                     "type": [
                       "string",
                       "null"
@@ -41683,12 +41036,12 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "public_address": {
-                    "description": "The IPv4 address domains and TCP exposures reach the station on",
+                    "description": "The IPv4 address domains and TCP exposures reach the server on",
                     "type": "string"
                   },
                   "concurrency_cap": {
                     "minimum": 1,
-                    "description": "Deployments the station runs at once",
+                    "description": "Deployments the server runs at once",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -41697,24 +41050,24 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 1,
-                        "description": "Deployments the station runs at once",
+                        "description": "Deployments the server runs at once",
                         "type": "integer"
                       }
                     ]
                   },
                   "draining": {
-                    "description": "Place no new deployments on it; running services stay",
+                    "description": "Place no new deployments on it; running apps stay",
                     "type": "boolean"
                   },
                   "intermittent": {
-                    "description": "The station sleeps at times: asleep instead of offline when heartbeats stop",
+                    "description": "The server sleeps at times: asleep instead of offline when heartbeats stop",
                     "type": "boolean"
                   },
-                  "sandbox_limits": {
+                  "machine_limits": {
                     "additionalProperties": false,
                     "type": "object",
                     "properties": {
-                      "max_sandboxes": {
+                      "max_machines": {
                         "minimum": 0,
                         "anyOf": [
                           {
@@ -41786,9 +41139,9 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "default_sandbox_runtime": {
+                  "default_machine_runtime": {
                     "nullable": true,
-                    "description": "a runtime the station offers in capabilities.sandboxes.runtimes, or null to follow the recommendation from its host probe",
+                    "description": "a runtime the server offers in capabilities.machines.runtimes, or null to follow the recommendation from its host probe",
                     "type": [
                       "string",
                       "null"
@@ -41804,12 +41157,12 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "public_address": {
-                    "description": "The IPv4 address domains and TCP exposures reach the station on",
+                    "description": "The IPv4 address domains and TCP exposures reach the server on",
                     "type": "string"
                   },
                   "concurrency_cap": {
                     "minimum": 1,
-                    "description": "Deployments the station runs at once",
+                    "description": "Deployments the server runs at once",
                     "anyOf": [
                       {
                         "format": "integer",
@@ -41818,24 +41171,24 @@ export const openApiDocument = {
                       },
                       {
                         "minimum": 1,
-                        "description": "Deployments the station runs at once",
+                        "description": "Deployments the server runs at once",
                         "type": "integer"
                       }
                     ]
                   },
                   "draining": {
-                    "description": "Place no new deployments on it; running services stay",
+                    "description": "Place no new deployments on it; running apps stay",
                     "type": "boolean"
                   },
                   "intermittent": {
-                    "description": "The station sleeps at times: asleep instead of offline when heartbeats stop",
+                    "description": "The server sleeps at times: asleep instead of offline when heartbeats stop",
                     "type": "boolean"
                   },
-                  "sandbox_limits": {
+                  "machine_limits": {
                     "additionalProperties": false,
                     "type": "object",
                     "properties": {
-                      "max_sandboxes": {
+                      "max_machines": {
                         "minimum": 0,
                         "anyOf": [
                           {
@@ -41907,9 +41260,9 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "default_sandbox_runtime": {
+                  "default_machine_runtime": {
                     "nullable": true,
-                    "description": "a runtime the station offers in capabilities.sandboxes.runtimes, or null to follow the recommendation from its host probe",
+                    "description": "a runtime the server offers in capabilities.machines.runtimes, or null to follow the recommendation from its host probe",
                     "type": [
                       "string",
                       "null"
@@ -41927,7 +41280,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Station"
+                  "$ref": "#/components/schemas/Server"
                 }
               }
             }
@@ -41937,7 +41290,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -42056,16 +41409,16 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "stations"
+          "servers"
         ],
-        "operationId": "remove_station",
-        "summary": "Remove a station: its key is revoked and kept, so it is told STATION_REVOKED",
+        "operationId": "remove_server",
+        "summary": "Remove a server: its key is revoked and kept, so it is told STATION_REVOKED",
         "x-stationly": {
           "level": "instance admin"
         },
         "parameters": [
           {
-            "name": "station",
+            "name": "server",
             "in": "path",
             "required": true,
             "schema": {
@@ -42229,7 +41582,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "station",
+            "name": "server",
             "in": "query",
             "required": false,
             "schema": {
@@ -42258,7 +41611,7 @@ export const openApiDocument = {
                     "lockfile",
                     "upgrade",
                     "items",
-                    "sandbox_storage",
+                    "machine_storage",
                     "base_images",
                     "base_image_checks",
                     "next_cursor"
@@ -42439,8 +41792,8 @@ export const openApiDocument = {
                         "id",
                         "status",
                         "release",
-                        "station",
-                        "staged_change",
+                        "server",
+                        "approval",
                         "started_at",
                         "finished_at",
                         "backup",
@@ -42477,13 +41830,13 @@ export const openApiDocument = {
                             }
                           }
                         },
-                        "station": {
+                        "server": {
                           "type": [
                             "string",
                             "null"
                           ]
                         },
-                        "staged_change": {
+                        "approval": {
                           "type": [
                             "string",
                             "null"
@@ -42541,7 +41894,7 @@ export const openApiDocument = {
                             "type": "object",
                             "required": [
                               "component",
-                              "station",
+                              "server",
                               "status",
                               "from",
                               "to",
@@ -42553,7 +41906,7 @@ export const openApiDocument = {
                               "component": {
                                 "type": "string"
                               },
-                              "station": {
+                              "server": {
                                 "type": [
                                   "string",
                                   "null"
@@ -42662,7 +42015,7 @@ export const openApiDocument = {
                         "required": [
                           "id",
                           "name",
-                          "station_id",
+                          "server_id",
                           "version",
                           "digest",
                           "since",
@@ -42700,7 +42053,7 @@ export const openApiDocument = {
                               "docker_engine"
                             ]
                           },
-                          "station_id": {
+                          "server_id": {
                             "type": [
                               "string",
                               "null"
@@ -42782,20 +42135,20 @@ export const openApiDocument = {
                         }
                       }
                     },
-                    "sandbox_storage": {
+                    "machine_storage": {
                       "type": "array",
                       "items": {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "station",
+                          "server",
                           "backing",
                           "size_bytes",
                           "free_bytes",
                           "max_size_bytes"
                         ],
                         "properties": {
-                          "station": {
+                          "server": {
                             "type": "string"
                           },
                           "backing": {
@@ -42840,8 +42193,8 @@ export const openApiDocument = {
                               "additionalProperties": false,
                               "type": "object",
                               "required": [
-                                "service_id",
-                                "service",
+                                "app_id",
+                                "app",
                                 "deployment_id",
                                 "digest",
                                 "check",
@@ -42849,10 +42202,10 @@ export const openApiDocument = {
                                 "latest_digest"
                               ],
                               "properties": {
-                                "service_id": {
+                                "app_id": {
                                   "type": "string"
                                 },
-                                "service": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "deployment_id": {
@@ -43043,7 +42396,7 @@ export const openApiDocument = {
         },
         "parameters": [
           {
-            "name": "station",
+            "name": "server",
             "in": "query",
             "required": false,
             "schema": {
@@ -43091,7 +42444,7 @@ export const openApiDocument = {
                         "type": "object",
                         "required": [
                           "name",
-                          "station",
+                          "server",
                           "status",
                           "code",
                           "finding",
@@ -43101,7 +42454,7 @@ export const openApiDocument = {
                           "name": {
                             "type": "string"
                           },
-                          "station": {
+                          "server": {
                             "type": [
                               "string",
                               "null"
@@ -43418,7 +42771,7 @@ export const openApiDocument = {
           "platform"
         ],
         "operationId": "platform_upgrade",
-        "summary": "Plan or apply lockfile overrides; every new digest is signature-checked by a station first (UNSIGNED_ARTIFACT)",
+        "summary": "Plan or apply lockfile overrides; every new digest is signature-checked by a server first (UNSIGNED_ARTIFACT)",
         "x-stationly": {
           "level": "instance admin",
           "cli": false
@@ -43472,7 +42825,7 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "station": {
+                  "server": {
                     "type": "string"
                   },
                   "plan": {
@@ -43527,7 +42880,7 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "station": {
+                  "server": {
                     "type": "string"
                   },
                   "plan": {
@@ -43582,7 +42935,7 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "station": {
+                  "server": {
                     "type": "string"
                   },
                   "plan": {
@@ -43621,7 +42974,7 @@ export const openApiDocument = {
                           "type": "string",
                           "enum": [
                             "plan",
-                            "accepted"
+                            "approved"
                           ]
                         },
                         "upgrade": {
@@ -43669,7 +43022,7 @@ export const openApiDocument = {
                             "required": [
                               "order",
                               "component",
-                              "station",
+                              "server",
                               "from",
                               "to",
                               "procedure"
@@ -43681,7 +43034,7 @@ export const openApiDocument = {
                               "component": {
                                 "type": "string"
                               },
-                              "station": {
+                              "server": {
                                 "type": [
                                   "string",
                                   "null"
@@ -43735,12 +43088,12 @@ export const openApiDocument = {
                             "additionalProperties": false,
                             "type": "object",
                             "required": [
-                              "station_id",
+                              "server_id",
                               "release",
                               "items"
                             ],
                             "properties": {
-                              "station_id": {
+                              "server_id": {
                                 "type": "string"
                               },
                               "release": {
@@ -43949,7 +43302,7 @@ export const openApiDocument = {
                           "type": "string",
                           "enum": [
                             "plan",
-                            "accepted"
+                            "approved"
                           ]
                         },
                         "upgrade": {
@@ -43987,12 +43340,12 @@ export const openApiDocument = {
                             "null"
                           ],
                           "required": [
-                            "station_id",
+                            "server_id",
                             "trusted_root",
                             "items"
                           ],
                           "properties": {
-                            "station_id": {
+                            "server_id": {
                               "type": "string"
                             },
                             "trusted_root": {
@@ -44193,7 +43546,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Staged"
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -44409,7 +43762,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only actions starting with this, such as service. or deploy",
+              "description": "Only actions starting with this, such as app. or deploy",
               "type": "string"
             }
           },
@@ -44418,7 +43771,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Only events on this kind of entity, such as service",
+              "description": "Only events on this kind of entity, such as app",
               "type": "string"
             }
           },
@@ -44590,7 +43943,7 @@ export const openApiDocument = {
           "manifest"
         ],
         "operationId": "apply_manifest",
-        "summary": "Validate and plan or apply a Manifest against one environment",
+        "summary": "Validate and plan or apply a Manifest against production or one preview",
         "x-stationly": {
           "level": "deploy",
           "cli": false
@@ -44632,8 +43985,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "environment": {
-                    "description": "Environment id or name; the project default when omitted",
+                  "preview": {
+                    "description": "A preview by id or name; production when omitted",
                     "type": "string"
                   },
                   "plan": {
@@ -44675,8 +44028,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "environment": {
-                    "description": "Environment id or name; the project default when omitted",
+                  "preview": {
+                    "description": "A preview by id or name; production when omitted",
                     "type": "string"
                   },
                   "plan": {
@@ -44718,8 +44071,8 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "environment": {
-                    "description": "Environment id or name; the project default when omitted",
+                  "preview": {
+                    "description": "A preview by id or name; production when omitted",
                     "type": "string"
                   },
                   "plan": {
@@ -44751,10 +44104,11 @@ export const openApiDocument = {
                       "type": "object",
                       "required": [
                         "id",
-                        "environment_id",
+                        "project_id",
+                        "preview_id",
                         "status",
                         "source",
-                        "actor",
+                        "requested_by",
                         "changes",
                         "refs",
                         "deployments",
@@ -44765,21 +44119,27 @@ export const openApiDocument = {
                         "id": {
                           "type": "null"
                         },
-                        "environment_id": {
+                        "project_id": {
                           "type": "string"
+                        },
+                        "preview_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         },
                         "status": {
                           "type": "string",
                           "enum": [
                             "plan",
-                            "accepted"
+                            "approved"
                           ]
                         },
                         "source": {
                           "const": "manifest",
                           "type": "string"
                         },
-                        "actor": {
+                        "requested_by": {
                           "$ref": "#/components/schemas/Actor"
                         },
                         "changes": {
@@ -44818,13 +44178,10 @@ export const openApiDocument = {
                               "id": {
                                 "type": "string"
                               },
-                              "service": {
+                              "app": {
                                 "type": "string"
                               },
                               "name": {
-                                "type": "string"
-                              },
-                              "key": {
                                 "type": "string"
                               },
                               "hostname": {
@@ -44869,10 +44226,19 @@ export const openApiDocument = {
                       "required": [
                         "id",
                         "created_at",
-                        "environment_id",
+                        "project_id",
+                        "task_id",
+                        "title",
                         "status",
                         "source",
-                        "actor",
+                        "requested_by",
+                        "requester",
+                        "requester_decides",
+                        "decided_by",
+                        "decided_at",
+                        "self_approved",
+                        "reason",
+                        "ship",
                         "summary",
                         "changes",
                         "refs",
@@ -44890,17 +44256,26 @@ export const openApiDocument = {
                         "updated_at": {
                           "type": "string"
                         },
-                        "environment_id": {
+                        "project_id": {
                           "type": [
                             "string",
                             "null"
                           ]
                         },
+                        "task_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
                         "status": {
                           "type": "string",
                           "enum": [
-                            "staged",
-                            "accepted",
+                            "waiting",
+                            "approved",
                             "rejected",
                             "superseded"
                           ]
@@ -44911,17 +44286,51 @@ export const openApiDocument = {
                             "api",
                             "manifest",
                             "compose_import",
-                            "agent",
+                            "task",
                             "ui"
                           ]
                         },
-                        "actor": {
+                        "requested_by": {
                           "$ref": "#/components/schemas/Actor"
                         },
-                        "accepted_by": {
+                        "requester": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "requester_decides": {
+                          "type": "boolean"
+                        },
+                        "decided_by": {
                           "anyOf": [
                             {
                               "$ref": "#/components/schemas/Actor"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "decided_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "self_approved": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ship": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/ApprovalShip"
                             },
                             {
                               "type": "null"
@@ -44988,13 +44397,10 @@ export const openApiDocument = {
                               "id": {
                                 "type": "string"
                               },
-                              "service": {
+                              "app": {
                                 "type": "string"
                               },
                               "name": {
-                                "type": "string"
-                              },
-                              "key": {
                                 "type": "string"
                               },
                               "hostname": {
@@ -45048,10 +44454,19 @@ export const openApiDocument = {
                   "required": [
                     "id",
                     "created_at",
-                    "environment_id",
+                    "project_id",
+                    "task_id",
+                    "title",
                     "status",
                     "source",
-                    "actor",
+                    "requested_by",
+                    "requester",
+                    "requester_decides",
+                    "decided_by",
+                    "decided_at",
+                    "self_approved",
+                    "reason",
+                    "ship",
                     "summary",
                     "changes",
                     "refs",
@@ -45069,17 +44484,26 @@ export const openApiDocument = {
                     "updated_at": {
                       "type": "string"
                     },
-                    "environment_id": {
+                    "project_id": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
+                    "task_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
-                        "staged",
-                        "accepted",
+                        "waiting",
+                        "approved",
                         "rejected",
                         "superseded"
                       ]
@@ -45090,17 +44514,51 @@ export const openApiDocument = {
                         "api",
                         "manifest",
                         "compose_import",
-                        "agent",
+                        "task",
                         "ui"
                       ]
                     },
-                    "actor": {
+                    "requested_by": {
                       "$ref": "#/components/schemas/Actor"
                     },
-                    "accepted_by": {
+                    "requester": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "requester_decides": {
+                      "type": "boolean"
+                    },
+                    "decided_by": {
                       "anyOf": [
                         {
                           "$ref": "#/components/schemas/Actor"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "decided_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "self_approved": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ship": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ApprovalShip"
                         },
                         {
                           "type": "null"
@@ -45167,13 +44625,10 @@ export const openApiDocument = {
                           "id": {
                             "type": "string"
                           },
-                          "service": {
+                          "app": {
                             "type": "string"
                           },
                           "name": {
-                            "type": "string"
-                          },
-                          "key": {
                             "type": "string"
                           },
                           "hostname": {
@@ -45366,7 +44821,7 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "environment": {
+                  "preview": {
                     "type": "string"
                   }
                 }
@@ -45396,7 +44851,7 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "environment": {
+                  "preview": {
                     "type": "string"
                   }
                 }
@@ -45426,7 +44881,7 @@ export const openApiDocument = {
                       }
                     ]
                   },
-                  "environment": {
+                  "preview": {
                     "type": "string"
                   }
                 }
@@ -45641,11 +45096,11 @@ export const openApiDocument = {
             }
           },
           {
-            "name": "environment",
+            "name": "preview",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Export this environment as the base; omit to write every environment as overrides",
+              "description": "Export this preview alone; omit to export production with named previews as overrides",
               "type": "string"
             }
           }
@@ -47144,7 +46599,7 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Resources"
       },
-      "StationCapabilities": {
+      "ServerCapabilities": {
         "title": "StationCapabilities",
         "type": "object",
         "required": [
@@ -47322,10 +46777,10 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/StationCapabilities"
+        "$id": "#/components/schemas/ServerCapabilities"
       },
-      "SandboxRuntimeAdvice": {
-        "title": "SandboxRuntimeAdvice",
+      "MachineRuntimeAdvice": {
+        "title": "MachineRuntimeAdvice",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -47348,7 +46803,7 @@ export const openApiDocument = {
           "options": {
             "type": "array",
             "items": {
-              "title": "SandboxRuntimeOption",
+              "title": "MachineRuntimeOption",
               "additionalProperties": false,
               "type": "object",
               "required": [
@@ -47388,13 +46843,13 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/SandboxRuntimeAdvice"
+        "$id": "#/components/schemas/MachineRuntimeAdvice"
       },
-      "SandboxRuntime": {
+      "MachineRuntime": {
         "title": "SandboxRuntime",
         "const": "gvisor",
         "type": "string",
-        "$id": "#/components/schemas/SandboxRuntime"
+        "$id": "#/components/schemas/MachineRuntime"
       },
       "BaseImage": {
         "title": "BaseImage",
@@ -47492,13 +46947,13 @@ export const openApiDocument = {
           "FORBIDDEN_SCOPE",
           "INSTANCE_SCOPE_REQUIRED",
           "RATE_LIMITED",
-          "PROTECTED_ENVIRONMENT",
-          "STAGED_CHANGE_SUPERSEDED",
+          "HUMAN_REQUIRED",
+          "APPROVAL_SUPERSEDED",
           "DEPLOY_IN_PROGRESS",
           "DEPLOY_PREFLIGHT_FAILED",
           "NO_CURRENT_DEPLOYMENT",
           "DEPLOYMENT_NOT_CANCELLABLE",
-          "SHARED_SERVICE_INTERMITTENT",
+          "SHARED_APP_INTERMITTENT",
           "ROLLBACK_SECRET_REVOKED",
           "STALE_SECRETS_CONFIRM_REQUIRED",
           "STRATEGY_VOLUME_CONFLICT",
@@ -47519,12 +46974,11 @@ export const openApiDocument = {
           "NETWORK_TARGET_INVALID",
           "CERTIFICATE_RATE_LIMITED",
           "CERTIFICATE_ISSUANCE_FAILED",
-          "VARIABLE_REFERENCE_INVALID",
-          "VARIABLE_UNRESOLVED",
-          "VARIABLE_TARGET_MISSING",
-          "VARIABLE_NOT_GRANTED",
-          "VARIABLE_CYCLE",
-          "VARIABLE_PROTECTED_SOURCE",
+          "KEY_REFERENCE_INVALID",
+          "KEY_UNRESOLVED",
+          "KEY_TARGET_MISSING",
+          "KEY_NOT_GRANTED",
+          "KEY_CYCLE",
           "SECRETS_NEED_REENTRY",
           "SEALED_VALUE_UNREADABLE",
           "SECRET_VERSION_IN_USE",
@@ -47541,21 +46995,20 @@ export const openApiDocument = {
           "ATTACH_HOOK_FAILED",
           "ATTACHMENT_ALIAS_TAKEN",
           "FIREWALL_CIDR_RESERVED",
-          "STATION_OFFLINE",
-          "STATION_VERSION_SKEW",
-          "STATION_CAPABILITY_MISSING",
+          "SERVER_OFFLINE",
+          "SERVER_VERSION_SKEW",
+          "SERVER_CAPABILITY_MISSING",
           "REPO_ACCESS_REQUIRED",
           "REPO_ACCESS_DENIED",
           "APPROVAL_CLOSED",
-          "SANDBOX_NOT_RUNNING",
-          "SANDBOX_STATE_CONFLICT",
-          "SANDBOX_QUOTA_EXCEEDED",
-          "SANDBOX_DISK_FULL",
-          "SANDBOX_START_FAILED",
-          "SANDBOX_STORAGE_GROW_FAILED",
-          "SANDBOX_IMAGE_UNPACK_FAILED",
-          "SANDBOX_RUNTIME_UNAVAILABLE",
-          "ENVIRONMENT_IS_DEFAULT",
+          "MACHINE_NOT_RUNNING",
+          "MACHINE_STATE_CONFLICT",
+          "MACHINE_QUOTA_EXCEEDED",
+          "MACHINE_DISK_FULL",
+          "MACHINE_START_FAILED",
+          "MACHINE_STORAGE_GROW_FAILED",
+          "MACHINE_IMAGE_UNPACK_FAILED",
+          "MACHINE_RUNTIME_UNAVAILABLE",
           "DELETE_HAS_DEPENDENTS",
           "NOT_FOUND",
           "INTERNAL_ERROR"
@@ -47566,14 +47019,22 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "project_id",
-          "environment_id",
+          "target",
           "level"
         ],
         "properties": {
           "project_id": {
             "type": "string"
           },
-          "environment_id": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "production",
+              "previews",
+              "*"
+            ]
+          },
+          "preview_id": {
             "type": "string"
           },
           "level": {
@@ -47587,14 +47048,15 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Scope"
       },
-      "ServiceStatus": {
+      "AppStatus": {
         "type": "string",
         "enum": [
-          "green",
-          "amber",
-          "red",
+          "healthy",
+          "deploying",
+          "failing",
           "stopped",
-          "asleep"
+          "asleep",
+          "not_deployed"
         ]
       },
       "StaleReason": {
@@ -47610,7 +47072,7 @@ export const openApiDocument = {
           "code": {
             "type": "string",
             "enum": [
-              "VARIABLES_CHANGED",
+              "KEYS_CHANGED",
               "CONFIG_CHANGED"
             ]
           },
@@ -47817,16 +47279,16 @@ export const openApiDocument = {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "key",
-          "variable_id",
+          "name",
+          "key_id",
           "sealed",
           "values"
         ],
         "properties": {
-          "key": {
+          "name": {
             "type": "string"
           },
-          "variable_id": {
+          "key_id": {
             "type": "string"
           },
           "sealed": {
@@ -48300,7 +47762,7 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "id",
-          "service_id",
+          "app_id",
           "number",
           "status",
           "trigger",
@@ -48320,7 +47782,7 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_id": {
+          "app_id": {
             "type": "string"
           },
           "number": {
@@ -48342,7 +47804,7 @@ export const openApiDocument = {
                   "push",
                   "manual",
                   "rollback",
-                  "variable_change",
+                  "key_change",
                   "redeploy",
                   "base_image",
                   "agent"
@@ -48532,7 +47994,7 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "id",
-          "service_port_id",
+          "app_port_id",
           "hostname",
           "kind",
           "ingress",
@@ -48549,7 +48011,7 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_port_id": {
+          "app_port_id": {
             "type": "string"
           },
           "hostname": {
@@ -48611,8 +48073,8 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "id",
-          "service_port_id",
-          "station_id",
+          "app_port_id",
+          "server_id",
           "host_port",
           "status",
           "address"
@@ -48627,10 +48089,10 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_port_id": {
+          "app_port_id": {
             "type": "string"
           },
-          "station_id": {
+          "server_id": {
             "type": "string"
           },
           "host_port": {
@@ -48652,13 +48114,13 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/PortAllocation"
       },
-      "ServicePort": {
-        "title": "ServicePort",
+      "AppPort": {
+        "title": "AppPort",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "service_id",
+          "app_id",
           "port",
           "protocol",
           "grpc"
@@ -48673,7 +48135,7 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_id": {
+          "app_id": {
             "type": "string"
           },
           "port": {
@@ -48702,7 +48164,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/ServicePort"
+        "$id": "#/components/schemas/AppPort"
       },
       "VolumeSnapshot": {
         "title": "VolumeSnapshot",
@@ -48711,7 +48173,7 @@ export const openApiDocument = {
         "required": [
           "id",
           "volume_id",
-          "station_id",
+          "server_id",
           "taken_at",
           "finished_at",
           "location",
@@ -48733,7 +48195,7 @@ export const openApiDocument = {
           "volume_id": {
             "type": "string"
           },
-          "station_id": {
+          "server_id": {
             "type": [
               "string",
               "null"
@@ -48799,7 +48261,7 @@ export const openApiDocument = {
                       "endpoint",
                       "bucket",
                       "prefix",
-                      "credentials_variable"
+                      "credentials_key"
                     ],
                     "properties": {
                       "type": {
@@ -48817,7 +48279,7 @@ export const openApiDocument = {
                       "prefix": {
                         "type": "string"
                       },
-                      "credentials_variable": {
+                      "credentials_key": {
                         "minLength": 1,
                         "type": "string"
                       }
@@ -48894,8 +48356,8 @@ export const openApiDocument = {
         "required": [
           "id",
           "owner",
-          "service_id",
-          "station_id",
+          "app_id",
+          "server_id",
           "mount_path",
           "size_bytes",
           "status",
@@ -48918,13 +48380,13 @@ export const openApiDocument = {
               "station"
             ]
           },
-          "service_id": {
+          "app_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "station_id": {
+          "server_id": {
             "type": "string"
           },
           "mount_path": {
@@ -48965,8 +48427,8 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "id",
-          "variable_id",
-          "environment_id",
+          "key_id",
+          "target",
           "version",
           "bytes",
           "created_by",
@@ -48979,13 +48441,14 @@ export const openApiDocument = {
           "id": {
             "type": "string"
           },
-          "variable_id": {
+          "key_id": {
             "type": "string"
           },
-          "environment_id": {
-            "type": [
-              "string",
-              "null"
+          "target": {
+            "type": "string",
+            "enum": [
+              "production",
+              "preview"
             ]
           },
           "version": {
@@ -49018,7 +48481,7 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/SecretValue"
       },
-      "VariableKind": {
+      "KeyKind": {
         "type": "string",
         "enum": [
           "literal",
@@ -49026,19 +48489,18 @@ export const openApiDocument = {
           "sealed"
         ]
       },
-      "Variable": {
-        "title": "Variable",
+      "Key": {
+        "title": "Key",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "scope",
-          "key",
+          "name",
           "kind",
           "reference",
           "injection",
           "build",
-          "copy_to_clones",
           "head_version",
           "bytes"
         ],
@@ -49057,8 +48519,8 @@ export const openApiDocument = {
             "enum": [
               "global",
               "project",
-              "service",
-              "sandbox"
+              "app",
+              "machine"
             ]
           },
           "project_id": {
@@ -49067,23 +48529,23 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "service_id": {
+          "app_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "sandbox_id": {
+          "machine_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "key": {
+          "name": {
             "type": "string"
           },
           "kind": {
-            "$ref": "#/components/schemas/VariableKind"
+            "$ref": "#/components/schemas/KeyKind"
           },
           "reference": {
             "type": [
@@ -49099,9 +48561,6 @@ export const openApiDocument = {
             ]
           },
           "build": {
-            "type": "boolean"
-          },
-          "copy_to_clones": {
             "type": "boolean"
           },
           "head_version": {
@@ -49122,10 +48581,14 @@ export const openApiDocument = {
           "value": {
             "type": "null"
           },
-          "environments": {
+          "targets": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "production",
+                "preview"
+              ]
             }
           },
           "versions": {
@@ -49135,10 +48598,10 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Variable"
+        "$id": "#/components/schemas/Key"
       },
-      "ServiceSource": {
-        "title": "ServiceSource",
+      "AppSource": {
+        "title": "AppSource",
         "anyOf": [
           {
             "type": "object",
@@ -49276,7 +48739,7 @@ export const openApiDocument = {
             }
           }
         ],
-        "$id": "#/components/schemas/ServiceSource"
+        "$id": "#/components/schemas/AppSource"
       },
       "Export": {
         "title": "Export",
@@ -49296,16 +48759,17 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Export"
       },
-      "Service": {
-        "title": "Service",
+      "App": {
+        "title": "App",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "environment_id",
+          "project_id",
+          "preview_id",
           "name",
           "kind",
-          "station_id",
+          "server_id",
           "source",
           "current_deployment_id",
           "status",
@@ -49324,8 +48788,14 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": "string"
+          },
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
             "type": "string"
@@ -49339,11 +48809,11 @@ export const openApiDocument = {
               "one_off"
             ]
           },
-          "station_id": {
+          "server_id": {
             "type": "string"
           },
           "source": {
-            "$ref": "#/components/schemas/ServiceSource"
+            "$ref": "#/components/schemas/AppSource"
           },
           "command": {
             "type": [
@@ -49506,12 +48976,12 @@ export const openApiDocument = {
             ]
           },
           "status": {
-            "$ref": "#/components/schemas/ServiceStatus"
+            "$ref": "#/components/schemas/AppStatus"
           },
           "status_reason": {
             "anyOf": [
               {
-                "const": "station_asleep",
+                "const": "server_asleep",
                 "type": "string"
               },
               {
@@ -49546,7 +49016,7 @@ export const openApiDocument = {
           "ports": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ServicePort"
+              "$ref": "#/components/schemas/AppPort"
             }
           },
           "volumes": {
@@ -49577,10 +49047,10 @@ export const openApiDocument = {
               }
             ]
           },
-          "variables": {
+          "keys": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Variable"
+              "$ref": "#/components/schemas/Key"
             }
           },
           "exports": {
@@ -49590,22 +49060,22 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Service"
+        "$id": "#/components/schemas/App"
       },
       "Edge": {
         "title": "Edge",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "from_service",
-          "to_service",
+          "from_app",
+          "to_app",
           "keys"
         ],
         "properties": {
-          "from_service": {
+          "from_app": {
             "type": "string"
           },
-          "to_service": {
+          "to_app": {
             "type": "string"
           },
           "keys": {
@@ -49617,45 +49087,82 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Edge"
       },
-      "PullRequest": {
-        "title": "PullRequest",
-        "type": "object",
-        "required": [
-          "repo",
-          "number",
-          "head_sha",
-          "fork"
-        ],
-        "properties": {
-          "repo": {
-            "type": "string"
+      "PreviewOrigin": {
+        "title": "PreviewOrigin",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "type",
+              "task_id"
+            ],
+            "properties": {
+              "type": {
+                "const": "task",
+                "type": "string"
+              },
+              "task_id": {
+                "type": "string"
+              }
+            }
           },
-          "number": {
-            "type": "integer"
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "type",
+              "repo",
+              "number",
+              "head_sha",
+              "fork"
+            ],
+            "properties": {
+              "type": {
+                "const": "pull_request",
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "head_sha": {
+                "type": "string"
+              },
+              "fork": {
+                "type": "boolean"
+              }
+            }
           },
-          "head_sha": {
-            "type": "string"
-          },
-          "fork": {
-            "type": "boolean"
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "named",
+                "type": "string"
+              }
+            }
           }
-        },
-        "$id": "#/components/schemas/PullRequest"
+        ],
+        "$id": "#/components/schemas/PreviewOrigin"
       },
-      "Environment": {
-        "title": "Environment",
+      "Preview": {
+        "title": "Preview",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "project_id",
           "name",
-          "protected",
-          "ephemeral",
-          "pull_request",
-          "ttl_seconds",
-          "service_count",
-          "pending_staged_changes"
+          "origin",
+          "expires_at",
+          "app_count"
         ],
         "properties": {
           "id": {
@@ -49673,44 +49180,22 @@ export const openApiDocument = {
           "name": {
             "type": "string"
           },
-          "protected": {
-            "type": "boolean"
+          "origin": {
+            "$ref": "#/components/schemas/PreviewOrigin"
           },
-          "ephemeral": {
-            "type": "boolean"
-          },
-          "source_environment_id": {
+          "expires_at": {
             "type": [
               "string",
               "null"
             ]
           },
-          "pull_request": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PullRequest"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "ttl_seconds": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "service_count": {
+          "app_count": {
             "type": "integer"
           },
-          "pending_staged_changes": {
-            "type": "integer"
-          },
-          "services": {
+          "apps": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Service"
+              "$ref": "#/components/schemas/App"
             }
           },
           "edges": {
@@ -49720,33 +49205,37 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Environment"
+        "$id": "#/components/schemas/Preview"
       },
       "StatusCounts": {
         "title": "StatusCounts",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "green",
-          "amber",
-          "red",
+          "healthy",
+          "deploying",
+          "failing",
           "stopped",
-          "asleep"
+          "asleep",
+          "not_deployed"
         ],
         "properties": {
-          "green": {
+          "healthy": {
             "type": "integer"
           },
-          "amber": {
+          "deploying": {
             "type": "integer"
           },
-          "red": {
+          "failing": {
             "type": "integer"
           },
           "stopped": {
             "type": "integer"
           },
           "asleep": {
+            "type": "integer"
+          },
+          "not_deployed": {
             "type": "integer"
           }
         },
@@ -49759,11 +49248,11 @@ export const openApiDocument = {
         "required": [
           "id",
           "name",
-          "default_environment_id",
-          "environment_count",
-          "service_count",
+          "preview_count",
+          "waiting_approvals",
+          "app_count",
           "status_counts",
-          "sandbox_count",
+          "machine_count",
           "workspace_count"
         ],
         "properties": {
@@ -49788,9 +49277,6 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "default_environment_id": {
-            "type": "string"
-          },
           "build_cache_bytes": {
             "type": "integer"
           },
@@ -49803,65 +49289,142 @@ export const openApiDocument = {
           "base_image_auto_rebuild": {
             "type": "boolean"
           },
-          "pr_environments": {
-            "type": "object",
-            "required": [
-              "enabled",
-              "source_environment_id"
-            ],
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "source_environment_id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            }
+          "pull_request_previews": {
+            "type": "boolean"
           },
-          "environment_count": {
+          "preview_count": {
             "type": "integer"
           },
-          "service_count": {
+          "waiting_approvals": {
+            "type": "integer"
+          },
+          "app_count": {
             "type": "integer"
           },
           "status_counts": {
             "$ref": "#/components/schemas/StatusCounts"
           },
-          "sandbox_count": {
+          "machine_count": {
             "type": "integer"
           },
           "workspace_count": {
             "type": "integer"
           },
-          "environments": {
+          "previews": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Environment"
+              "$ref": "#/components/schemas/Preview"
             }
           },
-          "variables": {
+          "apps": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Variable"
+              "$ref": "#/components/schemas/App"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Edge"
+            }
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Key"
             }
           }
         },
         "$id": "#/components/schemas/Project"
       },
-      "StagedChange": {
-        "title": "StagedChange",
+      "ApprovalShip": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "phase",
+          "run_id",
+          "pull_request",
+          "head_sha",
+          "merge_sha",
+          "reason"
+        ],
+        "properties": {
+          "phase": {
+            "type": "string",
+            "enum": [
+              "pushing",
+              "open",
+              "failed",
+              "merged"
+            ]
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "pull_request": {
+            "additionalProperties": false,
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "repo",
+              "number",
+              "url"
+            ],
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          },
+          "head_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "$id": "#/components/schemas/ApprovalShip"
+      },
+      "Approval": {
+        "title": "Approval",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "created_at",
-          "environment_id",
+          "project_id",
+          "task_id",
+          "title",
           "status",
           "source",
-          "actor",
+          "requested_by",
+          "requester",
+          "requester_decides",
+          "decided_by",
+          "decided_at",
+          "self_approved",
+          "reason",
+          "ship",
           "summary"
         ],
         "properties": {
@@ -49874,17 +49437,26 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": [
               "string",
               "null"
             ]
           },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
             "enum": [
-              "staged",
-              "accepted",
+              "waiting",
+              "approved",
               "rejected",
               "superseded"
             ]
@@ -49895,17 +49467,51 @@ export const openApiDocument = {
               "api",
               "manifest",
               "compose_import",
-              "agent",
+              "task",
               "ui"
             ]
           },
-          "actor": {
+          "requested_by": {
             "$ref": "#/components/schemas/Actor"
           },
-          "accepted_by": {
+          "requester": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requester_decides": {
+            "type": "boolean"
+          },
+          "decided_by": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Actor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "self_approved": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ship": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalShip"
               },
               {
                 "type": "null"
@@ -49957,14 +49563,14 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/StagedChange"
+        "$id": "#/components/schemas/Approval"
       },
       "DeploymentCreated": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "service_id",
+          "app_id",
           "number",
           "status",
           "trigger",
@@ -49985,7 +49591,7 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_id": {
+          "app_id": {
             "type": "string"
           },
           "number": {
@@ -50007,7 +49613,7 @@ export const openApiDocument = {
                   "push",
                   "manual",
                   "rollback",
-                  "variable_change",
+                  "key_change",
                   "redeploy",
                   "base_image",
                   "agent"
@@ -50139,16 +49745,25 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/DeploymentCreated"
       },
-      "Staged": {
+      "ApprovalDetail": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "created_at",
-          "environment_id",
+          "project_id",
+          "task_id",
+          "title",
           "status",
           "source",
-          "actor",
+          "requested_by",
+          "requester",
+          "requester_decides",
+          "decided_by",
+          "decided_at",
+          "self_approved",
+          "reason",
+          "ship",
           "summary",
           "changes",
           "refs",
@@ -50164,17 +49779,26 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": [
               "string",
               "null"
             ]
           },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
             "enum": [
-              "staged",
-              "accepted",
+              "waiting",
+              "approved",
               "rejected",
               "superseded"
             ]
@@ -50185,17 +49809,51 @@ export const openApiDocument = {
               "api",
               "manifest",
               "compose_import",
-              "agent",
+              "task",
               "ui"
             ]
           },
-          "actor": {
+          "requested_by": {
             "$ref": "#/components/schemas/Actor"
           },
-          "accepted_by": {
+          "requester": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requester_decides": {
+            "type": "boolean"
+          },
+          "decided_by": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Actor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "self_approved": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ship": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalShip"
               },
               {
                 "type": "null"
@@ -50247,7 +49905,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Staged"
+        "$id": "#/components/schemas/ApprovalDetail"
       },
       "Token": {
         "title": "Token",
@@ -50280,7 +49938,7 @@ export const openApiDocument = {
             "enum": [
               "personal",
               "scoped",
-              "station_enroll",
+              "server_enroll",
               "oauth"
             ]
           },
@@ -50305,7 +49963,7 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "station_id": {
+          "server_id": {
             "type": [
               "string",
               "null"
@@ -50326,7 +49984,7 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "name",
-          "station_id",
+          "server_id",
           "version",
           "digest",
           "lockfile_version",
@@ -50357,7 +50015,7 @@ export const openApiDocument = {
               "docker_engine"
             ]
           },
-          "station_id": {
+          "server_id": {
             "type": [
               "string",
               "null"
@@ -50393,17 +50051,17 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Component"
       },
-      "SandboxLimits": {
-        "title": "SandboxLimits",
+      "MachineLimits": {
+        "title": "MachineLimits",
         "type": "object",
         "required": [
-          "max_sandboxes",
+          "max_machines",
           "max_running",
           "memory_bytes",
           "min_free_bytes"
         ],
         "properties": {
-          "max_sandboxes": {
+          "max_machines": {
             "minimum": 0,
             "type": "integer"
           },
@@ -50426,10 +50084,10 @@ export const openApiDocument = {
             ]
           }
         },
-        "$id": "#/components/schemas/SandboxLimits"
+        "$id": "#/components/schemas/MachineLimits"
       },
-      "Station": {
-        "title": "Station",
+      "Server": {
+        "title": "Server",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -50536,36 +50194,36 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "sandbox_subnet": {
+          "machine_subnet": {
             "type": [
               "string",
               "null"
             ]
           },
-          "sandbox_limits": {
-            "$ref": "#/components/schemas/SandboxLimits"
+          "machine_limits": {
+            "$ref": "#/components/schemas/MachineLimits"
           },
-          "default_sandbox_runtime": {
+          "default_machine_runtime": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SandboxRuntime"
+                "$ref": "#/components/schemas/MachineRuntime"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "sandbox_runtime_advice": {
+          "machine_runtime_advice": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SandboxRuntimeAdvice"
+                "$ref": "#/components/schemas/MachineRuntimeAdvice"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "sandbox_memory": {
+          "machine_memory": {
             "type": "object",
             "required": [
               "limit",
@@ -50611,7 +50269,7 @@ export const openApiDocument = {
           "capabilities": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StationCapabilities"
+                "$ref": "#/components/schemas/ServerCapabilities"
               },
               {
                 "type": "null"
@@ -50691,7 +50349,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Station"
+        "$id": "#/components/schemas/Server"
       },
       "Attestation": {
         "title": "Attestation",
@@ -51247,8 +50905,8 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Build"
       },
-      "SandboxRunOutput": {
-        "title": "SandboxRunOutput",
+      "MachineRunOutput": {
+        "title": "MachineRunOutput",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -51266,7 +50924,7 @@ export const openApiDocument = {
             ],
             "properties": {
               "source": {
-                "const": "sandbox exec output",
+                "const": "machine exec output",
                 "type": "string"
               },
               "text": {
@@ -51284,7 +50942,7 @@ export const openApiDocument = {
             ]
           }
         },
-        "$id": "#/components/schemas/SandboxRunOutput"
+        "$id": "#/components/schemas/MachineRunOutput"
       },
       "Run": {
         "title": "Run",
@@ -51292,8 +50950,8 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "id",
-          "service_id",
-          "sandbox_id",
+          "app_id",
+          "machine_id",
           "deployment_id",
           "kind",
           "command",
@@ -51312,13 +50970,13 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_id": {
+          "app_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "sandbox_id": {
+          "machine_id": {
             "type": [
               "string",
               "null"
@@ -51399,7 +51057,7 @@ export const openApiDocument = {
             ]
           },
           "output": {
-            "$ref": "#/components/schemas/SandboxRunOutput"
+            "$ref": "#/components/schemas/MachineRunOutput"
           }
         },
         "$id": "#/components/schemas/Run"
@@ -51643,7 +51301,7 @@ export const openApiDocument = {
               "SWITCH_NO_TARGET",
               "SWITCH_PENDING",
               "SWITCH_MISMATCH",
-              "NAME_NOT_IN_ENVIRONMENT",
+              "NAME_NOT_IN_NETWORK",
               "PATH_BLOCKED",
               "DOMAIN_NOT_ALLOWED",
               "TARGET_NOT_RUNNING",
@@ -51656,7 +51314,7 @@ export const openApiDocument = {
               "WEB_PORTS_CLOSED",
               "ROUTE_NOT_APPLIED",
               "NO_PUBLIC_ADDRESS",
-              "STATION_STALE"
+              "SERVER_STALE"
             ]
           },
           "explanation": {
@@ -51676,34 +51334,36 @@ export const openApiDocument = {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "environment",
+          "project_id",
+          "preview",
           "computed_at",
           "virtual_prefix",
           "subnets",
-          "services",
-          "sandboxes",
+          "apps",
+          "machines",
           "edges",
           "inbound",
           "paths",
           "warnings"
         ],
         "properties": {
-          "environment": {
-            "additionalProperties": false,
-            "type": "object",
+          "project_id": {
+            "type": "string"
+          },
+          "preview": {
+            "type": [
+              "object",
+              "null"
+            ],
             "required": [
               "id",
-              "name",
-              "project_id"
+              "name"
             ],
             "properties": {
               "id": {
                 "type": "string"
               },
               "name": {
-                "type": "string"
-              },
-              "project_id": {
                 "type": "string"
               }
             }
@@ -51720,7 +51380,7 @@ export const openApiDocument = {
               "additionalProperties": false,
               "type": "object",
               "required": [
-                "station",
+                "server",
                 "subnet",
                 "gateway",
                 "resolver",
@@ -51728,7 +51388,7 @@ export const openApiDocument = {
                 "stale"
               ],
               "properties": {
-                "station": {
+                "server": {
                   "additionalProperties": false,
                   "type": "object",
                   "required": [
@@ -51768,7 +51428,7 @@ export const openApiDocument = {
               }
             }
           },
-          "services": {
+          "apps": {
             "type": "array",
             "items": {
               "additionalProperties": false,
@@ -51778,7 +51438,7 @@ export const openApiDocument = {
                 "name",
                 "kind",
                 "status",
-                "station_id",
+                "server_id",
                 "dns",
                 "virtual_ip",
                 "ports",
@@ -51803,9 +51463,9 @@ export const openApiDocument = {
                   ]
                 },
                 "status": {
-                  "$ref": "#/components/schemas/ServiceStatus"
+                  "$ref": "#/components/schemas/AppStatus"
                 },
-                "station_id": {
+                "server_id": {
                   "type": "string"
                 },
                 "dns": {
@@ -51930,7 +51590,7 @@ export const openApiDocument = {
                     "type": "object",
                     "required": [
                       "id",
-                      "service_port_id",
+                      "app_port_id",
                       "hostname",
                       "kind",
                       "ingress",
@@ -51943,7 +51603,7 @@ export const openApiDocument = {
                       "id": {
                         "type": "string"
                       },
-                      "service_port_id": {
+                      "app_port_id": {
                         "type": "string"
                       },
                       "hostname": {
@@ -52050,8 +51710,8 @@ export const openApiDocument = {
                     "type": "object",
                     "required": [
                       "id",
-                      "service_port_id",
-                      "station_id",
+                      "app_port_id",
+                      "server_id",
                       "host_port",
                       "status",
                       "address",
@@ -52063,10 +51723,10 @@ export const openApiDocument = {
                       "id": {
                         "type": "string"
                       },
-                      "service_port_id": {
+                      "app_port_id": {
                         "type": "string"
                       },
-                      "station_id": {
+                      "server_id": {
                         "type": "string"
                       },
                       "host_port": {
@@ -52123,7 +51783,7 @@ export const openApiDocument = {
               }
             }
           },
-          "sandboxes": {
+          "machines": {
             "type": "array",
             "items": {
               "additionalProperties": false,
@@ -52132,7 +51792,7 @@ export const openApiDocument = {
                 "id",
                 "name",
                 "status",
-                "station_id",
+                "server_id",
                 "address",
                 "egress"
               ],
@@ -52155,7 +51815,7 @@ export const openApiDocument = {
                     "deleting"
                   ]
                 },
-                "station_id": {
+                "server_id": {
                   "type": "string"
                 },
                 "address": {
@@ -52273,7 +51933,7 @@ export const openApiDocument = {
                       "required": [
                         "kind",
                         "hostname",
-                        "service",
+                        "app",
                         "port"
                       ],
                       "properties": {
@@ -52284,7 +51944,7 @@ export const openApiDocument = {
                         "hostname": {
                           "type": "string"
                         },
-                        "service": {
+                        "app": {
                           "type": "string"
                         },
                         "port": {
@@ -52298,7 +51958,7 @@ export const openApiDocument = {
                       "required": [
                         "kind",
                         "public",
-                        "service",
+                        "app",
                         "port"
                       ],
                       "properties": {
@@ -52312,7 +51972,7 @@ export const openApiDocument = {
                             "null"
                           ]
                         },
-                        "service": {
+                        "app": {
                           "type": "string"
                         },
                         "port": {
@@ -52349,7 +52009,7 @@ export const openApiDocument = {
                     "private_range",
                     "public_internet",
                     "no_switch_target",
-                    "shared_service",
+                    "shared_app",
                     "guard",
                     "inbound_domain",
                     "inbound_tcp",
@@ -52361,9 +52021,9 @@ export const openApiDocument = {
                 "from": {
                   "type": "string",
                   "enum": [
-                    "every service",
+                    "every app",
                     "internet",
-                    "a sandbox"
+                    "a machine"
                   ]
                 },
                 "to": {
@@ -52397,7 +52057,7 @@ export const openApiDocument = {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "service",
+          "app",
           "deployment_id",
           "at",
           "conntrack",
@@ -52407,7 +52067,7 @@ export const openApiDocument = {
           "untrusted"
         ],
         "properties": {
-          "service": {
+          "app": {
             "additionalProperties": false,
             "type": "object",
             "required": [
@@ -52515,16 +52175,16 @@ export const openApiDocument = {
                         "other"
                       ]
                     },
-                    "service": {
+                    "app": {
                       "type": "string"
                     },
-                    "service_id": {
+                    "app_id": {
                       "type": "string"
                     },
-                    "sandbox": {
+                    "machine": {
                       "type": "string"
                     },
-                    "sandbox_id": {
+                    "machine_id": {
                       "type": "string"
                     },
                     "deployment_id": {
@@ -52750,7 +52410,7 @@ export const openApiDocument = {
               "SWITCH_NO_TARGET",
               "SWITCH_PENDING",
               "SWITCH_MISMATCH",
-              "NAME_NOT_IN_ENVIRONMENT",
+              "NAME_NOT_IN_NETWORK",
               "PATH_BLOCKED",
               "DOMAIN_NOT_ALLOWED",
               "TARGET_NOT_RUNNING",
@@ -52763,7 +52423,7 @@ export const openApiDocument = {
               "WEB_PORTS_CLOSED",
               "ROUTE_NOT_APPLIED",
               "NO_PUBLIC_ADDRESS",
-              "STATION_STALE"
+              "SERVER_STALE"
             ]
           },
           "summary": {
@@ -52823,7 +52483,7 @@ export const openApiDocument = {
                     "SWITCH_NO_TARGET",
                     "SWITCH_PENDING",
                     "SWITCH_MISMATCH",
-                    "NAME_NOT_IN_ENVIRONMENT",
+                    "NAME_NOT_IN_NETWORK",
                     "PATH_BLOCKED",
                     "DOMAIN_NOT_ALLOWED",
                     "TARGET_NOT_RUNNING",
@@ -52836,7 +52496,7 @@ export const openApiDocument = {
                     "WEB_PORTS_CLOSED",
                     "ROUTE_NOT_APPLIED",
                     "NO_PUBLIC_ADDRESS",
-                    "STATION_STALE"
+                    "SERVER_STALE"
                   ]
                 },
                 "detail": {
@@ -52906,14 +52566,14 @@ export const openApiDocument = {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "service",
+          "app",
           "kind",
           "to",
           "port",
           "at"
         ],
         "properties": {
-          "service": {
+          "app": {
             "type": "string"
           },
           "kind": {
@@ -53026,19 +52686,19 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/NetworkProbe"
       },
-      "SandboxNetworkProbe": {
-        "title": "SandboxNetworkProbe",
+      "MachineNetworkProbe": {
+        "title": "MachineNetworkProbe",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "sandbox",
+          "machine",
           "kind",
           "to",
           "port",
           "at"
         ],
         "properties": {
-          "sandbox": {
+          "machine": {
             "type": "string"
           },
           "kind": {
@@ -53149,7 +52809,7 @@ export const openApiDocument = {
             "type": "string"
           }
         },
-        "$id": "#/components/schemas/SandboxNetworkProbe"
+        "$id": "#/components/schemas/MachineNetworkProbe"
       },
       "DnsLog": {
         "title": "DnsLog",
@@ -53235,7 +52895,7 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/DnsLog"
       },
-      "SandboxSize": {
+      "MachineSize": {
         "title": "SandboxSize",
         "type": "object",
         "required": [
@@ -53257,9 +52917,9 @@ export const openApiDocument = {
             "type": "integer"
           }
         },
-        "$id": "#/components/schemas/SandboxSize"
+        "$id": "#/components/schemas/MachineSize"
       },
-      "SandboxStatus": {
+      "MachineStatus": {
         "type": "string",
         "enum": [
           "creating",
@@ -53271,8 +52931,8 @@ export const openApiDocument = {
           "deleting"
         ]
       },
-      "SandboxImage": {
-        "title": "SandboxImage",
+      "MachineImage": {
+        "title": "MachineImage",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -53290,9 +52950,9 @@ export const openApiDocument = {
             "type": "string"
           }
         },
-        "$id": "#/components/schemas/SandboxImage"
+        "$id": "#/components/schemas/MachineImage"
       },
-      "SandboxEgressDomain": {
+      "MachineEgressDomain": {
         "title": "SandboxEgressDomain",
         "type": "object",
         "required": [
@@ -53316,17 +52976,18 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/SandboxEgressDomain"
+        "$id": "#/components/schemas/MachineEgressDomain"
       },
-      "SandboxSnapshot": {
-        "title": "SandboxSnapshot",
+      "MachineSnapshot": {
+        "title": "MachineSnapshot",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "sandbox_id",
-          "environment_id",
-          "station_id",
+          "machine_id",
+          "project_id",
+          "preview_id",
+          "server_id",
           "name",
           "runtime",
           "status",
@@ -53345,13 +53006,19 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "sandbox_id": {
+          "machine_id": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": "string"
           },
-          "station_id": {
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
             "type": "string"
           },
           "name": {
@@ -53393,10 +53060,10 @@ export const openApiDocument = {
             "type": "integer"
           },
           "image": {
-            "$ref": "#/components/schemas/SandboxImage"
+            "$ref": "#/components/schemas/MachineImage"
           },
           "size": {
-            "$ref": "#/components/schemas/SandboxSize"
+            "$ref": "#/components/schemas/MachineSize"
           },
           "failure": {
             "anyOf": [
@@ -53409,14 +53076,14 @@ export const openApiDocument = {
             ]
           }
         },
-        "$id": "#/components/schemas/SandboxSnapshot"
+        "$id": "#/components/schemas/MachineSnapshot"
       },
-      "SandboxMetricSample": {
-        "title": "SandboxMetricSample",
+      "MachineMetricSample": {
+        "title": "MachineMetricSample",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "sandbox_id",
+          "machine_id",
           "container_id",
           "at",
           "cpu_pct",
@@ -53428,7 +53095,7 @@ export const openApiDocument = {
           "blk_write_bps"
         ],
         "properties": {
-          "sandbox_id": {
+          "machine_id": {
             "type": "string"
           },
           "container_id": {
@@ -53465,7 +53132,7 @@ export const openApiDocument = {
             "type": "integer"
           }
         },
-        "$id": "#/components/schemas/SandboxMetricSample"
+        "$id": "#/components/schemas/MachineMetricSample"
       },
       "AgentEvent": {
         "description": "One stored event of a task's conversation; seq is the task cursor",
@@ -54894,132 +54561,13 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AgentEventPage"
       },
-      "ShipRequest": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "task_id",
-          "project_id",
-          "title",
-          "status",
-          "pull_request",
-          "preview_environment_id",
-          "head_sha",
-          "reason",
-          "requested_by",
-          "decided_by",
-          "decided_at",
-          "created_at"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "task_id": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pushing",
-              "pending",
-              "rejected",
-              "merged",
-              "failed"
-            ]
-          },
-          "pull_request": {
-            "additionalProperties": false,
-            "type": [
-              "object",
-              "null"
-            ],
-            "required": [
-              "repo",
-              "number",
-              "url"
-            ],
-            "properties": {
-              "repo": {
-                "type": "string"
-              },
-              "number": {
-                "type": "integer"
-              },
-              "url": {
-                "type": "string"
-              }
-            }
-          },
-          "preview_environment_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "head_sha": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "reason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "requested_by": {
-            "type": "string"
-          },
-          "decided_by": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "decided_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "created_at": {
-            "type": "string"
-          }
-        },
-        "$id": "#/components/schemas/ShipRequest"
-      },
-      "ShipRequestList": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ShipRequest"
-            }
-          }
-        },
-        "$id": "#/components/schemas/ShipRequestList"
-      },
       "Task": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "project",
-          "environment",
+          "preview_id",
           "owner",
           "title",
           "repository",
@@ -55027,7 +54575,6 @@ export const openApiDocument = {
           "branch",
           "agent",
           "model",
-          "sandbox",
           "machine",
           "port",
           "ship",
@@ -55062,20 +54609,11 @@ export const openApiDocument = {
               }
             }
           },
-          "environment": {
-            "type": "object",
-            "required": [
-              "id",
-              "name"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            }
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "owner": {
             "additionalProperties": false,
@@ -55124,11 +54662,12 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "sandbox": {
+          "machine": {
             "type": "object",
             "required": [
               "id",
-              "name"
+              "name",
+              "kind"
             ],
             "properties": {
               "id": {
@@ -55136,15 +54675,15 @@ export const openApiDocument = {
               },
               "name": {
                 "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "own"
+                ]
               }
             }
-          },
-          "machine": {
-            "type": "string",
-            "enum": [
-              "project",
-              "own"
-            ]
           },
           "port": {
             "type": [
@@ -55155,7 +54694,7 @@ export const openApiDocument = {
           "ship": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ShipRequest"
+                "$ref": "#/components/schemas/Approval"
               },
               {
                 "type": "null"
@@ -55169,12 +54708,12 @@ export const openApiDocument = {
               "null"
             ],
             "required": [
-              "environment_id",
+              "id",
               "name",
               "url"
             ],
             "properties": {
-              "environment_id": {
+              "id": {
                 "type": "string"
               },
               "name": {
@@ -55397,15 +54936,16 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/TaskPage"
       },
-      "Sandbox": {
-        "title": "Sandbox",
+      "Machine": {
+        "title": "Machine",
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "created_at",
-          "environment_id",
-          "station_id",
+          "project_id",
+          "preview_id",
+          "server_id",
           "name",
           "status",
           "status_reason",
@@ -55434,17 +54974,23 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": "string"
           },
-          "station_id": {
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
             "type": "string"
           },
           "name": {
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/SandboxStatus"
+            "$ref": "#/components/schemas/MachineStatus"
           },
           "status_reason": {
             "anyOf": [
@@ -55489,10 +55035,10 @@ export const openApiDocument = {
             ]
           },
           "image": {
-            "$ref": "#/components/schemas/SandboxImage"
+            "$ref": "#/components/schemas/MachineImage"
           },
           "size": {
-            "$ref": "#/components/schemas/SandboxSize"
+            "$ref": "#/components/schemas/MachineSize"
           },
           "runtime": {
             "const": "gvisor",
@@ -55525,7 +55071,7 @@ export const openApiDocument = {
               "domains": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/SandboxEgressDomain"
+                  "$ref": "#/components/schemas/MachineEgressDomain"
                 }
               }
             }
@@ -55564,11 +55110,11 @@ export const openApiDocument = {
               "null"
             ],
             "required": [
-              "sandbox_id",
+              "machine_id",
               "snapshot_id"
             ],
             "properties": {
-              "sandbox_id": {
+              "machine_id": {
                 "type": [
                   "string",
                   "null"
@@ -55747,7 +55293,7 @@ export const openApiDocument = {
           "snapshots": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SandboxSnapshot"
+              "$ref": "#/components/schemas/MachineSnapshot"
             }
           },
           "runs": {
@@ -55759,14 +55305,14 @@ export const openApiDocument = {
           "metrics": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SandboxMetricSample"
+                "$ref": "#/components/schemas/MachineMetricSample"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "variables": {
+          "keys": {
             "type": "array",
             "items": {
               "type": "object",
@@ -55776,16 +55322,17 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Sandbox"
+        "$id": "#/components/schemas/Machine"
       },
-      "SandboxCreated": {
+      "MachineCreated": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
           "created_at",
-          "environment_id",
-          "station_id",
+          "project_id",
+          "preview_id",
+          "server_id",
           "name",
           "status",
           "status_reason",
@@ -55815,17 +55362,23 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": "string"
           },
-          "station_id": {
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
             "type": "string"
           },
           "name": {
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/SandboxStatus"
+            "$ref": "#/components/schemas/MachineStatus"
           },
           "status_reason": {
             "anyOf": [
@@ -55870,10 +55423,10 @@ export const openApiDocument = {
             ]
           },
           "image": {
-            "$ref": "#/components/schemas/SandboxImage"
+            "$ref": "#/components/schemas/MachineImage"
           },
           "size": {
-            "$ref": "#/components/schemas/SandboxSize"
+            "$ref": "#/components/schemas/MachineSize"
           },
           "runtime": {
             "const": "gvisor",
@@ -55906,7 +55459,7 @@ export const openApiDocument = {
               "domains": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/SandboxEgressDomain"
+                  "$ref": "#/components/schemas/MachineEgressDomain"
                 }
               }
             }
@@ -55945,11 +55498,11 @@ export const openApiDocument = {
               "null"
             ],
             "required": [
-              "sandbox_id",
+              "machine_id",
               "snapshot_id"
             ],
             "properties": {
-              "sandbox_id": {
+              "machine_id": {
                 "type": [
                   "string",
                   "null"
@@ -56128,7 +55681,7 @@ export const openApiDocument = {
           "snapshots": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SandboxSnapshot"
+              "$ref": "#/components/schemas/MachineSnapshot"
             }
           },
           "runs": {
@@ -56140,14 +55693,14 @@ export const openApiDocument = {
           "metrics": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SandboxMetricSample"
+                "$ref": "#/components/schemas/MachineMetricSample"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "variables": {
+          "keys": {
             "type": "array",
             "items": {
               "type": "object",
@@ -56163,10 +55716,10 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/SandboxCreated"
+        "$id": "#/components/schemas/MachineCreated"
       },
-      "SandboxDeleted": {
-        "title": "SandboxDeleted",
+      "MachineDeleted": {
+        "title": "MachineDeleted",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -56182,16 +55735,17 @@ export const openApiDocument = {
             "type": "integer"
           }
         },
-        "$id": "#/components/schemas/SandboxDeleted"
+        "$id": "#/components/schemas/MachineDeleted"
       },
-      "SandboxSnapshotCreated": {
+      "MachineSnapshotCreated": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "sandbox_id",
-          "environment_id",
-          "station_id",
+          "machine_id",
+          "project_id",
+          "preview_id",
+          "server_id",
           "name",
           "runtime",
           "status",
@@ -56211,13 +55765,19 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "sandbox_id": {
+          "machine_id": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": "string"
           },
-          "station_id": {
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_id": {
             "type": "string"
           },
           "name": {
@@ -56259,10 +55819,10 @@ export const openApiDocument = {
             "type": "integer"
           },
           "image": {
-            "$ref": "#/components/schemas/SandboxImage"
+            "$ref": "#/components/schemas/MachineImage"
           },
           "size": {
-            "$ref": "#/components/schemas/SandboxSize"
+            "$ref": "#/components/schemas/MachineSize"
           },
           "failure": {
             "anyOf": [
@@ -56281,14 +55841,14 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/SandboxSnapshotCreated"
+        "$id": "#/components/schemas/MachineSnapshotCreated"
       },
-      "SandboxConnections": {
-        "title": "SandboxConnections",
+      "MachineConnections": {
+        "title": "MachineConnections",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "sandbox",
+          "machine",
           "at",
           "conntrack",
           "connections",
@@ -56297,7 +55857,7 @@ export const openApiDocument = {
           "untrusted"
         ],
         "properties": {
-          "sandbox": {
+          "machine": {
             "additionalProperties": false,
             "type": "object",
             "required": [
@@ -56399,16 +55959,16 @@ export const openApiDocument = {
                         "other"
                       ]
                     },
-                    "service": {
+                    "app": {
                       "type": "string"
                     },
-                    "service_id": {
+                    "app_id": {
                       "type": "string"
                     },
-                    "sandbox": {
+                    "machine": {
                       "type": "string"
                     },
-                    "sandbox_id": {
+                    "machine_id": {
                       "type": "string"
                     },
                     "deployment_id": {
@@ -56553,7 +56113,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/SandboxConnections"
+        "$id": "#/components/schemas/MachineConnections"
       },
       "StorageGrown": {
         "title": "StorageGrown",
@@ -56573,13 +56133,13 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/StorageGrown"
       },
-      "SandboxExec": {
+      "MachineExec": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "service_id",
-          "sandbox_id",
+          "app_id",
+          "machine_id",
           "deployment_id",
           "kind",
           "command",
@@ -56598,13 +56158,13 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_id": {
+          "app_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "sandbox_id": {
+          "machine_id": {
             "type": [
               "string",
               "null"
@@ -56685,21 +56245,21 @@ export const openApiDocument = {
             ]
           },
           "output": {
-            "$ref": "#/components/schemas/SandboxRunOutput"
+            "$ref": "#/components/schemas/MachineRunOutput"
           },
           "attach_url": {
             "type": "string"
           }
         },
-        "$id": "#/components/schemas/SandboxExec"
+        "$id": "#/components/schemas/MachineExec"
       },
-      "SandboxShell": {
+      "MachineShell": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "service_id",
-          "sandbox_id",
+          "app_id",
+          "machine_id",
           "deployment_id",
           "kind",
           "command",
@@ -56720,13 +56280,13 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "service_id": {
+          "app_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "sandbox_id": {
+          "machine_id": {
             "type": [
               "string",
               "null"
@@ -56807,33 +56367,33 @@ export const openApiDocument = {
             ]
           },
           "output": {
-            "$ref": "#/components/schemas/SandboxRunOutput"
+            "$ref": "#/components/schemas/MachineRunOutput"
           },
           "attach_url": {
             "type": "string"
           }
         },
-        "$id": "#/components/schemas/SandboxShell"
+        "$id": "#/components/schemas/MachineShell"
       },
-      "SandboxVariablesOutcome": {
-        "title": "SandboxVariablesOutcome",
+      "MachineKeysOutcome": {
+        "title": "MachineKeysOutcome",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "variables"
+          "keys"
         ],
         "properties": {
-          "variables": {
+          "keys": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Variable"
+              "$ref": "#/components/schemas/Key"
             }
           }
         },
-        "$id": "#/components/schemas/SandboxVariablesOutcome"
+        "$id": "#/components/schemas/MachineKeysOutcome"
       },
-      "SandboxSnapshotDeleted": {
-        "title": "SandboxSnapshotDeleted",
+      "MachineSnapshotDeleted": {
+        "title": "MachineSnapshotDeleted",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -56845,7 +56405,7 @@ export const openApiDocument = {
             "type": "boolean"
           }
         },
-        "$id": "#/components/schemas/SandboxSnapshotDeleted"
+        "$id": "#/components/schemas/MachineSnapshotDeleted"
       },
       "Invite": {
         "additionalProperties": false,
@@ -57167,13 +56727,13 @@ export const openApiDocument = {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "environment",
+          "preview",
           "run_id",
-          "services",
+          "apps",
           "url"
         ],
         "properties": {
-          "environment": {
+          "preview": {
             "additionalProperties": false,
             "type": "object",
             "required": [
@@ -57192,7 +56752,7 @@ export const openApiDocument = {
           "run_id": {
             "type": "string"
           },
-          "services": {
+          "apps": {
             "type": "array",
             "items": {
               "type": "string"
@@ -57207,15 +56767,16 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/TaskPreview"
       },
-      "ServiceWritten": {
+      "AppWritten": {
         "additionalProperties": false,
         "type": "object",
         "required": [
           "id",
-          "environment_id",
+          "project_id",
+          "preview_id",
           "name",
           "kind",
-          "station_id",
+          "server_id",
           "source",
           "current_deployment_id",
           "status",
@@ -57236,8 +56797,14 @@ export const openApiDocument = {
           "updated_at": {
             "type": "string"
           },
-          "environment_id": {
+          "project_id": {
             "type": "string"
+          },
+          "preview_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
             "type": "string"
@@ -57251,11 +56818,11 @@ export const openApiDocument = {
               "one_off"
             ]
           },
-          "station_id": {
+          "server_id": {
             "type": "string"
           },
           "source": {
-            "$ref": "#/components/schemas/ServiceSource"
+            "$ref": "#/components/schemas/AppSource"
           },
           "command": {
             "type": [
@@ -57418,12 +56985,12 @@ export const openApiDocument = {
             ]
           },
           "status": {
-            "$ref": "#/components/schemas/ServiceStatus"
+            "$ref": "#/components/schemas/AppStatus"
           },
           "status_reason": {
             "anyOf": [
               {
-                "const": "station_asleep",
+                "const": "server_asleep",
                 "type": "string"
               },
               {
@@ -57458,7 +57025,7 @@ export const openApiDocument = {
           "ports": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ServicePort"
+              "$ref": "#/components/schemas/AppPort"
             }
           },
           "volumes": {
@@ -57489,10 +57056,10 @@ export const openApiDocument = {
               }
             ]
           },
-          "variables": {
+          "keys": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Variable"
+              "$ref": "#/components/schemas/Key"
             }
           },
           "exports": {
@@ -57514,22 +57081,22 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/ServiceWritten"
+        "$id": "#/components/schemas/AppWritten"
       },
-      "VariablesOutcome": {
+      "KeysOutcome": {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "variables",
+          "keys",
           "stale_dependents",
           "deployments",
-          "staged_changes"
+          "approvals"
         ],
         "properties": {
-          "variables": {
+          "keys": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Variable"
+              "$ref": "#/components/schemas/Key"
             }
           },
           "stale_dependents": {
@@ -57538,20 +57105,23 @@ export const openApiDocument = {
               "additionalProperties": false,
               "type": "object",
               "required": [
-                "service_id",
-                "environment_id",
-                "protected",
+                "app_id",
+                "project_id",
+                "preview_id",
                 "keys"
               ],
               "properties": {
-                "service_id": {
+                "app_id": {
                   "type": "string"
                 },
-                "environment_id": {
+                "project_id": {
                   "type": "string"
                 },
-                "protected": {
-                  "type": "boolean"
+                "preview_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "keys": {
                   "type": "array",
@@ -57568,7 +57138,7 @@ export const openApiDocument = {
               "type": "string"
             }
           },
-          "staged_changes": {
+          "approvals": {
             "type": "array",
             "items": {
               "additionalProperties": false,
@@ -57576,10 +57146,19 @@ export const openApiDocument = {
               "required": [
                 "id",
                 "created_at",
-                "environment_id",
+                "project_id",
+                "task_id",
+                "title",
                 "status",
                 "source",
-                "actor",
+                "requested_by",
+                "requester",
+                "requester_decides",
+                "decided_by",
+                "decided_at",
+                "self_approved",
+                "reason",
+                "ship",
                 "summary",
                 "changes"
               ],
@@ -57593,17 +57172,26 @@ export const openApiDocument = {
                 "updated_at": {
                   "type": "string"
                 },
-                "environment_id": {
+                "project_id": {
                   "type": [
                     "string",
                     "null"
                   ]
                 },
+                "task_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
                 "status": {
                   "type": "string",
                   "enum": [
-                    "staged",
-                    "accepted",
+                    "waiting",
+                    "approved",
                     "rejected",
                     "superseded"
                   ]
@@ -57614,17 +57202,51 @@ export const openApiDocument = {
                     "api",
                     "manifest",
                     "compose_import",
-                    "agent",
+                    "task",
                     "ui"
                   ]
                 },
-                "actor": {
+                "requested_by": {
                   "$ref": "#/components/schemas/Actor"
                 },
-                "accepted_by": {
+                "requester": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "requester_decides": {
+                  "type": "boolean"
+                },
+                "decided_by": {
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/Actor"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decided_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "self_approved": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ship": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ApprovalShip"
                     },
                     {
                       "type": "null"
@@ -57679,7 +57301,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/VariablesOutcome"
+        "$id": "#/components/schemas/KeysOutcome"
       },
       "VolumeWritten": {
         "additionalProperties": false,
@@ -57687,8 +57309,8 @@ export const openApiDocument = {
         "required": [
           "id",
           "owner",
-          "service_id",
-          "station_id",
+          "app_id",
+          "server_id",
           "mount_path",
           "size_bytes",
           "status",
@@ -57713,13 +57335,13 @@ export const openApiDocument = {
               "station"
             ]
           },
-          "service_id": {
+          "app_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "station_id": {
+          "server_id": {
             "type": "string"
           },
           "mount_path": {

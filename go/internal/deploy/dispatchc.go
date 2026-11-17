@@ -123,7 +123,7 @@ func startDispatch(ctx context.Context, dc *docker.Client, l dispatchLaunch, sid
 	if err != nil {
 		return "", err
 	}
-	if err := ensureLitestream(ctx, dc, l); err != nil {
+	if err := restoreDispatchDatabase(ctx, dc, l); err != nil {
 		return "", fmt.Errorf("Litestream before Dispatch: %w", err)
 	}
 	if c, ok, _ := dc.ContainerByName(ctx, spec.Name); ok {
@@ -261,7 +261,7 @@ func (s *Station) dispatchProcedure(ctx context.Context, l dispatchLaunch, from,
 	}
 	step("migrate_checked", map[string]any{"pending": check.Pending, "irreversible": check.Irreversible, "unknown_applied": check.UnknownApplied, "prefix": check.Prefix})
 	if len(check.Irreversible) > 0 {
-		return done(fmt.Errorf("%s: pending migrations %v drop data; a human must accept a staged change that says so", protocol.ErrorCodeMigrationIrreversible, check.Irreversible))
+		return done(fmt.Errorf("%s: pending migrations %v drop data; a person must approve an approval that names them", protocol.ErrorCodeMigrationIrreversible, check.Irreversible))
 	}
 	restore := ""
 	if !check.Prefix {

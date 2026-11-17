@@ -247,7 +247,7 @@ func TestHealthCheckOfTypeImageIsReportedAsAMissingCapability(t *testing.T) {
 		spec["health"] = map[string]any{"type": "image", "interval_s": 2, "timeout_s": 1, "startup_timeout_s": 30, "passes": 2, "failures": 3}
 	})
 	sp := p.Services[alphaWhoami]
-	if sp.Run || sp.Unsupported == nil || sp.Unsupported.Code != string(protocol.ErrorCodeStationCapabilityMissing) {
+	if sp.Run || sp.Unsupported == nil || sp.Unsupported.Code != string(protocol.ErrorCodeServerCapabilityMissing) {
 		t.Fatalf("got run %v unsupported %+v", sp.Run, sp.Unsupported)
 	}
 }

@@ -5,7 +5,7 @@ import type { Db } from '../db/client.ts'
 import { logError } from '../log.ts'
 import { redactionKnown } from '../secrets/deploy.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { sandboxEnv, sandboxKnown } from '../secrets/sandbox.ts'
+import { machineEnv, machineKnown } from '../secrets/sandbox.ts'
 import { memberSecrets } from '../team/keys.ts'
 
 const cacheMs = 60_000
@@ -116,17 +116,17 @@ export const createRedaction = (db: Db, keyring: Keyring) => {
 
 export type Redaction = ReturnType<typeof createRedaction>
 
-export const createSandboxRedaction = (db: Db, keyring: Keyring) => {
+export const createMachineRedaction = (db: Db, keyring: Keyring) => {
   const cache = new Map<string, { digest: string; known: { key: string; value: string }[] }>()
 
-  return (sandboxIds: string[], actor: ActorValue, requestId: string): Redactor => {
+  return (machineIds: string[], actor: ActorValue, requestId: string): Redactor => {
     const known: { key: string; value: string }[] = []
 
-    for (const id of new Set(sandboxIds)) {
+    for (const id of new Set(machineIds)) {
       let digest: string
 
       try {
-        digest = sandboxEnv(db, id).env_digest
+        digest = machineEnv(db, id).env_digest
       } catch {
         continue
       }
@@ -137,10 +137,10 @@ export const createSandboxRedaction = (db: Db, keyring: Keyring) => {
         let found: { key: string; value: string }[] = []
 
         try {
-          found = sandboxKnown(db, keyring, id, actor, requestId)
+          found = machineKnown(db, keyring, id, actor, requestId)
         } catch (error) {
           logError('redaction.unavailable', {
-            sandbox_id: id,
+            machine_id: id,
             explanation: (error as Error).message,
           })
         }
@@ -159,4 +159,4 @@ export const createSandboxRedaction = (db: Db, keyring: Keyring) => {
   }
 }
 
-export type SandboxRedaction = ReturnType<typeof createSandboxRedaction>
+export type MachineRedaction = ReturnType<typeof createMachineRedaction>

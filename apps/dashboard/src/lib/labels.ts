@@ -1,48 +1,48 @@
 import {
-  sandboxRuntimeTradeoffs,
-  type SandboxRuntimeKind,
+  machineRuntimeTradeoffs,
+  type MachineRuntimeKind,
 } from '@stationly/protocol/sandbox-runtime'
 
 import type {
+  App,
+  Approval,
+  AppStatus,
   Connections,
   Deployment,
   DeploymentStatus,
   Diagnosis,
   Explanation,
   HostProbe,
+  Key,
+  Machine,
+  MachineSnapshot,
+  MachineStatus,
   NetworkMap,
   Probe,
-  Sandbox,
-  SandboxSnapshot,
-  SandboxStatus,
-  Service,
-  ServiceStatus,
-  StagedChange,
-  Variable,
 } from './api'
 import type { Level } from './commands'
 import type { Tone } from './tone'
 
 export type Status = { label: string; tone: Tone }
 
-type MapService = NetworkMap['services'][number]
-type MapDomain = MapService['domains'][number]
+type MapApp = NetworkMap['apps'][number]
+type MapDomain = MapApp['domains'][number]
 type Connection = Connections['connections'][number]
 type Hop = Explanation['hops'][number]
 
 type PathId = NetworkMap['paths'][number]['path'] | Connections['refused'][number]['path']
 type FindingCode = NetworkMap['warnings'][number]['code'] | NonNullable<Explanation['code']>
 
-export const serviceStatus: Record<ServiceStatus, Status> = {
-  green: {
+export const appStatus: Record<AppStatus, Status> = {
+  healthy: {
     label: 'Healthy',
     tone: 'success',
   },
-  amber: {
-    label: 'Degraded',
-    tone: 'warning',
+  deploying: {
+    label: 'Deploying',
+    tone: 'info',
   },
-  red: {
+  failing: {
     label: 'Failing',
     tone: 'danger',
   },
@@ -52,25 +52,29 @@ export const serviceStatus: Record<ServiceStatus, Status> = {
   },
   asleep: {
     label: 'Asleep',
-    tone: 'info',
+    tone: 'violet',
+  },
+  not_deployed: {
+    label: 'Not deployed',
+    tone: 'neutral',
   },
 }
 
-export const serviceStatusReason: Record<NonNullable<Service['status_reason']>, string> = {
-  station_asleep: 'station asleep',
+export const appStatusReason: Record<NonNullable<App['status_reason']>, string> = {
+  server_asleep: 'server asleep',
   gaming_mode: 'gaming mode',
   schedule: 'on schedule',
 }
 
-export const serviceKind: Record<Service['kind'], string> = {
+export const appKind: Record<App['kind'], string> = {
   web: 'Web',
   worker: 'Worker',
   cron: 'Cron',
   one_off: 'One-off',
 }
 
-export const staleReason: Record<NonNullable<Service['stale_reasons']>[number]['code'], string> = {
-  VARIABLES_CHANGED: 'Variables changed',
+export const staleReason: Record<NonNullable<App['stale_reasons']>[number]['code'], string> = {
+  KEYS_CHANGED: 'Keys changed',
   CONFIG_CHANGED: 'Settings changed',
 }
 
@@ -125,7 +129,7 @@ export const deploymentTrigger: Record<Deployment['trigger']['type'], string> = 
   push: 'Git push',
   manual: 'Manual',
   rollback: 'Rollback',
-  variable_change: 'Variable change',
+  key_change: 'Key change',
   redeploy: 'Redeploy',
   base_image: 'Base image update',
   agent: 'Agent',
@@ -139,7 +143,7 @@ export const deploymentStrategy: Record<Deployment['strategy'], string> = {
 export const cancelReason: Record<NonNullable<Deployment['cancel_reason']>, string> = {
   user: 'Cancelled by a person',
   superseded: 'Replaced by a newer deployment',
-  station_offline: 'The station went offline',
+  station_offline: 'The server went offline',
 }
 
 type Step = NonNullable<Deployment['steps']>[number]
@@ -188,7 +192,7 @@ export const diagnosisPhase: Record<Diagnosis['phase'], string> = {
   start: 'Start',
   health: 'Health check',
   cutover: 'Switch traffic',
-  recovery: 'Recovery after a station restart',
+  recovery: 'Recovery after a server restart',
   run: 'Run',
   route: 'Routing',
   certificate: 'Certificate',
@@ -204,22 +208,22 @@ export const diagnosisFailed: Record<Diagnosis['phase'], string> = {
   start: 'failed to start',
   health: 'failed its health check',
   cutover: 'couldn’t take over traffic',
-  recovery: 'couldn’t recover after a station restart',
+  recovery: 'couldn’t recover after a server restart',
   run: 'failed while running',
-  route: 'couldn’t get a route on the station',
+  route: 'couldn’t get a route on the server',
   certificate: 'couldn’t get a certificate',
   unpack: 'couldn’t unpack its image',
   disk: 'ran out of disk',
   network: 'couldn’t set up its network',
 }
 
-export const stagedStatus: Record<StagedChange['status'], Status> = {
-  staged: {
-    label: 'Waiting for review',
+export const approvalStatus: Record<Approval['status'], Status> = {
+  waiting: {
+    label: 'Waiting',
     tone: 'warning',
   },
-  accepted: {
-    label: 'Accepted',
+  approved: {
+    label: 'Approved',
     tone: 'success',
   },
   rejected: {
@@ -227,12 +231,12 @@ export const stagedStatus: Record<StagedChange['status'], Status> = {
     tone: 'danger',
   },
   superseded: {
-    label: 'Replaced',
+    label: 'Superseded',
     tone: 'neutral',
   },
 }
 
-export const sandboxStatus: Record<SandboxStatus, Status> = {
+export const machineStatus: Record<MachineStatus, Status> = {
   creating: {
     label: 'Creating',
     tone: 'info',
@@ -263,19 +267,19 @@ export const sandboxStatus: Record<SandboxStatus, Status> = {
   },
 }
 
-export const sandboxReason: Record<NonNullable<Sandbox['status_reason']>, string> = {
+export const machineReason: Record<NonNullable<Machine['status_reason']>, string> = {
   user: 'stopped by a person',
   ttl: 'time limit reached',
   exited: 'startup process exited',
   oom: 'out of memory',
   created_stopped: 'created stopped',
-  station_restart: 'station restarted',
+  station_restart: 'server restarted',
   idle: 'idle',
 }
 
-export const sandboxRuntime: Record<SandboxRuntimeKind, string> = {
-  gvisor: sandboxRuntimeTradeoffs.gvisor.label,
-  microvm: sandboxRuntimeTradeoffs.microvm.label,
+export const machineRuntime: Record<MachineRuntimeKind, string> = {
+  gvisor: machineRuntimeTradeoffs.gvisor.label,
+  microvm: machineRuntimeTradeoffs.microvm.label,
 }
 
 export const cpuVirtualization: Record<NonNullable<HostProbe['cpu_virtualization']>, string> = {
@@ -283,17 +287,17 @@ export const cpuVirtualization: Record<NonNullable<HostProbe['cpu_virtualization
   svm: 'AMD-V (svm)',
 }
 
-export const sandboxNetwork: Record<Sandbox['network'], string> = {
+export const machineNetwork: Record<Machine['network'], string> = {
   isolated: 'Isolated',
-  environment: 'Environment network',
+  environment: 'Joins the network',
 }
 
-export const snapshotSource: Record<SandboxSnapshot['source_state'], string> = {
+export const snapshotSource: Record<MachineSnapshot['source_state'], string> = {
   running: 'While running',
   stopped: 'While stopped',
 }
 
-export const snapshotStatus: Record<SandboxSnapshot['status'], Status> = {
+export const snapshotStatus: Record<MachineSnapshot['status'], Status> = {
   creating: {
     label: 'Saving',
     tone: 'info',
@@ -312,7 +316,7 @@ export const snapshotStatus: Record<SandboxSnapshot['status'], Status> = {
   },
 }
 
-export const routing: Record<MapService['switch']['state'], Status> = {
+export const routing: Record<MapApp['switch']['state'], Status> = {
   serving: {
     label: 'Serving',
     tone: 'success',
@@ -367,11 +371,11 @@ export const routeResult: Record<NonNullable<MapDomain['route']['result']>, Stat
     tone: 'success',
   },
   pending: {
-    label: 'Waiting for the station',
+    label: 'Waiting for the server',
     tone: 'warning',
   },
   failed: {
-    label: 'The station couldn’t apply it',
+    label: 'The server couldn’t apply it',
     tone: 'danger',
   },
   blocked: {
@@ -381,28 +385,28 @@ export const routeResult: Record<NonNullable<MapDomain['route']['result']>, Stat
 }
 
 export const path: Record<PathId, string> = {
-  same_environment: 'Other services in this environment',
+  same_environment: 'Other apps here',
   resolver: 'Internal names (.internal)',
   loopback: 'Itself (localhost)',
-  host_address: 'The station and Stationly’s own services',
-  other_environment: 'Other environments',
+  host_address: 'The server and Stationly’s own apps',
+  other_environment: 'Production and other previews',
   cloud_metadata: 'Cloud metadata (169.254.169.254)',
   private_range: 'Other private networks',
   public_internet: 'The internet',
-  no_switch_target: 'A service that isn’t running',
-  shared_service: 'Shared services',
+  no_switch_target: 'An app that isn’t running',
+  shared_app: 'Shared apps',
   guard: 'Destinations its outbound rules don’t allow',
   inbound_domain: 'Your domains, from the internet',
   inbound_tcp: 'Public TCP ports, from the internet',
   inbound_other: 'Any other port, from the internet',
-  sandbox_inbound: 'Sandboxes, from anywhere',
-  domain_not_allowed: 'Domains outside a sandbox’s allowlist',
+  sandbox_inbound: 'Machines, from anywhere',
+  domain_not_allowed: 'Domains outside a machine’s allowlist',
 }
 
 export const pathFrom: Record<NetworkMap['paths'][number]['from'], string> = {
-  'every service': 'Services in this environment',
+  'every app': 'Apps here',
   internet: 'The internet',
-  'a sandbox': 'A sandbox',
+  'a machine': 'A machine',
 }
 
 export const pathResult: Record<NetworkMap['paths'][number]['verdict'], Status & { hint: string }> =
@@ -451,7 +455,7 @@ export const explanationVerdict: Record<Explanation['verdict'], Status> = {
 
 export const hop: Record<Hop['hop'], string> = {
   source: 'Source is running',
-  applied: 'Station has the latest config',
+  applied: 'Server has the latest config',
   dns: 'Name resolves',
   allowlist: 'Outbound allowlist',
   firewall: 'Traffic rule',
@@ -462,14 +466,14 @@ export const hop: Record<Hop['hop'], string> = {
   probe_required: 'Needs a test connection',
   domain: 'Domain',
   exposure: 'Public TCP port',
-  public_address: 'Station public address',
+  public_address: 'Server public address',
   web_ports: 'Web traffic',
   certificate: 'Certificate',
-  route: 'Route on the station',
+  route: 'Route on the server',
 }
 
 export const hopFact: Record<string, string> = {
-  station: 'station',
+  station: 'server',
   virtual_ip: 'stable address',
   host_port: 'public port',
   web_ports: 'web traffic',
@@ -514,10 +518,10 @@ export const hopStatus: Record<Hop['status'], Status> = {
 }
 
 export const finding: Record<FindingCode, string> = {
-  SWITCH_NO_TARGET: 'Service isn’t running',
+  SWITCH_NO_TARGET: 'App isn’t running',
   SWITCH_PENDING: 'Routing is switching',
   SWITCH_MISMATCH: 'Routing is out of date',
-  NAME_NOT_IN_ENVIRONMENT: 'Name isn’t in this environment',
+  NAME_NOT_IN_NETWORK: 'Name isn’t in this network',
   PATH_BLOCKED: 'A traffic rule blocks it',
   DOMAIN_NOT_ALLOWED: 'Domain isn’t in the allowlist',
   TARGET_NOT_RUNNING: 'Destination isn’t running',
@@ -528,9 +532,9 @@ export const finding: Record<FindingCode, string> = {
   DOMAIN_NOT_ACTIVE: 'Domain isn’t live',
   CERTIFICATE_NOT_VALID: 'Certificate isn’t valid',
   WEB_PORTS_CLOSED: 'Web traffic is closed',
-  ROUTE_NOT_APPLIED: 'Route isn’t on the station yet',
-  NO_PUBLIC_ADDRESS: 'Station has no public address',
-  STATION_STALE: 'Station report is out of date',
+  ROUTE_NOT_APPLIED: 'Route isn’t on the server yet',
+  NO_PUBLIC_ADDRESS: 'Server has no public address',
+  SERVER_STALE: 'Server report is out of date',
 }
 
 export const direction: Record<Connection['direction'], string> = {
@@ -539,11 +543,11 @@ export const direction: Record<Connection['direction'], string> = {
 }
 
 export const peerKind: Record<Connection['peer']['kind'], string> = {
-  service: 'Service',
-  sandbox: 'Sandbox',
+  service: 'App',
+  sandbox: 'Machine',
   resolver: 'Internal name server',
   gateway: 'Gateway',
-  station: 'Station health checks',
+  station: 'Server health checks',
   internet: 'Internet',
   public: 'Internet',
   address: 'Address',
@@ -574,30 +578,30 @@ const rcodes: Record<string, string> = {
 
 export const rcode = (code: string) => rcodes[code] ?? code
 
-export const variableKind: Record<Variable['kind'], string> = {
+export const keyKind: Record<Key['kind'], string> = {
   literal: 'Plain',
   sealed: 'Sealed',
   reference: 'Reference',
 }
 
-export const injection: Record<Variable['injection'], string> = {
+export const injection: Record<Key['injection'], string> = {
   env: 'Environment variable',
   file: 'File',
 }
 
-export const stagedSource: Record<StagedChange['source'], string> = {
+export const approvalSource: Record<Approval['source'], string> = {
   api: 'the API',
   manifest: 'a Manifest',
   compose_import: 'a Compose import',
-  agent: 'an agent',
+  task: 'a task',
   ui: 'the dashboard',
 }
 
-export const actor: Record<StagedChange['actor']['type'], string> = {
+export const actor: Record<Approval['requested_by']['type'], string> = {
   user: 'You',
   token: 'A token',
   oauth_client: 'An agent',
-  station: 'A station',
+  station: 'A server',
   system: 'Stationly',
 }
 
@@ -621,7 +625,7 @@ export const client = (id: string) => {
   return isMcpClient(name) ? mcpClient[name] : name
 }
 
-type Who = Pick<StagedChange['actor'], 'type' | 'client'>
+type Who = Pick<Approval['requested_by'], 'type' | 'client'>
 
 export const isAgent = (who: Who) =>
   who.type === 'oauth_client' || (who.type === 'token' && Boolean(who.client?.startsWith('mcp/')))
@@ -636,11 +640,11 @@ export const level: Record<Level, { label: string; hint: string }> = {
   },
   deploy: {
     label: 'Deploy',
-    hint: 'Reads everything, deploys, rolls back, restarts services and runs commands and sandboxes.',
+    hint: 'Reads everything, deploys, rolls back, restarts apps and runs commands and machines.',
   },
   admin: {
     label: 'Admin',
-    hint: 'Everything Deploy allows, plus creating and deleting services, domains and sealed variables.',
+    hint: 'Everything Deploy allows, plus creating and deleting apps, domains and sealed keys.',
   },
 }
 
@@ -651,9 +655,9 @@ export const sentence = (value: string) => {
 }
 
 export const terms = {
-  station: {
-    term: 'Station',
-    definition: 'A server that runs your services.',
+  server: {
+    term: 'Server',
+    definition: 'A host Stationly runs your apps on.',
   },
   gateway: {
     term: 'Gateway',
@@ -661,11 +665,11 @@ export const terms = {
   },
   switch: {
     term: 'Switch',
-    definition: 'Routes a service’s stable address to its current deployment.',
+    definition: 'Routes an app’s stable address to its current deployment.',
   },
   internalName: {
     term: 'Internal name',
-    definition: 'Other services in this environment reach the service at this name.',
+    definition: 'Other apps in the same production or preview reach the app at this name.',
   },
   stableAddress: {
     term: 'Stable address',
@@ -674,49 +678,41 @@ export const terms = {
   },
   trafficRule: {
     term: 'Traffic rule',
-    definition: 'Decides what a service can reach and what can reach it. Stations enforce them.',
+    definition: 'Decides what an app can reach and what can reach it. Servers enforce them.',
   },
   publicTcpPort: {
     term: 'Public TCP port',
     definition:
-      'A port on the station that forwards to a TCP port of a service, for databases and other protocols.',
+      'A port on the server that forwards to a TCP port of an app, for databases and other protocols.',
   },
   liveTraffic: {
     term: 'Live traffic',
     definition: 'Open connections, sampled every 5 seconds while you watch.',
   },
-  protectedEnvironment: {
-    term: 'Protected environment',
-    definition: 'Changes from agents and tokens wait for you to accept them.',
-  },
-  stagedChange: {
-    term: 'Staged change',
-    definition: 'A change waiting for you to accept or reject it.',
-  },
-  sandbox: {
-    term: 'Sandbox',
-    definition: 'A machine for an agent or for you, with its own disk and a time limit.',
-  },
-  workspace: {
-    term: 'Workspace',
+  production: {
+    term: 'Production',
     definition:
-      'Where an agent works: a sandbox with the agent installed, a repository cloned and its own token. A workspace has many sessions.',
+      'What your project’s users see. Every change to it waits for an admin to approve it; previews apply at once.',
   },
-  session: {
-    term: 'Session',
-    definition: 'One conversation with an agent in a workspace.',
+  approval: {
+    term: 'Approval',
+    definition: 'A change waiting for an admin to approve or reject it.',
+  },
+  machine: {
+    term: 'Machine',
+    definition: 'A machine for an agent or for you, with its own disk and a time limit.',
   },
   snapshot: {
     term: 'Snapshot',
-    definition: 'A saved copy of a sandbox’s disk. You can fork new sandboxes from it.',
+    definition: 'A saved copy of a machine’s disk. You can fork new machines from it.',
   },
   fork: {
     term: 'Fork',
-    definition: 'A new sandbox that starts from another sandbox or a snapshot.',
+    definition: 'A new machine that starts from another machine or a snapshot.',
   },
   outboundTraffic: {
     term: 'Outbound traffic',
-    definition: 'Which public destinations a sandbox can reach.',
+    definition: 'Which public destinations a machine can reach.',
   },
   manifest: {
     term: 'Manifest',

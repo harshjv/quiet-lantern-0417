@@ -39,12 +39,12 @@ test('an unknown shell is a usage error', async () => {
 test('the first word completes to every group and top-level command, generated or hand-written', async () => {
   const words = await suggestions('')
 
-  for (const word of ['services', 'sandboxes', 'deploy', 'logs', 'login', 'push', 'completion']) {
+  for (const word of ['apps', 'machines', 'deploy', 'logs', 'login', 'push', 'completion']) {
     assert.ok(words.includes(word), word)
   }
 
   assert.ok(!words.includes('complete'))
-  assert.deepEqual(await suggestions('sand'), ['sandboxes'])
+  assert.deepEqual(await suggestions('mach'), ['machines'])
 })
 
 test('a group completes to its subcommands with their summaries as hints', async () => {
@@ -52,21 +52,21 @@ test('a group completes to its subcommands with their summaries as hints', async
 
   assert.match(stdout, /^diagnosis\tThe diagnosis object of a failed deployment$/m)
   assert.match(stdout, /^wait\t/m)
-  assert.ok((await suggestions('variables', 'ap')).includes('apply'))
+  assert.ok((await suggestions('keys', 'ap')).includes('apply'))
 })
 
 test('flags complete after their command, also behind global flags, and global flags at the root', async () => {
-  const flags = await suggestions('services', 'create', '--st')
+  const flags = await suggestions('apps', 'create', '--s')
 
   assert.ok(flags.includes('--strategy'))
-  assert.ok(flags.includes('--station-id'))
-  assert.ok((await suggestions('services', 'create', '--no-dep')).includes('--no-deploy-on-create'))
-  assert.deepEqual(await suggestions('--service', 'web', 'logs', '--fol'), ['--follow'])
+  assert.ok(flags.includes('--server-id'))
+  assert.ok((await suggestions('apps', 'create', '--no-dep')).includes('--no-deploy-on-create'))
+  assert.deepEqual(await suggestions('--app', 'web', 'logs', '--fol'), ['--follow'])
   assert.ok((await suggestions('--pro')).includes('--project'))
 })
 
 test('an enum flag completes to its choices', async () => {
-  assert.deepEqual(await suggestions('services', 'create', '--kind', ''), [
+  assert.deepEqual(await suggestions('apps', 'create', '--kind', ''), [
     'web',
     'worker',
     'cron',

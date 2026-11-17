@@ -1,21 +1,22 @@
-import { Loader2 } from 'lucide-react'
+import { Cpu, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 
-import { sandboxRuntimeChoice } from '@stationly/protocol/sandbox-runtime'
+import { machineRuntimeChoice } from '@stationly/protocol/sandbox-runtime'
 
 import { ChoiceCards } from '@/components/choice-cards'
 import { AlsoWith } from '@/components/code'
 import { FormError } from '@/components/form-dialog'
-import { KeyValue, Subsection } from '@/components/page'
+import { KeyValue } from '@/components/page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { api, idempotency, send, type HostProbe, type Station } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { bytes } from '@/lib/format'
-import { cpuVirtualization, sandboxRuntime } from '@/lib/labels'
+import { cpuVirtualization, machineRuntime } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
+import { Section } from '@/workbench/parts'
 
-type Advice = NonNullable<Station['sandbox_runtime_advice']>
+type Advice = NonNullable<Station['machine_runtime_advice']>
 type Option = Advice['options'][number]
 type Runtime = Advice['default']
 
@@ -62,9 +63,9 @@ function HostFacts({ host, arch }: { host: HostProbe; arch: Station['arch'] }) {
         ['CPU cores', String(host.cpu_cores)],
         ['Memory', bytes(host.memory_bytes)],
         [
-          'Free for sandboxes',
+          'Free for machines',
           host.sandbox_free_bytes === null
-            ? 'No sandbox filesystem'
+            ? 'No machine filesystem'
             : bytes(host.sandbox_free_bytes),
         ],
       ]}
@@ -74,9 +75,9 @@ function HostFacts({ host, arch }: { host: HostProbe; arch: Station['arch'] }) {
 
 function OptionCard({ option, inUse }: { option: Option; inUse: boolean }) {
   return (
-    <li className="space-y-3 rounded-lg border bg-card p-4">
+    <li className="space-y-3 border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">{sandboxRuntime[option.runtime]}</span>
+        <span className="text-sm font-medium">{machineRuntime[option.runtime]}</span>
         {inUse && <Badge>In use</Badge>}
         {option.recommended && <Badge variant="outline">Recommended for this host</Badge>}
         {!option.installed && <Badge variant="secondary">Not installed in this release</Badge>}
@@ -119,21 +120,21 @@ function RuntimeChoice({
     mutationFn: (runtime: Runtime) =>
       send(
         api.v1
-          .stations({
-            station: station.id,
+          .servers({
+            server: station.id,
           })
           .patch(
             {
-              default_sandbox_runtime: runtime,
+              default_machine_runtime: runtime,
             },
             idempotency(),
           ),
       ),
     invalidate: ['stations'],
-    staged: (runtime) => `Default sandbox runtime ${sandboxRuntime[runtime]} on ${station.name}`,
+    waiting: (runtime) => `Default machine runtime ${machineRuntime[runtime]} on ${station.name}`,
     success: (_body, runtime) => ({
-      title: `New sandboxes on ${station.name} start on ${sandboxRuntime[runtime]}`,
-      description: 'Sandboxes that exist keep the runtime they started with.',
+      title: `New machines on ${station.name} start on ${machineRuntime[runtime]}`,
+      description: 'Machines that exist keep the runtime they started with.',
     }),
   })
   const installed = advice.options.filter((option) => option.installed)
@@ -148,13 +149,13 @@ function RuntimeChoice({
     >
       <FormError>{mutation.errorText}</FormError>
       <ChoiceCards
-        name={`sandbox-runtime-${station.id}`}
-        legend="Default runtime for new sandboxes"
+        name={`machine-runtime-${station.id}`}
+        legend="Default runtime for new machines"
         value={value}
         onChange={setValue}
         options={installed.map((option) => ({
           value: option.runtime as Runtime,
-          title: sandboxRuntime[option.runtime],
+          title: machineRuntime[option.runtime],
           hint: option.recommended ? 'Recommended for this host' : 'Available on this host',
         }))}
       />
@@ -166,38 +167,40 @@ function RuntimeChoice({
   )
 }
 
-export function SandboxRuntimeSection({ station }: { station: Station }) {
+export function MachineRuntimeSection({ station }: { station: Station }) {
   const host = station.capabilities?.host
-  const advice = station.sandbox_runtime_advice
+  const advice = station.machine_runtime_advice
 
   if (!host) {
     return (
-      <Subsection title="Sandbox runtime">
+      <Section icon={Cpu} title="Machine runtime">
         <p className="text-sm text-muted-foreground">
-          This station has not reported its hardware yet. It does once stationd connects.
+          This server has not reported its hardware yet. It does once stationd connects.
         </p>
-      </Subsection>
+      </Section>
     )
   }
 
   if (!advice) {
     return (
-      <Subsection
-        title="Sandbox runtime"
-        description="This station runs no sandboxes, so there is no runtime to choose."
+      <Section
+        icon={Cpu}
+        title="Machine runtime"
+        note="This server runs no machines, so there is no runtime to choose."
       >
         <HostFacts host={host} arch={station.arch ?? null} />
-      </Subsection>
+      </Section>
     )
   }
 
-  const chosen = station.default_sandbox_runtime
+  const chosen = station.default_machine_runtime
   const current = chosen ?? advice.default
 
   return (
-    <Subsection
-      title="Sandbox runtime"
-      description={`New sandboxes start on ${sandboxRuntime[current]}, ${chosen ? 'chosen for this station' : 'the recommendation for this host'}.`}
+    <Section
+      icon={Cpu}
+      title="Machine runtime"
+      note={`New machines start on ${machineRuntime[current]}, ${chosen ? 'chosen for this server' : 'the recommendation for this host'}.`}
     >
       <HostFacts host={host} arch={station.arch ?? null} />
       <div className="space-y-1 text-sm">
@@ -210,12 +213,12 @@ export function SandboxRuntimeSection({ station }: { station: Station }) {
           <OptionCard key={option.runtime} option={option} inUse={option.runtime === current} />
         ))}
       </ul>
-      {sandboxRuntimeChoice(advice) && (
+      {machineRuntimeChoice(advice) && (
         <>
           <RuntimeChoice station={station} advice={advice} current={current} />
-          <AlsoWith cli={commands.setSandboxRuntime(station.name)} tool="update_station" />
+          <AlsoWith cli={commands.setMachineRuntime(station.name)} tool="update_server" />
         </>
       )}
-    </Subsection>
+    </Section>
   )
 }

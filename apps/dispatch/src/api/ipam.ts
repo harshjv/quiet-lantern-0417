@@ -3,22 +3,17 @@ import { and, eq } from 'drizzle-orm'
 import { networkLayout } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { ipam_allocation, station, virtual_ip } from '../db/schema.ts'
+import { ipam_allocation, server, virtual_ip } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import { hostAt, slash24sFrom } from '../net/cidr.ts'
 
 import { fail } from './errors.ts'
 
-export const ensureNetwork = (db: Db, environmentId: string, stationId: string) => {
+export const ensureNetwork = (db: Db, targetId: string, stationId: string) => {
   const existing = db
     .select()
     .from(ipam_allocation)
-    .where(
-      and(
-        eq(ipam_allocation.environment_id, environmentId),
-        eq(ipam_allocation.station_id, stationId),
-      ),
-    )
+    .where(and(eq(ipam_allocation.target_id, targetId), eq(ipam_allocation.server_id, stationId)))
     .get()
 
   if (existing) {
@@ -28,11 +23,11 @@ export const ensureNetwork = (db: Db, environmentId: string, stationId: string) 
   const pool = readSetting(db, 'ipam.pool')
   const reserved = db
     .select({
-      registry: station.registry_subnet,
-      sandbox: station.sandbox_subnet,
+      registry: server.registry_subnet,
+      machine: server.machine_subnet,
     })
-    .from(station)
-    .where(eq(station.id, stationId))
+    .from(server)
+    .where(eq(server.id, stationId))
     .get()
   const taken = new Set([
     ...db
@@ -40,11 +35,11 @@ export const ensureNetwork = (db: Db, environmentId: string, stationId: string) 
         subnet: ipam_allocation.subnet,
       })
       .from(ipam_allocation)
-      .where(eq(ipam_allocation.station_id, stationId))
+      .where(eq(ipam_allocation.server_id, stationId))
       .all()
       .map((r) => r.subnet),
     reserved?.registry,
-    reserved?.sandbox,
+    reserved?.machine,
   ])
 
   for (const { subnet, gateway } of slash24sFrom(pool, networkLayout.firstEnvironmentIndex)) {
@@ -55,8 +50,8 @@ export const ensureNetwork = (db: Db, environmentId: string, stationId: string) 
     return db
       .insert(ipam_allocation)
       .values({
-        environment_id: environmentId,
-        station_id: stationId,
+        target_id: targetId,
+        server_id: stationId,
         subnet,
         gateway,
       })
@@ -66,22 +61,22 @@ export const ensureNetwork = (db: Db, environmentId: string, stationId: string) 
 
   return fail(
     'SUBNET_EXHAUSTED',
-    `ipam.pool ${pool} has no free /24 for another environment on station ${stationId}.`,
-    'Delete unused environments on this station.',
+    `ipam.pool ${pool} has no free /24 for another production or preview on server ${stationId}.`,
+    'Delete unused previews on this server.',
     {
-      station_id: stationId,
+      server_id: stationId,
     },
   )
 }
 
-export const ensureSandboxNetwork = (db: Db, stationId: string) => {
+export const ensureMachineNetwork = (db: Db, stationId: string) => {
   const row = db
     .select({
-      subnet: station.sandbox_subnet,
-      registry: station.registry_subnet,
+      subnet: server.machine_subnet,
+      registry: server.registry_subnet,
     })
-    .from(station)
-    .where(eq(station.id, stationId))
+    .from(server)
+    .where(eq(server.id, stationId))
     .get()
 
   if (row?.subnet) {
@@ -95,7 +90,7 @@ export const ensureSandboxNetwork = (db: Db, stationId: string) => {
         subnet: ipam_allocation.subnet,
       })
       .from(ipam_allocation)
-      .where(eq(ipam_allocation.station_id, stationId))
+      .where(eq(ipam_allocation.server_id, stationId))
       .all()
       .map((r) => r.subnet),
     row?.registry,
@@ -106,11 +101,11 @@ export const ensureSandboxNetwork = (db: Db, stationId: string) => {
       continue
     }
 
-    db.update(station)
+    db.update(server)
       .set({
-        sandbox_subnet: subnet,
+        machine_subnet: subnet,
       })
-      .where(eq(station.id, stationId))
+      .where(eq(server.id, stationId))
       .run()
 
     return subnet
@@ -118,10 +113,10 @@ export const ensureSandboxNetwork = (db: Db, stationId: string) => {
 
   return fail(
     'SUBNET_EXHAUSTED',
-    `ipam.pool ${pool} has no free /24 for the sandbox network on station ${stationId}.`,
-    'Delete unused environments on this station.',
+    `ipam.pool ${pool} has no free /24 for the machine network on server ${stationId}.`,
+    'Delete unused previews on this server.',
     {
-      station_id: stationId,
+      server_id: stationId,
     },
   )
 }
@@ -129,8 +124,8 @@ export const ensureSandboxNetwork = (db: Db, stationId: string) => {
 export const dispatchVirtualIp = (prefix: string) =>
   hostAt(prefix, networkLayout.dispatchVirtualHost)
 
-export const ensureVirtualIp = (db: Db, serviceId: string, environmentId: string) => {
-  const existing = db.select().from(virtual_ip).where(eq(virtual_ip.service_id, serviceId)).get()
+export const ensureVirtualIp = (db: Db, appId: string, targetId: string) => {
+  const existing = db.select().from(virtual_ip).where(eq(virtual_ip.app_id, appId)).get()
 
   if (existing) {
     return existing
@@ -157,8 +152,8 @@ export const ensureVirtualIp = (db: Db, serviceId: string, environmentId: string
     return db
       .insert(virtual_ip)
       .values({
-        service_id: serviceId,
-        environment_id: environmentId,
+        app_id: appId,
+        target_id: targetId,
         address,
       })
       .returning()
@@ -168,9 +163,9 @@ export const ensureVirtualIp = (db: Db, serviceId: string, environmentId: string
   return fail(
     'SUBNET_EXHAUSTED',
     `ipam.virtual_prefix ${prefix} has no free address left; virtual IPs are unique across the instance.`,
-    'Delete unused services or environments.',
+    'Delete unused apps or previews.',
     {
-      environment_id: environmentId,
+      target_id: targetId,
     },
   )
 }

@@ -3,14 +3,19 @@ import { after, before, describe, test } from 'node:test'
 
 import { and, eq } from 'drizzle-orm'
 
-import { cloneInto } from '../src/api/routes/environments.ts'
-import { newId } from '../src/db/ids.ts'
-import { environment, project, secret_value, service, variable } from '../src/db/schema.ts'
+import { createPreview as createPreviewRow } from '../src/api/routes/previews.ts'
+import { app, key, project, secret_value } from '../src/db/schema.ts'
 import { decryptValue, headValue } from '../src/secrets/values.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createProject, createService, seedLockfile } from './helpers/seed.ts'
+import {
+  approveWaiting,
+  createApp,
+  createProject,
+  productionId,
+  seedLockfile,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
@@ -33,51 +38,104 @@ const asHuman = (method: string, path: string, body?: unknown) =>
     body,
   })
 
+const appsIn = (targetId: string) => {
+  const apps = h.db.select().from(app).where(eq(app.target_id, targetId)).all()
+
+  return {
+    web: apps.find((s) => s.name === 'web')!,
+    db: apps.find((s) => s.name === 'db')!,
+    api: apps.find((s) => s.name === 'api')!,
+    site: apps.find((s) => s.name === 'site')!,
+  }
+}
+
 const clone = async (name = `preview-${(counter += 1)}`) => {
-  const made = await asAdmin('POST', `/v1/projects/${proj.id}/environments`, {
+  const made = await asAdmin('POST', `/v1/projects/${proj.id}/previews`, {
     name,
-    source_environment_id: production,
     deploy_on_create: false,
   })
 
   assert.equal(made.status, 201, made.text)
 
-  const services = h.db.select().from(service).where(eq(service.environment_id, made.body.id)).all()
-
   return {
     id: made.body.id as string,
     name,
-    web: services.find((s) => s.name === 'web')!,
-    db: services.find((s) => s.name === 'db')!,
+    ...appsIn(made.body.id),
   }
 }
 
-const variableOf = (serviceId: string, key: string) =>
+const pullRequest = (number: number) => {
+  const row = h.db.select().from(project).where(eq(project.id, proj.id)).get()!
+  const made = createPreviewRow(
+    {
+      deps: h.deps,
+    },
+    {
+      principal: {
+        actor: {
+          type: 'system',
+          id: null,
+          client: 'test',
+        },
+      },
+      request_id: 'req_test',
+    } as never,
+    row,
+    {
+      name: `pr-${number}`,
+      origin: {
+        type: 'pull_request',
+        repo: 'github.com/acme/app',
+        number,
+        head_sha: 'abc',
+        fork: false,
+      },
+      expires_at: null,
+      deploy: false,
+    },
+  )
+
+  return {
+    id: made.preview.id,
+    name: `pr-${number}`,
+    ...appsIn(made.preview.id),
+  }
+}
+
+const keyOf = (appId: string, name: string) =>
   h.db
     .select()
-    .from(variable)
-    .where(and(eq(variable.service_id, serviceId), eq(variable.key, key)))
+    .from(key)
+    .where(and(eq(key.app_id, appId), eq(key.name, name)))
     .get()!
 
-const valueOf = (serviceId: string, key: string) => {
-  const row = variableOf(serviceId, key)
-  const head = headValue(h.db, row.id, null)
+const valueOf = (appId: string, name: string, target: 'production' | 'preview' = 'production') => {
+  const head = headValue(h.db, keyOf(appId, name).id, target)
 
   return head ? decryptValue(h.deps.keyring, head) : null
 }
 
-const deploy = (serviceId: string) => asAdmin('POST', `/v1/services/${serviceId}/deployments`, {})
+const deploy = (appId: string) => asAdmin('POST', `/v1/apps/${appId}/deployments`, {})
 
-const markCopied = (serviceId: string, key: string, flag = true) =>
-  asHuman('PATCH', `/v1/services/${serviceId}/variables`, {
-    set: [
-      {
-        key,
-        kind: 'sealed',
-        copy_to_clones: flag,
-      },
-    ],
-  })
+const approved = async (reply: { status: number; body: any; text: string }) => {
+  const done = await approveWaiting(h, reply)
+
+  assert.equal(done.status, 200, done.text)
+}
+
+const setAppPreviewValue = async (appId: string, name: string, value: string) =>
+  approved(
+    await asAdmin('PATCH', `/v1/apps/${appId}/keys`, {
+      target: 'preview',
+      set: [
+        {
+          name,
+          kind: 'sealed',
+          value,
+        },
+      ],
+    }),
+  )
 
 before(async () => {
   registry = FakeRegistry.install()
@@ -86,20 +144,20 @@ before(async () => {
   seedLockfile(h)
   await startFakeStation(h)
   proj = await createProject(h)
-  production = proj.default_environment_id
-  db = await createService(h, production, {
+  production = productionId(h, proj.id)
+  db = await createApp(h, production, {
     name: 'db',
     kind: 'worker',
     ref: 'nginx:1.27',
-    variables: [
+    keys: [
       {
-        key: 'URL',
+        name: 'URL',
         kind: 'sealed',
         value: 'postgres://prod-password@db',
       },
     ],
   })
-  web = await createService(h, production, {
+  web = await createApp(h, production, {
     name: 'web',
     ref: 'nginx:1.27',
     ports: [
@@ -107,39 +165,41 @@ before(async () => {
         port: 8080,
       },
     ],
-    variables: [
+    keys: [
       {
-        key: 'API_KEY',
+        name: 'API_KEY',
         kind: 'sealed',
         value: 'production-api-key',
       },
       {
-        key: 'PLAIN',
+        name: 'PLAIN',
         kind: 'literal',
         value: 'visible',
       },
       {
-        key: 'DATABASE_URL',
+        name: 'DATABASE_URL',
         kind: 'reference',
         reference: '${{db.URL}}',
       },
     ],
   })
-  await asHuman('PATCH', `/v1/projects/${proj.id}/variables`, {
-    environment: 'production',
-    set: [
-      {
-        key: 'PROJECT_SECRET',
-        kind: 'sealed',
-        value: 'production-project-secret',
-      },
-      {
-        key: 'PROJECT_PLAIN',
-        kind: 'literal',
-        value: 'project-visible',
-      },
-    ],
-  })
+  await approved(
+    await asHuman('PATCH', `/v1/projects/${proj.id}/keys`, {
+      target: 'production',
+      set: [
+        {
+          name: 'PROJECT_SECRET',
+          kind: 'sealed',
+          value: 'production-project-secret',
+        },
+        {
+          name: 'PROJECT_PLAIN',
+          kind: 'literal',
+          value: 'project-visible',
+        },
+      ],
+    }),
+  )
 })
 
 after(async () => {
@@ -147,187 +207,81 @@ after(async () => {
   registry.restore()
 })
 
-describe('a clone keeps sealed values in their source by default', () => {
-  test('plain values and references are copied, a sealed key arrives with no value', async () => {
+describe("a preview never reads production's sealed values", () => {
+  test('plain values and references are copied, a sealed app key arrives with no value', async () => {
     const copy = await clone()
 
     assert.equal(valueOf(copy.web.id, 'PLAIN'), 'visible')
-    assert.equal(variableOf(copy.web.id, 'DATABASE_URL').reference, '${{db.URL}}')
-    assert.equal(variableOf(copy.web.id, 'API_KEY').kind, 'sealed')
-    assert.equal(valueOf(copy.web.id, 'API_KEY'), null)
+    assert.equal(keyOf(copy.web.id, 'DATABASE_URL').reference, '${{db.URL}}')
+    assert.equal(keyOf(copy.web.id, 'API_KEY').kind, 'sealed')
     assert.equal(
       h.db
         .select()
         .from(secret_value)
-        .where(eq(secret_value.variable_id, variableOf(copy.web.id, 'API_KEY').id))
+        .where(eq(secret_value.key_id, keyOf(copy.web.id, 'API_KEY').id))
         .all().length,
       0,
     )
     assert.equal(valueOf(copy.db.id, 'URL'), null)
+    assert.equal(valueOf(copy.db.id, 'URL', 'preview'), null)
   })
 
-  test('project values follow the same rule', async () => {
-    const copy = await clone()
-    const rows = (key: string) =>
+  test('project keys hold no copy; a preview reads them through their one preview value', async () => {
+    await clone()
+    const previewRows = (name: string) =>
       h.db
         .select()
         .from(secret_value)
         .where(
           and(
             eq(
-              secret_value.variable_id,
+              secret_value.key_id,
               h.db
                 .select()
-                .from(variable)
-                .where(and(eq(variable.project_id, proj.id), eq(variable.key, key)))
+                .from(key)
+                .where(and(eq(key.project_id, proj.id), eq(key.name, name)))
                 .get()!.id,
             ),
-            eq(secret_value.environment_id, copy.id),
+            eq(secret_value.target, 'preview'),
           ),
         )
         .all()
 
-    assert.equal(rows('PROJECT_PLAIN').length, 1)
-    assert.equal(rows('PROJECT_SECRET').length, 0)
+    assert.equal(previewRows('PROJECT_PLAIN').length, 0)
+    assert.equal(previewRows('PROJECT_SECRET').length, 0)
   })
 
-  test('the value is copied once its variable is marked, and only for clones made afterwards', async () => {
-    const before = await clone()
-    const marked = await markCopied(web.id, 'API_KEY')
+  test('a pull request preview gets the same treatment', () => {
+    const pr = pullRequest(42)
 
-    assert.equal(marked.status, 200, marked.text)
-    assert.equal(variableOf(web.id, 'API_KEY').copy_to_clones, true)
-    assert.equal(valueOf(web.id, 'API_KEY'), 'production-api-key')
-
-    const after = await clone()
-
-    assert.equal(valueOf(before.web.id, 'API_KEY'), null)
-    assert.equal(valueOf(after.web.id, 'API_KEY'), 'production-api-key')
-    assert.equal(variableOf(after.web.id, 'API_KEY').copy_to_clones, true)
-
-    await markCopied(web.id, 'API_KEY', false)
-    assert.equal(valueOf((await clone()).web.id, 'API_KEY'), null)
-  })
-
-  test('a pull request environment gets the same treatment', () => {
-    const source = h.db.select().from(environment).where(eq(environment.id, production)).get()!
-    const row = h.db.select().from(project).where(eq(project.id, proj.id)).get()!
-    const id = newId('environment')
-
-    h.db
-      .insert(environment)
-      .values({
-        id,
-        project_id: proj.id,
-        name: 'pr-42',
-        protected: false,
-        ephemeral: true,
-        source_environment_id: production,
-        ttl_seconds: 3600,
-        pull_request: {
-          repo: 'github.com/acme/app',
-          number: 42,
-          head_sha: 'abc',
-          fork: false,
-        },
-      })
-      .run()
-    cloneInto(
-      {
-        deps: h.deps,
-      },
-      {
-        principal: {
-          actor: {
-            type: 'system',
-            id: null,
-            client: 'test',
-          },
-        },
-        request_id: 'req_test',
-      } as never,
-      row,
-      source,
-      h.db.select().from(environment).where(eq(environment.id, id)).get()!,
-      false,
-    )
-
-    const web = h.db
-      .select()
-      .from(service)
-      .where(and(eq(service.environment_id, id), eq(service.name, 'web')))
-      .get()!
-
-    assert.equal(valueOf(web.id, 'PLAIN'), 'visible')
-    assert.equal(valueOf(web.id, 'API_KEY'), null)
-  })
-})
-
-describe('setting the flag', () => {
-  test('is a human change, refused for a token', async () => {
-    const refused = await asAdmin('PATCH', `/v1/services/${web.id}/variables`, {
-      set: [
-        {
-          key: 'API_KEY',
-          kind: 'sealed',
-          copy_to_clones: true,
-        },
-      ],
-    })
-
-    assert.equal(refused.status, 403, refused.text)
-    assert.equal(refused.body.error.details.reason, 'human_required')
-    assert.equal(variableOf(web.id, 'API_KEY').copy_to_clones, false)
-  })
-
-  test('is refused on a variable that is not sealed', async () => {
-    const refused = await asHuman('PATCH', `/v1/services/${web.id}/variables`, {
-      set: [
-        {
-          key: 'PLAIN',
-          kind: 'literal',
-          value: 'visible',
-          copy_to_clones: true,
-        },
-      ],
-    })
-
-    assert.equal(refused.status, 400, refused.text)
-  })
-
-  test('is listed with the variable', async () => {
-    await markCopied(web.id, 'API_KEY')
-
-    const listed = await asAdmin('GET', `/v1/services/${web.id}/variables`)
-    const entry = listed.body.items.find((item: any) => item.key === 'API_KEY')
-
-    assert.equal(entry.copy_to_clones, true)
-    await markCopied(web.id, 'API_KEY', false)
+    assert.equal(valueOf(pr.web.id, 'PLAIN'), 'visible')
+    assert.equal(valueOf(pr.web.id, 'API_KEY'), null)
+    assert.equal(valueOf(pr.web.id, 'API_KEY', 'preview'), null)
   })
 })
 
 describe('a missing sealed value is a clear state', () => {
-  test('a deploy in the clone is refused naming the key and the environment, with the fix', async () => {
+  test('a deploy in the preview is refused naming the key and the preview, with the fix', async () => {
     const copy = await clone('needs-keys')
     const refused = await deploy(copy.web.id)
 
     assert.equal(refused.status, 422, refused.text)
-    assert.equal(refused.body.error.code, 'VARIABLE_UNRESOLVED')
+    assert.equal(refused.body.error.code, 'KEY_UNRESOLVED')
     assert.equal(refused.body.error.details.key, 'API_KEY')
-    assert.equal(refused.body.error.details.environment, 'needs-keys')
+    assert.equal(refused.body.error.details.preview, 'needs-keys')
     assert.equal(
       refused.body.error.fix,
-      'Set a value for API_KEY in needs-keys, or mark it to be copied to new environments in production.',
+      "Set a preview value for API_KEY; previews never read production's sealed values.",
     )
   })
 
-  test('a reference to a sealed variable that was not copied is unresolved in the clone, and resolves once it was', async () => {
+  test('a reference to a sealed key with no preview value is unresolved, and resolves once it has one', async () => {
     const plain = await clone('no-database')
 
-    await asAdmin('PATCH', `/v1/services/${plain.web.id}/variables`, {
+    await asAdmin('PATCH', `/v1/apps/${plain.web.id}/keys`, {
       set: [
         {
-          key: 'API_KEY',
+          name: 'API_KEY',
           kind: 'sealed',
           value: 'preview-api-key',
         },
@@ -338,16 +292,18 @@ describe('a missing sealed value is a clear state', () => {
 
     assert.equal(refused.status, 422, refused.text)
     assert.match(refused.body.error.explanation, /db\.URL/)
-    assert.equal(refused.body.error.details.environment, 'no-database')
+    assert.equal(refused.body.error.details.preview, 'no-database')
 
-    await markCopied(db.id, 'URL')
+    await setAppPreviewValue(db.id, 'URL', 'postgres://preview-password@db')
 
     const copy = await clone('with-database')
 
-    await asAdmin('PATCH', `/v1/services/${copy.web.id}/variables`, {
+    assert.equal(valueOf(copy.db.id, 'URL', 'preview'), 'postgres://preview-password@db')
+    assert.equal(valueOf(copy.db.id, 'URL'), null)
+    await asAdmin('PATCH', `/v1/apps/${copy.web.id}/keys`, {
       set: [
         {
-          key: 'API_KEY',
+          name: 'API_KEY',
           kind: 'sealed',
           value: 'preview-api-key',
         },
@@ -357,72 +313,41 @@ describe('a missing sealed value is a clear state', () => {
     const accepted = await deploy(copy.web.id)
 
     assert.ok(accepted.status === 201 || accepted.status === 202, accepted.text)
-    await markCopied(db.id, 'URL', false)
   })
 })
 
-describe('a project value set for every environment', () => {
+describe("a sealed app key's preview value", () => {
+  test('is copied into previews made afterwards, never its production value', async () => {
+    const before = await clone()
+
+    await setAppPreviewValue(web.id, 'API_KEY', 'preview-api-key')
+    assert.equal(valueOf(web.id, 'API_KEY'), 'production-api-key')
+    assert.equal(valueOf(web.id, 'API_KEY', 'preview'), 'preview-api-key')
+
+    const after = await clone()
+
+    assert.equal(valueOf(before.web.id, 'API_KEY', 'preview'), null)
+    assert.equal(valueOf(after.web.id, 'API_KEY', 'preview'), 'preview-api-key')
+    assert.equal(valueOf(after.web.id, 'API_KEY'), null)
+  })
+
+  test('is listed with the key', async () => {
+    const listed = await asAdmin('GET', `/v1/apps/${web.id}/keys`)
+    const entry = listed.body.items.find((item: any) => item.name === 'API_KEY')
+
+    assert.deepEqual(entry.targets, ['preview', 'production'])
+  })
+})
+
+describe('a project key in previews', () => {
   let api: any
-  let site: any
 
-  const pullRequest = (number: number) => {
-    const source = h.db.select().from(environment).where(eq(environment.id, production)).get()!
-    const row = h.db.select().from(project).where(eq(project.id, proj.id)).get()!
-    const id = newId('environment')
-
-    h.db
-      .insert(environment)
-      .values({
-        id,
-        project_id: proj.id,
-        name: `pr-${number}`,
-        protected: false,
-        ephemeral: true,
-        source_environment_id: production,
-        ttl_seconds: 3600,
-        pull_request: {
-          repo: 'github.com/acme/app',
-          number,
-          head_sha: 'abc',
-          fork: false,
-        },
-      })
-      .run()
-    cloneInto(
-      {
-        deps: h.deps,
-      },
-      {
-        principal: {
-          actor: {
-            type: 'system',
-            id: null,
-            client: 'test',
-          },
-        },
-        request_id: 'req_test',
-      } as never,
-      row,
-      source,
-      h.db.select().from(environment).where(eq(environment.id, id)).get()!,
-      false,
-    )
-
-    const services = h.db.select().from(service).where(eq(service.environment_id, id)).all()
-
-    return {
-      name: `pr-${number}`,
-      api: services.find((s) => s.name === 'api')!,
-      site: services.find((s) => s.name === 'site')!,
-    }
-  }
-
-  const everywhere = (key: string, kind: 'sealed' | 'literal', value: string) =>
-    asHuman('PATCH', `/v1/projects/${proj.id}/variables`, {
-      environment: 'default',
+  const projectKey = (name: string, kind: 'sealed' | 'literal', value: string) =>
+    asHuman('PATCH', `/v1/projects/${proj.id}/keys`, {
+      target: 'production',
       set: [
         {
-          key,
+          name,
           kind,
           value,
         },
@@ -430,27 +355,27 @@ describe('a project value set for every environment', () => {
     })
 
   before(async () => {
-    await everywhere('EVERYWHERE_SECRET', 'sealed', 'stripe-live-key')
-    await everywhere('EVERYWHERE_PLAIN', 'literal', 'plain-default')
-    api = await createService(h, production, {
+    await approved(await projectKey('EVERYWHERE_SECRET', 'sealed', 'stripe-live-key'))
+    await approved(await projectKey('EVERYWHERE_PLAIN', 'literal', 'plain-production'))
+    api = await createApp(h, production, {
       name: 'api',
       kind: 'worker',
       ref: 'nginx:1.27',
-      variables: [
+      keys: [
         {
-          key: 'STRIPE_KEY',
+          name: 'STRIPE_KEY',
           kind: 'reference',
           reference: '${{project.EVERYWHERE_SECRET}}',
         },
       ],
     })
-    site = await createService(h, production, {
+    await createApp(h, production, {
       name: 'site',
       kind: 'worker',
       ref: 'nginx:1.27',
-      variables: [
+      keys: [
         {
-          key: 'MODE',
+          name: 'MODE',
           kind: 'reference',
           reference: '${{project.EVERYWHERE_PLAIN}}',
         },
@@ -458,57 +383,47 @@ describe('a project value set for every environment', () => {
     })
   })
 
-  test('a sealed one does not resolve in a pull request environment', async () => {
+  test('a sealed one with no preview value does not resolve', async () => {
     const pr = pullRequest(7)
     const refused = await deploy(pr.api.id)
 
     assert.equal(refused.status, 422, refused.text)
-    assert.equal(refused.body.error.code, 'VARIABLE_UNRESOLVED')
+    assert.equal(refused.body.error.code, 'KEY_UNRESOLVED')
     assert.match(refused.body.error.explanation, /EVERYWHERE_SECRET/)
-    assert.equal(refused.body.error.details.environment, 'pr-7')
-    assert.match(refused.body.error.fix, /in production\.$/)
+    assert.equal(refused.body.error.details.preview, 'pr-7')
+    assert.match(refused.body.error.fix, /preview value/)
   })
 
-  test('a plain one still does', async () => {
+  test('a literal one falls back to its production value', async () => {
     const accepted = await deploy(pullRequest(8).site.id)
 
     assert.ok(accepted.status === 201 || accepted.status === 202, accepted.text)
   })
 
-  test('a sealed one marked copy_to_clones does', async () => {
-    const marked = await asHuman('PATCH', `/v1/projects/${proj.id}/variables`, {
-      environment: 'default',
+  test('a sealed one resolves once it has a preview value, shared by every preview', async () => {
+    const set = await asAdmin('PATCH', `/v1/projects/${proj.id}/keys`, {
+      target: 'preview',
       set: [
         {
-          key: 'EVERYWHERE_SECRET',
+          name: 'EVERYWHERE_SECRET',
           kind: 'sealed',
-          copy_to_clones: true,
+          value: 'stripe-test-key',
         },
       ],
     })
 
-    assert.equal(marked.status, 200, marked.text)
+    assert.equal(set.status, 200, set.text)
 
-    const accepted = await deploy(pullRequest(9).api.id)
+    for (const number of [9, 10]) {
+      const accepted = await deploy(pullRequest(number).api.id)
 
-    assert.ok(accepted.status === 201 || accepted.status === 202, accepted.text)
+      assert.ok(accepted.status === 201 || accepted.status === 202, accepted.text)
+    }
   })
 
-  test('production itself still resolves it', async () => {
-    await asHuman('PATCH', `/v1/projects/${proj.id}/variables`, {
-      environment: 'default',
-      set: [
-        {
-          key: 'EVERYWHERE_SECRET',
-          kind: 'sealed',
-          copy_to_clones: false,
-        },
-      ],
-    })
-
+  test('production itself resolves its production value', async () => {
     const accepted = await deploy(api.id)
 
     assert.ok(accepted.status === 201 || accepted.status === 202, accepted.text)
-    assert.ok(site)
   })
 })

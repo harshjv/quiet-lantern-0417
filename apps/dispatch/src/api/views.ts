@@ -1,9 +1,12 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 
-import { serviceStatusValues } from '@stationly/protocol'
+import { appStatusValues } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import {
+  app,
+  app_port,
+  approval,
   attestation,
   audit_event,
   build,
@@ -11,28 +14,25 @@ import {
   deployment,
   deployment_step,
   domain,
-  environment,
   event,
+  key,
+  machine,
+  machine_snapshot,
   notification_channel,
   port_allocation,
   run,
-  sandbox,
-  sandbox_snapshot,
   secret_value,
-  service,
-  service_port,
-  staged_change,
-  station,
+  server,
   station_generation,
+  target,
   token,
-  variable,
   volume,
   volume_snapshot,
 } from '../db/schema.ts'
 import { effectiveHealth, type StoredHealth } from '../generation/health.ts'
 import { deleteAt, retentionSeconds } from '../sandboxes/lifecycle.ts'
-import { sandboxMemory } from '../sandboxes/limits.ts'
-import { sandboxRuntimeAdvice } from '../sandboxes/runtime.ts'
+import { machineMemory } from '../sandboxes/limits.ts'
+import { machineRuntimeAdvice } from '../sandboxes/runtime.ts'
 import { workspaceSetupOf } from '../sandboxes/setup-failure.ts'
 import type { EnvSnapshot } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
@@ -42,6 +42,7 @@ import { isSealed, leaves, Resolver } from '../secrets/resolve.ts'
 import { storedBytes } from '../secrets/variables.ts'
 import { snapshotView } from '../volumes/backups.ts'
 
+import { approvalItem } from './approval-view.ts'
 import {
   all,
   projectAll,
@@ -50,18 +51,21 @@ import {
   type Row,
   type View,
 } from './fields.ts'
-import type {
-  AllocationRow,
-  DeploymentRow,
-  DomainRow,
-  EnvironmentRow,
-  PortRow,
-  ProjectRow,
-  ServiceRow,
-  StagedRow,
-  StationRow,
-  VariableRow,
-  VolumeRow,
+import {
+  decidable,
+  previewIdOf,
+  productionOf,
+  type AllocationRow,
+  type ApprovalRow,
+  type AppRow,
+  type DeploymentRow,
+  type DomainRow,
+  type KeyRow,
+  type PortRow,
+  type ProjectRow,
+  type StationRow,
+  type TargetRow,
+  type VolumeRow,
 } from './lookup.ts'
 import * as shapes from './shapes.ts'
 
@@ -83,29 +87,29 @@ type AuditRow = typeof audit_event.$inferSelect
 type SecretValueRow = typeof secret_value.$inferSelect
 type BuildRow = typeof build.$inferSelect
 type RunRow = typeof run.$inferSelect
-type SandboxRow = typeof sandbox.$inferSelect
-type SandboxSnapshotRow = typeof sandbox_snapshot.$inferSelect
+type MachineRow = typeof machine.$inferSelect
+type MachineSnapshotRow = typeof machine_snapshot.$inferSelect
 type EventRow = typeof event.$inferSelect
 type ChannelRow = typeof notification_channel.$inferSelect
 
-const countSandboxes = (db: Db, environments: string[], where: SQL) =>
-  environments.length
+const countMachines = (db: Db, targets: string[], where: SQL) =>
+  targets.length
     ? (db
         .select({
           n: count(),
         })
-        .from(sandbox)
-        .where(and(inArray(sandbox.environment_id, environments), where))
+        .from(machine)
+        .where(and(inArray(machine.target_id, targets), where))
         .get()?.n ?? 0)
     : 0
 
-export const exportsOf = (db: Db, svc: ServiceRow) => {
+export const exportsOf = (db: Db, svc: AppRow) => {
   const host = `${svc.name}.internal`
   const port = db
     .select()
-    .from(service_port)
-    .where(eq(service_port.service_id, svc.id))
-    .orderBy(asc(service_port.created_at), asc(service_port.port))
+    .from(app_port)
+    .where(eq(app_port.app_id, svc.id))
+    .orderBy(asc(app_port.created_at), asc(app_port.port))
     .get()
 
   return [
@@ -141,50 +145,48 @@ export const sourceView = (source: Record<string, unknown>) =>
     : source
 
 export const createViews = (db: Db) => {
-  const stagedPending = (environmentId: string) =>
+  const waitingApprovals = (projectId: string) =>
     db
       .select({
         n: count(),
       })
-      .from(staged_change)
-      .where(
-        and(eq(staged_change.environment_id, environmentId), eq(staged_change.status, 'staged')),
-      )
+      .from(approval)
+      .where(and(eq(approval.project_id, projectId), decidable()))
       .get()?.n ?? 0
 
-  const servicesOf = (environmentId: string) =>
-    db
-      .select()
-      .from(service)
-      .where(eq(service.environment_id, environmentId))
-      .orderBy(desc(service.id))
-      .all()
+  const appsOf = (targetId: string) =>
+    db.select().from(app).where(eq(app.target_id, targetId)).orderBy(desc(app.id)).all()
 
-  const portView: View<PortRow, typeof shapes.ServicePort> = {
-    schema: shapes.ServicePort,
+  const placeOf = (targetId: string) => {
+    const row = db.select().from(target).where(eq(target.id, targetId)).get()!
+
+    return {
+      project_id: row.project_id,
+      preview_id: previewIdOf(row),
+    }
+  }
+
+  const portView: View<PortRow, typeof shapes.AppPort> = {
+    schema: shapes.AppPort,
     full: (row) => ({
       ...stamps(row),
-      service_id: row.service_id,
+      app_id: row.app_id,
       port: row.port,
       protocol: row.protocol,
       grpc: row.grpc,
     }),
-    summary: ['id', 'service_id', 'port', 'protocol', 'grpc'],
+    summary: ['id', 'app_id', 'port', 'protocol', 'grpc'],
     expand: {
       domains: (row, sub) =>
         projectAll(
           domainView,
-          db.select().from(domain).where(eq(domain.service_port_id, row.id)).all(),
+          db.select().from(domain).where(eq(domain.app_port_id, row.id)).all(),
           sub,
         ),
       port_allocations: (row, sub) =>
         projectAll(
           allocationView,
-          db
-            .select()
-            .from(port_allocation)
-            .where(eq(port_allocation.service_port_id, row.id))
-            .all(),
+          db.select().from(port_allocation).where(eq(port_allocation.app_port_id, row.id)).all(),
           sub,
         ),
     },
@@ -195,8 +197,8 @@ export const createViews = (db: Db) => {
     full: (row) => ({
       ...stamps(row),
       owner: row.owner,
-      service_id: row.service_id,
-      station_id: row.station_id,
+      app_id: row.app_id,
+      server_id: row.server_id,
       mount_path: row.mount_path,
       docker_name: row.docker_name,
       size_bytes: row.size_bytes,
@@ -206,8 +208,8 @@ export const createViews = (db: Db) => {
     summary: [
       'id',
       'owner',
-      'service_id',
-      'station_id',
+      'app_id',
+      'server_id',
       'mount_path',
       'size_bytes',
       'status',
@@ -225,7 +227,7 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const stationOf = (id: string) => db.select().from(station).where(eq(station.id, id)).get()
+  const stationOf = (id: string) => db.select().from(server).where(eq(server.id, id)).get()
 
   const dnsInstructions = (row: DomainRow) => {
     if (row.kind === 'generated') {
@@ -234,13 +236,13 @@ export const createViews = (db: Db) => {
 
     const ctx = db
       .select({
-        station_id: service.station_id,
+        server_id: app.server_id,
       })
-      .from(service_port)
-      .innerJoin(service, eq(service.id, service_port.service_id))
-      .where(eq(service_port.id, row.service_port_id))
+      .from(app_port)
+      .innerJoin(app, eq(app.id, app_port.app_id))
+      .where(eq(app_port.id, row.app_port_id))
       .get()
-    const address = ctx ? stationOf(ctx.station_id)?.public_address : null
+    const address = ctx ? stationOf(ctx.server_id)?.public_address : null
 
     if (row.ingress === 'tunnel') {
       return [
@@ -259,8 +261,8 @@ export const createViews = (db: Db) => {
         name: row.hostname,
         value: address ?? null,
         note: address
-          ? 'Point the name at the station.'
-          : 'The station has not reported a public address yet.',
+          ? 'Point the name at the server.'
+          : 'The server has not reported a public address yet.',
       },
     ]
   }
@@ -269,7 +271,7 @@ export const createViews = (db: Db) => {
     schema: shapes.Domain,
     full: (row) => ({
       ...stamps(row),
-      service_port_id: row.service_port_id,
+      app_port_id: row.app_port_id,
       hostname: row.hostname,
       kind: row.kind,
       ingress: row.ingress,
@@ -282,7 +284,7 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'service_port_id',
+      'app_port_id',
       'hostname',
       'kind',
       'ingress',
@@ -299,24 +301,24 @@ export const createViews = (db: Db) => {
   const allocationView: View<AllocationRow, typeof shapes.PortAllocation> = {
     schema: shapes.PortAllocation,
     full: (row) => {
-      const stn = stationOf(row.station_id)
+      const stn = stationOf(row.server_id)
 
       return {
         ...stamps(row),
-        service_port_id: row.service_port_id,
-        station_id: row.station_id,
+        app_port_id: row.app_port_id,
+        server_id: row.server_id,
         host_port: row.host_port,
         status: row.status,
         address: stn?.public_address ? `${stn.public_address}:${row.host_port}` : null,
       }
     },
-    summary: ['id', 'service_port_id', 'station_id', 'host_port', 'status', 'address'],
+    summary: ['id', 'app_port_id', 'server_id', 'host_port', 'status', 'address'],
   }
 
   const snapshotIds = (snapshot: EnvSnapshot) =>
     (snapshot.entries ?? []).map((entry) => ({
-      key: entry.key,
-      variable_id: entry.variable_id,
+      name: entry.key,
+      key_id: entry.key_id,
       sealed: entry.sealed,
       values: leaves(entry.node).flatMap((leaf) =>
         leaf.kind === 'value'
@@ -334,7 +336,7 @@ export const createViews = (db: Db) => {
     schema: shapes.Deployment,
     full: (row) => ({
       ...stamps(row),
-      service_id: row.service_id,
+      app_id: row.app_id,
       number: row.number,
       status: row.status,
       trigger: row.trigger,
@@ -354,7 +356,7 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'service_id',
+      'app_id',
       'number',
       'status',
       'trigger.type',
@@ -420,7 +422,7 @@ export const createViews = (db: Db) => {
     return row ? select(deploymentView, row, sub) : null
   }
 
-  const headVersion = (row: VariableRow) => {
+  const headVersion = (row: KeyRow) => {
     if (!row.current_value_id) {
       return null
     }
@@ -454,16 +456,16 @@ export const createViews = (db: Db) => {
     schema: shapes.SecretValue,
     full: (row) => ({
       id: row.id,
-      variable_id: row.variable_id,
-      environment_id: row.environment_id,
+      key_id: row.key_id,
+      target: row.target,
       version: row.version,
       bytes:
         db
           .select({
-            kind: variable.kind,
+            kind: key.kind,
           })
-          .from(variable)
-          .where(eq(variable.id, row.variable_id))
+          .from(key)
+          .where(eq(key.id, row.key_id))
           .get()?.kind === 'sealed'
           ? valueBytes(row.ciphertext)
           : null,
@@ -475,8 +477,8 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'variable_id',
-      'environment_id',
+      'key_id',
+      'target',
       'version',
       'bytes',
       'created_by',
@@ -487,21 +489,20 @@ export const createViews = (db: Db) => {
     ],
   }
 
-  const variableView: View<VariableRow, typeof shapes.Variable> = {
-    schema: shapes.Variable,
+  const keyView: View<KeyRow, typeof shapes.Key> = {
+    schema: shapes.Key,
     full: (row) => {
       const base: Row = {
         ...stamps(row),
         scope: row.scope,
         project_id: row.project_id,
-        service_id: row.service_id,
-        sandbox_id: row.sandbox_id,
-        key: row.key,
+        app_id: row.app_id,
+        machine_id: row.machine_id,
+        name: row.name,
         kind: row.kind,
         reference: row.reference,
         injection: row.injection,
         build: row.build,
-        copy_to_clones: row.copy_to_clones,
         head_version: headVersion(row),
         bytes:
           row.kind === 'sealed' && row.current_value_id
@@ -511,32 +512,19 @@ export const createViews = (db: Db) => {
         value: null,
       }
 
-      if (row.scope === 'project') {
-        const held = db
-          .select({
-            environment_id: secret_value.environment_id,
-          })
-          .from(secret_value)
-          .where(and(eq(secret_value.variable_id, row.id), isNull(secret_value.revoked_at)))
-          .all()
-        const envIds = [
-          ...new Set(held.map((h) => h.environment_id).filter((id): id is string => id !== null)),
-        ]
-        const names = envIds.length
-          ? db
+      if (row.scope === 'project' || row.scope === 'app') {
+        base.targets = [
+          ...new Set(
+            db
               .select({
-                name: environment.name,
+                target: secret_value.target,
               })
-              .from(environment)
-              .where(inArray(environment.id, envIds))
+              .from(secret_value)
+              .where(and(eq(secret_value.key_id, row.id), isNull(secret_value.revoked_at)))
               .all()
-              .map((e) => e.name)
-          : []
-
-        base.environments = [
-          ...names.sort(),
-          ...(held.some((h) => h.environment_id === null) ? ['default'] : []),
-        ]
+              .map((h) => h.target),
+          ),
+        ].sort()
       }
 
       return base
@@ -544,15 +532,14 @@ export const createViews = (db: Db) => {
     summary: [
       'id',
       'scope',
-      'key',
+      'name',
       'kind',
       'reference',
       'injection',
       'build',
-      'copy_to_clones',
       'head_version',
       'bytes',
-      'environments',
+      'targets',
     ],
     expand: {
       versions: (row, sub) =>
@@ -561,7 +548,7 @@ export const createViews = (db: Db) => {
           db
             .select()
             .from(secret_value)
-            .where(eq(secret_value.variable_id, row.id))
+            .where(eq(secret_value.key_id, row.id))
             .orderBy(desc(secret_value.id))
             .all(),
           sub,
@@ -569,20 +556,20 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const portDocsOf = (serviceId: string) =>
+  const portDocsOf = (appId: string) =>
     db
       .select()
-      .from(service_port)
-      .where(eq(service_port.service_id, serviceId))
-      .orderBy(asc(service_port.port))
+      .from(app_port)
+      .where(eq(app_port.app_id, appId))
+      .orderBy(asc(app_port.port))
       .all()
       .map((p) => ({
         port: p.port,
         protocol: p.protocol,
       }))
 
-  const lastHealthChange = (row: ServiceRow) => {
-    if (row.status !== 'amber' && row.status !== 'red') {
+  const lastHealthChange = (row: AppRow) => {
+    if (row.status !== 'failing') {
       return null
     }
 
@@ -616,14 +603,14 @@ export const createViews = (db: Db) => {
     }
   }
 
-  const serviceView: View<ServiceRow, typeof shapes.Service> = {
-    schema: shapes.Service,
+  const appView: View<AppRow, typeof shapes.App> = {
+    schema: shapes.App,
     full: (row) => ({
       ...stamps(row),
-      environment_id: row.environment_id,
+      ...placeOf(row.target_id),
       name: row.name,
       kind: row.kind,
-      station_id: row.station_id,
+      server_id: row.server_id,
       source: sourceView(row.source),
       command: row.command,
       build_args: row.build_args,
@@ -646,13 +633,14 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'environment_id',
+      'project_id',
+      'preview_id',
       'name',
       'kind',
       'status',
       'status_reason',
       'desired_state',
-      'station_id',
+      'server_id',
       'source',
       'current_deployment_id',
       'stale',
@@ -666,32 +654,32 @@ export const createViews = (db: Db) => {
           portView,
           db
             .select()
-            .from(service_port)
-            .where(eq(service_port.service_id, row.id))
-            .orderBy(asc(service_port.port))
+            .from(app_port)
+            .where(eq(app_port.app_id, row.id))
+            .orderBy(asc(app_port.port))
             .all(),
           sub,
         ),
       volumes: (row, sub) =>
         projectAll(
           volumeView,
-          db.select().from(volume).where(eq(volume.service_id, row.id)).all(),
+          db.select().from(volume).where(eq(volume.app_id, row.id)).all(),
           sub,
         ),
       domains: (row, sub) => {
         const ports = db
           .select({
-            id: service_port.id,
+            id: app_port.id,
           })
-          .from(service_port)
-          .where(eq(service_port.service_id, row.id))
+          .from(app_port)
+          .where(eq(app_port.app_id, row.id))
           .all()
           .map((p) => p.id)
 
         return ports.length
           ? projectAll(
               domainView,
-              db.select().from(domain).where(inArray(domain.service_port_id, ports)).all(),
+              db.select().from(domain).where(inArray(domain.app_port_id, ports)).all(),
               sub,
             )
           : []
@@ -699,10 +687,10 @@ export const createViews = (db: Db) => {
       port_allocations: (row, sub) => {
         const ports = db
           .select({
-            id: service_port.id,
+            id: app_port.id,
           })
-          .from(service_port)
-          .where(eq(service_port.service_id, row.id))
+          .from(app_port)
+          .where(eq(app_port.app_id, row.id))
           .all()
           .map((p) => p.id)
 
@@ -712,21 +700,21 @@ export const createViews = (db: Db) => {
               db
                 .select()
                 .from(port_allocation)
-                .where(inArray(port_allocation.service_port_id, ports))
+                .where(inArray(port_allocation.app_port_id, ports))
                 .all(),
               sub,
             )
           : []
       },
       current_deployment: (row, sub) => deploymentSummary(row.current_deployment_id, sub),
-      variables: (row, sub) =>
+      keys: (row, sub) =>
         projectAll(
-          variableView,
+          keyView,
           db
             .select()
-            .from(variable)
-            .where(and(eq(variable.scope, 'service'), eq(variable.service_id, row.id)))
-            .orderBy(asc(variable.key))
+            .from(key)
+            .where(and(eq(key.scope, 'app'), eq(key.app_id, row.id)))
+            .orderBy(asc(key.name))
             .all(),
           sub,
         ),
@@ -734,22 +722,16 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const edgesOf = (environmentId: string) => {
-    const services = servicesOf(environmentId)
-    const byName = new Map(services.map((s) => [s.name, s.id]))
-    const edges = new Map<string, { from_service: string; to_service: string; keys: string[] }>()
+  const edgesOf = (targetId: string) => {
+    const apps = appsOf(targetId)
+    const byName = new Map(apps.map((s) => [s.name, s.id]))
+    const edges = new Map<string, { from_app: string; to_app: string; keys: string[] }>()
 
-    for (const svc of services) {
+    for (const svc of apps) {
       const vars = db
         .select()
-        .from(variable)
-        .where(
-          and(
-            eq(variable.scope, 'service'),
-            eq(variable.service_id, svc.id),
-            eq(variable.kind, 'reference'),
-          ),
-        )
+        .from(key)
+        .where(and(eq(key.scope, 'app'), eq(key.app_id, svc.id), eq(key.kind, 'reference')))
         .all()
 
       for (const v of vars) {
@@ -762,11 +744,11 @@ export const createViews = (db: Db) => {
         }
 
         for (const segment of segments) {
-          if (segment.type !== 'reference' || segment.target.type !== 'service') {
+          if (segment.type !== 'reference' || segment.target.type !== 'app') {
             continue
           }
 
-          const to = byName.get(segment.target.service)
+          const to = byName.get(segment.target.app)
 
           if (!to) {
             continue
@@ -774,13 +756,13 @@ export const createViews = (db: Db) => {
 
           const id = `${svc.id}>${to}`
           const edge = edges.get(id) ?? {
-            from_service: svc.id,
-            to_service: to,
+            from_app: svc.id,
+            to_app: to,
             keys: [],
           }
 
-          if (!edge.keys.includes(v.key)) {
-            edge.keys.push(v.key)
+          if (!edge.keys.includes(v.name)) {
+            edge.keys.push(v.name)
           }
 
           edges.set(id, edge)
@@ -791,76 +773,76 @@ export const createViews = (db: Db) => {
     return [...edges.values()]
   }
 
-  const environmentView: View<EnvironmentRow, typeof shapes.Environment> = {
-    schema: shapes.Environment,
+  const appCount = (targetId: string) =>
+    db
+      .select({
+        n: count(),
+      })
+      .from(app)
+      .where(eq(app.target_id, targetId))
+      .get()?.n ?? 0
+
+  const appsExpand = (targetId: string, sub: Parameters<typeof projectAll>[2]) => {
+    const nested =
+      sub && sub.size > 0
+        ? sub
+        : new Map([
+            ['current_deployment', new Map()],
+            ['domains', new Map()],
+          ])
+
+    return projectAll(appView, appsOf(targetId), nested)
+  }
+
+  const previewView: View<TargetRow, typeof shapes.Preview> = {
+    schema: shapes.Preview,
     full: (row) => ({
       ...stamps(row),
       project_id: row.project_id,
       name: row.name,
-      protected: row.protected,
-      ephemeral: row.ephemeral,
-      source_environment_id: row.source_environment_id,
-      pull_request: row.pull_request,
-      ttl_seconds: row.ttl_seconds,
-      service_count:
-        db
-          .select({
-            n: count(),
-          })
-          .from(service)
-          .where(eq(service.environment_id, row.id))
-          .get()?.n ?? 0,
-      pending_staged_changes: stagedPending(row.id),
-    }),
-    summary: [
-      'id',
-      'project_id',
-      'name',
-      'protected',
-      'ephemeral',
-      'ttl_seconds',
-      'pull_request',
-      'service_count',
-      'pending_staged_changes',
-    ],
-    expand: {
-      services: (row, sub) => {
-        const nested =
-          sub && sub.size > 0
-            ? sub
-            : new Map([
-                ['current_deployment', new Map()],
-                ['domains', new Map()],
-              ])
-
-        return projectAll(serviceView, servicesOf(row.id), nested)
+      origin: row.origin ?? {
+        type: 'named',
       },
+      expires_at: iso(row.expires_at),
+      app_count: appCount(row.id),
+    }),
+    summary: ['id', 'project_id', 'name', 'origin', 'expires_at', 'app_count'],
+    expand: {
+      apps: (row, sub) => appsExpand(row.id, sub),
       edges: (row) => edgesOf(row.id),
     },
   }
 
+  const previewsOf = (projectId: string) =>
+    db
+      .select()
+      .from(target)
+      .where(and(eq(target.project_id, projectId), eq(target.kind, 'preview')))
+      .orderBy(desc(target.id))
+      .all()
+
   const projectView: View<ProjectRow, typeof shapes.Project> = {
     schema: shapes.Project,
     full: (row) => {
-      const envIds = db
+      const targetIds = db
         .select({
-          id: environment.id,
+          id: target.id,
         })
-        .from(environment)
-        .where(eq(environment.project_id, row.id))
+        .from(target)
+        .where(eq(target.project_id, row.id))
         .all()
         .map((e) => e.id)
-      const services = envIds.length
+      const apps = targetIds.length
         ? db
             .select({
-              status: service.status,
+              status: app.status,
             })
-            .from(service)
-            .where(inArray(service.environment_id, envIds))
+            .from(app)
+            .where(inArray(app.target_id, targetIds))
             .all()
         : []
       const status_counts = Object.fromEntries(
-        serviceStatusValues.map((key) => [key, services.filter((s) => s.status === key).length]),
+        appStatusValues.map((key) => [key, apps.filter((s) => s.status === key).length]),
       )
 
       return {
@@ -868,76 +850,51 @@ export const createViews = (db: Db) => {
         name: row.name,
         shared: row.shared,
         manifest_path: row.manifest_path,
-        default_environment_id: row.default_environment_id,
         build_cache_bytes: row.build_cache_bytes,
         workshop_uid_base: row.workshop_uid_base,
         image_retention_count: row.image_retention_count,
         base_image_auto_rebuild: row.base_image_auto_rebuild,
-        pr_environments: row.pr_environments,
-        environment_count: envIds.length,
-        service_count: services.length,
+        pull_request_previews: row.pull_request_previews,
+        preview_count: targetIds.length - 1,
+        waiting_approvals: waitingApprovals(row.id),
+        app_count: apps.length,
         status_counts,
-        sandbox_count: countSandboxes(db, envIds, isNull(sandbox.workspace)),
-        workspace_count: countSandboxes(db, envIds, isNotNull(sandbox.workspace)),
+        machine_count: countMachines(db, targetIds, isNull(machine.workspace)),
+        workspace_count: countMachines(db, targetIds, isNotNull(machine.workspace)),
       }
     },
     summary: [
       'id',
       'name',
-      'default_environment_id',
-      'environment_count',
-      'service_count',
+      'preview_count',
+      'waiting_approvals',
+      'app_count',
       'status_counts',
-      'sandbox_count',
+      'machine_count',
       'workspace_count',
     ],
     expand: {
-      environments: (row, sub) =>
+      previews: (row, sub) => projectAll(previewView, previewsOf(row.id), sub),
+      apps: (row, sub) => appsExpand(productionOf(db, row.id).id, sub),
+      edges: (row) => edgesOf(productionOf(db, row.id).id),
+      keys: (row, sub) =>
         projectAll(
-          environmentView,
+          keyView,
           db
             .select()
-            .from(environment)
-            .where(eq(environment.project_id, row.id))
-            .orderBy(desc(environment.id))
-            .all(),
-          sub,
-        ),
-      variables: (row, sub) =>
-        projectAll(
-          variableView,
-          db
-            .select()
-            .from(variable)
-            .where(and(eq(variable.scope, 'project'), eq(variable.project_id, row.id)))
-            .orderBy(asc(variable.key))
+            .from(key)
+            .where(and(eq(key.scope, 'project'), eq(key.project_id, row.id)))
+            .orderBy(asc(key.name))
             .all(),
           sub,
         ),
     },
   }
 
-  const stagedView: View<StagedRow, typeof shapes.StagedChange> = {
-    schema: shapes.StagedChange,
-    full: (row) => {
-      const changes = row.changes as { op: string; entity: string }[]
-
-      return {
-        ...stamps(row),
-        environment_id: row.environment_id,
-        status: row.status,
-        source: row.source,
-        actor: row.actor,
-        accepted_by: row.accepted_by,
-        summary: {
-          add: changes.filter((c) => c.op === 'add' && c.entity !== 'deployment').length,
-          update: changes.filter((c) => c.op === 'update').length,
-          remove: changes.filter((c) => c.op === 'remove').length,
-          deployments: changes.filter((c) => c.op === 'add' && c.entity === 'deployment').length,
-        },
-      }
-    },
-    summary: ['id', 'environment_id', 'status', 'source', 'actor', 'created_at', 'summary'],
+  const approvalView: View<ApprovalRow, typeof shapes.Approval> = {
+    schema: shapes.Approval,
+    full: (row) => approvalItem(db, row),
+    summary: [...shapes.approvalSummary],
     expand: {
       changes: (row) => row.changes,
       refs: (row) => row.refs,
@@ -956,7 +913,7 @@ export const createViews = (db: Db) => {
           ? [
               {
                 project_id: '*',
-                environment_id: '*',
+                target: '*',
                 level: 'admin',
               },
             ]
@@ -964,14 +921,14 @@ export const createViews = (db: Db) => {
       expires_at: iso(row.expires_at),
       last_used_at: iso(row.last_used_at),
       client_id: row.client_id,
-      station_id: row.station_id,
+      server_id: row.server_id,
       used_at: iso(row.used_at),
     }),
     summary: ['id', 'name', 'kind', 'scopes', 'expires_at', 'last_used_at', 'client_id'],
   }
 
-  const stationView: View<StationRow, typeof shapes.Station> = {
-    schema: shapes.Station,
+  const stationView: View<StationRow, typeof shapes.Server> = {
+    schema: shapes.Server,
     full: (row) => ({
       ...stamps(row),
       name: row.name,
@@ -985,9 +942,9 @@ export const createViews = (db: Db) => {
       resources: row.resources,
       intermittent: row.intermittent,
       public_address: row.public_address,
-      sandbox_subnet: row.sandbox_subnet,
-      sandbox_limits: row.sandbox_limits,
-      default_sandbox_runtime: row.default_sandbox_runtime,
+      machine_subnet: row.machine_subnet,
+      machine_limits: row.machine_limits,
+      default_machine_runtime: row.default_machine_runtime,
       registry_address: row.registry_address,
       hosts_dispatch: row.hosts_dispatch,
       generation: row.generation,
@@ -1008,8 +965,8 @@ export const createViews = (db: Db) => {
     expand: {
       capabilities: (row) => row.capabilities,
       routes: (row) => row.routes,
-      sandbox_memory: (row) => sandboxMemory(db, row),
-      sandbox_runtime_advice: (row) => sandboxRuntimeAdvice(row),
+      machine_memory: (row) => machineMemory(db, row),
+      machine_runtime_advice: (row) => machineRuntimeAdvice(row),
       generation_failure: (row) =>
         db
           .select({
@@ -1019,7 +976,7 @@ export const createViews = (db: Db) => {
           })
           .from(station_generation)
           .where(
-            and(eq(station_generation.station_id, row.id), eq(station_generation.ack, 'rejected')),
+            and(eq(station_generation.server_id, row.id), eq(station_generation.ack, 'rejected')),
           )
           .orderBy(desc(station_generation.generation))
           .limit(1)
@@ -1028,11 +985,11 @@ export const createViews = (db: Db) => {
         db
           .select()
           .from(component)
-          .where(eq(component.station_id, row.id))
+          .where(eq(component.server_id, row.id))
           .all()
           .map((c) => ({
             name: c.name,
-            station_id: c.station_id,
+            server_id: c.server_id,
             version: c.version,
             digest: c.digest,
             lockfile_version: c.lockfile_version,
@@ -1099,8 +1056,8 @@ export const createViews = (db: Db) => {
     schema: shapes.Run,
     full: (row) => ({
       ...stamps(row),
-      service_id: row.service_id,
-      sandbox_id: row.sandbox_id,
+      app_id: row.app_id,
+      machine_id: row.machine_id,
       deployment_id: row.deployment_id,
       kind: row.kind,
       command: row.command,
@@ -1114,8 +1071,8 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'service_id',
-      'sandbox_id',
+      'app_id',
+      'machine_id',
       'deployment_id',
       'kind',
       'command',
@@ -1129,13 +1086,13 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const sandboxSnapshotView: View<SandboxSnapshotRow, typeof shapes.SandboxSnapshot> = {
-    schema: shapes.SandboxSnapshot,
+  const machineSnapshotView: View<MachineSnapshotRow, typeof shapes.MachineSnapshot> = {
+    schema: shapes.MachineSnapshot,
     full: (row) => ({
       ...stamps(row),
-      sandbox_id: row.sandbox_id,
-      environment_id: row.environment_id,
-      station_id: row.station_id,
+      machine_id: row.machine_id,
+      ...placeOf(row.target_id),
+      server_id: row.server_id,
       name: row.name,
       runtime: row.runtime,
       status: row.status,
@@ -1146,9 +1103,10 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'sandbox_id',
-      'environment_id',
-      'station_id',
+      'machine_id',
+      'project_id',
+      'preview_id',
+      'server_id',
       'name',
       'runtime',
       'status',
@@ -1164,15 +1122,15 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const sandboxVariables = (row: SandboxRow) => {
-    const resolver = Resolver.forSandbox(db, row.id)
+  const machineKeys = (row: MachineRow) => {
+    const resolver = Resolver.forMachine(db, row.id)
 
-    return resolver.sandboxVariables().map((v) => {
+    return resolver.machineKeys().map((v) => {
       try {
-        const node = resolver.resolveSandbox(v)
+        const node = resolver.resolveMachine(v)
 
         return {
-          key: v.key,
+          name: v.name,
           kind: v.kind,
           reference: v.reference,
           sealed: isSealed(node),
@@ -1196,7 +1154,7 @@ export const createViews = (db: Db) => {
         }
 
         return {
-          key: v.key,
+          name: v.name,
           kind: v.kind,
           reference: v.reference,
           sealed: v.kind === 'sealed',
@@ -1210,12 +1168,12 @@ export const createViews = (db: Db) => {
     })
   }
 
-  const sandboxView: View<SandboxRow, typeof shapes.Sandbox> = {
-    schema: shapes.Sandbox,
+  const machineView: View<MachineRow, typeof shapes.Machine> = {
+    schema: shapes.Machine,
     full: (row) => ({
       ...stamps(row),
-      environment_id: row.environment_id,
-      station_id: row.station_id,
+      ...placeOf(row.target_id),
+      server_id: row.server_id,
       name: row.name,
       status: row.status,
       status_reason: row.status_reason,
@@ -1241,8 +1199,9 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'environment_id',
-      'station_id',
+      'project_id',
+      'preview_id',
+      'server_id',
       'name',
       'status',
       'status_reason',
@@ -1268,12 +1227,12 @@ export const createViews = (db: Db) => {
       command: (row) => row.command,
       snapshots: (row, sub) =>
         projectAll(
-          sandboxSnapshotView,
+          machineSnapshotView,
           db
             .select()
-            .from(sandbox_snapshot)
-            .where(eq(sandbox_snapshot.sandbox_id, row.id))
-            .orderBy(desc(sandbox_snapshot.id))
+            .from(machine_snapshot)
+            .where(eq(machine_snapshot.machine_id, row.id))
+            .orderBy(desc(machine_snapshot.id))
             .all(),
           sub,
         ),
@@ -1283,13 +1242,13 @@ export const createViews = (db: Db) => {
           db
             .select()
             .from(run)
-            .where(eq(run.sandbox_id, row.id))
+            .where(eq(run.machine_id, row.id))
             .orderBy(desc(run.id))
             .limit(20)
             .all(),
           sub,
         ),
-      variables: (row) => sandboxVariables(row),
+      keys: (row) => machineKeys(row),
     },
   }
 
@@ -1354,23 +1313,23 @@ export const createViews = (db: Db) => {
 
   return {
     project: projectView,
-    environment: environmentView,
-    service: serviceView,
+    preview: previewView,
+    app: appView,
     port: portView,
     volume: volumeView,
     domain: domainView,
     allocation: allocationView,
     deployment: deploymentView,
-    variable: variableView,
+    key: keyView,
     secretValue: secretValueView,
-    staged: stagedView,
+    approval: approvalView,
     token: tokenView,
     station: stationView,
     audit: auditView,
     build: buildView,
     run: runView,
-    sandbox: sandboxView,
-    sandboxSnapshot: sandboxSnapshotView,
+    machine: machineView,
+    machineSnapshot: machineSnapshotView,
     event: eventView,
     channel: channelView,
     edges: edgesOf,

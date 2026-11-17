@@ -11,7 +11,7 @@ import {
   type Node,
 } from 'yaml'
 
-import { Manifest, Service, type ManifestDoc, type ServiceDoc } from './schema.ts'
+import { App, Manifest, type AppDoc, type ManifestDoc } from './schema.ts'
 
 export type Issue = { path: string; code: string; message: string; line?: number; column?: number }
 
@@ -131,8 +131,8 @@ export const parseInput = (input: unknown): Parsed =>
 
 const aliases: Record<string, string> = {
   timetable: 'schedule',
-  env: 'variables',
-  vars: 'variables',
+  env: 'keys',
+  vars: 'keys',
   image: 'source',
   replicas: '',
   dockerfile_path: 'source.dockerfile',
@@ -426,11 +426,11 @@ const walk = (schema: Schema, value: unknown, prefix: string, root: Schema): Iss
 
       const known = Object.keys(parent.properties ?? {})
 
-      if (/^\/environments\/[^/]+\/services\/[^/]+$/.test(parentPath)) {
+      if (/^\/previews\/[^/]+\/apps\/[^/]+$/.test(parentPath)) {
         out.push({
           path: absolute.path,
           code: 'OVERRIDE_KEY',
-          message: `${key} cannot be overridden per environment; only ${known.join(', ')} can.`,
+          message: `${key} cannot be overridden per preview; only ${known.join(', ')} can.`,
         })
         continue
       }
@@ -465,8 +465,8 @@ export const schemaIssues = (value: unknown): Issue[] => {
   })
 }
 
-export const serviceWithDefaults = (value: ServiceDoc): ServiceDoc =>
-  Value.Default(Service, structuredClone(value)) as ServiceDoc
+export const appWithDefaults = (value: AppDoc): AppDoc =>
+  Value.Default(App, structuredClone(value)) as AppDoc
 
 export const validateSchema = (input: unknown) => {
   const parsed = parseInput(input)

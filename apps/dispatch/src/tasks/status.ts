@@ -183,17 +183,17 @@ export const nextAgentStatus = (
   }
 }
 
-export const taskChanged = (db: Db, row: Pick<TaskRow, 'id' | 'project_id' | 'environment_id'>) =>
+export const taskChanged = (db: Db, row: Pick<TaskRow, 'id' | 'project_id' | 'preview_id'>) =>
   emitEvent(db, 'task.changed', taskSubject(row), {
     task: row.id,
   })
 
-export const taskSubject = (row: Pick<TaskRow, 'id' | 'project_id' | 'environment_id'>) => ({
+export const taskSubject = (row: Pick<TaskRow, 'id' | 'project_id' | 'preview_id'>) => ({
   entity: 'task',
   id: row.id,
   task_id: row.id,
   project_id: row.project_id,
-  environment_id: row.environment_id,
+  preview_id: row.preview_id,
 })
 
 export const saveActivity = (db: Db, row: TaskRow, next: AgentStatusRecord) => {

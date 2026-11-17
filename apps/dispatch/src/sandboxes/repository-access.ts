@@ -1,15 +1,15 @@
 import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 
-import type { SandboxVariableSet } from '@stationly/protocol'
+import type { MachineKeySet } from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
-import { environment } from '../db/schema.ts'
+import { target } from '../db/schema.ts'
 import { githubWeb } from '../github/client.ts'
 import { http, transientRetry, userAgent } from '../net/http.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { decryptValue, headValue, isClone, variablesOf } from '../secrets/values.ts'
+import { decryptValue, headValue, keysOf } from '../secrets/values.ts'
 
 export type RepositoryAccess = 'readable' | 'unreadable' | 'unknown'
 
@@ -62,22 +62,21 @@ export const repositoryLabel = (repository: string) =>
 export const projectSecret = (
   db: Db,
   keyring: Keyring,
-  scope: { project: string; environment: string },
-  key: string,
+  scope: { project: string; target: string },
+  name: string,
 ) => {
-  const found = variablesOf(db, {
+  const found = keysOf(db, {
     scope: 'project',
     id: scope.project,
   })
     .all()
-    .find((variable) => variable.key === key)
-  const env = db.select().from(environment).where(eq(environment.id, scope.environment)).get()
-  const cloned = env ? isClone(env) : false
+    .find((row) => row.name === name)
+  const place = db.select().from(target).where(eq(target.id, scope.target)).get()
+  const inPreview = place?.kind === 'preview'
+  const preview = found && inPreview ? headValue(db, found.id, 'preview') : undefined
   const head = found
-    ? (headValue(db, found.id, scope.environment) ??
-      (cloned && found.kind === 'sealed' && !found.copy_to_clones
-        ? undefined
-        : headValue(db, found.id, null)))
+    ? (preview ??
+      (inPreview && found.kind === 'sealed' ? undefined : headValue(db, found.id, 'production')))
     : undefined
 
   return head ? decryptValue(keyring, head) : null
@@ -87,9 +86,9 @@ export const requireRepositoryAccess = async (
   deps: { db: Db; keyring: Keyring; readRepository: ReadRepository },
   request: {
     project: { id: string; name: string }
-    environment: string
+    target: string
     repository: string
-    variables: Static<typeof SandboxVariableSet>[] | undefined
+    keys: Static<typeof MachineKeySet>[] | undefined
   },
 ) => {
   if (!isGitHubRepository(request.repository)) {
@@ -100,15 +99,15 @@ export const requireRepositoryAccess = async (
     return
   }
 
-  const supplied = request.variables?.find(
-    (variable) => variable.key === tokenKey && variable.kind !== 'reference',
+  const supplied = request.keys?.find(
+    (set) => set.name === tokenKey && set.kind !== 'reference',
   )?.value
   const stored = projectSecret(
     deps.db,
     deps.keyring,
     {
       project: request.project.id,
-      environment: request.environment,
+      target: request.target,
     },
     tokenKey,
   )
@@ -123,7 +122,7 @@ export const requireRepositoryAccess = async (
     fail(
       'REPO_ACCESS_REQUIRED',
       `${name} cannot be read without credentials, and project ${request.project.name} has no ${tokenKey}.`,
-      `Set ${tokenKey} on project ${request.project.name} with set_project_variables: a fine-grained token with Contents read and write on ${name}, or the output of gh auth token.`,
+      `Set ${tokenKey} on project ${request.project.name} with set_project_keys: a fine-grained token with Contents read and write on ${name}, or the output of gh auth token.`,
       details,
     )
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import type { Service } from '../src/lib/api.ts'
+import type { App } from '../src/lib/api.ts'
 import { healthChangeText, healthLine, healthPortNote, healthWhy } from '../src/lib/health-text.ts'
 
 const timing = {
@@ -20,7 +20,7 @@ test('an http check reads as one line with its port, timing and thresholds', () 
       port: 3000,
       ...timing,
     }),
-    'HTTP GET / on port 3000 · every 5 s, 3 s timeout · 2 passes to go live, 3 failures to turn red',
+    'HTTP GET / on port 3000 · every 5 s, 3 s timeout · 2 passes to go live, 3 failures before it is failing',
   )
 })
 
@@ -33,7 +33,7 @@ test('an http check names its Host header when one is set', () => {
       host: 'web.internal',
       ...timing,
     }),
-    'HTTP GET /ready on port 8080 with Host web.internal · every 5 s, 3 s timeout · 2 passes to go live, 3 failures to turn red',
+    'HTTP GET /ready on port 8080 with Host web.internal · every 5 s, 3 s timeout · 2 passes to go live, 3 failures before it is failing',
   )
 })
 
@@ -44,7 +44,7 @@ test('a tcp, image, alive and absent check each read in one line', () => {
       port: 5432,
       ...timing,
     }),
-    'TCP connect to port 5432 · every 5 s, 3 s timeout · 2 passes to go live, 3 failures to turn red',
+    'TCP connect to port 5432 · every 5 s, 3 s timeout · 2 passes to go live, 3 failures before it is failing',
   )
   assert.equal(
     healthLine({
@@ -76,7 +76,7 @@ test('a default check says why it was chosen and a set one does not', () => {
       health: http,
       health_default: true,
     }),
-    'Default for a web service: the first http port',
+    'Default for a web app: the first http port',
   )
   assert.equal(
     healthWhy({
@@ -88,7 +88,7 @@ test('a default check says why it was chosen and a set one does not', () => {
       },
       health_default: true,
     }),
-    'Default for a web service with no http port: the first port',
+    'Default for a web app with no http port: the first port',
   )
   assert.equal(
     healthWhy({
@@ -180,11 +180,11 @@ test('several ports make plain that only the named one is checked', () => {
 })
 
 const change = (
-  fields: Partial<NonNullable<Service['last_health_change']>>,
-): NonNullable<Service['last_health_change']> => ({
+  fields: Partial<NonNullable<App['last_health_change']>>,
+): NonNullable<App['last_health_change']> => ({
   at: '2026-11-13T10:00:00.000Z',
-  from: 'green',
-  to: 'amber',
+  from: 'healthy',
+  to: 'failing',
   state: null,
   consecutive: null,
   last_check: null,
@@ -192,20 +192,10 @@ const change = (
   ...fields,
 })
 
-test('the reason an unhealthy service gives follows the newest health change', () => {
+test('the reason an unhealthy app gives follows the newest health change', () => {
   assert.equal(
     healthChangeText(
       change({
-        state: 'failing',
-        consecutive: 2,
-      }),
-    ),
-    'The health check is failing (2 in a row)',
-  )
-  assert.equal(
-    healthChangeText(
-      change({
-        to: 'red',
         state: 'failed',
         consecutive: 3,
       }),
@@ -215,12 +205,11 @@ test('the reason an unhealthy service gives follows the newest health change', (
   assert.equal(
     healthChangeText(
       change({
-        to: 'red',
         state: 'none',
         status_hint: 'stopped',
       }),
     ),
     'The container is not running',
   )
-  assert.equal(healthChangeText(change({})), 'Went from green to amber')
+  assert.equal(healthChangeText(change({})), 'Went from healthy to failing')
 })

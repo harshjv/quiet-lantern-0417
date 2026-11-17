@@ -104,14 +104,14 @@ func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress 
 		progress("release", "no verified release in "+dir+"; setup writes no lockfile")
 	}
 	if !s.link.Connected() {
-		return nil, protocolError(protocol.ErrorCodeStationOffline, "Start Dispatch and wait for stationd to connect (stationd connection).", "stationd is not connected to Dispatch")
+		return nil, protocolError(protocol.ErrorCodeServerOffline, "Start Dispatch and wait for stationd to connect (stationd connection).", "stationd is not connected to Dispatch")
 	}
 	progress("dispatch", "creating the admin")
 	rctx, cancel := context.WithTimeout(ctx, setupTimeout)
 	defer cancel()
 	reply, err := s.link.Request(rctx, protocol.MessageHostAdmin, protocol.HostAdminBody{Op: "setup", Params: p})
 	if err != nil {
-		return nil, protocolError(protocol.ErrorCodeStationOffline, "Check that Dispatch is up and retry.", "host.admin setup: %v", err)
+		return nil, protocolError(protocol.ErrorCodeServerOffline, "Check that Dispatch is up and retry.", "host.admin setup: %v", err)
 	}
 	if reply.Type != protocol.MessageHostAdminResult {
 		var e protocol.ErrorBody

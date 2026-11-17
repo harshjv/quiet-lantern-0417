@@ -5,11 +5,11 @@ import { Type } from '@sinclair/typebox'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { enrollTokenPrefix, slugPattern, stationStatusValues } from '@stationly/protocol'
+import { enrollTokenPrefix, serverStatusValues, slugPattern } from '@stationly/protocol'
 
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { sandbox, service, station, token } from '../../db/schema.ts'
+import { app, machine, server, token } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import { runtimeRefusal } from '../../sandboxes/runtime.ts'
 import { ChangeSet, commit } from '../changes.ts'
@@ -19,12 +19,12 @@ import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import { stationByRef } from '../lookup.ts'
 import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
-import { Page, replies, Staged, Station } from '../shapes.ts'
+import { ApprovalDetail, Page, replies, Server } from '../shapes.ts'
 import { drainRefusal, stationFields } from '../station-fields.ts'
 
 const intermittent = t.Optional(
   t.Boolean({
-    description: 'The station sleeps at times: asleep instead of offline when heartbeats stop',
+    description: 'The server sleeps at times: asleep instead of offline when heartbeats stop',
   }),
 )
 
@@ -40,7 +40,7 @@ const Removed = Type.Object(
 )
 const Enrollment = Type.Object(
   {
-    station: Station,
+    server: Server,
     enroll_token: Type.String(),
     enroll_token_id: Type.String(),
     expires_at: Type.String(),
@@ -55,29 +55,29 @@ export const enrollTokenSeconds = 15 * 60
 export const enrollTokenSha256 = (value: string) =>
   createHash('sha256').update(value, 'utf8').digest('hex')
 
-type StationStatus = (typeof station.$inferSelect)['status']
+type StationStatus = (typeof server.$inferSelect)['status']
 
 export const stationRoutes = (kit: Kit) => {
   const { db } = kit.deps
 
   return kit
-    .router('stations', '/v1')
+    .router('servers', '/v1')
     .get(
-      '/stations',
+      '/servers',
       ({ query }) => {
         const page = collect(
           (cursor, size) =>
             db
               .select()
-              .from(station)
+              .from(server)
               .where(
                 and(
-                  query.status ? eq(station.status, query.status as StationStatus) : undefined,
-                  query.revoked ? undefined : isNull(station.revoked_at),
-                  before(station.id, cursor),
+                  query.status ? eq(server.status, query.status as StationStatus) : undefined,
+                  query.revoked ? undefined : isNull(server.revoked_at),
+                  before(server.id, cursor),
                 ),
               )
-              .orderBy(desc(station.id))
+              .orderBy(desc(server.id))
               .limit(size)
               .all(),
           query,
@@ -90,53 +90,53 @@ export const stationRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'list_stations',
-          summary: 'List stations; removed stations only with revoked = true',
+          id: 'list_servers',
+          summary: 'List servers; removed servers only with revoked = true',
           level: 'instance read',
         },
         query: t.Object({
           ...listQuery,
-          status: filterOne(stationStatusValues),
+          status: filterOne(serverStatusValues),
           revoked: t.Optional(
             t.BooleanString({
-              description: 'Include removed stations',
+              description: 'Include removed servers',
             }),
           ),
         }),
         response: replies({
-          200: Page(Station),
+          200: Page(Server),
         }),
       },
     )
     .get(
-      '/stations/:station',
+      '/servers/:server',
       ({ params, query }) => {
-        return select(kit.views.station, stationByRef(db, params.station), kit.fields(query.fields))
+        return select(kit.views.station, stationByRef(db, params.server), kit.fields(query.fields))
       },
       {
         operation: {
-          id: 'get_station',
-          summary: 'Get a station by id or name',
+          id: 'get_server',
+          summary: 'Get a server by id or name',
           level: 'instance read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Station,
+          200: Server,
         }),
       },
     )
     .patch(
-      '/stations/:station',
+      '/servers/:server',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        const row = stationByRef(db, params.station)
+        const row = stationByRef(db, params.server)
 
         if (row.revoked_at) {
-          fail('VALIDATION_FAILED', `Station ${row.name} was removed.`, undefined, {
+          fail('VALIDATION_FAILED', `Server ${row.name} was removed.`, undefined, {
             issues: [
               {
-                path: '/station',
-                message: 'station is revoked',
+                path: '/server',
+                message: 'server is revoked',
               },
             ],
           })
@@ -148,7 +148,7 @@ export const stationRoutes = (kit: Kit) => {
           issues.push({
             path: '/',
             message:
-              'send at least one of public_address, concurrency_cap, draining, intermittent, sandbox_limits, default_sandbox_runtime',
+              'send at least one of public_address, concurrency_cap, draining, intermittent, machine_limits, default_machine_runtime',
           })
         }
 
@@ -176,13 +176,13 @@ export const stationRoutes = (kit: Kit) => {
         }
 
         const runtimeProblem =
-          body.default_sandbox_runtime === undefined
+          body.default_machine_runtime === undefined
             ? null
-            : runtimeRefusal(row, body.default_sandbox_runtime)
+            : runtimeRefusal(row, body.default_machine_runtime)
 
         if (runtimeProblem) {
           issues.push({
-            path: '/default_sandbox_runtime',
+            path: '/default_machine_runtime',
             message: runtimeProblem,
           })
         }
@@ -196,34 +196,34 @@ export const stationRoutes = (kit: Kit) => {
           concurrency_cap: row.concurrency_cap,
           draining: row.draining,
           intermittent: row.intermittent,
-          sandbox_limits: row.sandbox_limits,
-          default_sandbox_runtime: row.default_sandbox_runtime,
+          machine_limits: row.machine_limits,
+          default_machine_runtime: row.default_machine_runtime,
         }
         const wantedLimits =
-          body.sandbox_limits === undefined
+          body.machine_limits === undefined
             ? undefined
             : {
-                ...row.sandbox_limits,
-                ...body.sandbox_limits,
+                ...row.machine_limits,
+                ...body.machine_limits,
               }
         const changes = new ChangeSet()
         const before: Record<string, unknown> = {}
         const after: Record<string, unknown> = {}
 
         for (const field of stationFields) {
-          const wanted = field === 'sandbox_limits' ? wantedLimits : body[field]
+          const wanted = field === 'machine_limits' ? wantedLimits : body[field]
 
           if (wanted === undefined || JSON.stringify(wanted) === JSON.stringify(current[field])) {
             continue
           }
 
-          changes.update('station', row.id, `/${field}`, current[field], wanted)
+          changes.update('server', row.id, `/${field}`, current[field], wanted)
           before[field] = current[field]
           after[field] = wanted
         }
 
         const shown = kit.fields(
-          'public_address,intermittent,sandbox_limits,default_sandbox_runtime,sandbox_runtime_advice',
+          'public_address,intermittent,machine_limits,default_machine_runtime,machine_runtime_advice',
         )
 
         if (changes.empty) {
@@ -235,22 +235,22 @@ export const stationRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: null,
+            target: null,
             protect,
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         audit(
           db,
           call,
-          'station.update',
+          'server.update',
           {
-            entity: 'station',
+            entity: 'server',
             id: row.id,
           },
           {
@@ -265,40 +265,40 @@ export const stationRoutes = (kit: Kit) => {
 
         return select(
           kit.views.station,
-          db.select().from(station).where(eq(station.id, row.id)).get()!,
+          db.select().from(server).where(eq(server.id, row.id)).get()!,
           shown,
         )
       },
       {
         operation: {
-          id: 'update_station',
+          id: 'update_server',
           summary:
-            'Change a station: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, sandbox_limits and default_sandbox_runtime; sleep_schedule is phase 2',
+            'Change a server: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2',
           level: 'instance admin',
         },
         body: t.Object(
           {
             public_address: t.Optional(
               t.String({
-                description: 'The IPv4 address domains and TCP exposures reach the station on',
+                description: 'The IPv4 address domains and TCP exposures reach the server on',
               }),
             ),
             concurrency_cap: t.Optional(
               t.Integer({
                 minimum: 1,
-                description: 'Deployments the station runs at once',
+                description: 'Deployments the server runs at once',
               }),
             ),
             draining: t.Optional(
               t.Boolean({
-                description: 'Place no new deployments on it; running services stay',
+                description: 'Place no new deployments on it; running apps stay',
               }),
             ),
             intermittent: intermittent,
-            sandbox_limits: t.Optional(
+            machine_limits: t.Optional(
               t.Object(
                 {
-                  max_sandboxes: t.Optional(
+                  max_machines: t.Optional(
                     t.Integer({
                       minimum: 0,
                     }),
@@ -330,11 +330,11 @@ export const stationRoutes = (kit: Kit) => {
                 },
               ),
             ),
-            default_sandbox_runtime: t.Optional(
+            default_machine_runtime: t.Optional(
               t.Nullable(
                 t.String({
                   description:
-                    'a runtime the station offers in capabilities.sandboxes.runtimes, or null to follow the recommendation from its host probe',
+                    'a runtime the server offers in capabilities.machines.runtimes, or null to follow the recommendation from its host probe',
                 }),
               ),
             ),
@@ -345,16 +345,16 @@ export const stationRoutes = (kit: Kit) => {
           },
         ),
         response: replies({
-          200: Station,
-          202: Staged,
+          200: Server,
+          202: ApprovalDetail,
         }),
       },
     )
     .delete(
-      '/stations/:station',
+      '/servers/:server',
       async ({ request, params }) => {
         const call = await kit.call(request)
-        const row = stationByRef(db, params.station)
+        const row = stationByRef(db, params.server)
 
         if (row.revoked_at) {
           return {
@@ -363,36 +363,36 @@ export const stationRoutes = (kit: Kit) => {
           }
         }
 
-        const services = db
+        const apps = db
           .select({
-            id: service.id,
-            name: service.name,
+            id: app.id,
+            name: app.name,
           })
-          .from(service)
-          .where(eq(service.station_id, row.id))
+          .from(app)
+          .where(eq(app.server_id, row.id))
           .all()
         const boxes = db
           .select({
-            id: sandbox.id,
-            name: sandbox.name,
+            id: machine.id,
+            name: machine.name,
           })
-          .from(sandbox)
-          .where(eq(sandbox.station_id, row.id))
+          .from(machine)
+          .where(eq(machine.server_id, row.id))
           .all()
 
-        if (services.length || boxes.length) {
+        if (apps.length || boxes.length) {
           fail(
             'DELETE_HAS_DEPENDENTS',
-            `Station ${row.name} still runs ${services.length} services and ${boxes.length} sandboxes.`,
-            'Move or delete its services and delete its sandboxes first.',
+            `Server ${row.name} still runs ${apps.length} apps and ${boxes.length} machines.`,
+            'Move or delete its apps and delete its machines first.',
             {
               dependents: [
-                ...services.map((s) => ({
-                  entity: 'service',
+                ...apps.map((s) => ({
+                  entity: 'app',
                   ...s,
                 })),
                 ...boxes.map((b) => ({
-                  entity: 'sandbox',
+                  entity: 'machine',
                   ...b,
                 })),
               ],
@@ -402,19 +402,19 @@ export const stationRoutes = (kit: Kit) => {
 
         const revokedAt = new Date()
 
-        db.update(station)
+        db.update(server)
           .set({
             revoked_at: revokedAt,
             status: 'offline',
           })
-          .where(eq(station.id, row.id))
+          .where(eq(server.id, row.id))
           .run()
         audit(
           db,
           call,
-          'station.remove',
+          'server.remove',
           {
-            entity: 'station',
+            entity: 'server',
             id: row.id,
           },
           {
@@ -436,8 +436,8 @@ export const stationRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'remove_station',
-          summary: 'Remove a station: its key is revoked and kept, so it is told STATION_REVOKED',
+          id: 'remove_server',
+          summary: 'Remove a server: its key is revoked and kept, so it is told STATION_REVOKED',
           level: 'instance admin',
         },
         response: replies({
@@ -446,34 +446,34 @@ export const stationRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/stations',
+      '/servers',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
 
         if (
           db
             .select({
-              id: station.id,
+              id: server.id,
             })
-            .from(station)
-            .where(eq(station.name, body.name))
+            .from(server)
+            .where(eq(server.name, body.name))
             .get()
         ) {
-          fail('NAME_TAKEN', `A station named ${body.name} exists.`, undefined, {
+          fail('NAME_TAKEN', `A server named ${body.name} exists.`, undefined, {
             name: body.name,
           })
         }
 
         const secret = `${enrollTokenPrefix}${randomBytes(32).toString('base64url')}`
         const expiresAt = new Date(Date.now() + enrollTokenSeconds * 1000)
-        const stationId = newId('station')
+        const stationId = newId('server')
         const tokenId = newId('token')
 
         db.transaction((tx) => {
           const tdb = tx as unknown as Db
 
           tdb
-            .insert(station)
+            .insert(server)
             .values({
               id: stationId,
               name: body.name,
@@ -487,19 +487,19 @@ export const stationRoutes = (kit: Kit) => {
               id: tokenId,
               user_id: call.principal.user_id,
               name: `enroll/${body.name}`,
-              kind: 'station_enroll',
+              kind: 'server_enroll',
               scopes: [],
               expires_at: expiresAt,
               secret_sha256: enrollTokenSha256(secret),
-              station_id: stationId,
+              server_id: stationId,
             })
             .run()
           audit(
             tdb,
             call,
-            'station.create',
+            'server.create',
             {
-              entity: 'station',
+              entity: 'server',
               id: stationId,
             },
             {
@@ -514,9 +514,9 @@ export const stationRoutes = (kit: Kit) => {
         set.status = 201
 
         return {
-          station: select(
+          server: select(
             kit.views.station,
-            db.select().from(station).where(eq(station.id, stationId)).get()!,
+            db.select().from(server).where(eq(server.id, stationId)).get()!,
             undefined,
           ),
           enroll_token: secret,
@@ -527,9 +527,9 @@ export const stationRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'enroll_station',
+          id: 'enroll_server',
           summary:
-            'Create a station in enrolling state and a one-time enrollment token (15 minutes)',
+            'Create a server in enrolling state and a one-time enrollment token (15 minutes)',
           level: 'instance admin',
           cli: {
             args: ['name'],
@@ -539,7 +539,7 @@ export const stationRoutes = (kit: Kit) => {
           {
             name: t.String({
               pattern: slugPattern,
-              description: 'The station name',
+              description: 'The server name',
             }),
             intermittent,
           },

@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 
 import { fail } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
-import { station } from '../db/schema.ts'
+import { server } from '../db/schema.ts'
 
 import {
   displayRef,
@@ -365,9 +365,9 @@ export const resolveImage = async (
     !platforms.some((p) => p === `linux/${arch}` || p.startsWith(`linux/${arch}/`))
   ) {
     fail(
-      'STATION_CAPABILITY_MISSING',
+      'SERVER_CAPABILITY_MISSING',
       `${displayRef(r)} has no linux/${arch} image; it is published for ${platforms.join(', ')}.`,
-      `Use a tag published for linux/${arch}, or place the service on a station whose architecture is listed.`,
+      `Use a tag published for linux/${arch}, or place the app on a server whose architecture is listed.`,
       {
         ref: input,
         reason: 'platform_missing',
@@ -397,10 +397,10 @@ export const stationArch = (db: Db, stationId: string | null | undefined) => {
   return (
     db
       .select({
-        arch: station.arch,
+        arch: server.arch,
       })
-      .from(station)
-      .where(eq(station.id, stationId))
+      .from(server)
+      .where(eq(server.id, stationId))
       .get()?.arch ?? null
   )
 }

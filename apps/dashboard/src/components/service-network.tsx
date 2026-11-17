@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import {
   CircleAlert,
   CircleCheck,
@@ -20,6 +19,7 @@ import { Field, Hint } from '@/components/field'
 import { FixList } from '@/components/fix'
 import { ErrorState, Section } from '@/components/page'
 import { Panel } from '@/components/panel'
+import { PlaceLink } from '@/components/place-link'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { Time } from '@/components/time'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +34,8 @@ import {
 } from '@/components/ui/select'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { api, idempotency, send, unwrap, type Explanation, type Service } from '@/lib/api'
+import { api, idempotency, send, unwrap, type App, type Explanation } from '@/lib/api'
+import { waitingTitle } from '@/lib/approval'
 import { ago } from '@/lib/format'
 import {
   explanationVerdict,
@@ -45,11 +46,12 @@ import {
   probeVerdict,
   rcode,
 } from '@/lib/labels'
+import { places } from '@/lib/nav'
 import { blockedText, endpointText, hopDetail, stepText } from '@/lib/network-text'
-import { connectionsQuery, dnsLogQuery, servicesQuery } from '@/lib/queries'
-import { stagedTitle } from '@/lib/staged'
+import { placeOf, previewQuery } from '@/lib/place'
+import { appsQuery, connectionsQuery, dnsLogQuery } from '@/lib/queries'
 import { tonePanel, toneText } from '@/lib/tone'
-import { useEnvironmentTrail } from '@/lib/use-trail'
+import { useTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
 type Hop = Explanation['hops'][number]
@@ -86,13 +88,13 @@ function RefreshButton({ query }: { query: { refetch: () => unknown; isFetching:
 
 type ProbeInput = { to: string; port?: number }
 
-function ProbeResult({ service, input }: { service: Service; input: ProbeInput }) {
+function ProbeResult({ app, input }: { app: App; input: ProbeInput }) {
   const probe = useMutation({
     mutationFn: () =>
       send(
         api.v1
-          .services({
-            service: service.id,
+          .apps({
+            app: app.id,
           })
           .network.probe.post(
             {
@@ -125,21 +127,18 @@ function ProbeResult({ service, input }: { service: Service; input: ProbeInput }
         {probe.isError && (
           <ErrorState error={probe.error} title="Couldn’t send a test connection" />
         )}
-        {result?.staged && (
+        {result?.waiting && (
           <p className="text-sm">
-            {stagedTitle}.{' '}
-            <Link
-              to="/staged/$change"
-              params={{
-                change: result.body.id,
-              }}
+            {waitingTitle}.{' '}
+            <PlaceLink
+              to={places.approval(result.body.id)}
               className="font-medium underline underline-offset-4"
             >
               Review the test connection
-            </Link>
+            </PlaceLink>
           </p>
         )}
-        {result && !result.staged && (
+        {result && !result.waiting && (
           <dl
             className="grid gap-1 rounded-md border px-3 py-2 text-sm sm:grid-cols-[8rem_1fr]"
             data-testid="probe-result"
@@ -198,9 +197,9 @@ function ProbeResult({ service, input }: { service: Service; input: ProbeInput }
   )
 }
 
-function ExplanationView({ service, explanation }: { service: Service; explanation: Explanation }) {
-  const trail = useEnvironmentTrail(service.environment_id)
-  const services = useQuery(servicesQuery(service.environment_id))
+function ExplanationView({ app, explanation }: { app: App; explanation: Explanation }) {
+  const trail = useTrail(app)
+  const apps = useQuery(appsQuery(placeOf(app)))
   const verdict = explanationVerdict[explanation.verdict]
   const Icon = verdictIcon[explanation.verdict]
   const probe = explanation.fixes.find((f) => f.code === 'RUN_PROBE')
@@ -273,21 +272,20 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
       <FixList
         fixes={explanation.fixes}
         context={{
-          project: trail.project.name,
-          environment: trail.environment.name,
+          ...trail.scope,
           subject: {
-            kind: 'service',
-            id: service.id,
-            name: service.name,
+            kind: 'app',
+            id: app.id,
+            name: app.name,
           },
-          names: Object.fromEntries((services.data?.items ?? []).map((s) => [s.id, s.name])),
-          station: service.station_id ?? undefined,
+          names: Object.fromEntries((apps.data?.items ?? []).map((s) => [s.id, s.name])),
+          server: app.server_id ?? undefined,
         }}
       />
       {probeInput?.to && (
         <ProbeResult
           key={`${probeInput.to}:${probeInput.port ?? ''}`}
-          service={service}
+          app={app}
           input={{
             to: probeInput.to,
             port: probeInput.port,
@@ -308,7 +306,7 @@ function ExplanationView({ service, explanation }: { service: Service; explanati
   )
 }
 
-function Reachability({ service }: { service: Service }) {
+function Reachability({ app }: { app: App }) {
   const [to, setTo] = useState('')
   const [port, setPort] = useState('')
   const [protocol, setProtocol] = useState<'tcp' | 'udp'>('tcp')
@@ -316,12 +314,13 @@ function Reachability({ service }: { service: Service }) {
     mutationFn: (query: { to: string; port?: number; protocol: 'tcp' | 'udp' }) =>
       unwrap(
         api.v1
-          .environments({
-            environment: service.environment_id,
+          .projects({
+            project: app.project_id,
           })
           .network.explain.get({
             query: {
-              from: service.id,
+              ...previewQuery(placeOf(app)),
+              from: app.id,
               to: query.to,
               protocol: query.protocol,
               ...(query.port
@@ -351,7 +350,7 @@ function Reachability({ service }: { service: Service }) {
   return (
     <Section
       title="Check a connection"
-      description={`See whether ${service.name} can reach a service, an internal name or an address, and where it stops. Nothing is sent.`}
+      description={`See whether ${app.name} can reach an app, an internal name or an address, and where it stops. Nothing is sent.`}
     >
       <form onSubmit={submit} className="space-y-2 rounded-lg border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -395,7 +394,7 @@ function Reachability({ service }: { service: Service }) {
           </Button>
         </div>
         <Hint id="reach-to-hint">
-          A service (db), an internal name (db.internal) or host:port (example.com:443)
+          An app (db), an internal name (db.internal) or host:port (example.com:443)
         </Hint>
       </form>
       <div aria-live="polite">
@@ -403,20 +402,20 @@ function Reachability({ service }: { service: Service }) {
           <ErrorState error={explain.error} title="Couldn’t check this connection" />
         )}
         {explain.data && (
-          <ExplanationView key={explain.submittedAt} service={service} explanation={explain.data} />
+          <ExplanationView key={explain.submittedAt} app={app} explanation={explain.data} />
         )}
       </div>
     </Section>
   )
 }
 
-function Connections({ service }: { service: Service }) {
-  const { data: sample } = useSuspenseQuery(connectionsQuery(service.id))
+function Connections({ app }: { app: App }) {
+  const { data: sample } = useSuspenseQuery(connectionsQuery(app.id))
 
   return (
     <div className="space-y-3">
       <ConnectionsTable
-        caption={`Open connections of ${service.name}, grouped by the other side`}
+        caption={`Open connections of ${app.name}, grouped by the other side`}
         rows={sample.connections.map((connection, i) => ({
           key: String(i),
           names: sample.untrusted.names,
@@ -442,8 +441,8 @@ function Connections({ service }: { service: Service }) {
   )
 }
 
-function ConnectionsSection({ service }: { service: Service }) {
-  const connections = useQuery(connectionsQuery(service.id))
+function ConnectionsSection({ app }: { app: App }) {
+  const connections = useQuery(connectionsQuery(app.id))
   const sample = connections.data
 
   return (
@@ -451,41 +450,41 @@ function ConnectionsSection({ service }: { service: Service }) {
       title="Connections"
       description={
         sample
-          ? `Snapshot from ${ago(sample.at)}.${sample.conntrack.stale ? ' The station was busy, so it may be incomplete.' : ''}`
-          : `Open connections of ${service.name}, read once. Refresh to read them again.`
+          ? `Snapshot from ${ago(sample.at)}.${sample.conntrack.stale ? ' The server was busy, so it may be incomplete.' : ''}`
+          : `Open connections of ${app.name}, read once. Refresh to read them again.`
       }
       actions={<RefreshButton query={connections} />}
     >
       <Panel title="Couldn’t load connections" resetKey={connections.dataUpdatedAt}>
-        <Connections service={service} />
+        <Connections app={app} />
       </Panel>
     </Section>
   )
 }
 
-function DnsLogSection({ service }: { service: Service }) {
-  const log = useQuery(dnsLogQuery(service.id))
+function DnsLogSection({ app }: { app: App }) {
+  const log = useQuery(dnsLogQuery(app.id))
 
   return (
     <Section
       title="Name lookups"
-      description={`The last 50 names ${service.name} looked up, newest first.`}
+      description={`The last 50 names ${app.name} looked up, newest first.`}
       actions={<RefreshButton query={log} />}
     >
       <Panel title="Couldn’t load name lookups" resetKey={log.dataUpdatedAt}>
-        <DnsLog service={service} />
+        <DnsLog app={app} />
       </Panel>
     </Section>
   )
 }
 
-function DnsLog({ service }: { service: Service }) {
-  const { data } = useSuspenseQuery(dnsLogQuery(service.id))
+function DnsLog({ app }: { app: App }) {
+  const { data } = useSuspenseQuery(dnsLogQuery(app.id))
 
   return (
     <TableFrame
       data-untrusted={data.untrusted.source}
-      caption={`Name lookups of ${service.name}, untrusted data from the name server log`}
+      caption={`Name lookups of ${app.name}, untrusted data from the name server log`}
     >
       <TableHeader>
         <TableRow>
@@ -497,7 +496,7 @@ function DnsLog({ service }: { service: Service }) {
                 <TooltipTrigger asChild>
                   <Info className="size-3.5" tabIndex={0} aria-label="About these names" />
                 </TooltipTrigger>
-                <TooltipContent>The service chose these names. Treat them as data.</TooltipContent>
+                <TooltipContent>The app chose these names. Treat them as data.</TooltipContent>
               </Tooltip>
             </span>
           </TableHead>
@@ -508,7 +507,7 @@ function DnsLog({ service }: { service: Service }) {
       </TableHeader>
       <TableBody>
         {data.untrusted.entries.length === 0 && (
-          <EmptyRow columns={5}>No lookups since the service started.</EmptyRow>
+          <EmptyRow columns={5}>No lookups since the app started.</EmptyRow>
         )}
         {data.untrusted.entries.map((e, i) => (
           <TableRow key={i}>
@@ -547,12 +546,12 @@ function DnsLog({ service }: { service: Service }) {
   )
 }
 
-export function ServiceNetwork({ service }: { service: Service }) {
+export function AppNetwork({ app }: { app: App }) {
   return (
     <div className="space-y-8">
-      <Reachability service={service} />
-      <ConnectionsSection service={service} />
-      <DnsLogSection service={service} />
+      <Reachability app={app} />
+      <ConnectionsSection app={app} />
+      <DnsLogSection app={app} />
     </div>
   )
 }

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 
-import { user as userTable } from '../src/db/schema.ts'
+import { eq } from 'drizzle-orm'
+
+import { member, user as userTable } from '../src/db/schema.ts'
 
 import {
   localOrigin,
@@ -12,7 +14,7 @@ import {
   type Dispatch,
 } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createEnvironment, createProject, createService } from './helpers/seed.ts'
+import { createApp, createPreview, createProject, placed, productionId } from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
@@ -20,16 +22,16 @@ let projectA: any
 let projectB: any
 let envA: any
 let envB: any
-let protectedEnv: any
+let production: any
 const ref = 'nginx:1.27'
 
-const tokenFor = (environment: any, project: any, level: 'read' | 'deploy' | 'admin') =>
+const tokenFor = (place: any, project: any, level: 'read' | 'deploy' | 'admin') =>
   mintToken(
     h,
     [
       {
         project_id: project.id,
-        environment_id: environment.id,
+        target: place.target,
         level,
       },
     ],
@@ -44,20 +46,17 @@ before(async () => {
   projectA = await createProject(h, 'alpha')
   projectB = await createProject(h, 'beta')
   envA = {
-    id: projectA.default_environment_id,
+    id: (await createPreview(h, 'alpha', 'stage')).id,
+    target: 'previews',
   }
   envB = {
-    id: projectB.default_environment_id,
+    id: (await createPreview(h, 'beta', 'stage')).id,
+    target: 'previews',
   }
-  protectedEnv = await createEnvironment(
-    h,
-    'alpha',
-    'prod',
-    {
-      protected: true,
-    },
-    true,
-  )
+  production = {
+    id: productionId(h, projectA.id),
+    target: 'production',
+  }
 })
 
 after(async () => {
@@ -68,7 +67,7 @@ after(async () => {
 const sessionBearer = (cookie: string) =>
   decodeURIComponent(/session_token=([^;]+)/.exec(cookie)![1]!)
 
-const serviceBody = (name: string) => ({
+const appBody = (name: string) => ({
   name,
   kind: 'web',
   source: {
@@ -86,27 +85,28 @@ const serviceBody = (name: string) => ({
 describe('levels and scopes', () => {
   test('read can list but cannot create or deploy', async () => {
     const token = await tokenFor(envA, projectA, 'read')
-    const list = await h.call('GET', `/v1/environments/${envA.id}/services`, {
+    const list = await h.call('GET', placed(h, envA.id, `apps`), {
       token,
     })
 
     assert.equal(list.status, 200)
-    const create = await h.call('POST', `/v1/environments/${envA.id}/services`, {
+    const create = await h.call('POST', placed(h, envA.id, `apps`), {
       token,
-      body: serviceBody('web'),
+      body: appBody('web'),
     })
 
     assert.equal(create.status, 403)
     assert.equal(create.body.error.code, 'FORBIDDEN_SCOPE')
     assert.deepEqual(create.body.error.details.required, {
       project_id: projectA.id,
-      environment_id: envA.id,
+      target: 'previews',
+      preview_id: envA.id,
       level: 'admin',
     })
   })
 
-  test('deploy can change a service but cannot create one', async () => {
-    const svc = await createService(h, envA.id, {
+  test('deploy can change an app but cannot create one', async () => {
+    const svc = await createApp(h, envA.id, {
       name: 'api',
       ref,
       ports: [
@@ -116,14 +116,14 @@ describe('levels and scopes', () => {
       ],
     })
     const token = await tokenFor(envA, projectA, 'deploy')
-    const create = await h.call('POST', `/v1/environments/${envA.id}/services`, {
+    const create = await h.call('POST', placed(h, envA.id, `apps`), {
       token,
-      body: serviceBody('other'),
+      body: appBody('other'),
     })
 
     assert.equal(create.status, 403)
     assert.equal(create.body.error.details.required.level, 'admin')
-    const patch = await h.call('PATCH', `/v1/services/${svc.id}`, {
+    const patch = await h.call('PATCH', `/v1/apps/${svc.id}`, {
       token,
       body: {
         drain_timeout_s: 12,
@@ -132,30 +132,30 @@ describe('levels and scopes', () => {
     })
 
     assert.equal(patch.status, 200)
-    const read = await h.call('GET', `/v1/services/${svc.id}?fields=drain_timeout_s`, {
+    const read = await h.call('GET', `/v1/apps/${svc.id}?fields=drain_timeout_s`, {
       token,
     })
 
     assert.equal(read.body.drain_timeout_s, 12)
-    const del = await h.call('DELETE', `/v1/services/${svc.id}`, {
+    const del = await h.call('DELETE', `/v1/apps/${svc.id}`, {
       token,
     })
 
     assert.equal(del.status, 403)
   })
 
-  test('admin on an environment can create services there', async () => {
+  test('admin on previews can create apps there', async () => {
     const token = await tokenFor(envA, projectA, 'admin')
-    const create = await h.call('POST', `/v1/environments/${envA.id}/services`, {
+    const create = await h.call('POST', placed(h, envA.id, `apps`), {
       token,
-      body: serviceBody('made-by-scoped-admin'),
+      body: appBody('made-by-scoped-admin'),
     })
 
     assert.equal(create.status, 201)
   })
 
   test('a scope on one project cannot touch another project', async () => {
-    const svcB = await createService(h, envB.id, {
+    const svcB = await createApp(h, envB.id, {
       name: 'b-web',
       ref,
       ports: [
@@ -167,10 +167,10 @@ describe('levels and scopes', () => {
     const token = await tokenFor(envA, projectA, 'admin')
 
     for (const [method, path] of [
-      ['GET', `/v1/environments/${envB.id}/services`],
-      ['GET', `/v1/services/${svcB.id}`],
-      ['PATCH', `/v1/services/${svcB.id}`],
-      ['DELETE', `/v1/services/${svcB.id}`],
+      ['GET', placed(h, envB.id, `apps`)],
+      ['GET', `/v1/apps/${svcB.id}`],
+      ['PATCH', `/v1/apps/${svcB.id}`],
+      ['DELETE', `/v1/apps/${svcB.id}`],
     ] as const) {
       const reply = await h.call(method, path, {
         token,
@@ -187,31 +187,31 @@ describe('levels and scopes', () => {
     }
   })
 
-  test('a scope on one environment of a project cannot touch a sibling environment', async () => {
+  test('a scope on previews cannot touch production', async () => {
     const token = await tokenFor(envA, projectA, 'admin')
-    const reply = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
+    const reply = await h.call('GET', placed(h, production.id, `apps`), {
       token,
     })
 
     assert.equal(reply.status, 403)
   })
 
-  test('a project-wide scope covers every environment of that project', async () => {
+  test('a project-wide scope covers production and previews', async () => {
     const token = await mintToken(h, [
       {
         project_id: projectA.id,
-        environment_id: '*',
+        target: '*',
         level: 'read',
       },
     ])
-    const reply = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
+    const reply = await h.call('GET', placed(h, production.id, `apps`), {
       token,
     })
 
     assert.equal(reply.status, 200)
   })
 
-  test('instance routes need admin on every project and environment', async () => {
+  test('instance routes need admin on every project', async () => {
     const token = await tokenFor(envA, projectA, 'admin')
     const reply = await h.call('POST', '/v1/projects', {
       token,
@@ -224,15 +224,15 @@ describe('levels and scopes', () => {
     assert.equal(reply.body.error.code, 'FORBIDDEN_SCOPE')
     assert.deepEqual(reply.body.error.details.required, {
       project_id: '*',
-      environment_id: '*',
+      target: '*',
       level: 'admin',
     })
-    const stations = await h.call('GET', '/v1/staged-changes', {
+    const servers = await h.call('GET', '/v1/servers', {
       token,
     })
 
-    assert.equal(stations.status, 403)
-    assert.equal(stations.body.error.code, 'INSTANCE_SCOPE_REQUIRED')
+    assert.equal(servers.status, 403)
+    assert.equal(servers.body.error.code, 'INSTANCE_SCOPE_REQUIRED')
   })
 
   test('minting a token beyond the caller admin scopes is refused', async () => {
@@ -244,7 +244,7 @@ describe('levels and scopes', () => {
         scopes: [
           {
             project_id: projectA.id,
-            environment_id: envA.id,
+            target: 'previews',
             level: 'deploy',
           },
         ],
@@ -259,7 +259,7 @@ describe('levels and scopes', () => {
         scopes: [
           {
             project_id: projectB.id,
-            environment_id: envB.id,
+            target: 'previews',
             level: 'read',
           },
         ],
@@ -277,7 +277,7 @@ describe('levels and scopes', () => {
         scopes: [
           {
             project_id: projectA.id,
-            environment_id: envA.id,
+            target: 'previews',
             level: 'read',
           },
         ],
@@ -297,7 +297,7 @@ describe('levels and scopes', () => {
     })
 
     assert.equal(byToken.status, 403)
-    assert.equal(byToken.body.error.code, 'PROTECTED_ENVIRONMENT')
+    assert.equal(byToken.body.error.code, 'HUMAN_REQUIRED')
     assert.equal(byToken.body.error.details.reason, 'human_required')
     const byHuman = await h.call('POST', '/v1/tokens', {
       cookie: h.admin.cookie,
@@ -316,7 +316,7 @@ describe('levels and scopes', () => {
     const scopes = [
       {
         project_id: projectA.id,
-        environment_id: envA.id,
+        target: 'previews',
         level: 'read',
       },
     ]
@@ -388,7 +388,7 @@ describe('levels and scopes', () => {
         scopes: [
           {
             project_id: projectA.id,
-            environment_id: envA.id,
+            target: 'previews',
             level: 'read',
           },
         ],
@@ -423,7 +423,7 @@ describe('levels and scopes', () => {
         scopes: [
           {
             project_id: projectB.id,
-            environment_id: envB.id,
+            target: 'previews',
             level: 'read',
           },
         ],
@@ -436,7 +436,7 @@ describe('levels and scopes', () => {
         scopes: [
           {
             project_id: projectA.id,
-            environment_id: envA.id,
+            target: 'previews',
             level: 'read',
           },
         ],
@@ -464,145 +464,180 @@ describe('levels and scopes', () => {
     assert.deepEqual(me.body.scopes, [
       {
         project_id: '*',
-        environment_id: '*',
+        target: '*',
         level: 'admin',
       },
     ])
   })
 })
 
-describe('protected environments', () => {
+describe('production is always protected', () => {
   const stage = async (name: string) => {
-    const reply = await h.call('POST', `/v1/environments/${protectedEnv.id}/services`, {
+    const reply = await h.call('POST', placed(h, production.id, `apps`), {
       token: h.admin.token,
-      body: serviceBody(name),
+      body: appBody(name),
     })
 
     return reply
   }
 
-  test('a token mutation is staged and nothing applies', async () => {
-    const reply = await stage('staged-one')
+  test('a token mutation waits for approval and nothing applies', async () => {
+    const reply = await stage('waiting-one')
 
     assert.equal(reply.status, 202)
-    assert.equal(reply.body.status, 'staged')
-    assert.equal(reply.body.environment_id, protectedEnv.id)
-    const services = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
+    assert.equal(reply.body.status, 'waiting')
+    assert.equal(reply.body.requester, h.admin.userId)
+    assert.equal(reply.body.project_id, projectA.id)
+    const apps = await h.call('GET', placed(h, production.id, `apps`), {
       token: h.admin.token,
     })
 
-    assert.deepEqual(services.body.items, [])
-    const listed = await h.call('GET', `/v1/environments/${protectedEnv.id}/staged-changes`, {
+    assert.deepEqual(apps.body.items, [])
+    const listed = await h.call('GET', `/v1/approvals?project=${projectA.id}`, {
       token: h.admin.token,
     })
 
     assert.ok(listed.body.items.some((s: any) => s.id === reply.body.id))
   })
 
-  test('a token cannot accept or reject, even a personal one', async () => {
-    const staged = await stage('staged-two')
+  test('a token cannot approve or reject, even a personal one', async () => {
+    const waiting = await stage('waiting-two')
 
-    for (const action of ['accept', 'reject']) {
-      const reply = await h.call('POST', `/v1/staged-changes/${staged.body.id}/${action}`, {
+    for (const decision of ['approve', 'reject']) {
+      const reply = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
         token: h.admin.token,
+        body: {
+          decision,
+        },
       })
 
-      assert.equal(reply.status, 403, action)
-      assert.equal(reply.body.error.code, 'PROTECTED_ENVIRONMENT')
+      assert.equal(reply.status, 403, decision)
+      assert.equal(reply.body.error.code, 'HUMAN_REQUIRED')
       assert.equal(reply.body.error.details.reason, 'human_required')
     }
 
-    const scoped = await tokenFor(protectedEnv, projectA, 'admin')
-    const reply = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, {
+    const scoped = await tokenFor(production, projectA, 'admin')
+    const reply = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
+      body: {
+        decision: 'approve',
+      },
       token: scoped,
     })
 
-    assert.equal(reply.body.error.code, 'PROTECTED_ENVIRONMENT')
+    assert.equal(reply.body.error.code, 'HUMAN_REQUIRED')
   })
 
-  test('a human accepts the staged change and it applies', async () => {
-    const staged = await stage('staged-three')
-    const accepted = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, {
+  test('a human approves the approval and it applies', async () => {
+    const waiting = await stage('waiting-three')
+    const approved = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
+      body: {
+        decision: 'approve',
+      },
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
 
-    assert.equal(accepted.status, 200)
-    assert.equal(accepted.body.status, 'accepted')
-    assert.equal(accepted.body.accepted_by.type, 'user')
-    const services = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
+    assert.equal(approved.status, 200)
+    assert.equal(approved.body.status, 'approved')
+    assert.equal(approved.body.decided_by.type, 'user')
+    assert.equal(approved.body.self_approved, true)
+    const apps = await h.call('GET', placed(h, production.id, `apps`), {
       token: h.admin.token,
     })
 
     assert.deepEqual(
-      services.body.items.map((s: any) => s.name),
-      ['staged-three'],
+      apps.body.items.map((s: any) => s.name),
+      ['waiting-three'],
     )
   })
 
-  test('a human rejects a staged change and it never applies', async () => {
-    const staged = await stage('staged-four')
-    const rejected = await h.call('POST', `/v1/staged-changes/${staged.body.id}/reject`, {
+  test('a human rejects an approval and it never applies', async () => {
+    const waiting = await stage('waiting-four')
+    const rejected = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
       cookie: h.admin.cookie,
       origin: localOrigin,
       body: {
+        decision: 'reject',
         reason: 'not now',
       },
     })
 
     assert.equal(rejected.status, 200)
     assert.equal(rejected.body.status, 'rejected')
-    const again = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, {
+    assert.equal(rejected.body.reason, 'not now')
+    const again = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
+      body: {
+        decision: 'approve',
+      },
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
 
     assert.ok(again.status >= 400)
-    const services = await h.call('GET', `/v1/environments/${protectedEnv.id}/services`, {
+    const apps = await h.call('GET', placed(h, production.id, `apps`), {
       token: h.admin.token,
     })
 
-    assert.ok(!services.body.items.some((s: any) => s.name === 'staged-four'))
+    assert.ok(!apps.body.items.some((s: any) => s.name === 'waiting-four'))
   })
 
-  test('a human mutation in a protected environment is staged too, with the human as actor', async () => {
-    const reply = await h.call('POST', `/v1/environments/${protectedEnv.id}/services`, {
+  test('another admin approves what an admin asked for; the requester may still reject it', async () => {
+    const waiting = await stage('waiting-five')
+    const decide = (decision: string) =>
+      h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
+        cookie: h.admin.cookie,
+        origin: localOrigin,
+        body: {
+          decision,
+        },
+      })
+
+    h.db
+      .insert(member)
+      .values({
+        user_id: 'usr_other_admin',
+        role: 'admin',
+        created_at: new Date(),
+      })
+      .run()
+
+    try {
+      const listed = await h.call('GET', `/v1/approvals/${waiting.body.id}`, {
+        token: h.admin.token,
+      })
+
+      assert.equal(listed.body.requester_decides, false)
+      const refused = await decide('approve')
+
+      assert.equal(refused.status, 403, refused.text)
+      assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
+      assert.equal(refused.body.error.details.reason, 'requester')
+      const withdrawn = await decide('reject')
+
+      assert.equal(withdrawn.status, 200, withdrawn.text)
+      assert.equal(withdrawn.body.status, 'rejected')
+      assert.equal(withdrawn.body.self_approved, false)
+    } finally {
+      h.db.delete(member).where(eq(member.user_id, 'usr_other_admin')).run()
+    }
+  })
+
+  test('a human mutation in production waits for approval too, with the human as requester', async () => {
+    const reply = await h.call('POST', placed(h, production.id, `apps`), {
       cookie: h.admin.cookie,
       origin: localOrigin,
-      body: serviceBody('human-staged'),
+      body: appBody('human-waiting'),
     })
 
     assert.equal(reply.status, 202)
-    assert.equal(reply.body.status, 'staged')
-    assert.equal(reply.body.actor.type, 'user')
+    assert.equal(reply.body.status, 'waiting')
+    assert.equal(reply.body.requested_by.type, 'user')
   })
 
-  test('tokens cannot create a protected environment or lift protection', async () => {
-    const create = await h.call('POST', '/v1/projects/alpha/environments', {
+  test('a preview applies a token mutation immediately', async () => {
+    const reply = await h.call('POST', placed(h, envB.id, `apps`), {
       token: h.admin.token,
-      body: {
-        name: 'locked',
-        protected: true,
-      },
-    })
-
-    assert.equal(create.status, 403)
-    assert.equal(create.body.error.code, 'PROTECTED_ENVIRONMENT')
-    const lift = await h.call('PATCH', `/v1/environments/${protectedEnv.id}`, {
-      token: h.admin.token,
-      body: {
-        protected: false,
-      },
-    })
-
-    assert.equal(lift.status, 403)
-    assert.equal(lift.body.error.code, 'PROTECTED_ENVIRONMENT')
-  })
-
-  test('a non-protected environment applies a token mutation immediately', async () => {
-    const reply = await h.call('POST', `/v1/environments/${envB.id}/services`, {
-      token: h.admin.token,
-      body: serviceBody('direct'),
+      body: appBody('direct'),
     })
 
     assert.equal(reply.status, 201)
@@ -611,9 +646,9 @@ describe('protected environments', () => {
 
 describe('origin checks and hosts', () => {
   test('a cookie mutation without an Origin header is refused', async () => {
-    const reply = await h.call('POST', `/v1/environments/${envB.id}/services`, {
+    const reply = await h.call('POST', placed(h, envB.id, `apps`), {
       cookie: h.admin.cookie,
-      body: serviceBody('no-origin'),
+      body: appBody('no-origin'),
     })
 
     assert.equal(reply.status, 401)
@@ -621,10 +656,10 @@ describe('origin checks and hosts', () => {
   })
 
   test('a cookie mutation from an untrusted Origin is refused', async () => {
-    const reply = await h.call('POST', `/v1/environments/${envB.id}/services`, {
+    const reply = await h.call('POST', placed(h, envB.id, `apps`), {
       cookie: h.admin.cookie,
       origin: 'https://evil.example',
-      body: serviceBody('evil-origin'),
+      body: appBody('evil-origin'),
     })
 
     assert.equal(reply.status, 401)
@@ -632,10 +667,10 @@ describe('origin checks and hosts', () => {
   })
 
   test('a cookie mutation from the trusted Origin works and the actor is a user', async () => {
-    const reply = await h.call('POST', `/v1/environments/${envB.id}/services`, {
+    const reply = await h.call('POST', placed(h, envB.id, `apps`), {
       cookie: h.admin.cookie,
       origin: localOrigin,
-      body: serviceBody('good-origin'),
+      body: appBody('good-origin'),
     })
 
     assert.equal(reply.status, 201)

@@ -7,6 +7,14 @@ import { fail } from './errors.ts'
 export const defaultLimit = 50
 export const maxLimit = 200
 
+export const previewQuery = {
+  preview: t.Optional(
+    t.String({
+      description: 'A preview by id or name; production when omitted',
+    }),
+  ),
+}
+
 export const getQuery = {
   fields: t.Optional(
     t.String({

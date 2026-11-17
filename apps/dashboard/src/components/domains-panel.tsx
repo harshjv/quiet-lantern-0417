@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { api, idempotency, send, type Domain } from '@/lib/api'
 import { seedItem } from '@/lib/cache'
-import { commands, type ServiceScope } from '@/lib/commands'
+import { commands, type AppScope } from '@/lib/commands'
 import { planFix } from '@/lib/fixes'
 import { entityIcon } from '@/lib/icons'
 import { domainIngress, domainKind, domainStatus, sentence } from '@/lib/labels'
@@ -42,22 +42,22 @@ const hostnameModes = [
   {
     value: 'custom',
     title: domainKind.custom,
-    hint: 'Point a DNS record you own at the station.',
+    hint: 'Point a DNS record you own at the server.',
   },
 ] as const
 
 function AddDomain({
-  service,
+  app,
   scope,
   open,
   onOpenChange,
 }: {
-  service: string
-  scope: ServiceScope
+  app: string
+  scope: AppScope
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const ports = useQuery(portsQuery(service))
+  const ports = useQuery(portsQuery(app))
   const http = (ports.data?.items ?? []).filter((p) => p.protocol === 'http')
   const [port, setPort] = useState<string>('')
   const [mode, setMode] = useState<'generated' | 'custom'>('generated')
@@ -81,12 +81,12 @@ function AddDomain({
             idempotency(),
           ),
       ),
-    seed: (domain) => [seedItem(domainsQuery(service), domain)],
+    seed: (domain) => [seedItem(domainsQuery(app), domain)],
     invalidate: ['domains'],
-    staged: () =>
+    waiting: () =>
       mode === 'custom'
-        ? `Add ${hostname.trim()} to ${scope.service}`
-        : `Add a generated domain to ${scope.service}`,
+        ? `Add ${hostname.trim()} to ${scope.app}`
+        : `Add a generated domain to ${scope.app}`,
     success: (body) => ({
       title: `${body.hostname} added`,
       description:
@@ -104,7 +104,7 @@ function AddDomain({
       title="Add a domain"
       description={
         <>
-          The <Term name="gateway" /> routes the hostname to an HTTP port of {scope.service} and
+          The <Term name="gateway" /> routes the hostname to an HTTP port of {scope.app} and
           requests a certificate.
         </>
       }
@@ -118,7 +118,7 @@ function AddDomain({
       {ports.isError && <ErrorState error={ports.error} title="Couldn’t load ports" />}
       {ports.data && http.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {scope.service} has no HTTP port, so it can’t have a domain.
+          {scope.app} has no HTTP port, so it can’t have a domain.
         </p>
       ) : (
         <>
@@ -172,7 +172,7 @@ function RemoveDomain({ domain }: { domain: Domain }) {
           .delete(undefined, idempotency()),
       ),
     invalidate: ['domains'],
-    staged: () => `Remove ${domain.hostname}`,
+    waiting: () => `Remove ${domain.hostname}`,
     success: () => `${domain.hostname} removed`,
   })
 
@@ -188,9 +188,9 @@ function RemoveDomain({ domain }: { domain: Domain }) {
   )
 }
 
-export function DomainsPanel({ service, scope }: { service: string; scope: ServiceScope }) {
-  const { data: domains } = useSuspenseQuery(domainsQuery(service))
-  const { data: ports } = useSuspenseQuery(portsQuery(service))
+export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
+  const { data: domains } = useSuspenseQuery(domainsQuery(app))
+  const { data: ports } = useSuspenseQuery(portsQuery(app))
   const [adding, setAdding] = useState(false)
   const portOf = new Map(ports.items.map((p) => [p.id, p.port]))
   const noHttp = !ports.items.some((p) => p.protocol === 'http')
@@ -201,7 +201,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
       title="Domains"
       description={
         <>
-          Hostnames the <Term name="gateway" /> serves over HTTPS for {scope.service}.
+          Hostnames the <Term name="gateway" /> serves over HTTPS for {scope.app}.
         </>
       }
       actions={
@@ -218,8 +218,8 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
           title="No domains yet"
           description={
             noHttp
-              ? `Domains route to HTTP ports, and ${scope.service} has none. Switch a port to HTTP above to add one.`
-              : `A domain serves ${scope.service} over HTTPS on a hostname you own, or on a generated one.`
+              ? `Domains route to HTTP ports, and ${scope.app} has none. Switch a port to HTTP above to add one.`
+              : `A domain serves ${scope.app} over HTTPS on a hostname you own, or on a generated one.`
           }
           action={
             !noHttp && (
@@ -252,9 +252,9 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
                 </span>
                 <Badge variant="outline">{domainKind[domain.kind]}</Badge>
                 <Badge variant="outline">{domainIngress[domain.ingress]}</Badge>
-                {portOf.get(domain.service_port_id) && (
+                {portOf.get(domain.app_port_id) && (
                   <span className="text-xs text-muted-foreground">
-                    Port {portOf.get(domain.service_port_id)}
+                    Port {portOf.get(domain.app_port_id)}
                   </span>
                 )}
                 <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -279,9 +279,9 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
                         plan={planFix(fix, {
                           ...scope,
                           subject: {
-                            kind: 'service',
-                            id: service,
-                            name: scope.service,
+                            kind: 'app',
+                            id: app,
+                            name: scope.app,
                           },
                         })}
                         primary={false}
@@ -310,9 +310,7 @@ export function DomainsPanel({ service, scope }: { service: string; scope: Servi
           ))}
         </ul>
       )}
-      {adding && (
-        <AddDomain service={service} scope={scope} open={adding} onOpenChange={setAdding} />
-      )}
+      {adding && <AddDomain app={app} scope={scope} open={adding} onOpenChange={setAdding} />}
     </Subsection>
   )
 }

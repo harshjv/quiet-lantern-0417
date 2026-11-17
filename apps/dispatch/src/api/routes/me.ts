@@ -1,4 +1,4 @@
-import { Type } from '@sinclair/typebox'
+import { Type, type Static } from '@sinclair/typebox'
 
 import type { Kit } from '../kit.ts'
 import { Actor, replies, Scope } from '../shapes.ts'
@@ -26,7 +26,7 @@ export const meRoutes = (kit: Kit) =>
         actor: principal.actor,
         human: principal.human,
         token_kind: principal.token_kind,
-        scopes: principal.scopes,
+        scopes: principal.scopes as Static<typeof Scope>[],
         expires_at: principal.expires_at.toISOString(),
       }
     },

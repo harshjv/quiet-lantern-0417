@@ -57,7 +57,7 @@ type streams struct {
 
 func (c *Client) OpenStream(window int, onData func(channel byte, p []byte), onCancel func()) (*Stream, error) {
 	if !c.live.Load() {
-		return nil, &StreamError{Code: protocol.ErrorCodeStationOffline, Explanation: "not connected to Dispatch"}
+		return nil, &StreamError{Code: protocol.ErrorCodeServerOffline, Explanation: "not connected to Dispatch"}
 	}
 	c.st.mu.Lock()
 	defer c.st.mu.Unlock()

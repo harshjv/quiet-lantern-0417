@@ -1,15 +1,15 @@
-import { useNavigate } from '@tanstack/react-router'
 import { Loader2, Wrench } from 'lucide-react'
 
 import { Code, Command } from '@/components/code'
 import { CopyButton } from '@/components/copy'
 import { deployCopy, useDeploy, useRollback } from '@/components/deploy-actions'
-import { useSandboxPower } from '@/components/sandbox-actions'
+import { useMachinePower } from '@/components/sandbox-actions'
 import { Button } from '@/components/ui/button'
 import { api, idempotency, send, type ApiFailure } from '@/lib/api'
 import { errorFix, planFix, type Fix, type FixContext, type FixPlan, type Run } from '@/lib/fixes'
 import { entityIcon } from '@/lib/icons'
 import { useApiMutation } from '@/lib/mutation'
+import { go, places } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 type Pressable = {
@@ -44,15 +44,15 @@ type RunOf<T extends Run['tool']> = Extract<Run, { tool: T }>
 function DeployRun({ run, ...props }: Pressable & { run: RunOf<'deploy'> }) {
   const mutation = useDeploy(
     {
-      service: run.service,
+      app: run.app,
       trigger: 'manual',
     },
     () => deployCopy(run.name),
     () =>
       send(
         api.v1
-          .services({
-            service: run.service,
+          .apps({
+            app: run.app,
           })
           .deployments.post({}, idempotency()),
       ),
@@ -64,7 +64,7 @@ function DeployRun({ run, ...props }: Pressable & { run: RunOf<'deploy'> }) {
 function RollbackRun({ run, ...props }: Pressable & { run: RunOf<'rollback'> }) {
   const { mutation, confirm } = useRollback(
     {
-      id: run.service,
+      id: run.app,
       name: run.name,
     },
     {
@@ -81,46 +81,37 @@ function RollbackRun({ run, ...props }: Pressable & { run: RunOf<'rollback'> }) 
   )
 }
 
-const serviceCopy = {
-  start_service: (name: string) => `${name} is starting`,
-  update_service: (name: string) => `${name} updated`,
+const appCopy = {
+  start_app: (name: string) => `${name} is starting`,
+  update_app: (name: string) => `${name} updated`,
 } as const
 
-function ServiceRun({
-  run,
-  ...props
-}: Pressable & { run: RunOf<'start_service' | 'update_service'> }) {
-  const navigate = useNavigate()
+function AppRun({ run, ...props }: Pressable & { run: RunOf<'start_app' | 'update_app'> }) {
   const mutation = useApiMutation({
     mutationFn: () => {
-      const target = api.v1.services({
-        service: run.service,
+      const target = api.v1.apps({
+        app: run.app,
       })
 
       return send(
-        run.tool === 'start_service'
+        run.tool === 'start_app'
           ? target.start.post(undefined, idempotency())
           : target.patch(run.body, idempotency()),
       )
     },
-    invalidate: ['services', 'deployments', 'networking'],
-    staged: () => props.label,
+    invalidate: ['apps', 'deployments', 'networking'],
+    waiting: () => props.label,
     success: (body) => ({
-      title: serviceCopy[run.tool](run.name),
+      title: appCopy[run.tool](run.name),
       description: body.deployments[0]
         ? `Deployment #${body.deployments[0].number} is rolling it out.`
         : undefined,
     }),
     onSuccess: (result) => {
-      const deployment = !result.staged && result.body.deployments[0]
+      const deployment = !result.waiting && result.body.deployments[0]
 
       if (deployment) {
-        void navigate({
-          to: '/deployments/$deployment',
-          params: {
-            deployment: deployment.id,
-          },
-        })
+        go(places.deployment(deployment.id))
       }
     },
     failure: () => lower(props.label),
@@ -129,10 +120,10 @@ function ServiceRun({
   return <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate()} />
 }
 
-function SandboxRun({ run, ...props }: Pressable & { run: RunOf<'start_sandbox'> }) {
-  const mutation = useSandboxPower(
+function MachineRun({ run, ...props }: Pressable & { run: RunOf<'start_machine'> }) {
+  const mutation = useMachinePower(
     {
-      id: run.sandbox,
+      id: run.machine,
       name: run.name,
     },
     'start',
@@ -150,11 +141,11 @@ function RunButton({ run, ...props }: Pressable & { run: Run }) {
     return <RollbackRun {...props} run={run} />
   }
 
-  if (run.tool === 'start_sandbox') {
-    return <SandboxRun {...props} run={run} />
+  if (run.tool === 'start_machine') {
+    return <MachineRun {...props} run={run} />
   }
 
-  return <ServiceRun {...props} run={run} />
+  return <AppRun {...props} run={run} />
 }
 
 function AskAgent({ plan }: { plan: FixPlan }) {

@@ -7,16 +7,16 @@ export const volumeCommands = (program: Program) => {
   group(program, 'volumes')
     .command('backup')
     .description(
-      'Back up a volume to the volume_backup.target setting or a station directory; --wait polls its backups until this one ends',
+      'Back up a volume to the volume_backup.target setting or a server directory; --wait polls its backups until this one ends',
     )
     .argument('<id>', 'volume id')
     .option(
       '--to <path>',
-      'a directory under the station backup root (default: the volume_backup.target setting, which may be an S3 bucket)',
+      'a directory under the server backup root (default: the volume_backup.target setting, which may be an S3 bucket)',
     )
     .option(
       '--live',
-      'copy while the service runs (quiesce false); the archive is marked consistent false',
+      'copy while the app runs (quiesce false); the archive is marked consistent false',
     )
     .option('--wait', 'wait until the backup is complete or failed')
     .option('--timeout <duration>', 'with --wait, give up after this long (default 10m)', seconds)

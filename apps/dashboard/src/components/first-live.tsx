@@ -2,18 +2,18 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowUpRight, CircleCheck } from 'lucide-react'
 
 import { Code } from '@/components/code'
-import { ServiceStatus } from '@/components/status'
+import { AppStatus } from '@/components/status'
 import { Button } from '@/components/ui/button'
-import type { Service } from '@/lib/api'
+import type { App } from '@/lib/api'
 import { liveText } from '@/lib/completion'
 import { domainsQuery } from '@/lib/queries'
 import { tonePanel } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
-export function FirstLive({ service }: { service: Service }) {
-  const domains = useQuery(domainsQuery(service.id))
+export function FirstLive({ app }: { app: App }) {
+  const domains = useQuery(domainsQuery(app.id))
   const domain = domains.data?.items.find((d) => d.status === 'active')
-  const address = domain?.hostname ?? `${service.name}.internal`
+  const address = domain?.hostname ?? `${app.name}.internal`
 
   return (
     <div
@@ -26,9 +26,9 @@ export function FirstLive({ service }: { service: Service }) {
     >
       <span className="flex items-center gap-2 font-medium">
         <CircleCheck className="size-4 shrink-0" aria-hidden />
-        {liveText(service.name)}
+        {liveText(app.name)}
       </span>
-      <ServiceStatus status={service.status} />
+      <AppStatus status={app.status} />
       <span data-moment="address" className="flex items-center gap-2 sm:ml-auto">
         <Code copy={address}>{address}</Code>
         {domain && (

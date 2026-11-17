@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useSuspenseQueries } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import { Cable, CircleAlert, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
@@ -12,6 +11,7 @@ import { CheckboxField, Field } from '@/components/field'
 import { DialogForm, dialogScroll, FormDialog, FormError } from '@/components/form-dialog'
 import { EmptyState, ErrorState, Subsection } from '@/components/page'
 import { Panel } from '@/components/panel'
+import { PlaceLink } from '@/components/place-link'
 import { Term } from '@/components/term'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -37,36 +37,31 @@ import {
   ApiFailure,
   idempotency,
   send,
+  type App,
+  type AppPort,
   type Domain,
   type PortAllocation,
-  type Service,
-  type ServicePort,
 } from '@/lib/api'
+import { waitingText, waitingTitle } from '@/lib/approval'
 import { editItems } from '@/lib/cache'
-import { commands, type ServiceScope } from '@/lib/commands'
+import { commands, type AppScope } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
 import { useInvalidate } from '@/lib/invalidate'
-import { serviceKind } from '@/lib/labels'
+import { appKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import {
-  allocationsQuery,
-  domainsQuery,
-  portsQuery,
-  seedService,
-  stationQuery,
-} from '@/lib/queries'
-import { stagedText, stagedTitle } from '@/lib/staged'
+import { places } from '@/lib/nav'
+import { allocationsQuery, domainsQuery, portsQuery, seedApp, stationQuery } from '@/lib/queries'
 import { toneText, warningAlert } from '@/lib/tone'
-import { useEnvironmentTrail } from '@/lib/use-trail'
+import { useTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
-type Protocol = ServicePort['protocol']
+type Protocol = AppPort['protocol']
 
 type PortSpec = { port: number; protocol: Protocol; grpc: boolean }
 
 type Dependent = { entity: string; id: string; hostname?: string; host_port?: number }
 
-const specOf = (p: ServicePort): PortSpec => ({
+const specOf = (p: AppPort): PortSpec => ({
   port: p.port,
   protocol: p.protocol,
   grpc: p.grpc,
@@ -74,20 +69,20 @@ const specOf = (p: ServicePort): PortSpec => ({
 
 const protocolHelp: Record<Protocol, string> = {
   http: 'Reachable through a domain with HTTPS.',
-  tcp: 'Reachable on a public port of the station, for databases and other protocols.',
+  tcp: 'Reachable on a public port of the server, for databases and other protocols.',
 }
 
-type PortsChange = { ports: PortSpec[]; done: string; staged: string }
+type PortsChange = { ports: PortSpec[]; done: string; waiting: string }
 
 const portsFailed = 'Couldn’t save the ports'
 
-function usePortsChange(service: Service) {
+function usePortsChange(app: App) {
   return useApiMutation({
     mutationFn: (input: PortsChange) =>
       send(
         api.v1
-          .services({
-            service: service.id,
+          .apps({
+            app: app.id,
           })
           .patch(
             {
@@ -97,7 +92,7 @@ function usePortsChange(service: Service) {
           ),
       ),
     optimistic: (input) => [
-      editItems(portsQuery(service.id), (ports) =>
+      editItems(portsQuery(app.id), (ports) =>
         ports.map((p) => {
           const spec = input.ports.find((next) => next.port === p.port)
 
@@ -111,9 +106,9 @@ function usePortsChange(service: Service) {
         }),
       ),
     ],
-    seed: seedService,
+    seed: seedApp,
     invalidate: ['networking'],
-    staged: (input) => input.staged,
+    waiting: (input) => input.waiting,
     success: (body, input) => {
       const started = body.deployments[0]
 
@@ -229,19 +224,19 @@ function GrpcChoice({
 }
 
 function AddPort({
-  service,
+  app,
   ports,
   allocations,
   open,
   onOpenChange,
 }: {
-  service: Service
-  ports: ServicePort[]
+  app: App
+  ports: AppPort[]
   allocations: PortAllocation[]
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const change = usePortsChange(service)
+  const change = usePortsChange(app)
   const [port, setPort] = useState('')
   const [protocol, setProtocol] = useState<Protocol>('http')
   const [grpc, setGrpc] = useState(false)
@@ -267,7 +262,7 @@ function AddPort({
           },
         ],
         done: `Port ${number} added`,
-        staged: `Add port ${number} to ${service.name}`,
+        waiting: `Add port ${number} to ${app.name}`,
       },
       {
         onSuccess: () => onOpenChange(false),
@@ -280,7 +275,7 @@ function AddPort({
       open={open}
       onOpenChange={onOpenChange}
       title="Add a port"
-      description={`Adding a port deploys ${service.name}.`}
+      description={`Adding a port deploys ${app.name}.`}
       error={change.isError && <FailureNotice error={change.error} allocations={allocations} />}
       submitLabel="Add port"
       pending={change.isPending}
@@ -302,7 +297,7 @@ function AddPort({
         />
         {taken && (
           <FormError id="port-number-taken">
-            {service.name} already has port {port}. Edit that port instead.
+            {app.name} already has port {port}. Edit that port instead.
           </FormError>
         )}
       </Field>
@@ -313,21 +308,21 @@ function AddPort({
 }
 
 function EditPort({
-  service,
+  app,
   ports,
   allocations,
   target,
   initial,
   onClose,
 }: {
-  service: Service
-  ports: ServicePort[]
+  app: App
+  ports: AppPort[]
   allocations: PortAllocation[]
-  target: ServicePort
+  target: AppPort
   initial: Protocol
   onClose: () => void
 }) {
-  const change = usePortsChange(service)
+  const change = usePortsChange(app)
   const [protocol, setProtocol] = useState<Protocol>(initial)
   const [grpc, setGrpc] = useState(target.grpc)
   const unchanged = protocol === target.protocol && grpc === target.grpc
@@ -349,7 +344,7 @@ function EditPort({
             : specOf(p),
         ),
         done: what,
-        staged: `Change port ${target.port} of ${service.name}`,
+        waiting: `Change port ${target.port} of ${app.name}`,
       },
       {
         onSuccess: onClose,
@@ -362,7 +357,7 @@ function EditPort({
       open
       onOpenChange={(next) => !next && onClose()}
       title={`Edit port ${target.port}`}
-      description={`Saving deploys ${service.name}. You can’t change the protocol while a domain or public TCP port uses this port.`}
+      description={`Saving deploys ${app.name}. You can’t change the protocol while a domain or public TCP port uses this port.`}
       error={change.isError && <FailureNotice error={change.error} allocations={allocations} />}
       submitLabel="Save and deploy"
       pending={change.isPending}
@@ -377,23 +372,23 @@ function EditPort({
 }
 
 function RemovePort({
-  service,
+  app,
   ports,
   allocations,
   target,
 }: {
-  service: Service
-  ports: ServicePort[]
+  app: App
+  ports: AppPort[]
   allocations: PortAllocation[]
-  target: ServicePort
+  target: AppPort
 }) {
-  const change = usePortsChange(service)
+  const change = usePortsChange(app)
   const last = ports.length === 1
 
   return (
     <Confirm
       title={`Remove port ${target.port}?`}
-      description={`Removing it deploys ${service.name}. Other services that call this port lose their connection.`}
+      description={`Removing it deploys ${app.name}. Other apps that call this port lose their connection.`}
       action="Remove port"
       cancel="Keep port"
       renderError={(failure) => (
@@ -407,7 +402,7 @@ function RemovePort({
         change.mutateAsync({
           ports: ports.filter((p) => p.id !== target.id).map(specOf),
           done: `Port ${target.port} removed`,
-          staged: `Remove port ${target.port} from ${service.name}`,
+          waiting: `Remove port ${target.port} from ${app.name}`,
         })
       }
       trigger={
@@ -418,7 +413,7 @@ function RemovePort({
               : `Remove port ${target.port}`
           }
           disabled={last}
-          title={last ? 'A web service needs at least one port.' : undefined}
+          title={last ? 'A web app needs at least one port.' : undefined}
         />
       }
     />
@@ -430,12 +425,12 @@ function Reach({
   domains,
   allocations,
 }: {
-  port: ServicePort
+  port: AppPort
   domains: Domain[]
   allocations: PortAllocation[]
 }) {
   if (port.protocol === 'http') {
-    const mine = domains.filter((d) => d.service_port_id === port.id)
+    const mine = domains.filter((d) => d.app_port_id === port.id)
 
     return (
       <span className="text-xs text-muted-foreground">
@@ -444,7 +439,7 @@ function Reach({
     )
   }
 
-  const mine = allocations.filter((a) => a.service_port_id === port.id)
+  const mine = allocations.filter((a) => a.app_port_id === port.id)
 
   return (
     <span className="text-xs text-muted-foreground">
@@ -453,17 +448,17 @@ function Reach({
   )
 }
 
-type Editing = { port: ServicePort; protocol: Protocol }
+type Editing = { port: AppPort; protocol: Protocol }
 
 function PortsPart({
-  service,
+  app,
   ports,
   domains,
   allocations,
   onEdit,
 }: {
-  service: Service
-  ports: ServicePort[]
+  app: App
+  ports: AppPort[]
   domains: Domain[]
   allocations: PortAllocation[]
   onEdit: (editing: Editing) => void
@@ -482,7 +477,7 @@ function PortsPart({
     >
       <ul
         className="divide-y overflow-hidden rounded-lg border"
-        aria-label={`Ports of ${service.name}`}
+        aria-label={`Ports of ${app.name}`}
       >
         {ports.map((port) => (
           <li
@@ -508,14 +503,14 @@ function PortsPart({
               >
                 <Pencil />
               </Button>
-              <RemovePort service={service} ports={ports} allocations={allocations} target={port} />
+              <RemovePort app={app} ports={ports} allocations={allocations} target={port} />
             </span>
           </li>
         ))}
       </ul>
       {adding && (
         <AddPort
-          service={service}
+          app={app}
           ports={ports}
           allocations={allocations}
           open={adding}
@@ -526,14 +521,14 @@ function PortsPart({
   )
 }
 
-function NoPublicAddress({ station, service }: { station: { name: string }; service: string }) {
+function NoPublicAddress({ station, app }: { station: { name: string }; app: string }) {
   return (
     <Alert data-testid="no-public-address" className={warningAlert}>
       <TriangleAlert />
-      <AlertTitle>Station {station.name} has no public address</AlertTitle>
+      <AlertTitle>Server {station.name} has no public address</AlertTitle>
       <AlertDescription className="space-y-3 text-current">
         <p>
-          Domains and public TCP ports can’t reach {service} until you set one. Ports you expose now
+          Domains and public TCP ports can’t reach {app} until you set one. Ports you expose now
           keep their number.
         </p>
         <CommandBlock
@@ -541,7 +536,7 @@ function NoPublicAddress({ station, service }: { station: { name: string }; serv
           caption="Run on your computer"
           className="bg-background/70"
         />
-        <AlsoWith tool="update_station" className="justify-start" />
+        <AlsoWith tool="update_server" className="justify-start" />
       </AlertDescription>
     </Alert>
   )
@@ -562,8 +557,8 @@ function Expose({
   open,
   onOpenChange,
 }: {
-  scope: ServiceScope
-  candidates: ServicePort[]
+  scope: AppScope
+  candidates: AppPort[]
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -579,7 +574,7 @@ function Expose({
           })
           ['port-allocations'].post(undefined, idempotency()),
       ),
-    onSuccess: () => invalidate('networking', 'staged'),
+    onSuccess: () => invalidate('networking', 'approvals'),
   })
   const result = mutation.data
 
@@ -590,15 +585,15 @@ function Expose({
           <div className="space-y-4" aria-live="polite">
             <DialogHeader>
               <DialogTitle>
-                {result.staged ? stagedTitle : `Port ${chosen?.port} is public`}
+                {result.waiting ? waitingTitle : `Port ${chosen?.port} is public`}
               </DialogTitle>
               <DialogDescription>
-                {result.staged
-                  ? stagedText(`Expose port ${chosen?.port} of ${scope.service}`)
-                  : 'Clients on the internet connect to this address. The station forwards it to the container.'}
+                {result.waiting
+                  ? waitingText(`Expose port ${chosen?.port} of ${scope.app}`)
+                  : 'Clients on the internet connect to this address. The server forwards it to the container.'}
               </DialogDescription>
             </DialogHeader>
-            {result.staged ? null : result.body.address ? (
+            {result.waiting ? null : result.body.address ? (
               <div
                 className="rounded-md border bg-muted/40 px-3 py-2"
                 data-testid="exposed-address"
@@ -612,16 +607,9 @@ function Expose({
               </p>
             )}
             <DialogFooter>
-              {result.staged && (
+              {result.waiting && (
                 <Button asChild variant="outline">
-                  <Link
-                    to="/staged/$change"
-                    params={{
-                      change: result.body.id,
-                    }}
-                  >
-                    Review
-                  </Link>
+                  <PlaceLink to={places.approval(result.body.id)}>Review</PlaceLink>
                 </Button>
               )}
               <Button type="button" onClick={() => onOpenChange(false)}>
@@ -632,7 +620,7 @@ function Expose({
         ) : (
           <DialogForm
             title="Expose a TCP port"
-            description="Stationly picks a free port on the station and forwards it to the port you choose."
+            description="Stationly picks a free port on the server and forwards it to the port you choose."
             error={
               mutation.isError && (
                 <ErrorState error={mutation.error} title={`Couldn’t expose port ${chosen?.port}`} />
@@ -682,17 +670,17 @@ function RemoveExposure({
         }).delete(undefined, idempotency()),
       ),
     invalidate: ['networking'],
-    staged: () => `Remove ${label}`,
+    waiting: () => `Remove ${label}`,
     success: () => ({
       title: `${label} removed`,
-      description: 'The station stops forwarding it within a few seconds.',
+      description: 'The server stops forwarding it within a few seconds.',
     }),
   })
 
   return (
     <Confirm
       title={`Remove ${label}?`}
-      description={`Clients connected through it lose their connection${port ? `, and port ${port} stays reachable inside the environment only` : ''}. If you expose it again, it may get a different number.`}
+      description={`Clients connected through it lose their connection${port ? `, and port ${port} stays reachable inside its network only` : ''}. If you expose it again, it may get a different number.`}
       action="Remove port"
       cancel="Keep port"
       onConfirm={() => mutation.mutateAsync()}
@@ -708,15 +696,15 @@ function ExposuresPart({
   publicAddress,
   onEdit,
 }: {
-  scope: ServiceScope
-  ports: ServicePort[]
+  scope: AppScope
+  ports: AppPort[]
   allocations: PortAllocation[]
   publicAddress: string | null | undefined
   onEdit: (editing: Editing) => void
 }) {
   const [exposing, setExposing] = useState(false)
   const tcp = ports.filter((p) => p.protocol === 'tcp')
-  const exposed = new Set(allocations.map((a) => a.service_port_id))
+  const exposed = new Set(allocations.map((a) => a.app_port_id))
   const candidates = tcp.filter((p) => !exposed.has(p.id))
   const portOf = new Map(ports.map((p) => [p.id, p]))
   const http = ports.filter((p) => p.protocol === 'http')
@@ -724,7 +712,7 @@ function ExposuresPart({
   return (
     <Subsection
       title={<Term name="publicTcpPort">Public TCP ports</Term>}
-      description={`TCP from the internet on a port of ${publicAddress ?? 'the station'}, for databases and other protocols.`}
+      description={`TCP from the internet on a port of ${publicAddress ?? 'the server'}, for databases and other protocols.`}
       actions={
         tcp.length > 0 &&
         allocations.length > 0 && (
@@ -772,7 +760,7 @@ function ExposuresPart({
         <EmptyState
           icon={Cable}
           title="No public TCP ports yet"
-          description="A public TCP port lets clients outside the environment connect to a TCP port of this service."
+          description="A public TCP port lets clients on the internet connect to a TCP port of this app."
           action={
             <Button size="sm" onClick={() => setExposing(true)}>
               <Cable /> Expose port {candidates[0]?.port}
@@ -783,7 +771,7 @@ function ExposuresPart({
       ) : (
         <ul className="divide-y overflow-hidden rounded-lg border" aria-label="Public TCP ports">
           {allocations.map((a) => {
-            const port = portOf.get(a.service_port_id)
+            const port = portOf.get(a.app_port_id)
 
             return (
               <li
@@ -826,16 +814,16 @@ function ExposuresPart({
 }
 
 function Exposure({
-  service,
+  app,
   scope,
   publicAddress,
 }: {
-  service: Service
-  scope: ServiceScope
+  app: App
+  scope: AppScope
   publicAddress?: string | null
 }) {
   const [ports, domains, allocations] = useSuspenseQueries({
-    queries: [portsQuery(service.id), domainsQuery(service.id), allocationsQuery(service.id)],
+    queries: [portsQuery(app.id), domainsQuery(app.id), allocationsQuery(app.id)],
   })
   const [editing, setEditing] = useState<Editing | null>(null)
   const portList = ports.data.items
@@ -844,13 +832,13 @@ function Exposure({
   return (
     <>
       <PortsPart
-        service={service}
+        app={app}
         ports={portList}
         domains={domains.data.items}
         allocations={allocationList}
         onEdit={setEditing}
       />
-      <DomainsPanel service={service.id} scope={scope} />
+      <DomainsPanel app={app.id} scope={scope} />
       <ExposuresPart
         scope={scope}
         ports={portList}
@@ -861,7 +849,7 @@ function Exposure({
       {editing && (
         <EditPort
           key={`${editing.port.id}:${editing.protocol}`}
-          service={service}
+          app={app}
           ports={portList}
           allocations={allocationList}
           target={editing.port}
@@ -873,19 +861,12 @@ function Exposure({
   )
 }
 
-export function PublicNetworking({
-  service,
-  protectedEnvironment,
-}: {
-  service: Service
-  protectedEnvironment: boolean
-}) {
-  const station = useQuery(stationQuery(service.station_id))
-  const trail = useEnvironmentTrail(service.environment_id)
+export function PublicNetworking({ app, production }: { app: App; production: boolean }) {
+  const station = useQuery(stationQuery(app.server_id))
+  const trail = useTrail(app)
   const scope = {
-    project: trail.project.name,
-    environment: trail.environment.name,
-    service: service.name,
+    ...trail.scope,
+    app: app.name,
   }
 
   return (
@@ -895,24 +876,23 @@ export function PublicNetworking({
           Public networking
         </h2>
         <p className="text-sm text-muted-foreground">
-          The internet reaches {service.name} on HTTP ports through domains, and on TCP ports
-          through public TCP ports.
-          {protectedEnvironment &&
-            ' This environment is protected, so changes wait for your review.'}
+          The internet reaches {app.name} on HTTP ports through domains, and on TCP ports through
+          public TCP ports.
+          {production && ' This is production, so changes wait for an approval.'}
         </p>
       </div>
       {station.data && !station.data.public_address && (
-        <NoPublicAddress station={station.data} service={service.name} />
+        <NoPublicAddress station={station.data} app={app.name} />
       )}
-      {service.kind !== 'web' ? (
+      {app.kind !== 'web' ? (
         <EmptyState
           icon={entityIcon.domain}
           title="No public networking"
-          description={`${serviceKind[service.kind]} services have no ports, so they have no domains or public TCP ports.`}
+          description={`${appKind[app.kind]} apps have no ports, so they have no domains or public TCP ports.`}
         />
       ) : (
         <Panel rows={3} title="Couldn’t load ports">
-          <Exposure service={service} scope={scope} publicAddress={station.data?.public_address} />
+          <Exposure app={app} scope={scope} publicAddress={station.data?.public_address} />
         </Panel>
       )}
     </section>

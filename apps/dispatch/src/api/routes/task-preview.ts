@@ -4,16 +4,7 @@ import { workspaceUser } from '@stationly/protocol'
 
 import { mintToken } from '../../auth/tokens.ts'
 import { newId } from '../../db/ids.ts'
-import {
-  domain,
-  environment,
-  project,
-  run,
-  sandbox,
-  service,
-  service_port,
-  task,
-} from '../../db/schema.ts'
+import { app, app_port, domain, machine, project, run, task } from '../../db/schema.ts'
 import { asMember } from '../../sandboxes/workspace.ts'
 import { ephemeralDelivery } from '../../secrets/deliver.ts'
 import { homeOf, machineUserOf } from '../../tasks/machine.ts'
@@ -24,10 +15,10 @@ import type { Call } from '../context.ts'
 import { fail } from '../errors.ts'
 import { generatedHostname } from '../exposure.ts'
 import type { Kit } from '../kit.ts'
+import { productionOf, type TargetRow } from '../lookup.ts'
 
-import { cloneInto } from './environments.ts'
+import { createPreview } from './previews.ts'
 
-const previewTtlSeconds = 7 * 24 * 3600
 const previewTokenSeconds = 3600
 
 type RepoSource = { repo?: string; path?: string }
@@ -42,38 +33,21 @@ export const repoKey = (repository: string) =>
 const previewName = (row: TaskRow) =>
   `task-${row.branch.replace(/^task\//, '').slice(0, 40)}-${row.id.slice(-4).toLowerCase()}`
 
-const addressPreview = (
-  kit: Kit,
-  call: Call,
-  source: string,
-  target: typeof environment.$inferSelect,
-) => {
+const addressPreview = (kit: Kit, call: Call, source: string, preview: TargetRow) => {
   const { db } = kit.deps
   const changes = new ChangeSet()
-  const previewServices = db
-    .select()
-    .from(service)
-    .where(eq(service.environment_id, target.id))
-    .all()
+  const previewApps = db.select().from(app).where(eq(app.target_id, preview.id)).all()
 
-  for (const original of db
-    .select()
-    .from(service)
-    .where(eq(service.environment_id, source))
-    .all()) {
-    const copy = previewServices.find((entry) => entry.name === original.name)
-    const ports = db
-      .select()
-      .from(service_port)
-      .where(eq(service_port.service_id, original.id))
-      .all()
+  for (const original of db.select().from(app).where(eq(app.target_id, source)).all()) {
+    const copy = previewApps.find((entry) => entry.name === original.name)
+    const ports = db.select().from(app_port).where(eq(app_port.app_id, original.id)).all()
     const routed = ports.length
       ? db
           .select()
           .from(domain)
           .where(
             inArray(
-              domain.service_port_id,
+              domain.app_port_id,
               ports.map((port) => port.id),
             ),
           )
@@ -84,18 +58,14 @@ const addressPreview = (
       continue
     }
 
-    const copyPorts = db
-      .select()
-      .from(service_port)
-      .where(eq(service_port.service_id, copy.id))
-      .all()
+    const copyPorts = db.select().from(app_port).where(eq(app_port.app_id, copy.id)).all()
 
     for (const routedDomain of routed) {
-      const port = ports.find((entry) => entry.id === routedDomain.service_port_id)
+      const port = ports.find((entry) => entry.id === routedDomain.app_port_id)
       const target_port = copyPorts.find((entry) => entry.port === port?.port)
-      const hostname = generatedHostname(db, copy.name, target.name, copy.station_id)
+      const hostname = generatedHostname(db, copy.name, preview.name, copy.server_id)
       const taken = target_port
-        ? db.select().from(domain).where(eq(domain.service_port_id, target_port.id)).get()
+        ? db.select().from(domain).where(eq(domain.app_port_id, target_port.id)).get()
         : undefined
 
       if (target_port && hostname && !taken) {
@@ -112,7 +82,7 @@ const addressPreview = (
     kit.deps,
     call,
     {
-      environment: target,
+      target: preview,
       protect: false,
     },
     changes,
@@ -128,33 +98,20 @@ export const ensurePreview = (kit: Kit, call: Call, row: TaskRow) => {
   }
 
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
-  const source = db
-    .select()
-    .from(environment)
-    .where(eq(environment.id, proj.default_environment_id))
-    .get()!
-  const id = newId('environment')
+  const created = createPreview(kit, call, proj, {
+    name: previewName(row),
+    origin: {
+      type: 'task',
+      task_id: row.id,
+    },
+    expires_at: null,
+    deploy: false,
+  }).preview
 
-  db.insert(environment)
-    .values({
-      id,
-      project_id: proj.id,
-      name: previewName(row),
-      protected: false,
-      ephemeral: true,
-      source_environment_id: source.id,
-      ttl_seconds: previewTtlSeconds,
-      pull_request: null,
-    })
-    .run()
-
-  const created = db.select().from(environment).where(eq(environment.id, id)).get()!
-
-  cloneInto(kit, call, proj, source, created, false)
-  addressPreview(kit, call, source.id, created)
+  addressPreview(kit, call, productionOf(db, proj.id).id, created)
   db.update(task)
     .set({
-      preview_environment_id: id,
+      preview_id: created.id,
     })
     .where(eq(task.id, row.id))
     .run()
@@ -164,21 +121,21 @@ export const ensurePreview = (kit: Kit, call: Call, row: TaskRow) => {
 
 export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
   const { db } = kit.deps
-  const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+  const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
   if (!box?.workspace || box.status !== 'running') {
     fail(
-      'SANDBOX_NOT_RUNNING',
+      'MACHINE_NOT_RUNNING',
       `The machine of task ${row.title} is not running, so its worktree cannot be deployed.`,
       'Reply to the task to start its machine, then make the preview again.',
       {
-        sandbox_id: row.sandbox_id,
+        machine_id: row.machine_id,
       },
     )
   }
 
   const wanted = repoKey(row.repository)
-  const builtFrom = (entry: typeof service.$inferSelect) => {
+  const builtFrom = (entry: typeof app.$inferSelect) => {
     const source = entry.source as RepoSource
 
     return source.repo !== undefined && repoKey(source.repo) === wanted
@@ -186,8 +143,8 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
   const originals = db
     .select()
-    .from(service)
-    .where(eq(service.environment_id, proj.default_environment_id))
+    .from(app)
+    .where(eq(app.target_id, productionOf(db, proj.id).id))
     .all()
     .filter(builtFrom)
 
@@ -205,8 +162,8 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
   const preview = ensurePreview(kit, call, row)
   const targets = db
     .select()
-    .from(service)
-    .where(eq(service.environment_id, preview.id))
+    .from(app)
+    .where(eq(app.target_id, preview.id))
     .all()
     .filter((entry) => originals.some((original) => original.name === entry.name))
 
@@ -214,7 +171,7 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
     const source = entry.source as RepoSource & { type: string; dockerfile?: string }
 
     if (source.type !== 'local') {
-      db.update(service)
+      db.update(app)
         .set({
           source: {
             type: 'local',
@@ -225,7 +182,7 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
               : {}),
           },
         })
-        .where(eq(service.id, entry.id))
+        .where(eq(app.id, entry.id))
         .run()
     }
   }
@@ -242,7 +199,8 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
     scopes: [
       {
         project_id: row.project_id,
-        environment_id: preview.id,
+        target: 'previews',
+        preview_id: preview.id,
         level: 'deploy',
       },
     ],
@@ -259,7 +217,7 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
   ]
 
   await kit.deps.stations.ask(
-    box!.station_id,
+    box!.server_id,
     'secrets.deliver',
     ephemeralDelivery(
       {
@@ -274,14 +232,14 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
     'set -eu',
     'cd "$1"',
     'shift',
-    'while [ "$#" -gt 1 ]; do sly push --service "$1" --wait "${2:-.}"; shift 2; done',
+    'while [ "$#" -gt 1 ]; do sly push --app "$1" --wait "${2:-.}"; shift 2; done',
   ].join('\n')
 
   db.insert(run)
     .values({
       id,
-      service_id: null,
-      sandbox_id: box!.id,
+      app_id: null,
+      machine_id: box!.id,
       deployment_id: null,
       kind: 'exec',
       command: member
@@ -301,15 +259,15 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
       },
     })
     .run()
-  kit.deps.stations.reconcile(box!.station_id)
+  kit.deps.stations.reconcile(box!.server_id)
 
   return {
-    environment: {
+    preview: {
       id: preview.id,
       name: preview.name,
     },
     run_id: id,
-    services: targets.map((entry) => entry.id),
+    apps: targets.map((entry) => entry.id),
   }
 }
 
@@ -322,7 +280,7 @@ export const removePreview = (kit: Kit, call: Call, row: TaskRow) => {
 
   const changes = new ChangeSet()
 
-  changes.remove('environment', preview.id, {
+  changes.remove('preview', preview.id, {
     id: preview.id,
     name: preview.name,
   })
@@ -330,7 +288,7 @@ export const removePreview = (kit: Kit, call: Call, row: TaskRow) => {
     kit.deps,
     call,
     {
-      environment: preview,
+      target: preview,
       protect: false,
     },
     changes,

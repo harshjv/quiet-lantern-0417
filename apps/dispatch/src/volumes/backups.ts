@@ -7,9 +7,9 @@ import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
 import {
+  app,
   deployment,
-  service,
-  station,
+  server,
   volume,
   volume_snapshot,
   type StoredBackupTarget,
@@ -22,7 +22,7 @@ import { ephemeralDelivery } from '../secrets/deliver.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { sealedGlobalExists, sealedGlobalValue } from '../secrets/variables.ts'
-import { emitEvent, serviceSubject } from '../station/events.ts'
+import { appSubject, emitEvent } from '../station/events.ts'
 import type { StationServer } from '../station/server.ts'
 
 import { s3Location, s3TargetIssues } from './s3-target.ts'
@@ -38,7 +38,7 @@ type WireTarget = MessageBody<'volume.backup'>['target']
 type BackupCode =
   | 'VOLUME_BACKUP_TARGET_MISSING'
   | 'VALIDATION_FAILED'
-  | 'STATION_OFFLINE'
+  | 'SERVER_OFFLINE'
   | 'NOT_FOUND'
   | 'SECRETS_UNAVAILABLE'
   | 'SECRETS_NEED_REENTRY'
@@ -54,7 +54,7 @@ export class BackupError extends DomainError<BackupCode> {
 export const snapshotView = (s: typeof volume_snapshot.$inferSelect) => ({
   id: s.id,
   volume_id: s.volume_id,
-  station_id: s.station_id,
+  server_id: s.server_id,
   taken_at: s.taken_at.toISOString(),
   finished_at: s.finished_at?.toISOString() ?? null,
   location: s.location,
@@ -77,7 +77,7 @@ const utcStamp = (d: Date) =>
     .replace(/\.\d{3}Z$/, 'Z')
 
 const credentialsFormat =
-  'Store the access key id and the secret access key as ACCESS_KEY_ID:SECRET_ACCESS_KEY, for example sly variables set --scope global --sealed BACKUP_S3=AKIA...:wJal...'
+  'Store the access key id and the secret access key as ACCESS_KEY_ID:SECRET_ACCESS_KEY, for example sly keys set --scope global --sealed BACKUP_S3=AKIA...:wJal...'
 
 const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget => {
   if (!target) {
@@ -105,12 +105,12 @@ const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget =
     )
   }
 
-  const held = sealedGlobalExists(db, target.credentials_variable)
+  const held = sealedGlobalExists(db, target.credentials_key)
 
   if (!held) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `credentials_variable ${target.credentials_variable} is not a global variable.`,
+      `credentials_key ${target.credentials_key} is not a global key.`,
       credentialsFormat,
     )
   }
@@ -118,7 +118,7 @@ const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget =
   if (!held.sealed) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `credentials_variable ${target.credentials_variable} is not sealed.`,
+      `credentials_key ${target.credentials_key} is not sealed.`,
       credentialsFormat,
     )
   }
@@ -128,7 +128,7 @@ const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget =
     endpoint: target.endpoint,
     bucket: target.bucket,
     prefix: target.prefix,
-    credentials_variable: target.credentials_variable,
+    credentials_key: target.credentials_key,
   }
 }
 
@@ -167,13 +167,13 @@ const deliverCredentials = async (
   let held: ReturnType<typeof sealedGlobalValue>
 
   try {
-    held = sealedGlobalValue(db, keyring, target.credentials_variable)
+    held = sealedGlobalValue(db, keyring, target.credentials_key)
   } catch (error) {
     if (
       error instanceof SecretsError &&
       (error.code === 'SECRETS_UNAVAILABLE' || error.code === 'SECRETS_NEED_REENTRY')
     ) {
-      throw new BackupError(error.code, error.message, 'Set the sealed global variable again.')
+      throw new BackupError(error.code, error.message, 'Set the sealed global key again.')
     }
 
     if (error instanceof SecretsError) {
@@ -190,7 +190,7 @@ const deliverCredentials = async (
   if (!accessKeyId || !secretAccessKey) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `${target.credentials_variable} does not hold ACCESS_KEY_ID:SECRET_ACCESS_KEY.`,
+      `${target.credentials_key} does not hold ACCESS_KEY_ID:SECRET_ACCESS_KEY.`,
       credentialsFormat,
     )
   }
@@ -212,9 +212,9 @@ const deliverCredentials = async (
     })
   } catch (error) {
     throw new BackupError(
-      'STATION_OFFLINE',
+      'SERVER_OFFLINE',
       (error as Error).message,
-      'Check the station, then try again.',
+      'Check the server, then try again.',
     )
   }
 
@@ -270,17 +270,15 @@ export const startBackup = async (
   const { db, stations } = deps
   const { vol, target } = backupPlan(db, volumeId, options.target)
 
-  if (!stations.isConnected(vol.station_id)) {
+  if (!stations.isConnected(vol.server_id)) {
     throw new BackupError(
-      'STATION_OFFLINE',
-      `station ${vol.station_id} is not connected`,
-      'Bring the station online, then back up again.',
+      'SERVER_OFFLINE',
+      `server ${vol.server_id} is not connected`,
+      'Bring the server online, then back up again.',
     )
   }
 
-  const svc = vol.service_id
-    ? db.select().from(service).where(eq(service.id, vol.service_id)).get()
-    : undefined
+  const svc = vol.app_id ? db.select().from(app).where(eq(app.id, vol.app_id)).get() : undefined
   const dep = svc?.current_deployment_id
     ? db.select().from(deployment).where(eq(deployment.id, svc.current_deployment_id)).get()
     : undefined
@@ -296,7 +294,7 @@ export const startBackup = async (
     .values({
       id,
       volume_id: vol.id,
-      station_id: vol.station_id,
+      server_id: vol.server_id,
       taken_at: now,
       location: locationOf(target, objects.archive),
       source: 'tar',
@@ -311,8 +309,8 @@ export const startBackup = async (
     snapshot_id: id,
     volume_id: vol.id,
     docker_name: vol.docker_name,
-    service_id: vol.service_id ?? null,
-    environment_id: svc?.environment_id ?? null,
+    service_id: vol.app_id ?? null,
+    environment_id: svc?.target_id ?? null,
     deployment_id: dep?.id ?? null,
     image_ref: dep?.image_ref ?? null,
     mount_path: vol.mount_path,
@@ -322,8 +320,8 @@ export const startBackup = async (
   }
 
   try {
-    await deliverCredentials(deps, vol.station_id, id, target, options.actor)
-    await stations.ask(vol.station_id, 'volume.backup', body, {
+    await deliverCredentials(deps, vol.server_id, id, target, options.actor)
+    await stations.ask(vol.server_id, 'volume.backup', body, {
       timeoutMs: 30_000,
     })
   } catch (error) {
@@ -338,7 +336,7 @@ export const startBackup = async (
           status: 'failed',
           finished_at: new Date(),
           failure: {
-            code: code ?? 'STATION_OFFLINE',
+            code: code ?? 'SERVER_OFFLINE',
             explanation: (error as Error).message,
           },
         })
@@ -355,11 +353,11 @@ export const startBackup = async (
     }
 
     throw new BackupError(
-      refused ? code : 'STATION_OFFLINE',
+      refused ? code : 'SERVER_OFFLINE',
       (error as Error).message,
       refused
-        ? 'Name a directory under the station backup root, or an S3 bucket the station can reach.'
-        : 'Check the station, then back up again.',
+        ? 'Name a directory under the server backup root, or an S3 bucket the server can reach.'
+        : 'Check the server, then back up again.',
     )
   }
 
@@ -383,11 +381,11 @@ export const startBackup = async (
   return {
     snapshot: snapshotView(row),
     warnings:
-      options.quiesce && vol.service_id
+      options.quiesce && vol.app_id
         ? [
             {
-              code: 'BACKUP_STOPS_SERVICE',
-              explanation: `The service using ${vol.id} is stopped while the archive is written, then started again from the same deployment.`,
+              code: 'BACKUP_STOPS_APP',
+              explanation: `The app using ${vol.id} is stopped while the archive is written, then started again from the same deployment.`,
             },
           ]
         : [],
@@ -418,25 +416,25 @@ export const restorePlan = (db: Db, volumeId: string, snapshotId: string, statio
   }
 
   const source = db.select().from(volume).where(eq(volume.id, volumeId)).get()!
-  const targetStation = stationId ?? source.station_id
+  const targetStation = stationId ?? source.server_id
 
   if (stationId !== undefined) {
-    const row = db.select().from(station).where(eq(station.id, stationId)).get()
+    const row = db.select().from(server).where(eq(server.id, stationId)).get()
 
     if (!row || row.revoked_at) {
       throw new BackupError(
         'NOT_FOUND',
-        `station ${stationId} does not exist or is revoked`,
-        'List stations with sly stations list.',
+        `server ${stationId} does not exist or is revoked`,
+        'List servers with sly servers list.',
       )
     }
   }
 
-  if (snap.target.type === 'path' && targetStation !== snap.station_id) {
+  if (snap.target.type === 'path' && targetStation !== snap.server_id) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `backup ${snapshotId} is a directory on station ${snap.station_id} and cannot be restored on ${targetStation}`,
-      'Restore a backup written to an S3 target to move data between stations.',
+      `backup ${snapshotId} is a directory on server ${snap.server_id} and cannot be restored on ${targetStation}`,
+      'Restore a backup written to an S3 target to move data between servers.',
     )
   }
 
@@ -450,7 +448,7 @@ export const restorePlan = (db: Db, volumeId: string, snapshotId: string, statio
       target,
     },
     source,
-    station_id: targetStation,
+    server_id: targetStation,
   }
 }
 
@@ -462,13 +460,13 @@ export const restoreBackup = async (
   stationId?: string,
 ) => {
   const { db, stations } = deps
-  const { snap, source, station_id } = restorePlan(db, volumeId, snapshotId, stationId)
+  const { snap, source, server_id } = restorePlan(db, volumeId, snapshotId, stationId)
 
-  if (!stations.isConnected(station_id)) {
+  if (!stations.isConnected(server_id)) {
     throw new BackupError(
-      'STATION_OFFLINE',
-      `station ${station_id} is not connected`,
-      'Bring the station online, then restore again.',
+      'SERVER_OFFLINE',
+      `server ${server_id} is not connected`,
+      'Bring the server online, then restore again.',
     )
   }
 
@@ -479,10 +477,10 @@ export const restoreBackup = async (
     .values({
       id,
       owner: 'service',
-      service_id: null,
+      app_id: null,
       project_id: source.project_id,
       mount_path: source.mount_path,
-      station_id,
+      server_id,
       docker_name: dockerName,
       size_bytes: 0,
       status: 'retained',
@@ -491,9 +489,9 @@ export const restoreBackup = async (
     .run()
 
   try {
-    await deliverCredentials(deps, station_id, snap.id, snap.target, actor)
+    await deliverCredentials(deps, server_id, snap.id, snap.target, actor)
     await stations.ask(
-      station_id,
+      server_id,
       'volume.restore',
       {
         snapshot_id: snap.id,
@@ -516,13 +514,13 @@ export const restoreBackup = async (
     }
 
     throw new BackupError(
-      'STATION_OFFLINE',
+      'SERVER_OFFLINE',
       (error as Error).message,
-      'Check the station, then restore again.',
+      'Check the server, then restore again.',
     )
   }
 
-  stations.reconcile(station_id)
+  stations.reconcile(server_id)
   recordAudit(db, {
     actor: actor as ActorValue,
     action: 'volume.restore_started',
@@ -534,7 +532,7 @@ export const restoreBackup = async (
       from_volume: volumeId,
       snapshot_id: snap.id,
       docker_name: dockerName,
-      station_id,
+      server_id,
     },
   })
 
@@ -542,9 +540,9 @@ export const restoreBackup = async (
     volume_id: id,
     docker_name: dockerName,
     snapshot_id: snap.id,
-    station_id,
+    server_id,
     status: 'running' as const,
-    adopt: `sly volumes adopt ${id} --service-id <service id> --mount-path ${source.mount_path}`,
+    adopt: `sly volumes adopt ${id} --app-id <app id> --mount-path ${source.mount_path}`,
   }
 }
 
@@ -559,7 +557,7 @@ export const pruneBackups = async (deps: BackupDeps, volumeId: string) => {
     .where(and(eq(volume_snapshot.volume_id, volumeId), eq(volume_snapshot.status, 'complete')))
     .orderBy(desc(volume_snapshot.taken_at), desc(volume_snapshot.id))
     .all()
-  const expired = complete.slice(keep).filter((s) => s.target && s.objects && s.station_id)
+  const expired = complete.slice(keep).filter((s) => s.target && s.objects && s.server_id)
 
   if (!expired.length) {
     return {
@@ -570,18 +568,17 @@ export const pruneBackups = async (deps: BackupDeps, volumeId: string) => {
 
   const volumeStation = db
     .select({
-      station_id: volume.station_id,
+      server_id: volume.server_id,
     })
     .from(volume)
     .where(eq(volume.id, volumeId))
-    .get()?.station_id
+    .get()?.server_id
   const gone: string[] = []
   const failed: { snapshot_id: string; explanation: string }[] = []
   const byStation = new Map<string, typeof expired>()
 
   for (const snap of expired) {
-    const holder =
-      snap.target!.type === 's3' ? (volumeStation ?? snap.station_id!) : snap.station_id!
+    const holder = snap.target!.type === 's3' ? (volumeStation ?? snap.server_id!) : snap.server_id!
 
     byStation.set(holder, [...(byStation.get(holder) ?? []), snap])
   }
@@ -669,7 +666,7 @@ export const pruneBackups = async (deps: BackupDeps, volumeId: string) => {
 
 const volumeSubject = (db: Db, volumeId: string) => {
   const v = db.select().from(volume).where(eq(volume.id, volumeId)).get()
-  const base = v?.service_id ? serviceSubject(db, v.service_id) : {}
+  const base = v?.app_id ? appSubject(db, v.app_id) : {}
 
   return {
     ...base,
@@ -712,7 +709,7 @@ export const recordBackupResult = (
     .run()
   emitEvent(db, 'volume.backup_done', volumeSubject(db, body.volume_id), {
     snapshot_id: body.snapshot_id,
-    station_id: stationId,
+    server_id: stationId,
     status: body.status,
     trigger: snap.trigger,
     objects: body.objects,
@@ -742,7 +739,7 @@ export const recordRestoreResult = (
 
   emitEvent(db, 'volume.restore_done', volumeSubject(db, body.volume_id), {
     snapshot_id: body.snapshot_id,
-    station_id: stationId,
+    server_id: stationId,
     status: body.status,
     sha256: body.sha256,
     size_bytes: body.size_bytes,
@@ -765,10 +762,10 @@ export const startBackupScheduler = (deps: BackupDeps, log: Log) => {
       .from(volume)
       .where(and(eq(volume.status, 'active'), eq(volume.owner, 'service')))
       .all()) {
-      if (!stations.isConnected(v.station_id)) {
+      if (!stations.isConnected(v.server_id)) {
         log('volume_backup.skipped', {
           volume_id: v.id,
-          reason: 'station offline',
+          reason: 'server offline',
         })
         continue
       }

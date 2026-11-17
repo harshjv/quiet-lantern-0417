@@ -2,10 +2,10 @@ import { Type, type TObject, type Static as TStatic } from '@sinclair/typebox'
 import { and, desc, eq } from 'drizzle-orm'
 import { t, type Static } from 'elysia'
 
-import { serviceKindValues, serviceStatusValues } from '@stationly/protocol'
+import { appKindValues, appStatusValues } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
-import { deployment, service, service_port, station, variable, volume } from '../../db/schema.ts'
+import { app, app_port, deployment, key, server, volume } from '../../db/schema.ts'
 import {
   healthPortMissing,
   normalizeHealth,
@@ -20,6 +20,7 @@ import {
   ChangeSet,
   commit,
   leafDiff,
+  placeName,
   requireProtocolChangeAllowed,
   type CommitResult,
 } from '../changes.ts'
@@ -27,22 +28,22 @@ import { configDeployTrigger, configFields, requireStationReady } from '../deplo
 import { fail, invalid } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { warning, type Kit } from '../kit.ts'
-import { type EnvironmentRow, type ServiceContext, type ServiceRow } from '../lookup.ts'
-import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
-import { ServiceCreate, ServicePatch } from '../schemas.ts'
+import { isProduction, scopeOf, type AppContext, type AppRow, type TargetRow } from '../lookup.ts'
+import { before, collect, filterOne, getQuery, listQuery, previewQuery } from '../pagination.ts'
+import { AppCreate, AppPatch } from '../schemas.ts'
 import {
+  App,
+  ApprovalDetail,
   component,
   DeletedRetaining,
   Deployment,
   extend,
   Page,
   replies,
-  Service,
-  Staged,
   Warnings,
   type Ref,
 } from '../shapes.ts'
-import { planVariables } from '../variable-changes.ts'
+import { planKeys } from '../variable-changes.ts'
 
 export const withDeployments = <S extends TObject>(schema: S | Ref<S>) =>
   extend(schema, {
@@ -50,14 +51,14 @@ export const withDeployments = <S extends TObject>(schema: S | Ref<S>) =>
     warnings: Warnings,
   })
 
-const ServiceWritten = component('ServiceWritten', withDeployments(Service))
+const AppWritten = component('AppWritten', withDeployments(App))
 
-const ServiceStarted = extend(Service, {
+const AppStarted = extend(App, {
   deployments: Type.Array(Deployment),
 })
 
-type CreateBody = Static<typeof ServiceCreate>
-type PatchBody = Static<typeof ServicePatch>
+type CreateBody = Static<typeof AppCreate>
+type PatchBody = Static<typeof AppPatch>
 type HealthBody = NonNullable<CreateBody['health']>
 
 const defaultLimits = {
@@ -103,13 +104,13 @@ const placeStation = (kit: Kit, stationId: string | undefined) => {
   const { db } = kit.deps
 
   if (stationId) {
-    const row = db.select().from(station).where(eq(station.id, stationId)).get()
+    const row = db.select().from(server).where(eq(server.id, stationId)).get()
 
     if (!row) {
       return invalid([
         {
-          path: '/station_id',
-          message: `station ${stationId} does not exist`,
+          path: '/server_id',
+          message: `server ${stationId} does not exist`,
         },
       ])
     }
@@ -117,8 +118,8 @@ const placeStation = (kit: Kit, stationId: string | undefined) => {
     if (row.draining) {
       return invalid([
         {
-          path: '/station_id',
-          message: `station ${row.name} is draining, so no new services are placed on it`,
+          path: '/server_id',
+          message: `server ${row.name} is draining, so no new apps are placed on it`,
         },
       ])
     }
@@ -128,17 +129,17 @@ const placeStation = (kit: Kit, stationId: string | undefined) => {
 
   const online = db
     .select({
-      id: station.id,
+      id: server.id,
     })
-    .from(station)
-    .where(and(eq(station.status, 'online'), eq(station.draining, false)))
+    .from(server)
+    .where(and(eq(server.status, 'online'), eq(server.draining, false)))
     .all()
 
   if (online.length !== 1) {
     invalid([
       {
-        path: '/station_id',
-        message: `required unless exactly one station is online (${online.length} are)`,
+        path: '/server_id',
+        message: `required unless exactly one server is online (${online.length} are)`,
       },
     ])
   }
@@ -161,7 +162,7 @@ const portIssues = (kind: string, ports: { port: number }[]) => {
     return [
       {
         path: '/ports',
-        message: 'a web service needs at least one port',
+        message: 'a web app needs at least one port',
       },
     ]
   }
@@ -170,7 +171,7 @@ const portIssues = (kind: string, ports: { port: number }[]) => {
     return [
       {
         path: '/ports',
-        message: `a ${kind} service has no ports`,
+        message: `a ${kind} app has no ports`,
       },
     ]
   }
@@ -189,34 +190,33 @@ const portIssues = (kind: string, ports: { port: number }[]) => {
   )
 }
 
-export const dependentsOfService = (kit: Kit, svc: ServiceRow) =>
+export const dependentsOfApp = (kit: Kit, svc: AppRow) =>
   kit.deps.db
     .select({
-      id: variable.id,
-      key: variable.key,
-      service_id: variable.service_id,
-      reference: variable.reference,
+      id: key.id,
+      name: key.name,
+      app_id: key.app_id,
+      reference: key.reference,
     })
-    .from(variable)
-    .innerJoin(service, eq(service.id, variable.service_id))
-    .where(and(eq(variable.kind, 'reference'), eq(service.environment_id, svc.environment_id)))
+    .from(key)
+    .innerJoin(app, eq(app.id, key.app_id))
+    .where(and(eq(key.kind, 'reference'), eq(app.target_id, svc.target_id)))
     .all()
-    .filter((v) => v.service_id !== svc.id)
+    .filter((v) => v.app_id !== svc.id)
     .filter((v) => {
       try {
         return parseValue(v.reference ?? '').some(
-          (s) =>
-            s.type === 'reference' && s.target.type === 'service' && s.target.service === svc.name,
+          (s) => s.type === 'reference' && s.target.type === 'app' && s.target.app === svc.name,
         )
       } catch {
         return false
       }
     })
     .map((v) => ({
-      entity: 'variable',
+      entity: 'key',
       id: v.id,
-      key: v.key,
-      service_id: v.service_id,
+      name: v.name,
+      app_id: v.app_id,
     }))
 
 export const respond = <B extends object>(
@@ -226,10 +226,10 @@ export const respond = <B extends object>(
   body: () => B,
   warnings: TStatic<typeof Warnings> = [],
 ):
-  | TStatic<typeof Staged>
+  | TStatic<typeof ApprovalDetail>
   | (B & { deployments: TStatic<typeof Deployment>[]; warnings: TStatic<typeof Warnings> }) => {
   if (!result.applied) {
-    return kit.stagedBody(result, set)
+    return kit.approvalBody(result, set)
   }
 
   const deployments = result.deployments.map((id) =>
@@ -258,10 +258,10 @@ export const respond = <B extends object>(
 const onlyOnlineStation = (kit: Kit) => {
   const online = kit.deps.db
     .select({
-      id: station.id,
+      id: server.id,
     })
-    .from(station)
-    .where(and(eq(station.status, 'online'), eq(station.draining, false)))
+    .from(server)
+    .where(and(eq(server.status, 'online'), eq(server.draining, false)))
     .all()
 
   return online.length === 1 ? online[0]!.id : null
@@ -269,15 +269,15 @@ const onlyOnlineStation = (kit: Kit) => {
 
 const authorizeSource = async (
   kit: Kit,
-  body: { source?: CreateBody['source']; station_id?: string },
-  current?: ServiceRow,
+  body: { source?: CreateBody['source']; server_id?: string },
+  current?: AppRow,
 ) => {
   const source = body.source
 
   if (source?.type === 'image') {
-    const stationId = body.station_id ?? current?.station_id ?? onlyOnlineStation(kit)
+    const stationId = body.server_id ?? current?.server_id ?? onlyOnlineStation(kit)
     const prior =
-      current && (body.station_id === undefined || body.station_id === current.station_id)
+      current && (body.server_id === undefined || body.server_id === current.server_id)
         ? current.source
         : null
     const pinned = await pinImageSource(kit.deps.db, source, stationId, prior)
@@ -308,7 +308,7 @@ const authorizeSource = async (
     : []
 }
 
-const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: CreateBody) => {
+const planCreate = (kit: Kit, principal: Principal, env: TargetRow, body: CreateBody) => {
   const { db } = kit.deps
   const ports = body.ports ?? []
   const volumes = body.volumes ?? []
@@ -317,7 +317,7 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
   if (body.kind === 'cron' && !body.schedule) {
     issues.push({
       path: '/schedule',
-      message: 'a cron service needs a schedule',
+      message: 'a cron app needs a schedule',
     })
   }
 
@@ -328,15 +328,15 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
   if (
     db
       .select({
-        id: service.id,
+        id: app.id,
       })
-      .from(service)
-      .where(and(eq(service.environment_id, env.id), eq(service.name, body.name)))
+      .from(app)
+      .where(and(eq(app.target_id, env.id), eq(app.name, body.name)))
       .get()
   ) {
     fail(
       'NAME_TAKEN',
-      `Environment ${env.name} already has a service named ${body.name}.`,
+      `An app named ${body.name} already exists in ${placeName(env)}.`,
       undefined,
       {
         name: body.name,
@@ -344,7 +344,7 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
     )
   }
 
-  const stationId = placeStation(kit, body.station_id)
+  const stationId = placeStation(kit, body.server_id)
   const strategy = body.strategy ?? (volumes.length > 0 ? 'replace' : 'overlap')
 
   strategyCheck(strategy, volumes.length, body.multi_writer_safe ?? false)
@@ -355,11 +355,11 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
   }
 
   const set = new ChangeSet()
-  const ref = set.add('service', env.id, {
+  const ref = set.add('app', env.id, {
     name: body.name,
     kind: body.kind,
     source: body.source,
-    station_id: stationId,
+    server_id: stationId,
     command: body.command ?? null,
     build_args: body.build_args ?? null,
     limits: {
@@ -377,7 +377,7 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
   })
 
   for (const port of ports) {
-    set.add('service_port', ref, {
+    set.add('app_port', ref, {
       port: port.port,
       protocol: port.protocol ?? 'http',
       grpc: port.grpc ?? false,
@@ -390,23 +390,21 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
     })
   }
 
-  if (body.variables?.length) {
-    planVariables(
+  if (body.keys?.length) {
+    planKeys(
       db,
       kit.deps.keyring,
       principal,
       set,
       {
-        scope: 'service',
+        scope: 'app',
         parent: ref,
-        serviceId: null,
-        target: {
-          project_id: env.project_id,
-          environment_id: env.id,
-        },
+        appId: null,
+        valueTarget: 'production',
+        target: scopeOf(env),
       },
       {
-        set: body.variables,
+        set: body.keys,
         allow_unresolved: true,
       },
     )
@@ -419,16 +417,16 @@ const planCreate = (kit: Kit, principal: Principal, env: EnvironmentRow, body: C
   return set
 }
 
-const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: PatchBody) => {
+const planPatch = (kit: Kit, principal: Principal, ctx: AppContext, body: PatchBody) => {
   const { db } = kit.deps
-  const svc = ctx.service
+  const svc = ctx.app
 
-  if (body.station_id !== undefined && body.station_id !== svc.station_id) {
+  if (body.server_id !== undefined && body.server_id !== svc.server_id) {
     requireLevel(principal, ctx.target, 'admin')
-    placeStation(kit, body.station_id)
+    placeStation(kit, body.server_id)
   }
 
-  const stored = db.select().from(service_port).where(eq(service_port.service_id, svc.id)).all()
+  const stored = db.select().from(app_port).where(eq(app_port.app_id, svc.id)).all()
   const nextPorts: PortDoc[] = body.ports
     ? body.ports.map((p) => ({
         port: p.port,
@@ -476,7 +474,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
 
     leafDiff(
       set,
-      'service',
+      'app',
       svc.id,
       `/${field}`,
       (svc as Record<string, unknown>)[field] ?? null,
@@ -502,7 +500,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
         continue
       }
 
-      set.remove('service_port', port.id, select(kit.views.port, port, undefined))
+      set.remove('app_port', port.id, select(kit.views.port, port, undefined))
       structural = true
     }
 
@@ -510,7 +508,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
       const existing = current.find((c) => c.port === port.port)
 
       if (!existing) {
-        set.add('service_port', svc.id, {
+        set.add('app_port', svc.id, {
           port: port.port,
           protocol: port.protocol ?? 'http',
           grpc: port.grpc ?? false,
@@ -521,12 +519,12 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
 
       if (port.protocol !== undefined && port.protocol !== existing.protocol) {
         requireProtocolChangeAllowed(db, existing.id, port.protocol)
-        set.update('service_port', existing.id, '/protocol', existing.protocol, port.protocol)
+        set.update('app_port', existing.id, '/protocol', existing.protocol, port.protocol)
         structural = true
       }
 
       if (port.grpc !== undefined && port.grpc !== existing.grpc) {
-        set.update('service_port', existing.id, '/grpc', existing.grpc, port.grpc)
+        set.update('app_port', existing.id, '/grpc', existing.grpc, port.grpc)
         structural = true
       }
     }
@@ -536,7 +534,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
     const current = db
       .select()
       .from(volume)
-      .where(and(eq(volume.service_id, svc.id), eq(volume.status, 'active')))
+      .where(and(eq(volume.app_id, svc.id), eq(volume.status, 'active')))
       .all()
 
     for (const vol of current) {
@@ -552,7 +550,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
         null,
         new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
       )
-      set.update('volume', vol.id, '/service_id', svc.id, null)
+      set.update('volume', vol.id, '/app_id', svc.id, null)
       structural = true
     }
 
@@ -576,7 +574,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
         id: volume.id,
       })
       .from(volume)
-      .where(and(eq(volume.service_id, svc.id), eq(volume.status, 'active')))
+      .where(and(eq(volume.app_id, svc.id), eq(volume.status, 'active')))
       .all().length
 
   strategyCheck(
@@ -585,20 +583,21 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
     (next.multi_writer_safe as boolean | undefined) ?? svc.multi_writer_safe,
   )
 
-  if (body.variables) {
-    planVariables(
+  if (body.keys) {
+    planKeys(
       db,
       kit.deps.keyring,
       principal,
       set,
       {
-        scope: 'service',
+        scope: 'app',
         parent: svc.id,
-        serviceId: svc.id,
+        appId: svc.id,
+        valueTarget: 'production',
         target: ctx.target,
       },
       {
-        set: body.variables,
+        set: body.keys,
         allow_unresolved: true,
       },
       {
@@ -611,7 +610,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
   const trigger = configDeployTrigger(svc, next.source ?? svc.source, sourceChanged)
 
   if (trigger && (structural || (configChanged && deploy))) {
-    requireStationReady(db, (next.station_id as string | undefined) ?? svc.station_id)
+    requireStationReady(db, (next.server_id as string | undefined) ?? svc.server_id)
     set.deploy(svc.id, trigger, {
       reason:
         set.changes
@@ -624,100 +623,96 @@ const planPatch = (kit: Kit, principal: Principal, ctx: ServiceContext, body: Pa
   return set
 }
 
-export const serviceRoutes = (kit: Kit) => {
+export const appRoutes = (kit: Kit) => {
   const { db } = kit.deps
   const view = (id: string, fields?: string) =>
-    select(
-      kit.views.service,
-      db.select().from(service).where(eq(service.id, id)).get()!,
-      kit.fields(fields),
-    )
+    select(kit.views.app, db.select().from(app).where(eq(app.id, id)).get()!, kit.fields(fields))
 
   return kit
-    .router('services', '/v1')
+    .router('apps', '/v1')
     .get(
-      '/environments/:environment/services',
+      '/projects/:project/apps',
       ({ ctx, query }) => {
         const page = collect(
           (cursor, size) =>
             db
               .select()
-              .from(service)
+              .from(app)
               .where(
                 and(
-                  eq(service.environment_id, ctx.environment.id),
-                  query.status ? eq(service.status, query.status as 'green') : undefined,
-                  query.kind ? eq(service.kind, query.kind as 'web') : undefined,
-                  query.station ? eq(service.station_id, query.station) : undefined,
-                  query.stale === undefined ? undefined : eq(service.stale, query.stale),
-                  before(service.id, cursor),
+                  eq(app.target_id, ctx.target_row.id),
+                  query.status ? eq(app.status, query.status as 'healthy') : undefined,
+                  query.kind ? eq(app.kind, query.kind as 'web') : undefined,
+                  query.server ? eq(app.server_id, query.server) : undefined,
+                  query.stale === undefined ? undefined : eq(app.stale, query.stale),
+                  before(app.id, cursor),
                 ),
               )
-              .orderBy(desc(service.id))
+              .orderBy(desc(app.id))
               .limit(size)
               .all(),
           query,
         )
 
         return {
-          items: page.rows.map((row) => select(kit.views.service, row, kit.fields(query.fields))),
+          items: page.rows.map((row) => select(kit.views.app, row, kit.fields(query.fields))),
           next_cursor: page.next_cursor,
         }
       },
       {
-        environment: {
-          id: 'list_services',
-          summary: 'List the services of an environment',
+        place: {
+          id: 'list_apps',
+          summary: 'List the apps of production, or of a preview',
           level: 'read',
         },
         query: t.Object({
           ...listQuery,
-          status: filterOne(serviceStatusValues),
-          kind: filterOne(serviceKindValues),
-          station: t.Optional(
+          ...previewQuery,
+          status: filterOne(appStatusValues),
+          kind: filterOne(appKindValues),
+          server: t.Optional(
             t.String({
-              description: 'Only services on this station id',
+              description: 'Only apps on this server id',
             }),
           ),
           stale: t.Optional(
             t.BooleanString({
-              description:
-                'Only services whose current deployment is out of date, with stale_reasons',
+              description: 'Only apps whose current deployment is out of date, with stale_reasons',
             }),
           ),
         }),
         response: replies({
-          200: Page(Service),
+          200: Page(App),
         }),
       },
     )
     .get(
-      '/services/:service',
-      ({ ctx, query }) => select(kit.views.service, ctx.service, kit.fields(query.fields)),
+      '/apps/:app',
+      ({ ctx, query }) => select(kit.views.app, ctx.app, kit.fields(query.fields)),
       {
-        service: {
-          id: 'describe_service',
-          summary: 'Get a service',
+        app: {
+          id: 'describe_app',
+          summary: 'Get an app',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Service,
+          200: App,
         }),
       },
     )
     .post(
-      '/environments/:environment/services',
+      '/projects/:project/apps',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
         const sourceWarnings = await authorizeSource(kit, body)
-        const changes = planCreate(kit, call.principal, ctx.environment, body)
+        const changes = planCreate(kit, call.principal, ctx.target_row, body)
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
@@ -730,36 +725,37 @@ export const serviceRoutes = (kit: Kit) => {
           kit,
           set,
           result,
-          () => view(result.applied ? result.refs['new:service:1']! : '', 'ports,volumes'),
+          () => view(result.applied ? result.refs['new:app:1']! : '', 'ports,volumes'),
           sourceWarnings,
         )
       },
       {
-        environment: {
-          id: 'create_service',
-          summary: 'Create a service',
+        place: {
+          id: 'create_app',
+          summary: 'Create an app in production, or in a preview',
           level: 'admin',
           cli: {
             args: ['name'],
           },
         },
-        body: ServiceCreate,
+        body: AppCreate,
+        query: t.Object(previewQuery),
         response: replies({
-          201: ServiceWritten,
-          202: Staged,
+          201: AppWritten,
+          202: ApprovalDetail,
         }),
       },
     )
     .patch(
-      '/services/:service',
+      '/apps/:app',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const sourceWarnings = await authorizeSource(kit, body, ctx.service)
+        const sourceWarnings = await authorizeSource(kit, body, ctx.app)
         const changes = planPatch(kit, call.principal, ctx, body)
 
         if (changes.empty) {
           return {
-            ...view(ctx.service.id),
+            ...view(ctx.app.id),
             deployments: [],
             warnings: [],
           }
@@ -769,43 +765,37 @@ export const serviceRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
-        return respond(
-          kit,
-          set,
-          result,
-          () => view(ctx.service.id, 'ports,volumes'),
-          sourceWarnings,
-        )
+        return respond(kit, set, result, () => view(ctx.app.id, 'ports,volumes'), sourceWarnings)
       },
       {
-        service: {
-          id: 'update_service',
-          summary: 'Update a service; deploys when deploy = true and the configuration changed',
+        app: {
+          id: 'update_app',
+          summary: 'Update an app; deploys when deploy = true and the configuration changed',
           level: 'deploy',
         },
-        body: ServicePatch,
+        body: AppPatch,
         response: replies({
-          200: ServiceWritten,
-          202: Staged,
+          200: AppWritten,
+          202: ApprovalDetail,
         }),
       },
     )
     .delete(
-      '/services/:service',
+      '/apps/:app',
       async ({ ctx, request, set }) => {
         const call = await kit.call(request)
-        const dependents = dependentsOfService(kit, ctx.service)
+        const dependents = dependentsOfApp(kit, ctx.app)
 
         if (dependents.length) {
           fail(
             'DELETE_HAS_DEPENDENTS',
-            `${ctx.service.name} is referenced by other services' variables.`,
+            `${ctx.app.name} is referenced by other apps' keys.`,
             'Remove those references first.',
             {
               dependents,
@@ -815,19 +805,19 @@ export const serviceRoutes = (kit: Kit) => {
 
         const changes = new ChangeSet()
 
-        changes.remove('service', ctx.service.id, select(kit.views.service, ctx.service, undefined))
+        changes.remove('app', ctx.app.id, select(kit.views.app, ctx.app, undefined))
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return {
@@ -836,47 +826,47 @@ export const serviceRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
-          id: 'delete_service',
-          summary: 'Delete a service; volumes are retained',
+        app: {
+          id: 'delete_app',
+          summary: 'Delete an app; volumes are retained',
           level: 'admin',
         },
         response: replies({
           200: DeletedRetaining,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
     .post(
-      '/services/:service/restart',
+      '/apps/:app/restart',
       async ({ ctx, request, set }) => {
         const call = await kit.call(request)
 
-        if (!ctx.service.current_deployment_id) {
+        if (!ctx.app.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
-            `${ctx.service.name} has no current deployment to restart.`,
-            'Call deploy (POST /v1/services/{service}/deployments) first.',
+            `${ctx.app.name} has no current deployment to restart.`,
+            'Call deploy (POST /v1/apps/{app}/deployments) first.',
           )
         }
 
         const changes = new ChangeSet()
 
-        changes.deploy(ctx.service.id, 'redeploy', {
+        changes.deploy(ctx.app.id, 'redeploy', {
           reason: 'restart',
         })
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return select(
@@ -886,8 +876,8 @@ export const serviceRoutes = (kit: Kit) => {
         )
       },
       {
-        service: {
-          id: 'restart_service',
+        app: {
+          id: 'restart_app',
           summary: 'Restart: a redeploy of the current deployment',
           level: 'deploy',
           cli: {
@@ -896,86 +886,74 @@ export const serviceRoutes = (kit: Kit) => {
         },
         response: replies({
           200: Deployment,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
     .post(
-      '/services/:service/stop',
+      '/apps/:app/stop',
       async ({ ctx, request, set }) => {
         const call = await kit.call(request)
         const changes = new ChangeSet()
 
-        if (ctx.service.desired_state !== 'stopped') {
-          changes.update(
-            'service',
-            ctx.service.id,
-            '/desired_state',
-            ctx.service.desired_state,
-            'stopped',
-          )
+        if (ctx.app.desired_state !== 'stopped') {
+          changes.update('app', ctx.app.id, '/desired_state', ctx.app.desired_state, 'stopped')
         }
 
         if (changes.empty) {
-          return view(ctx.service.id)
+          return view(ctx.app.id)
         }
 
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
-        return view(ctx.service.id)
+        return view(ctx.app.id)
       },
       {
-        service: {
-          id: 'stop_service',
+        app: {
+          id: 'stop_app',
           summary: 'Stop: desired_state = stopped',
           level: 'deploy',
         },
         response: replies({
-          200: Service,
-          202: Staged,
+          200: App,
+          202: ApprovalDetail,
         }),
       },
     )
     .post(
-      '/services/:service/start',
+      '/apps/:app/start',
       async ({ ctx, request, set }) => {
         const call = await kit.call(request)
 
-        if (!ctx.service.current_deployment_id) {
+        if (!ctx.app.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
-            `${ctx.service.name} has no current deployment to start.`,
-            'Call deploy (POST /v1/services/{service}/deployments) first.',
+            `${ctx.app.name} has no current deployment to start.`,
+            'Call deploy (POST /v1/apps/{app}/deployments) first.',
           )
         }
 
         const changes = new ChangeSet()
 
-        if (ctx.service.desired_state !== 'running') {
-          changes.update(
-            'service',
-            ctx.service.id,
-            '/desired_state',
-            ctx.service.desired_state,
-            'running',
-          )
+        if (ctx.app.desired_state !== 'running') {
+          changes.update('app', ctx.app.id, '/desired_state', ctx.app.desired_state, 'running')
         }
 
         if (changes.empty) {
           return {
-            ...view(ctx.service.id),
+            ...view(ctx.app.id),
             deployments: [],
           }
         }
@@ -984,30 +962,30 @@ export const serviceRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return {
-          ...view(ctx.service.id),
+          ...view(ctx.app.id),
           deployments: [],
         }
       },
       {
-        service: {
-          id: 'start_service',
+        app: {
+          id: 'start_app',
           summary: 'Start: desired_state = running',
           level: 'deploy',
         },
         response: replies({
-          200: ServiceStarted,
-          202: Staged,
+          200: AppStarted,
+          202: ApprovalDetail,
         }),
       },
     )

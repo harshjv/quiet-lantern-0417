@@ -1,47 +1,48 @@
 import { and, eq, ne } from 'drizzle-orm'
 
-import { bytesText, fitSandboxMemory } from '@stationly/protocol'
+import { bytesText, fitMachineMemory } from '@stationly/protocol'
 
 import { can } from '../api/access.ts'
 import { fail } from '../api/errors.ts'
+import { scopeOf } from '../api/lookup.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { environment, project, sandbox, station } from '../db/schema.ts'
+import { machine, project, server, target } from '../db/schema.ts'
 
 import { activityOf } from './activity.ts'
 
-type StationRow = typeof station.$inferSelect
+type StationRow = typeof server.$inferSelect
 
 export const memoryCap = (st: StationRow) =>
-  st.sandbox_limits.memory_bytes ??
+  st.machine_limits.memory_bytes ??
   (st.resources ? Math.floor(st.resources.memory_bytes * 0.75) : null)
 
 export const minFree = (st: StationRow) =>
-  st.sandbox_limits.min_free_bytes ??
+  st.machine_limits.min_free_bytes ??
   (st.capabilities?.sandboxes
     ? Math.floor(st.capabilities.sandboxes.filesystem_bytes * 0.05)
     : null)
 
 export type QuotaRequest = {
-  sandboxId: string | null
-  newSandbox: boolean
+  machineId: string | null
+  newMachine: boolean
   running: boolean
   memoryBytes: number
 }
 
-const sandboxesOn = (db: Db, st: StationRow, except: string | null) =>
+const machinesOn = (db: Db, st: StationRow, except: string | null) =>
   db
     .select()
-    .from(sandbox)
-    .where(and(eq(sandbox.station_id, st.id), except ? ne(sandbox.id, except) : undefined))
+    .from(machine)
+    .where(and(eq(machine.server_id, st.id), except ? ne(machine.id, except) : undefined))
     .all()
 
-const runningOf = (rows: (typeof sandbox.$inferSelect)[]) =>
+const runningOf = (rows: (typeof machine.$inferSelect)[]) =>
   rows.filter((r) => r.desired_state === 'running' && r.status !== 'deleting')
 
-export const sandboxMemory = (db: Db, st: StationRow) => {
+export const machineMemory = (db: Db, st: StationRow) => {
   const limit = memoryCap(st)
-  const used = runningOf(sandboxesOn(db, st, null)).reduce((sum, r) => sum + r.size.memory_bytes, 0)
+  const used = runningOf(machinesOn(db, st, null)).reduce((sum, r) => sum + r.size.memory_bytes, 0)
 
   return {
     limit,
@@ -51,10 +52,32 @@ export const sandboxMemory = (db: Db, st: StationRow) => {
 }
 
 export const fittingMemory = (db: Db, st: StationRow, wanted?: number) =>
-  fitSandboxMemory(sandboxMemory(db, st).free, wanted)
+  fitMachineMemory(machineMemory(db, st).free, wanted)
 
-const holdersOf = (db: Db, rows: (typeof sandbox.$inferSelect)[], principal: Principal) => {
-  const named = (table: typeof project | typeof environment, id: string) =>
+const targetScope = (db: Db, targetId: string) =>
+  scopeOf(db.select().from(target).where(eq(target.id, targetId)).get()!)
+
+const previewOf = (db: Db, targetId: string) => {
+  const row = db
+    .select({
+      id: target.id,
+      name: target.name,
+      kind: target.kind,
+    })
+    .from(target)
+    .where(eq(target.id, targetId))
+    .get()
+
+  return row && row.kind === 'preview'
+    ? {
+        id: row.id,
+        name: row.name,
+      }
+    : null
+}
+
+const holdersOf = (db: Db, rows: (typeof machine.$inferSelect)[], principal: Principal) => {
+  const named = (table: typeof project | typeof target, id: string) =>
     db
       .select({
         id: table.id,
@@ -65,21 +88,12 @@ const holdersOf = (db: Db, rows: (typeof sandbox.$inferSelect)[], principal: Pri
       .get()
 
   return rows
-    .filter((row) =>
-      can(
-        principal,
-        {
-          project_id: row.project_id,
-          environment_id: row.environment_id,
-        },
-        'read',
-      ),
-    )
+    .filter((row) => can(principal, targetScope(db, row.target_id), 'read'))
     .map((row) => ({
       id: row.id,
       name: row.name,
       project: named(project, row.project_id) ?? null,
-      environment: named(environment, row.environment_id) ?? null,
+      preview: previewOf(db, row.target_id),
       workspace: row.workspace !== null,
       repository: row.workspace?.repository ?? null,
       status: row.status,
@@ -94,9 +108,9 @@ export const requireQuota = (
   request: QuotaRequest,
   principal: Principal,
 ) => {
-  const rows = sandboxesOn(db, st, request.sandboxId)
+  const rows = machinesOn(db, st, request.machineId)
   const exceeded = (
-    limit: 'max_sandboxes' | 'max_running' | 'memory_bytes',
+    limit: 'max_machines' | 'max_running' | 'memory_bytes',
     allowed: number,
     used: number,
     requested: number,
@@ -104,22 +118,22 @@ export const requireQuota = (
     const text = limit === 'memory_bytes' ? bytesText : String
 
     return fail(
-      'SANDBOX_QUOTA_EXCEEDED',
-      `Station ${st.name} allows ${text(allowed)} for ${limit}; ${text(used)} ${limit === 'memory_bytes' ? 'is' : 'are'} used and this change needs ${text(requested)} more.`,
-      `Delete or stop a sandbox on ${st.name}, or ask an instance admin to raise sandbox_limits.${limit} with sly stations update ${st.name} --sandbox-limits ${limit}=<n>.`,
+      'MACHINE_QUOTA_EXCEEDED',
+      `Server ${st.name} allows ${text(allowed)} for ${limit}; ${text(used)} ${limit === 'memory_bytes' ? 'is' : 'are'} used and this change needs ${text(requested)} more.`,
+      `Delete or stop a machine on ${st.name}, or ask an instance admin to raise machine_limits.${limit} with sly servers update ${st.name} --machine-limits ${limit}=<n>.`,
       {
-        station: st.id,
+        server: st.id,
         limit,
         allowed,
         used,
         requested,
-        holders: holdersOf(db, limit === 'max_sandboxes' ? rows : runningOf(rows), principal),
+        holders: holdersOf(db, limit === 'max_machines' ? rows : runningOf(rows), principal),
       },
     )
   }
 
-  if (request.newSandbox && rows.length + 1 > st.sandbox_limits.max_sandboxes) {
-    exceeded('max_sandboxes', st.sandbox_limits.max_sandboxes, rows.length, 1)
+  if (request.newMachine && rows.length + 1 > st.machine_limits.max_machines) {
+    exceeded('max_machines', st.machine_limits.max_machines, rows.length, 1)
   }
 
   if (!request.running) {
@@ -128,8 +142,8 @@ export const requireQuota = (
 
   const running = runningOf(rows)
 
-  if (running.length + 1 > st.sandbox_limits.max_running) {
-    exceeded('max_running', st.sandbox_limits.max_running, running.length, 1)
+  if (running.length + 1 > st.machine_limits.max_running) {
+    exceeded('max_running', st.machine_limits.max_running, running.length, 1)
   }
 
   const cap = memoryCap(st)
@@ -149,11 +163,11 @@ export const requireDiskRoom = (st: StationRow) => {
   }
 
   fail(
-    'SANDBOX_DISK_FULL',
-    `Station ${st.name}'s sandbox filesystem has ${free} bytes free, below the ${floor} byte floor for new disks, snapshots and forks.`,
-    `Delete sandboxes or snapshots, or grow the sandbox filesystem with sly sandboxes grow-storage ${st.name} --size-bytes <size>.`,
+    'MACHINE_DISK_FULL',
+    `Server ${st.name}'s machine filesystem has ${free} bytes free, below the ${floor} byte floor for new disks, snapshots and forks.`,
+    `Delete machines or snapshots, or grow the machine filesystem with sly machines grow-storage ${st.name} --size-bytes <size>.`,
     {
-      station: st.id,
+      server: st.id,
       free_bytes: free,
       min_free_bytes: floor,
     },

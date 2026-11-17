@@ -1,13 +1,13 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { releaseRepositories } from '@stationly/protocol/release-config'
 
-import { setting } from '../../src/db/schema.ts'
+import { app, setting, target } from '../../src/db/schema.ts'
 import { lockfileFor, parseManifest, sha256Of, storeRelease } from '../../src/platform/lockfile.ts'
 
 import type { Dispatch } from './dispatch.ts'
 
-type Api = Pick<Dispatch, 'call' | 'admin'>
+type Api = Pick<Dispatch, 'call' | 'admin' | 'db'>
 
 const must = <T>(reply: { status: number; body: T; text: string }, ...ok: number[]) => {
   if (!ok.includes(reply.status)) {
@@ -28,84 +28,125 @@ export const createProject = async (h: Api, name = 'shop') =>
     201,
   )
 
-export const createEnvironment = async (
+export const productionId = (h: Pick<Dispatch, 'db'>, projectId: string) =>
+  h.db
+    .select()
+    .from(target)
+    .where(and(eq(target.project_id, projectId), eq(target.kind, 'production')))
+    .get()!.id
+
+export const placed = (h: Pick<Dispatch, 'db'>, targetId: string, rest: string) => {
+  const row = h.db.select().from(target).where(eq(target.id, targetId)).get()!
+  const path = `/v1/projects/${row.project_id}/${rest}`
+
+  if (row.kind === 'production') {
+    return path
+  }
+
+  return `${path}${path.includes('?') ? '&' : '?'}preview=${row.id}`
+}
+
+export const approveWaiting = async (
+  h: Api,
+  reply: { status: number; body: any; text: string },
+) => {
+  if (reply.status !== 202) {
+    return reply
+  }
+
+  const decided = await h.call('POST', `/v1/approvals/${reply.body.id}/decision`, {
+    cookie: h.admin.cookie,
+    origin: 'http://127.0.0.1:7900',
+    body: {
+      decision: 'approve',
+    },
+  })
+
+  if (decided.status !== 200) {
+    throw new Error(`approving ${reply.body.id} answered ${decided.status}: ${decided.text}`)
+  }
+
+  return decided
+}
+
+export const createPreview = async (
   h: Api,
   project: string,
   name: string,
   extra: Record<string, unknown> = {},
-  human = false,
 ) =>
   must<any>(
-    await h.call(
-      'POST',
-      `/v1/projects/${project}/environments`,
-      human
-        ? {
-            cookie: h.admin.cookie,
-            origin: 'http://127.0.0.1:7900',
-            body: {
-              name,
-              deploy_on_create: false,
-              ...extra,
-            },
-          }
-        : {
-            token: h.admin.token,
-            body: {
-              name,
-              deploy_on_create: false,
-              ...extra,
-            },
-          },
-    ),
+    await h.call('POST', `/v1/projects/${project}/previews`, {
+      token: h.admin.token,
+      body: {
+        name,
+        deploy_on_create: false,
+        ...extra,
+      },
+    }),
     201,
   )
 
-export type ServiceSeed = {
+export type AppSeed = {
   name: string
   kind?: string
   ref: string
   ports?: { port: number; protocol?: string }[]
-  variables?: unknown[]
+  keys?: unknown[]
   deploy?: boolean
   extra?: Record<string, unknown>
 }
 
-export const createService = async (h: Api, environmentId: string, seed: ServiceSeed) =>
-  must<any>(
-    await h.call('POST', `/v1/environments/${environmentId}/services`, {
-      token: h.admin.token,
-      body: {
-        name: seed.name,
-        kind: seed.kind ?? 'web',
-        source: {
-          type: 'image',
-          ref: seed.ref,
-        },
-        ports: seed.ports,
-        variables: seed.variables,
-        deploy_on_create: seed.deploy ?? false,
-        ...seed.extra,
+export const createApp = async (h: Api, targetId: string, seed: AppSeed) => {
+  const reply = await h.call('POST', placed(h, targetId, 'apps'), {
+    token: h.admin.token,
+    body: {
+      name: seed.name,
+      kind: seed.kind ?? 'web',
+      source: {
+        type: 'image',
+        ref: seed.ref,
       },
-    }),
-    201,
-    202,
-  )
+      ports: seed.ports,
+      keys: seed.keys,
+      deploy_on_create: seed.deploy ?? false,
+      ...seed.extra,
+    },
+  })
 
-export const listServices = async (h: Api, environmentId: string) =>
+  if (reply.status !== 202) {
+    return must<any>(reply, 201)
+  }
+
+  await approveWaiting(h, reply)
+  const row = h.db
+    .select()
+    .from(app)
+    .where(and(eq(app.target_id, targetId), eq(app.name, seed.name)))
+    .get()!
+
+  return must<any>(
+    await h.call('GET', `/v1/apps/${row.id}?fields=*`, {
+      token: h.admin.token,
+    }),
+    200,
+  )
+}
+
+export const listApps = async (h: Api, targetId: string) =>
   must<any>(
-    await h.call('GET', `/v1/environments/${environmentId}/services?fields=*`, {
+    await h.call('GET', placed(h, targetId, 'apps?fields=*'), {
       token: h.admin.token,
     }),
     200,
   ).items as any[]
 
-export const waitForActive = async (h: Api, serviceId: string, timeoutMs = 8000) => {
+export const waitForActive = async (h: Api, appId: string, timeoutMs = 8000) => {
   const deadline = Date.now() + timeoutMs
 
   for (;;) {
     const svc = must<any>(
-      await h.call('GET', `/v1/services/${serviceId}?fields=current_deployment_id`, {
+      await h.call('GET', `/v1/apps/${appId}?fields=current_deployment_id`, {
         token: h.admin.token,
       }),
       200,
@@ -116,7 +157,7 @@ export const waitForActive = async (h: Api, serviceId: string, timeoutMs = 8000)
     }
 
     if (Date.now() > deadline) {
-      throw new Error(`service ${serviceId} never became current`)
+      throw new Error(`app ${appId} never became current`)
     }
 
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -159,7 +200,7 @@ const digestOf = (c: string) => `sha256:${c.repeat(64)}`
 
 const toolchainDigest = digestOf('e')
 
-const releaseManifest = (release: string, gateway: boolean, sandboxes: boolean) =>
+const releaseManifest = (release: string, gateway: boolean, machines: boolean) =>
   JSON.stringify({
     schema: 1,
     release,
@@ -174,7 +215,7 @@ const releaseManifest = (release: string, gateway: boolean, sandboxes: boolean) 
         digest: digestOf('d'),
         platforms: null,
       },
-      ...(sandboxes
+      ...(machines
         ? {
             sandbox_toolchain: {
               kind: 'image',
@@ -207,12 +248,12 @@ const releaseManifest = (release: string, gateway: boolean, sandboxes: boolean) 
 
 export const pinPlatform = (
   h: Pick<Dispatch, 'db'>,
-  options: { gateway?: boolean; sandboxes?: boolean } = {},
+  options: { gateway?: boolean; machines?: boolean } = {},
 ) => {
   const raw = releaseManifest(
-    `0.0.0-test${options.gateway ? '-gateway' : ''}${options.sandboxes ? '-sandboxes' : ''}`,
+    `0.0.0-test${options.gateway ? '-gateway' : ''}${options.machines ? '-machines' : ''}`,
     options.gateway ?? false,
-    options.sandboxes ?? false,
+    options.machines ?? false,
   )
 
   storeRelease(h.db, {
@@ -292,23 +333,23 @@ export const rows = <T = Record<string, unknown>>(
 
 export const toolchainImageDigest = toolchainDigest
 
-export const createSandbox = async (
+export const createMachine = async (
   h: Api,
-  environmentId: string,
+  targetId: string,
   body: Record<string, unknown> = {},
   expect = [201],
 ) =>
   must<any>(
-    await h.call('POST', `/v1/environments/${environmentId}/sandboxes`, {
+    await h.call('POST', placed(h, targetId, 'machines'), {
       token: h.admin.token,
       body,
     }),
     ...expect,
   )
 
-export const waitForSandbox = async (
+export const waitForMachine = async (
   h: Api & Partial<Pick<Dispatch, 'deps'>>,
-  sandboxId: string,
+  machineId: string,
   status: string,
   timeoutMs = 8000,
 ) => {
@@ -317,7 +358,7 @@ export const waitForSandbox = async (
   for (;;) {
     h.deps?.stations.reconcile()
     const box = must<any>(
-      await h.call('GET', `/v1/sandboxes/${sandboxId}?fields=*`, {
+      await h.call('GET', `/v1/machines/${machineId}?fields=*`, {
         token: h.admin.token,
       }),
       200,
@@ -328,7 +369,7 @@ export const waitForSandbox = async (
     }
 
     if (Date.now() > deadline) {
-      throw new Error(`sandbox ${sandboxId} stayed ${box.status}, wanted ${status}`)
+      throw new Error(`machine ${machineId} stayed ${box.status}, wanted ${status}`)
     }
 
     await new Promise((resolve) => setTimeout(resolve, 50))

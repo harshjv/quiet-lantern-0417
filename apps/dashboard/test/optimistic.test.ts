@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import { QueryClient, queryOptions } from '@tanstack/react-query'
 
-import type { Deployment, DeploymentStep, Event, Variable } from '../src/lib/api.ts'
+import type { Deployment, DeploymentStep, Event, Key } from '../src/lib/api.ts'
 import {
   applyOptimistic,
   isOptimistic,
@@ -98,7 +98,7 @@ test('an optimistic edit leaves queries that are not cached alone', async () => 
 
 const deployment = (number: number): Deployment => ({
   id: `dep_${number}`,
-  service_id: 'svc_web',
+  app_id: 'svc_web',
   number,
   status: 'active',
   trigger: {
@@ -128,10 +128,10 @@ test('a deploy queues a placeholder above the latest deployment', () => {
   assert.deepEqual(withQueued([], 'manual'), [])
 })
 
-const variable = (key: string): Variable => ({
-  id: `var_${key}`,
-  scope: 'service',
-  key,
+const keyNamed = (name: string): Key => ({
+  id: `key_${name}`,
+  scope: 'app',
+  name,
   kind: 'literal',
   reference: null,
   injection: 'file',
@@ -140,17 +140,17 @@ const variable = (key: string): Variable => ({
   bytes: null,
 })
 
-test('a saved variable shows as a draft until the server answers', () => {
-  const list = [variable('A')]
+test('a saved key shows as a draft until the server answers', () => {
+  const list = [keyNamed('A')]
   const added = withDraft(
     list,
     {
-      key: 'B',
+      name: 'B',
       kind: 'reference',
       value: '${{db.HOST}}',
       build: true,
     },
-    'service',
+    'app',
   )
 
   assert.equal(added.length, 2)
@@ -160,21 +160,21 @@ test('a saved variable shows as a draft until the server answers', () => {
   const changed = withDraft(
     list,
     {
-      key: 'A',
+      name: 'A',
       kind: 'literal',
       value: 'two',
       build: false,
     },
-    'service',
+    'app',
   )
 
   assert.equal(changed.length, 1)
-  assert.equal(changed[0].id, 'var_A')
+  assert.equal(changed[0].id, 'key_A')
   assert.equal(changed[0].injection, 'file')
   assert.ok(isOptimistic(changed[0]))
   assert.ok(!isOptimistic(list[0]))
   assert.deepEqual(
-    withoutKeys(added, ['A']).map((v) => v.key),
+    withoutKeys(added, ['A']).map((v) => v.name),
     ['B'],
   )
 })
@@ -215,7 +215,7 @@ test('only finished deployments make a completion', () => {
   assert.equal(completionOf(event('deployment.failed', {})), null)
 })
 
-test('completion toasts name the service and the deployment', () => {
+test('completion toasts name the app and the deployment', () => {
   assert.deepEqual(
     completionText(
       {
@@ -273,7 +273,7 @@ test('the step header counts distinct steps and times the running one', () => {
   const steps = [
     step('pull', 'done'),
     step('pre_deploy', 'skipped'),
-    step('service', 'done'),
+    step('app', 'done'),
     step('health', 'failed'),
     step('health', 'running'),
     step('cutover', 'pending'),

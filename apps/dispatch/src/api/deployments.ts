@@ -10,12 +10,13 @@ import {
 import type { ActorValue } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { blob, build, deployment, environment, service, station } from '../db/schema.ts'
+import { app, blob, build, deployment, server, target as targetTable } from '../db/schema.ts'
 import { targetIssue } from '../generation/build.ts'
 import { isPinned, pinnedRef } from '../platform/image-source.ts'
 import { snapshotOf } from '../secrets/deploy.ts'
 import type { StationServer } from '../station/server.ts'
 
+import { refreshAppStatus } from './app-status.ts'
 import { fail } from './errors.ts'
 
 export type TriggerType = (typeof deploymentTriggerValues)[number]
@@ -24,7 +25,7 @@ export const deployableStationStatuses = new Set(['online', 'asleep'])
 
 export const configFields = [
   'source',
-  'station_id',
+  'server_id',
   'command',
   'build_args',
   'limits',
@@ -38,10 +39,10 @@ export const configFields = [
   'schedule',
 ] as const
 
-const restoredColumns = configFields.filter((c) => c !== 'station_id')
+const restoredColumns = configFields.filter((c) => c !== 'server_id')
 
 type DeploymentRow = typeof deployment.$inferSelect
-type ServiceRow = typeof service.$inferSelect
+type AppRow = typeof app.$inferSelect
 type Source = {
   type: string
   ref?: string
@@ -60,14 +61,14 @@ export const requireStationReady = (
     placement: true,
   },
 ) => {
-  const row = db.select().from(station).where(eq(station.id, stationId)).get()
+  const row = db.select().from(server).where(eq(server.id, stationId)).get()
 
   if (!row) {
-    return fail('VALIDATION_FAILED', `station ${stationId} does not exist.`, undefined, {
+    return fail('VALIDATION_FAILED', `server ${stationId} does not exist.`, undefined, {
       issues: [
         {
-          path: '/station_id',
-          message: 'unknown station',
+          path: '/server_id',
+          message: 'unknown server',
         },
       ],
     })
@@ -75,11 +76,11 @@ export const requireStationReady = (
 
   if (row.draining && options.placement) {
     fail(
-      'STATION_OFFLINE',
-      `Station ${row.name} is draining, so no new deployments are placed on it.`,
-      `Place the service on another station, or end the drain with sly stations update ${row.name} --no-draining.`,
+      'SERVER_OFFLINE',
+      `Server ${row.name} is draining, so no new deployments are placed on it.`,
+      `Place the app on another server, or end the drain with sly servers update ${row.name} --no-draining.`,
       {
-        station_id: row.id,
+        server_id: row.id,
         status: row.status,
         draining: true,
       },
@@ -88,11 +89,11 @@ export const requireStationReady = (
 
   if (row.revoked_at || !deployableStationStatuses.has(row.status)) {
     fail(
-      'STATION_OFFLINE',
-      `Station ${row.name} is ${row.revoked_at ? 'removed' : row.status}, so nothing can be deployed to it.`,
+      'SERVER_OFFLINE',
+      `Server ${row.name} is ${row.revoked_at ? 'removed' : row.status}, so nothing can be deployed to it.`,
       undefined,
       {
-        station_id: row.id,
+        server_id: row.id,
         status: row.status,
       },
     )
@@ -100,11 +101,11 @@ export const requireStationReady = (
 
   if (row.version_skew === 'unsupported') {
     fail(
-      'STATION_VERSION_SKEW',
-      `Station ${row.name} runs a stationd outside the supported version window.`,
-      'Upgrade stationd on the station.',
+      'SERVER_VERSION_SKEW',
+      `Server ${row.name} runs a stationd outside the supported version window.`,
+      'Upgrade stationd on the server.',
       {
-        station_id: row.id,
+        server_id: row.id,
       },
     )
   }
@@ -114,8 +115,8 @@ export const requireStationReady = (
 
 export const requireLink = (stations: Pick<StationServer, 'isConnected'>, stationId: string) => {
   if (!stations.isConnected(stationId)) {
-    fail('STATION_OFFLINE', `Station ${stationId} is not connected to Dispatch.`, undefined, {
-      station_id: stationId,
+    fail('SERVER_OFFLINE', `Server ${stationId} is not connected to Dispatch.`, undefined, {
+      server_id: stationId,
     })
   }
 }
@@ -130,19 +131,19 @@ export const requireConnected = (
   requireLink(deps.stations, stationId)
 }
 
-export const usableBlob = (db: Db, blobId: string, serviceId: string) => {
+export const usableBlob = (db: Db, blobId: string, appId: string) => {
   const row = db.select().from(blob).where(eq(blob.id, blobId)).get()
 
-  if (!row || row.kind !== 'push_tarball' || row.service_id !== serviceId) {
+  if (!row || row.kind !== 'push_tarball' || row.app_id !== appId) {
     return fail(
       'VALIDATION_FAILED',
-      `blob ${blobId} is not a source upload for this service.`,
-      'Upload the directory with POST /v1/blobs and the X-Stationly-Service header naming this service.',
+      `blob ${blobId} is not a source upload for this app.`,
+      'Upload the directory with POST /v1/blobs and the X-Stationly-App header naming this app.',
       {
         issues: [
           {
             path: '/blob_id',
-            message: 'unknown blob for this service',
+            message: 'unknown blob for this app',
           },
         ],
       },
@@ -163,14 +164,14 @@ export const usableBlob = (db: Db, blobId: string, serviceId: string) => {
   return row
 }
 
-const lastBuildBlob = (db: Db, serviceId: string) => {
+const lastBuildBlob = (db: Db, appId: string) => {
   const rows = db
     .select({
       source: build.source,
     })
     .from(build)
     .innerJoin(deployment, eq(deployment.id, build.deployment_id))
-    .where(eq(deployment.service_id, serviceId))
+    .where(eq(deployment.app_id, appId))
     .orderBy(desc(build.id))
     .limit(1)
     .all()
@@ -179,11 +180,11 @@ const lastBuildBlob = (db: Db, serviceId: string) => {
 }
 
 export const configDeployTrigger = (
-  svc: Pick<ServiceRow, 'current_deployment_id'>,
+  svc: Pick<AppRow, 'current_deployment_id'>,
   source: { type?: unknown },
   sourceChanged = false,
-  reuse: 'redeploy' | 'variable_change' = 'redeploy',
-): 'manual' | 'redeploy' | 'variable_change' | null => {
+  reuse: 'redeploy' | 'key_change' = 'redeploy',
+): 'manual' | 'redeploy' | 'key_change' | null => {
   if (!svc.current_deployment_id) {
     return source.type === 'local' ? null : 'manual'
   }
@@ -193,7 +194,7 @@ export const configDeployTrigger = (
 
 const planBuild = (
   db: Db,
-  svc: ServiceRow,
+  svc: AppRow,
   input: { blob_id?: string | null; rebuild?: boolean; source_sha?: string | null },
 ) => {
   const source = svc.source as Source
@@ -223,30 +224,25 @@ const planBuild = (
   }
 
   if (input.blob_id) {
-    fail(
-      'VALIDATION_FAILED',
-      'blob_id is accepted only for services with a local source.',
-      undefined,
-      {
-        issues: [
-          {
-            path: '/blob_id',
-            message: `source is ${source.type}`,
-          },
-        ],
-      },
-    )
+    fail('VALIDATION_FAILED', 'blob_id is accepted only for apps with a local source.', undefined, {
+      issues: [
+        {
+          path: '/blob_id',
+          message: `source is ${source.type}`,
+        },
+      ],
+    })
   }
 
-  const env = db
+  const origin = db
     .select({
-      pull_request: environment.pull_request,
+      origin: targetTable.origin,
     })
-    .from(environment)
-    .where(eq(environment.id, svc.environment_id))
-    .get()
+    .from(targetTable)
+    .where(eq(targetTable.id, svc.target_id))
+    .get()?.origin
   const forkPr =
-    env?.pull_request?.fork && env.pull_request.repo === source.repo ? env.pull_request : null
+    origin?.type === 'pull_request' && origin.fork && origin.repo === source.repo ? origin : null
 
   return {
     source: {
@@ -265,7 +261,7 @@ const planBuild = (
 }
 
 export type DeploymentInput = {
-  service_id: string
+  app_id: string
   trigger: TriggerType
   actor: ActorValue
   supersede: boolean
@@ -278,21 +274,18 @@ export type DeploymentInput = {
 }
 
 export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
-  const svc = db.select().from(service).where(eq(service.id, input.service_id)).get()
+  const svc = db.select().from(app).where(eq(app.id, input.app_id)).get()
 
   if (!svc) {
-    return fail('NOT_FOUND', `service ${input.service_id} does not exist.`)
+    return fail('NOT_FOUND', `app ${input.app_id} does not exist.`)
   }
 
-  requireStationReady(db, svc.station_id)
+  requireStationReady(db, svc.server_id)
   const open = db
     .select()
     .from(deployment)
     .where(
-      and(
-        eq(deployment.service_id, svc.id),
-        inArray(deployment.status, [...deploymentOpenStatuses]),
-      ),
+      and(eq(deployment.app_id, svc.id), inArray(deployment.status, [...deploymentOpenStatuses])),
     )
     .all()
   const blocking = open.find(
@@ -324,13 +317,13 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   }
 
   const source = svc.source as Source
-  const reuse = input.trigger === 'redeploy' || input.trigger === 'variable_change'
+  const reuse = input.trigger === 'redeploy' || input.trigger === 'key_change'
 
   if (reuse && !current?.image_ref) {
     fail(
       'NO_CURRENT_DEPLOYMENT',
       `${svc.name} has no current deployment to redeploy.`,
-      'Call deploy (POST /v1/services/{service}/deployments) first.',
+      'Call deploy (POST /v1/apps/{app}/deployments) first.',
     )
   }
 
@@ -356,7 +349,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       image_ref
         ? `${svc.name} would deploy ${image_ref}, which is not a digest reference.`
         : `${svc.name} has no resolved image digest to deploy.`,
-      'Set the image source again (PATCH /v1/services/{service} with source) so Dispatch resolves the tag to its digest, then deploy.',
+      'Set the image source again (PATCH /v1/apps/{app} with source) so Dispatch resolves the tag to its digest, then deploy.',
       {
         image_ref,
         source: svc.source,
@@ -368,7 +361,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
     ? target.config_snapshot
     : (({ id: _i, created_at: _c, updated_at: _u, ...rest }) => rest)(svc)
   const problem = targetIssue(db, {
-    service_id: svc.id,
+    app_id: svc.id,
     image_ref,
     config_snapshot,
     strategy: target
@@ -380,7 +373,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
     fail(
       'VALIDATION_FAILED',
       `${svc.name} cannot be deployed: its container spec fails at ${problem.path}: ${problem.message}.`,
-      'Correct the service setting at that path, then deploy again.',
+      'Correct the app setting at that path, then deploy again.',
       {
         issues: [
           {
@@ -412,16 +405,16 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
         .map((c) => [c, target.config_snapshot[c]]),
     )
 
-    db.update(service).set(restored).where(eq(service.id, svc.id)).run()
+    db.update(app).set(restored).where(eq(app.id, svc.id)).run()
   }
 
-  const fresh = db.select().from(service).where(eq(service.id, svc.id)).get()!
+  const fresh = db.select().from(app).where(eq(app.id, svc.id)).get()!
   const last = db
     .select({
       number: deployment.number,
     })
     .from(deployment)
-    .where(eq(deployment.service_id, svc.id))
+    .where(eq(deployment.app_id, svc.id))
     .orderBy(desc(deployment.number))
     .limit(1)
     .get()
@@ -432,7 +425,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   db.insert(deployment)
     .values({
       id,
-      service_id: svc.id,
+      app_id: svc.id,
       number: (last?.number ?? 0) + 1,
       trigger: {
         type: input.trigger,
@@ -457,10 +450,10 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   if (plannedBuild) {
     const env = db
       .select({
-        project_id: environment.project_id,
+        project_id: targetTable.project_id,
       })
-      .from(environment)
-      .where(eq(environment.id, svc.environment_id))
+      .from(targetTable)
+      .where(eq(targetTable.id, svc.target_id))
       .get()!
 
     db.insert(build)
@@ -477,14 +470,10 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
       .run()
   }
 
-  if (fresh.desired_state === 'running' && fresh.status !== 'amber') {
-    db.update(service)
-      .set({
-        status: 'amber',
-      })
-      .where(eq(service.id, svc.id))
-      .run()
-  }
+  refreshAppStatus(db, svc.id, {
+    source: 'deployment',
+    deployment_id: id,
+  })
 
   return {
     id,

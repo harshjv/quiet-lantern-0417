@@ -2,36 +2,30 @@ import { useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react
 
 export const groups = {
   projects: [['projects']],
-  environments: [['environments'], ['projects']],
-  services: [['services'], ['environments'], ['projects']],
-  deployments: [['deployments'], ['services'], ['projects'], ['environments']],
-  health: [['services'], ['projects']],
-  variables: [['variables'], ['services']],
-  domains: [['domains'], ['services'], ['network']],
+  previews: [['previews'], ['projects']],
+  apps: [['apps'], ['previews'], ['projects']],
+  deployments: [['deployments'], ['apps'], ['projects'], ['previews']],
+  health: [['apps'], ['projects']],
+  keys: [['keys'], ['apps']],
+  domains: [['domains'], ['apps'], ['network']],
   networking: [
     ['ports'],
     ['domains'],
     ['port-allocations'],
-    ['services'],
+    ['apps'],
     ['deployments'],
     ['network'],
   ],
-  sandboxes: [['sandboxes'], ['sandbox-snapshots'], ['tasks'], ['projects']],
-  tasks: [['tasks']],
+  machines: [['machines'], ['machine-snapshots'], ['tasks'], ['projects']],
+  tasks: [['tasks'], ['approvals']],
   stations: [['stations']],
-  staged: [['staged']],
+  approvals: [['approvals']],
   auth: [['auth']],
 } satisfies Record<string, QueryKey[]>
 
 export type Group = keyof typeof groups
 
-export const stagedDecided: Group[] = [
-  'staged',
-  'services',
-  'variables',
-  'networking',
-  'deployments',
-]
+export const approvalDecided: Group[] = ['approvals', 'apps', 'keys', 'networking', 'deployments']
 
 export const invalidateGroups = (client: QueryClient, names: Group[]) => {
   const keys = new Map<string, QueryKey>(

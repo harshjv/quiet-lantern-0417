@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
 import { Loader2, RefreshCw, TriangleAlert, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -14,27 +13,28 @@ import {
   ApiFailure,
   idempotency,
   send,
+  type App,
   type Deployment,
   type SentOf,
-  type Service,
 } from '@/lib/api'
 import { editItems } from '@/lib/cache'
 import { entityIcon } from '@/lib/icons'
 import { follow } from '@/lib/live'
 import { useApiMutation } from '@/lib/mutation'
+import { go, places } from '@/lib/nav'
 import { deploymentsQuery, seedDeployment } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { isInFlight, withQueued, type TriggerType } from '@/lib/status'
 import { warningAlert } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
-type Started = SentOf<ReturnType<typeof api.v1.services>['redeploy']['post']>
+type Started = SentOf<ReturnType<typeof api.v1.apps>['redeploy']['post']>
 
-type Named = Pick<Service, 'id' | 'name'>
+type Named = Pick<App, 'id' | 'name'>
 
 export function useDeploy<V = void>(
-  target: { service: string; trigger: TriggerType },
-  act: (vars: V) => { started: string; staged: string; failed: string },
+  target: { app: string; trigger: TriggerType },
+  act: (vars: V) => { started: string; waiting: string; failed: string },
   mutationFn: (vars: V) => Promise<Started>,
   options: {
     inline?: boolean
@@ -42,16 +42,14 @@ export function useDeploy<V = void>(
     onSuccess?: () => void
   } = {},
 ) {
-  const navigate = useNavigate()
-
   return useApiMutation({
     mutationFn,
     optimistic: () => [
-      editItems(deploymentsQuery(target.service), (list) => withQueued(list, target.trigger)),
+      editItems(deploymentsQuery(target.app), (list) => withQueued(list, target.trigger)),
     ],
     seed: seedDeployment,
     invalidate: ['deployments'],
-    staged: (vars) => act(vars).staged,
+    waiting: (vars) => act(vars).waiting,
     success: (body, vars) => ({
       title: act(vars).started,
       description: `Deployment #${body.number}`,
@@ -59,17 +57,12 @@ export function useDeploy<V = void>(
     onSuccess: (result) => {
       options.onSuccess?.()
 
-      if (result.staged) {
+      if (result.waiting) {
         return
       }
 
       follow(result.body.id)
-      void navigate({
-        to: '/deployments/$deployment',
-        params: {
-          deployment: result.body.id,
-        },
-      })
+      go(places.deployment(result.body.id))
     },
     failure: options.inline ? undefined : (vars) => act(vars).failed,
     intercept: options.intercept,
@@ -78,50 +71,50 @@ export function useDeploy<V = void>(
 
 export const deployCopy = (name: string) => ({
   started: `Deploying ${name}`,
-  staged: `Deploy ${name}`,
+  waiting: `Deploy ${name}`,
   failed: `deploy ${name}`,
 })
 
-const useRedeploy = (service: Named, verb: 'Deploy' | 'Redeploy') =>
+const useRedeploy = (app: Named, verb: 'Deploy' | 'Redeploy') =>
   useDeploy(
     {
-      service: service.id,
+      app: app.id,
       trigger: 'redeploy',
     },
     () =>
       verb === 'Redeploy'
         ? {
-            started: `Redeploying ${service.name}`,
-            staged: `Redeploy ${service.name}`,
-            failed: `redeploy ${service.name}`,
+            started: `Redeploying ${app.name}`,
+            waiting: `Redeploy ${app.name}`,
+            failed: `redeploy ${app.name}`,
           }
-        : deployCopy(service.name),
+        : deployCopy(app.name),
     () =>
       send(
         api.v1
-          .services({
-            service: service.id,
+          .apps({
+            app: app.id,
           })
           .redeploy.post({}, idempotency()),
       ),
   )
 
-export function DeployButton({ service, shortcut }: { service: Service; shortcut?: boolean }) {
+export function DeployButton({ app, shortcut }: { app: App; shortcut?: boolean }) {
   const [open, setOpen] = useState(false)
-  const deployable = service.source.type !== 'local' && service.source.type !== 'template'
+  const deployable = app.source.type !== 'local' && app.source.type !== 'template'
 
   useShortcut('deploy', () => setOpen(true), Boolean(shortcut) && deployable)
-  const image = service.source.type === 'image' ? service.source.ref : null
+  const image = app.source.type === 'image' ? app.source.ref : null
   const [ref, setRef] = useState(image ?? '')
   const mutation = useDeploy(
     {
-      service: service.id,
+      app: app.id,
       trigger: 'manual',
     },
-    () => deployCopy(service.name),
+    () => deployCopy(app.name),
     () => {
       const body =
-        service.source.type === 'image'
+        app.source.type === 'image'
           ? {
               image: ref.trim(),
             }
@@ -133,8 +126,8 @@ export function DeployButton({ service, shortcut }: { service: Service; shortcut
 
       return send(
         api.v1
-          .services({
-            service: service.id,
+          .apps({
+            app: app.id,
           })
           .deployments.post(body, idempotency()),
       )
@@ -144,7 +137,7 @@ export function DeployButton({ service, shortcut }: { service: Service; shortcut
       onSuccess: () => setOpen(false),
     },
   )
-  const repo = service.source.type === 'dockerfile' || service.source.type === 'railpack'
+  const repo = app.source.type === 'dockerfile' || app.source.type === 'railpack'
 
   if (!deployable) {
     return null
@@ -165,14 +158,14 @@ export function DeployButton({ service, shortcut }: { service: Service; shortcut
           <entityIcon.deployment /> Deploy
         </Button>
       }
-      title={`Deploy ${service.name}`}
+      title={`Deploy ${app.name}`}
       description={
         repo
-          ? `Stationly builds the source and rolls it out to ${service.name}.`
-          : `Stationly rolls this image out to ${service.name}.`
+          ? `Stationly builds the source and rolls it out to ${app.name}.`
+          : `Stationly rolls this image out to ${app.name}.`
       }
       error={mutation.errorText}
-      submitLabel={`Deploy ${service.name}`}
+      submitLabel={`Deploy ${app.name}`}
       pending={mutation.isPending}
       hideWhilePending
       onSubmit={() => mutation.mutate()}
@@ -184,8 +177,8 @@ export function DeployButton({ service, shortcut }: { service: Service; shortcut
           value={ref}
           onChange={(e) => setRef(e.target.value)}
           placeholder={
-            repo && service.source.type !== 'image'
-              ? (service.source as { branch: string }).branch
+            repo && app.source.type !== 'image'
+              ? (app.source as { branch: string }).branch
               : 'nginx:1.27'
           }
           className="font-mono"
@@ -195,15 +188,15 @@ export function DeployButton({ service, shortcut }: { service: Service; shortcut
   )
 }
 
-export function RedeployButton({ service }: { service: Service }) {
-  const mutation = useRedeploy(service, 'Redeploy')
+export function RedeployButton({ app }: { app: App }) {
+  const mutation = useRedeploy(app, 'Redeploy')
 
   return (
     <Button
       size="sm"
       variant="outline"
       onClick={() => mutation.mutate()}
-      disabled={!service.current_deployment_id || mutation.isPending}
+      disabled={!app.current_deployment_id || mutation.isPending}
     >
       {mutation.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
       Redeploy
@@ -211,23 +204,23 @@ export function RedeployButton({ service }: { service: Service }) {
   )
 }
 
-export function useRollback(service: Named, deployment: { id: string; label: string }) {
+export function useRollback(app: Named, deployment: { id: string; label: string }) {
   const [confirm, setConfirm] = useState<string | null>(null)
   const mutation = useDeploy(
     {
-      service: service.id,
+      app: app.id,
       trigger: 'rollback',
     },
     () => ({
       started: `Rolling back to ${deployment.label}`,
-      staged: `Roll ${service.name} back to ${deployment.label}`,
+      waiting: `Roll ${app.name} back to ${deployment.label}`,
       failed: `roll back to ${deployment.label}`,
     }),
     (stale: boolean) =>
       send(
         api.v1
-          .services({
-            service: service.id,
+          .apps({
+            app: app.id,
           })
           .rollback.post(
             {
@@ -272,14 +265,8 @@ export function useRollback(service: Named, deployment: { id: string; label: str
   }
 }
 
-export function RollbackButton({
-  service,
-  deployment,
-}: {
-  service: Service
-  deployment: Deployment
-}) {
-  const { mutation, confirm } = useRollback(service, {
+export function RollbackButton({ app, deployment }: { app: App; deployment: Deployment }) {
+  const { mutation, confirm } = useRollback(app, {
     id: deployment.id,
     label: `#${deployment.number}`,
   })
@@ -302,21 +289,21 @@ export function RollbackButton({
 }
 
 const staleTitle = (codes: Set<string>) =>
-  codes.has('VARIABLES_CHANGED') && codes.has('CONFIG_CHANGED')
-    ? 'Variables and settings changed. Deploy to use them.'
-    : codes.has('VARIABLES_CHANGED')
-      ? 'Variables changed. Deploy to use them.'
+  codes.has('KEYS_CHANGED') && codes.has('CONFIG_CHANGED')
+    ? 'Keys and settings changed. Deploy to use them.'
+    : codes.has('KEYS_CHANGED')
+      ? 'Keys changed. Deploy to use them.'
       : 'Settings changed. Deploy to use them.'
 
-export function StaleBanner({ service }: { service: Service }) {
+export function StaleBanner({ app }: { app: App }) {
   const deployments = useQuery({
-    ...deploymentsQuery(service.id),
-    enabled: service.stale,
+    ...deploymentsQuery(app.id),
+    enabled: app.stale,
   })
-  const mutation = useRedeploy(service, 'Deploy')
-  const reasons = service.stale_reasons ?? []
+  const mutation = useRedeploy(app, 'Deploy')
+  const reasons = app.stale_reasons ?? []
 
-  if (!service.stale || reasons.length === 0) {
+  if (!app.stale || reasons.length === 0) {
     return null
   }
 
@@ -357,13 +344,13 @@ export function StaleBanner({ service }: { service: Service }) {
       </div>
       {!rolling &&
         (sourceChanged ? (
-          <DeployButton service={service} />
+          <DeployButton app={app} />
         ) : (
           <Button
             size="sm"
             className="shrink-0 self-start sm:self-center"
             onClick={() => mutation.mutate()}
-            disabled={!service.current_deployment_id || mutation.isPending}
+            disabled={!app.current_deployment_id || mutation.isPending}
           >
             {mutation.isPending ? <Loader2 className="animate-spin" /> : <entityIcon.deployment />}
             Deploy

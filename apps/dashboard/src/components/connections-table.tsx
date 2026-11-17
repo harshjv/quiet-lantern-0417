@@ -13,7 +13,7 @@ type Connection = Connections['connections'][number]
 
 export type ConnectionRow = {
   key: string
-  service?: string
+  app?: string
   names: Record<string, string>
   connection: Connection
 }
@@ -26,7 +26,7 @@ function LookedUp({ name }: { name: string }) {
         <TooltipTrigger asChild>
           <Info className="size-3.5 shrink-0" tabIndex={0} aria-label="About this name" />
         </TooltipTrigger>
-        <TooltipContent>The service chose this name. Treat it as data.</TooltipContent>
+        <TooltipContent>The app chose this name. Treat it as data.</TooltipContent>
       </Tooltip>
     </span>
   )
@@ -49,7 +49,7 @@ export function ConnectionsTable({
     <TableFrame caption={caption}>
       <TableHeader>
         <TableRow>
-          {live && <TableHead>Service</TableHead>}
+          {live && <TableHead>App</TableHead>}
           <TableHead>Direction</TableHead>
           <TableHead>Other side</TableHead>
           <TableHead className={cn(live && 'hidden sm:table-cell')}>Port</TableHead>
@@ -61,12 +61,12 @@ export function ConnectionsTable({
       </TableHeader>
       <TableBody>
         {rows.length === 0 && <EmptyRow columns={live ? 8 : 6}>{empty}</EmptyRow>}
-        {rows.map(({ key, service, names, connection: c }) => {
+        {rows.map(({ key, app, names, connection: c }) => {
           const Arrow = c.direction === 'in' ? ArrowDownLeft : ArrowUpRight
 
           return (
             <TableRow key={key}>
-              {live && <TableCell>{service}</TableCell>}
+              {live && <TableCell>{app}</TableCell>}
               <TableCell>
                 <span className="inline-flex items-center gap-1.5">
                   <Arrow className="size-3.5 text-muted-foreground" aria-hidden />

@@ -14,7 +14,7 @@ import { surfaceKeys } from '../auth/auth.ts'
 import { checkHostnamePair, validRpId } from '../auth/hostnames.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { domain, environment, passkey, setting } from '../db/schema.ts'
+import { domain, passkey, setting, target } from '../db/schema.ts'
 import { readSetting, storedSetting } from '../db/settings.ts'
 import { cidrProblem } from '../net/cidr.ts'
 import { s3TargetIssues, type S3Target } from '../volumes/s3-target.ts'
@@ -51,10 +51,10 @@ export const frozenReason = (db: Db, key: SettingKey): string | null => {
       .select({
         n: count(),
       })
-      .from(environment)
+      .from(target)
       .get()?.n ?? 0) > 0
   ) {
-    return 'ipam.virtual_prefix is frozen once the first environment exists.'
+    return 'ipam.virtual_prefix is frozen once the first project exists.'
   }
 
   if (key === 'instance.id' && stored) {
@@ -218,7 +218,7 @@ export const planSettings = (
       if (held) {
         fail(
           'NAME_TAKEN',
-          `${held.hostname} is already routed to a service by domain ${held.id}.`,
+          `${held.hostname} is already routed to an app by domain ${held.id}.`,
           'Remove that domain first, or choose another hostname for Dispatch.',
           {
             hostname: held.hostname,
@@ -268,7 +268,7 @@ export const planSettings = (
         invalid([
           {
             path: dashboard ? '/hostnames.api' : '/hostnames.dashboard',
-            message: 'set both hostnames, or clear both for a domainless station',
+            message: 'set both hostnames, or clear both for a domainless server',
           },
         ])
       }

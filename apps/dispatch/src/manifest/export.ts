@@ -1,20 +1,19 @@
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { stringify } from 'yaml'
 
-import type { EnvironmentRow, ProjectRow, ServiceRow, VariableRow } from '../api/lookup.ts'
-import type { Db } from '../db/client.ts'
+import { isTransient } from '../api/changes.ts'
 import {
-  domain,
-  environment,
-  port_allocation,
-  service,
-  service_port,
-  station,
-  volume,
-} from '../db/schema.ts'
+  productionOf,
+  type AppRow,
+  type KeyRow,
+  type ProjectRow,
+  type TargetRow,
+} from '../api/lookup.ts'
+import type { Db } from '../db/client.ts'
+import { app, app_port, domain, port_allocation, server, target, volume } from '../db/schema.ts'
 import { normalizeHealth } from '../generation/health.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { decryptValue, headValue, variablesOf } from '../secrets/values.ts'
+import { decryptValue, headValue, keysOf, type ValueTarget } from '../secrets/values.ts'
 
 import { defaultLimits } from './plan.ts'
 
@@ -23,13 +22,13 @@ type Json = Record<string, unknown>
 const sorted = <T>(entries: [string, T][]) =>
   Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)))
 
-const latest = (db: Db, keyring: Keyring, row: VariableRow, environmentId: string | null) => {
-  const value = headValue(db, row.id, environmentId)
+const latest = (db: Db, keyring: Keyring, row: KeyRow, valueTarget: ValueTarget) => {
+  const value = headValue(db, row.id, valueTarget)
 
   return value ? decryptValue(keyring, value) : null
 }
 
-const withFlags = (base: Json, row: VariableRow) => ({
+const withFlags = (base: Json, row: KeyRow) => ({
   ...base,
   ...(row.injection !== 'env'
     ? {
@@ -43,7 +42,7 @@ const withFlags = (base: Json, row: VariableRow) => ({
     : {}),
 })
 
-const serviceVariable = (db: Db, keyring: Keyring, row: VariableRow): unknown => {
+const appKey = (db: Db, keyring: Keyring, row: KeyRow): unknown => {
   const plain = row.injection === 'env' && !row.build
 
   if (row.kind === 'sealed') {
@@ -71,7 +70,7 @@ const serviceVariable = (db: Db, keyring: Keyring, row: VariableRow): unknown =>
         )
   }
 
-  const value = latest(db, keyring, row, null) ?? ''
+  const value = latest(db, keyring, row, 'production') ?? ''
 
   if (plain && !value.includes('${{')) {
     return value
@@ -136,20 +135,20 @@ const exportSource = (source: Json) => {
   return out
 }
 
-type ServiceExport = { doc: Json; overridable: Json }
+type AppExport = { doc: Json; overridable: Json }
 
-const exportService = (
+const exportApp = (
   db: Db,
   keyring: Keyring,
-  svc: ServiceRow,
+  svc: AppRow,
   stationNames: Map<string, string>,
   multiStation: boolean,
-): ServiceExport => {
+): AppExport => {
   const ports = db
     .select()
-    .from(service_port)
-    .where(eq(service_port.service_id, svc.id))
-    .orderBy(asc(service_port.port))
+    .from(app_port)
+    .where(eq(app_port.app_id, svc.id))
+    .orderBy(asc(app_port.port))
     .all()
   const portDocs = ports.map((p) => ({
     port: p.port,
@@ -159,7 +158,7 @@ const exportService = (
   const volumes = db
     .select()
     .from(volume)
-    .where(and(eq(volume.service_id, svc.id), eq(volume.status, 'active')))
+    .where(and(eq(volume.app_id, svc.id), eq(volume.status, 'active')))
     .orderBy(asc(volume.mount_path))
     .all()
   const portIds = ports.map((p) => p.id)
@@ -168,7 +167,7 @@ const exportService = (
     ? db
         .select()
         .from(domain)
-        .where(inArray(domain.service_port_id, portIds))
+        .where(inArray(domain.app_port_id, portIds))
         .orderBy(asc(domain.hostname))
         .all()
     : []
@@ -177,15 +176,12 @@ const exportService = (
         .select()
         .from(port_allocation)
         .where(
-          and(
-            inArray(port_allocation.service_port_id, portIds),
-            eq(port_allocation.status, 'active'),
-          ),
+          and(inArray(port_allocation.app_port_id, portIds), eq(port_allocation.status, 'active')),
         )
         .all()
     : []
-  const variables = variablesOf(db, {
-    scope: 'service',
+  const keys = keysOf(db, {
+    scope: 'app',
     id: svc.id,
   }).all()
   const firstHttp = portDocs.find((p) => p.protocol === 'http')?.port
@@ -195,7 +191,7 @@ const exportService = (
   }
 
   if (multiStation) {
-    doc.station = stationNames.get(svc.station_id)
+    doc.server = stationNames.get(svc.server_id)
   }
 
   if (svc.command) {
@@ -296,7 +292,7 @@ const exportService = (
 
   if (domains.length) {
     overridable.domains = domains.map((d) => {
-      const port = portOf.get(d.service_port_id)!.port
+      const port = portOf.get(d.app_port_id)!.port
       const out: Json =
         d.kind === 'generated'
           ? {
@@ -320,12 +316,12 @@ const exportService = (
 
   if (allocations.length) {
     overridable.expose_tcp = allocations
-      .map((a) => portOf.get(a.service_port_id)!.port)
+      .map((a) => portOf.get(a.app_port_id)!.port)
       .sort((a, b) => a - b)
   }
 
-  if (variables.length) {
-    overridable.variables = sorted(variables.map((v) => [v.key, serviceVariable(db, keyring, v)]))
+  if (keys.length) {
+    overridable.keys = sorted(keys.map((v) => [v.name, appKey(db, keyring, v)]))
   }
 
   if (svc.desired_state !== 'running') {
@@ -347,7 +343,7 @@ const exportService = (
   }
 
   if (multiStation) {
-    overridable.station = stationNames.get(svc.station_id)
+    overridable.server = stationNames.get(svc.server_id)
   }
 
   overridable.limits = svc.limits
@@ -366,7 +362,7 @@ const exportService = (
 const keyOrder = [
   'kind',
   'source',
-  'station',
+  'server',
   'command',
   'build_args',
   'ports',
@@ -382,19 +378,14 @@ const keyOrder = [
   'volumes',
   'domains',
   'expose_tcp',
-  'variables',
+  'keys',
   'desired_state',
 ]
 
 const order = (doc: Json) =>
   Object.fromEntries(keyOrder.filter((k) => doc[k] !== undefined).map((k) => [k, doc[k]]))
 
-const projectVariable = (
-  db: Db,
-  keyring: Keyring,
-  row: VariableRow,
-  environments: EnvironmentRow[],
-): unknown => {
+const projectKey = (db: Db, keyring: Keyring, row: KeyRow, places: TargetRow[]): unknown => {
   if (row.kind === 'sealed') {
     return {
       sealed: true,
@@ -410,22 +401,24 @@ const projectVariable = (
     return row.reference
   }
 
-  const fallback = latest(db, keyring, row, null)
-  const perEnv = environments
-    .map((e) => [e.name, latest(db, keyring, row, e.id)] as const)
-    .filter((e): e is readonly [string, string] => e[1] !== null)
+  const production = latest(db, keyring, row, 'production')
+  const preview = latest(db, keyring, row, 'preview')
 
-  if (!perEnv.length) {
-    return fallback ?? ''
+  if (places.length === 1) {
+    return (places[0]!.kind === 'preview' ? (preview ?? production) : production) ?? ''
+  }
+
+  if (preview === null || preview === production) {
+    return production ?? ''
   }
 
   return {
-    ...(fallback !== null
+    ...(production !== null
       ? {
-          default: fallback,
+          production,
         }
       : {}),
-    environments: sorted(perEnv.map(([k, v]) => [k, v])),
+    preview,
   }
 }
 
@@ -434,13 +427,13 @@ const diffOverride = (base: Json, other: Json) => {
 
   for (const key of [
     'source',
-    'station',
+    'server',
     'limits',
     'domains',
     'expose_tcp',
     'desired_state',
     'schedule',
-    'variables',
+    'keys',
   ]) {
     const a = base[key]
     const b = other[key]
@@ -451,7 +444,7 @@ const diffOverride = (base: Json, other: Json) => {
 
     if (b === undefined) {
       out[key] = null
-    } else if (key === 'variables' && a && typeof a === 'object' && b && typeof b === 'object') {
+    } else if (key === 'keys' && a && typeof a === 'object' && b && typeof b === 'object') {
       const changed = Object.fromEntries(
         Object.entries(b as Json).filter(
           ([k, v]) => JSON.stringify((a as Json)[k]) !== JSON.stringify(v),
@@ -475,39 +468,35 @@ export const exportManifest = (
   db: Db,
   keyring: Keyring,
   proj: ProjectRow,
-  target: EnvironmentRow | null,
+  chosen: TargetRow | null,
 ) => {
-  const base =
-    target ??
-    db.select().from(environment).where(eq(environment.id, proj.default_environment_id)).get()!
+  const base = chosen ?? productionOf(db, proj.id)
   const stations = db
     .select()
-    .from(station)
+    .from(server)
     .all()
     .filter((s) => !s.revoked_at)
   const stationNames = new Map(stations.map((s) => [s.id, s.name]))
   const multiStation = stations.length > 1
-  const servicesOf = (env: EnvironmentRow) =>
+  const appsOf = (place: TargetRow) =>
     new Map(
       db
         .select()
-        .from(service)
-        .where(eq(service.environment_id, env.id))
+        .from(app)
+        .where(eq(app.target_id, place.id))
         .all()
-        .map(
-          (svc) => [svc.name, exportService(db, keyring, svc, stationNames, multiStation)] as const,
-        ),
+        .map((svc) => [svc.name, exportApp(db, keyring, svc, stationNames, multiStation)] as const),
     )
-  const baseServices = servicesOf(base)
-  const others = target
+  const baseApps = appsOf(base)
+  const others = chosen
     ? []
     : db
         .select()
-        .from(environment)
-        .where(eq(environment.project_id, proj.id))
+        .from(target)
+        .where(eq(target.project_id, proj.id))
         .all()
-        .filter((e) => e.id !== base.id && !e.ephemeral)
-  const projectRows = variablesOf(db, {
+        .filter((e) => e.id !== base.id && !isTransient(e))
+  const projectRows = keysOf(db, {
     scope: 'project',
     id: proj.id,
   }).all()
@@ -517,25 +506,25 @@ export const exportManifest = (
   }
 
   if (projectRows.length) {
-    doc.variables = sorted(
+    doc.keys = sorted(
       projectRows.map((row) => [
-        row.key,
-        projectVariable(db, keyring, row, target ? [target] : [base, ...others]),
+        row.name,
+        projectKey(db, keyring, row, chosen ? [chosen] : [base, ...others]),
       ]),
     )
   }
 
-  if (baseServices.size) {
-    doc.services = sorted([...baseServices].map(([name, e]) => [name, e.doc]))
+  if (baseApps.size) {
+    doc.apps = sorted([...baseApps].map(([name, e]) => [name, e.doc]))
   }
 
   const overrides: Json = {}
 
-  for (const env of others) {
-    const services: Json = {}
+  for (const preview of others) {
+    const apps: Json = {}
 
-    for (const [name, e] of servicesOf(env)) {
-      const baseline = baseServices.get(name)
+    for (const [name, e] of appsOf(preview)) {
+      const baseline = baseApps.get(name)
 
       if (!baseline) {
         continue
@@ -544,19 +533,19 @@ export const exportManifest = (
       const diff = diffOverride(baseline.overridable, e.overridable)
 
       if (Object.keys(diff).length) {
-        services[name] = diff
+        apps[name] = diff
       }
     }
 
-    if (Object.keys(services).length) {
-      overrides[env.name] = {
-        services: sorted(Object.entries(services)),
+    if (Object.keys(apps).length) {
+      overrides[preview.name] = {
+        apps: sorted(Object.entries(apps)),
       }
     }
   }
 
   if (Object.keys(overrides).length) {
-    doc.environments = sorted(Object.entries(overrides))
+    doc.previews = sorted(Object.entries(overrides))
   }
 
   return doc

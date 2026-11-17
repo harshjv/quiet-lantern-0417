@@ -8,14 +8,14 @@ import { useTheme } from 'next-themes'
 import { useEffect, useRef, useState } from 'react'
 
 import { ErrorState } from '@/components/page'
-import { StartSandbox } from '@/components/sandbox-actions'
+import { StartMachine } from '@/components/sandbox-actions'
 import { TimeLeft } from '@/components/sandbox-clock'
 import { Button } from '@/components/ui/button'
-import { api, ApiFailure, failureText, idempotency, unwrap, type Sandbox } from '@/lib/api'
-import { sandboxStatus, sentence } from '@/lib/labels'
+import { api, ApiFailure, failureText, idempotency, unwrap, type Machine } from '@/lib/api'
+import { machineStatus, sentence } from '@/lib/labels'
 import { attachUrl, outputFrame, stdinFrame } from '@/lib/sandbox'
 import { isIdle, isTransient } from '@/lib/status'
-import { useEnvironmentTrail } from '@/lib/use-trail'
+import { useTrail } from '@/lib/use-trail'
 import { cn } from '@/lib/utils'
 
 type Phase = 'connecting' | 'live' | 'ended' | 'error'
@@ -44,8 +44,12 @@ const themes = {
 
 const dim = (text: string) => `\r\n\x1b[2m${text}\x1b[0m\r\n`
 
-function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'environment_id'> }) {
-  const trail = useEnvironmentTrail(sandbox.environment_id)
+function ShellSession({
+  machine,
+}: {
+  machine: Pick<Machine, 'id' | 'name' | 'project_id' | 'preview_id'>
+}) {
+  const trail = useTrail(machine)
   const { resolvedTheme } = useTheme()
   const container = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -174,8 +178,8 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
       try {
         const shell = await unwrap(
           api.v1
-            .sandboxes({
-              sandbox: sandbox.id,
+            .machines({
+              machine: machine.id,
             })
             .shells.post({}, idempotency()),
         )
@@ -247,7 +251,7 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
 
       socketRef.current = null
     }
-  }, [sandbox.id, epoch])
+  }, [machine.id, epoch])
 
   const reconnect = () => {
     termRef.current?.write(dim('Starting a new shell'))
@@ -302,12 +306,11 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
             error={failure}
             title="Couldn’t open the terminal"
             fixes={{
-              project: trail.project.name,
-              environment: trail.environment.name,
+              ...trail.scope,
               subject: {
-                kind: 'sandbox',
-                id: sandbox.id,
-                name: sandbox.name,
+                kind: 'machine',
+                id: machine.id,
+                name: machine.name,
               },
             }}
           />
@@ -325,19 +328,22 @@ function ShellSession({ sandbox }: { sandbox: Pick<Sandbox, 'id' | 'name' | 'env
   )
 }
 
-export function SandboxTerminal({
-  sandbox,
+export function MachineTerminal({
+  machine,
 }: {
-  sandbox: Pick<Sandbox, 'id' | 'name' | 'status' | 'stop_at' | 'delete_at' | 'environment_id'> & {
-    failure?: Sandbox['failure']
+  machine: Pick<
+    Machine,
+    'id' | 'name' | 'status' | 'stop_at' | 'delete_at' | 'project_id' | 'preview_id'
+  > & {
+    failure?: Machine['failure']
   }
 }) {
-  if (sandbox.status === 'running') {
-    return <ShellSession sandbox={sandbox} />
+  if (machine.status === 'running') {
+    return <ShellSession machine={machine} />
   }
 
-  const busy = isTransient(sandbox.status)
-  const idle = isIdle(sandbox.status)
+  const busy = isTransient(machine.status)
+  const idle = isIdle(machine.status)
 
   return (
     <div
@@ -349,7 +355,7 @@ export function SandboxTerminal({
           className="size-5 animate-spin text-muted-foreground motion-reduce:animate-none"
           aria-hidden
         />
-      ) : sandbox.status === 'stopped' ? (
+      ) : machine.status === 'stopped' ? (
         <Moon className="size-5 text-muted-foreground" aria-hidden />
       ) : (
         <TerminalSquare className="size-5 text-muted-foreground" aria-hidden />
@@ -357,24 +363,24 @@ export function SandboxTerminal({
       <div className="space-y-1">
         <p className="text-sm font-medium">
           {busy
-            ? `${sandbox.name} is ${sandboxStatus[sandbox.status].label.toLowerCase()}`
-            : sandbox.status === 'stopped'
-              ? `${sandbox.name} is stopped`
-              : `${sandbox.name} failed`}
+            ? `${machine.name} is ${machineStatus[machine.status].label.toLowerCase()}`
+            : machine.status === 'stopped'
+              ? `${machine.name} is stopped`
+              : `${machine.name} failed`}
         </p>
         <p className="max-w-md text-sm text-muted-foreground">
-          {sandbox.status === 'failed' && sandbox.failure?.summary
-            ? sandbox.failure.summary
+          {machine.status === 'failed' && machine.failure?.summary
+            ? machine.failure.summary
             : idle
-              ? 'Start it to open the terminal. Stationly keeps its disk and deletes the sandbox if it stays stopped, in '
-              : 'The terminal opens once the sandbox is running.'}
-          {idle && sandbox.status === 'stopped' && (
-            <TimeLeft sandbox={sandbox} className="font-medium text-foreground" />
+              ? 'Start it to open the terminal. Stationly keeps its disk and deletes the machine if it stays stopped, in '
+              : 'The terminal opens once the machine is running.'}
+          {idle && machine.status === 'stopped' && (
+            <TimeLeft machine={machine} className="font-medium text-foreground" />
           )}
-          {idle && sandbox.status === 'stopped' && '.'}
+          {idle && machine.status === 'stopped' && '.'}
         </p>
       </div>
-      {idle && <StartSandbox sandbox={sandbox} />}
+      {idle && <StartMachine machine={machine} />}
     </div>
   )
 }

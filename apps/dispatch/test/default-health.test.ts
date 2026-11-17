@@ -5,9 +5,11 @@ import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispat
 import type { FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
+  createApp,
+  createPreview,
   createProject,
-  createService,
   pinPlatform,
+  placed,
   seedLockfile,
   waitForDeployment,
 } from './helpers/seed.ts'
@@ -15,7 +17,7 @@ import {
 let h: Dispatch
 let registry: FakeRegistry
 let station: FakeStation
-let environmentId: string
+let previewId: string
 
 before(async () => {
   registry = FakeRegistry.install()
@@ -23,7 +25,7 @@ before(async () => {
   h = await startDispatch()
   seedLockfile(h)
   station = await startFakeStation(h)
-  environmentId = (await createProject(h)).default_environment_id
+  previewId = (await createPreview(h, (await createProject(h)).id, 'staging')).id
 })
 
 after(async () => {
@@ -31,8 +33,8 @@ after(async () => {
   registry.restore()
 })
 
-const targetHealth = async (seed: Omit<Parameters<typeof createService>[2], 'ref' | 'deploy'>) => {
-  const created = await createService(h, environmentId, {
+const targetHealth = async (seed: Omit<Parameters<typeof createApp>[2], 'ref' | 'deploy'>) => {
+  const created = await createApp(h, previewId, {
     ...seed,
     ref: 'nginx:1.27',
     deploy: true,
@@ -45,8 +47,8 @@ const targetHealth = async (seed: Omit<Parameters<typeof createService>[2], 'ref
   return (doc.deployments[deploymentId] as unknown as { target: { health: unknown } }).target.health
 }
 
-describe('default health checks by service kind', () => {
-  test('a web service with an http port and no health gets the http check on that port', async () => {
+describe('default health checks by app kind', () => {
+  test('a web app with an http port and no health gets the http check on that port', async () => {
     assert.deepEqual(
       await targetHealth({
         name: 'web',
@@ -70,7 +72,7 @@ describe('default health checks by service kind', () => {
     )
   })
 
-  test('a web service with only a tcp port gets the tcp check', async () => {
+  test('a web app with only a tcp port gets the tcp check', async () => {
     assert.deepEqual(
       await targetHealth({
         name: 'db',
@@ -106,8 +108,8 @@ describe('default health checks by service kind', () => {
     )
   })
 
-  test('a web service left without ports gets the alive check', async () => {
-    const created = await createService(h, environmentId, {
+  test('a web app left without ports gets the alive check', async () => {
+    const created = await createApp(h, previewId, {
       name: 'portless',
       ref: 'nginx:1.27',
       ports: [
@@ -127,7 +129,7 @@ describe('default health checks by service kind', () => {
       ).status,
       200,
     )
-    const redeployed = await h.call('POST', `/v1/services/${created.id}/redeploy`, {
+    const redeployed = await h.call('POST', `/v1/apps/${created.id}/redeploy`, {
       token: h.admin.token,
       body: {},
     })
@@ -172,8 +174,8 @@ describe('default health checks by service kind', () => {
     })
   })
 
-  test('an http check sends the service first domain as Host once it has one', async () => {
-    const created = await createService(h, environmentId, {
+  test('an http check sends the app first domain as Host once it has one', async () => {
+    const created = await createApp(h, previewId, {
       name: 'domained',
       ref: 'nginx:1.27',
       ports: [
@@ -196,7 +198,7 @@ describe('default health checks by service kind', () => {
     })
 
     assert.equal(added.status, 201, added.text)
-    const redeployed = await h.call('POST', `/v1/services/${created.id}/redeploy`, {
+    const redeployed = await h.call('POST', `/v1/apps/${created.id}/redeploy`, {
       token: h.admin.token,
       body: {},
     })
@@ -237,7 +239,7 @@ describe('default health checks by service kind', () => {
   })
 
   test('health.host is refused on a tcp check', async () => {
-    const res = await h.call('POST', `/v1/environments/${environmentId}/services`, {
+    const res = await h.call('POST', placed(h, previewId, `apps`), {
       token: h.admin.token,
       body: {
         name: 'badhost',

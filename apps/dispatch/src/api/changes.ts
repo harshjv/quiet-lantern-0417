@@ -1,60 +1,62 @@
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne, type SQL } from 'drizzle-orm'
 
 import type { LockfileDoc, SettingKey } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
 import {
+  app,
+  app_port,
+  approval,
+  approval_value,
   domain,
-  environment,
   ipam_allocation,
+  key,
+  machine,
+  machine_snapshot,
   port_allocation,
   run,
-  sandbox,
-  sandbox_snapshot,
   secret_value,
-  service,
-  service_port,
-  staged_change,
-  staged_value,
-  variable,
+  target,
   virtual_ip,
   volume,
 } from '../db/schema.ts'
 import { deleteSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { startUpgrade } from '../platform/upgrade.ts'
 import { requestDeletion, systemActor } from '../sandboxes/lifecycle.ts'
-import { setVariable, type VariableWrite } from '../secrets/variables.ts'
+import { setKey, type KeyWrite } from '../secrets/variables.ts'
 import type { BackupTarget } from '../volumes/backups.ts'
 
+import { recordHealth, refreshAppStatus } from './app-status.ts'
 import { audit, emit, type Call, type Deps } from './context.ts'
 import { configFields, createDeploymentRecord, type TriggerType } from './deployments.ts'
-import { createService, createServicePort, createVolume } from './entities.ts'
+import { createApp, createAppPort, createVolume } from './entities.ts'
 import { fail } from './errors.ts'
 import { ensureNetwork } from './ipam.ts'
-import type { EnvironmentRow, StagedRow } from './lookup.ts'
-import { refreshStale, settleVariableWrites } from './stale.ts'
+import { placeName, type ApprovalRow, type TargetRow } from './lookup.ts'
+import { requesterOf, requireRequesterRule } from './requester.ts'
+import { refreshStale, settleKeyWrites } from './stale.ts'
 import { applyStationField, stationFields, type StationField } from './station-fields.ts'
 
 export type Store = Pick<Deps, 'db' | 'keyring'>
 
 export type Entity =
-  | 'sandbox_storage'
-  | 'service'
-  | 'service_port'
+  | 'machine_storage'
+  | 'app'
+  | 'app_port'
   | 'volume'
   | 'volume_snapshot'
   | 'volume_restore'
   | 'domain'
   | 'port_allocation'
-  | 'variable'
+  | 'key'
   | 'deployment'
-  | 'environment'
+  | 'preview'
   | 'setting'
   | 'run'
   | 'network_probe'
   | 'lockfile'
-  | 'station'
+  | 'server'
 
 type Json = Record<string, unknown>
 
@@ -228,10 +230,13 @@ const setPointer = (target: Json, path: string, value: unknown) => {
   target[head!] = inner
 }
 
-const retention = (env: EnvironmentRow | undefined) =>
-  new Date(Date.now() + (env?.ephemeral ? 24 : 7 * 24) * 3600 * 1000)
+export const isTransient = (row: TargetRow) =>
+  row.expires_at !== null || (row.origin !== null && row.origin.type !== 'named')
 
-const serviceColumns = new Set<string>([...configFields, 'desired_state', 'status'])
+const retention = (row: TargetRow | undefined) =>
+  new Date(Date.now() + (row && isTransient(row) ? 24 : 7 * 24) * 3600 * 1000)
+
+const appColumns = new Set<string>([...configFields, 'desired_state'])
 
 const portDependents = (db: Db, portId: string) => ({
   domains: db
@@ -240,7 +245,7 @@ const portDependents = (db: Db, portId: string) => ({
       hostname: domain.hostname,
     })
     .from(domain)
-    .where(eq(domain.service_port_id, portId))
+    .where(eq(domain.app_port_id, portId))
     .all()
     .map((d) => ({
       entity: 'domain',
@@ -253,7 +258,7 @@ const portDependents = (db: Db, portId: string) => ({
       host_port: port_allocation.host_port,
     })
     .from(port_allocation)
-    .where(and(eq(port_allocation.service_port_id, portId), eq(port_allocation.status, 'active')))
+    .where(and(eq(port_allocation.app_port_id, portId), eq(port_allocation.status, 'active')))
     .all()
     .map((a) => ({
       entity: 'port_allocation',
@@ -265,10 +270,10 @@ const portDependents = (db: Db, portId: string) => ({
 const portNumber = (db: Db, portId: string) =>
   db
     .select({
-      port: service_port.port,
+      port: app_port.port,
     })
-    .from(service_port)
-    .where(eq(service_port.id, portId))
+    .from(app_port)
+    .where(eq(app_port.id, portId))
     .get()?.port ?? portId
 
 export const requireNoPortDependents = (db: Db, portId: string) => {
@@ -322,32 +327,32 @@ export const requireProtocolChangeAllowed = (db: Db, portId: string, protocol: '
 const removePort = (db: Db, portId: string) => {
   requireNoPortDependents(db, portId)
   db.delete(port_allocation)
-    .where(and(eq(port_allocation.service_port_id, portId), eq(port_allocation.status, 'removed')))
+    .where(and(eq(port_allocation.app_port_id, portId), eq(port_allocation.status, 'removed')))
     .run()
-  db.delete(service_port).where(eq(service_port.id, portId)).run()
+  db.delete(app_port).where(eq(app_port.id, portId)).run()
 }
 
-const removeService = (db: Db, serviceId: string) => {
-  const svc = db.select().from(service).where(eq(service.id, serviceId)).get()
+const removeApp = (db: Db, appId: string) => {
+  const svc = db.select().from(app).where(eq(app.id, appId)).get()
 
   if (!svc) {
-    return fail('NOT_FOUND', `service ${serviceId} does not exist.`)
+    return fail('NOT_FOUND', `app ${appId} does not exist.`)
   }
 
-  const env = db.select().from(environment).where(eq(environment.id, svc.environment_id)).get()
+  const env = db.select().from(target).where(eq(target.id, svc.target_id)).get()
   const ports = db
     .select({
-      id: service_port.id,
+      id: app_port.id,
     })
-    .from(service_port)
-    .where(eq(service_port.service_id, svc.id))
+    .from(app_port)
+    .where(eq(app_port.app_id, svc.id))
     .all()
     .map((p) => p.id)
 
   if (ports.length) {
-    db.delete(domain).where(inArray(domain.service_port_id, ports)).run()
-    db.delete(port_allocation).where(inArray(port_allocation.service_port_id, ports)).run()
-    db.delete(service_port).where(eq(service_port.service_id, svc.id)).run()
+    db.delete(domain).where(inArray(domain.app_port_id, ports)).run()
+    db.delete(port_allocation).where(inArray(port_allocation.app_port_id, ports)).run()
+    db.delete(app_port).where(eq(app_port.app_id, svc.id)).run()
   }
 
   const retainUntil = retention(env)
@@ -356,51 +361,48 @@ const removeService = (db: Db, serviceId: string) => {
     .set({
       status: 'retained',
       retain_until: retainUntil,
-      service_id: null,
+      app_id: null,
     })
-    .where(and(eq(volume.service_id, svc.id), eq(volume.owner, 'service')))
+    .where(and(eq(volume.app_id, svc.id), eq(volume.owner, 'service')))
     .run()
   const vars = db
     .select({
-      id: variable.id,
+      id: key.id,
     })
-    .from(variable)
-    .where(eq(variable.service_id, svc.id))
+    .from(key)
+    .where(eq(key.app_id, svc.id))
     .all()
     .map((v) => v.id)
 
   if (vars.length) {
-    db.delete(secret_value).where(inArray(secret_value.variable_id, vars)).run()
-    db.delete(variable).where(inArray(variable.id, vars)).run()
+    db.delete(secret_value).where(inArray(secret_value.key_id, vars)).run()
+    db.delete(key).where(inArray(key.id, vars)).run()
   }
 
-  db.delete(virtual_ip).where(eq(virtual_ip.service_id, svc.id)).run()
-  db.delete(service).where(eq(service.id, svc.id)).run()
+  db.delete(virtual_ip).where(eq(virtual_ip.app_id, svc.id)).run()
+  db.delete(app).where(eq(app.id, svc.id)).run()
 
   return retainUntil
 }
 
-export const requireNoSandboxes = (
-  db: Db,
-  env: { id: string; name: string; ephemeral: boolean },
-) => {
+export const requireNoMachines = (db: Db, row: TargetRow) => {
   const boxes = db
     .select({
-      id: sandbox.id,
-      name: sandbox.name,
+      id: machine.id,
+      name: machine.name,
     })
-    .from(sandbox)
-    .where(and(eq(sandbox.environment_id, env.id), ne(sandbox.status, 'deleting')))
+    .from(machine)
+    .where(and(eq(machine.target_id, row.id), ne(machine.status, 'deleting')))
     .all()
 
-  if (boxes.length && !env.ephemeral) {
+  if (boxes.length && !isTransient(row)) {
     fail(
       'DELETE_HAS_DEPENDENTS',
-      `Environment ${env.name} still holds ${boxes.length} sandboxes.`,
-      'Delete its sandboxes first; an ephemeral environment deletes them with itself.',
+      `Preview ${row.name} still holds ${boxes.length} machines.`,
+      "Delete its machines first; a task's or pull request's preview deletes them with itself.",
       {
         dependents: boxes.map((b) => ({
-          entity: 'sandbox',
+          entity: 'machine',
           ...b,
         })),
       },
@@ -408,59 +410,60 @@ export const requireNoSandboxes = (
   }
 }
 
-export const removeEnvironment = (db: Db, environmentId: string) => {
-  const env = db.select().from(environment).where(eq(environment.id, environmentId)).get()
+export const removePreview = (db: Db, previewId: string) => {
+  const row = db.select().from(target).where(eq(target.id, previewId)).get()
 
-  if (!env) {
-    return fail('NOT_FOUND', `environment ${environmentId} does not exist.`)
+  if (!row || row.kind !== 'preview') {
+    return fail('NOT_FOUND', `preview ${previewId} does not exist.`)
   }
 
-  requireNoSandboxes(db, env)
+  requireNoMachines(db, row)
 
-  for (const box of db.select().from(sandbox).where(eq(sandbox.environment_id, env.id)).all()) {
+  for (const box of db.select().from(machine).where(eq(machine.target_id, row.id)).all()) {
     requestDeletion(db, box, {
       actor: systemActor,
-      reason: 'environment',
+      reason: 'preview',
     })
   }
 
-  db.update(sandbox_snapshot)
+  db.update(machine_snapshot)
     .set({
       status: 'deleting',
     })
-    .where(and(eq(sandbox_snapshot.environment_id, env.id), ne(sandbox_snapshot.status, 'failed')))
+    .where(and(eq(machine_snapshot.target_id, row.id), ne(machine_snapshot.status, 'failed')))
     .run()
-  db.delete(sandbox_snapshot)
-    .where(and(eq(sandbox_snapshot.environment_id, env.id), eq(sandbox_snapshot.status, 'failed')))
+  db.delete(machine_snapshot)
+    .where(and(eq(machine_snapshot.target_id, row.id), eq(machine_snapshot.status, 'failed')))
     .run()
   let retainUntil: Date | null = null
 
   for (const svc of db
     .select({
-      id: service.id,
+      id: app.id,
     })
-    .from(service)
-    .where(eq(service.environment_id, env.id))
+    .from(app)
+    .where(eq(app.target_id, row.id))
     .all()) {
-    retainUntil = removeService(db, svc.id)
+    retainUntil = removeApp(db, svc.id)
   }
 
-  db.delete(ipam_allocation).where(eq(ipam_allocation.environment_id, env.id)).run()
-  db.delete(virtual_ip).where(eq(virtual_ip.environment_id, env.id)).run()
-  db.delete(secret_value).where(eq(secret_value.environment_id, env.id)).run()
-  db.delete(environment).where(eq(environment.id, env.id)).run()
+  db.delete(ipam_allocation).where(eq(ipam_allocation.target_id, row.id)).run()
+  db.delete(virtual_ip).where(eq(virtual_ip.target_id, row.id)).run()
+  db.delete(target).where(eq(target.id, row.id)).run()
 
   return retainUntil
 }
 
-export type StagedBackup = { volume_id: string; target: BackupTarget; quiesce: boolean }
+export { placeName }
 
-export type StagedRestore = { volume_id: string; snapshot_id: string; station_id?: string }
+export type ApprovedBackup = { volume_id: string; target: BackupTarget; quiesce: boolean }
 
-export type StagedGrow = { station_id: string; size_bytes: number }
+export type ApprovedRestore = { volume_id: string; snapshot_id: string; server_id?: string }
 
-export type StagedProbe = {
-  service_id: string
+export type ApprovedGrow = { server_id: string; size_bytes: number }
+
+export type ApprovedProbe = {
+  app_id: string
   kind: 'tcp' | 'dns'
   to: string
   port: number | null
@@ -472,10 +475,10 @@ type ApplyResult = {
   deployments: string[]
   retained_until: Date | null
   lockfile: { before: LockfileDoc; after: LockfileDoc } | null
-  backups: StagedBackup[]
-  restores: StagedRestore[]
-  probes: StagedProbe[]
-  grows: StagedGrow[]
+  backups: ApprovedBackup[]
+  restores: ApprovedRestore[]
+  probes: ApprovedProbe[]
+  grows: ApprovedGrow[]
 }
 
 const applyChanges = (
@@ -487,10 +490,10 @@ const applyChanges = (
   const { db, keyring } = deps
   const refs: Record<string, string> = {}
   const deployments: string[] = []
-  const backups: StagedBackup[] = []
-  const restores: StagedRestore[] = []
-  const probes: StagedProbe[] = []
-  const grows: StagedGrow[] = []
+  const backups: ApprovedBackup[] = []
+  const restores: ApprovedRestore[] = []
+  const probes: ApprovedProbe[] = []
+  const grows: ApprovedGrow[] = []
   let retained_until: Date | null = null
   const resolve = (value: string) =>
     refs[value] ??
@@ -499,8 +502,8 @@ const applyChanges = (
       : value)
   const resolveAll = (after: Json) =>
     Object.fromEntries(Object.entries(after).map(([k, v]) => [k, isRef(v) ? resolve(v) : v]))
-  let variablesChanged = false
-  const writes: VariableWrite[] = []
+  let keysChanged = false
+  const writes: KeyWrite[] = []
   const touched = new Set<string>()
   let lockfileBefore: LockfileDoc | null = null
 
@@ -510,12 +513,12 @@ const applyChanges = (
       const after = resolveAll(change.after)
 
       switch (change.entity) {
-        case 'service': {
-          refs[change.ref] = createService(db, {
-            environment_id: parent!,
+        case 'app': {
+          refs[change.ref] = createApp(db, {
+            target_id: parent!,
             name: after.name as string,
             kind: after.kind as 'web' | 'worker' | 'cron' | 'one_off',
-            station_id: after.station_id as string,
+            server_id: after.server_id as string,
             source: after.source as Json,
             command: (after.command as string[] | null) ?? null,
             build_args: (after.build_args as Record<string, string> | null) ?? null,
@@ -538,8 +541,8 @@ const applyChanges = (
           break
         }
 
-        case 'service_port': {
-          refs[change.ref] = createServicePort(db, parent!, {
+        case 'app_port': {
+          refs[change.ref] = createAppPort(db, parent!, {
             port: after.port as number,
             protocol: after.protocol as 'http' | 'tcp',
             grpc: Boolean(after.grpc),
@@ -549,19 +552,15 @@ const applyChanges = (
 
         case 'volume': {
           const owner =
-            db.select().from(service).where(eq(service.id, parent!)).get() ??
-            fail('NOT_FOUND', `service ${parent} does not exist.`)
-          const env = db
-            .select()
-            .from(environment)
-            .where(eq(environment.id, owner.environment_id))
-            .get()!
+            db.select().from(app).where(eq(app.id, parent!)).get() ??
+            fail('NOT_FOUND', `app ${parent} does not exist.`)
+          const env = db.select().from(target).where(eq(target.id, owner.target_id)).get()!
 
           refs[change.ref] = createVolume(
             db,
             {
               id: owner.id,
-              station_id: owner.station_id,
+              server_id: owner.server_id,
               project_id: env.project_id,
             },
             after.mount_path as string,
@@ -575,7 +574,7 @@ const applyChanges = (
           db.insert(domain)
             .values({
               id,
-              service_port_id: parent!,
+              app_port_id: parent!,
               hostname: after.hostname as string,
               kind: after.kind as 'generated' | 'custom',
               ingress: after.ingress as 'direct' | 'tunnel',
@@ -597,8 +596,8 @@ const applyChanges = (
           db.insert(port_allocation)
             .values({
               id,
-              service_port_id: parent!,
-              station_id: after.station_id as string,
+              app_port_id: parent!,
+              server_id: after.server_id as string,
               host_port: after.host_port as number,
             })
             .run()
@@ -606,43 +605,42 @@ const applyChanges = (
           break
         }
 
-        case 'variable': {
-          const scope = after.scope as 'global' | 'project' | 'service' | 'sandbox'
+        case 'key': {
+          const scope = after.scope as 'global' | 'project' | 'app' | 'machine'
           const kind = after.kind as 'literal' | 'reference' | 'sealed'
           const value =
             typeof after.value_id === 'string'
               ? plaintext(after.value_id)
               : ((after.reference as string | null) ?? '')
-          const result = setVariable(db, keyring, {
+          const result = setKey(db, keyring, {
             scope,
             project_id: scope === 'project' ? parent! : undefined,
-            service_id: scope === 'service' ? parent! : undefined,
-            sandbox_id: scope === 'sandbox' ? parent! : undefined,
-            environment_id: (after.environment_id as string | null | undefined) ?? null,
-            key: after.key as string,
+            app_id: scope === 'app' ? parent! : undefined,
+            machine_id: scope === 'machine' ? parent! : undefined,
+            target: (after.target as 'production' | 'preview' | undefined) ?? 'production',
+            name: after.name as string,
             value,
             sealed: kind === 'sealed',
             injection: after.injection as 'env' | 'file' | undefined,
             build: after.build as boolean | undefined,
-            copy_to_clones: after.copy_to_clones as boolean | undefined,
             allow_unresolved: Boolean(after.allow_unresolved),
             actor: call.principal.actor,
             request_id: call.request_id,
           })
 
-          refs[change.ref] = result.variable_id
+          refs[change.ref] = result.key_id
 
           if (result.write) {
             writes.push(result.write)
           }
 
-          variablesChanged = true
+          keysChanged = true
           break
         }
 
         case 'deployment': {
           const created = createDeploymentRecord(db, {
-            service_id: parent!,
+            app_id: parent!,
             trigger: (after.trigger as { type: TriggerType }).type,
             actor: call.principal.actor,
             supersede: Boolean(after.supersede),
@@ -662,14 +660,14 @@ const applyChanges = (
 
         case 'run': {
           const owner =
-            db.select().from(service).where(eq(service.id, parent!)).get() ??
-            fail('NOT_FOUND', `service ${parent} does not exist.`)
+            db.select().from(app).where(eq(app.id, parent!)).get() ??
+            fail('NOT_FOUND', `app ${parent} does not exist.`)
 
           if (!owner.current_deployment_id) {
             fail(
               'NO_CURRENT_DEPLOYMENT',
               `${owner.name} has no current deployment to run the command in.`,
-              'Deploy the service first.',
+              'Deploy the app first.',
             )
           }
 
@@ -678,7 +676,7 @@ const applyChanges = (
           db.insert(run)
             .values({
               id,
-              service_id: owner.id,
+              app_id: owner.id,
               deployment_id: owner.current_deployment_id,
               kind: (after.kind as 'one_off' | 'shell' | undefined) ?? 'one_off',
               command: (after.command as string[] | undefined) ?? [],
@@ -696,14 +694,14 @@ const applyChanges = (
           const owner =
             db
               .select({
-                id: service.id,
+                id: app.id,
               })
-              .from(service)
-              .where(eq(service.id, parent!))
-              .get() ?? fail('NOT_FOUND', `service ${parent} does not exist.`)
+              .from(app)
+              .where(eq(app.id, parent!))
+              .get() ?? fail('NOT_FOUND', `app ${parent} does not exist.`)
 
           probes.push({
-            service_id: owner.id,
+            app_id: owner.id,
             kind: after.kind === 'dns' ? 'dns' : 'tcp',
             to: String(after.to),
             port: typeof after.port === 'number' ? after.port : null,
@@ -712,9 +710,9 @@ const applyChanges = (
           break
         }
 
-        case 'sandbox_storage':
+        case 'machine_storage':
           grows.push({
-            station_id: parent!,
+            server_id: parent!,
             size_bytes: Number(after.size_bytes),
           })
           break
@@ -726,7 +724,7 @@ const applyChanges = (
 
           backups.push({
             volume_id: vol.id,
-            target: after.target as StagedBackup['target'],
+            target: after.target as ApprovedBackup['target'],
             quiesce: after.quiesce !== false,
           })
           break
@@ -740,9 +738,9 @@ const applyChanges = (
           restores.push({
             volume_id: vol.id,
             snapshot_id: after.snapshot_id as string,
-            ...(typeof after.station_id === 'string'
+            ...(typeof after.server_id === 'string'
               ? {
-                  station_id: after.station_id,
+                  server_id: after.server_id,
                 }
               : {}),
           })
@@ -750,10 +748,7 @@ const applyChanges = (
         }
 
         default:
-          fail(
-            'VALIDATION_FAILED',
-            `adding ${change.entity} through a staged change is not supported.`,
-          )
+          fail('VALIDATION_FAILED', `adding ${change.entity} through an approval is not supported.`)
       }
 
       continue
@@ -763,17 +758,14 @@ const applyChanges = (
 
     if (change.op === 'update') {
       switch (change.entity) {
-        case 'service': {
+        case 'app': {
           const row =
-            db.select().from(service).where(eq(service.id, id)).get() ??
-            fail('NOT_FOUND', `service ${id} does not exist.`)
+            db.select().from(app).where(eq(app.id, id)).get() ??
+            fail('NOT_FOUND', `app ${id} does not exist.`)
           const column = change.path.split('/')[1]!
 
-          if (!serviceColumns.has(column)) {
-            fail(
-              'VALIDATION_FAILED',
-              `service field ${column} cannot change through a staged change.`,
-            )
+          if (!appColumns.has(column)) {
+            fail('VALIDATION_FAILED', `app field ${column} cannot change through an approval.`)
           }
 
           const holder: Json = {
@@ -785,42 +777,52 @@ const applyChanges = (
             [column]: holder[column],
           }
 
-          if (column === 'desired_state') {
-            update.status = change.after === 'stopped' ? 'stopped' : 'amber'
-          }
-
-          db.update(service).set(update).where(eq(service.id, id)).run()
+          db.update(app).set(update).where(eq(app.id, id)).run()
           touched.add(id)
 
-          if (column === 'station_id') {
-            ensureNetwork(db, row.environment_id, change.after as string)
+          if (
+            column === 'desired_state' &&
+            change.after === 'running' &&
+            row.current_deployment_id
+          ) {
+            recordHealth(db, row.current_deployment_id, false)
+          }
+
+          if (column === 'desired_state' || column === 'server_id') {
+            refreshAppStatus(db, id, {
+              source: column,
+            })
+          }
+
+          if (column === 'server_id') {
+            ensureNetwork(db, row.target_id, change.after as string)
           }
 
           break
         }
 
-        case 'service_port':
+        case 'app_port':
           if (change.path === '/grpc') {
-            db.update(service_port)
+            db.update(app_port)
               .set({
                 grpc: Boolean(change.after),
               })
-              .where(eq(service_port.id, id))
+              .where(eq(app_port.id, id))
               .run()
           } else if (change.path === '/protocol') {
             const protocol = change.after === 'tcp' ? 'tcp' : 'http'
 
             requireProtocolChangeAllowed(db, id, protocol)
-            db.update(service_port)
+            db.update(app_port)
               .set({
                 protocol,
               })
-              .where(eq(service_port.id, id))
+              .where(eq(app_port.id, id))
               .run()
           } else {
             fail(
               'VALIDATION_FAILED',
-              `service_port field ${change.path.slice(1)} cannot change in place.`,
+              `app_port field ${change.path.slice(1)} cannot change in place.`,
               'Remove the port and add it again.',
               {
                 issues: [
@@ -862,23 +864,22 @@ const applyChanges = (
             .run()
           break
 
-        case 'variable': {
+        case 'key': {
           const row =
-            db.select().from(variable).where(eq(variable.id, id)).get() ??
-            fail('NOT_FOUND', `variable ${id} does not exist.`)
+            db.select().from(key).where(eq(key.id, id)).get() ??
+            fail('NOT_FOUND', `key ${id} does not exist.`)
           const after = change.after as Json
           const kind = after.kind as 'literal' | 'reference' | 'sealed'
 
           if (kind === 'sealed' && typeof after.value_id !== 'string' && !after.reference) {
-            db.update(variable)
+            db.update(key)
               .set({
                 injection: (after.injection as 'env' | 'file' | undefined) ?? row.injection,
                 build: (after.build as boolean | undefined) ?? row.build,
-                copy_to_clones: (after.copy_to_clones as boolean | undefined) ?? row.copy_to_clones,
               })
-              .where(eq(variable.id, id))
+              .where(eq(key.id, id))
               .run()
-            variablesChanged = true
+            keysChanged = true
             break
           }
 
@@ -886,18 +887,17 @@ const applyChanges = (
             typeof after.value_id === 'string'
               ? plaintext(after.value_id)
               : ((after.reference as string | null) ?? '')
-          const result = setVariable(db, keyring, {
+          const result = setKey(db, keyring, {
             scope: row.scope,
             project_id: row.project_id ?? undefined,
-            service_id: row.service_id ?? undefined,
-            sandbox_id: row.sandbox_id ?? undefined,
-            environment_id: (after.environment_id as string | null | undefined) ?? null,
-            key: row.key,
+            app_id: row.app_id ?? undefined,
+            machine_id: row.machine_id ?? undefined,
+            target: (after.target as 'production' | 'preview' | undefined) ?? 'production',
+            name: row.name,
             value,
             sealed: kind === 'sealed',
             injection: after.injection as 'env' | 'file' | undefined,
             build: after.build as boolean | undefined,
-            copy_to_clones: after.copy_to_clones as boolean | undefined,
             allow_unresolved: Boolean(after.allow_unresolved),
             actor: call.principal.actor,
             request_id: call.request_id,
@@ -907,7 +907,7 @@ const applyChanges = (
             writes.push(result.write)
           }
 
-          variablesChanged = true
+          keysChanged = true
           break
         }
 
@@ -956,23 +956,20 @@ const applyChanges = (
           break
         }
 
-        case 'environment':
-          db.update(environment)
+        case 'preview':
+          db.update(target)
             .set({
               [change.path.slice(1)]: change.after,
             })
-            .where(eq(environment.id, id))
+            .where(eq(target.id, id))
             .run()
           break
 
-        case 'station': {
+        case 'server': {
           const field = change.path.slice(1)
 
           if (!(stationFields as readonly string[]).includes(field)) {
-            fail(
-              'VALIDATION_FAILED',
-              `station field ${field} cannot change through a staged change.`,
-            )
+            fail('VALIDATION_FAILED', `server field ${field} cannot change through an approval.`)
           }
 
           applyStationField(db, id, field as StationField, change.after)
@@ -982,7 +979,7 @@ const applyChanges = (
         default:
           fail(
             'VALIDATION_FAILED',
-            `updating ${change.entity} through a staged change is not supported.`,
+            `updating ${change.entity} through an approval is not supported.`,
           )
       }
 
@@ -990,33 +987,30 @@ const applyChanges = (
     }
 
     switch (change.entity) {
-      case 'service':
-        retained_until = removeService(db, id)
+      case 'app':
+        retained_until = removeApp(db, id)
         break
-      case 'environment':
-        retained_until = removeEnvironment(db, id)
+      case 'preview':
+        retained_until = removePreview(db, id)
         break
-      case 'service_port':
+      case 'app_port':
         removePort(db, id)
         break
       case 'domain':
         db.delete(domain).where(eq(domain.id, id)).run()
         break
-      case 'variable':
-        db.delete(secret_value).where(eq(secret_value.variable_id, id)).run()
-        db.delete(variable).where(eq(variable.id, id)).run()
-        variablesChanged = true
+      case 'key':
+        db.delete(secret_value).where(eq(secret_value.key_id, id)).run()
+        db.delete(key).where(eq(key.id, id)).run()
+        keysChanged = true
         break
       default:
-        fail(
-          'VALIDATION_FAILED',
-          `removing ${change.entity} through a staged change is not supported.`,
-        )
+        fail('VALIDATION_FAILED', `removing ${change.entity} through an approval is not supported.`)
     }
   }
 
-  if (variablesChanged) {
-    settleVariableWrites(db, writes)
+  if (keysChanged) {
+    settleKeyWrites(db, writes)
   } else {
     refreshStale(db, [...touched])
   }
@@ -1042,7 +1036,7 @@ const applyChanges = (
 
 export const stripValues = (changes: Change[]) =>
   changes.map((change) => {
-    if (change.entity !== 'variable' || change.op === 'remove') {
+    if (change.entity !== 'key' || change.op === 'remove') {
       return change
     }
 
@@ -1070,7 +1064,6 @@ const overlapKeys = (changes: Change[]) =>
       }
 
       const name = (change.after.name ??
-        change.after.key ??
         change.after.hostname ??
         change.after.port ??
         change.after.mount_path) as string | undefined
@@ -1082,22 +1075,78 @@ const overlapKeys = (changes: Change[]) =>
   )
 
 export type CommitOptions = {
-  environment: EnvironmentRow | null
+  target: TargetRow | null
   protect: boolean
-  source?: 'api' | 'manifest' | 'agent' | 'ui'
-  station?: string | null
+  source?: 'api' | 'manifest' | 'task' | 'ui'
+  server?: string | null
 }
 
 export type CommitResult =
-  | { applied: false; staged: StagedRow }
+  | { applied: false; approval: ApprovalRow }
   | {
       applied: true
-      staged: StagedRow
+      approval: ApprovalRow
       refs: Record<string, string>
       deployments: string[]
       retained_until: Date | null
       upgrade: string | null
     }
+
+const entityWords = (entity: string) => entity.replaceAll('_', ' ')
+
+export const approvalTitle = (changes: Change[], row: TargetRow | null) => {
+  const place = row ? placeName(row) : 'the instance'
+
+  if (changes.some((change) => (change.entity as string) === 'lockfile')) {
+    return 'Upgrade Stationly'
+  }
+
+  if (changes.length === 1) {
+    const [change] = changes as [Change]
+
+    if (change.op === 'add' && change.entity === 'deployment') {
+      return `Deploy in ${place}`
+    }
+
+    const verb = {
+      add: 'Add',
+      update: 'Change',
+      remove: 'Remove',
+    }[change.op]
+
+    return `${verb} ${entityWords(change.entity)} in ${place}`
+  }
+
+  return `${changes.length} changes in ${place}`
+}
+
+const supersede = (tdb: Db, ids: string[]) => {
+  if (!ids.length) {
+    return
+  }
+
+  tdb
+    .update(approval)
+    .set({
+      status: 'superseded',
+    })
+    .where(inArray(approval.id, ids))
+    .run()
+  tdb.delete(approval_value).where(inArray(approval_value.approval_id, ids)).run()
+}
+
+export const supersedeWaiting = (tdb: Db, where: SQL) =>
+  supersede(
+    tdb,
+    tdb
+      .select({
+        id: approval.id,
+      })
+      .from(approval)
+      .where(and(eq(approval.status, 'waiting'), where))
+      .all()
+      .map((row) => row.id),
+  )
 
 export const commit = (
   deps: Store,
@@ -1108,37 +1157,42 @@ export const commit = (
   const { db, keyring } = deps
   const changes = set.changes
   const source = options.source ?? (call.principal.human ? 'ui' : 'api')
-  const environmentId = options.environment?.id ?? null
+  const projectId = options.target?.project_id ?? null
+  const base = {
+    project_id: projectId,
+    title: approvalTitle(changes, options.target),
+    requested_by: call.principal.actor,
+    requester: requesterOf(call.principal),
+    source,
+  }
 
   if (options.protect) {
     return db.transaction((tx) => {
       const tdb = tx as unknown as Db
-      const id = newId('staged_change')
+      const id = newId('approval')
 
       tdb
-        .insert(staged_change)
+        .insert(approval)
         .values({
           id,
-          environment_id: environmentId,
-          actor: call.principal.actor,
+          ...base,
           changes,
-          refs: options.station
+          refs: options.server
             ? {
-                'platform.station': options.station,
+                'platform.server': options.server,
               }
             : {},
-          source,
-          status: 'staged',
+          status: 'waiting',
           deployments: [],
         })
         .run()
 
       for (const [valueId, plaintext] of set.values) {
         tdb
-          .insert(staged_value)
+          .insert(approval_value)
           .values({
             id: valueId,
-            staged_change_id: id,
+            approval_id: id,
             ...keyring.encrypt(valueId, plaintext),
           })
           .run()
@@ -1147,13 +1201,12 @@ export const commit = (
       const mine = overlapKeys(changes)
       const older = tdb
         .select()
-        .from(staged_change)
+        .from(approval)
         .where(
           and(
-            environmentId === null
-              ? isNull(staged_change.environment_id)
-              : eq(staged_change.environment_id, environmentId),
-            eq(staged_change.status, 'staged'),
+            projectId === null ? isNull(approval.project_id) : eq(approval.project_id, projectId),
+            eq(approval.status, 'waiting'),
+            isNull(approval.task_id),
           ),
         )
         .all()
@@ -1162,28 +1215,21 @@ export const commit = (
             row.id !== id && [...overlapKeys(row.changes as Change[])].some((key) => mine.has(key)),
         )
 
-      for (const row of older) {
-        tdb
-          .update(staged_change)
-          .set({
-            status: 'superseded',
-          })
-          .where(eq(staged_change.id, row.id))
-          .run()
-        tdb.delete(staged_value).where(eq(staged_value.staged_change_id, row.id)).run()
-      }
-
+      supersede(
+        tdb,
+        older.map((o) => o.id),
+      )
       audit(
         tdb,
         call,
-        'staged_change.create',
+        'approval.create',
         {
-          entity: 'staged_change',
+          entity: 'approval',
           id,
         },
         {
           after: {
-            environment_id: environmentId,
+            project_id: projectId,
             entries: changes.length,
             superseded: older.map((o) => o.id),
           },
@@ -1191,11 +1237,11 @@ export const commit = (
       )
       emit(
         tdb,
-        'staged_change.created',
+        'approval.created',
         {
-          entity: 'staged_change',
+          entity: 'approval',
           id,
-          environment_id: environmentId,
+          project_id: projectId,
         },
         {
           superseded: older.map((o) => o.id),
@@ -1204,7 +1250,7 @@ export const commit = (
 
       return {
         applied: false as const,
-        staged: tdb.select().from(staged_change).where(eq(staged_change.id, id)).get()!,
+        approval: tdb.select().from(approval).where(eq(approval.id, id)).get()!,
       }
     })
   }
@@ -1221,76 +1267,78 @@ export const commit = (
       (valueId) =>
         set.values.get(valueId) ?? fail('VALIDATION_FAILED', `value ${valueId} is missing.`),
     )
-    const id = newId('staged_change')
+    const id = newId('approval')
 
     tdb
-      .insert(staged_change)
+      .insert(approval)
       .values({
         id,
-        environment_id: environmentId,
-        actor: call.principal.actor,
+        ...base,
         changes: stripValues(changes),
         refs: result.refs,
-        source,
-        status: 'accepted',
-        accepted_by: call.principal.actor,
+        status: 'approved',
+        decided_by: call.principal.actor,
+        decided_at: new Date(),
         deployments: result.deployments,
       })
       .run()
     const upgrade = result.lockfile
       ? startUpgrade(tdb, {
-          stagedChangeId: id,
+          approvalId: id,
           actor: call.principal.actor,
           before: result.lockfile.before,
           after: result.lockfile.after,
-          station: options.station ?? null,
+          server: options.server ?? null,
         })
       : null
 
     return {
       applied: true as const,
       upgrade,
-      staged: tdb.select().from(staged_change).where(eq(staged_change.id, id)).get()!,
+      approval: tdb.select().from(approval).where(eq(approval.id, id)).get()!,
       ...result,
     }
   })
 }
 
-export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
-  const { db, keyring } = deps
-
+export const requireWaiting = (row: ApprovalRow) => {
   if (row.status === 'superseded') {
     fail(
-      'STAGED_CHANGE_SUPERSEDED',
-      `Staged change ${row.id} was replaced by a newer one.`,
-      'Read the newer staged change and accept that one.',
+      'APPROVAL_SUPERSEDED',
+      `Approval ${row.id} was replaced by a newer one.`,
+      'Read the newer approval and decide that one.',
     )
   }
 
-  if (row.status !== 'staged') {
-    fail('VALIDATION_FAILED', `Staged change ${row.id} is ${row.status}, not staged.`, undefined, {
-      issues: [
-        {
-          path: '/status',
-          message: row.status,
-        },
-      ],
-    })
+  if (row.status !== 'waiting' || (row.ship && row.ship.phase !== 'open')) {
+    fail(
+      'APPROVAL_CLOSED',
+      `Approval ${row.id} is ${row.ship && row.status === 'waiting' ? row.ship.phase : row.status}, not waiting for a decision.`,
+      row.task_id ? 'Ship the task again to ask anew.' : undefined,
+    )
   }
+}
+
+export const approveChanges = (deps: Store, call: Call, row: ApprovalRow) => {
+  const { db, keyring } = deps
+
+  requireWaiting(row)
+
+  const selfApproved = requireRequesterRule(db, row, call.principal)
 
   return db.transaction((tx) => {
     const tdb = tx as unknown as Db
     const values = new Map(
       tdb
         .select()
-        .from(staged_value)
-        .where(eq(staged_value.staged_change_id, row.id))
+        .from(approval_value)
+        .where(eq(approval_value.approval_id, row.id))
         .all()
         .map((v) => [v.id, v]),
     )
     const plaintext = (valueId: string) => {
       const stored =
-        values.get(valueId) ?? fail('VALIDATION_FAILED', `staged value ${valueId} is missing.`)
+        values.get(valueId) ?? fail('VALIDATION_FAILED', `approval value ${valueId} is missing.`)
 
       return keyring.decrypt(stored.id, stored.data_key_id, stored.ciphertext)
     }
@@ -1304,115 +1352,110 @@ export const acceptStaged = (deps: Store, call: Call, row: StagedRow) => {
       plaintext,
     )
 
-    tdb.delete(staged_value).where(eq(staged_value.staged_change_id, row.id)).run()
+    tdb.delete(approval_value).where(eq(approval_value.approval_id, row.id)).run()
     tdb
-      .update(staged_change)
+      .update(approval)
       .set({
-        status: 'accepted',
-        accepted_by: call.principal.actor,
+        status: 'approved',
+        decided_by: call.principal.actor,
+        decided_at: new Date(),
+        self_approved: selfApproved,
         refs: result.refs,
         deployments: result.deployments,
         changes: stripValues(row.changes as Change[]),
       })
-      .where(eq(staged_change.id, row.id))
+      .where(eq(approval.id, row.id))
       .run()
     const upgrade = result.lockfile
       ? startUpgrade(tdb, {
-          stagedChangeId: row.id,
-          actor: row.actor,
+          approvalId: row.id,
+          actor: row.requested_by,
           before: result.lockfile.before,
           after: result.lockfile.after,
-          station: (row.refs as Record<string, string> | null)?.['platform.station'] ?? null,
+          server: (row.refs as Record<string, string> | null)?.['platform.server'] ?? null,
         })
       : null
 
-    audit(
-      tdb,
-      call,
-      'staged_change.accept',
-      {
-        entity: 'staged_change',
-        id: row.id,
-      },
-      {
-        after: {
-          refs: result.refs,
-          deployments: result.deployments,
-          upgrade,
-        },
-      },
-    )
-    emit(
-      tdb,
-      'staged_change.accepted',
-      {
-        entity: 'staged_change',
-        id: row.id,
-        environment_id: row.environment_id,
-      },
-      {
-        deployments: result.deployments,
-      },
-    )
+    recordDecision(tdb, call, row, true, {
+      refs: result.refs,
+      deployments: result.deployments,
+      upgrade,
+      self_approved: selfApproved,
+    })
 
     return {
-      staged: tdb.select().from(staged_change).where(eq(staged_change.id, row.id)).get()!,
+      approval: tdb.select().from(approval).where(eq(approval.id, row.id)).get()!,
       ...result,
       upgrade,
     }
   })
 }
 
-export const rejectStaged = (deps: Store, call: Call, row: StagedRow, reason: string | null) => {
+export const recordDecision = (
+  tdb: Db,
+  call: Call,
+  row: ApprovalRow,
+  approve: boolean,
+  details: Record<string, unknown>,
+) => {
+  audit(
+    tdb,
+    call,
+    approve ? 'approval.approve' : 'approval.reject',
+    {
+      entity: 'approval',
+      id: row.id,
+    },
+    {
+      after: {
+        task_id: row.task_id,
+        ...details,
+      },
+    },
+  )
+  emit(
+    tdb,
+    approve ? 'approval.approved' : 'approval.rejected',
+    {
+      entity: 'approval',
+      id: row.id,
+      project_id: row.project_id,
+    },
+    {
+      task_id: row.task_id,
+      ...details,
+    },
+  )
+}
+
+export const rejectApproval = (
+  deps: Pick<Deps, 'db'>,
+  call: Call,
+  row: ApprovalRow,
+  reason: string | null,
+) => {
   const { db } = deps
 
-  if (row.status === 'superseded') {
-    fail('STAGED_CHANGE_SUPERSEDED', `Staged change ${row.id} was replaced by a newer one.`)
-  }
-
-  if (row.status !== 'staged') {
-    fail('VALIDATION_FAILED', `Staged change ${row.id} is ${row.status}, not staged.`)
-  }
+  requireWaiting(row)
 
   return db.transaction((tx) => {
     const tdb = tx as unknown as Db
 
-    tdb.delete(staged_value).where(eq(staged_value.staged_change_id, row.id)).run()
+    tdb.delete(approval_value).where(eq(approval_value.approval_id, row.id)).run()
     tdb
-      .update(staged_change)
+      .update(approval)
       .set({
         status: 'rejected',
-        accepted_by: call.principal.actor,
-      })
-      .where(eq(staged_change.id, row.id))
-      .run()
-    audit(
-      tdb,
-      call,
-      'staged_change.reject',
-      {
-        entity: 'staged_change',
-        id: row.id,
-      },
-      {
-        after: {
-          reason,
-        },
-      },
-    )
-    emit(
-      tdb,
-      'staged_change.rejected',
-      {
-        entity: 'staged_change',
-        id: row.id,
-        environment_id: row.environment_id,
-      },
-      {
         reason,
-      },
-    )
+        decided_by: call.principal.actor,
+        decided_at: new Date(),
+      })
+      .where(eq(approval.id, row.id))
+      .run()
+    recordDecision(tdb, call, row, false, {
+      reason,
+    })
 
-    return tdb.select().from(staged_change).where(eq(staged_change.id, row.id)).get()!
+    return tdb.select().from(approval).where(eq(approval.id, row.id)).get()!
   })
 }

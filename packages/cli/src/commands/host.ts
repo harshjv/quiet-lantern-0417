@@ -5,19 +5,19 @@ import { createInterface } from 'node:readline'
 import { Option } from '@commander-js/extra-typings'
 
 import {
-  adviseSandboxRuntime,
+  adviseMachineRuntime,
   dispatchAddress,
+  machineRuntimeChoice,
+  machineRuntimeTradeoffs,
   rootSocketPath,
   rootSocketVersion,
-  sandboxRuntimeChoice,
-  sandboxRuntimeTradeoffs,
   stationdUnit,
+  type MachineRuntimeAdviceDoc,
   type RootSocketLineDoc,
   type RootSocketOp,
   type RootSocketParams,
   type RootSocketRequestDoc,
   type RootSocketResult,
-  type SandboxRuntimeAdviceDoc,
 } from '@stationly/protocol'
 
 import { action, type Program } from '../command.ts'
@@ -62,7 +62,7 @@ const unreachable = async (path: string, reason: string) => {
     : `cannot reach stationd's root socket at ${path}: ${reason}`
   const fix = refusal
     ? `Fix the cause above and restart it: systemctl restart ${stationdUnit}; journalctl -u ${stationdUnit} has the full log.`
-    : 'Run sly setup as root on the station host while stationd runs (or pass --socket).'
+    : 'Run sly setup as root on the server host while stationd runs (or pass --socket).'
 
   return new Exit(exitCodes.connection, {
     error: {
@@ -158,8 +158,8 @@ const render = (r: RootSocketResult<'setup'>) =>
     `  ${r.login_link ?? 'none'}`,
     '',
     r.public_address
-      ? `station public address ${r.public_address}`
-      : 'no public address set: sly stations update <station> --public-address <ipv4> before the Gateway routes go out',
+      ? `server public address ${r.public_address}`
+      : 'no public address set: sly servers update <server> --public-address <ipv4> before the Gateway routes go out',
     r.hostnames
       ? `hostnames ${r.hostnames.api} and ${r.hostnames.dashboard} are ${r.hostnames.status}; the Gateway issues certificates once DNS points at this host`
       : 'no domain: Dispatch stays on the loopback publish',
@@ -364,8 +364,8 @@ const publicAddressFrom = async (
 
   const entered = await ask(
     found.address && found.public
-      ? 'station public IPv4 address (Enter to accept, or type another)'
-      : 'station public IPv4 address (Enter to skip)',
+      ? 'server public IPv4 address (Enter to accept, or type another)'
+      : 'server public IPv4 address (Enter to skip)',
     {
       valid: (v) => (!v ? null : ipv4Problem(v)),
       fallback: found.address && found.public ? found.address : '',
@@ -375,15 +375,15 @@ const publicAddressFrom = async (
   return entered || undefined
 }
 
-type SandboxRuntime = NonNullable<RootSocketParams<'setup'>['sandbox_runtime']>
+type MachineRuntime = NonNullable<RootSocketParams<'setup'>['sandbox_runtime']>
 
-const runtimeLabel = (runtime: keyof typeof sandboxRuntimeTradeoffs) =>
-  sandboxRuntimeTradeoffs[runtime].label
+const runtimeLabel = (runtime: keyof typeof machineRuntimeTradeoffs) =>
+  machineRuntimeTradeoffs[runtime].label
 
-const tradeoffText = (advice: SandboxRuntimeAdviceDoc) =>
+const tradeoffText = (advice: MachineRuntimeAdviceDoc) =>
   [
     '',
-    'Sandbox runtime',
+    'Machine runtime',
     ...advice.reasons.map((reason) => `  ${reason}`),
     ...advice.options.flatMap((option) => [
       '',
@@ -400,27 +400,27 @@ const tradeoffText = (advice: SandboxRuntimeAdviceDoc) =>
     '',
   ].join('\n') + '\n'
 
-const sandboxRuntimeFrom = async (
+const machineRuntimeFrom = async (
   given: string | undefined,
   tty: boolean,
   probe: RootSocketResult<'host.probe'>,
-): Promise<SandboxRuntime | undefined> => {
+): Promise<MachineRuntime | undefined> => {
   const offered = probe.runtimes
 
   if (given !== undefined) {
     if (!(offered as string[]).includes(given)) {
       throw usage(
-        `This host does not offer the sandbox runtime ${given}.`,
+        `This host does not offer the machine runtime ${given}.`,
         offered.length
-          ? `Pass --sandbox-runtime with one of ${offered.join(', ')}.`
-          : 'Leave out --sandbox-runtime; this host runs no sandboxes.',
+          ? `Pass --machine-runtime with one of ${offered.join(', ')}.`
+          : 'Leave out --machine-runtime; this host runs no machines.',
       )
     }
 
-    return given as SandboxRuntime
+    return given as MachineRuntime
   }
 
-  const advice = adviseSandboxRuntime(probe.host, offered)
+  const advice = adviseMachineRuntime(probe.host, offered)
 
   if (!advice) {
     return undefined
@@ -434,16 +434,16 @@ const sandboxRuntimeFrom = async (
 
   process.stderr.write(tradeoffText(advice))
 
-  if (!tty || !sandboxRuntimeChoice(advice)) {
+  if (!tty || !machineRuntimeChoice(advice)) {
     return undefined
   }
 
   return choose(
-    'Sandbox runtime',
+    'Machine runtime',
     advice.options
       .filter((option) => option.installed)
       .map((option) => ({
-        value: option.runtime as SandboxRuntime,
+        value: option.runtime as MachineRuntime,
         label: runtimeLabel(option.runtime),
         hint: option.recommended ? 'recommended' : undefined,
       })),
@@ -455,7 +455,7 @@ export const hostCommands = (program: Program) => {
   program
     .command('setup')
     .description(
-      "First-admin bootstrap on the station host, as root, through stationd's root socket",
+      "First-admin bootstrap on the server host, as root, through stationd's root socket",
     )
     .option('--socket <path>', 'stationd root socket', rootSocketPath)
     .option('--email <email>', 'admin email')
@@ -464,16 +464,16 @@ export const hostCommands = (program: Program) => {
     .option('--api-host <host>', 'API hostname (hostnames.api)')
     .option('--dashboard-host <host>', 'dashboard hostname (hostnames.dashboard)')
     .option('--no-domain', 'skip the hostnames; Dispatch stays on the loopback publish')
-    .option('--public-address <ipv4>', "the station's public IPv4 address (station.public_address)")
+    .option('--public-address <ipv4>', "the server's public IPv4 address (server.public_address)")
     .addOption(
       new Option(
         '--detect-public-address',
-        'use the IPv4 address of the default-route interface when it is public; no lookup service is contacted',
+        'use the IPv4 address of the default-route interface when it is public; no lookup app is contacted',
       ).conflicts('publicAddress'),
     )
     .option(
-      '--sandbox-runtime <runtime>',
-      'the runtime sandboxes on this station use by default; asked only when the host offers more than one',
+      '--machine-runtime <runtime>',
+      'the runtime machines on this server use by default; asked only when the host offers more than one',
     )
     .option(
       '--litestream-bucket <bucket>',
@@ -575,9 +575,9 @@ export const hostCommands = (program: Program) => {
         const publicAddress = await publicAddressFrom(options, tty, detect)
         const litestream = await litestreamFrom(options, tty)
         const probe = await rootSocketCall(options.socket, 'host.probe', {}, () => {})
-        const sandboxRuntime = await sandboxRuntimeFrom(options.sandboxRuntime, tty, probe)
+        const machineRuntime = await machineRuntimeFrom(options.machineRuntime, tty, probe)
         const runtimeShown =
-          sandboxRuntime ?? adviseSandboxRuntime(probe.host, probe.runtimes)?.default
+          machineRuntime ?? adviseMachineRuntime(probe.host, probe.runtimes)?.default
 
         if (prompted) {
           process.stderr.write(
@@ -589,9 +589,9 @@ export const hostCommands = (program: Program) => {
                 : `  hostnames      none (domainless; SSH forward to ${dispatchAddress})`,
               pair ? `  dashboard host ${pair.dashboard} (passkey RP ID ${pair.parent})` : null,
               `  ACME email     ${acme || 'none'}`,
-              `  public address ${publicAddress ?? 'none (set it later with sly stations update)'}`,
+              `  public address ${publicAddress ?? 'none (set it later with sly servers update)'}`,
               `  Litestream     ${litestream ? `${litestream.bucket}${litestream.endpoint ? ` at ${litestream.endpoint}` : ''}` : 'none'}`,
-              `  sandboxes      ${runtimeShown ? runtimeLabel(runtimeShown) : 'none on this host'}`,
+              `  machines       ${runtimeShown ? runtimeLabel(runtimeShown) : 'none on this host'}`,
               '',
             ]
               .filter((line) => line !== null)
@@ -624,9 +624,9 @@ export const hostCommands = (program: Program) => {
                 public_address: publicAddress,
               }
             : {}),
-          ...(sandboxRuntime
+          ...(machineRuntime
             ? {
-                sandbox_runtime: sandboxRuntime,
+                sandbox_runtime: machineRuntime,
               }
             : {}),
           ...(litestream
@@ -667,7 +667,7 @@ export const adminHostCommands = (program: Program) => {
   const admin = program
     .command('admin')
     .description(
-      "Host-only administration, as root on the station host through stationd's root socket",
+      "Host-only administration, as root on the server host through stationd's root socket",
     )
 
   admin

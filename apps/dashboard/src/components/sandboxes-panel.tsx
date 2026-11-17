@@ -1,29 +1,27 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from '@tanstack/react-router'
-import { Plus, ShieldCheck } from 'lucide-react'
+import { Camera, Container, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { fitSandboxMemory, sandboxSizeDefaults } from '@stationly/protocol/domain'
+import { fitMachineMemory, machineSizeDefaults } from '@stationly/protocol/domain'
 import { gibibyte, parseSeconds } from '@stationly/protocol/format'
 
 import { AlsoWith, Code } from '@/components/code'
 import { CheckboxField, Field, FieldSet, Suffixed } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
-import { EmptyState, Section } from '@/components/page'
+import { EmptyState } from '@/components/page'
 import { Panel } from '@/components/panel'
+import { PlaceLink } from '@/components/place-link'
 import {
-  DeleteSandbox,
-  ExtendSandbox,
-  StartSandbox,
-  StopSandbox,
+  DeleteMachine,
+  ExtendMachine,
+  StartMachine,
+  StopMachine,
 } from '@/components/sandbox-actions'
 import { TimeLeft } from '@/components/sandbox-clock'
 import { SlugInput } from '@/components/slug-input'
 import { SnapshotsTable } from '@/components/snapshots-table'
-import { SandboxStatusBadge } from '@/components/status'
+import { MachineStatusBadge } from '@/components/status'
 import { ActionsHead, TableFrame } from '@/components/table-frame'
-import { Term } from '@/components/term'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,38 +34,38 @@ import {
 } from '@/components/ui/select'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { api, idempotency, send, type Environment } from '@/lib/api'
-import { commands, type Scope } from '@/lib/commands'
+import { api, idempotency, send } from '@/lib/api'
+import { commands } from '@/lib/commands'
 import { bytes } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
-import { sandboxNetwork } from '@/lib/labels'
+import { machineNetwork } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
+import { go, places } from '@/lib/nav'
+import { isProduction, previewQuery, scopeOf, type Place, type PlaceView } from '@/lib/place'
 import {
-  sandboxesQuery,
-  sandboxSnapshotsQuery,
-  sandboxStationQuery,
-  seedSandbox,
+  machineSnapshotsQuery,
+  machinesQuery,
+  machineStationQuery,
+  seedMachine,
 } from '@/lib/queries'
 import { egressBody, egressText, imageText, ttlProblem } from '@/lib/sandbox'
 import { useShortcut } from '@/lib/shortcuts'
 import { isIdle, isLive } from '@/lib/status'
 import { highlight, useFresh } from '@/lib/use-fresh'
 import { cn } from '@/lib/utils'
+import { MachineUseLine } from '@/workbench/machine-use'
+import { Notice, Section } from '@/workbench/parts'
 
-export function ProtectedNotice({ environment }: { environment: Environment }) {
-  if (!environment.protected) {
+export function ProtectedNotice({ place }: { place: Place }) {
+  if (!isProduction(place)) {
     return null
   }
 
   return (
-    <Alert>
-      <ShieldCheck />
-      <AlertTitle>Only people can change sandboxes here</AlertTitle>
-      <AlertDescription>
-        This environment is protected. Your changes apply at once. Stationly refuses sandbox changes
-        from agents and tokens.
-      </AlertDescription>
-    </Alert>
+    <Notice tone="info" title="Only people can change machines here">
+      This is production. Your changes apply at once. Stationly refuses machine changes from agents
+      and tokens.
+    </Notice>
   )
 }
 
@@ -118,20 +116,18 @@ export function EgressFields({
   )
 }
 
-type NewSandboxBody = Parameters<ReturnType<typeof api.v1.environments>['sandboxes']['post']>[0]
+type NewMachineBody = Parameters<ReturnType<typeof api.v1.projects>['machines']['post']>[0]
 
-export function NewSandbox({
-  environment,
-  scope,
+export function NewMachine({
+  place,
   open,
   onOpenChange,
 }: {
-  environment: Environment
-  scope: Scope
+  place: PlaceView
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const navigate = useNavigate()
+  const scope = scopeOf(place)
   const [name, setName] = useState('')
   const [custom, setCustom] = useState(false)
   const [image, setImage] = useState('')
@@ -139,35 +135,38 @@ export function NewSandbox({
   const [ttl, setTtl] = useState('1h')
   const [mode, setMode] = useState<'open' | 'allowlist'>('open')
   const [domains, setDomains] = useState('')
-  const [cpu, setCpu] = useState(String(sandboxSizeDefaults.cpu_millis / 1000))
-  const [memory, setMemory] = useState(String(sandboxSizeDefaults.memory_bytes / gibibyte))
+  const [cpu, setCpu] = useState(String(machineSizeDefaults.cpu_millis / 1000))
+  const [memory, setMemory] = useState(String(machineSizeDefaults.memory_bytes / gibibyte))
   const [memoryTouched, setMemoryTouched] = useState(false)
-  const [disk, setDisk] = useState(String(sandboxSizeDefaults.disk_bytes / gibibyte))
+  const [disk, setDisk] = useState(String(machineSizeDefaults.disk_bytes / gibibyte))
   const station = useQuery({
-    ...sandboxStationQuery,
+    ...machineStationQuery,
     enabled: open,
   })
-  const room = station.data?.sandbox_memory
+  const room = station.data?.machine_memory
 
   useEffect(() => {
     if (room && !memoryTouched) {
-      setMemory(String(fitSandboxMemory(room.free) / gibibyte))
+      setMemory(String(fitMachineMemory(room.free) / gibibyte))
     }
   }, [room, memoryTouched])
   const [docker, setDocker] = useState(false)
   const [start, setStart] = useState(true)
   const [problem, setProblem] = useState<string | null>(null)
   const mutation = useApiMutation({
-    mutationFn: (body: NewSandboxBody) =>
+    mutationFn: (body: NewMachineBody) =>
       send(
         api.v1
-          .environments({
-            environment: environment.id,
+          .projects({
+            project: place.project,
           })
-          .sandboxes.post(body, idempotency()),
+          .machines.post(body, {
+            ...idempotency(),
+            query: previewQuery(place),
+          }),
       ),
-    seed: seedSandbox,
-    invalidate: ['sandboxes'],
+    seed: seedMachine,
+    invalidate: ['machines'],
     success: (created) => ({
       title: `${created.name} created`,
       description:
@@ -176,13 +175,8 @@ export function NewSandbox({
     onSuccess: (result) => {
       onOpenChange(false)
 
-      if (!result.staged) {
-        void navigate({
-          to: '/sandboxes/$sandbox',
-          params: {
-            sandbox: result.body.id,
-          },
-        })
+      if (!result.waiting) {
+        go(places.machine(result.body.id))
       }
     },
   })
@@ -228,11 +222,11 @@ export function NewSandbox({
       open={open}
       onOpenChange={onOpenChange}
       size="lg"
-      title="New sandbox"
+      title="New machine"
       description="A machine for an agent or for you, with its own disk and a time limit. Stopping it keeps the disk."
-      also={<AlsoWith cli={commands.createSandbox(scope)} tool="create_sandbox" />}
+      also={<AlsoWith cli={commands.createMachine(scope)} tool="create_machine" />}
       error={problem ?? mutation.errorText}
-      submitLabel="Create sandbox"
+      submitLabel="Create machine"
       pending={mutation.isPending}
       onSubmit={submit}
     >
@@ -283,7 +277,7 @@ export function NewSandbox({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="isolated">Isolated, internet only</SelectItem>
-              <SelectItem value="environment">Joins the environment network</SelectItem>
+              <SelectItem value="environment">Joins the network</SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -376,33 +370,23 @@ export function NewSandbox({
   )
 }
 
-function SandboxTable({
-  environment,
-  scope,
-  onCreate,
-}: {
-  environment: Environment
-  scope: Scope
-  onCreate: () => void
-}) {
-  const { data: all } = useSuspenseQuery(sandboxesQuery(environment.id))
-  const data = {
-    items: all.items.filter((sandbox) => !sandbox.workspace),
-  }
+function MachineTable({ place, onCreate }: { place: PlaceView; onCreate: () => void }) {
+  const scope = scopeOf(place)
+  const { data } = useSuspenseQuery(machinesQuery(place))
   const fresh = useFresh(data.items)
 
   if (data.items.length === 0) {
     return (
       <EmptyState
-        icon={entityIcon.sandbox}
-        title="No sandboxes yet"
-        description="A sandbox is a machine for an agent or for you, with its own disk and a time limit."
+        icon={entityIcon.machine}
+        title="No machines yet"
+        description="A machine is an isolated computer on a server: the project machine where tasks run, a task’s own machine, or one you use by hand."
         action={
           <Button size="sm" onClick={onCreate}>
-            <Plus /> New sandbox
+            <Plus /> New machine
           </Button>
         }
-        also={<AlsoWith cli={commands.createSandbox(scope)} tool="create_sandbox" />}
+        also={<AlsoWith cli={commands.createMachine(scope)} tool="create_machine" />}
       />
     )
   }
@@ -411,73 +395,74 @@ function SandboxTable({
     <TableFrame>
       <TableHeader>
         <TableRow>
-          <TableHead>Sandbox</TableHead>
+          <TableHead>Machine</TableHead>
           <TableHead>Status</TableHead>
+          <TableHead className="hidden md:table-cell">Used by</TableHead>
           <TableHead className="hidden xl:table-cell">Image</TableHead>
           <TableHead className="hidden lg:table-cell">Resources</TableHead>
-          <TableHead className="hidden md:table-cell">Network</TableHead>
+          <TableHead className="hidden lg:table-cell">Network</TableHead>
           <TableHead className="hidden sm:table-cell">Time</TableHead>
           <ActionsHead />
         </TableRow>
       </TableHeader>
       <TableBody>
-        {data.items.map((sandbox) => (
-          <TableRow key={sandbox.id} className={cn('relative', fresh.has(sandbox.id) && highlight)}>
+        {data.items.map((machine) => (
+          <TableRow key={machine.id} className={cn('relative', fresh.has(machine.id) && highlight)}>
             <TableCell>
-              <Link
-                to="/sandboxes/$sandbox"
-                params={{
-                  sandbox: sandbox.id,
-                }}
+              <PlaceLink
+                to={places.machine(machine.id)}
                 className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
-                data-testid="sandbox-link"
+                data-testid="machine-link"
               >
-                <entityIcon.sandbox className="size-4 text-muted-foreground" aria-hidden />
-                {sandbox.name}
-                {sandbox.forked_from && (
+                <entityIcon.machine className="size-4 text-muted-foreground" aria-hidden />
+                {machine.name}
+                {machine.forked_from && (
                   <Badge variant="outline" className="font-normal">
                     Fork
                   </Badge>
                 )}
-              </Link>
+              </PlaceLink>
               <span className="mt-0.5 block pl-6 text-xs sm:hidden">
-                <TimeLeft sandbox={sandbox} />
+                <TimeLeft machine={machine} />
               </span>
             </TableCell>
             <TableCell>
               <span className="inline-flex flex-wrap items-center gap-1.5">
-                <SandboxStatusBadge status={sandbox.status} reason={sandbox.status_reason} />
+                <MachineStatusBadge status={machine.status} reason={machine.status_reason} />
               </span>
+            </TableCell>
+            <TableCell className="hidden max-w-56 md:table-cell">
+              <MachineUseLine machine={machine} />
             </TableCell>
             <TableCell className="hidden max-w-56 truncate xl:table-cell">
               <span className="font-mono text-[0.8125rem] text-muted-foreground">
-                {imageText(sandbox.image)}
+                {imageText(machine.image)}
               </span>
             </TableCell>
             <TableCell className="hidden text-muted-foreground tabular-nums lg:table-cell">
-              {sandbox.size.cpu_millis / 1000} vCPU · {bytes(sandbox.size.memory_bytes)}
+              {machine.size.cpu_millis / 1000} vCPU · {bytes(machine.size.memory_bytes)}
               <br />
               <span className="text-xs">
-                {bytes(sandbox.disk_used_bytes)} of {bytes(sandbox.size.disk_bytes)} disk
+                {bytes(machine.disk_used_bytes)} of {bytes(machine.size.disk_bytes)} disk
               </span>
             </TableCell>
-            <TableCell className="hidden text-muted-foreground md:table-cell">
-              {sandboxNetwork[sandbox.network]}
+            <TableCell className="hidden text-muted-foreground lg:table-cell">
+              {machineNetwork[machine.network]}
               <br />
-              <span className="text-xs">Outbound to {egressText(sandbox.egress)}</span>
+              <span className="text-xs">Outbound to {egressText(machine.egress)}</span>
             </TableCell>
             <TableCell className="hidden sm:table-cell">
-              <TimeLeft sandbox={sandbox} />
+              <TimeLeft machine={machine} />
             </TableCell>
             <TableCell className="relative z-10 text-right">
               <span className="inline-flex items-center gap-1">
-                {isIdle(sandbox.status) ? (
-                  <StartSandbox sandbox={sandbox} size="icon-sm" />
-                ) : isLive(sandbox.status) ? (
-                  <StopSandbox sandbox={sandbox} size="icon-sm" />
+                {isIdle(machine.status) ? (
+                  <StartMachine machine={machine} size="icon-sm" />
+                ) : isLive(machine.status) ? (
+                  <StopMachine machine={machine} size="icon-sm" />
                 ) : null}
-                <ExtendSandbox sandbox={sandbox} size="icon-sm" />
-                <DeleteSandbox sandbox={sandbox} size="icon-sm" />
+                <ExtendMachine machine={machine} size="icon-sm" />
+                <DeleteMachine machine={machine} size="icon-sm" />
               </span>
             </TableCell>
           </TableRow>
@@ -487,44 +472,33 @@ function SandboxTable({
   )
 }
 
-function EnvironmentSnapshots({
-  environment,
-  project,
-  scope,
-}: {
-  environment: Environment
-  project: string
-  scope: Scope
-}) {
-  const { data: snapshots } = useSuspenseQuery(sandboxSnapshotsQuery(environment.id))
-  const { data: sandboxes } = useSuspenseQuery(sandboxesQuery(environment.id))
-  const names = new Map(sandboxes.items.map((s) => [s.id, s.name]))
+function PlaceSnapshots({ place }: { place: PlaceView }) {
+  const scope = scopeOf(place)
+  const { data: snapshots } = useSuspenseQuery(machineSnapshotsQuery(place))
+  const { data: machines } = useSuspenseQuery(machinesQuery(place))
+  const names = new Map(machines.items.map((s) => [s.id, s.name]))
 
   return (
     <SnapshotsTable
       snapshots={snapshots.items}
-      project={project}
-      environment={environment.name}
+      scope={scope}
       originLabel="Taken from"
       origin={(snapshot) =>
-        names.get(snapshot.sandbox_id) ? (
-          <Code>{names.get(snapshot.sandbox_id)}</Code>
+        names.get(snapshot.machine_id) ? (
+          <Code>{names.get(snapshot.machine_id)}</Code>
         ) : (
-          <span className="text-muted-foreground">Deleted sandbox</span>
+          <span className="text-muted-foreground">Deleted machine</span>
         )
       }
       empty={
         <EmptyState
           icon={entityIcon.snapshot}
           title="No snapshots yet"
-          description="A snapshot saves a sandbox’s disk so you can fork new sandboxes from it. Take one from a sandbox’s page."
+          description="A snapshot saves a machine’s disk so you can fork new machines from it. Take one from a machine’s page."
           also={
             <AlsoWith
-              cli={commands.snapshotSandbox(
-                scope,
-                sandboxes.items.find((item) => !item.workspace)?.name ?? '<sandbox>',
-              )}
-              tool="snapshot_sandbox"
+              cli={commands.snapshotMachine(scope, machines.items[0]?.name ?? '<machine>')}
+              tool="snapshot_machine"
             />
           }
         />
@@ -533,57 +507,38 @@ function EnvironmentSnapshots({
   )
 }
 
-export function SandboxesPanel({
-  environment,
-  project,
-}: {
-  environment: Environment
-  project: string
-}) {
+export function MachinesPanel({ place }: { place: PlaceView }) {
   const [creating, setCreating] = useState(false)
 
   useShortcut('create', () => setCreating(true))
-  const scope = {
-    project,
-    environment: environment.name,
-  }
 
   return (
-    <div className="space-y-6">
-      <ProtectedNotice environment={environment} />
+    <div className="flex flex-col gap-8">
+      <ProtectedNotice place={place} />
       <Section
-        title={<Term name="sandbox">Sandboxes</Term>}
-        description="A running sandbox stops when its time runs out. Stationly deletes a stopped one after 7 days."
-        actions={
+        icon={Container}
+        title="Machines"
+        note="A running machine stops when its time runs out. Stationly deletes a stopped one after 7 days."
+        action={
           <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus /> New sandbox
+            <Plus /> New machine
           </Button>
         }
       >
-        <Panel title="Couldn’t load sandboxes">
-          <SandboxTable
-            environment={environment}
-            scope={scope}
-            onCreate={() => setCreating(true)}
-          />
+        <Panel title="Couldn’t load machines">
+          <MachineTable place={place} onCreate={() => setCreating(true)} />
         </Panel>
       </Section>
       <Section
-        title={<Term name="snapshot">Snapshots</Term>}
-        description="Saved copies of a sandbox’s disk. Fork one to get a new sandbox."
+        icon={Camera}
+        title="Snapshots"
+        note="Saved copies of a machine’s disk. Fork one to get a new machine."
       >
         <Panel rows={2} title="Couldn’t load snapshots">
-          <EnvironmentSnapshots environment={environment} project={project} scope={scope} />
+          <PlaceSnapshots place={place} />
         </Panel>
       </Section>
-      {creating && (
-        <NewSandbox
-          environment={environment}
-          scope={scope}
-          open={creating}
-          onOpenChange={setCreating}
-        />
-      )}
+      {creating && <NewMachine place={place} open={creating} onOpenChange={setCreating} />}
     </div>
   )
 }

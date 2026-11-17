@@ -1,15 +1,18 @@
-import { tokenLevelValues } from '@stationly/protocol'
+import { scopeTargetValues, tokenLevelValues } from '@stationly/protocol'
 
 export type Level = (typeof tokenLevelValues)[number]
 
-export type Scope = { project_id: string; environment_id: string; level: Level }
+export type Scope = { project_id: string; target: string; preview_id?: string; level: Level }
 
-export type Target = { project_id: string; environment_id: string }
+export type Target = { project_id: string; target: string; preview_id?: string }
 
 export const anyTarget: Target = {
   project_id: '*',
-  environment_id: '*',
+  target: '*',
 }
+
+export const isScopeTarget = (value: string): value is (typeof scopeTargetValues)[number] =>
+  (scopeTargetValues as readonly string[]).includes(value)
 
 const rank = (level: Level) => tokenLevelValues.indexOf(level)
 
@@ -21,7 +24,8 @@ export const levelAt = (scopes: Scope[], target: Target): Level | null => {
   for (const scope of scopes) {
     if (
       !covers(scope.project_id, target.project_id) ||
-      !covers(scope.environment_id, target.environment_id)
+      !covers(scope.target, target.target) ||
+      (scope.preview_id !== undefined && scope.preview_id !== target.preview_id)
     ) {
       continue
     }
@@ -43,7 +47,8 @@ export const scopeWithin = (scopes: Scope[], wanted: Scope) =>
   atLeast(
     levelAt(scopes, {
       project_id: wanted.project_id,
-      environment_id: wanted.environment_id,
+      target: wanted.target,
+      preview_id: wanted.preview_id,
     }),
     'admin',
   )
@@ -51,7 +56,7 @@ export const scopeWithin = (scopes: Scope[], wanted: Scope) =>
 export const fullAdmin: Scope[] = [
   {
     project_id: '*',
-    environment_id: '*',
+    target: '*',
     level: 'admin',
   },
 ]

@@ -18,11 +18,11 @@ export const createProgram = () =>
       'project id or name (default from STATIONLY_PROJECT or .stationly/context.json)',
     )
     .option(
-      '--environment <environment>',
-      'environment id or name (default from STATIONLY_ENVIRONMENT, else the project default)',
+      '--preview <preview>',
+      'preview id or name (default from STATIONLY_PREVIEW, else production)',
     )
-    .option('--service <service>', 'service id or name')
-    .option('--sandbox <sandbox>', 'sandbox id or name')
+    .option('--app <app>', 'app id or name')
+    .option('--machine <machine>', 'machine id or name')
     .exitOverride()
     .configureOutput({
       writeErr: (text) => process.stderr.write(text),
@@ -37,7 +37,11 @@ export type ProgramOptions = ReturnType<Program['opts']>
 
 export const group = (parent: CommandUnknownOpts, name: string) =>
   (parent.commands.find((c) => c.name() === name) ??
-    parent.command(name).description(tagSummary(name))) as Command<[], {}, ProgramOptions>
+    parent.command(name).description(parent.parent ? name : tagSummary(name))) as Command<
+    [],
+    {},
+    ProgramOptions
+  >
 
 export const action =
   <A extends unknown[], O extends OptionValues, G extends Globals>(

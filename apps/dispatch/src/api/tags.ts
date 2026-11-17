@@ -8,16 +8,16 @@ export const operationTags = [
     description: 'Projects',
   },
   {
-    name: 'environments',
-    description: 'Environments of a project',
+    name: 'previews',
+    description: "A project's previews: copies of production's apps at their own URLs",
   },
   {
-    name: 'services',
-    description: 'Services of an environment',
+    name: 'apps',
+    description: 'Apps in production or a preview',
   },
   {
     name: 'ports',
-    description: 'Ports of a service',
+    description: 'Ports of an app',
   },
   {
     name: 'volumes',
@@ -25,7 +25,7 @@ export const operationTags = [
   },
   {
     name: 'domains',
-    description: 'Domains and TCP exposures of a service',
+    description: 'Domains and TCP exposures of an app',
   },
   {
     name: 'network',
@@ -33,23 +33,23 @@ export const operationTags = [
   },
   {
     name: 'deployments',
-    description: 'Deployments, builds, redeploys and rollbacks of a service',
+    description: 'Deployments, builds, redeploys and rollbacks of an app',
   },
   {
     name: 'runs',
-    description: 'One-off runs of a service',
+    description: 'One-off runs of an app',
   },
   {
-    name: 'sandboxes',
+    name: 'machines',
     description: 'Persistent Linux machines for agents, isolated with gVisor',
   },
   {
     name: 'logs',
-    description: 'Logs of a service, deployment, build, run, sandbox or platform component',
+    description: 'Logs of an app, deployment, build, run, machine or platform component',
   },
   {
     name: 'metrics',
-    description: 'Live metrics of services',
+    description: 'Live metrics of apps',
   },
   {
     name: 'events',
@@ -60,12 +60,13 @@ export const operationTags = [
     description: 'Notification channels',
   },
   {
-    name: 'variables',
-    description: 'Variables, secret values and grants; sealed values are never shown',
+    name: 'keys',
+    description: 'Keys, secret values and grants; sealed values are never shown',
   },
   {
-    name: 'staged-changes',
-    description: 'Changes that wait for a human in a protected environment or platform',
+    name: 'approvals',
+    description:
+      'Changes to production that wait for a person: production, the platform and Ship it',
   },
   {
     name: 'settings',
@@ -76,8 +77,8 @@ export const operationTags = [
     description: 'Personal and scoped tokens',
   },
   {
-    name: 'stations',
-    description: 'Stations',
+    name: 'servers',
+    description: 'Servers',
   },
   {
     name: 'platform',

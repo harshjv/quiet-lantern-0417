@@ -3,47 +3,47 @@ import { eq } from 'drizzle-orm'
 import { requireLink } from '../api/deployments.ts'
 import { fail, invalid } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
-import { station } from '../db/schema.ts'
+import { server } from '../db/schema.ts'
 import type { StationServer } from '../station/server.ts'
 
-type StationRow = typeof station.$inferSelect
+type StationRow = typeof server.$inferSelect
 
 export type StorageDeps = { db: Db; stations: Pick<StationServer, 'ask' | 'isConnected'> }
 
 export const requireGrowable = (st: StationRow, sizeBytes: number) => {
-  const sandboxes = st.capabilities?.sandboxes
+  const machines = st.capabilities?.sandboxes
 
-  if (!sandboxes) {
+  if (!machines) {
     fail(
-      'STATION_CAPABILITY_MISSING',
-      `Station ${st.name} reports no sandbox capability.`,
-      'Install sandbox support on the station, then retry.',
+      'SERVER_CAPABILITY_MISSING',
+      `Server ${st.name} reports no machine capability.`,
+      'Install machine support on the server, then retry.',
       {
-        missing: 'sandboxes',
-        station_id: st.id,
+        missing: 'machines',
+        server_id: st.id,
       },
     )
   }
 
-  if (sizeBytes <= sandboxes!.filesystem_bytes) {
+  if (sizeBytes <= machines!.filesystem_bytes) {
     invalid([
       {
         path: '/size_bytes',
-        message: `must exceed the current ${sandboxes!.filesystem_bytes} bytes`,
+        message: `must exceed the current ${machines!.filesystem_bytes} bytes`,
       },
     ])
   }
 
-  if (sizeBytes > sandboxes!.filesystem_max_bytes) {
+  if (sizeBytes > machines!.filesystem_max_bytes) {
     invalid([
       {
         path: '/size_bytes',
-        message: `exceeds the ${sandboxes!.filesystem_max_bytes} bytes the filesystem can grow to now`,
+        message: `exceeds the ${machines!.filesystem_max_bytes} bytes the filesystem can grow to now`,
       },
     ])
   }
 
-  return sandboxes!
+  return machines!
 }
 
 export const growStorage = async (
@@ -53,8 +53,8 @@ export const growStorage = async (
   onStationError: (error: unknown) => never,
 ) => {
   const { db, stations } = deps
-  const st = db.select().from(station).where(eq(station.id, stationId)).get()!
-  const sandboxes = requireGrowable(st, sizeBytes)
+  const st = db.select().from(server).where(eq(server.id, stationId)).get()!
+  const machines = requireGrowable(st, sizeBytes)
 
   requireLink(stations, st.id)
   const reply = await stations
@@ -76,14 +76,14 @@ export const growStorage = async (
       invalid([
         {
           path: '/size_bytes',
-          message: grown.error ?? 'the station refused the size',
+          message: grown.error ?? 'the server refused the size',
         },
       ])
     }
 
     fail(
-      'SANDBOX_STORAGE_GROW_FAILED',
-      `Growing the sandbox filesystem failed at ${grown.step}: ${grown.error ?? 'no detail'}.`,
+      'MACHINE_STORAGE_GROW_FAILED',
+      `Growing the machine filesystem failed at ${grown.step}: ${grown.error ?? 'no detail'}.`,
       'Read the step and error, fix the host, then grow again; the filesystem is as it was or larger.',
       {
         step: grown.step,
@@ -92,23 +92,23 @@ export const growStorage = async (
     )
   }
 
-  db.update(station)
+  db.update(server)
     .set({
       capabilities: {
         ...st.capabilities!,
         sandboxes: {
-          ...sandboxes,
+          ...machines,
           filesystem_bytes: grown.filesystem_bytes,
           filesystem_free_bytes: grown.filesystem_free_bytes,
         },
       },
     })
-    .where(eq(station.id, st.id))
+    .where(eq(server.id, st.id))
     .run()
 
   return {
     filesystem_bytes: grown.filesystem_bytes,
     filesystem_free_bytes: grown.filesystem_free_bytes,
-    before: sandboxes.filesystem_bytes,
+    before: machines.filesystem_bytes,
   }
 }

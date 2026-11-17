@@ -3,18 +3,24 @@ import { after, before, describe, test } from 'node:test'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createProject, seedLockfile, waitForDeployment } from './helpers/seed.ts'
+import {
+  createPreview,
+  createProject,
+  placed,
+  seedLockfile,
+  waitForDeployment,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
-let environmentId: string
+let previewId: string
 
 const token = () => h.admin.token
-const servicesNamed = () =>
-  (h.db as any).$client.prepare('select name from service').all() as { name: string }[]
-const getService = async (id: string) =>
+const appsNamed = () =>
+  (h.db as any).$client.prepare('select name from app').all() as { name: string }[]
+const getApp = async (id: string) =>
   (
-    await h.call('GET', `/v1/services/${id}`, {
+    await h.call('GET', `/v1/apps/${id}`, {
       token: token(),
     })
   ).body
@@ -24,7 +30,7 @@ before(async () => {
   h = await startDispatch()
   seedLockfile(h)
   await startFakeStation(h)
-  environmentId = (await createProject(h)).default_environment_id
+  previewId = (await createPreview(h, (await createProject(h)).id, 'staging')).id
 })
 
 after(async () => {
@@ -33,12 +39,12 @@ after(async () => {
 })
 
 const create = (body: Record<string, unknown>) =>
-  h.call('POST', `/v1/environments/${environmentId}/services`, {
+  h.call('POST', placed(h, previewId, `apps`), {
     token: token(),
     body,
   })
 
-describe('creating a service from an image', () => {
+describe('creating an app from an image', () => {
   test('a tag resolves to the registry digest and the response says so', async () => {
     const digest = registry.publish('nginx:1.27')
     const reply = await create({
@@ -119,7 +125,7 @@ describe('a failed lookup answers at request time and creates nothing', () => {
     reason: string | null,
     status: number,
   ) => {
-    const before = servicesNamed().length
+    const before = appsNamed().length
     const reply = await create({
       name,
       kind: 'web',
@@ -142,9 +148,9 @@ describe('a failed lookup answers at request time and creates nothing', () => {
       assert.equal(reply.body.error.details.reason, reason)
     }
 
-    assert.equal(servicesNamed().length, before)
+    assert.equal(appsNamed().length, before)
     assert.equal(
-      servicesNamed().some((s) => s.name === name),
+      appsNamed().some((s) => s.name === name),
       false,
     )
 
@@ -220,12 +226,12 @@ describe('a failed lookup answers at request time and creates nothing', () => {
     await refuses('misshapen', 'misshapen:1', 'SOURCE_UNREACHABLE', 'invalid_manifest', 422)
   })
 
-  test('an image without linux/arm64 fails with STATION_CAPABILITY_MISSING', async () => {
+  test('an image without linux/arm64 fails with SERVER_CAPABILITY_MISSING', async () => {
     registry.publish('amd-only:1', ['linux/amd64'])
     const error = await refuses(
       'amd-only',
       'amd-only:1',
-      'STATION_CAPABILITY_MISSING',
+      'SERVER_CAPABILITY_MISSING',
       'platform_missing',
       422,
     )
@@ -239,7 +245,7 @@ describe('a failed lookup answers at request time and creates nothing', () => {
 })
 
 describe('keeping and refreshing the digest', () => {
-  let serviceId: string
+  let appId: string
   let first: string
   let second: string
 
@@ -259,26 +265,26 @@ describe('keeping and refreshing the digest', () => {
       ],
     })
 
-    serviceId = created.body.id
+    appId = created.body.id
     await waitForDeployment(h, created.body.deployments[0].id, 'active')
     second = registry.publish('app:stable')
     assert.notEqual(first, second)
   })
 
   test('redeploy keeps the digest the current deployment ran', async () => {
-    const reply = await h.call('POST', `/v1/services/${serviceId}/redeploy`, {
+    const reply = await h.call('POST', `/v1/apps/${appId}/redeploy`, {
       token: token(),
       body: {},
     })
 
     assert.equal(reply.status, 201)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${first}`)
-    assert.equal((await getService(serviceId)).source.digest, first)
+    assert.equal((await getApp(appId)).source.digest, first)
     await waitForDeployment(h, reply.body.id, 'active')
   })
 
   test('restart keeps the digest', async () => {
-    const reply = await h.call('POST', `/v1/services/${serviceId}/restart`, {
+    const reply = await h.call('POST', `/v1/apps/${appId}/restart`, {
       token: token(),
     })
 
@@ -289,7 +295,7 @@ describe('keeping and refreshing the digest', () => {
 
   test('PATCH with an unchanged ref keeps the digest without asking the registry', async () => {
     const seen = registry.manifestRequests().length
-    const reply = await h.call('PATCH', `/v1/services/${serviceId}`, {
+    const reply = await h.call('PATCH', `/v1/apps/${appId}`, {
       token: token(),
       body: {
         source: {
@@ -306,21 +312,21 @@ describe('keeping and refreshing the digest', () => {
   })
 
   test('deploy resolves the tag again and updates source.digest', async () => {
-    const reply = await h.call('POST', `/v1/services/${serviceId}/deployments`, {
+    const reply = await h.call('POST', `/v1/apps/${appId}/deployments`, {
       token: token(),
       body: {},
     })
 
     assert.equal(reply.status, 201)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${second}`)
-    assert.equal((await getService(serviceId)).source.digest, second)
+    assert.equal((await getApp(appId)).source.digest, second)
     assert.ok(reply.body.warnings.some((w: { code: string }) => w.code === 'IMAGE_PINNED'))
     await waitForDeployment(h, reply.body.id, 'active')
   })
 
   test('redeploy after a deploy keeps the newly resolved digest while the tag moves on', async () => {
     registry.publish('app:stable')
-    const reply = await h.call('POST', `/v1/services/${serviceId}/redeploy`, {
+    const reply = await h.call('POST', `/v1/apps/${appId}/redeploy`, {
       token: token(),
       body: {},
     })
@@ -330,11 +336,11 @@ describe('keeping and refreshing the digest', () => {
   })
 
   test('rollback restores the digest of the deployment it names', async () => {
-    const listed = await h.call('GET', `/v1/services/${serviceId}/deployments`, {
+    const listed = await h.call('GET', `/v1/apps/${appId}/deployments`, {
       token: token(),
     })
     const oldest = listed.body.items.find((d: { number: number }) => d.number === 1)
-    const reply = await h.call('POST', `/v1/services/${serviceId}/rollback`, {
+    const reply = await h.call('POST', `/v1/apps/${appId}/rollback`, {
       token: token(),
       body: {
         deployment_id: oldest.id,
@@ -343,6 +349,6 @@ describe('keeping and refreshing the digest', () => {
 
     assert.equal(reply.status, 201)
     assert.equal(reply.body.image_ref, `docker.io/library/app@${first}`)
-    assert.equal((await getService(serviceId)).source.digest, first)
+    assert.equal((await getApp(appId)).source.digest, first)
   })
 })

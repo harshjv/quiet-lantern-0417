@@ -1,4 +1,4 @@
-import { separators, spaceScale, typeScale } from '../apps/dashboard/src/next/tokens.ts'
+import { separators, spaceScale, typeScale } from '../apps/dashboard/src/workbench/tokens.ts'
 
 type Range = [number, number]
 

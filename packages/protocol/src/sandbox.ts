@@ -1,17 +1,17 @@
 import { Type } from '@sinclair/typebox'
 
-import { slugPattern, variableKeyPattern, variableKindValues } from './domain.ts'
-import { variablePatchText } from './field-text.ts'
+import { keyKindValues, keyNamePattern, slugPattern } from './domain.ts'
+import { keyPatchText } from './field-text.ts'
 import {
-  sandboxEgressModeValues,
-  sandboxNetworkValues,
-  SandboxRuntime,
-  sandboxTtl,
+  machineEgressModeValues,
+  machineNetworkValues,
+  MachineRuntime,
+  machineTtl,
 } from './model.ts'
 import { Port, StringEnum } from './primitives.ts'
-import { SandboxWorkspaceInput } from './workspace.ts'
+import { MachineWorkspaceInput } from './workspace.ts'
 
-export const sandboxExecLimits = {
+export const machineExecLimits = {
   envBytes: 64 * 1024,
   stdinBytes: 256 * 1024,
   timeoutS: {
@@ -22,7 +22,7 @@ export const sandboxExecLimits = {
   forwards: 16,
 } as const
 
-export const SandboxSizeInput = Type.Object(
+export const MachineSizeInput = Type.Object(
   {
     cpu_millis: Type.Optional(
       Type.Integer({
@@ -46,9 +46,9 @@ export const SandboxSizeInput = Type.Object(
   },
 )
 
-export const SandboxEgressInput = Type.Object(
+export const MachineEgressInput = Type.Object(
   {
-    mode: StringEnum(sandboxEgressModeValues),
+    mode: StringEnum(machineEgressModeValues),
     domains: Type.Optional(
       Type.Array(
         Type.Object(
@@ -73,12 +73,12 @@ export const SandboxEgressInput = Type.Object(
   },
 )
 
-export const SandboxVariableSet = Type.Object(
+export const MachineKeySet = Type.Object(
   {
-    key: Type.String({
-      pattern: variableKeyPattern,
+    name: Type.String({
+      pattern: keyNamePattern,
     }),
-    kind: StringEnum(variableKindValues),
+    kind: StringEnum(keyKindValues),
     value: Type.Optional(Type.String()),
     reference: Type.Optional(Type.String()),
   },
@@ -88,9 +88,9 @@ export const SandboxVariableSet = Type.Object(
 )
 
 const ttl = Type.Integer({
-  minimum: sandboxTtl.min,
-  maximum: sandboxTtl.max,
-  description: `Time to live after each start (default ${sandboxTtl.default} s)`,
+  minimum: machineTtl.min,
+  maximum: machineTtl.max,
+  description: `Time to live after each start (default ${machineTtl.default} s)`,
 })
 
 const command = Type.Union(
@@ -107,9 +107,9 @@ const command = Type.Union(
 
 const configurable = {
   command: Type.Optional(command),
-  size: Type.Optional(SandboxSizeInput),
+  size: Type.Optional(MachineSizeInput),
   network: Type.Optional(
-    StringEnum(sandboxNetworkValues, {
+    StringEnum(machineNetworkValues, {
       description: "isolated (default), or environment to join the environment's network",
     }),
   ),
@@ -118,11 +118,11 @@ const configurable = {
       description: 'Start dockerd inside at boot (default false)',
     }),
   ),
-  egress: Type.Optional(SandboxEgressInput),
+  egress: Type.Optional(MachineEgressInput),
   ttl_s: Type.Optional(ttl),
 }
 
-export const SandboxCreateBody = Type.Object(
+export const MachineCreateBody = Type.Object(
   {
     name: Type.Optional(
       Type.String({
@@ -148,7 +148,7 @@ export const SandboxCreateBody = Type.Object(
         [
           Type.Object(
             {
-              sandbox: Type.String({
+              machine: Type.String({
                 minLength: 1,
               }),
             },
@@ -168,24 +168,24 @@ export const SandboxCreateBody = Type.Object(
           ),
         ],
         {
-          description: 'Fork the disk of sandbox=<sandbox> or snapshot=<snapshot id>',
+          description: 'Fork the disk of machine=<machine> or snapshot=<snapshot id>',
         },
       ),
     ),
-    station_id: Type.Optional(
+    server_id: Type.Optional(
       Type.String({
         minLength: 1,
-        description: 'The station to place it on; a sandbox never moves',
+        description: 'The server to place it on; a machine never moves',
       }),
     ),
-    runtime: Type.Optional(SandboxRuntime),
+    runtime: Type.Optional(MachineRuntime),
     ...configurable,
-    variables: Type.Optional(
-      Type.Array(SandboxVariableSet, {
-        description: variablePatchText.set,
+    keys: Type.Optional(
+      Type.Array(MachineKeySet, {
+        description: keyPatchText.set,
       }),
     ),
-    workspace: Type.Optional(SandboxWorkspaceInput),
+    workspace: Type.Optional(MachineWorkspaceInput),
     start: Type.Optional(
       Type.Boolean({
         description: 'Start it once created (default true)',
@@ -197,7 +197,7 @@ export const SandboxCreateBody = Type.Object(
   },
 )
 
-export const SandboxPatchBody = Type.Object(
+export const MachinePatchBody = Type.Object(
   {
     ...configurable,
   },
@@ -206,7 +206,7 @@ export const SandboxPatchBody = Type.Object(
   },
 )
 
-export const SandboxStartBody = Type.Object(
+export const MachineStartBody = Type.Object(
   {
     ttl_s: Type.Optional(ttl),
   },
@@ -215,7 +215,7 @@ export const SandboxStartBody = Type.Object(
   },
 )
 
-export const SandboxExecBody = Type.Object(
+export const MachineExecBody = Type.Object(
   {
     command: Type.Array(Type.String(), {
       minItems: 1,
@@ -241,13 +241,13 @@ export const SandboxExecBody = Type.Object(
     stdin: Type.Optional(
       Type.String({
         pattern: '^[A-Za-z0-9_-]*$',
-        maxLength: Math.ceil((sandboxExecLimits.stdinBytes * 4) / 3),
+        maxLength: Math.ceil((machineExecLimits.stdinBytes * 4) / 3),
       }),
     ),
     timeout_s: Type.Optional(
       Type.Integer({
         minimum: 1,
-        maximum: sandboxExecLimits.timeoutS.max,
+        maximum: machineExecLimits.timeoutS.max,
       }),
     ),
     attach: Type.Optional(Type.Boolean()),
@@ -263,7 +263,7 @@ export const SandboxExecBody = Type.Object(
   },
 )
 
-export const SandboxShellBody = Type.Object(
+export const MachineShellBody = Type.Object(
   {
     command: Type.Optional(
       Type.Array(Type.String(), {
@@ -286,26 +286,26 @@ export const SandboxShellBody = Type.Object(
   },
 )
 
-export const SandboxVariablesPatchBody = Type.Object(
+export const MachineKeysPatchBody = Type.Object(
   {
     set: Type.Optional(
-      Type.Array(SandboxVariableSet, {
-        description: variablePatchText.set,
+      Type.Array(MachineKeySet, {
+        description: keyPatchText.set,
       }),
     ),
     unset: Type.Optional(
       Type.Array(
         Type.String({
-          pattern: variableKeyPattern,
+          pattern: keyNamePattern,
         }),
         {
-          description: variablePatchText.unset,
+          description: keyPatchText.unset,
         },
       ),
     ),
     allow_unresolved: Type.Optional(
       Type.Boolean({
-        description: variablePatchText.allow_unresolved,
+        description: keyPatchText.allow_unresolved,
       }),
     ),
   },
@@ -314,7 +314,7 @@ export const SandboxVariablesPatchBody = Type.Object(
   },
 )
 
-export const SandboxSnapshotBody = Type.Object(
+export const MachineSnapshotBody = Type.Object(
   {
     name: Type.Optional(
       Type.String({
@@ -328,11 +328,11 @@ export const SandboxSnapshotBody = Type.Object(
   },
 )
 
-export const SandboxStorageGrowRequest = Type.Object(
+export const MachineStorageGrowRequest = Type.Object(
   {
     size_bytes: Type.Integer({
       minimum: 1,
-      description: 'The new size of the sandbox filesystem; it only grows',
+      description: 'The new size of the machine filesystem; it only grows',
     }),
   },
   {

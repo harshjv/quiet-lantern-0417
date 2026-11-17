@@ -20,7 +20,7 @@ export const exitCodes = {
   ok: 0,
   api: 1,
   usage: 2,
-  staged: 3,
+  waiting: 3,
   deployFailed: 4,
   connection: 5,
   brokenPipe: 141,

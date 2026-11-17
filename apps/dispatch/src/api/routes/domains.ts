@@ -10,16 +10,17 @@ import {
   StringEnum,
 } from '@stationly/protocol'
 
-import { domain, port_allocation, service_port } from '../../db/schema.ts'
+import { app_port, domain, port_allocation } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail } from '../errors.ts'
 import { generatedHostname, hostPortPicker, requireGatewayPin } from '../exposure.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
+import { isProduction } from '../lookup.ts'
 import { filterOne, getQuery } from '../pagination.ts'
 import { input } from '../schemas.ts'
-import { Deleted, Domain, Page, PortAllocation, replies, Staged } from '../shapes.ts'
+import { ApprovalDetail, Deleted, Domain, Page, PortAllocation, replies } from '../shapes.ts'
 
 export const domainRoutes = (kit: Kit) => {
   const { db } = kit.deps
@@ -35,29 +36,29 @@ export const domainRoutes = (kit: Kit) => {
       db.select().from(port_allocation).where(eq(port_allocation.id, id)).get()!,
       undefined,
     )
-  const portsOf = (serviceId: string) =>
+  const portsOf = (appId: string) =>
     db
       .select({
-        id: service_port.id,
+        id: app_port.id,
       })
-      .from(service_port)
-      .where(eq(service_port.service_id, serviceId))
+      .from(app_port)
+      .where(eq(app_port.app_id, appId))
       .all()
       .map((p) => p.id)
 
   return kit
     .router('domains', '/v1')
     .get(
-      '/services/:service/domains',
+      '/apps/:app/domains',
       ({ ctx, query }) => {
-        const ports = portsOf(ctx.service.id)
+        const ports = portsOf(ctx.app.id)
         const rows = ports.length
           ? db
               .select()
               .from(domain)
               .where(
                 and(
-                  inArray(domain.service_port_id, ports),
+                  inArray(domain.app_port_id, ports),
                   query.status ? eq(domain.status, query.status as 'active') : undefined,
                 ),
               )
@@ -71,9 +72,9 @@ export const domainRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'list_domains',
-          summary: 'List the domains of a service',
+          summary: 'List the domains of an app',
           level: 'read',
         },
         query: t.Object({
@@ -133,7 +134,7 @@ export const domainRoutes = (kit: Kit) => {
           }
         }
 
-        requireGatewayPin(db, ctx.service.station_id)
+        requireGatewayPin(db, ctx.app.server_id)
 
         if (body.generated === (body.hostname !== undefined)) {
           fail(
@@ -168,10 +169,10 @@ export const domainRoutes = (kit: Kit) => {
           }
         } else {
           hostname =
-            generatedHostname(db, ctx.service.name, ctx.environment.name, ctx.service.station_id) ??
+            generatedHostname(db, ctx.app.name, ctx.target_row.name, ctx.app.server_id) ??
             fail(
               'DOMAIN_INVALID',
-              'No domains.zone is set and the station has not reported a public address, so no hostname can be generated.',
+              'No domains.zone is set and the server has not reported a public address, so no hostname can be generated.',
               'Set the domains.zone setting, or send a hostname.',
             )
         }
@@ -198,7 +199,7 @@ export const domainRoutes = (kit: Kit) => {
           fail(
             'NAME_TAKEN',
             `${hostname} is Dispatch's own hostname (${ownKey}).`,
-            'Choose another hostname for the service.',
+            'Choose another hostname for the app.',
             {
               hostname,
               setting: ownKey,
@@ -217,14 +218,14 @@ export const domainRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         set.status = 201
@@ -232,7 +233,7 @@ export const domainRoutes = (kit: Kit) => {
         return domainView(result.refs['new:domain:1']!, 'dns_instructions')
       },
       {
-        service_port: {
+        app_port: {
           id: 'add_domain',
           summary: 'Add a generated or custom domain to an http port',
           level: 'admin',
@@ -264,7 +265,7 @@ export const domainRoutes = (kit: Kit) => {
         ),
         response: replies({
           201: Domain,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -279,14 +280,14 @@ export const domainRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return {
@@ -301,21 +302,21 @@ export const domainRoutes = (kit: Kit) => {
         },
         response: replies({
           200: Deleted,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
     .get(
-      '/services/:service/port-allocations',
+      '/apps/:app/port-allocations',
       ({ ctx, query }) => {
-        const ports = portsOf(ctx.service.id)
+        const ports = portsOf(ctx.app.id)
         const rows = ports.length
           ? db
               .select()
               .from(port_allocation)
               .where(
                 and(
-                  inArray(port_allocation.service_port_id, ports),
+                  inArray(port_allocation.app_port_id, ports),
                   query.status ? eq(port_allocation.status, query.status as 'active') : undefined,
                 ),
               )
@@ -329,9 +330,9 @@ export const domainRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'list_tcp_exposures',
-          summary: 'List the TCP exposures of a service',
+          summary: 'List the TCP exposures of an app',
           level: 'read',
         },
         query: t.Object({
@@ -364,32 +365,32 @@ export const domainRoutes = (kit: Kit) => {
           )
         }
 
-        const picker = hostPortPicker(db, ctx.service.station_id)
+        const picker = hostPortPicker(db, ctx.app.server_id)
         const hostPort =
           picker.next() ??
           fail(
             'PORT_RANGE_EXHAUSTED',
-            `Every port in ${picker.range} is allocated on this station.`,
+            `Every port in ${picker.range} is allocated on this server.`,
             'Remove an unused TCP exposure, or widen exposure.port_range.',
           )
         const changes = new ChangeSet()
 
         changes.add('port_allocation', ctx.port.id, {
-          station_id: ctx.service.station_id,
+          server_id: ctx.app.server_id,
           host_port: hostPort,
         })
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         set.status = 201
@@ -397,14 +398,14 @@ export const domainRoutes = (kit: Kit) => {
         return allocationView(result.refs['new:port_allocation:1']!)
       },
       {
-        service_port: {
+        app_port: {
           id: 'expose_tcp',
           summary: 'Expose a tcp port on a host port',
           level: 'admin',
         },
         response: replies({
           201: PortAllocation,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -430,14 +431,14 @@ export const domainRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return allocationView(ctx.allocation.id)
@@ -450,7 +451,7 @@ export const domainRoutes = (kit: Kit) => {
         },
         response: replies({
           200: PortAllocation,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )

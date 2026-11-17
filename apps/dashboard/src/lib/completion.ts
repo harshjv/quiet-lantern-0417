@@ -28,10 +28,10 @@ export const completionOf = (event: Pick<Event, 'type' | 'subject' | 'payload'>)
 export const startedByAgent = (trigger: Deployment['trigger']) =>
   trigger.type === 'agent' || Boolean(trigger.actor && isAgent(trigger.actor))
 
-export const liveText = (service: string) => `${service} is live`
+export const liveText = (app: string) => `${app} is live`
 
-export const completionText = ({ number, outcome }: Completion, service: string) => ({
-  title: outcome === 'active' ? liveText(service) : `${service} failed to deploy`,
+export const completionText = ({ number, outcome }: Completion, app: string) => ({
+  title: outcome === 'active' ? liveText(app) : `${app} failed to deploy`,
   description: `Deployment #${number}`,
   action: outcome === 'active' ? 'Open' : 'See why',
 })

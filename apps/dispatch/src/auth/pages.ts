@@ -2,20 +2,20 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
-import { and, asc, count, eq } from 'drizzle-orm'
+import { asc, count, eq } from 'drizzle-orm'
 import { Elysia } from 'elysia'
 
 import { tokenLevelValues } from '@stationly/protocol'
 
 import { audit, requestIdOf, type Deps } from '../api/context.ts'
 import { newId } from '../db/ids.ts'
-import { environment, passkey, project, token, user } from '../db/schema.ts'
+import { passkey, project, token, user } from '../db/schema.ts'
 import { userScopes } from '../team/members.ts'
 
 import { canonicalOrigin, type Auth } from './auth.ts'
 import { levelOfScope, levelScopes, oauthRefreshSeconds, withPendingGrant } from './grants.ts'
 import { surfaceOf, type Principal } from './principal.ts'
-import { type Level, type Scope } from './scopes.ts'
+import { isScopeTarget, type Level, type Scope } from './scopes.ts'
 
 const escape = (value: string | null | undefined) =>
   (value ?? '').replace(
@@ -401,31 +401,23 @@ export const createAuthPages = (deps: Deps) => {
     const options: { value: string; label: string }[] = [
       {
         value: '*|*',
-        label: 'Every project and environment, including ones created later',
+        label: 'Every project, its production and previews, including ones created later',
       },
     ]
 
     for (const p of projects) {
       options.push({
         value: `${p.id}|*`,
-        label: `${p.name}: every environment`,
+        label: `${p.name}: production and previews`,
       })
-      const envs = db
-        .select({
-          id: environment.id,
-          name: environment.name,
-        })
-        .from(environment)
-        .where(eq(environment.project_id, p.id))
-        .orderBy(asc(environment.name))
-        .all()
-
-      for (const e of envs) {
-        options.push({
-          value: `${p.id}|${e.id}`,
-          label: `${p.name} / ${e.name}`,
-        })
-      }
+      options.push({
+        value: `${p.id}|production`,
+        label: `${p.name} / production`,
+      })
+      options.push({
+        value: `${p.id}|previews`,
+        label: `${p.name} / previews`,
+      })
     }
 
     return options
@@ -435,13 +427,13 @@ export const createAuthPages = (deps: Deps) => {
     const scopes: Scope[] = []
 
     for (const value of values) {
-      const [projectId, environmentId] = value.split('|')
+      const [projectId, targetName] = value.split('|')
 
-      if (!projectId || !environmentId) {
+      if (!projectId || !targetName || !isScopeTarget(targetName)) {
         return null
       }
 
-      if (projectId === '*' && environmentId !== '*') {
+      if (projectId === '*' && targetName !== '*') {
         return null
       }
 
@@ -458,22 +450,9 @@ export const createAuthPages = (deps: Deps) => {
         return null
       }
 
-      if (
-        environmentId !== '*' &&
-        !db
-          .select({
-            id: environment.id,
-          })
-          .from(environment)
-          .where(and(eq(environment.id, environmentId), eq(environment.project_id, projectId)))
-          .get()
-      ) {
-        return null
-      }
-
       scopes.push({
         project_id: projectId,
-        environment_id: environmentId,
+        target: targetName,
         level,
       })
     }
@@ -522,7 +501,7 @@ export const createAuthPages = (deps: Deps) => {
           (level, i) =>
             `<label><input type="radio" name="level" value="${level}"${i === offered.length - 1 ? ' checked' : ''}> ${level}</label>`,
         )
-        .join('')}</fieldset><fieldset><legend>Projects and environments</legend>${options
+        .join('')}</fieldset><fieldset><legend>Projects, production and previews</legend>${options
         .map(
           (option) =>
             `<label><input type="checkbox" name="target" value="${escape(option.value)}"> ${escape(option.label)}</label>`,
@@ -755,7 +734,11 @@ export const createAuthPages = (deps: Deps) => {
         const scopes = scopesFrom(form.getAll('target'), level)
 
         if (!scopes) {
-          return consentPage(request, oauthQuery, 'Pick at least one project or environment.')
+          return consentPage(
+            request,
+            oauthQuery,
+            'Pick at least one project, its production or its previews.',
+          )
         }
 
         const clientId = query.get('client_id') ?? ''

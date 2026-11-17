@@ -1,11 +1,11 @@
-import type { Service } from './api'
+import type { App } from './api'
 
-type Check = NonNullable<Service['health']>
+type Check = NonNullable<App['health']>
 
 const timing = (check: Extract<Check, { interval_s: number }>) =>
-  `every ${check.interval_s} s, ${check.timeout_s} s timeout · ${check.passes} passes to go live, ${check.failures} failures to turn red`
+  `every ${check.interval_s} s, ${check.timeout_s} s timeout · ${check.passes} passes to go live, ${check.failures} failures before it is failing`
 
-export const healthLine = (health: Service['health']) => {
+export const healthLine = (health: App['health']) => {
   if (!health) {
     return 'No health check; runs are judged by their exit code'
   }
@@ -27,26 +27,26 @@ export const healthLine = (health: Service['health']) => {
   return `Running for ${health.seconds} s without exiting`
 }
 
-export const healthWhy = (service: Pick<Service, 'kind' | 'health' | 'health_default'>) => {
-  if (!service.health_default || !service.health) {
+export const healthWhy = (app: Pick<App, 'kind' | 'health' | 'health_default'>) => {
+  if (!app.health_default || !app.health) {
     return null
   }
 
-  if (service.health.type === 'http') {
-    return 'Default for a web service: the first http port'
+  if (app.health.type === 'http') {
+    return 'Default for a web app: the first http port'
   }
 
-  if (service.health.type === 'tcp') {
-    return 'Default for a web service with no http port: the first port'
+  if (app.health.type === 'tcp') {
+    return 'Default for a web app with no http port: the first port'
   }
 
-  return service.kind === 'worker'
+  return app.kind === 'worker'
     ? 'Default for a worker: it has no port to check'
-    : 'Default for a service with no port'
+    : 'Default for an app with no port'
 }
 
 export const healthPortNote = (
-  health: Service['health'],
+  health: App['health'],
   ports: readonly { port: number }[] | undefined,
 ) => {
   if (!health || !('port' in health) || !ports || ports.length < 2) {
@@ -61,7 +61,7 @@ export const healthPortNote = (
   return `Only port ${health.port} is checked; ${others} ${ports.length === 2 ? 'is' : 'are'} not.`
 }
 
-export const healthChangeText = (change: NonNullable<Service['last_health_change']>) => {
+export const healthChangeText = (change: NonNullable<App['last_health_change']>) => {
   if (change.status_hint === 'stopped') {
     return 'The container is not running'
   }
@@ -71,21 +71,13 @@ export const healthChangeText = (change: NonNullable<Service['last_health_change
   }
 
   if (change.status_hint === 'asleep') {
-    return 'The station is asleep'
+    return 'The server is asleep'
   }
 
   const count = change.consecutive ? ` (${change.consecutive} in a row)` : ''
 
-  if (change.state === 'failing') {
-    return `The health check is failing${count}`
-  }
-
   if (change.state === 'failed') {
     return `The health check has failed${count}`
-  }
-
-  if (change.state === 'passing') {
-    return `The health check is passing again${count}`
   }
 
   return `Went from ${change.from} to ${change.to}`

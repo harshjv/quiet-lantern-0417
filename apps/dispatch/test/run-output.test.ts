@@ -3,11 +3,17 @@ import { after, before, describe, test } from 'node:test'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createProject, createService, seedLockfile, waitForDeployment } from './helpers/seed.ts'
+import {
+  createApp,
+  createPreview,
+  createProject,
+  seedLockfile,
+  waitForDeployment,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
-let serviceId: string
+let appId: string
 
 before(async () => {
   registry = FakeRegistry.install()
@@ -17,8 +23,9 @@ before(async () => {
   await startFakeStation(h, 'station-1', {
     runOutput: ['[run] hi', '[run] bye'],
   })
-  const environmentId = (await createProject(h)).default_environment_id
-  const created = await createService(h, environmentId, {
+  await createProject(h)
+  const previewId = (await createPreview(h, 'shop', 'stage')).id as string
+  const created = await createApp(h, previewId, {
     name: 'web',
     ref: 'nginx:1.27',
     ports: [
@@ -30,7 +37,7 @@ before(async () => {
   })
 
   await waitForDeployment(h, created.deployments[0].id, 'active')
-  serviceId = created.id
+  appId = created.id
 })
 
 after(async () => {
@@ -50,7 +57,7 @@ const events = (text: string) =>
 describe('output of a run that finished before its log stream opened', () => {
   for (let attempt = 1; attempt <= 5; attempt++) {
     test(`attempt ${attempt} delivers every line and then the end event`, async () => {
-      const created = await h.call('POST', `/v1/services/${serviceId}/runs`, {
+      const created = await h.call('POST', `/v1/apps/${appId}/runs`, {
         token: h.admin.token,
         body: {
           command: ['echo', 'hi'],

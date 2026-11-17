@@ -183,15 +183,15 @@ describe('found', () => {
 
   test('throws a NOT_FOUND exit with the explanation and fix when nothing matches', () => {
     assert.throws(
-      () => found(items, (item) => item.name === 'db', 'No service db.', 'Run sly services list.'),
+      () => found(items, (item) => item.name === 'db', 'No app db.', 'Run sly apps list.'),
       (error: unknown) => {
         assert.ok(error instanceof Exit)
         assert.equal(error.code, exitCodes.api)
         assert.deepEqual(error.envelope, {
           error: {
             code: 'NOT_FOUND',
-            explanation: 'No service db.',
-            fix: 'Run sly services list.',
+            explanation: 'No app db.',
+            fix: 'Run sly apps list.',
           },
         })
 
@@ -256,7 +256,7 @@ describe('streamLogs', () => {
       run,
       {},
       {
-        service: 'svc_TEST',
+        app: 'svc_TEST',
       },
       out.stream,
     )
@@ -267,7 +267,7 @@ describe('streamLogs', () => {
     const query = new URL(seen[0]!.url!, 'http://x').searchParams
 
     assert.equal(query.get('follow'), 'true')
-    assert.equal(query.get('service'), 'svc_TEST')
+    assert.equal(query.get('app'), 'svc_TEST')
     assert.equal(seen[0]!.headers['last-event-id'], undefined)
     assert.equal(seen[1]!.headers['last-event-id'], 'c1')
   })
@@ -275,12 +275,12 @@ describe('streamLogs', () => {
   test('turns an error event into an exit carrying its code and explanation', async () => {
     handle = (_req, res) =>
       sse(res, [
-        'event: error\ndata: {"code":"STATION_OFFLINE","explanation":"station-1 is offline."}\n\n',
+        'event: error\ndata: {"code":"SERVER_OFFLINE","explanation":"station-1 is offline."}\n\n',
       ])
     await assert.rejects(streamLogs(run, {}, {}, sink().stream), (error: unknown) => {
       assert.ok(error instanceof Exit)
       assert.equal(error.code, exitCodes.api)
-      assert.equal(error.envelope?.error.code, 'STATION_OFFLINE')
+      assert.equal(error.envelope?.error.code, 'SERVER_OFFLINE')
       assert.equal(error.envelope?.error.explanation, 'station-1 is offline.')
 
       return true

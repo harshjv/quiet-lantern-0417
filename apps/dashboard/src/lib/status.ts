@@ -1,7 +1,7 @@
 import {
   deploymentCancellableStatuses,
   deploymentOpenStatuses,
-  sandboxIdleStatuses,
+  machineIdleStatuses,
 } from '@stationly/protocol/domain'
 
 import type { Deployment, DeploymentStatus, DeploymentStep } from './api'
@@ -20,7 +20,7 @@ export const isTerminal = (status: DeploymentStatus | undefined) =>
 
 export const isCancellable = (status: DeploymentStatus) => cancellable.has(status)
 
-const idle = new Set<string>(sandboxIdleStatuses)
+const idle = new Set<string>(machineIdleStatuses)
 
 const live = new Set<string>(['running', 'starting', 'creating'])
 
@@ -50,8 +50,8 @@ export const withQueued = (
 
   return [
     optimistic({
-      id: `queued-${latest.service_id}`,
-      service_id: latest.service_id,
+      id: `queued-${latest.app_id}`,
+      app_id: latest.app_id,
       number: Math.max(...list.map((d) => d.number)) + 1,
       status: 'queued',
       trigger: {

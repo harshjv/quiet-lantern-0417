@@ -5,18 +5,20 @@ import { eq } from 'drizzle-orm'
 
 import { waitForRun } from '../src/api/runs.ts'
 import { newId } from '../src/db/ids.ts'
-import { run, sandbox } from '../src/db/schema.ts'
+import { machine, run } from '../src/db/schema.ts'
 
 import { mintToken, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
+  createApp,
+  createMachine,
+  createPreview,
   createProject,
-  createSandbox,
-  createService,
   pinPlatform,
+  placed,
   rows,
-  waitForSandbox,
+  waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
@@ -44,21 +46,21 @@ before(async () => {
   registry.publish('alpine:3.20')
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   station = await startFakeStation(h, 'station-1', {
-    sandboxes: {
+    machines: {
       runOutput: (command, env) => [`$ ${command.join(' ')}`, `env ${JSON.stringify(env)}`],
     },
   })
   project = await createProject(h, 'alpha')
-  envId = project.default_environment_id
+  envId = (await createPreview(h, 'alpha', 'dev')).id
   deployToken = await mintToken(
     h,
     [
       {
         project_id: project.id,
-        environment_id: '*',
+        target: '*',
         level: 'deploy',
       },
     ],
@@ -69,18 +71,18 @@ before(async () => {
     [
       {
         project_id: project.id,
-        environment_id: '*',
+        target: '*',
         level: 'read',
       },
     ],
     'reader',
   )
-  const box = await createSandbox(h, envId, {
+  const box = await createMachine(h, envId, {
     name: 'worker',
   })
 
   boxId = box.id
-  await waitForSandbox(h, boxId, 'running')
+  await waitForMachine(h, boxId, 'running')
 })
 
 after(async () => {
@@ -89,14 +91,14 @@ after(async () => {
 })
 
 const exec = (body: Record<string, unknown>, token = h.admin.token, id = boxId) =>
-  api('POST', `/v1/sandboxes/${id}/exec`, body, token)
+  api('POST', `/v1/machines/${id}/exec`, body, token)
 
 const dump = () =>
   JSON.stringify([
     rows(h, 'select * from run'),
     rows(h, 'select * from audit_event'),
     rows(h, 'select * from event'),
-    rows(h, 'select * from staged_change'),
+    rows(h, 'select * from approval'),
   ])
 
 describe('exec', () => {
@@ -112,12 +114,12 @@ describe('exec', () => {
     const body = reply.body
 
     assert.equal(body.kind, 'exec')
-    assert.equal(body.sandbox_id, boxId)
-    assert.equal(body.service_id, null)
+    assert.equal(body.machine_id, boxId)
+    assert.equal(body.app_id, null)
     assert.equal(body.deployment_id, null)
     assert.equal(body.status, 'succeeded')
     assert.equal(body.exit_code, 0)
-    assert.deepEqual(body.output.untrusted.source, 'sandbox exec output')
+    assert.deepEqual(body.output.untrusted.source, 'machine exec output')
     assert.match(body.output.untrusted.text, /^stdout: \$ echo hello\n/)
     assert.equal(body.output.truncated, false)
     const sent = station.received.filter(
@@ -158,27 +160,27 @@ describe('exec', () => {
     assert.equal(diagnosis.body.entity.id, reply.body.id)
   })
 
-  test('a sandbox that is not running refuses exec and shells with SANDBOX_NOT_RUNNING naming start_sandbox', async () => {
-    const cold = await createSandbox(h, envId, {
+  test('a machine that is not running refuses exec and shells with MACHINE_NOT_RUNNING naming start_machine', async () => {
+    const cold = await createMachine(h, envId, {
       name: 'cold',
       start: false,
     })
 
     for (const [path, body] of [
       [
-        `/v1/sandboxes/${cold.id}/exec`,
+        `/v1/machines/${cold.id}/exec`,
         {
           command: ['true'],
         },
       ],
-      [`/v1/sandboxes/${cold.id}/shells`, {}],
+      [`/v1/machines/${cold.id}/shells`, {}],
     ] as const) {
       const reply = await api('POST', path, body)
 
       assert.equal(reply.status, 409)
-      assert.equal(reply.body.error.code, 'SANDBOX_NOT_RUNNING')
+      assert.equal(reply.body.error.code, 'MACHINE_NOT_RUNNING')
       assert.equal(reply.body.error.details.status, 'stopped')
-      assert.match(reply.body.error.fix, /start_sandbox/)
+      assert.match(reply.body.error.fix, /start_machine/)
     }
   })
 
@@ -204,7 +206,7 @@ describe('exec', () => {
     assert.ok(!dump().includes(value))
     const audit = rows<{ after: string }>(
       h,
-      "select after from audit_event where action = 'sandbox.exec'",
+      "select after from audit_event where action = 'machine.exec'",
     ).at(-1)!
 
     assert.deepEqual(JSON.parse(audit.after).env_keys, ['CI', 'EXEC_SECRET'])
@@ -273,8 +275,8 @@ describe('exec', () => {
       .insert(run)
       .values({
         id,
-        service_id: null,
-        sandbox_id: boxId,
+        app_id: null,
+        machine_id: boxId,
         deployment_id: null,
         kind: 'one_off',
         command: ['migrate'],
@@ -295,27 +297,27 @@ describe('exec', () => {
     assert.equal(attached.body.status, 'queued')
     assert.equal(attached.body.attach_url, `/v1/runs/${attached.body.id}/attach`)
     assert.equal(attached.body.output, undefined)
-    const shell = await api('POST', `/v1/sandboxes/${boxId}/shells`, {
+    const shell = await api('POST', `/v1/machines/${boxId}/shells`, {
       user: 'agent',
       cwd: '/home/agent',
     })
 
     assert.equal(shell.status, 201, shell.text)
     assert.deepEqual(
-      [shell.body.kind, shell.body.tty, shell.body.sandbox_id, shell.body.status],
+      [shell.body.kind, shell.body.tty, shell.body.machine_id, shell.body.status],
       ['shell', true, boxId, 'queued'],
     )
     assert.deepEqual(shell.body.command, ['/bin/bash', '-l'])
     assert.equal(shell.body.attach_url, `/v1/runs/${shell.body.id}/attach`)
-    const plainBox = await createSandbox(h, envId, {
+    const plainBox = await createMachine(h, envId, {
       name: 'alpine-shell',
       image: {
         ref: 'alpine:3.20',
       },
     })
 
-    await waitForSandbox(h, plainBox.id, 'running')
-    const alpineShell = await api('POST', `/v1/sandboxes/${plainBox.id}/shells`, {})
+    await waitForMachine(h, plainBox.id, 'running')
+    const alpineShell = await api('POST', `/v1/machines/${plainBox.id}/shells`, {})
 
     assert.deepEqual(alpineShell.body.command, ['/bin/sh'])
     const queued = rows<{ n: number }>(
@@ -327,12 +329,12 @@ describe('exec', () => {
     assert.equal(queued, 1)
   })
 
-  test('at most 16 runs are active in a sandbox at once', async () => {
-    const box = await createSandbox(h, envId, {
+  test('at most 16 runs are active in a machine at once', async () => {
+    const box = await createMachine(h, envId, {
       name: 'busy',
     })
 
-    await waitForSandbox(h, box.id, 'running')
+    await waitForMachine(h, box.id, 'running')
     const planted = Array.from(
       {
         length: 16,
@@ -345,8 +347,8 @@ describe('exec', () => {
         .insert(run)
         .values({
           id,
-          service_id: null,
-          sandbox_id: box.id,
+          app_id: null,
+          machine_id: box.id,
           deployment_id: null,
           kind: 'exec',
           command: ['sleep'],
@@ -372,7 +374,7 @@ describe('exec', () => {
       .set({
         status: 'cancelled',
       })
-      .where(eq(run.sandbox_id, box.id))
+      .where(eq(run.machine_id, box.id))
       .run()
     assert.equal(
       (
@@ -389,13 +391,13 @@ describe('exec', () => {
   })
 
   test('the run list filters by kind and status, and a run is cancellable through the common route', async () => {
-    const listed = await api('GET', `/v1/sandboxes/${boxId}/runs?kind=exec&status=succeeded`)
+    const listed = await api('GET', `/v1/machines/${boxId}/runs?kind=exec&status=succeeded`)
 
     assert.equal(listed.status, 200)
     assert.ok(listed.body.items.length >= 3)
     assert.ok(
       listed.body.items.every(
-        (r: any) => r.kind === 'exec' && r.status === 'succeeded' && r.sandbox_id === boxId,
+        (r: any) => r.kind === 'exec' && r.status === 'succeeded' && r.machine_id === boxId,
       ),
     )
     const queued = (
@@ -410,13 +412,13 @@ describe('exec', () => {
     assert.equal(cancelled.body.status, 'cancelled')
   })
 
-  test('a missing run or sandbox is NOT_FOUND on the shared run paths', async () => {
+  test('a missing run or machine is NOT_FOUND on the shared run paths', async () => {
     const missing = newId('run')
 
     for (const path of [
       `/v1/runs/${missing}`,
       `/v1/runs/${missing}?wait_s=2`,
-      `/v1/sandboxes/${newId('sandbox')}/runs`,
+      `/v1/machines/${newId('machine')}/runs`,
     ]) {
       const reply = await api('GET', path)
 
@@ -460,18 +462,15 @@ describe('exec', () => {
       ).status,
       201,
     )
-    assert.equal(
-      (await api('GET', `/v1/sandboxes/${boxId}/runs`, undefined, readToken)).status,
-      200,
-    )
+    assert.equal((await api('GET', `/v1/machines/${boxId}/runs`, undefined, readToken)).status, 200)
   })
 
-  test('stopping a sandbox cancels its queued and running runs', async () => {
-    const box = await createSandbox(h, envId, {
+  test('stopping a machine cancels its queued and running runs', async () => {
+    const box = await createMachine(h, envId, {
       name: 'stopping-runs',
     })
 
-    await waitForSandbox(h, box.id, 'running')
+    await waitForMachine(h, box.id, 'running')
     const queued = (
       await exec(
         {
@@ -483,22 +482,22 @@ describe('exec', () => {
       )
     ).body
 
-    await api('POST', `/v1/sandboxes/${box.id}/stop`)
-    await waitForSandbox(h, box.id, 'stopped')
+    await api('POST', `/v1/machines/${box.id}/stop`)
+    await waitForMachine(h, box.id, 'stopped')
     assert.equal((await api('GET', `/v1/runs/${queued.id}`)).body.status, 'cancelled')
   })
 })
 
-describe('variables', () => {
+describe('keys', () => {
   const set = (body: unknown, token = h.admin.token, id = boxId) =>
-    api('PATCH', `/v1/sandboxes/${id}/variables`, body, token)
+    api('PATCH', `/v1/machines/${id}/keys`, body, token)
 
   before(async () => {
-    const projectVars = await api('PATCH', `/v1/projects/alpha/variables`, {
-      environment: 'default',
+    const projectVars = await api('PATCH', `/v1/projects/alpha/keys`, {
+      target: 'preview',
       set: [
         {
-          key: 'GH_TOKEN',
+          name: 'GH_TOKEN',
           kind: 'sealed',
           value: secret,
         },
@@ -508,26 +507,26 @@ describe('variables', () => {
     assert.equal(projectVars.status, 200, projectVars.text)
   })
 
-  test('literal, sealed and reference variables are set, delivered to stationd as purpose sandbox and never listed with values', async () => {
+  test('literal, sealed and reference keys are set, delivered to stationd as purpose sandbox and never listed with values', async () => {
     const reply = await set({
       set: [
         {
-          key: 'PLAIN',
+          name: 'PLAIN',
           kind: 'literal',
           value: plain,
         },
         {
-          key: 'OWN_SEALED',
+          name: 'OWN_SEALED',
           kind: 'sealed',
           value: sealed,
         },
         {
-          key: 'GH_TOKEN',
+          name: 'GH_TOKEN',
           kind: 'reference',
           reference: '${{project.GH_TOKEN}}',
         },
         {
-          key: 'GENERATED',
+          name: 'GENERATED',
           kind: 'literal',
           reference: '${{secret(32)}}',
         },
@@ -535,25 +534,25 @@ describe('variables', () => {
     })
 
     assert.equal(reply.status, 200, reply.text)
-    assert.deepEqual(reply.body.variables.map((v: any) => v.key).sort(), [
+    assert.deepEqual(reply.body.keys.map((v: any) => v.name).sort(), [
       'GENERATED',
       'GH_TOKEN',
       'OWN_SEALED',
       'PLAIN',
     ])
     assert.ok(
-      reply.body.variables.every(
-        (v: any) => v.scope === 'sandbox' && v.injection === 'env' && v.build === false,
+      reply.body.keys.every(
+        (v: any) => v.scope === 'machine' && v.injection === 'env' && v.build === false,
       ),
     )
-    const full = (await api('GET', `/v1/sandboxes/${boxId}/variables?fields=sandbox_id`)).body.items
+    const full = (await api('GET', `/v1/machines/${boxId}/keys?fields=machine_id`)).body.items
 
-    assert.ok(full.every((v: any) => v.sandbox_id === boxId))
+    assert.ok(full.every((v: any) => v.machine_id === boxId))
     const delivery = await station.waitFor(
       () =>
         station.secrets.filter((s) => s.target.sandbox_id === boxId && s.values.GH_TOKEN).at(-1),
       8000,
-      'the sandbox delivery',
+      'the machine delivery',
     )
 
     assert.equal(delivery.purpose, 'sandbox')
@@ -561,7 +560,7 @@ describe('variables', () => {
     assert.equal(delivery.values.OWN_SEALED, sealed)
     assert.equal(delivery.values.GH_TOKEN, secret)
     assert.ok(delivery.values.GENERATED!.length >= 32)
-    const listed = await api('GET', `/v1/sandboxes/${boxId}/variables?fields=*`)
+    const listed = await api('GET', `/v1/machines/${boxId}/keys?fields=*`)
 
     assert.equal(listed.status, 200)
     assert.equal(listed.body.items.length, 4)
@@ -574,10 +573,10 @@ describe('variables', () => {
   })
 
   test('the resolved view shows sources for a project reference and a value only to admin, never for sealed ones', async () => {
-    const resolved = (await api('GET', `/v1/sandboxes/${boxId}/variables/resolved`)).body
+    const resolved = (await api('GET', `/v1/machines/${boxId}/keys/resolved`)).body
 
-    assert.equal(resolved.sandbox_id, boxId)
-    const byKey = Object.fromEntries(resolved.variables.map((v: any) => [v.key, v]))
+    assert.equal(resolved.machine_id, boxId)
+    const byKey = Object.fromEntries(resolved.keys.map((v: any) => [v.name, v]))
 
     assert.equal(byKey.PLAIN.value, plain)
     assert.equal(byKey.OWN_SEALED.sealed, true)
@@ -585,16 +584,16 @@ describe('variables', () => {
     assert.equal(byKey.GH_TOKEN.value, undefined)
     assert.equal(byKey.GH_TOKEN.sealed, true)
     assert.equal(byKey.GH_TOKEN.parts[0].chain[0].scope, 'project')
-    assert.equal(byKey.GH_TOKEN.parts[0].chain[0].key, 'GH_TOKEN')
+    assert.equal(byKey.GH_TOKEN.parts[0].chain[0].name, 'GH_TOKEN')
     const asDeployer = (
-      await api('GET', `/v1/sandboxes/${boxId}/variables/resolved`, undefined, deployToken)
+      await api('GET', `/v1/machines/${boxId}/keys/resolved`, undefined, deployToken)
     ).body
 
-    assert.ok(asDeployer.variables.every((v: any) => v.value === undefined))
+    assert.ok(asDeployer.keys.every((v: any) => v.value === undefined))
     assert.ok(!JSON.stringify(asDeployer).includes(plain))
-    const expanded = (await api('GET', `/v1/sandboxes/${boxId}?fields=variables`)).body.variables
+    const expanded = (await api('GET', `/v1/machines/${boxId}?fields=keys`)).body.keys
 
-    assert.ok(expanded.some((v: any) => v.key === 'GH_TOKEN' && v.sealed === true))
+    assert.ok(expanded.some((v: any) => v.name === 'GH_TOKEN' && v.sealed === true))
     assert.ok(!JSON.stringify(expanded).includes(secret))
   })
 
@@ -607,11 +606,11 @@ describe('variables', () => {
 
     assert.equal(
       (
-        await api('PATCH', `/v1/projects/alpha/variables`, {
-          environment: 'default',
+        await api('PATCH', `/v1/projects/alpha/keys`, {
+          target: 'preview',
           set: [
             {
-              key: 'GH_TOKEN',
+              name: 'GH_TOKEN',
               kind: 'sealed',
               value: next,
             },
@@ -634,11 +633,11 @@ describe('variables', () => {
     assert.notEqual(delivery.digest, before)
     const changed = (
       (await api('GET', '/v1/events?types=secret.changed&limit=50')).body.items as any[]
-    ).filter((e) => e.payload.sandboxes?.includes(boxId))
+    ).filter((e) => e.payload.machines?.includes(boxId))
 
-    assert.ok(changed.length > 0, 'secret.changed names the sandbox that reads the value')
+    assert.ok(changed.length > 0, 'secret.changed names the machine that reads the value')
     assert.equal(
-      rows<{ stale: number }>(h, 'select count(*) as stale from service where stale = 1')[0]!.stale,
+      rows<{ stale: number }>(h, 'select count(*) as stale from app where stale = 1')[0]!.stale,
       0,
     )
     const after = await station.waitForGeneration(
@@ -648,7 +647,7 @@ describe('variables', () => {
     assert.equal(after.sandboxes![boxId]!.env_digest, delivery.digest)
   })
 
-  test('exec output and logs are redacted with the sandbox variable values', async () => {
+  test('exec output and logs are redacted with the machine key values', async () => {
     const reply = await exec({
       command: ['env'],
     })
@@ -670,8 +669,8 @@ describe('variables', () => {
     assert.match(logs.text, /\[redacted:/)
   })
 
-  test('a reference to a service, an unresolved reference and an ungranted global are refused with their codes', async () => {
-    await createService(h, envId, {
+  test('a reference to an app, an unresolved reference and an ungranted global are refused with their codes', async () => {
+    await createApp(h, envId, {
       name: 'web',
       ref: 'nginx:1.27',
       ports: [
@@ -680,23 +679,23 @@ describe('variables', () => {
         },
       ],
     })
-    const service = await set({
+    const app = await set({
       set: [
         {
-          key: 'WEB_PORT',
+          name: 'WEB_PORT',
           kind: 'reference',
           reference: '${{web.PORT}}',
         },
       ],
     })
 
-    assert.equal(service.status, 400)
-    assert.equal(service.body.error.code, 'VALIDATION_FAILED')
-    assert.equal(service.body.error.details.issues[0].path, '/set/0/reference')
+    assert.equal(app.status, 400)
+    assert.equal(app.body.error.code, 'VALIDATION_FAILED')
+    assert.equal(app.body.error.details.issues[0].path, '/set/0/reference')
     const unresolved = await set({
       set: [
         {
-          key: 'NOPE',
+          name: 'NOPE',
           kind: 'reference',
           reference: '${{project.NOPE}}',
         },
@@ -704,13 +703,13 @@ describe('variables', () => {
     })
 
     assert.equal(unresolved.status, 422)
-    assert.equal(unresolved.body.error.code, 'VARIABLE_UNRESOLVED')
+    assert.equal(unresolved.body.error.code, 'KEY_UNRESOLVED')
     assert.equal(
       (
-        await api('PATCH', '/v1/global-variables', {
+        await api('PATCH', '/v1/global-keys', {
           set: [
             {
-              key: 'ORG_KEY',
+              name: 'ORG_KEY',
               kind: 'sealed',
               value: 'org-key-0123456789',
             },
@@ -722,7 +721,7 @@ describe('variables', () => {
     const ungranted = await set({
       set: [
         {
-          key: 'ORG_KEY',
+          name: 'ORG_KEY',
           kind: 'reference',
           reference: '${{global.ORG_KEY}}',
         },
@@ -730,14 +729,14 @@ describe('variables', () => {
     })
 
     assert.equal(ungranted.status, 403)
-    assert.equal(ungranted.body.error.code, 'VARIABLE_NOT_GRANTED')
-    const variable = (await api('GET', '/v1/global-variables')).body.items.find(
-      (v: any) => v.key === 'ORG_KEY',
+    assert.equal(ungranted.body.error.code, 'KEY_NOT_GRANTED')
+    const key = (await api('GET', '/v1/global-keys')).body.items.find(
+      (v: any) => v.name === 'ORG_KEY',
     )
 
     assert.equal(
       (
-        await api('POST', `/v1/variables/${variable.id}/grants`, {
+        await api('POST', `/v1/keys/${key.id}/grants`, {
           project_id: project.id,
         })
       ).status,
@@ -746,7 +745,7 @@ describe('variables', () => {
     const granted = await set({
       set: [
         {
-          key: 'ORG_KEY',
+          name: 'ORG_KEY',
           kind: 'reference',
           reference: '${{global.ORG_KEY}}',
         },
@@ -757,7 +756,7 @@ describe('variables', () => {
     const deferred = await set({
       set: [
         {
-          key: 'LATER',
+          name: 'LATER',
           kind: 'reference',
           reference: '${{project.LATER}}',
         },
@@ -776,12 +775,12 @@ describe('variables', () => {
     )
   })
 
-  test('a sealed variable needs admin and a deploy token sets literals and references only', async () => {
+  test('a sealed key needs admin and a deploy token sets literals and references only', async () => {
     const sealedByDeployer = await set(
       {
         set: [
           {
-            key: 'DEPLOYER_SEALED',
+            name: 'DEPLOYER_SEALED',
             kind: 'sealed',
             value: 'whatever-0123456789',
           },
@@ -798,7 +797,7 @@ describe('variables', () => {
           {
             set: [
               {
-                key: 'DEPLOYER_LITERAL',
+                name: 'DEPLOYER_LITERAL',
                 kind: 'literal',
                 value: 'ok',
               },
@@ -813,7 +812,7 @@ describe('variables', () => {
       {
         set: [
           {
-            key: 'READER',
+            name: 'READER',
             kind: 'literal',
             value: 'no',
           },
@@ -825,37 +824,34 @@ describe('variables', () => {
     assert.equal(asReader.status, 403)
   })
 
-  test('deleting the sandbox deletes its variable rows and a fork starts with none', async () => {
-    const fork = await createSandbox(h, envId, {
-      name: 'variable-fork',
+  test('deleting the machine deletes its key rows and a fork starts with none', async () => {
+    const fork = await createMachine(h, envId, {
+      name: 'key-fork',
       from: {
-        sandbox: boxId,
+        machine: boxId,
       },
       start: false,
     })
 
-    assert.equal(rows(h, 'select id from variable where sandbox_id = ?', fork.id).length, 0)
-    const withVariables = await createSandbox(h, envId, {
-      name: 'created-with-variables',
+    assert.equal(rows(h, 'select id from key where machine_id = ?', fork.id).length, 0)
+    const withKeys = await createMachine(h, envId, {
+      name: 'created-with-keys',
       start: false,
-      variables: [
+      keys: [
         {
-          key: 'TOKEN',
+          name: 'TOKEN',
           kind: 'reference',
           reference: '${{project.GH_TOKEN}}',
         },
       ],
     })
 
-    assert.equal(
-      rows(h, 'select id from variable where sandbox_id = ?', withVariables.id).length,
-      1,
-    )
-    const unresolved = await api('POST', `/v1/environments/${envId}/sandboxes`, {
-      name: 'bad-variables',
-      variables: [
+    assert.equal(rows(h, 'select id from key where machine_id = ?', withKeys.id).length, 1)
+    const unresolved = await api('POST', placed(h, envId, `machines`), {
+      name: 'bad-keys',
+      keys: [
         {
-          key: 'X',
+          name: 'X',
           kind: 'reference',
           reference: '${{project.MISSING}}',
         },
@@ -863,27 +859,23 @@ describe('variables', () => {
     })
 
     assert.equal(unresolved.status, 422)
-    assert.equal(rows(h, "select id from sandbox where name = 'bad-variables'").length, 0)
-    assert.equal((await api('DELETE', `/v1/sandboxes/${withVariables.id}`)).status, 200)
+    assert.equal(rows(h, "select id from machine where name = 'bad-keys'").length, 0)
+    assert.equal((await api('DELETE', `/v1/machines/${withKeys.id}`)).status, 200)
+    assert.equal(rows(h, 'select id from key where machine_id = ?', withKeys.id).length, 0)
     assert.equal(
-      rows(h, 'select id from variable where sandbox_id = ?', withVariables.id).length,
-      0,
-    )
-    assert.equal(
-      h.db.select().from(sandbox).where(eq(sandbox.id, withVariables.id)).get()?.status ??
-        'deleting',
+      h.db.select().from(machine).where(eq(machine.id, withKeys.id)).get()?.status ?? 'deleting',
       'deleting',
     )
   })
 })
 
 describe('logs, metrics and network', () => {
-  test('GET /v1/logs reads the init and runtime log of a sandbox', async () => {
-    const init = await api('GET', `/v1/logs?sandbox=${boxId}`)
+  test('GET /v1/logs reads the init and runtime log of a machine', async () => {
+    const init = await api('GET', `/v1/logs?machine=${boxId}`)
 
     assert.equal(init.status, 200, init.text)
     assert.equal(init.body.untrusted.lines[0].role, 'init')
-    const runtime = await api('GET', `/v1/logs?sandbox=${boxId}&role=runtime`)
+    const runtime = await api('GET', `/v1/logs?machine=${boxId}&role=runtime`)
 
     assert.equal(runtime.body.untrusted.lines[0].role, 'runtime')
     const sent = station.received
@@ -897,30 +889,30 @@ describe('logs, metrics and network', () => {
         [boxId, 'runtime'],
       ],
     )
-    const bad = await api('GET', `/v1/logs?sandbox=${boxId}&role=service`)
+    const bad = await api('GET', `/v1/logs?machine=${boxId}&role=app`)
 
     assert.equal(bad.status, 400)
-    const two = await api('GET', `/v1/logs?sandbox=${boxId}&run=run_01ARZ3NDEKTSV4RRFFQ69G5FAV`)
+    const two = await api('GET', `/v1/logs?machine=${boxId}&run=run_01ARZ3NDEKTSV4RRFFQ69G5FAV`)
 
     assert.equal(two.status, 400)
   })
 
-  test('metrics, connections and the DNS log come from the station with the sandbox form of each request', async () => {
-    const metrics = await api('GET', `/v1/sandboxes/${boxId}/metrics`)
+  test('metrics, connections and the DNS log come from the station with the machine form of each request', async () => {
+    const metrics = await api('GET', `/v1/machines/${boxId}/metrics`)
 
     assert.equal(metrics.status, 200, metrics.text)
-    assert.equal(metrics.body.sandbox_id, boxId)
+    assert.equal(metrics.body.machine_id, boxId)
     assert.equal(metrics.body.disk_limit_bytes, 21474836480)
-    const connections = await api('GET', `/v1/sandboxes/${boxId}/connections?direction=out`)
+    const connections = await api('GET', `/v1/machines/${boxId}/connections?direction=out`)
 
     assert.equal(connections.status, 200, connections.text)
-    assert.deepEqual(connections.body.sandbox, {
+    assert.deepEqual(connections.body.machine, {
       id: boxId,
       name: 'worker',
     })
     assert.equal(connections.body.refused[0].path, 'domain_not_allowed')
     assert.equal(connections.body.untrusted.source, 'resolver answers')
-    const dns = await api('GET', `/v1/sandboxes/${boxId}/dns-log?tail=10`)
+    const dns = await api('GET', `/v1/machines/${boxId}/dns-log?tail=10`)
 
     assert.equal(dns.status, 200, dns.text)
     assert.equal(dns.body.untrusted.source, 'resolver log')
@@ -936,27 +928,27 @@ describe('logs, metrics and network', () => {
     assert.ok(asked.some((b) => b.sandbox_id === boxId))
   })
 
-  test('metrics of a stopped sandbox are a documented error and an offline station is STATION_OFFLINE', async () => {
-    const cold = await createSandbox(h, envId, {
+  test('metrics of a stopped machine are a documented error and an offline station is SERVER_OFFLINE', async () => {
+    const cold = await createMachine(h, envId, {
       name: 'cold-metrics',
       start: false,
     })
 
-    assert.equal((await api('GET', `/v1/sandboxes/${cold.id}/metrics`)).status, 404)
+    assert.equal((await api('GET', `/v1/machines/${cold.id}/metrics`)).status, 404)
     const idle = await startFakeStation(h, 'station-away', {
-      sandboxes: {},
+      machines: {},
     })
-    const away = await createSandbox(h, envId, {
+    const away = await createMachine(h, envId, {
       name: 'away-box',
-      station_id: 'station-away',
+      server_id: 'station-away',
       start: false,
     })
 
     await idle.close()
     await idle.waitFor(() => !h.deps.stations.isConnected(idle.stationId), 5000, 'disconnect')
-    const reply = await api('GET', `/v1/sandboxes/${away.id}/metrics`)
+    const reply = await api('GET', `/v1/machines/${away.id}/metrics`)
 
     assert.equal(reply.status, 503)
-    assert.equal(reply.body.error.code, 'STATION_OFFLINE')
+    assert.equal(reply.body.error.code, 'SERVER_OFFLINE')
   })
 })

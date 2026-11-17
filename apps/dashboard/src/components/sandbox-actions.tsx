@@ -1,4 +1,3 @@
-import { useNavigate } from '@tanstack/react-router'
 import {
   CircleAlert,
   GitFork,
@@ -19,15 +18,18 @@ import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { api, idempotency, send, type Sandbox, type SandboxSnapshot } from '@/lib/api'
+import { api, idempotency, send, type Machine, type MachineSnapshot } from '@/lib/api'
+import { scopeLabel, type Scope } from '@/lib/commands'
 import { plural, span } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { useApiMutation } from '@/lib/mutation'
-import { patchSandbox, seedSandbox, seedSnapshot } from '@/lib/queries'
+import { go, places } from '@/lib/nav'
+import { placeOf, previewQuery } from '@/lib/place'
+import { patchMachine, seedMachine, seedSnapshot } from '@/lib/queries'
 import { ttlProblem } from '@/lib/sandbox'
 import { isIdle } from '@/lib/status'
 
-type Named = Pick<Sandbox, 'id' | 'name' | 'status'> & { environment_id: string }
+type Named = Pick<Machine, 'id' | 'name' | 'status' | 'project_id' | 'preview_id'>
 
 type Size = 'sm' | 'icon-sm'
 
@@ -80,8 +82,8 @@ const power = {
   },
 } as const
 
-export const useSandboxPower = (
-  sandbox: Pick<Sandbox, 'id' | 'name'> & Partial<Pick<Sandbox, 'environment_id'>>,
+export const useMachinePower = (
+  machine: Pick<Machine, 'id' | 'name'> & Partial<Pick<Machine, 'project_id' | 'preview_id'>>,
   action: keyof typeof power,
 ) => {
   const { status, success, failure } = power[action]
@@ -90,40 +92,40 @@ export const useSandboxPower = (
     mutationFn: () =>
       send(
         api.v1
-          .sandboxes({
-            sandbox: sandbox.id,
+          .machines({
+            machine: machine.id,
           })
           [action].post(undefined, idempotency()),
       ),
     optimistic: () =>
-      patchSandbox(sandbox, {
+      patchMachine(machine, {
         status,
         status_reason: null,
       }),
-    seed: seedSandbox,
-    invalidate: ['sandboxes'],
-    success: () => success(sandbox.name),
-    failure: () => failure(sandbox.name),
+    seed: seedMachine,
+    invalidate: ['machines'],
+    success: () => success(machine.name),
+    failure: () => failure(machine.name),
   })
 }
 
 function PowerButton({
-  sandbox,
+  machine,
   action,
   size,
 }: {
-  sandbox: Named
+  machine: Named
   action: keyof typeof power
   size?: Size
 }) {
   const { icon, label } = power[action]
-  const mutation = useSandboxPower(sandbox, action)
+  const mutation = useMachinePower(machine, action)
 
   return (
     <ActionButton
       icon={icon}
       label={label}
-      subject={sandbox.name}
+      subject={machine.name}
       size={size}
       pending={mutation.isPending}
       disabled={mutation.isPending}
@@ -132,34 +134,34 @@ function PowerButton({
   )
 }
 
-export const StartSandbox = (props: { sandbox: Named; size?: Size }) => (
+export const StartMachine = (props: { machine: Named; size?: Size }) => (
   <PowerButton action="start" {...props} />
 )
 
-export const StopSandbox = (props: { sandbox: Named; size?: Size }) => (
+export const StopMachine = (props: { machine: Named; size?: Size }) => (
   <PowerButton action="stop" {...props} />
 )
 
 const presets = ['30m', '1h', '4h', '12h', '1d']
 
-type Extendable = { sandbox: Named & Pick<Sandbox, 'ttl_s'>; size?: Size }
+type Extendable = { machine: Named & Pick<Machine, 'ttl_s'>; size?: Size }
 
-export const ExtendSandbox = ({ sandbox, size }: Extendable) =>
-  sandbox.ttl_s === null ? null : (
+export const ExtendMachine = ({ machine, size }: Extendable) =>
+  machine.ttl_s === null ? null : (
     <ExtendDialog
-      sandbox={{
-        ...sandbox,
-        ttl_s: sandbox.ttl_s,
+      machine={{
+        ...machine,
+        ttl_s: machine.ttl_s,
       }}
       size={size}
     />
   )
 
 function ExtendDialog({
-  sandbox,
+  machine,
   size = 'sm',
 }: {
-  sandbox: Named & { ttl_s: number }
+  machine: Named & { ttl_s: number }
   size?: Size
 }) {
   const [open, setOpen] = useState(false)
@@ -169,8 +171,8 @@ function ExtendDialog({
     mutationFn: (ttl_s: number) =>
       send(
         api.v1
-          .sandboxes({
-            sandbox: sandbox.id,
+          .machines({
+            machine: machine.id,
           })
           .patch(
             {
@@ -179,10 +181,10 @@ function ExtendDialog({
             idempotency(),
           ),
       ),
-    seed: seedSandbox,
-    invalidate: ['sandboxes'],
-    success: (_, ttl_s) => `${sandbox.name} now stops in ${span(ttl_s)}`,
-    failure: () => `extend ${sandbox.name}`,
+    seed: seedMachine,
+    invalidate: ['machines'],
+    success: (_, ttl_s) => `${machine.name} now stops in ${span(ttl_s)}`,
+    failure: () => `extend ${machine.name}`,
     onSuccess: () => setOpen(false),
   })
   const submit = () => {
@@ -201,16 +203,16 @@ function ExtendDialog({
       <ActionButton
         icon={Timer}
         label="Extend"
-        subject={sandbox.name}
+        subject={machine.name}
         size={size}
         onClick={() => setOpen(true)}
-        disabled={isIdle(sandbox.status)}
+        disabled={isIdle(machine.status)}
       />
       <FormDialog
         open={open}
         onOpenChange={setOpen}
-        title={`Extend ${sandbox.name}`}
-        description={`${sandbox.name} stops this long from now, replacing the time it has left. Its time to live is ${span(sandbox.ttl_s)}.`}
+        title={`Extend ${machine.name}`}
+        description={`${machine.name} stops this long from now, replacing the time it has left. Its time to live is ${span(machine.ttl_s)}.`}
         error={problem ?? mutation.errorText}
         submitLabel="Extend"
         pending={mutation.isPending}
@@ -289,14 +291,14 @@ function CopyDialog({
   )
 }
 
-export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
+export function SnapshotMachine({ machine }: { machine: Named }) {
   const [open, setOpen] = useState(false)
   const mutation = useApiMutation({
     mutationFn: (name: string) =>
       send(
         api.v1
-          .sandboxes({
-            sandbox: sandbox.id,
+          .machines({
+            machine: machine.id,
           })
           .snapshots.post(
             name
@@ -308,12 +310,12 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
           ),
       ),
     seed: seedSnapshot,
-    invalidate: ['sandboxes'],
+    invalidate: ['machines'],
     success: (snapshot) =>
       snapshot.status === 'ready'
         ? `Snapshot ${snapshot.name ?? snapshot.id} is ready`
         : `Taking snapshot ${snapshot.name ?? snapshot.id}`,
-    failure: () => `snapshot ${sandbox.name}`,
+    failure: () => `snapshot ${machine.name}`,
     onSuccess: () => setOpen(false),
   })
 
@@ -323,15 +325,15 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
         variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
-        disabled={sandbox.status === 'creating' || sandbox.status === 'deleting'}
+        disabled={machine.status === 'creating' || machine.status === 'deleting'}
       >
         <entityIcon.snapshot /> Snapshot
       </Button>
       {open && (
         <CopyDialog
           id="snapshot-name"
-          title={`Snapshot ${sandbox.name}`}
-          description="Saves a read-only copy of the disk. Stationly copies a running sandbox as it is, so data its processes haven’t written yet is missing."
+          title={`Snapshot ${machine.name}`}
+          description="Saves a read-only copy of the disk. Stationly copies a running machine as it is, so data its processes haven’t written yet is missing."
           submitLabel="Take snapshot"
           error={mutation.errorText}
           pending={mutation.isPending}
@@ -350,43 +352,39 @@ export function SnapshotSandbox({ sandbox }: { sandbox: Named }) {
 }
 
 type ForkSource =
-  { kind: 'sandbox'; sandbox: Named } | { kind: 'snapshot'; snapshot: SandboxSnapshot }
+  { kind: 'machine'; machine: Named } | { kind: 'snapshot'; snapshot: MachineSnapshot }
 
 export function ForkButton({
   source,
-  project,
-  environment,
+  scope,
   label = 'Fork',
   size = 'sm',
 }: {
   source: ForkSource
-  project: string
-  environment: string
+  scope: Scope
   label?: string
   size?: Size
 }) {
-  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const from =
-    source.kind === 'sandbox'
+    source.kind === 'machine'
       ? {
-          sandbox: source.sandbox.id,
+          machine: source.machine.id,
         }
       : {
           snapshot: source.snapshot.id,
         }
-  const environmentId =
-    source.kind === 'sandbox' ? source.sandbox.environment_id : source.snapshot.environment_id
+  const place = placeOf(source.kind === 'machine' ? source.machine : source.snapshot)
   const subject =
-    source.kind === 'sandbox' ? source.sandbox.name : (source.snapshot.name ?? source.snapshot.id)
+    source.kind === 'machine' ? source.machine.name : (source.snapshot.name ?? source.snapshot.id)
   const mutation = useApiMutation({
     mutationFn: (name: string) =>
       send(
         api.v1
-          .environments({
-            environment: environmentId,
+          .projects({
+            project: place.project,
           })
-          .sandboxes.post(
+          .machines.post(
             {
               from,
               ...(name
@@ -395,23 +393,21 @@ export function ForkButton({
                   }
                 : {}),
             },
-            idempotency(),
+            {
+              ...idempotency(),
+              query: previewQuery(place),
+            },
           ),
       ),
-    seed: seedSandbox,
-    invalidate: ['sandboxes'],
+    seed: seedMachine,
+    invalidate: ['machines'],
     success: (created) => `${created.name} forked from ${subject}`,
     failure: () => `fork ${subject}`,
     onSuccess: (result) => {
       setOpen(false)
 
-      if (!result.staged) {
-        void navigate({
-          to: '/sandboxes/$sandbox',
-          params: {
-            sandbox: result.body.id,
-          },
-        })
+      if (!result.waiting) {
+        go(places.machine(result.body.id))
       }
     },
   })
@@ -429,7 +425,7 @@ export function ForkButton({
         <CopyDialog
           id="fork-name"
           title={`Fork ${subject}`}
-          description={`Creates a sandbox in ${project}/${environment} from a copy of ${source.kind === 'sandbox' ? `${subject}’s disk` : 'the snapshot'}, with the same size, network and outbound traffic rules.`}
+          description={`Creates a machine in ${scopeLabel(scope)} from a copy of ${source.kind === 'machine' ? `${subject}’s disk` : 'the snapshot'}, with the same size, network and outbound traffic rules.`}
           submitLabel="Fork"
           error={mutation.errorText}
           pending={mutation.isPending}
@@ -447,12 +443,12 @@ export function ForkButton({
   )
 }
 
-export function DeleteSandbox({
-  sandbox,
+export function DeleteMachine({
+  machine,
   size = 'sm',
   after,
 }: {
-  sandbox: Named
+  machine: Named
   size?: Size
   after?: () => void
 }) {
@@ -460,14 +456,14 @@ export function DeleteSandbox({
     mutationFn: () =>
       send(
         api.v1
-          .sandboxes({
-            sandbox: sandbox.id,
+          .machines({
+            machine: machine.id,
           })
           .delete(undefined, idempotency()),
       ),
-    invalidate: ['sandboxes'],
+    invalidate: ['machines'],
     success: (result) => ({
-      title: `${sandbox.name} deleted`,
+      title: `${machine.name} deleted`,
       description: result.snapshots_kept
         ? `${plural(result.snapshots_kept, 'snapshot')} kept.`
         : undefined,
@@ -477,41 +473,41 @@ export function DeleteSandbox({
 
   return (
     <Confirm
-      title={`Delete sandbox ${sandbox.name}?`}
-      description="Stationly deletes the sandbox and its disk. Snapshots taken from it stay."
-      action="Delete sandbox"
-      cancel="Keep sandbox"
+      title={`Delete machine ${machine.name}?`}
+      description="Stationly deletes the machine and its disk. Snapshots taken from it stay."
+      action="Delete machine"
+      cancel="Keep machine"
       onConfirm={() => mutation.mutateAsync()}
       trigger={
         <ActionButton
           icon={Trash2}
           label="Delete"
-          subject={sandbox.name}
+          subject={machine.name}
           size={size}
-          disabled={sandbox.status === 'deleting'}
+          disabled={machine.status === 'deleting'}
         />
       }
     />
   )
 }
 
-export function DeleteSnapshot({ snapshot }: { snapshot: SandboxSnapshot }) {
+export function DeleteSnapshot({ snapshot }: { snapshot: MachineSnapshot }) {
   const label = snapshot.name ?? snapshot.id
   const mutation = useApiMutation({
     mutationFn: () =>
       send(
-        api.v1['sandbox-snapshots']({
+        api.v1['machine-snapshots']({
           id: snapshot.id,
         }).delete(undefined, idempotency()),
       ),
-    invalidate: ['sandboxes'],
+    invalidate: ['machines'],
     success: () => `Snapshot ${label} deleted`,
   })
 
   return (
     <Confirm
       title={`Delete snapshot ${label}?`}
-      description="Sandboxes forked from it keep their own disks."
+      description="Machines forked from it keep their own disks."
       action="Delete snapshot"
       cancel="Keep snapshot"
       onConfirm={() => mutation.mutateAsync()}

@@ -1,4 +1,4 @@
-import { commands, type Scope, type ServiceScope, type Tool } from './commands.ts'
+import { commands, scopeLabel, type AppScope, type Scope, type Tool } from './commands.ts'
 
 export type Hint<S extends Scope> = {
   tools: readonly Tool[]
@@ -6,21 +6,22 @@ export type Hint<S extends Scope> = {
   command: (scope: S) => string
 }
 
-const environment: Hint<Scope> = {
-  tools: ['describe_environment', 'list_services', 'create_service'],
-  prompt: ({ project, environment }) =>
-    `Use Stationly to check ${project}/${environment}. List each service with its status and current deployment, and tell me which ones need attention.`,
-  command: commands.listServices,
+const place: Hint<Scope> = {
+  tools: ['get_project', 'describe_preview', 'list_apps', 'create_app'],
+  prompt: (scope) =>
+    `Use Stationly to check ${scopeLabel(scope)}. List each app with its status and current deployment, and tell me which ones need attention.`,
+  command: commands.listApps,
 }
 
-const service: Hint<ServiceScope> = {
-  tools: ['describe_service', 'deploy', 'get_deployment_diagnosis', 'get_logs'],
-  prompt: ({ project, environment, service }) =>
-    `Use Stationly to deploy the latest version of ${service} in ${project}/${environment} and wait until it’s active. If it fails, read the diagnosis, fix the cause and deploy again.`,
+const app: Hint<AppScope> = {
+  tools: ['describe_app', 'deploy', 'get_deployment_diagnosis', 'get_logs'],
+  prompt: (scope) =>
+    `Use Stationly to deploy the latest version of ${scope.app} in ${scopeLabel(scope)} and wait until it’s active. If it fails, read the diagnosis, fix the cause and deploy again.`,
   command: commands.deploy,
 }
 
-export const agentHints = {
-  '/_app/projects/$project/$environment': environment,
-  '/_app/services/$service': service,
+export const agentHints: { production: Hint<Scope>; preview: Hint<Scope>; app: Hint<AppScope> } = {
+  production: place,
+  preview: place,
+  app,
 }

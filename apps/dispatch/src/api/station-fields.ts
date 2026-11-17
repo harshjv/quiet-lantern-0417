@@ -1,9 +1,10 @@
 import { eq } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
-import { station } from '../db/schema.ts'
+import { server } from '../db/schema.ts'
 import { runtimeRefusal } from '../sandboxes/runtime.ts'
 
+import { refreshServerApps } from './app-status.ts'
 import { fail } from './errors.ts'
 
 export const stationFields = [
@@ -11,17 +12,17 @@ export const stationFields = [
   'concurrency_cap',
   'draining',
   'intermittent',
-  'sandbox_limits',
-  'default_sandbox_runtime',
+  'machine_limits',
+  'default_machine_runtime',
 ] as const
 
 export type StationField = (typeof stationFields)[number]
 
-type StationRow = typeof station.$inferSelect
+type StationRow = typeof server.$inferSelect
 
 export const drainRefusal = (row: Pick<StationRow, 'name' | 'status'>) =>
   row.status === 'enrolling'
-    ? `station ${row.name} has not enrolled yet; only an enrolled station can be drained`
+    ? `server ${row.name} has not enrolled yet; only an enrolled server can be drained`
     : null
 
 const refuse = (path: string, message: string) =>
@@ -35,10 +36,10 @@ const refuse = (path: string, message: string) =>
   })
 
 export const applyStationField = (db: Db, id: string, field: StationField, after: unknown) => {
-  const row = db.select().from(station).where(eq(station.id, id)).get()
+  const row = db.select().from(server).where(eq(server.id, id)).get()
 
   if (!row) {
-    return fail('NOT_FOUND', `station ${id} does not exist.`)
+    return fail('NOT_FOUND', `server ${id} does not exist.`)
   }
 
   switch (field) {
@@ -49,18 +50,18 @@ export const applyStationField = (db: Db, id: string, field: StationField, after
         refuse('/draining', refusal)
       }
 
-      db.update(station)
+      db.update(server)
         .set({
           draining: after as boolean,
         })
-        .where(eq(station.id, id))
+        .where(eq(server.id, id))
         .run()
 
       return
     }
 
     case 'intermittent':
-      db.update(station)
+      db.update(server)
         .set({
           intermittent: after as boolean,
           ...(after === false && row.status === 'asleep'
@@ -69,51 +70,55 @@ export const applyStationField = (db: Db, id: string, field: StationField, after
               }
             : {}),
         })
-        .where(eq(station.id, id))
+        .where(eq(server.id, id))
         .run()
+
+      if (after === false && row.status === 'asleep') {
+        refreshServerApps(db, id)
+      }
 
       return
     case 'concurrency_cap':
-      db.update(station)
+      db.update(server)
         .set({
           concurrency_cap: after as number,
         })
-        .where(eq(station.id, id))
+        .where(eq(server.id, id))
         .run()
 
       return
     case 'public_address':
-      db.update(station)
+      db.update(server)
         .set({
           public_address: after as string,
         })
-        .where(eq(station.id, id))
+        .where(eq(server.id, id))
         .run()
 
       return
-    case 'sandbox_limits':
-      db.update(station)
+    case 'machine_limits':
+      db.update(server)
         .set({
-          sandbox_limits: after as StationRow['sandbox_limits'],
+          machine_limits: after as StationRow['machine_limits'],
         })
-        .where(eq(station.id, id))
+        .where(eq(server.id, id))
         .run()
 
       return
 
-    case 'default_sandbox_runtime': {
-      const runtime = after as StationRow['default_sandbox_runtime']
+    case 'default_machine_runtime': {
+      const runtime = after as StationRow['default_machine_runtime']
       const refusal = runtimeRefusal(row, runtime)
 
       if (refusal) {
-        refuse('/default_sandbox_runtime', refusal)
+        refuse('/default_machine_runtime', refusal)
       }
 
-      db.update(station)
+      db.update(server)
         .set({
-          default_sandbox_runtime: runtime,
+          default_machine_runtime: runtime,
         })
-        .where(eq(station.id, id))
+        .where(eq(server.id, id))
         .run()
     }
   }

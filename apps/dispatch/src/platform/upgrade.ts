@@ -11,7 +11,7 @@ import {
   component,
   platform_release,
   platform_upgrade,
-  station,
+  server,
   type UpgradePin,
   type UpgradeStep,
 } from '../db/schema.ts'
@@ -47,11 +47,11 @@ export const procedureNotes: Record<string, string> = {
   gateway:
     'blue/green swap between the two Gateway Couplers with the probe route, port_switch replacement and two conntrack passes; zero downtime',
   depot:
-    'maintenance window: builds queue, Depot restarts read-only then writable; pulls fail briefly across the two restarts; running services unaffected',
+    'maintenance window: builds queue, Depot restarts read-only then writable; pulls fail briefly across the two restarts; running apps unaffected',
   buildkit:
     'each project Workshop restarts when no build runs for it; queued builds wait; cache volumes kept',
   coupler_image:
-    'pull and verify; each service uses it at its next deployment; running Couplers are never replaced',
+    'pull and verify; each app uses it at its next deployment; running Couplers are never replaced',
   railpack_frontend: 'pull and verify; the next Railpack build uses it',
   syft_scanner: 'pull and verify; the next build attestation uses it',
   litestream: 'sidecar restart, present only with a bucket; Dispatch keeps running',
@@ -99,11 +99,11 @@ const manifestFor = (db: Db, lockfile: LockfileDoc) =>
 const dispatchStation = (db: Db) =>
   db
     .select({
-      id: station.id,
+      id: server.id,
     })
-    .from(station)
-    .where(eq(station.hosts_dispatch, true))
-    .orderBy(asc(station.created_at))
+    .from(server)
+    .where(eq(server.hosts_dispatch, true))
+    .orderBy(asc(server.created_at))
     .get()?.id ?? null
 
 export const overlayPins = (db: Db, stationId: string, base: Pins): Pins => {
@@ -118,7 +118,7 @@ export const overlayPins = (db: Db, stationId: string, base: Pins): Pins => {
   }
 
   for (const step of row.steps) {
-    if (step.station_id !== stationId) {
+    if (step.server_id !== stationId) {
       continue
     }
 
@@ -162,13 +162,13 @@ export const planUpgrade = (
   const afterManifest = manifestFor(db, after)
   const stations = db
     .select({
-      id: station.id,
-      arch: station.arch,
-      hosts_dispatch: station.hosts_dispatch,
+      id: server.id,
+      arch: server.arch,
+      hosts_dispatch: server.hosts_dispatch,
     })
-    .from(station)
-    .where(isNull(station.revoked_at))
-    .orderBy(asc(station.created_at))
+    .from(server)
+    .where(isNull(server.revoked_at))
+    .orderBy(asc(server.created_at))
     .all()
     .filter((s) => !stationFilter || s.id === stationFilter)
   const hostId = dispatchStation(db)
@@ -199,7 +199,7 @@ export const planUpgrade = (
 
       const step: UpgradeStep = {
         component: name,
-        station_id: st.id,
+        server_id: st.id,
         from: a ?? {
           version: 'none',
           digest: null,
@@ -235,7 +235,7 @@ export const planUpgrade = (
 const componentsPayload = (row: { steps: UpgradeStep[] }) =>
   row.steps.map((s) => ({
     component: s.component,
-    station: s.station_id,
+    server: s.server_id,
     from: s.from,
     to: s.to,
     status: s.status,
@@ -244,19 +244,19 @@ const componentsPayload = (row: { steps: UpgradeStep[] }) =>
 export const startUpgrade = (
   db: Db,
   input: {
-    stagedChangeId: string | null
+    approvalId: string | null
     actor: Actor
     before: LockfileDoc
     after: LockfileDoc
-    station: string | null
+    server: string | null
   },
 ) => {
-  const plan = planUpgrade(db, input.before, input.after, input.station)
+  const plan = planUpgrade(db, input.before, input.after, input.server)
   const id = db
     .insert(platform_upgrade)
     .values({
-      staged_change_id: input.stagedChangeId,
-      station_id: input.station,
+      approval_id: input.approvalId,
+      server_id: input.server,
       release_from: input.before.release,
       release_to: input.after.release,
       lockfile_before: input.before,
@@ -271,14 +271,14 @@ export const startUpgrade = (
     })
     .get().id
   const payload = {
-    staged_change: input.stagedChangeId,
+    approval: input.approvalId,
     release: {
       from: input.before.release,
       to: input.after.release,
     },
     components: componentsPayload(plan),
     removed_overrides: plan.removedOverrides,
-    station: input.station,
+    server: input.server,
     result: null,
   }
 
@@ -346,13 +346,13 @@ const finish = (db: Db, row: Row, result: 'done' | 'failed' | 'reverted') => {
       id: row.id,
     },
     {
-      staged_change: row.staged_change_id,
+      approval: row.approval_id,
       release: {
         from: row.release_from,
         to: row.release_to,
       },
       components: componentsPayload(row),
-      station: row.station_id,
+      server: row.server_id,
       result,
       failure: row.failure,
     },
@@ -364,10 +364,10 @@ const syncComponentLockfile = (db: Db, lockfile: LockfileDoc) => {
 
   for (const st of db
     .select({
-      id: station.id,
-      arch: station.arch,
+      id: server.id,
+      arch: server.arch,
     })
-    .from(station)
+    .from(server)
     .all()) {
     const pins = resolvePins(manifest, lockfile, st.arch)
 
@@ -380,7 +380,7 @@ const syncComponentLockfile = (db: Db, lockfile: LockfileDoc) => {
         .where(
           and(
             eq(component.name, name as (typeof component.$inferSelect)['name']),
-            name === 'dispatch' ? isNull(component.station_id) : eq(component.station_id, st.id),
+            name === 'dispatch' ? isNull(component.server_id) : eq(component.server_id, st.id),
           ),
         )
         .run()
@@ -411,8 +411,8 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
     ) {
       const failure: ErrorValue = {
         code: 'UPGRADE_FAILED',
-        explanation: `${step.component} on ${step.station_id} did not report ${step.status === 'running' ? step.to.version : step.from.version} within ${Math.round((stepTimeoutMs[step.component] ?? defaultTimeoutMs) / 1000)} s`,
-        fix: 'Read the stationd log on the station; the upgrade reverts the components already moved.',
+        explanation: `${step.component} on ${step.server_id} did not report ${step.status === 'running' ? step.to.version : step.from.version} within ${Math.round((stepTimeoutMs[step.component] ?? defaultTimeoutMs) / 1000)} s`,
+        fix: 'Read the stationd log on the server; the upgrade reverts the components already moved.',
         details: {},
       }
 
@@ -433,8 +433,8 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
       finish(db, row, 'done')
 
       for (const s of row.steps) {
-        if (s.station_id) {
-          out.reconcile.add(s.station_id)
+        if (s.server_id) {
+          out.reconcile.add(s.server_id)
         }
       }
 
@@ -454,8 +454,8 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
     next.started_at = now()
     save(db, row)
 
-    if (next.station_id) {
-      out.reconcile.add(next.station_id)
+    if (next.server_id) {
+      out.reconcile.add(next.server_id)
     }
 
     return out
@@ -471,8 +471,8 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
     finish(db, row, 'reverted')
 
     for (const s of row.steps) {
-      if (s.station_id) {
-        out.reconcile.add(s.station_id)
+      if (s.server_id) {
+        out.reconcile.add(s.server_id)
       }
     }
 
@@ -483,8 +483,8 @@ export const advanceUpgrade = (db: Db, dispatchVersion: string): Advance => {
   back.started_at = now()
   save(db, row)
 
-  if (back.station_id) {
-    out.reconcile.add(back.station_id)
+  if (back.server_id) {
+    out.reconcile.add(back.server_id)
   }
 
   return out
@@ -507,8 +507,8 @@ const markFailed = (db: Db, row: Row, step: UpgradeStep, failure: ErrorValue, ou
   row.failure = failure
   save(db, row)
 
-  if (step.station_id) {
-    out.reconcile.add(step.station_id)
+  if (step.server_id) {
+    out.reconcile.add(step.server_id)
   }
 }
 
@@ -530,7 +530,7 @@ export const upgradeOnComponent = (db: Db, stationId: string, body: ComponentRep
   const step = row.steps.find(
     (s) =>
       s.component === body.name &&
-      s.station_id === stationId &&
+      s.server_id === stationId &&
       (s.status === 'running' || s.status === 'reverting'),
   )
 
@@ -554,13 +554,13 @@ export const upgradeOnComponent = (db: Db, stationId: string, body: ComponentRep
       {
         entity: 'component',
         id: body.name,
-        station_id: stationId,
+        server_id: stationId,
       },
       {
         component: body.name,
         from,
         to: target,
-        station: stationId,
+        server: stationId,
         upgrade: row.id,
         revert: step.status === 'reverted',
       },

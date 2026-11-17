@@ -2,29 +2,28 @@ import type { Static, TSchema } from '@sinclair/typebox'
 import { t } from 'elysia'
 
 import {
+  appFieldText,
+  appKindValues,
   dnsLogTail,
   injectionValues,
+  keyKindValues,
+  keyNamePattern,
+  keyPatchText,
   portFieldText,
   portProtocolValues,
   portRange,
   probeKinds,
   probeTimeout,
   scheduleConcurrencyValues,
-  serviceFieldText,
-  serviceKindValues,
   slugPattern,
   strategyValues,
   StringEnum,
-  tokenLevelValues,
-  variableKeyPattern,
-  variableKindValues,
-  variablePatchText,
   volumeFieldText,
 } from '@stationly/protocol'
 
 export const input = <S extends TSchema>(schema: S) => t.Unsafe<Static<S>>(schema)
 
-export const ServiceSource = t.Union(
+export const AppSource = t.Union(
   [
     t.Object(
       {
@@ -212,22 +211,16 @@ export const VolumeInput = t.Object(
   },
 )
 
-export const VariableSet = t.Object(
+export const KeySet = t.Object(
   {
-    key: t.String({
-      pattern: variableKeyPattern,
+    name: t.String({
+      pattern: keyNamePattern,
     }),
-    kind: input(StringEnum(variableKindValues)),
+    kind: input(StringEnum(keyKindValues)),
     value: t.Optional(t.String()),
     reference: t.Optional(t.String()),
     injection: t.Optional(input(StringEnum(injectionValues))),
     build: t.Optional(t.Boolean()),
-    copy_to_clones: t.Optional(
-      t.Boolean({
-        description:
-          'Sealed values only: copy the value into clones of this environment, by default false',
-      }),
-    ),
   },
   {
     additionalProperties: false,
@@ -249,7 +242,7 @@ export const Limits = t.Object(
   },
   {
     additionalProperties: false,
-    description: serviceFieldText.limits,
+    description: appFieldText.limits,
   },
 )
 
@@ -269,25 +262,25 @@ export const Schedule = t.Object(
 )
 
 const mutable = {
-  source: t.Optional(ServiceSource),
-  station_id: t.Optional(
+  source: t.Optional(AppSource),
+  server_id: t.Optional(
     t.String({
-      description: 'The station to run on; the only online station by default',
+      description: 'The server to run on; the only online server by default',
     }),
   ),
   command: t.Optional(
     t.Union([t.Array(t.String()), t.Null()], {
-      description: serviceFieldText.command,
+      description: appFieldText.command,
     }),
   ),
   build_args: t.Optional(
     t.Union([t.Record(t.String(), t.String()), t.Null()], {
-      description: serviceFieldText.build_args,
+      description: appFieldText.build_args,
     }),
   ),
   ports: t.Optional(
     t.Array(PortInput, {
-      description: serviceFieldText.ports,
+      description: appFieldText.ports,
     }),
   ),
   volumes: t.Optional(
@@ -298,30 +291,30 @@ const mutable = {
   limits: t.Optional(Limits),
   health: t.Optional(
     t.Union([HealthInput, t.Null()], {
-      description: serviceFieldText.health,
+      description: appFieldText.health,
     }),
   ),
   strategy: t.Optional(
     input(
       StringEnum(strategyValues, {
-        description: serviceFieldText.strategy,
+        description: appFieldText.strategy,
       }),
     ),
   ),
   multi_writer_safe: t.Optional(
     t.Boolean({
-      description: serviceFieldText.multi_writer_safe,
+      description: appFieldText.multi_writer_safe,
     }),
   ),
   drain_timeout_s: t.Optional(
     t.Integer({
       minimum: 0,
-      description: serviceFieldText.drain_timeout_s,
+      description: appFieldText.drain_timeout_s,
     }),
   ),
   readonly_rootfs: t.Optional(
     t.Boolean({
-      description: serviceFieldText.readonly_rootfs,
+      description: appFieldText.readonly_rootfs,
     }),
   ),
   secrets_owner: t.Optional(
@@ -338,43 +331,43 @@ const mutable = {
         t.Null(),
       ],
       {
-        description: serviceFieldText.secrets_owner,
+        description: appFieldText.secrets_owner,
       },
     ),
   ),
   pre_deploy: t.Optional(
     t.Union([t.Array(t.String()), t.Null()], {
-      description: serviceFieldText.pre_deploy,
+      description: appFieldText.pre_deploy,
     }),
   ),
   schedule: t.Optional(
     t.Union([Schedule, t.Null()], {
-      description: serviceFieldText.schedule,
+      description: appFieldText.schedule,
     }),
   ),
-  variables: t.Optional(
-    t.Array(VariableSet, {
-      description: 'Service variables to set: key, kind, and value or reference',
+  keys: t.Optional(
+    t.Array(KeySet, {
+      description: 'App keys to set: name, kind, and value or reference',
     }),
   ),
 }
 
-export const ServiceCreate = t.Object(
+export const AppCreate = t.Object(
   {
     name: t.String({
       pattern: slugPattern,
-      description: 'The service name and DNS label',
+      description: 'The app name and DNS label',
     }),
     kind: input(
-      StringEnum(serviceKindValues, {
-        description: serviceFieldText.kind,
+      StringEnum(appKindValues, {
+        description: appFieldText.kind,
       }),
     ),
     ...mutable,
-    source: ServiceSource,
+    source: AppSource,
     deploy_on_create: t.Optional(
       t.Boolean({
-        description: 'Deploy the new service at once (default true)',
+        description: 'Deploy the new app at once (default true)',
       }),
     ),
   },
@@ -383,7 +376,7 @@ export const ServiceCreate = t.Object(
   },
 )
 
-export const ServicePatch = t.Object(
+export const AppPatch = t.Object(
   {
     ...mutable,
     deploy: t.Optional(
@@ -397,19 +390,19 @@ export const ServicePatch = t.Object(
   },
 )
 
-export const VariablesPatch = {
+export const KeysPatch = {
   set: t.Optional(
-    t.Array(VariableSet, {
-      description: variablePatchText.set,
+    t.Array(KeySet, {
+      description: keyPatchText.set,
     }),
   ),
   unset: t.Optional(
     t.Array(
       t.String({
-        pattern: variableKeyPattern,
+        pattern: keyNamePattern,
       }),
       {
-        description: variablePatchText.unset,
+        description: keyPatchText.unset,
       },
     ),
   ),
@@ -420,7 +413,7 @@ export const VariablesPatch = {
   ),
   allow_unresolved: t.Optional(
     t.Boolean({
-      description: variablePatchText.allow_unresolved,
+      description: keyPatchText.allow_unresolved,
     }),
   ),
 }
@@ -432,23 +425,12 @@ export const supersede = t.Optional(
   }),
 )
 
-export const ScopeInput = t.Object(
-  {
-    project_id: t.String(),
-    environment_id: t.String(),
-    level: input(StringEnum(tokenLevelValues)),
-  },
-  {
-    additionalProperties: false,
-  },
-)
-
 export const ProbeBody = t.Object(
   {
     to: t.String({
       minLength: 1,
       maxLength: 260,
-      description: 'A service, a <name>.internal, or a host or address with :port',
+      description: 'An app, a <name>.internal, or a host or address with :port',
     }),
     port: t.Optional(
       t.Integer({

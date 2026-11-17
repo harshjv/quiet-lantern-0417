@@ -27,7 +27,7 @@ test('spans format with the two largest units', () => {
   assert.equal(span(3600), '1 h')
 })
 
-test('a running sandbox counts down to stop_at and a stopped one to delete_at', () => {
+test('a running machine counts down to stop_at and a stopped one to delete_at', () => {
   const now = Date.parse('2026-11-08T10:00:00Z')
 
   assert.deepEqual(

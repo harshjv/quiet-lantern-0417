@@ -1,14 +1,14 @@
 import type { Static } from '@sinclair/typebox'
 import { sql } from 'drizzle-orm'
 
-import type { SandboxEgress } from '@stationly/protocol'
+import type { MachineEgress } from '@stationly/protocol'
 
 import { requireHuman } from '../api/access.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { sandbox } from '../db/schema.ts'
+import { machine } from '../db/schema.ts'
 
-type Egress = Static<typeof SandboxEgress>
+type Egress = Static<typeof MachineEgress>
 type Entry = Egress['domains'][number]
 
 const wildcardDepth = 3
@@ -46,14 +46,14 @@ export const workspaceHeldBy = (db: Db, principal: Principal) =>
   principal.token_id
     ? db
         .select()
-        .from(sandbox)
-        .where(sql`json_extract(${sandbox.workspace}, '$.token_id') = ${principal.token_id}`)
+        .from(machine)
+        .where(sql`json_extract(${machine.workspace}, '$.token_id') = ${principal.token_id}`)
         .get()
     : undefined
 
 export const requireHumanToWiden = (
   principal: Principal,
-  held: typeof sandbox.$inferSelect | undefined,
+  held: typeof machine.$inferSelect | undefined,
   what: string | null,
 ) => {
   if (held && what) {
@@ -66,7 +66,7 @@ export const requireHumanToWiden = (
 export const requireHumanToEnter = (
   db: Db,
   principal: Principal,
-  row: typeof sandbox.$inferSelect,
+  row: typeof machine.$inferSelect,
 ) => {
   const held = workspaceHeldBy(db, principal)
 
@@ -76,7 +76,7 @@ export const requireHumanToEnter = (
     held &&
       held.id !== row.id &&
       (!egressWithin(row.egress, held.egress) || row.network !== 'isolated' || row.docker)
-      ? 'cannot run anything in another sandbox with wider egress than its own, on the environment network or with docker'
+      ? 'cannot run anything in another machine with wider egress than its own, on its production or preview network or with docker'
       : null,
   )
 }

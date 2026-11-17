@@ -1,13 +1,25 @@
 import { useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useNavigate, useRouterState, type LinkOptions } from '@tanstack/react-router'
-import { Copy, Keyboard, Monitor, Moon, Plus, Sun, UserRound, type LucideIcon } from 'lucide-react'
+import {
+  Blocks,
+  Copy,
+  Eye,
+  Keyboard,
+  ListTodo,
+  LogOut,
+  Monitor,
+  Moon,
+  Plus,
+  Rocket,
+  Sun,
+  type LucideIcon,
+} from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { NewProject } from '@/components/new-project'
-import { NewService } from '@/components/new-service'
-import { NewSandbox } from '@/components/sandboxes-panel'
+import { NewApp } from '@/components/new-service'
+import { NewMachine } from '@/components/sandboxes-panel'
 import { ShortcutKeys } from '@/components/shortcut-keys'
 import {
   Command,
@@ -19,9 +31,11 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command'
-import type { Environment } from '@/lib/api'
+import { isInstanceAdmin } from '@/lib/agent-session'
+import { signOut } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
+import { go, places, usePlace, viewId, type Place } from '@/lib/nav'
 import {
   destinations,
   pageProject,
@@ -30,179 +44,216 @@ import {
   type Destination,
   type Page,
 } from '@/lib/palette'
+import { scopeOf, type PlaceView } from '@/lib/place'
 import {
+  appQuery,
+  appsQuery,
   deploymentQuery,
-  environmentDeploymentsQuery,
-  environmentQuery,
-  environmentsQuery,
-  projectQuery,
+  machineQuery,
+  machinesQuery,
+  meQuery,
+  placeDeploymentsQuery,
+  previewsQuery,
   projectsQuery,
-  sandboxesQuery,
-  sandboxQuery,
-  serviceQuery,
-  servicesQuery,
+  tasksQuery,
 } from '@/lib/queries'
 import type { ShortcutId } from '@/lib/shortcuts'
+import { pages } from '@/workbench/outside'
 
-type Here = { page: Page | null; environment: Environment | null }
+type Here = { page: Page | null; place: PlaceView | null }
 
 type Creating =
-  | { kind: 'project' }
-  | { kind: 'service'; environment: Environment }
-  | { kind: 'sandbox'; environment: Environment; project: string }
+  { kind: 'project' } | { kind: 'app'; place: PlaceView } | { kind: 'machine'; place: PlaceView }
 
 const nowhere: Here = {
   page: null,
-  environment: null,
+  place: null,
 }
 
-const trail = (client: QueryClient, environmentId: string) => {
-  const environment = client.getQueryData(environmentQuery(environmentId).queryKey)
-  const project = environment && client.getQueryData(projectQuery(environment.project_id).queryKey)
+const projectWhere = (client: QueryClient, match: (p: { id: string; name: string }) => boolean) =>
+  client.getQueryData(projectsQuery.queryKey)?.items.find(match)
 
-  return environment && project
+const placeView = (
+  client: QueryClient,
+  project: { id: string; name: string },
+  match: ((p: { id: string; name: string }) => boolean) | null,
+): PlaceView | null => {
+  const preview = match
+    ? client.getQueryData(previewsQuery(project.id).queryKey)?.items.find(match)
+    : null
+
+  if (match && !preview) {
+    return null
+  }
+
+  return {
+    project: project.id,
+    preview: preview?.id ?? null,
+    projectName: project.name,
+    previewName: preview?.name ?? null,
+  }
+}
+
+const trail = (client: QueryClient, row: { project_id: string; preview_id: string | null }) => {
+  const project = projectWhere(client, (p) => p.id === row.project_id)
+  const place =
+    project && placeView(client, project, row.preview_id ? (p) => p.id === row.preview_id : null)
+
+  return place
     ? {
-        environment,
-        scope: {
-          project: project.name,
-          environment: environment.name,
-        },
+        place,
+        scope: scopeOf(place),
       }
     : null
 }
 
-const serviceHere = (client: QueryClient, serviceId: string): Here => {
-  const service = client.getQueryData(serviceQuery(serviceId).queryKey)
-  const found = service && trail(client, service.environment_id)
+const appHere = (client: QueryClient, appId: string): Here => {
+  const app = client.getQueryData(appQuery(appId).queryKey)
+  const found = app && trail(client, app)
 
   return found
     ? {
-        environment: found.environment,
+        place: found.place,
         page: {
-          kind: 'service',
+          kind: 'app',
           scope: {
             ...found.scope,
-            service: service.name,
+            app: app.name,
           },
         },
       }
     : nowhere
 }
 
-const locate = (client: QueryClient, routeId: string, params: Record<string, string>): Here => {
-  switch (routeId) {
-    case '/_app/projects/':
-      return {
-        environment: null,
+const machineHere = (client: QueryClient, machineId: string): Here => {
+  const machine = client.getQueryData(machineQuery(machineId).queryKey)
+  const found = machine && trail(client, machine)
+
+  return found
+    ? {
+        place: found.place,
         page: {
-          kind: 'projects',
+          kind: 'machine',
+          scope: found.scope,
+          machine: machine.name,
         },
       }
-    case '/_app/projects/$project/':
-      return {
-        environment: null,
-        page: {
-          kind: 'project',
-          project: params.project!,
-        },
-      }
-
-    case '/_app/projects/$project/$environment': {
-      const environment = client
-        .getQueryData(environmentsQuery(params.project!).queryKey)
-        ?.items.find((e) => e.name === params.environment)
-
-      return environment
-        ? {
-            environment,
-            page: {
-              kind: 'environment',
-              scope: {
-                project: params.project!,
-                environment: environment.name,
-              },
-            },
-          }
-        : nowhere
-    }
-
-    case '/_app/services/$service':
-      return serviceHere(client, params.service!)
-
-    case '/_app/deployments/$deployment': {
-      const deployment = client.getQueryData(deploymentQuery(params.deployment!).queryKey)
-
-      return deployment ? serviceHere(client, deployment.service_id) : nowhere
-    }
-
-    case '/_app/sandboxes/$sandbox': {
-      const sandbox = client.getQueryData(sandboxQuery(params.sandbox!).queryKey)
-      const found = sandbox && trail(client, sandbox.environment_id)
-
-      return found
-        ? {
-            environment: found.environment,
-            page: {
-              kind: 'sandbox',
-              scope: found.scope,
-              sandbox: sandbox.name,
-            },
-          }
-        : nowhere
-    }
-
-    default:
-      return nowhere
-  }
+    : nowhere
 }
 
-function useHere() {
-  const client = useQueryClient()
-  const match = useRouterState({
-    select: (state) => state.matches.at(-1),
-  })
+const projectHere = (client: QueryClient, name: string, view: string | null): Here => {
+  const project = projectWhere(client, (p) => p.name === name)
+  const previewName = view?.startsWith('preview:') ? view.slice(8).split('/')[0]! : null
+  const place =
+    project && placeView(client, project, previewName ? (p) => p.name === previewName : null)
 
-  return match ? locate(client, match.routeId, match.params) : nowhere
+  return place
+    ? {
+        place,
+        page: {
+          kind: 'place',
+          scope: scopeOf(place),
+        },
+      }
+    : nowhere
+}
+
+const locate = (client: QueryClient, place: Place): Here => {
+  if (place.mode !== 'ship') {
+    return nowhere
+  }
+
+  const app = viewId(place.view, 'app')
+  const deployment = viewId(place.view, 'deployment')
+  const machine = viewId(place.view, 'machine')
+
+  if (app) {
+    return appHere(client, app)
+  }
+
+  if (deployment) {
+    const found = client.getQueryData(deploymentQuery(deployment).queryKey)
+
+    return found ? appHere(client, found.app_id) : nowhere
+  }
+
+  if (machine) {
+    return machineHere(client, machine)
+  }
+
+  if (place.project) {
+    return projectHere(client, place.project, place.view)
+  }
+
+  return {
+    place: null,
+    page: {
+      kind: 'projects',
+    },
+  }
 }
 
 function useDestinations(searching: boolean) {
   const projects = useQuery(projectsQuery)
-  const projectItems = projects.data?.items ?? []
-  const environments = useQueries({
-    queries: projectItems.map((project) => environmentsQuery(project.name)),
+  const tasks = useQuery({
+    ...tasksQuery,
+    enabled: searching,
   })
-  const places = environments.flatMap((query, index) =>
-    (query.data?.items ?? []).map((environment) => ({
-      project: projectItems[index]!.name,
-      environment,
+  const projectItems = projects.data?.items ?? []
+  const previews = useQueries({
+    queries: projectItems.map((project) => previewsQuery(project.id)),
+  })
+  const spaces = projectItems.flatMap((project, index) => [
+    {
+      project: project.name,
+      place: {
+        project: project.id,
+        preview: null,
+      },
+      preview: null,
+    },
+    ...(previews[index]?.data?.items ?? []).map((preview) => ({
+      project: project.name,
+      place: {
+        project: project.id,
+        preview: preview.id,
+      },
+      preview,
     })),
-  )
-  const each = <T,>(query: (environment: string) => T) =>
-    places.map((place) => ({
-      ...query(place.environment.id),
+  ])
+  const each = <T,>(query: (place: (typeof spaces)[number]['place']) => T) =>
+    spaces.map((space) => ({
+      ...query(space.place),
       enabled: searching,
     }))
-  const services = useQueries({
-    queries: each(servicesQuery),
+  const apps = useQueries({
+    queries: each(appsQuery),
   })
-  const sandboxes = useQueries({
-    queries: each(sandboxesQuery),
+  const machines = useQueries({
+    queries: each(machinesQuery),
   })
   const deployments = useQueries({
-    queries: each(environmentDeploymentsQuery),
+    queries: each(placeDeploymentsQuery),
   })
-  const pending = [projects, ...environments, ...services, ...sandboxes, ...deployments].some(
+  const pending = [projects, tasks, ...previews, ...apps, ...machines, ...deployments].some(
     (query) => query.isPending && query.fetchStatus === 'fetching',
   )
 
   return {
     pending,
+    tasks: (tasks.data?.items ?? []).map((task): Destination => ({
+      value: task.id,
+      label: task.title,
+      hint: task.project.name,
+      to: places.task(task.id),
+    })),
     found: destinations(
       projectItems,
-      places.map((place, index) => ({
-        ...place,
-        services: services[index]?.data?.items ?? [],
-        sandboxes: sandboxes[index]?.data?.items ?? [],
+      spaces.map((space, index) => ({
+        project: space.project,
+        preview: space.preview,
+        apps: apps[index]?.data?.items ?? [],
+        machines: machines[index]?.data?.items ?? [],
         deployments: deployments[index]?.data?.items ?? [],
       })),
     ),
@@ -245,45 +296,57 @@ function Item({
   )
 }
 
-const goTo: { label: string; icon: LucideIcon; link: LinkOptions; shortcut?: ShortcutId }[] = [
+type GoTo = {
+  label: string
+  icon: LucideIcon
+  to: Partial<Place>
+  shortcut?: ShortcutId
+  admin?: boolean
+}
+
+const modeGoTo: GoTo[] = [
   {
-    label: 'Projects',
-    icon: entityIcon.project,
-    link: {
-      to: '/projects',
+    label: 'Build',
+    icon: Blocks,
+    to: {
+      mode: 'build',
     },
-    shortcut: 'projects',
+    shortcut: 'build',
   },
   {
-    label: 'Staged changes',
-    icon: entityIcon.stagedChange,
-    link: {
-      to: '/staged',
+    label: 'Ship',
+    icon: Rocket,
+    to: {
+      mode: 'ship',
     },
-    shortcut: 'staged',
+    shortcut: 'ship',
   },
   {
-    label: 'Connect an agent',
-    icon: entityIcon.agent,
-    link: {
-      to: '/connect',
+    label: 'Observe',
+    icon: Eye,
+    to: {
+      mode: 'observe',
     },
-    shortcut: 'connect',
+    shortcut: 'observe',
   },
-  {
-    label: 'Stations',
-    icon: entityIcon.station,
-    link: {
-      to: '/stations',
-    },
-  },
-  {
-    label: 'Account and sign-in',
-    icon: UserRound,
-    link: {
-      to: '/account',
-    },
-  },
+]
+
+const pageShortcut: Partial<Record<(typeof pages)[number]['id'], ShortcutId>> = {
+  inbox: 'inbox',
+  account: 'account',
+  team: 'team',
+  connect: 'connect',
+}
+
+const goTo: GoTo[] = [
+  ...modeGoTo,
+  ...pages.map((p): GoTo => ({
+    label: p.title,
+    icon: p.icon,
+    to: places.page(p.id),
+    shortcut: pageShortcut[p.id],
+    admin: p.admin,
+  })),
 ]
 
 const groups: { heading: string; icon: LucideIcon; key: keyof ReturnType<typeof destinations> }[] =
@@ -294,19 +357,19 @@ const groups: { heading: string; icon: LucideIcon; key: keyof ReturnType<typeof 
       key: 'projects',
     },
     {
-      heading: 'Environments',
-      icon: entityIcon.environment,
-      key: 'environments',
+      heading: 'Production and previews',
+      icon: entityIcon.preview,
+      key: 'places',
     },
     {
-      heading: 'Services',
-      icon: entityIcon.service,
-      key: 'services',
+      heading: 'Apps',
+      icon: entityIcon.app,
+      key: 'apps',
     },
     {
-      heading: 'Sandboxes',
-      icon: entityIcon.sandbox,
-      key: 'sandboxes',
+      heading: 'Machines',
+      icon: entityIcon.machine,
+      key: 'machines',
     },
     {
       heading: 'Recent deployments',
@@ -343,21 +406,35 @@ function PaletteContent({
   onHelp: () => void
 }) {
   const [search, setSearch] = useState('')
-  const navigate = useNavigate()
+  const client = useQueryClient()
+  const me = useQuery(meQuery)
+  const admin = isInstanceAdmin(me.data?.scopes ?? [])
   const { theme, setTheme } = useTheme()
-  const here = useHere()
+  const here = locate(client, usePlace())
   const searching = search.trim().length > 0
-  const { found, pending } = useDestinations(searching)
+  const { found, tasks, pending } = useDestinations(searching)
   const text = here.page && pageText(here.page)
   const project = here.page && pageProject(here.page)
   const run = (action: () => void) => () => {
     close()
     action()
   }
-  const go = (link: LinkOptions) => run(() => void navigate(link))
+  const goto = (to: Partial<Place>) => run(() => go(to))
   const copy = (value: string, what: string) =>
     run(() => void navigator.clipboard.writeText(value).then(() => toast.success(`${what} copied`)))
-  const environment = here.environment
+  const place = here.place
+  const placeHint =
+    place &&
+    project &&
+    spaceName({
+      project,
+      preview: place.previewName
+        ? {
+            id: place.preview!,
+            name: place.previewName,
+          }
+        : null,
+    })
 
   return (
     <Command loop>
@@ -370,17 +447,33 @@ function PaletteContent({
       <CommandList className="max-h-[min(26rem,60dvh)]">
         <CommandEmpty>{pending ? 'Loading' : 'Nothing matches that search.'}</CommandEmpty>
         <CommandGroup heading="Go to">
-          {goTo.map((entry) => (
-            <Item
-              key={entry.label}
-              value={`go ${entry.label}`}
-              icon={entry.icon}
-              label={entry.label}
-              shortcut={entry.shortcut}
-              onSelect={go(entry.link)}
-            />
-          ))}
+          {goTo
+            .filter((entry) => admin || !entry.admin)
+            .map((entry) => (
+              <Item
+                key={entry.label}
+                value={`go ${entry.label}`}
+                icon={entry.icon}
+                label={entry.label}
+                shortcut={entry.shortcut}
+                onSelect={goto(entry.to)}
+              />
+            ))}
         </CommandGroup>
+        {searching && tasks.length > 0 && (
+          <CommandGroup heading="Tasks">
+            {tasks.map((entry) => (
+              <Item
+                key={entry.value}
+                value={entry.value}
+                icon={ListTodo}
+                label={entry.label}
+                hint={entry.hint}
+                onSelect={goto(entry.to)}
+              />
+            ))}
+          </CommandGroup>
+        )}
         {searching &&
           groups.map(
             (group) =>
@@ -393,13 +486,23 @@ function PaletteContent({
                       icon={group.icon}
                       label={entry.label}
                       hint={entry.hint}
-                      onSelect={go(entry.link)}
+                      onSelect={goto(entry.to)}
                     />
                   ))}
                 </CommandGroup>
               ),
           )}
         <CommandGroup heading="Create">
+          <Item
+            value="create task"
+            icon={Plus}
+            label="New task"
+            shortcut="newTask"
+            onSelect={goto({
+              mode: 'build',
+              view: 'new',
+            })}
+          />
           <Item
             value="create project"
             icon={Plus}
@@ -410,36 +513,29 @@ function PaletteContent({
               }),
             )}
           />
-          {environment && project && (
+          {place && placeHint && (
             <>
               <Item
-                value="create service"
+                value="create app"
                 icon={Plus}
-                label="New service"
-                hint={spaceName({
-                  project,
-                  environment,
-                })}
+                label="New app"
+                hint={placeHint}
                 onSelect={run(() =>
                   onCreate({
-                    kind: 'service',
-                    environment,
+                    kind: 'app',
+                    place,
                   }),
                 )}
               />
               <Item
-                value="create sandbox"
+                value="create machine"
                 icon={Plus}
-                label="New sandbox"
-                hint={spaceName({
-                  project,
-                  environment,
-                })}
+                label="New machine"
+                hint={placeHint}
                 onSelect={run(() =>
                   onCreate({
-                    kind: 'sandbox',
-                    environment,
-                    project,
+                    kind: 'machine',
+                    place,
                   }),
                 )}
               />
@@ -472,7 +568,7 @@ function PaletteContent({
                   commands.mcpInstall({
                     client: 'claude-code',
                     project,
-                    environment: null,
+                    target: '*',
                     level: 'deploy',
                     ttl: '30d',
                   }),
@@ -499,6 +595,12 @@ function PaletteContent({
             label="Keyboard shortcuts"
             shortcut="help"
             onSelect={run(onHelp)}
+          />
+          <Item
+            value="sign out"
+            icon={LogOut}
+            label="Sign out"
+            onSelect={run(() => void signOut(client))}
           />
         </CommandGroup>
       </CommandList>
@@ -534,19 +636,9 @@ export function CommandPalette({
         <PaletteContent close={() => onOpenChange(false)} onCreate={setCreating} onHelp={onHelp} />
       </CommandDialog>
       {creating?.kind === 'project' && <NewProject open onOpenChange={done} />}
-      {creating?.kind === 'service' && (
-        <NewService environment={creating.environment} open onOpenChange={done} />
-      )}
-      {creating?.kind === 'sandbox' && (
-        <NewSandbox
-          environment={creating.environment}
-          scope={{
-            project: creating.project,
-            environment: creating.environment.name,
-          }}
-          open
-          onOpenChange={done}
-        />
+      {creating?.kind === 'app' && <NewApp place={creating.place} open onOpenChange={done} />}
+      {creating?.kind === 'machine' && (
+        <NewMachine place={creating.place} open onOpenChange={done} />
       )}
     </>
   )

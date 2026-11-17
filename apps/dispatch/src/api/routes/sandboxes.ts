@@ -4,24 +4,24 @@ import { t } from 'elysia'
 
 import {
   dnsLogTail,
+  MachineCreateBody,
+  MachineExecBody,
+  machineExecLimits,
+  machineIdleStatuses,
+  MachineKeysPatchBody,
+  machineNetworkValues,
+  MachinePatchBody,
+  MachineShellBody,
+  machineSizeDefaults,
+  MachineSnapshotBody,
+  machineSnapshotStatusValues,
+  MachineStartBody,
+  machineStatusValues,
+  MachineStorageGrowRequest,
+  machineTtl,
   networkDirectionValues,
   probeTimeout,
   runActiveStatuses,
-  SandboxCreateBody,
-  SandboxExecBody,
-  sandboxExecLimits,
-  sandboxIdleStatuses,
-  sandboxNetworkValues,
-  SandboxPatchBody,
-  SandboxShellBody,
-  sandboxSizeDefaults,
-  SandboxSnapshotBody,
-  sandboxSnapshotStatusValues,
-  SandboxStartBody,
-  sandboxStatusValues,
-  SandboxStorageGrowRequest,
-  sandboxTtl,
-  SandboxVariablesPatchBody,
   StringEnum,
   workspaceEgress,
   workspaceRoot,
@@ -35,11 +35,11 @@ import { scopedTokenMaxSeconds } from '../../auth/auth.ts'
 import { dropToken, mintToken } from '../../auth/tokens.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { run, sandbox, sandbox_snapshot, station, variable } from '../../db/schema.ts'
+import { key, machine, machine_snapshot, run, server } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
-import { shapeSandboxSample } from '../../net/connections.ts'
+import { shapeMachineSample } from '../../net/connections.ts'
 import { probeTarget } from '../../net/explain.ts'
-import { sendSandboxProbe } from '../../net/probe.ts'
+import { sendMachineProbe } from '../../net/probe.ts'
 import { resolveImage, stationArch } from '../../platform/image-source.ts'
 import { effectivePins } from '../../platform/lockfile.ts'
 import {
@@ -51,9 +51,9 @@ import {
 import { normalizeEgress, openEgress } from '../../sandboxes/egress.ts'
 import {
   requestDeletion,
-  startSandbox,
+  startMachine,
   stopAtFrom,
-  stopSandbox,
+  stopMachine,
 } from '../../sandboxes/lifecycle.ts'
 import { fittingMemory, requireDiskRoom, requireQuota } from '../../sandboxes/limits.ts'
 import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
@@ -64,105 +64,105 @@ import {
   machineSetupAs,
   repositoryName,
   setupCommand,
+  workspaceKeySets,
   workspacePath,
-  workspaceVariableSets,
 } from '../../sandboxes/workspace.ts'
 import { ephemeralDelivery } from '../../secrets/deliver.ts'
-import { variablesOf } from '../../secrets/values.ts'
+import { keysOf } from '../../secrets/values.ts'
 import { gitIdentityOf } from '../../team/members.ts'
 import { can, requireHuman, requireLevel } from '../access.ts'
-import { ChangeSet, commit } from '../changes.ts'
+import { ChangeSet, commit, placeName } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
 import { requireConnected, requireStationReady } from '../deployments.ts'
 import { fail, invalid } from '../errors.ts'
 import { project as select } from '../fields.ts'
-import { ensureNetwork, ensureSandboxNetwork } from '../ipam.ts'
+import { ensureMachineNetwork, ensureNetwork } from '../ipam.ts'
 import { csv, warning, type Kit } from '../kit.ts'
 import {
-  sandboxById,
-  sandboxInEnvironment,
+  machineById,
+  machineInTarget,
+  previewIdOf,
+  scopeOf,
   snapshotById,
   stationByRef,
-  type EnvironmentRow,
+  type MachineContext,
+  type MachineRow,
+  type MachineSnapshotRow,
   type ProjectRow,
-  type SandboxContext,
-  type SandboxRow,
-  type SandboxSnapshotRow,
+  type TargetRow,
 } from '../lookup.ts'
-import { before, collect, filterMany, getQuery, listQuery } from '../pagination.ts'
-import { SandboxResolved, sandboxResolvedView } from '../resolved.ts'
-import { listRuns, pollUntil, runListQuery, runRow, sandboxRunOutput, waitForRun } from '../runs.ts'
+import { before, collect, filterMany, getQuery, listQuery, previewQuery } from '../pagination.ts'
+import { MachineResolved, machineResolvedView } from '../resolved.ts'
+import { listRuns, machineRunOutput, pollUntil, runListQuery, runRow, waitForRun } from '../runs.ts'
 import { DnsLogQuery, input, ProbeBody } from '../schemas.ts'
 import {
+  ApprovalDetail,
   DnsLog,
+  Key,
+  Machine,
+  MachineConnections,
+  MachineCreated,
+  MachineDeleted,
+  MachineExec,
+  MachineKeysOutcome,
+  MachineMetricSample,
+  MachineNetworkProbe,
+  MachineShell,
+  MachineSnapshot,
+  MachineSnapshotCreated,
+  MachineSnapshotDeleted,
   Page,
   replies,
   Run,
-  Sandbox,
-  SandboxConnections,
-  SandboxCreated,
-  SandboxDeleted,
-  SandboxExec,
-  SandboxMetricSample,
-  SandboxNetworkProbe,
-  SandboxShell,
-  SandboxSnapshot,
-  SandboxSnapshotCreated,
-  SandboxSnapshotDeleted,
-  SandboxVariablesOutcome,
-  Staged,
   StorageGrown,
-  Variable,
 } from '../shapes.ts'
-import { planVariables } from '../variable-changes.ts'
+import { planKeys } from '../variable-changes.ts'
 
 import { stationError } from './runs.ts'
 import { requireMintable } from './tokens.ts'
 
 const snapshotWaitMs = 10_000
 
-export const sandboxRoutes = (kit: Kit) => {
+export const machineRoutes = (kit: Kit) => {
   const { db, stations, keyring } = kit.deps
 
-  const stationRow = (id: string) => db.select().from(station).where(eq(station.id, id)).get()!
+  const stationRow = (id: string) => db.select().from(server).where(eq(server.id, id)).get()!
 
-  const requireHumanIn = (call: Call, environment: EnvironmentRow) => {
-    if (environment.protected) {
-      requireHuman(call.principal, 'A sandbox operation in a protected environment', {
-        environment_id: environment.id,
-      })
+  const requireHumanIn = (call: Call, row: TargetRow) => {
+    if (row.kind === 'production') {
+      requireHuman(call.principal, 'A machine operation in production', scopeOf(row))
     }
   }
 
   const requireWrite = (
     call: Call,
-    ctx: { target: SandboxContext['target']; environment: EnvironmentRow },
+    ctx: { target: MachineContext['target']; target_row: TargetRow },
   ) => {
     requireLevel(call.principal, ctx.target, 'deploy')
-    requireHumanIn(call, ctx.environment)
+    requireHumanIn(call, ctx.target_row)
   }
 
-  const conflict = (row: SandboxRow, allowed: string[]) =>
+  const conflict = (row: MachineRow, allowed: string[]) =>
     fail(
-      'SANDBOX_STATE_CONFLICT',
-      `Sandbox ${row.name} is ${row.status}, which this operation does not allow.`,
-      `Wait until the sandbox is ${allowed.join(' or ')}, then retry.`,
+      'MACHINE_STATE_CONFLICT',
+      `Machine ${row.name} is ${row.status}, which this operation does not allow.`,
+      `Wait until the machine is ${allowed.join(' or ')}, then retry.`,
       {
         status: row.status,
         allowed,
       },
     )
 
-  const shown = (row: SandboxRow, fields?: string) =>
-    select(kit.views.sandbox, row, kit.fields(fields))
+  const shown = (row: MachineRow, fields?: string) =>
+    select(kit.views.machine, row, kit.fields(fields))
 
-  const metricsOf = async (row: SandboxRow) => {
+  const metricsOf = async (row: MachineRow) => {
     if (row.status !== 'running') {
       return null
     }
 
     try {
-      const reply = await stations.ask(row.station_id, 'metrics.sample', {
+      const reply = await stations.ask(row.server_id, 'metrics.sample', {
         sandbox_ids: [row.id],
       })
       const sample = reply.body.samples.find((s) => s.sandbox_id === row.id)
@@ -174,7 +174,7 @@ export const sandboxRoutes = (kit: Kit) => {
       const { service_id: _s, deployment_id: _d, restarts: _r, sandbox_id: _b, ...rest } = sample
 
       return {
-        sandbox_id: row.id,
+        machine_id: row.id,
         ...rest,
       }
     } catch {
@@ -188,7 +188,7 @@ export const sandboxRoutes = (kit: Kit) => {
     return Boolean(tree && (tree.has('*') || tree.has('metrics')))
   }
 
-  const present = async (row: SandboxRow, fields: string | undefined) => {
+  const present = async (row: MachineRow, fields: string | undefined) => {
     const body = shown(row, fields)
 
     return wantsMetrics(fields)
@@ -199,22 +199,22 @@ export const sandboxRoutes = (kit: Kit) => {
       : body
   }
 
-  const warningsFor = (row: SandboxRow) =>
+  const warningsFor = (row: MachineRow) =>
     row.status === 'running' || row.status === 'starting'
       ? [
           warning(
-            'SANDBOX_SNAPSHOT_CRASH_CONSISTENT',
+            'MACHINE_SNAPSHOT_CRASH_CONSISTENT',
             'The copy holds what reached the disk; data still in process buffers is not in it.',
           ),
         ]
       : []
 
-  const sourceStateOf = (row: SandboxRow) =>
+  const sourceStateOf = (row: MachineRow) =>
     row.desired_state === 'running' && row.status !== 'stopped' && row.status !== 'failed'
       ? ('running' as const)
       : ('stopped' as const)
 
-  const rowOf = (id: string) => db.select().from(sandbox).where(eq(sandbox.id, id)).get()!
+  const rowOf = (id: string) => db.select().from(machine).where(eq(machine.id, id)).get()!
 
   const pickStation = (ref: string | undefined) => {
     if (ref) {
@@ -223,8 +223,8 @@ export const sandboxRoutes = (kit: Kit) => {
 
     const capable = db
       .select()
-      .from(station)
-      .where(and(isNull(station.revoked_at), eq(station.status, 'online')))
+      .from(server)
+      .where(and(isNull(server.revoked_at), eq(server.status, 'online')))
       .all()
       .filter((s) => s.capabilities?.sandboxes && stations.isConnected(s.id))
 
@@ -234,24 +234,24 @@ export const sandboxRoutes = (kit: Kit) => {
 
     if (capable.length === 0) {
       fail(
-        'STATION_CAPABILITY_MISSING',
-        'No online station reports the sandbox capability.',
-        'Install sandbox support on a station (stationd install --sandbox-device or --sandbox-size) and wait for it to reconnect.',
+        'SERVER_CAPABILITY_MISSING',
+        'No online server reports the machine capability.',
+        'Install machine support on a server (stationd install --sandbox-device or --sandbox-size) and wait for it to reconnect.',
         {
-          missing: 'sandboxes',
+          missing: 'machines',
         },
       )
     }
 
     return invalid([
       {
-        path: '/station_id',
-        message: `${capable.length} stations report sandboxes; name one of ${capable.map((s) => s.name).join(', ')}`,
+        path: '/server_id',
+        message: `${capable.length} servers report machines; name one of ${capable.map((s) => s.name).join(', ')}`,
       },
     ])
   }
 
-  const imageFor = async (st: typeof station.$inferSelect, ref: string | undefined) => {
+  const imageFor = async (st: typeof server.$inferSelect, ref: string | undefined) => {
     if (ref) {
       const resolved = await resolveImage(ref, stationArch(db, st.id), '/image/ref')
 
@@ -265,8 +265,8 @@ export const sandboxRoutes = (kit: Kit) => {
 
     if (!pin?.digest) {
       fail(
-        'STATION_CAPABILITY_MISSING',
-        'The platform lockfile pins no sandbox_toolchain image, so there is no default sandbox image.',
+        'SERVER_CAPABILITY_MISSING',
+        'The platform lockfile pins no sandbox_toolchain image, so there is no default machine image.',
         'Upgrade to a release that pins sandbox_toolchain with sly platform upgrade, or name an image.',
         {
           missing: 'sandbox_toolchain',
@@ -283,8 +283,8 @@ export const sandboxRoutes = (kit: Kit) => {
 
   const sourceOf = (
     call: Call,
-    ctx: { project: { id: string }; environment: EnvironmentRow },
-    from: NonNullable<Static<typeof SandboxCreateBody>['from']>,
+    ctx: { project: { id: string }; target_row: TargetRow },
+    from: NonNullable<Static<typeof MachineCreateBody>['from']>,
   ) => {
     if ('snapshot' in from) {
       const snap = snapshotById(db, from.snapshot)
@@ -302,7 +302,7 @@ export const sandboxRoutes = (kit: Kit) => {
 
       if (snap.snapshot.status !== 'ready') {
         fail(
-          'SANDBOX_STATE_CONFLICT',
+          'MACHINE_STATE_CONFLICT',
           `Snapshot ${snap.snapshot.name ?? snap.snapshot.id} is ${snap.snapshot.status}, so it cannot be forked.`,
           'Wait until the snapshot is ready, then fork it.',
           {
@@ -313,7 +313,7 @@ export const sandboxRoutes = (kit: Kit) => {
       }
 
       return {
-        stationId: snap.snapshot.station_id,
+        stationId: snap.snapshot.server_id,
         image: snap.snapshot.image,
         size: snap.snapshot.size,
         runtime: snap.snapshot.runtime,
@@ -323,21 +323,21 @@ export const sandboxRoutes = (kit: Kit) => {
           snapshot_id: snap.snapshot.id,
         },
         forkedFrom: {
-          sandbox_id: null,
+          machine_id: null,
           snapshot_id: snap.snapshot.id,
         },
         warnings: [] as ReturnType<typeof warning>[],
       }
     }
 
-    const source = from.sandbox.startsWith('sbx_') ? sandboxById(db, from.sandbox) : null
-    const named = source ? null : sandboxInEnvironment(db, ctx.environment.id, from.sandbox)
-    const found = source ?? (named ? sandboxById(db, named.id) : null)
+    const source = from.machine.startsWith('sbx_') ? machineById(db, from.machine) : null
+    const named = source ? null : machineInTarget(db, ctx.target_row.id, from.machine)
+    const found = source ?? (named ? machineById(db, named.id) : null)
 
     if (!found) {
       return fail(
         'NOT_FOUND',
-        `sandbox ${from.sandbox} does not exist or is not visible to this credential.`,
+        `machine ${from.machine} does not exist or is not visible to this credential.`,
       )
     }
 
@@ -346,47 +346,47 @@ export const sandboxRoutes = (kit: Kit) => {
     if (found.project.id !== ctx.project.id) {
       invalid([
         {
-          path: '/from/sandbox',
+          path: '/from/machine',
           message: 'a fork stays inside its project',
         },
       ])
     }
 
-    if (found.sandbox.status === 'creating' || found.sandbox.status === 'deleting') {
-      conflict(found.sandbox, ['starting', 'running', 'stopping', 'stopped', 'failed'])
+    if (found.machine.status === 'creating' || found.machine.status === 'deleting') {
+      conflict(found.machine, ['starting', 'running', 'stopping', 'stopped', 'failed'])
     }
 
     return {
-      stationId: found.sandbox.station_id,
-      image: found.sandbox.image,
-      size: found.sandbox.size,
-      runtime: found.sandbox.runtime,
+      stationId: found.machine.server_id,
+      image: found.machine.image,
+      size: found.machine.size,
+      runtime: found.machine.runtime,
       settings: {
-        network: found.sandbox.network,
-        docker: found.sandbox.docker,
-        egress: found.sandbox.egress,
-        command: found.sandbox.command,
-        ttl_s: found.sandbox.ttl_s,
+        network: found.machine.network,
+        docker: found.machine.docker,
+        egress: found.machine.egress,
+        command: found.machine.command,
+        ttl_s: found.machine.ttl_s,
       },
-      usedBytes: found.sandbox.disk_used_bytes,
+      usedBytes: found.machine.disk_used_bytes,
       diskFrom: {
-        sandbox_id: found.sandbox.id,
+        sandbox_id: found.machine.id,
       },
       forkedFrom: {
-        sandbox_id: found.sandbox.id,
+        machine_id: found.machine.id,
         snapshot_id: null,
       },
-      warnings: warningsFor(found.sandbox),
+      warnings: warningsFor(found.machine),
     }
   }
 
-  const activeRuns = (sandboxId: string) =>
+  const activeRuns = (machineId: string) =>
     db
       .select({
         id: run.id,
       })
       .from(run)
-      .where(and(eq(run.sandbox_id, sandboxId), inArray(run.status, [...runActiveStatuses])))
+      .where(and(eq(run.machine_id, machineId), inArray(run.status, [...runActiveStatuses])))
       .all().length
 
   const envBytes = (env: Record<string, string>) =>
@@ -406,9 +406,9 @@ export const sandboxRoutes = (kit: Kit) => {
     }
   }
 
-  const workspaceDefault = (row: SandboxRow, value: string) => (row.workspace ? value : null)
+  const workspaceDefault = (row: MachineRow, value: string) => (row.workspace ? value : null)
 
-  const defaultShell = (row: SandboxRow) =>
+  const defaultShell = (row: MachineRow) =>
     row.image.ref === null ? ['/bin/bash', '-l'] : ['/bin/sh']
 
   type WorkspaceOptions = {
@@ -418,24 +418,24 @@ export const sandboxRoutes = (kit: Kit) => {
     repositoryReadable?: boolean
   }
 
-  const createSandbox = async (
+  const createMachine = async (
     call: Call,
-    ctx: { project: ProjectRow; environment: EnvironmentRow; target: SandboxContext['target'] },
-    body: Static<typeof SandboxCreateBody>,
+    ctx: { project: ProjectRow; target_row: TargetRow; target: MachineContext['target'] },
+    body: Static<typeof MachineCreateBody>,
     options: WorkspaceOptions = {},
   ) => {
     const taskBranch = options.taskBranch ?? null
     const kind = options.kind ?? 'own'
 
-    requireHumanIn(call, ctx.environment)
+    requireHumanIn(call, ctx.target_row)
     const source = body.from ? sourceOf(call, ctx, body.from) : null
-    const st = body.from ? stationRow(source!.stationId) : pickStation(body.station_id)
+    const st = body.from ? stationRow(source!.stationId) : pickStation(body.server_id)
 
-    if (source && body.station_id !== undefined && stationByRef(db, body.station_id).id !== st.id) {
+    if (source && body.server_id !== undefined && stationByRef(db, body.server_id).id !== st.id) {
       invalid([
         {
-          path: '/station_id',
-          message: `a fork runs on its source's station ${st.name}`,
+          path: '/server_id',
+          message: `a fork runs on its source's server ${st.name}`,
         },
       ])
     }
@@ -444,12 +444,12 @@ export const sandboxRoutes = (kit: Kit) => {
 
     if (!st.capabilities?.sandboxes) {
       fail(
-        'STATION_CAPABILITY_MISSING',
-        `Station ${st.name} reports no sandbox capability.`,
-        'Install sandbox support on the station, then retry.',
+        'SERVER_CAPABILITY_MISSING',
+        `Server ${st.name} reports no machine capability.`,
+        'Install machine support on the server, then retry.',
         {
-          missing: 'sandboxes',
-          station_id: st.id,
+          missing: 'machines',
+          server_id: st.id,
         },
       )
     }
@@ -457,7 +457,7 @@ export const sandboxRoutes = (kit: Kit) => {
     const runtime = requireRuntime(st, body.runtime ?? source?.runtime)
     const inherited = source?.settings
     const size = {
-      ...sandboxSizeDefaults,
+      ...machineSizeDefaults,
       memory_bytes: fittingMemory(
         db,
         st,
@@ -492,17 +492,16 @@ export const sandboxRoutes = (kit: Kit) => {
     if (wanted && !options.repositoryReadable) {
       await requireRepositoryAccess(kit.deps, {
         project: ctx.project,
-        environment: ctx.environment.id,
+        target: ctx.target_row.id,
         repository: wanted.repository,
-        variables: body.variables,
+        keys: body.keys,
       })
     }
 
     const scopes = wanted
       ? [
           {
-            project_id: ctx.project.id,
-            environment_id: ctx.environment.id,
+            ...scopeOf(ctx.target_row),
             level: wanted.level ?? ('deploy' as const),
           },
         ]
@@ -522,15 +521,15 @@ export const sandboxRoutes = (kit: Kit) => {
       call.principal,
       caller,
       caller && !egressWithin(egress, caller.egress)
-        ? 'cannot create a sandbox with wider egress than its own'
+        ? 'cannot create a machine with wider egress than its own'
         : network === 'environment'
-          ? 'cannot create a sandbox on the environment network'
+          ? 'cannot create a machine on its production or preview network'
           : docker
-            ? 'cannot create a sandbox with docker'
+            ? 'cannot create a machine with docker'
             : null,
     )
     const command = body.command !== undefined ? body.command : (inherited?.command ?? null)
-    const ttl_s = wanted ? null : (body.ttl_s ?? inherited?.ttl_s ?? sandboxTtl.default)
+    const ttl_s = wanted ? null : (body.ttl_s ?? inherited?.ttl_s ?? machineTtl.default)
     const start = body.start ?? true
     const image = body.image
       ? await imageFor(st, body.image.ref)
@@ -540,21 +539,21 @@ export const sandboxRoutes = (kit: Kit) => {
       db,
       st,
       {
-        sandboxId: null,
-        newSandbox: true,
+        machineId: null,
+        newMachine: true,
         running: start,
         memoryBytes: size.memory_bytes,
       },
       call.principal,
     )
     requireDiskRoom(st)
-    const id = newId('sandbox')
-    const name = body.name ?? `sandbox-${id.slice(-6).toLowerCase()}`
+    const id = newId('machine')
+    const name = body.name ?? `machine-${id.slice(-6).toLowerCase()}`
 
-    if (sandboxInEnvironment(db, ctx.environment.id, name)) {
+    if (machineInTarget(db, ctx.target_row.id, name)) {
       fail(
         'NAME_TAKEN',
-        `Environment ${ctx.environment.name} already has a sandbox named ${name}.`,
+        `${placeName(ctx.target_row)} already has a machine named ${name}.`,
         undefined,
         {
           name,
@@ -563,9 +562,9 @@ export const sandboxRoutes = (kit: Kit) => {
     }
 
     if (network === 'environment') {
-      ensureNetwork(db, ctx.environment.id, st.id)
+      ensureNetwork(db, ctx.target_row.id, st.id)
     } else {
-      ensureSandboxNetwork(db, st.id)
+      ensureMachineNetwork(db, st.id)
     }
 
     const now = new Date()
@@ -592,18 +591,18 @@ export const sandboxRoutes = (kit: Kit) => {
             task_branch: taskBranch,
           }
         : null
-    const variables = [
-      ...(body.variables ?? []),
+    const keys = [
+      ...(body.keys ?? []),
       ...(wanted && minted
-        ? workspaceVariableSets(
+        ? workspaceKeySets(
             db,
             {
               project: ctx.project.id,
-              environment: ctx.environment.id,
+              preview: previewIdOf(ctx.target_row),
             },
             wanted.agent,
             minted.key,
-            (body.variables ?? []).map((v) => v.key),
+            (body.keys ?? []).map((v) => v.name),
             kind,
           )
         : []),
@@ -614,12 +613,12 @@ export const sandboxRoutes = (kit: Kit) => {
         const tdb = tx as unknown as Db
 
         tdb
-          .insert(sandbox)
+          .insert(machine)
           .values({
             id,
-            environment_id: ctx.environment.id,
+            target_id: ctx.target_row.id,
             project_id: ctx.project.id,
-            station_id: st.id,
+            server_id: st.id,
             name,
             image,
             command,
@@ -641,22 +640,22 @@ export const sandboxRoutes = (kit: Kit) => {
           })
           .run()
 
-        if (variables.length) {
+        if (keys.length) {
           const changes = new ChangeSet()
 
-          planVariables(
+          planKeys(
             tdb,
             keyring,
             call.principal,
             changes,
             {
-              scope: 'sandbox',
+              scope: 'machine',
               parent: id,
-              sandboxId: id,
+              machineId: id,
               target: ctx.target,
             },
             {
-              set: variables,
+              set: keys,
             },
           )
           commit(
@@ -666,7 +665,7 @@ export const sandboxRoutes = (kit: Kit) => {
             },
             call,
             {
-              environment: ctx.environment,
+              target: ctx.target_row,
               protect: false,
             },
             changes,
@@ -695,8 +694,8 @@ export const sandboxRoutes = (kit: Kit) => {
             .insert(run)
             .values({
               id: workspace.setup_run_id,
-              service_id: null,
-              sandbox_id: id,
+              app_id: null,
+              machine_id: id,
               deployment_id: null,
               kind: 'exec',
               command: setupCommand(
@@ -710,7 +709,7 @@ export const sandboxRoutes = (kit: Kit) => {
               exec: {
                 cwd: machineSetupAs(workspace).home,
                 user: machineSetupAs(workspace).user,
-                timeout_s: sandboxExecLimits.timeoutS.default,
+                timeout_s: machineExecLimits.timeoutS.default,
                 stdin: null,
                 env_keys: [],
                 attach: false,
@@ -722,16 +721,16 @@ export const sandboxRoutes = (kit: Kit) => {
         audit(
           tdb,
           call,
-          'sandbox.create',
+          'machine.create',
           {
-            entity: 'sandbox',
+            entity: 'machine',
             id,
           },
           {
             after: {
               name,
-              environment_id: ctx.environment.id,
-              station_id: st.id,
+              target_id: ctx.target_row.id,
+              server_id: st.id,
               image,
               size,
               network,
@@ -740,7 +739,7 @@ export const sandboxRoutes = (kit: Kit) => {
               start,
               forked_from: source?.forkedFrom ?? null,
               workspace,
-              variables: variables.map((v) => v.key),
+              keys: keys.map((v) => v.name),
             },
           },
         )
@@ -762,29 +761,29 @@ export const sandboxRoutes = (kit: Kit) => {
   }
 
   const routes = kit
-    .router('sandboxes', '/v1')
+    .router('machines', '/v1')
     .get(
-      '/environments/:environment/sandboxes',
+      '/projects/:project/machines',
       async ({ ctx, query }) => {
         const statuses = csv(query.status)
-        const stationId = query.station ? stationByRef(db, query.station).id : undefined
+        const stationId = query.server ? stationByRef(db, query.server).id : undefined
         const page = collect(
           (cursor, size) =>
             db
               .select()
-              .from(sandbox)
+              .from(machine)
               .where(
                 and(
-                  eq(sandbox.environment_id, ctx.environment.id),
+                  eq(machine.target_id, ctx.target_row.id),
                   statuses
-                    ? inArray(sandbox.status, statuses as SandboxRow['status'][])
+                    ? inArray(machine.status, statuses as MachineRow['status'][])
                     : undefined,
-                  stationId ? eq(sandbox.station_id, stationId) : undefined,
-                  query.network ? eq(sandbox.network, query.network) : undefined,
-                  before(sandbox.id, cursor),
+                  stationId ? eq(machine.server_id, stationId) : undefined,
+                  query.network ? eq(machine.network, query.network) : undefined,
+                  before(machine.id, cursor),
                 ),
               )
-              .orderBy(desc(sandbox.id))
+              .orderBy(desc(machine.id))
               .limit(size)
               .all(),
           query,
@@ -796,49 +795,50 @@ export const sandboxRoutes = (kit: Kit) => {
         }
       },
       {
-        environment: {
-          id: 'list_sandboxes',
-          summary: 'List the sandboxes of an environment',
+        place: {
+          id: 'list_machines',
+          summary: 'List the machines of production or a preview',
           level: 'read',
         },
         query: t.Object({
           ...listQuery,
-          status: filterMany(sandboxStatusValues),
-          station: t.Optional(
+          ...previewQuery,
+          status: filterMany(machineStatusValues),
+          server: t.Optional(
             t.String({
-              description: 'Only sandboxes on this station, by id or name',
+              description: 'Only machines on this server, by id or name',
             }),
           ),
-          network: t.Optional(input(StringEnum(sandboxNetworkValues))),
+          network: t.Optional(input(StringEnum(machineNetworkValues))),
         }),
         response: replies({
-          200: Page(Sandbox),
+          200: Page(Machine),
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox',
+      '/machines/:machine',
       async ({ ctx, query }) => {
-        return present(ctx.sandbox, query.fields)
+        return present(ctx.machine, query.fields)
       },
       {
-        sandbox: {
-          id: 'get_sandbox',
-          summary: 'Get a sandbox',
+        machine: {
+          id: 'get_machine',
+          summary: 'Get a machine',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Sandbox,
+          200: Machine,
         }),
       },
     )
     .post(
-      '/environments/:environment/sandboxes',
+      '/projects/:project/machines',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        const created = await createSandbox(call, ctx, body)
+        const created = await createMachine(call, ctx, body)
 
         set.status = 201
 
@@ -848,29 +848,30 @@ export const sandboxRoutes = (kit: Kit) => {
         }
       },
       {
-        environment: {
-          id: 'create_sandbox',
-          summary: 'Create a sandbox, or fork one from a snapshot or a live sandbox disk with from',
+        place: {
+          id: 'create_machine',
+          summary: 'Create a machine, or fork one from a snapshot or a live machine disk with from',
           level: 'deploy',
           humanForWorkspaceToken:
-            'create a sandbox with wider egress than its own workspace, on the environment network, or with docker',
+            'create a machine with wider egress than its own workspace, on its production or preview network, or with docker',
           cli: {
             args: ['name'],
           },
         },
-        body: input(SandboxCreateBody),
+        query: t.Object(previewQuery),
+        body: input(MachineCreateBody),
         response: replies({
-          201: SandboxCreated,
+          201: MachineCreated,
         }),
       },
     )
     .patch(
-      '/sandboxes/:sandbox',
+      '/machines/:machine',
       async ({ ctx, request, body }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const row = ctx.sandbox
+        requireHumanIn(call, ctx.target_row)
+        const row = ctx.machine
 
         if (!Object.keys(body).length) {
           invalid([
@@ -889,19 +890,19 @@ export const sandboxRoutes = (kit: Kit) => {
           call.principal,
           workspaceHeldBy(db, call.principal),
           body.egress && !egressWithin(normalizeEgress(body.egress), row.egress)
-            ? 'cannot widen the egress of a sandbox'
+            ? 'cannot widen the egress of a machine'
             : body.network === 'environment' && row.network !== 'environment'
-              ? 'cannot put a sandbox on the environment network'
+              ? 'cannot put a machine on its production or preview network'
               : body.docker && !row.docker
-                ? 'cannot turn on docker for a sandbox'
+                ? 'cannot turn on docker for a machine'
                 : null,
         )
         noTtl(row.workspace, body.ttl_s)
         const live = row.desired_state === 'running'
-        const idle = (sandboxIdleStatuses as readonly string[]).includes(row.status)
+        const idle = (machineIdleStatuses as readonly string[]).includes(row.status)
 
         if (body.network !== undefined && body.network !== row.network && !idle) {
-          conflict(row, [...sandboxIdleStatuses])
+          conflict(row, [...machineIdleStatuses])
         }
 
         const size = {
@@ -918,15 +919,15 @@ export const sandboxRoutes = (kit: Kit) => {
           ])
         }
 
-        const st = stationRow(row.station_id)
+        const st = stationRow(row.server_id)
 
         if (live && size.memory_bytes > row.size.memory_bytes) {
           requireQuota(
             db,
             st,
             {
-              sandboxId: row.id,
-              newSandbox: false,
+              machineId: row.id,
+              newMachine: false,
               running: true,
               memoryBytes: size.memory_bytes,
             },
@@ -971,20 +972,20 @@ export const sandboxRoutes = (kit: Kit) => {
         }
 
         if (update.network === 'environment' && row.network !== 'environment') {
-          ensureNetwork(db, row.environment_id, row.station_id)
+          ensureNetwork(db, row.target_id, row.server_id)
         }
 
         if (update.network === 'isolated' && row.network !== 'isolated') {
-          ensureSandboxNetwork(db, row.station_id)
+          ensureMachineNetwork(db, row.server_id)
         }
 
-        db.update(sandbox).set(update).where(eq(sandbox.id, row.id)).run()
+        db.update(machine).set(update).where(eq(machine.id, row.id)).run()
         audit(
           db,
           call,
-          'sandbox.update',
+          'machine.update',
           {
-            entity: 'sandbox',
+            entity: 'machine',
             id: row.id,
           },
           {
@@ -1006,7 +1007,7 @@ export const sandboxRoutes = (kit: Kit) => {
             },
           },
         )
-        stations.reconcile(row.station_id)
+        stations.reconcile(row.server_id)
         const restart = live && changed.length > 0
 
         return {
@@ -1014,7 +1015,7 @@ export const sandboxRoutes = (kit: Kit) => {
           warnings: restart
             ? [
                 warning(
-                  'SANDBOX_RESTART_REQUIRED',
+                  'MACHINE_RESTART_REQUIRED',
                   `${changed.join(', ')} ${changed.length === 1 ? 'is' : 'are'} stored and apply at the next start.`,
                 ),
               ]
@@ -1022,34 +1023,34 @@ export const sandboxRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
-          id: 'update_sandbox',
+        machine: {
+          id: 'update_machine',
           summary:
-            'Change a sandbox: ttl_s extends from now, egress and disk size apply at once, the rest at the next start',
+            'Change a machine: ttl_s extends from now, egress and disk size apply at once, the rest at the next start',
           level: 'deploy',
           humanForWorkspaceToken:
-            'widen egress, move a sandbox to the environment network or turn docker on',
+            'widen egress, move a machine to its production or preview network or turn docker on',
         },
-        body: input(SandboxPatchBody),
+        body: input(MachinePatchBody),
         response: replies({
-          200: SandboxCreated,
+          200: MachineCreated,
         }),
       },
     )
     .post(
-      '/sandboxes/:sandbox/start',
+      '/machines/:machine/start',
       async ({ ctx, request, body }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const row = ctx.sandbox
+        requireHumanIn(call, ctx.target_row)
+        const row = ctx.machine
 
         if (row.status === 'deleting') {
           conflict(row, ['stopping', 'stopped', 'failed'])
         }
 
         noTtl(row.workspace, body?.ttl_s)
-        requireConnected(kit.deps, row.station_id)
+        requireConnected(kit.deps, row.server_id)
         const ttl_s = body?.ttl_s ?? row.ttl_s
         const starting =
           row.desired_state === 'running' &&
@@ -1057,24 +1058,24 @@ export const sandboxRoutes = (kit: Kit) => {
 
         if (starting) {
           if (body?.ttl_s !== undefined) {
-            db.update(sandbox)
+            db.update(machine)
               .set({
                 ttl_s,
                 stop_at: stopAtFrom(ttl_s),
               })
-              .where(eq(sandbox.id, row.id))
+              .where(eq(machine.id, row.id))
               .run()
           }
         } else {
-          startSandbox(db, stationRow(row.station_id), call.principal, row, ttl_s)
+          startMachine(db, stationRow(row.server_id), call.principal, row, ttl_s)
         }
 
         audit(
           db,
           call,
-          'sandbox.start',
+          'machine.start',
           {
-            entity: 'sandbox',
+            entity: 'machine',
             id: row.id,
           },
           {
@@ -1086,44 +1087,44 @@ export const sandboxRoutes = (kit: Kit) => {
             },
           },
         )
-        stations.reconcile(row.station_id)
+        stations.reconcile(row.server_id)
 
         return shown(rowOf(row.id), undefined)
       },
       {
-        sandbox: {
-          id: 'start_sandbox',
-          summary: 'Start a stopped sandbox; ttl_s replaces the stored one',
+        machine: {
+          id: 'start_machine',
+          summary: 'Start a stopped machine; ttl_s replaces the stored one',
           level: 'deploy',
         },
-        body: t.Optional(input(SandboxStartBody)),
+        body: t.Optional(input(MachineStartBody)),
         response: replies({
-          200: Sandbox,
+          200: Machine,
         }),
       },
     )
     .post(
-      '/sandboxes/:sandbox/stop',
+      '/machines/:machine/stop',
       async ({ ctx, request }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const row = ctx.sandbox
+        requireHumanIn(call, ctx.target_row)
+        const row = ctx.machine
 
         if (row.status === 'deleting') {
           conflict(row, ['creating', 'starting', 'running', 'stopping', 'stopped', 'failed'])
         }
 
-        requireConnected(kit.deps, row.station_id)
+        requireConnected(kit.deps, row.server_id)
 
-        stopSandbox(db, row)
+        stopMachine(db, row)
 
         audit(
           db,
           call,
-          'sandbox.stop',
+          'machine.stop',
           {
-            entity: 'sandbox',
+            entity: 'machine',
             id: row.id,
           },
           {
@@ -1132,29 +1133,29 @@ export const sandboxRoutes = (kit: Kit) => {
             },
           },
         )
-        stations.reconcile(row.station_id)
+        stations.reconcile(row.server_id)
 
         return shown(rowOf(row.id), undefined)
       },
       {
-        sandbox: {
-          id: 'stop_sandbox',
-          summary: 'Stop a sandbox and keep its disk',
+        machine: {
+          id: 'stop_machine',
+          summary: 'Stop a machine and keep its disk',
           level: 'deploy',
         },
         response: replies({
-          200: Sandbox,
+          200: Machine,
         }),
       },
     )
     .delete(
-      '/sandboxes/:sandbox',
+      '/machines/:machine',
       async ({ ctx, request }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        requireConnected(kit.deps, ctx.sandbox.station_id)
-        const kept = requestDeletion(db, ctx.sandbox, {
+        requireHumanIn(call, ctx.target_row)
+        requireConnected(kit.deps, ctx.machine.server_id)
+        const kept = requestDeletion(db, ctx.machine, {
           actor: call.principal.actor,
           reason: 'user',
         })
@@ -1162,22 +1163,22 @@ export const sandboxRoutes = (kit: Kit) => {
         audit(
           db,
           call,
-          'sandbox.delete',
+          'machine.delete',
           {
-            entity: 'sandbox',
-            id: ctx.sandbox.id,
+            entity: 'machine',
+            id: ctx.machine.id,
           },
           {
             before: {
-              name: ctx.sandbox.name,
-              status: ctx.sandbox.status,
+              name: ctx.machine.name,
+              status: ctx.machine.status,
             },
             after: {
               snapshots_kept: kept,
             },
           },
         )
-        stations.reconcile(ctx.sandbox.station_id)
+        stations.reconcile(ctx.machine.server_id)
 
         return {
           deleted: true as const,
@@ -1185,46 +1186,46 @@ export const sandboxRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
-          id: 'delete_sandbox',
-          summary: 'Delete a sandbox and its disk; its snapshots stay',
+        machine: {
+          id: 'delete_machine',
+          summary: 'Delete a machine and its disk; its snapshots stay',
           level: 'deploy',
         },
         response: replies({
-          200: SandboxDeleted,
+          200: MachineDeleted,
         }),
       },
     )
     .post(
-      '/sandboxes/:sandbox/exec',
+      '/machines/:machine/exec',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const row = ctx.sandbox
+        requireHumanIn(call, ctx.target_row)
+        const row = ctx.machine
 
         requireHumanToEnter(db, call.principal, row)
 
         if (row.status !== 'running') {
           fail(
-            'SANDBOX_NOT_RUNNING',
-            `Sandbox ${row.name} is ${row.status}, so nothing can run in it.`,
-            'Start the sandbox with start_sandbox, then run the command again.',
+            'MACHINE_NOT_RUNNING',
+            `Machine ${row.name} is ${row.status}, so nothing can run in it.`,
+            'Start the machine with start_machine, then run the command again.',
             {
               status: row.status,
             },
           )
         }
 
-        requireConnected(kit.deps, row.station_id)
+        requireConnected(kit.deps, row.server_id)
 
-        if (activeRuns(row.id) >= sandboxExecLimits.activeRuns) {
+        if (activeRuns(row.id) >= machineExecLimits.activeRuns) {
           fail(
             'RATE_LIMITED',
-            `Sandbox ${row.name} already has ${sandboxExecLimits.activeRuns} active runs.`,
+            `Machine ${row.name} already has ${machineExecLimits.activeRuns} active runs.`,
             'Wait for a run to finish, then run again.',
             {
-              limit: sandboxExecLimits.activeRuns,
+              limit: machineExecLimits.activeRuns,
             },
           )
         }
@@ -1232,20 +1233,20 @@ export const sandboxRoutes = (kit: Kit) => {
         const env = body.env ?? {}
         const issues: { path: string; message: string }[] = []
 
-        if (envBytes(env) > sandboxExecLimits.envBytes) {
+        if (envBytes(env) > machineExecLimits.envBytes) {
           issues.push({
             path: '/env',
-            message: `env holds more than ${sandboxExecLimits.envBytes} bytes`,
+            message: `env holds more than ${machineExecLimits.envBytes} bytes`,
           })
         }
 
         if (
           body.stdin !== undefined &&
-          Buffer.from(body.stdin, 'base64url').length > sandboxExecLimits.stdinBytes
+          Buffer.from(body.stdin, 'base64url').length > machineExecLimits.stdinBytes
         ) {
           issues.push({
             path: '/stdin',
-            message: `stdin holds more than ${sandboxExecLimits.stdinBytes} bytes`,
+            message: `stdin holds more than ${machineExecLimits.stdinBytes} bytes`,
           })
         }
 
@@ -1265,7 +1266,7 @@ export const sandboxRoutes = (kit: Kit) => {
             keys.map((key) => [key, env[key]!]),
           )
 
-          await stations.ask(row.station_id, 'secrets.deliver', delivery).catch(stationError)
+          await stations.ask(row.server_id, 'secrets.deliver', delivery).catch(stationError)
         }
 
         const attach = body.attach ?? false
@@ -1273,8 +1274,8 @@ export const sandboxRoutes = (kit: Kit) => {
         db.insert(run)
           .values({
             id,
-            service_id: null,
-            sandbox_id: row.id,
+            app_id: null,
+            machine_id: row.id,
             deployment_id: null,
             kind: 'exec',
             command: body.command,
@@ -1285,7 +1286,7 @@ export const sandboxRoutes = (kit: Kit) => {
             exec: {
               cwd: body.cwd ?? workspaceDefault(row, workspaceUser.home),
               user: body.user ?? workspaceDefault(row, workspaceUser.name),
-              timeout_s: body.timeout_s ?? sandboxExecLimits.timeoutS.default,
+              timeout_s: body.timeout_s ?? machineExecLimits.timeoutS.default,
               stdin: body.stdin ?? null,
               env_keys: keys,
               attach,
@@ -1295,21 +1296,21 @@ export const sandboxRoutes = (kit: Kit) => {
         audit(
           db,
           call,
-          'sandbox.exec',
+          'machine.exec',
           {
             entity: 'run',
             id,
           },
           {
             after: {
-              sandbox_id: row.id,
+              machine_id: row.id,
               command: body.command,
               env_keys: keys,
               attach,
             },
           },
         )
-        stations.reconcile(row.station_id)
+        stations.reconcile(row.server_id)
         set.status = 201
 
         if (attach) {
@@ -1326,7 +1327,7 @@ export const sandboxRoutes = (kit: Kit) => {
           return shownRun
         }
 
-        const output = await sandboxRunOutput(kit, finished, call)
+        const output = await machineRunOutput(kit, finished, call)
 
         return output
           ? {
@@ -1336,51 +1337,51 @@ export const sandboxRoutes = (kit: Kit) => {
           : shownRun
       },
       {
-        sandbox: {
-          id: 'sandbox_exec',
+        machine: {
+          id: 'machine_exec',
           summary:
-            'Run a command in a running sandbox and wait up to wait_s for it; env values are never stored',
+            'Run a command in a running machine and wait up to wait_s for it; env values are never stored',
           level: 'deploy',
           humanForWorkspaceToken:
-            'run a command in another sandbox with wider egress than its own workspace, on the environment network or with docker',
+            'run a command in another machine with wider egress than its own workspace, on its production or preview network or with docker',
           cli: false,
         },
-        body: input(SandboxExecBody),
+        body: input(MachineExecBody),
         response: replies({
-          201: SandboxExec,
+          201: MachineExec,
         }),
       },
     )
     .post(
-      '/sandboxes/:sandbox/shells',
+      '/machines/:machine/shells',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const row = ctx.sandbox
+        requireHumanIn(call, ctx.target_row)
+        const row = ctx.machine
 
         requireHumanToEnter(db, call.principal, row)
 
         if (row.status !== 'running') {
           fail(
-            'SANDBOX_NOT_RUNNING',
-            `Sandbox ${row.name} is ${row.status}, so no shell can open in it.`,
-            'Start the sandbox with start_sandbox, then open the shell.',
+            'MACHINE_NOT_RUNNING',
+            `Machine ${row.name} is ${row.status}, so no shell can open in it.`,
+            'Start the machine with start_machine, then open the shell.',
             {
               status: row.status,
             },
           )
         }
 
-        requireConnected(kit.deps, row.station_id)
+        requireConnected(kit.deps, row.server_id)
         const command = body.command ?? defaultShell(row)
         const id = newId('run')
 
         db.insert(run)
           .values({
             id,
-            service_id: null,
-            sandbox_id: row.id,
+            app_id: null,
+            machine_id: row.id,
             deployment_id: null,
             kind: 'shell',
             command,
@@ -1401,14 +1402,14 @@ export const sandboxRoutes = (kit: Kit) => {
         audit(
           db,
           call,
-          'sandbox.shell',
+          'machine.shell',
           {
             entity: 'run',
             id,
           },
           {
             after: {
-              sandbox_id: row.id,
+              machine_id: row.id,
               command,
             },
           },
@@ -1422,28 +1423,28 @@ export const sandboxRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
-          id: 'open_sandbox_shell',
-          summary: 'Create a shell run in a sandbox; attach to it over the WebSocket at attach_url',
+        machine: {
+          id: 'open_machine_shell',
+          summary: 'Create a shell run in a machine; attach to it over the WebSocket at attach_url',
           level: 'deploy',
           humanForWorkspaceToken:
-            'open a shell in another sandbox with wider egress than its own workspace, on the environment network or with docker',
+            'open a shell in another machine with wider egress than its own workspace, on its production or preview network or with docker',
           mcp: false,
           cli: false,
         },
-        body: input(SandboxShellBody),
+        body: input(MachineShellBody),
         response: replies({
-          201: SandboxShell,
+          201: MachineShell,
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox/runs',
-      ({ ctx, query }) => listRuns(kit, eq(run.sandbox_id, ctx.sandbox.id), query),
+      '/machines/:machine/runs',
+      ({ ctx, query }) => listRuns(kit, eq(run.machine_id, ctx.machine.id), query),
       {
-        sandbox: {
-          id: 'list_sandbox_runs',
-          summary: 'List the runs of a sandbox',
+        machine: {
+          id: 'list_machine_runs',
+          summary: 'List the runs of a machine',
           level: 'read',
           mcp: false,
         },
@@ -1454,23 +1455,23 @@ export const sandboxRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/sandboxes/:sandbox/metrics',
+      '/machines/:machine/metrics',
       async ({ ctx }) => {
         const reply = await stations
-          .ask(ctx.sandbox.station_id, 'metrics.sample', {
-            sandbox_ids: [ctx.sandbox.id],
+          .ask(ctx.machine.server_id, 'metrics.sample', {
+            sandbox_ids: [ctx.machine.id],
           })
           .catch(stationError)
-        const sample = reply.body.samples.find((s) => s.sandbox_id === ctx.sandbox.id)
+        const sample = reply.body.samples.find((s) => s.sandbox_id === ctx.machine.id)
 
         if (!sample) {
           fail(
             'NOT_FOUND',
-            `${ctx.sandbox.name} reports no metrics.`,
-            'Start the sandbox, then read metrics again.',
+            `${ctx.machine.name} reports no metrics.`,
+            'Start the machine, then read metrics again.',
             {
-              sandbox_id: ctx.sandbox.id,
-              status: ctx.sandbox.status,
+              machine_id: ctx.machine.id,
+              status: ctx.machine.status,
             },
           )
         }
@@ -1478,83 +1479,83 @@ export const sandboxRoutes = (kit: Kit) => {
         const { service_id: _s, deployment_id: _d, restarts: _r, sandbox_id: _b, ...rest } = sample!
 
         return {
-          sandbox_id: ctx.sandbox.id,
+          machine_id: ctx.machine.id,
           ...rest,
         }
       },
       {
-        sandbox: {
-          id: 'get_sandbox_metrics',
-          summary: 'Latest live metrics sample of a sandbox',
+        machine: {
+          id: 'get_machine_metrics',
+          summary: 'Latest live metrics sample of a machine',
           level: 'read',
           mcp: false,
         },
         response: replies({
-          200: SandboxMetricSample,
+          200: MachineMetricSample,
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox/variables',
+      '/machines/:machine/keys',
       ({ ctx, query }) => {
-        const rows = variablesOf(db, {
-          scope: 'sandbox',
-          id: ctx.sandbox.id,
+        const rows = keysOf(db, {
+          scope: 'machine',
+          id: ctx.machine.id,
         }).all()
 
         return {
           items: rows
-            .sort((a, b) => a.key.localeCompare(b.key))
-            .map((row) => select(kit.views.variable, row, kit.fields(query.fields))),
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((row) => select(kit.views.key, row, kit.fields(query.fields))),
           next_cursor: null,
         }
       },
       {
-        sandbox: {
-          id: 'list_sandbox_variables',
-          summary: 'List the variables of a sandbox; values are never listed',
+        machine: {
+          id: 'list_machine_keys',
+          summary: 'List the keys of a machine; values are never listed',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(Variable),
+          200: Page(Key),
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox/variables/resolved',
+      '/machines/:machine/keys/resolved',
       async ({ ctx, request }) => {
         const call = await kit.call(request)
 
-        return sandboxResolvedView(kit, call, ctx, {
+        return machineResolvedView(kit, call, ctx, {
           admin: can(call.principal, ctx.target, 'admin'),
-        }) as Static<typeof SandboxResolved>
+        }) as Static<typeof MachineResolved>
       },
       {
-        sandbox: {
-          id: 'get_sandbox_resolved_variables',
+        machine: {
+          id: 'get_machine_resolved_keys',
           summary:
-            'The resolved variables of a sandbox with their sources; a value only with admin and never a sealed one',
+            'The resolved keys of a machine with their sources; a value only with admin and never a sealed one',
           level: 'read',
         },
         response: replies({
-          200: SandboxResolved,
+          200: MachineResolved,
         }),
       },
     )
     .patch(
-      '/sandboxes/:sandbox/variables',
+      '/machines/:machine/keys',
       async ({ ctx, request, body }) => {
         const call = await kit.call(request)
 
-        if (ctx.environment.protected) {
-          requireHuman(call.principal, 'A sandbox variable change in a protected environment', {
-            environment_id: ctx.environment.id,
+        if (ctx.target_row.kind === 'production') {
+          requireHuman(call.principal, 'A machine key change in production', {
+            ...scopeOf(ctx.target_row),
           })
         }
 
-        if (ctx.sandbox.status === 'deleting') {
-          conflict(ctx.sandbox, [
+        if (ctx.machine.status === 'deleting') {
+          conflict(ctx.machine, [
             'creating',
             'starting',
             'running',
@@ -1566,15 +1567,15 @@ export const sandboxRoutes = (kit: Kit) => {
 
         const changes = new ChangeSet()
 
-        planVariables(
+        planKeys(
           db,
           keyring,
           call.principal,
           changes,
           {
-            scope: 'sandbox',
-            parent: ctx.sandbox.id,
-            sandboxId: ctx.sandbox.id,
+            scope: 'machine',
+            parent: ctx.machine.id,
+            machineId: ctx.machine.id,
             target: ctx.target,
           },
           body,
@@ -1582,7 +1583,7 @@ export const sandboxRoutes = (kit: Kit) => {
 
         if (changes.empty) {
           return {
-            variables: [],
+            keys: [],
           }
         }
 
@@ -1590,7 +1591,7 @@ export const sandboxRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
+            target: ctx.target_row,
             protect: false,
           },
           changes,
@@ -1599,7 +1600,7 @@ export const sandboxRoutes = (kit: Kit) => {
         if (!result.applied) {
           fail(
             'INTERNAL_ERROR',
-            'a sandbox variable change was staged, which sandbox operations never are',
+            'a machine key change waits for approval, which machine operations never do',
           )
         }
 
@@ -1607,112 +1608,112 @@ export const sandboxRoutes = (kit: Kit) => {
           ? [
               ...Object.values(result.refs),
               ...changes.changes.flatMap((c) => (c.op === 'update' ? [c.id] : [])),
-            ].filter((id) => id.startsWith('var_'))
+            ].filter((id) => id.startsWith('key_'))
           : []
 
         audit(
           db,
           call,
-          'sandbox.variables',
+          'machine.keys',
           {
-            entity: 'sandbox',
-            id: ctx.sandbox.id,
+            entity: 'machine',
+            id: ctx.machine.id,
           },
           {
             after: {
-              set: (body.set ?? []).map((v) => v.key),
+              set: (body.set ?? []).map((v) => v.name),
               unset: body.unset ?? [],
             },
           },
         )
-        stations.reconcile(ctx.sandbox.station_id)
+        stations.reconcile(ctx.machine.server_id)
         const rows = ids
-          .map((id) => db.select().from(variable).where(eq(variable.id, id)).get())
-          .filter((row): row is typeof variable.$inferSelect => row !== undefined)
+          .map((id) => db.select().from(key).where(eq(key.id, id)).get())
+          .filter((row): row is typeof key.$inferSelect => row !== undefined)
 
         return {
-          variables: rows.map((row) => select(kit.views.variable, row, undefined)),
+          keys: rows.map((row) => select(kit.views.key, row, undefined)),
         }
       },
       {
-        sandbox: {
-          id: 'set_sandbox_variables',
+        machine: {
+          id: 'set_machine_keys',
           summary:
-            "Set and unset a sandbox's variables; references to project and global variables keep values out of the agent's hands",
+            "Set and unset a machine's keys; references to project and global keys keep values out of the agent's hands",
           level: 'deploy',
         },
-        body: input(SandboxVariablesPatchBody),
+        body: input(MachineKeysPatchBody),
         response: replies({
-          200: SandboxVariablesOutcome,
+          200: MachineKeysOutcome,
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox/connections',
+      '/machines/:machine/connections',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
         const reply = await stations
           .ask(
-            ctx.sandbox.station_id,
+            ctx.machine.server_id,
             'network.sample',
             {
-              sandbox_ids: [ctx.sandbox.id],
+              sandbox_ids: [ctx.machine.id],
             },
             {
               timeoutMs: 10_000,
             },
           )
           .catch(stationError)
-        const sample = reply.body.samples.find((s) => s.sandbox_id === ctx.sandbox.id)
+        const sample = reply.body.samples.find((s) => s.sandbox_id === ctx.machine.id)
 
         if (!sample) {
           fail(
             'NOT_FOUND',
-            `The station returned no connection sample for ${ctx.sandbox.name}.`,
-            'Start the sandbox, then read the connections again.',
+            `The server returned no connection sample for ${ctx.machine.name}.`,
+            'Start the machine, then read the connections again.',
             {
-              sandbox_id: ctx.sandbox.id,
+              machine_id: ctx.machine.id,
             },
           )
         }
 
-        return shapeSandboxSample(
+        return shapeMachineSample(
           {
             db,
             redaction: kit.redaction,
-            sandboxRedaction: kit.sandboxRedaction,
+            machineRedaction: kit.machineRedaction,
             actor: call.principal.actor,
             requestId: call.request_id,
           },
           sample!,
-          ctx.sandbox,
+          ctx.machine,
           query.direction,
         )
       },
       {
-        sandbox: {
-          id: 'get_sandbox_connections',
-          summary: 'Live connections and refused attempts of a sandbox; one sample',
+        machine: {
+          id: 'get_machine_connections',
+          summary: 'Live connections and refused attempts of a machine; one sample',
           level: 'read',
         },
         query: t.Object({
           direction: t.Optional(input(StringEnum(networkDirectionValues))),
         }),
         response: replies({
-          200: SandboxConnections,
+          200: MachineConnections,
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox/dns-log',
+      '/machines/:machine/dns-log',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
         const reply = await stations
           .ask(
-            ctx.sandbox.station_id,
+            ctx.machine.server_id,
             'dns.log',
             {
-              sandbox_id: ctx.sandbox.id,
+              sandbox_id: ctx.machine.id,
               tail: query.tail ?? dnsLogTail.default,
               ...(query.name
                 ? {
@@ -1730,7 +1731,7 @@ export const sandboxRoutes = (kit: Kit) => {
             },
           )
           .catch(stationError)
-        const redact = kit.sandboxRedaction([ctx.sandbox.id], call.principal.actor, call.request_id)
+        const redact = kit.machineRedaction([ctx.machine.id], call.principal.actor, call.request_id)
         const entries = reply.body.entries.map((e) => ({
           ...e,
           deployment_id: e.deployment_id ?? null,
@@ -1745,10 +1746,10 @@ export const sandboxRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
-          id: 'get_sandbox_dns_log',
+        machine: {
+          id: 'get_machine_dns_log',
           summary:
-            "The sandbox's recent DNS queries from the resolver's ring, newest first, as untrusted data",
+            "The machine's recent DNS queries from the resolver's ring, newest first, as untrusted data",
           level: 'read',
           cli: {
             render: 'dns-log',
@@ -1761,21 +1762,21 @@ export const sandboxRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/sandboxes/:sandbox/network/probe',
+      '/machines/:machine/network/probe',
       async ({ ctx, request, body }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
+        requireHumanIn(call, ctx.target_row)
 
-        if (ctx.sandbox.status !== 'running') {
-          conflict(ctx.sandbox, ['running'])
+        if (ctx.machine.status !== 'running') {
+          conflict(ctx.machine, ['running'])
         }
 
-        kit.probeLimit(ctx.sandbox.id, ctx.environment.id)
+        kit.probeLimit(ctx.machine.id, ctx.target_row.id)
         const kind = body.kind ?? 'tcp'
-        const target = probeTarget(db, ctx.environment, body.to, body.port, kind)
+        const target = probeTarget(db, ctx.target_row, body.to, body.port, kind)
 
-        return sendSandboxProbe(kit.deps, call, ctx.sandbox, {
+        return sendMachineProbe(kit.deps, call, ctx.machine, {
           kind,
           to: target.to,
           port: target.port,
@@ -1783,10 +1784,10 @@ export const sandboxRoutes = (kit: Kit) => {
         })
       },
       {
-        sandbox: {
-          id: 'probe_sandbox_network',
+        machine: {
+          id: 'probe_machine_network',
           summary:
-            "Ask the sandbox's resolver as the sandbox, or judge one TCP handshake with the sandbox ruleset and send it from the station when the ruleset accepts the destination",
+            "Ask the machine's resolver as the machine, or judge one TCP handshake with the machine ruleset and send it from the server when the ruleset accepts the destination",
           level: 'deploy',
           cli: {
             render: 'probe',
@@ -1794,44 +1795,41 @@ export const sandboxRoutes = (kit: Kit) => {
         },
         body: ProbeBody,
         response: replies({
-          200: SandboxNetworkProbe,
+          200: MachineNetworkProbe,
         }),
       },
     )
     .post(
-      '/sandboxes/:sandbox/snapshots',
+      '/machines/:machine/snapshots',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        const row = ctx.sandbox
+        requireHumanIn(call, ctx.target_row)
+        const row = ctx.machine
 
         if (row.status === 'creating' || row.status === 'deleting') {
           conflict(row, ['starting', 'running', 'stopping', 'stopped', 'failed'])
         }
 
-        requireConnected(kit.deps, row.station_id)
-        requireDiskRoom(stationRow(row.station_id))
+        requireConnected(kit.deps, row.server_id)
+        requireDiskRoom(stationRow(row.server_id))
         const name = body?.name ?? null
 
         if (
           name &&
           db
             .select({
-              id: sandbox_snapshot.id,
+              id: machine_snapshot.id,
             })
-            .from(sandbox_snapshot)
+            .from(machine_snapshot)
             .where(
-              and(
-                eq(sandbox_snapshot.environment_id, row.environment_id),
-                eq(sandbox_snapshot.name, name),
-              ),
+              and(eq(machine_snapshot.target_id, row.target_id), eq(machine_snapshot.name, name)),
             )
             .get()
         ) {
           fail(
             'NAME_TAKEN',
-            `Environment ${ctx.environment.name} already has a snapshot named ${name}.`,
+            `${placeName(ctx.target_row)} already has a snapshot named ${name}.`,
             undefined,
             {
               name,
@@ -1839,15 +1837,15 @@ export const sandboxRoutes = (kit: Kit) => {
           )
         }
 
-        const id = newId('sandbox_snapshot')
+        const id = newId('machine_snapshot')
 
-        db.insert(sandbox_snapshot)
+        db.insert(machine_snapshot)
           .values({
             id,
-            sandbox_id: row.id,
-            environment_id: row.environment_id,
+            machine_id: row.id,
+            target_id: row.target_id,
             project_id: row.project_id,
-            station_id: row.station_id,
+            server_id: row.server_id,
             name,
             image: row.image,
             size: row.size,
@@ -1867,89 +1865,89 @@ export const sandboxRoutes = (kit: Kit) => {
         audit(
           db,
           call,
-          'sandbox.snapshot',
+          'machine.snapshot',
           {
-            entity: 'sandbox_snapshot',
+            entity: 'machine_snapshot',
             id,
           },
           {
             after: {
-              sandbox_id: row.id,
+              machine_id: row.id,
               name,
               source_state: sourceStateOf(row),
             },
           },
         )
-        stations.reconcile(row.station_id)
+        stations.reconcile(row.server_id)
         await pollUntil(
           () =>
             db
               .select({
-                status: sandbox_snapshot.status,
+                status: machine_snapshot.status,
               })
-              .from(sandbox_snapshot)
-              .where(eq(sandbox_snapshot.id, id))
+              .from(machine_snapshot)
+              .where(eq(machine_snapshot.id, id))
               .get()?.status !== 'creating',
           snapshotWaitMs,
           request.signal,
         )
         set.status = 201
-        const created = db.select().from(sandbox_snapshot).where(eq(sandbox_snapshot.id, id)).get()!
+        const created = db.select().from(machine_snapshot).where(eq(machine_snapshot.id, id)).get()!
 
         return {
-          ...select(kit.views.sandboxSnapshot, created, undefined),
+          ...select(kit.views.machineSnapshot, created, undefined),
           warnings: warningsFor(row),
         }
       },
       {
-        sandbox: {
-          id: 'snapshot_sandbox',
+        machine: {
+          id: 'snapshot_machine',
           summary:
-            "Take a read-only copy of a sandbox's disk; files on the disk, credentials included, are copied into every snapshot and fork",
+            "Take a read-only copy of a machine's disk; files on the disk, credentials included, are copied into every snapshot and fork",
           level: 'deploy',
         },
-        body: t.Optional(input(SandboxSnapshotBody)),
+        body: t.Optional(input(MachineSnapshotBody)),
         response: replies({
-          201: SandboxSnapshotCreated,
+          201: MachineSnapshotCreated,
         }),
       },
     )
     .get(
-      '/sandboxes/:sandbox/snapshots',
+      '/machines/:machine/snapshots',
       ({ ctx, query }) => {
         return listSnapshots(
           query,
           and(
-            eq(sandbox_snapshot.sandbox_id, ctx.sandbox.id),
-            eq(sandbox_snapshot.environment_id, ctx.environment.id),
+            eq(machine_snapshot.machine_id, ctx.machine.id),
+            eq(machine_snapshot.target_id, ctx.target_row.id),
           ),
         )
       },
       {
-        sandbox: {
-          id: 'list_sandbox_snapshots',
-          summary: 'List the snapshots of a sandbox',
+        machine: {
+          id: 'list_machine_snapshots',
+          summary: 'List the snapshots of a machine',
           level: 'read',
         },
         query: t.Object({
           ...listQuery,
-          status: filterMany(sandboxSnapshotStatusValues),
+          status: filterMany(machineSnapshotStatusValues),
         }),
         response: replies({
-          200: Page(SandboxSnapshot),
+          200: Page(MachineSnapshot),
         }),
       },
     )
     .get(
-      '/environments/:environment/sandbox-snapshots',
+      '/projects/:project/machine-snapshots',
       ({ ctx, query }) => {
-        const source = query.sandbox
-          ? query.sandbox.startsWith('sbx_')
-            ? query.sandbox
-            : sandboxInEnvironment(db, ctx.environment.id, query.sandbox)?.id
+        const source = query.machine
+          ? query.machine.startsWith('sbx_')
+            ? query.machine
+            : machineInTarget(db, ctx.target_row.id, query.machine)?.id
           : undefined
 
-        if (query.sandbox && !source) {
+        if (query.machine && !source) {
           return {
             items: [],
             next_cursor: null,
@@ -1959,70 +1957,71 @@ export const sandboxRoutes = (kit: Kit) => {
         return listSnapshots(
           query,
           and(
-            eq(sandbox_snapshot.environment_id, ctx.environment.id),
-            source ? eq(sandbox_snapshot.sandbox_id, source) : undefined,
+            eq(machine_snapshot.target_id, ctx.target_row.id),
+            source ? eq(machine_snapshot.machine_id, source) : undefined,
           ),
         )
       },
       {
-        environment: {
-          id: 'list_environment_sandbox_snapshots',
-          summary: 'List the sandbox snapshots of an environment',
+        place: {
+          id: 'list_project_machine_snapshots',
+          summary: 'List the machine snapshots of production or a preview',
           level: 'read',
         },
         query: t.Object({
           ...listQuery,
-          sandbox: t.Optional(t.String()),
-          status: filterMany(sandboxSnapshotStatusValues),
+          ...previewQuery,
+          machine: t.Optional(t.String()),
+          status: filterMany(machineSnapshotStatusValues),
         }),
         response: replies({
-          200: Page(SandboxSnapshot),
+          200: Page(MachineSnapshot),
         }),
       },
     )
     .get(
-      '/sandbox-snapshots/:id',
+      '/machine-snapshots/:id',
       ({ ctx, query }) => {
-        return select(kit.views.sandboxSnapshot, ctx.snapshot, kit.fields(query.fields))
+        return select(kit.views.machineSnapshot, ctx.snapshot, kit.fields(query.fields))
       },
       {
-        sandbox_snapshot: {
-          id: 'get_sandbox_snapshot',
-          summary: 'Get a sandbox snapshot',
+        machine_snapshot: {
+          id: 'get_machine_snapshot',
+          summary: 'Get a machine snapshot',
           level: 'read',
           mcp: false,
         },
         query: t.Object(getQuery),
         response: replies({
-          200: SandboxSnapshot,
+          200: MachineSnapshot,
         }),
       },
     )
     .delete(
-      '/sandbox-snapshots/:id',
+      '/machine-snapshots/:id',
       async ({ ctx, request }) => {
         const call = await kit.call(request)
 
-        requireHumanIn(call, ctx.environment)
-        requireConnected(kit.deps, ctx.snapshot.station_id)
+        requireHumanIn(call, ctx.target_row)
+        requireConnected(kit.deps, ctx.snapshot.server_id)
 
         if (ctx.snapshot.status === 'failed') {
-          db.delete(sandbox_snapshot).where(eq(sandbox_snapshot.id, ctx.snapshot.id)).run()
+          db.delete(machine_snapshot).where(eq(machine_snapshot.id, ctx.snapshot.id)).run()
         } else {
-          db.update(sandbox_snapshot)
+          db.update(machine_snapshot)
             .set({
               status: 'deleting',
             })
-            .where(eq(sandbox_snapshot.id, ctx.snapshot.id))
+            .where(eq(machine_snapshot.id, ctx.snapshot.id))
             .run()
         }
 
         audit(
           db,
           call,
-          'sandbox.snapshot_delete',
+          'machine.snapshot_delete',
           {
-            entity: 'sandbox_snapshot',
+            entity: 'machine_snapshot',
             id: ctx.snapshot.id,
           },
           {
@@ -2032,48 +2031,48 @@ export const sandboxRoutes = (kit: Kit) => {
             },
           },
         )
-        stations.reconcile(ctx.snapshot.station_id)
+        stations.reconcile(ctx.snapshot.server_id)
 
         return {
           deleted: true as const,
         }
       },
       {
-        sandbox_snapshot: {
-          id: 'delete_sandbox_snapshot',
-          summary: 'Delete a sandbox snapshot',
+        machine_snapshot: {
+          id: 'delete_machine_snapshot',
+          summary: 'Delete a machine snapshot',
           level: 'deploy',
         },
         response: replies({
-          200: SandboxSnapshotDeleted,
+          200: MachineSnapshotDeleted,
         }),
       },
     )
     .post(
-      '/stations/:station/sandbox-storage/grow',
+      '/servers/:server/machine-storage/grow',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        const st = stationByRef(db, params.station)
+        const st = stationByRef(db, params.server)
         const before = requireGrowable(st, body.size_bytes).filesystem_bytes
 
         if (readSetting(db, 'platform.protected') && !call.principal.human) {
           const changes = new ChangeSet()
 
-          changes.add('sandbox_storage', st.id, {
+          changes.add('machine_storage', st.id, {
             size_bytes: body.size_bytes,
           })
           const result = commit(
             kit.deps,
             call,
             {
-              environment: null,
+              target: null,
               protect: true,
             },
             changes,
           )
 
           if (!result.applied) {
-            return kit.stagedBody(result, set)
+            return kit.approvalBody(result, set)
           }
         }
 
@@ -2090,9 +2089,9 @@ export const sandboxRoutes = (kit: Kit) => {
         audit(
           db,
           call,
-          'sandbox.storage_grow',
+          'machine.storage_grow',
           {
-            entity: 'station',
+            entity: 'server',
             id: st.id,
           },
           {
@@ -2112,22 +2111,22 @@ export const sandboxRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'grow_sandbox_storage',
+          id: 'grow_machine_storage',
           summary:
-            "Grow a station's sandbox filesystem to size_bytes while sandboxes run; staged for a non-human actor under platform.protected",
+            "Grow a server's machine filesystem to size_bytes while machines run; needs approval for a non-human actor under platform.protected",
           level: 'instance admin',
         },
-        body: input(SandboxStorageGrowRequest),
+        body: input(MachineStorageGrowRequest),
         response: replies({
           200: StorageGrown,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
 
   return {
     routes,
-    createSandbox,
+    createMachine,
   }
 
   function listSnapshots(
@@ -2139,17 +2138,17 @@ export const sandboxRoutes = (kit: Kit) => {
       (cursor, size) =>
         db
           .select()
-          .from(sandbox_snapshot)
+          .from(machine_snapshot)
           .where(
             and(
               scope,
               statuses
-                ? inArray(sandbox_snapshot.status, statuses as SandboxSnapshotRow['status'][])
+                ? inArray(machine_snapshot.status, statuses as MachineSnapshotRow['status'][])
                 : undefined,
-              before(sandbox_snapshot.id, cursor),
+              before(machine_snapshot.id, cursor),
             ),
           )
-          .orderBy(desc(sandbox_snapshot.id))
+          .orderBy(desc(machine_snapshot.id))
           .limit(size)
           .all(),
       query,
@@ -2157,7 +2156,7 @@ export const sandboxRoutes = (kit: Kit) => {
 
     return {
       items: page.rows.map((row) =>
-        select(kit.views.sandboxSnapshot, row, kit.fields(query.fields)),
+        select(kit.views.machineSnapshot, row, kit.fields(query.fields)),
       ),
       next_cursor: page.next_cursor,
     }

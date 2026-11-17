@@ -3,8 +3,8 @@ import { test } from 'node:test'
 
 import { hasNoValue, noValueLabel } from '../src/lib/variables.ts'
 
-test('a sealed key with no version reads as having no value in this environment', () => {
-  assert.equal(noValueLabel, 'No value in this environment')
+test('a sealed key with no version reads as having no value here', () => {
+  assert.equal(noValueLabel, 'No value here')
   assert.equal(
     hasNoValue({
       kind: 'sealed',

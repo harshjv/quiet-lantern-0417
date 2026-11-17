@@ -57,7 +57,7 @@ const unreachable = (detail: string): CallToolResult => ({
       type: 'text',
       text: JSON.stringify({
         error: {
-          code: 'STATION_OFFLINE',
+          code: 'SERVER_OFFLINE',
           explanation: `Dispatch could not be reached: ${detail}`,
           fix: 'Check the instance URL and that Dispatch is running, then retry.',
         },

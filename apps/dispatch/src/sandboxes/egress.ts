@@ -1,15 +1,15 @@
 import type { Static } from '@sinclair/typebox'
 
 import {
-  sandboxEgressLimits,
-  type SandboxEgress,
-  type SandboxEgressInput,
+  machineEgressLimits,
+  type MachineEgress,
+  type MachineEgressInput,
 } from '@stationly/protocol'
 
 import { invalid } from '../api/errors.ts'
 
-type EgressInput = Static<typeof SandboxEgressInput>
-type Egress = Static<typeof SandboxEgress>
+type EgressInput = Static<typeof MachineEgressInput>
+type Egress = Static<typeof MachineEgress>
 
 const label = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/
 
@@ -42,19 +42,19 @@ export const normalizeEgress = (input: EgressInput, path = '/egress'): Egress =>
     }
   })
 
-  if (domains.length > sandboxEgressLimits.domains) {
+  if (domains.length > machineEgressLimits.domains) {
     issues.push({
       path: `${path}/domains`,
-      message: `at most ${sandboxEgressLimits.domains} entries, got ${domains.length}`,
+      message: `at most ${machineEgressLimits.domains} entries, got ${domains.length}`,
     })
   }
 
   const distinct = new Set(domains.flatMap((d) => d.ports))
 
-  if (distinct.size > sandboxEgressLimits.ports) {
+  if (distinct.size > machineEgressLimits.ports) {
     issues.push({
       path: `${path}/domains`,
-      message: `at most ${sandboxEgressLimits.ports} distinct ports, got ${distinct.size}`,
+      message: `at most ${machineEgressLimits.ports} distinct ports, got ${distinct.size}`,
     })
   }
 

@@ -166,7 +166,7 @@
       }
     },
     {
-      "files": ["apps/dashboard/src/next/**/*.tsx"],
+      "files": ["apps/dashboard/src/workbench/**/*.tsx"],
       "rules": {
         "stationly/design-tokens": "error"
       }
@@ -178,7 +178,7 @@
           "error",
           {
             "allowed": [
-              "/v1/sandboxes/{}/forward",
+              "/v1/machines/{}/forward",
               "/v1/events?types={}",
               "/v1/logs?{}",
               "/v1/environments/{}/network/live"

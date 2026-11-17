@@ -151,7 +151,7 @@ export type ForwardEvents = { control?: (message: string) => void; unopened?: ()
 
 export const forwardPort = async (
   run: Run,
-  sandboxId: string,
+  machineId: string,
   remote: number,
   localPort: number | undefined,
   events: ForwardEvents = {},
@@ -160,7 +160,7 @@ export const forwardPort = async (
   const relay = async (socket: Socket) => {
     connections.add(socket)
     socket.on('error', () => socket.destroy())
-    const url = attachUrl(run, `/v1/sandboxes/${sandboxId}/forward`)
+    const url = attachUrl(run, `/v1/machines/${machineId}/forward`)
 
     url.searchParams.set('port', String(remote))
     const ws = await openSocket(run, url)

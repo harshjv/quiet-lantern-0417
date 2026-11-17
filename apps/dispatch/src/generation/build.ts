@@ -25,18 +25,18 @@ import { releaseRepositories } from '@stationly/protocol/release-config'
 import { dispatchVirtualIp } from '../api/ipam.ts'
 import type { Db } from '../db/client.ts'
 import {
+  app,
+  app_port,
   deployment,
   domain,
-  environment,
   ipam_allocation,
+  machine,
+  machine_snapshot,
   port_allocation,
   project,
-  sandbox,
-  sandbox_snapshot,
-  service,
-  service_port,
-  station,
+  server,
   station_generation,
+  target,
   virtual_ip,
   volume,
 } from '../db/schema.ts'
@@ -49,7 +49,7 @@ import { projectRepositoryPrefix } from '../platform/registry.ts'
 import { generationLockfile, overlayPins } from '../platform/upgrade.ts'
 import { envDigest, generationEnv } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
-import { sandboxEnv } from '../secrets/sandbox.ts'
+import { machineEnv } from '../secrets/sandbox.ts'
 
 import { hashed, sha256Digest } from './hash.ts'
 import { effectiveHealth } from './health.ts'
@@ -131,7 +131,7 @@ const readSettings = (db: Db) => {
 const healthBudget = (health: HealthCheck) =>
   health && 'startup_timeout_s' in health ? health.startup_timeout_s : budgetDefaults.health_s
 
-const healthWithHost = (db: Db, serviceId: string, health: HealthCheck): HealthCheck => {
+const healthWithHost = (db: Db, appId: string, health: HealthCheck): HealthCheck => {
   if (!health || health.type !== 'http' || health.host !== undefined) {
     return health
   }
@@ -141,18 +141,18 @@ const healthWithHost = (db: Db, serviceId: string, health: HealthCheck): HealthC
       hostname: domain.hostname,
     })
     .from(domain)
-    .innerJoin(service_port, eq(domain.service_port_id, service_port.id))
-    .where(eq(service_port.service_id, serviceId))
+    .innerJoin(app_port, eq(domain.app_port_id, app_port.id))
+    .where(eq(app_port.app_id, appId))
     .orderBy(asc(domain.id))
     .get()
   const name =
     db
       .select({
-        name: service.name,
+        name: app.name,
       })
-      .from(service)
-      .where(eq(service.id, serviceId))
-      .get()?.name ?? serviceId
+      .from(app)
+      .where(eq(app.id, appId))
+      .get()?.name ?? appId
 
   return {
     ...health,
@@ -160,10 +160,9 @@ const healthWithHost = (db: Db, serviceId: string, health: HealthCheck): HealthC
   }
 }
 
-type SpecInput = Pick<
-  typeof deployment.$inferSelect,
-  'service_id' | 'config_snapshot' | 'strategy'
-> & { image_ref: string }
+type SpecInput = Pick<typeof deployment.$inferSelect, 'app_id' | 'config_snapshot' | 'strategy'> & {
+  image_ref: string
+}
 
 const specOf = (
   db: Db,
@@ -184,14 +183,14 @@ const specOf = (
   const runsOnly = config.kind === 'cron' || config.kind === 'one_off'
   const ports = db
     .select()
-    .from(service_port)
-    .where(eq(service_port.service_id, dep.service_id))
-    .orderBy(asc(service_port.created_at), asc(service_port.port))
+    .from(app_port)
+    .where(eq(app_port.app_id, dep.app_id))
+    .orderBy(asc(app_port.created_at), asc(app_port.port))
     .all()
   const mounts = db
     .select()
     .from(volume)
-    .where(and(eq(volume.service_id, dep.service_id), eq(volume.status, 'active')))
+    .where(and(eq(volume.app_id, dep.app_id), eq(volume.status, 'active')))
     .orderBy(asc(volume.id))
     .all()
 
@@ -199,7 +198,7 @@ const specOf = (
     image_ref: dep.image_ref,
     command: config.command ?? null,
     limits: config.limits,
-    health: healthWithHost(db, dep.service_id, effectiveHealth(config.kind, ports, config.health)),
+    health: healthWithHost(db, dep.app_id, effectiveHealth(config.kind, ports, config.health)),
     ports: ports.map((p) => ({
       id: p.id,
       port: p.port,
@@ -273,14 +272,14 @@ export const targetIssue = (
 }
 
 export type ExcludedObject =
-  | 'environment'
-  | 'service'
+  | 'network'
+  | 'app'
   | 'deployment'
   | 'volume'
   | 'route'
   | 'port_allocation'
-  | 'sandbox'
-  | 'sandbox_snapshot'
+  | 'machine'
+  | 'machine_snapshot'
 
 export type Exclusion = {
   object: ExcludedObject
@@ -296,14 +295,14 @@ export type Built = { content: GenerationContent; excluded: Exclusion[] }
 export type Skip = Map<string, string>
 
 const objectKeys: Record<ExcludedObject, (id: string) => string> = {
-  environment: (id) => `/environments/${id}`,
-  service: (id) => `/services/${id}`,
+  network: (id) => `/environments/${id}`,
+  app: (id) => `/services/${id}`,
   deployment: (id) => `/deployments/${id}`,
   volume: (id) => `/volumes/${id}`,
   route: (id) => `/gateway/routes/${id}`,
   port_allocation: (id) => `/port_allocations/${id}`,
-  sandbox: (id) => `/sandboxes/${id}`,
-  sandbox_snapshot: (id) => `/sandbox_snapshots/${id}`,
+  machine: (id) => `/sandboxes/${id}`,
+  machine_snapshot: (id) => `/sandbox_snapshots/${id}`,
 }
 
 export const objectAt = (path: string): { object: ExcludedObject; id: string } | null => {
@@ -318,14 +317,14 @@ export const objectAt = (path: string): { object: ExcludedObject; id: string } |
 
   const object = (
     {
-      environments: 'environment',
-      services: 'service',
+      environments: 'network',
+      services: 'app',
       deployments: 'deployment',
       volumes: 'volume',
       port_allocations: 'port_allocation',
       'gateway/routes': 'route',
-      sandboxes: 'sandbox',
-      sandbox_snapshots: 'sandbox_snapshot',
+      sandboxes: 'machine',
+      sandbox_snapshots: 'machine_snapshot',
     } as const
   )[m[1] as 'environments']
 
@@ -398,14 +397,14 @@ const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): Sys
 }
 
 export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()): Built => {
-  const st = db.select().from(station).where(eq(station.id, stationId)).get()
+  const st = db.select().from(server).where(eq(server.id, stationId)).get()
 
   if (!st) {
-    throw new GenerationError(`station ${stationId} does not exist`)
+    throw new GenerationError(`server ${stationId} does not exist`)
   }
 
   if (!st.registry_address || !st.registry_subnet) {
-    throw new GenerationError(`station ${stationId} has no registry address yet`)
+    throw new GenerationError(`server ${stationId} has no registry address yet`)
   }
 
   const { settings, read } = readSettings(db)
@@ -426,7 +425,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       document: station_generation.document,
     })
     .from(station_generation)
-    .where(eq(station_generation.station_id, stationId))
+    .where(eq(station_generation.server_id, stationId))
     .orderBy(desc(station_generation.generation))
     .limit(1)
     .get()?.document
@@ -466,41 +465,36 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     }
   }
 
-  const services = db
-    .select()
-    .from(service)
-    .where(eq(service.station_id, stationId))
-    .orderBy(asc(service.id))
-    .all()
-  const serviceIds = services.map((s) => s.id)
-  const sandboxCapable = Boolean(st.capabilities?.sandboxes)
-  const sandboxRows = sandboxCapable
+  const apps = db.select().from(app).where(eq(app.server_id, stationId)).orderBy(asc(app.id)).all()
+  const appIds = apps.map((s) => s.id)
+  const machineCapable = Boolean(st.capabilities?.sandboxes)
+  const machineRows = machineCapable
     ? db
         .select()
-        .from(sandbox)
-        .where(eq(sandbox.station_id, stationId))
-        .orderBy(asc(sandbox.id))
+        .from(machine)
+        .where(eq(machine.server_id, stationId))
+        .orderBy(asc(machine.id))
         .all()
     : []
-  const joinedEnvironmentIds = sandboxRows
+  const joinedEnvironmentIds = machineRows
     .filter((r) => r.network === 'environment' && r.status !== 'deleting')
-    .map((r) => r.environment_id)
+    .map((r) => r.target_id)
   const environmentIds = [
-    ...new Set([...services.map((s) => s.environment_id), ...joinedEnvironmentIds]),
+    ...new Set([...apps.map((s) => s.target_id), ...joinedEnvironmentIds]),
   ].sort()
   const environments = environmentIds.length
-    ? db.select().from(environment).where(inArray(environment.id, environmentIds)).all()
+    ? db.select().from(target).where(inArray(target.id, environmentIds)).all()
     : []
   const vips = environmentIds.length
     ? db
         .select()
         .from(virtual_ip)
-        .where(inArray(virtual_ip.environment_id, environmentIds))
+        .where(inArray(virtual_ip.target_id, environmentIds))
         .orderBy(asc(virtual_ip.address))
         .all()
     : []
-  const vipOf = new Map(vips.filter((v) => v.service_id).map((v) => [v.service_id!, v]))
-  const serviceById = new Map(services.map((s) => [s.id, s]))
+  const vipOf = new Map(vips.filter((v) => v.app_id).map((v) => [v.app_id!, v]))
+  const appById = new Map(apps.map((s) => [s.id, s]))
   const projectOf = new Map(environments.map((e) => [e.id, e.project_id]))
 
   const volumeDocs: GenerationContent['volumes'] = {}
@@ -508,7 +502,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   for (const v of db
     .select()
     .from(volume)
-    .where(eq(volume.station_id, stationId))
+    .where(eq(volume.server_id, stationId))
     .orderBy(asc(volume.id))
     .all()) {
     const status = v.status
@@ -520,7 +514,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     const doc = guarded('volume', v.id, previous?.volumes[v.id], () => {
       const built = hashed({
         owner: v.owner,
-        service_id: v.service_id ?? null,
+        service_id: v.app_id ?? null,
         docker_name: v.docker_name,
         status,
         retain_until: v.retain_until
@@ -546,7 +540,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     for (const mount of target.volumes) {
       if (!volumeDocs[mount.volume_id]) {
         throw new GenerationError(
-          `${at}/volumes: volume ${mount.volume_id} is not in this station's generation`,
+          `${at}/volumes: volume ${mount.volume_id} is not in this server's generation`,
         )
       }
     }
@@ -554,30 +548,21 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     return target
   }
 
-  const environmentDoc = (
-    env: (typeof environments)[number],
-    keep: (serviceId: string) => boolean,
-  ) => {
+  const environmentDoc = (env: (typeof environments)[number], keep: (appId: string) => boolean) => {
     const allocation = db
       .select()
       .from(ipam_allocation)
-      .where(
-        and(eq(ipam_allocation.environment_id, env.id), eq(ipam_allocation.station_id, stationId)),
-      )
+      .where(and(eq(ipam_allocation.target_id, env.id), eq(ipam_allocation.server_id, stationId)))
       .get()
 
     if (!allocation) {
       throw new GenerationError(
-        `environment ${env.id} has no ipam_allocation on station ${stationId}`,
+        `environment ${env.id} has no ipam_allocation on server ${stationId}`,
       )
     }
 
     const envVips = vips.filter(
-      (v) =>
-        v.environment_id === env.id &&
-        v.service_id &&
-        serviceById.has(v.service_id) &&
-        keep(v.service_id),
+      (v) => v.target_id === env.id && v.app_id && appById.has(v.app_id) && keep(v.app_id),
     )
     const built = hashed({
       project_id: env.project_id,
@@ -590,7 +575,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         gateway_mode: 'nat' as const,
       },
       dns: envVips.map((v) => {
-        const svc = serviceById.get(v.service_id!)!
+        const svc = appById.get(v.app_id!)!
 
         return {
           name: svc.name,
@@ -602,11 +587,11 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       virtual_ips: envVips.map((v) => ({
         id: v.id,
         address: v.address,
-        service_id: v.service_id!,
+        service_id: v.app_id!,
       })),
     })
 
-    conform(DesiredEnvironment, built, keyOf('environment', env.id))
+    conform(DesiredEnvironment, built, keyOf('network', env.id))
 
     return built
   }
@@ -614,7 +599,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const environmentDocs: GenerationContent['environments'] = {}
 
   for (const env of environments) {
-    const doc = guarded('environment', env.id, previous?.environments[env.id], () =>
+    const doc = guarded('network', env.id, previous?.environments[env.id], () =>
       environmentDoc(env, () => true),
     )
 
@@ -623,21 +608,19 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     }
   }
 
-  const serviceDocs: GenerationContent['services'] = {}
+  const appDocs: GenerationContent['services'] = {}
 
-  for (const svc of services) {
-    const at = keyOf('service', svc.id)
-    const doc = guarded('service', svc.id, previous?.services[svc.id], () => {
-      if (!environmentDocs[svc.environment_id]) {
-        throw new GenerationError(
-          `${at}: environment ${svc.environment_id} is not in this generation`,
-        )
+  for (const svc of apps) {
+    const at = keyOf('app', svc.id)
+    const doc = guarded('app', svc.id, previous?.services[svc.id], () => {
+      if (!environmentDocs[svc.target_id]) {
+        throw new GenerationError(`${at}: environment ${svc.target_id} is not in this generation`)
       }
 
       const vip = vipOf.get(svc.id)
 
       if (!vip) {
-        throw new GenerationError(`service ${svc.id} has no virtual_ip`)
+        throw new GenerationError(`app ${svc.id} has no virtual_ip`)
       }
 
       let current = null
@@ -653,7 +636,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
 
         if (!dep) {
           throw new GenerationError(
-            `service ${svc.id} names current deployment ${svc.current_deployment_id}, which does not exist`,
+            `app ${svc.id} names current deployment ${svc.current_deployment_id}, which does not exist`,
           )
         }
 
@@ -665,16 +648,14 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       }
 
       const built = hashed({
-        environment_id: svc.environment_id,
-        project_id: projectOf.get(svc.environment_id)!,
+        environment_id: svc.target_id,
+        project_id: projectOf.get(svc.target_id)!,
         name: svc.name,
         kind: svc.kind,
         desired_state: svc.desired_state,
         virtual_ip: vip.address,
         current,
-        reach: vips
-          .filter((v) => v.environment_id === svc.environment_id && v.service_id)
-          .map((v) => v.id),
+        reach: vips.filter((v) => v.target_id === svc.target_id && v.app_id).map((v) => v.id),
       })
 
       conform(DesiredService, built, at)
@@ -683,7 +664,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     })
 
     if (doc && environmentDocs[doc.environment_id]) {
-      serviceDocs[svc.id] = doc
+      appDocs[svc.id] = doc
     }
   }
 
@@ -691,13 +672,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     const carried = new Set(excluded.filter((e) => e.carried).map((e) => e.key))
 
     for (const env of environments) {
-      if (environmentDocs[env.id] && !carried.has(keyOf('environment', env.id))) {
-        environmentDocs[env.id] = environmentDoc(env, (id) => Boolean(serviceDocs[id]))
+      if (environmentDocs[env.id] && !carried.has(keyOf('network', env.id))) {
+        environmentDocs[env.id] = environmentDoc(env, (id) => Boolean(appDocs[id]))
       }
     }
 
-    for (const [id, doc] of Object.entries(serviceDocs)) {
-      if (carried.has(keyOf('service', id))) {
+    for (const [id, doc] of Object.entries(appDocs)) {
+      if (carried.has(keyOf('app', id))) {
         continue
       }
 
@@ -709,7 +690,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       if (reach.length !== doc.reach.length) {
         const { hash: _hash, ...rest } = doc
 
-        serviceDocs[id] = hashed({
+        appDocs[id] = hashed({
           ...rest,
           reach,
         })
@@ -719,14 +700,12 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
 
   const pins = overlayPins(db, stationId, effectivePins(db, st.arch))
 
-  const desiredSandbox = (row: (typeof sandboxRows)[number]) => {
-    const at = keyOf('sandbox', row.id)
+  const desiredMachine = (row: (typeof machineRows)[number]) => {
+    const at = keyOf('machine', row.id)
     const destroy = row.status === 'deleting'
 
-    if (!destroy && row.network === 'environment' && !environmentDocs[row.environment_id]) {
-      throw new GenerationError(
-        `${at}: environment ${row.environment_id} is not in this generation`,
-      )
+    if (!destroy && row.network === 'environment' && !environmentDocs[row.target_id]) {
+      throw new GenerationError(`${at}: environment ${row.target_id} is not in this generation`)
     }
 
     const image_ref =
@@ -734,7 +713,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         ? `${pins.sandbox_toolchain?.source ?? releaseRepositories.sandbox_toolchain}@${row.image.digest}`
         : pinnedRef(row.image.ref, row.image.digest)
     const built = hashed({
-      environment_id: row.environment_id,
+      environment_id: row.target_id,
       project_id: row.project_id,
       name: row.name,
       status: destroy ? ('destroy' as const) : ('active' as const),
@@ -749,7 +728,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       command: row.command ?? null,
       size: row.size,
       docker: row.docker,
-      env_digest: destroy ? envDigest([]) : sandboxEnv(db, row.id).env_digest,
+      env_digest: destroy ? envDigest([]) : machineEnv(db, row.id).env_digest,
       network: row.network,
       egress: row.egress,
       disk: {
@@ -757,9 +736,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       },
       reach:
         row.network === 'environment' && !destroy
-          ? vips
-              .filter((v) => v.environment_id === row.environment_id && v.service_id)
-              .map((v) => v.id)
+          ? vips.filter((v) => v.target_id === row.target_id && v.app_id).map((v) => v.id)
           : [],
       ...(row.workspace
         ? {
@@ -772,13 +749,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
 
     return built
   }
-  const sandboxDocs: Record<string, Static<typeof DesiredSandbox>> = {}
+  const machineDocs: Record<string, Static<typeof DesiredSandbox>> = {}
 
-  for (const row of sandboxRows) {
-    const doc = guarded('sandbox', row.id, previous?.sandboxes?.[row.id], () => desiredSandbox(row))
+  for (const row of machineRows) {
+    const doc = guarded('machine', row.id, previous?.sandboxes?.[row.id], () => desiredMachine(row))
 
     if (doc) {
-      sandboxDocs[row.id] = doc
+      machineDocs[row.id] = doc
     }
   }
 
@@ -787,28 +764,28 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     { hash: string; sandbox_id: string; status: 'active' | 'destroy' }
   > = {}
 
-  if (sandboxCapable) {
+  if (machineCapable) {
     for (const snap of db
       .select()
-      .from(sandbox_snapshot)
-      .where(eq(sandbox_snapshot.station_id, stationId))
-      .orderBy(asc(sandbox_snapshot.id))
+      .from(machine_snapshot)
+      .where(eq(machine_snapshot.server_id, stationId))
+      .orderBy(asc(machine_snapshot.id))
       .all()) {
       if (snap.status === 'failed') {
         continue
       }
 
       const doc = guarded(
-        'sandbox_snapshot',
+        'machine_snapshot',
         snap.id,
         previous?.sandbox_snapshots?.[snap.id],
         () => {
           const built = hashed({
-            sandbox_id: snap.sandbox_id,
+            sandbox_id: snap.machine_id,
             status: snap.status === 'deleting' ? ('destroy' as const) : ('active' as const),
           })
 
-          conform(DesiredSandboxSnapshot, built, keyOf('sandbox_snapshot', snap.id))
+          conform(DesiredSandboxSnapshot, built, keyOf('machine_snapshot', snap.id))
 
           return built
         },
@@ -820,13 +797,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     }
   }
 
-  const candidates = serviceIds.length
+  const candidates = appIds.length
     ? db
         .select()
         .from(deployment)
         .where(
           and(
-            inArray(deployment.service_id, serviceIds),
+            inArray(deployment.app_id, appIds),
             isNotNull(deployment.image_ref),
             isNull(deployment.finished_at),
             or(
@@ -839,27 +816,25 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         .all()
     : []
   const deploymentDocs: GenerationContent['deployments'] = {}
-  const perService = new Set<string>()
+  const perApp = new Set<string>()
   let uncancelled = 0
-  let variableChangeAdmitted = false
+  let keyChangeAdmitted = false
   const dispatched = new Set(Object.keys(previous?.deployments ?? {}))
   const started = (dep: (typeof candidates)[number]) =>
     dispatched.has(dep.id) || dep.status !== 'queued' ? 0 : 1
 
   for (const dep of [...candidates].sort((a, b) => started(a) - started(b))) {
     const cancelled = dep.status === 'cancelled'
-    const serial = dep.trigger.type === 'variable_change'
+    const serial = dep.trigger.type === 'key_change'
 
     if (
       !cancelled &&
-      (perService.has(dep.service_id) ||
-        uncancelled >= st.concurrency_cap ||
-        (serial && variableChangeAdmitted))
+      (perApp.has(dep.app_id) || uncancelled >= st.concurrency_cap || (serial && keyChangeAdmitted))
     ) {
       continue
     }
 
-    const svc = serviceById.get(dep.service_id)!
+    const svc = appById.get(dep.app_id)!
 
     if (svc.current_deployment_id === dep.id) {
       continue
@@ -872,15 +847,15 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       dep.id,
       wasSent ? previous!.deployments[dep.id] : undefined,
       () => {
-        if (!serviceDocs[dep.service_id]) {
-          throw new GenerationError(`${at}: service ${dep.service_id} is not in this generation`)
+        if (!appDocs[dep.app_id]) {
+          throw new GenerationError(`${at}: app ${dep.app_id} is not in this generation`)
         }
 
         const target = spec(dep.id, `${at}/target`)
         const drain = target.drain_timeout_s
         const health = healthBudget(target.health)
         const built = hashed({
-          service_id: dep.service_id,
+          service_id: dep.app_id,
           number: dep.number,
           target,
           from_deployment_id: svc.current_deployment_id ?? null,
@@ -912,24 +887,24 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       wasSent,
     )
 
-    if (!doc || !serviceDocs[doc.service_id]) {
+    if (!doc || !appDocs[doc.service_id]) {
       continue
     }
 
     deploymentDocs[dep.id] = doc
 
     if (!cancelled) {
-      perService.add(dep.service_id)
+      perApp.add(dep.app_id)
       uncancelled++
 
       if (serial) {
-        variableChangeAdmitted = true
+        keyChangeAdmitted = true
       }
     }
   }
 
-  const ports = serviceIds.length
-    ? db.select().from(service_port).where(inArray(service_port.service_id, serviceIds)).all()
+  const ports = appIds.length
+    ? db.select().from(app_port).where(inArray(app_port.app_id, appIds)).all()
     : []
   const portById = new Map(ports.map((p) => [p.id, p]))
   const routes: GenerationContent['gateway']['routes'] = {}
@@ -947,7 +922,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       const route = guarded('route', r.id, previous?.gateway.routes[r.id], () => {
         if (!st.public_address) {
           throw new GenerationError(
-            `${keyOf('route', r.id)}: ${r.hostname} is a direct route, which needs the station's public_address; set it with sly stations update ${st.name} --public-address <ipv4>`,
+            `${keyOf('route', r.id)}: ${r.hostname} is a direct route, which needs the server's public_address; set it with sly servers update ${st.name} --public-address <ipv4>`,
           )
         }
 
@@ -977,11 +952,11 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     for (const d of db
       .select()
       .from(domain)
-      .where(inArray(domain.service_port_id, [...portById.keys()]))
+      .where(inArray(domain.app_port_id, [...portById.keys()]))
       .orderBy(asc(domain.id))
       .all()) {
       const route = guarded('route', d.id, previous?.gateway.routes[d.id], () => {
-        const port = portById.get(d.service_port_id)!
+        const port = portById.get(d.app_port_id)!
         const taken = systemHosts.get(d.hostname)
 
         if (taken) {
@@ -990,11 +965,11 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           )
         }
 
-        const vip = vipOf.get(port.service_id)
+        const vip = vipOf.get(port.app_id)
 
-        if (!serviceDocs[port.service_id] || !vip) {
+        if (!appDocs[port.app_id] || !vip) {
           throw new GenerationError(
-            `${keyOf('route', d.id)}: service ${port.service_id} is not in this generation`,
+            `${keyOf('route', d.id)}: app ${port.app_id} is not in this generation`,
           )
         }
 
@@ -1007,7 +982,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           hostname: d.hostname,
           ingress: d.ingress,
           target: {
-            service_id: port.service_id,
+            service_id: port.app_id,
             virtual_ip: vip.address,
             port: port.port,
           },
@@ -1024,7 +999,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         return built
       })
 
-      if (route && 'service_id' in route.target && serviceDocs[route.target.service_id]) {
+      if (route && 'service_id' in route.target && appDocs[route.target.service_id]) {
         routes[d.id] = route
       }
     }
@@ -1035,27 +1010,27 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   for (const pa of db
     .select()
     .from(port_allocation)
-    .where(and(eq(port_allocation.station_id, stationId), eq(port_allocation.status, 'active')))
+    .where(and(eq(port_allocation.server_id, stationId), eq(port_allocation.status, 'active')))
     .orderBy(asc(port_allocation.id))
     .all()) {
-    const port = portById.get(pa.service_port_id)
+    const port = portById.get(pa.app_port_id)
 
     if (!port) {
       continue
     }
 
     const doc = guarded('port_allocation', pa.id, previous?.port_allocations[pa.id], () => {
-      const vip = vipOf.get(port.service_id)
+      const vip = vipOf.get(port.app_id)
 
-      if (!serviceDocs[port.service_id] || !vip) {
+      if (!appDocs[port.app_id] || !vip) {
         throw new GenerationError(
-          `${keyOf('port_allocation', pa.id)}: service ${port.service_id} is not in this generation`,
+          `${keyOf('port_allocation', pa.id)}: app ${port.app_id} is not in this generation`,
         )
       }
 
       const built = hashed({
-        service_port_id: pa.service_port_id,
-        service_id: port.service_id,
+        service_port_id: pa.app_port_id,
+        service_id: port.app_id,
         host_port: pa.host_port,
         protocol: 'tcp' as const,
         virtual_ip: vip.address,
@@ -1067,7 +1042,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       return built
     })
 
-    if (doc && serviceDocs[doc.service_id]) {
+    if (doc && appDocs[doc.service_id]) {
       allocationDocs[pa.id] = doc
     }
   }
@@ -1141,13 +1116,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
         concurrency_cap: st.concurrency_cap,
         intermittent: st.intermittent,
         hosts_dispatch: st.hosts_dispatch,
-        ...(sandboxCapable
+        ...(machineCapable
           ? {
-              sandbox_network: st.sandbox_subnet
+              sandbox_network: st.machine_subnet
                 ? {
                     bridge_name: sandboxNetworkName,
-                    subnet: st.sandbox_subnet,
-                    gateway: st.sandbox_subnet.replace(/\.0\/\d+$/, '.1'),
+                    subnet: st.machine_subnet,
+                    gateway: st.machine_subnet.replace(/\.0\/\d+$/, '.1'),
                   }
                 : null,
             }
@@ -1155,7 +1130,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       },
       components,
       environments: environmentDocs,
-      services: serviceDocs,
+      services: appDocs,
       deployments: deploymentDocs,
       volumes: volumeDocs,
       gateway: hashed({
@@ -1173,9 +1148,9 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
             }),
           }
         : {},
-      ...(sandboxCapable
+      ...(machineCapable
         ? {
-            sandboxes: sandboxDocs,
+            sandboxes: machineDocs,
             sandbox_snapshots: snapshotDocs,
           }
         : {}),

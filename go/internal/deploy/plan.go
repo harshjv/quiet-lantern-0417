@@ -201,7 +201,7 @@ func checkContainers(svcID string, sp *ServicePlan, stateDir string) *Rejection 
 func unsupported(spec protocol.ContainerSpec) *protocol.ErrorBody {
 	if spec.Health != nil && spec.Health.Type == "image" {
 		return &protocol.ErrorBody{
-			Code:        string(protocol.ErrorCodeStationCapabilityMissing),
+			Code:        string(protocol.ErrorCodeServerCapabilityMissing),
 			Explanation: "health checks of type image are not supported by this stationd yet",
 			Fix:         "Run this service on a stationd build that includes the capability.",
 		}

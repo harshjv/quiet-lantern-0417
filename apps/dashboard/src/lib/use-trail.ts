@@ -1,45 +1,27 @@
-import { useSuspenseQuery, type QueryClient } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 
-import type { Crumb } from '@/components/crumbs'
+import { scopeOf, type PlaceView } from './place'
+import { previewQueryOf, projectQuery } from './queries'
 
-import { environmentQuery, load, projectQuery } from './queries'
-import { placeOf } from './title'
+type Placed = { project_id: string; preview_id: string | null }
 
-export const loadTrail = async (client: QueryClient, environmentId: string) => {
-  const environment = await load(client, environmentQuery(environmentId))
-  const project = await load(client, projectQuery(environment.project_id))
-
-  return placeOf(project.name, environment.name)
-}
-
-export function useEnvironmentTrail(environmentId: string) {
-  const { data: environment } = useSuspenseQuery(environmentQuery(environmentId))
-  const { data: project } = useSuspenseQuery(projectQuery(environment.project_id))
-  const crumbs: Crumb[] = [
-    {
-      label: 'Projects',
-      to: '/projects',
-    },
-    {
-      label: project.name,
-      to: '/projects/$project',
-      params: {
-        project: project.name,
-      },
-    },
-    {
-      label: environment.name,
-      to: '/projects/$project/$environment',
-      params: {
-        project: project.name,
-        environment: environment.name,
-      },
-    },
-  ]
+export function useTrail(row: Placed) {
+  const { data: project } = useSuspenseQuery(projectQuery(row.project_id))
+  const { data: preview } = useQuery({
+    ...previewQueryOf(row.preview_id ?? ''),
+    enabled: row.preview_id !== null,
+  })
+  const place: PlaceView = {
+    project: project.id,
+    preview: row.preview_id,
+    projectName: project.name,
+    previewName: row.preview_id ? (preview?.name ?? row.preview_id) : null,
+  }
 
   return {
-    environment,
     project,
-    crumbs,
+    place,
+    scope: scopeOf(place),
+    production: row.preview_id === null,
   }
 }

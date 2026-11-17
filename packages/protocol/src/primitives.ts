@@ -9,11 +9,12 @@ import {
 const crockfordUlid = '[0-9A-HJKMNP-TV-Z]{26}'
 
 export const idPrefixes = {
-  station: 'stn',
+  server: 'stn',
   project: 'prj',
   environment: 'env',
-  service: 'svc',
-  service_port: 'prt',
+  target: 'env',
+  app: 'svc',
+  app_port: 'prt',
   volume: 'vol',
   domain: 'dom',
   port_allocation: 'pal',
@@ -21,11 +22,11 @@ export const idPrefixes = {
   deployment_step: 'stp',
   build: 'bld',
   run: 'run',
-  variable: 'var',
+  key: 'key',
   secret_value: 'sec',
   grant: 'grt',
   attachment: 'att',
-  staged_change: 'chg',
+  approval: 'apr',
   template: 'tpl',
   template_version: 'tpv',
   firewall_policy: 'fwp',
@@ -56,12 +57,11 @@ export const idPrefixes = {
   platform_release: 'rel',
   platform_upgrade: 'pup',
   message: 'msg',
-  sandbox: 'sbx',
-  sandbox_snapshot: 'sbs',
+  machine: 'sbx',
+  machine_snapshot: 'sbs',
   task: 'tsk',
   conversation: 'cnv',
   invite: 'inv',
-  ship_request: 'shp',
 } as const
 
 export type IdEntity = keyof typeof idPrefixes

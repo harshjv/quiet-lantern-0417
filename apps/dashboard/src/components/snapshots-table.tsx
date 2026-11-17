@@ -5,7 +5,8 @@ import { StatusBadge } from '@/components/status'
 import { ActionsHead, TableFrame } from '@/components/table-frame'
 import { Time } from '@/components/time'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { SandboxSnapshot } from '@/lib/api'
+import type { MachineSnapshot } from '@/lib/api'
+import type { Scope } from '@/lib/commands'
 import { bytes } from '@/lib/format'
 import { snapshotStatus } from '@/lib/labels'
 import { highlight, useFresh } from '@/lib/use-fresh'
@@ -13,17 +14,15 @@ import { cn } from '@/lib/utils'
 
 export function SnapshotsTable({
   snapshots,
-  project,
-  environment,
+  scope,
   originLabel,
   origin,
   empty,
 }: {
-  snapshots: SandboxSnapshot[]
-  project: string
-  environment: string
+  snapshots: MachineSnapshot[]
+  scope: Scope
   originLabel: string
-  origin: (snapshot: SandboxSnapshot) => ReactNode
+  origin: (snapshot: MachineSnapshot) => ReactNode
   empty: ReactNode
 }) {
   const fresh = useFresh(snapshots)
@@ -73,8 +72,7 @@ export function SnapshotsTable({
                       kind: 'snapshot',
                       snapshot,
                     }}
-                    project={project}
-                    environment={environment}
+                    scope={scope}
                     size="icon-sm"
                   />
                 )}

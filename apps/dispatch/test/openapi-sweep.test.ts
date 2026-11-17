@@ -10,10 +10,8 @@ import { seedWorld, type World } from './helpers/world.ts'
 type Operation = { path: string; schema: unknown }
 
 const skipped: Record<string, string> = {
-  '/v1/environments/{environment}/network/live':
-    'server-sent events stream with no JSON response schema',
-  '/v1/environments/{environment}/metrics':
-    'server-sent events stream with no JSON response schema',
+  '/v1/projects/{project}/network/live': 'server-sent events stream with no JSON response schema',
+  '/v1/projects/{project}/metrics': 'server-sent events stream with no JSON response schema',
   '/v1/github/installations/{id}/repositories':
     'calls api.github.com through an installed GitHub App',
   '/v1/platform/releases': 'reads the release feed over the network',
@@ -21,41 +19,41 @@ const skipped: Record<string, string> = {
 
 const idQueries: Record<string, string> = {
   project: 'select id from project',
-  environment: 'select id from environment',
-  service: 'select id from service',
+  preview: "select id from target where kind = 'preview'",
+  app: 'select id from app',
   station: 'select id from station',
   deployment: 'select id from deployment',
   domain: 'select id from domain',
   volume: 'select id from volume',
   build: 'select id from build',
   run: 'select id from run',
-  'staged-change': 'select id from staged_change',
-  variable: 'select id from variable',
-  sandbox: 'select id from sandbox',
-  'sandbox-snapshot': 'select id from sandbox_snapshot',
+  approval: 'select id from approval',
+  key: 'select id from key',
+  machine: 'select id from machine',
+  'machine-snapshot': 'select id from machine_snapshot',
   'notification-channel': 'select id from notification_channel',
 }
 
 const segmentKinds: Record<string, string> = {
   projects: 'project',
-  environments: 'environment',
-  services: 'service',
+  previews: 'preview',
+  apps: 'app',
   stations: 'station',
   deployments: 'deployment',
   domains: 'domain',
   volumes: 'volume',
   builds: 'build',
   runs: 'run',
-  'staged-changes': 'staged-change',
-  variables: 'variable',
-  sandboxes: 'sandbox',
-  'sandbox-snapshots': 'sandbox-snapshot',
+  approvals: 'approval',
+  keys: 'key',
+  machines: 'machine',
+  'machine-snapshots': 'machine-snapshot',
   'notification-channels': 'notification-channel',
 }
 
 const requiredQuery: Record<string, string> = {
-  '/v1/environments/{environment}/network/explain': 'from=web&to=db',
-  '/v1/logs': 'service=SERVICE',
+  '/v1/projects/{project}/network/explain': 'from=web&to=db',
+  '/v1/logs': 'app=APP',
 }
 
 const fixedQuery: Record<string, string> = {
@@ -160,10 +158,7 @@ const sweep = (
         const compiled = compileResponse(op.schema, components)
 
         for (const url of fill(h, op.path)) {
-          const extra = (requiredQuery[op.path] ?? '').replace(
-            'SERVICE',
-            world?.services.web ?? 'missing',
-          )
+          const extra = (requiredQuery[op.path] ?? '').replace('APP', world?.apps.web ?? 'missing')
           const base = fixedQuery[op.path]
           const queries = base
             ? [`?${base}`, `?${base}&fields=*`]
@@ -215,13 +210,13 @@ sweep('a fresh database', async () => ({
 let registry: FakeRegistry
 
 sweep(
-  'a seeded database with projects, environments, services, domains, volumes, variables and staged changes',
+  'a seeded database with projects, previews, apps, domains, volumes, keys and approvals',
   async () => {
     registry = FakeRegistry.install()
     const h = await startDispatch()
     const world = await seedWorld(h, registry)
 
-    assert.ok(world.staged, 'the protected environment staged the agent change')
+    assert.ok(world.waiting, 'production holds the agent change for approval')
 
     return {
       h,

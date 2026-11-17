@@ -5,13 +5,14 @@ import { optimistic } from '../src/lib/cache.ts'
 import { changedKeys, signatureOf, unversioned, versionsOf } from '../src/lib/fresh.ts'
 import { firstErrorIndex, isErrorLine } from '../src/lib/logs.ts'
 import { hasBecome, isFirstLive, nextWatch, watching } from '../src/lib/moments.ts'
-import { loaderTitle, pageTitle, placeOf, titled } from '../src/lib/title.ts'
+import { pageTitle, placeTitle, titled } from '../src/lib/title.ts'
 
 test('titles put the page first and Stationly last', () => {
   assert.equal(pageTitle(), 'Stationly')
   assert.equal(pageTitle('Projects'), 'Projects · Stationly')
-  assert.equal(pageTitle('web', placeOf('shop', 'production')), 'web · shop/production · Stationly')
-  assert.equal(pageTitle('Staged change', ''), 'Staged change · Stationly')
+  assert.equal(pageTitle('web', placeTitle('shop', null)), 'web · shop/production · Stationly')
+  assert.equal(pageTitle('web', placeTitle('shop', 'staging')), 'web · shop/staging · Stationly')
+  assert.equal(pageTitle('Approval', ''), 'Approval · Stationly')
 })
 
 test('route heads carry one title tag', () => {
@@ -22,15 +23,6 @@ test('route heads carry one title tag', () => {
       },
     ],
   })
-  assert.deepEqual(
-    loaderTitle({
-      loaderData: {
-        title: ['web #3', 'shop/production'],
-      },
-    }),
-    titled('web #3', 'shop/production'),
-  )
-  assert.deepEqual(loaderTitle({}), titled())
 })
 
 test('rows highlight when they are new or their version changed', () => {
@@ -85,7 +77,7 @@ test('a moment plays only after the value was seen false', () => {
   assert.equal(hasBecome(switched, 'cursor', true), false)
 })
 
-test('first live ignores redeploys of a service that was live before', () => {
+test('first live ignores redeploys of an app that was live before', () => {
   assert.equal(
     isFirstLive('d2', [
       {

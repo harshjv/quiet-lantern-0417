@@ -94,7 +94,7 @@ export const settings = {
     default: 1,
     station: true,
   }),
-  'workshop.max_daemons_per_station': define(Int, {
+  'workshop.max_daemons_per_server': define(Int, {
     default: 4,
   }),
   'registry.gc_schedule': define(Str, {
@@ -134,7 +134,7 @@ export const settings = {
       station: true,
     },
   ),
-  'sandbox.stopped_retention_s': define(
+  'machine.stopped_retention_s': define(
     Type.Union([
       Type.Literal(0),
       Type.Integer({
@@ -145,7 +145,7 @@ export const settings = {
       default: 604800,
     },
   ),
-  'sandbox.agent_events_retention_s': define(
+  'machine.agent_events_retention_s': define(
     Type.Integer({
       minimum: 3600,
     }),
@@ -153,7 +153,7 @@ export const settings = {
       default: 604800,
     },
   ),
-  'sandbox.workspace_idle_stop_s': define(
+  'machine.workspace_idle_stop_s': define(
     Type.Union([
       Type.Literal(0),
       Type.Integer({
@@ -164,7 +164,7 @@ export const settings = {
       default: 1800,
     },
   ),
-  'sandbox.agent_events_output': define(Bool, {
+  'machine.agent_events_output': define(Bool, {
     default: false,
   }),
   'volume_backup.target': define(
@@ -175,7 +175,7 @@ export const settings = {
           endpoint: Str,
           bucket: Str,
           prefix: Type.String(),
-          credentials_variable: Str,
+          credentials_key: Str,
         },
         {
           additionalProperties: false,
@@ -205,7 +205,7 @@ export const settings = {
       default: 7,
     },
   ),
-  'cloudflare.token_variable': define(Str),
+  'cloudflare.token_key': define(Str),
   'acme.email': define(
     Type.String({
       pattern: '^[^@\\s]+@[^@\\s]+$',
@@ -221,7 +221,7 @@ export const settings = {
     Type.Object(
       {
         provider: Str,
-        token_variable: Str,
+        token_key: Str,
       },
       {
         additionalProperties: false,
@@ -233,7 +233,7 @@ export const settings = {
       {
         ca_server: Str,
         eab_kid: Str,
-        eab_hmac_variable: Str,
+        eab_hmac_key: Str,
       },
       {
         additionalProperties: false,

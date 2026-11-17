@@ -12,12 +12,17 @@ import { mcpClients } from '../src/lib/labels.ts'
 
 const scope = {
   project: 'shop',
-  environment: 'production',
+  preview: null,
 }
 
-const service = {
+const preview = {
+  project: 'shop',
+  preview: 'staging',
+}
+
+const app = {
   ...scope,
-  service: 'web',
+  app: 'web',
 }
 
 const built: Record<keyof typeof commands, string[]> = {
@@ -26,21 +31,21 @@ const built: Record<keyof typeof commands, string[]> = {
     commands.mcpInstall({
       client: 'claude-code',
       project: 'shop',
-      environment: null,
+      target: '*',
       level: 'deploy',
       ttl: '30d',
     }),
     commands.mcpInstall({
       client: 'cursor',
       project: '*',
-      environment: null,
+      target: '*',
       level: 'read',
       ttl: '7d',
     }),
     commands.mcpInstall({
       client: 'generic',
       project: 'shop',
-      environment: 'production',
+      target: 'production',
       level: 'admin',
       ttl: '1d',
     }),
@@ -49,35 +54,34 @@ const built: Record<keyof typeof commands, string[]> = {
     commands.createToken(
       {
         project: 'prj_01',
-        environment: '*',
+        target: 'previews',
         level: 'deploy',
       },
       '30d',
     ),
   ],
-  listServices: [commands.listServices(scope)],
+  listApps: [commands.listApps(scope), commands.listApps(preview)],
   createProject: [commands.createProject()],
-  createEnvironment: [commands.createEnvironment('shop')],
-  createService: [commands.createService(scope)],
-  deploy: [commands.deploy(service)],
-  startService: [commands.startService(service)],
-  rollback: [commands.rollback(service, 'dep_01')],
-  createWorkspace: [commands.createWorkspace(scope)],
-  openWorkspace: [commands.openWorkspace(scope, 'my-ws')],
-  setMemory: [commands.setMemory(service, 1073741824)],
-  setHealth: [commands.setHealth(service, 3000), commands.setHealth(service, null)],
-  logs: [commands.logs(service, 'dep_01', null), commands.logs(service, 'dep_01', 'bld_01')],
-  probe: [commands.probe(service, 'db.internal', 5432), commands.probe(service, 'db', null)],
-  setServiceVariable: [commands.setServiceVariable(service)],
-  setProjectVariable: [commands.setProjectVariable(scope)],
+  createPreview: [commands.createPreview('shop')],
+  createApp: [commands.createApp(scope)],
+  deploy: [commands.deploy(app)],
+  startApp: [commands.startApp(app)],
+  rollback: [commands.rollback(app, 'dep_01')],
+  machineShell: [commands.machineShell(scope, 'dev')],
+  setMemory: [commands.setMemory(app, 1073741824)],
+  setHealth: [commands.setHealth(app, 3000), commands.setHealth(app, null)],
+  logs: [commands.logs(app, 'dep_01', null), commands.logs(app, 'dep_01', 'bld_01')],
+  probe: [commands.probe(app, 'db.internal', 5432), commands.probe(app, 'db', null)],
+  setAppKey: [commands.setAppKey(app)],
+  setProjectKey: [commands.setProjectKey(scope)],
   addDomain: [commands.addDomain('spt_01'), commands.addDomain(null)],
   exposeTcp: [commands.exposeTcp('spt_01'), commands.exposeTcp(null)],
   setPublicAddress: [commands.setPublicAddress('home')],
-  setSandboxRuntime: [commands.setSandboxRuntime('home')],
-  startSandbox: [commands.startSandbox(scope, 'web-sbx')],
-  createSandbox: [commands.createSandbox(scope)],
-  snapshotSandbox: [commands.snapshotSandbox(scope, 'web-sbx')],
-  setSandboxVariable: [commands.setSandboxVariable('sbx_01')],
+  setMachineRuntime: [commands.setMachineRuntime('home')],
+  startMachine: [commands.startMachine(scope, 'web-sbx')],
+  createMachine: [commands.createMachine(scope)],
+  snapshotMachine: [commands.snapshotMachine(scope, 'web-sbx')],
+  setMachineKey: [commands.setMachineKey('sbx_01')],
   forward: [commands.forward('sbx_01', 3000)],
 }
 
@@ -183,7 +187,7 @@ test('the install command leaves out the defaults and fills the rest', () => {
     commands.mcpInstall({
       client: 'claude-code',
       project: 'shop',
-      environment: null,
+      target: '*',
       level: 'deploy',
       ttl: '30d',
     }),
@@ -193,18 +197,18 @@ test('the install command leaves out the defaults and fills the rest', () => {
     commands.mcpInstall({
       client: 'codex',
       project: '*',
-      environment: 'production',
+      target: 'production',
       level: 'read',
       ttl: '7d',
     }),
-    "sly mcp install codex --project '*' --environment production --level read --ttl 7d",
+    "sly mcp install codex --project '*' --target production --level read --ttl 7d",
   )
 })
 
 test('placeholders are the angle-bracket segments', () => {
   assert.deepEqual(placeholders(commands.setPublicAddress('home')), ['ipv4'])
-  assert.deepEqual(placeholders(commands.setSandboxRuntime('home')), ['runtime'])
-  assert.deepEqual(placeholders(commands.deploy(service)), [])
+  assert.deepEqual(placeholders(commands.setMachineRuntime('home')), ['runtime'])
+  assert.deepEqual(placeholders(commands.deploy(app)), [])
 })
 
 let h: Dispatch

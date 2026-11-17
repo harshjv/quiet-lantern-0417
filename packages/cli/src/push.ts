@@ -82,7 +82,7 @@ export const packDirectory = async (path: string) => {
 
 export const uploadSource = async (
   run: Run,
-  serviceId: string,
+  appId: string,
   path: string,
   onProgress: (message: string) => void = () => {},
 ) => {
@@ -97,7 +97,7 @@ export const uploadSource = async (
       headers: {
         'content-type': 'application/gzip',
         'content-length': String(packed.bytes.length),
-        'x-stationly-service': serviceId,
+        'x-stationly-app': appId,
       },
       fetch: {
         body: packed.bytes,

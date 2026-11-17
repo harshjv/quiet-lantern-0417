@@ -50,7 +50,7 @@ const findings = (db: Db, stationId: string, observed: Observed, now: number): F
     .from(station_generation)
     .where(
       and(
-        eq(station_generation.station_id, stationId),
+        eq(station_generation.server_id, stationId),
         inArray(station_generation.ack, ['applied', 'partial']),
       ),
     )
@@ -136,7 +136,7 @@ const findings = (db: Db, stationId: string, observed: Observed, now: number): F
         key: `services/${id}/containers`,
         desired: 'running',
         observed: o.containers.map((c) => c.state),
-        reason: 'a desired-running service has no running container set',
+        reason: 'a desired-running app has no running container set',
       })
     }
   }
@@ -149,7 +149,7 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
   const open = db
     .select()
     .from(drift)
-    .where(and(eq(drift.station_id, stationId), eq(drift.status, 'open')))
+    .where(and(eq(drift.server_id, stationId), eq(drift.status, 'open')))
     .all()
     .filter((d) => d.object !== 'generation')
   const openKeys = new Map(open.map((d) => [d.object, d]))
@@ -164,7 +164,7 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
     const row = db
       .insert(drift)
       .values({
-        station_id: stationId,
+        server_id: stationId,
         object: f.key,
         observed: f.observed,
         desired: f.desired,
@@ -176,9 +176,9 @@ export const evaluateDrift = (db: Db, stationId: string, observed: Observed, now
 
     emitEvent(
       db,
-      'station.drift',
+      'server.drift',
       {
-        entity: 'station',
+        entity: 'server',
         id: stationId,
       },
       {

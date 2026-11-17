@@ -2,7 +2,12 @@ import { Type } from '@sinclair/typebox'
 import { and, desc, eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { tokenKindValues } from '@stationly/protocol'
+import {
+  scopeTargetValues,
+  StringEnum,
+  tokenKindValues,
+  tokenLevelValues,
+} from '@stationly/protocol'
 
 import {
   personalTokenDefaultSeconds,
@@ -11,17 +16,28 @@ import {
   scopedTokenMaxSeconds,
 } from '../../auth/auth.ts'
 import type { Principal } from '../../auth/principal.ts'
-import { fullAdmin, scopeWithin, type Scope } from '../../auth/scopes.ts'
+import { fullAdmin, isScopeTarget, scopeWithin, type Scope } from '../../auth/scopes.ts'
 import { dropToken, extendToken, mintToken, tokenRow, type TokenRow } from '../../auth/tokens.ts'
-import { environment, project, token } from '../../db/schema.ts'
+import { project, token } from '../../db/schema.ts'
 import { requireHuman } from '../access.ts'
 import { audit } from '../context.ts'
 import { fail, invalid, notFound } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import { before, collect, filterOne, listQuery } from '../pagination.ts'
-import { ScopeInput } from '../schemas.ts'
+import { input } from '../schemas.ts'
 import { extend, Page, replies, Token } from '../shapes.ts'
+
+const ScopeInput = t.Object(
+  {
+    project_id: t.String(),
+    target: input(StringEnum(scopeTargetValues)),
+    level: input(StringEnum(tokenLevelValues)),
+  },
+  {
+    additionalProperties: false,
+  },
+)
 
 const personalLifetime = `personal default ${personalTokenDefaultSeconds} s, at most ${personalTokenMaxSeconds} s`
 
@@ -39,7 +55,7 @@ const Revoked = Type.Object(
 )
 
 const scopesOf = (row: TokenRow): Scope[] =>
-  row.kind === 'personal' || row.kind === 'station_enroll' ? fullAdmin : row.scopes
+  row.kind === 'personal' || row.kind === 'server_enroll' ? fullAdmin : row.scopes
 
 export const manages = (principal: Principal, row: TokenRow) =>
   scopesOf(row).every((scope) => scopeWithin(principal.scopes, scope))
@@ -50,12 +66,12 @@ export const requireMintable = (principal: Principal, scopes: Scope[]) => {
   if (outside) {
     fail(
       'FORBIDDEN_SCOPE',
-      `Minting ${outside.level} on project ${outside.project_id}, environment ${outside.environment_id} needs admin there.`,
+      `Minting ${outside.level} on project ${outside.project_id}, target ${outside.target} needs admin there.`,
       'Request only scopes within your own admin scopes.',
       {
         required: {
           project_id: outside.project_id,
-          environment_id: outside.environment_id,
+          target: outside.target,
           level: 'admin',
         },
       },
@@ -87,19 +103,16 @@ export const tokenRoutes = (kit: Kit) => {
         })
       }
 
-      if (scope.environment_id !== '*') {
-        const env = db
-          .select()
-          .from(environment)
-          .where(eq(environment.id, scope.environment_id))
-          .get()
-
-        if (!env || env.project_id !== scope.project_id) {
-          issues.push({
-            path: `/scopes/${i}/environment_id`,
-            message: 'not an environment of that project',
-          })
-        }
+      if (!isScopeTarget(scope.target)) {
+        issues.push({
+          path: `/scopes/${i}/target`,
+          message: 'production, previews or *',
+        })
+      } else if (scope.project_id === '*' && scope.target !== '*') {
+        issues.push({
+          path: `/scopes/${i}/target`,
+          message: 'every project takes target *',
+        })
       }
     })
 
@@ -272,7 +285,8 @@ export const tokenRoutes = (kit: Kit) => {
             kind: t.Optional(t.Union([t.Literal('scoped'), t.Literal('personal')])),
             scopes: t.Optional(
               t.Array(ScopeInput, {
-                description: 'project_id, environment_id and level of each scope of a scoped token',
+                description:
+                  'project_id, target (production, previews or *) and level of each scope of a scoped token',
               }),
             ),
             expires_in_s: t.Optional(

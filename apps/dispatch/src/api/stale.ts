@@ -2,29 +2,29 @@ import { and, eq, inArray } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
 import {
+  app,
   deployment,
-  environment,
   event,
-  sandbox,
-  service,
-  variable,
+  key,
+  machine,
+  target,
   type StaleReasonValue,
 } from '../db/schema.ts'
 import { canonical } from '../generation/hash.ts'
 import { envDigest, envOf, generationEnv } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { leaves, Resolver } from '../secrets/resolve.ts'
-import { sandboxEntries } from '../secrets/sandbox.ts'
-import type { VariableWrite } from '../secrets/variables.ts'
+import { machineEntries } from '../secrets/sandbox.ts'
+import type { KeyWrite } from '../secrets/variables.ts'
 
 import { configFields } from './deployments.ts'
 
-type ServiceRow = typeof service.$inferSelect
+type AppRow = typeof app.$inferSelect
 
 export type StaleDependent = {
-  service_id: string
-  environment_id: string
-  protected: boolean
+  app_id: string
+  project_id: string
+  preview_id: string | null
   keys: string[]
 }
 
@@ -32,15 +32,15 @@ const canonicalOrNull = (value: unknown) => canonical(value ?? null)
 
 const list = (keys: string[]) => keys.join(', ')
 
-const pendingEnv = (db: Db, svc: ServiceRow) => {
-  const resolver = Resolver.forService(db, svc.id)
+const pendingEnv = (db: Db, svc: AppRow) => {
+  const resolver = Resolver.forApp(db, svc.id)
   const entries = []
   const unresolved: string[] = []
 
-  for (const v of resolver.serviceVariables()) {
+  for (const v of resolver.appKeys()) {
     try {
       entries.push({
-        key: v.key,
+        key: v.name,
         injection: v.injection,
         node: resolver.resolve(v),
       })
@@ -49,15 +49,15 @@ const pendingEnv = (db: Db, svc: ServiceRow) => {
         throw error
       }
 
-      unresolved.push(v.key)
+      unresolved.push(v.name)
     }
   }
 
   const env = envOf(
     db,
     {
-      service_id: svc.id,
-      environment_id: svc.environment_id,
+      app_id: svc.id,
+      target_id: svc.target_id,
       deployment_id: svc.current_deployment_id ?? '',
     },
     entries,
@@ -104,7 +104,7 @@ const deployedEnv = (db: Db, deploymentId: string) => {
   }
 }
 
-export const staleness = (db: Db, svc: ServiceRow) => {
+export const staleness = (db: Db, svc: AppRow) => {
   const pending = pendingEnv(db, svc)
   const reads = pending.env.flatMap((entry) =>
     entry.refs.flatMap((ref) => ('secret_value_id' in ref ? [ref.secret_value_id] : [])),
@@ -143,8 +143,8 @@ export const staleness = (db: Db, svc: ServiceRow) => {
       : ''
 
     reasons.push({
-      code: 'VARIABLES_CHANGED',
-      explanation: `Variables changed since the last deploy${keys.length ? `: ${list(keys)}` : ''}. Deploy to apply them.${unresolved}`,
+      code: 'KEYS_CHANGED',
+      explanation: `Keys changed since the last deploy${keys.length ? `: ${list(keys)}` : ''}. Deploy to apply them.${unresolved}`,
       keys,
     })
   }
@@ -169,17 +169,17 @@ export const staleness = (db: Db, svc: ServiceRow) => {
   }
 }
 
-export const refreshStale = (db: Db, serviceIds?: string[]) => {
+export const refreshStale = (db: Db, appIds?: string[]) => {
   const readers = new Map<string, string[]>()
 
-  if (serviceIds && serviceIds.length === 0) {
+  if (appIds && appIds.length === 0) {
     return readers
   }
 
   const rows = db
     .select()
-    .from(service)
-    .where(serviceIds ? inArray(service.id, serviceIds) : undefined)
+    .from(app)
+    .where(appIds ? inArray(app.id, appIds) : undefined)
     .all()
 
   for (const svc of rows) {
@@ -196,42 +196,42 @@ export const refreshStale = (db: Db, serviceIds?: string[]) => {
       continue
     }
 
-    db.update(service)
+    db.update(app)
       .set({
         stale: reasons.length > 0,
         stale_reasons: reasons,
       })
-      .where(eq(service.id, svc.id))
+      .where(eq(app.id, svc.id))
       .run()
   }
 
   return readers
 }
 
-const sandboxReaders = (db: Db) => {
+const machineReaders = (db: Db) => {
   const readers = new Map<string, string[]>()
   const owners = new Set(
     db
       .select({
-        id: variable.sandbox_id,
+        id: key.machine_id,
       })
-      .from(variable)
-      .where(eq(variable.scope, 'sandbox'))
+      .from(key)
+      .where(eq(key.scope, 'machine'))
       .all()
       .map((v) => v.id),
   )
 
   for (const box of db
     .select({
-      id: sandbox.id,
+      id: machine.id,
     })
-    .from(sandbox)
+    .from(machine)
     .all()) {
     if (!owners.has(box.id)) {
       continue
     }
 
-    for (const entry of sandboxEntries(db, box.id)) {
+    for (const entry of machineEntries(db, box.id)) {
       for (const leaf of leaves(entry.node)) {
         if (leaf.kind === 'value') {
           readers.set(leaf.secret_value_id, [
@@ -245,25 +245,25 @@ const sandboxReaders = (db: Db) => {
   return readers
 }
 
-export const settleVariableWrites = (db: Db, writes: VariableWrite[]) => {
+export const settleKeyWrites = (db: Db, writes: KeyWrite[]) => {
   const readers = refreshStale(db)
-  const boxes = sandboxReaders(db)
+  const boxes = machineReaders(db)
 
   for (const write of writes) {
     db.insert(event)
       .values({
         type: 'secret.changed',
         subject: {
-          entity: 'variable',
-          id: write.variable_id,
+          entity: 'key',
+          id: write.key_id,
           project_id: write.project_id,
         },
         payload: {
-          variable: write.variable_id,
+          key_id: write.key_id,
           scope: write.scope,
           version: write.version,
           dependents: readers.get(write.secret_value_id) ?? [],
-          sandboxes: boxes.get(write.secret_value_id) ?? [],
+          machines: boxes.get(write.secret_value_id) ?? [],
           actor: write.actor,
         },
         delivered: {},
@@ -275,35 +275,32 @@ export const settleVariableWrites = (db: Db, writes: VariableWrite[]) => {
 export const staleDependents = (
   db: Db,
   projectId: string | null,
-  serviceIds?: Set<string>,
+  appIds?: Set<string>,
 ): StaleDependent[] =>
   db
     .select({
-      svc: service,
-      env: environment,
+      svc: app,
+      env: target,
     })
-    .from(service)
-    .innerJoin(environment, eq(environment.id, service.environment_id))
+    .from(app)
+    .innerJoin(target, eq(target.id, app.target_id))
     .where(
-      and(
-        eq(service.stale, true),
-        projectId === null ? undefined : eq(environment.project_id, projectId),
-      ),
+      and(eq(app.stale, true), projectId === null ? undefined : eq(target.project_id, projectId)),
     )
     .all()
     .flatMap(({ svc, env }) => {
-      if (serviceIds && !serviceIds.has(svc.id)) {
+      if (appIds && !appIds.has(svc.id)) {
         return []
       }
 
-      const reason = svc.stale_reasons.find((r) => r.code === 'VARIABLES_CHANGED')
+      const reason = svc.stale_reasons.find((r) => r.code === 'KEYS_CHANGED')
 
       return reason
         ? [
             {
-              service_id: svc.id,
-              environment_id: env.id,
-              protected: env.protected,
+              app_id: svc.id,
+              project_id: env.project_id,
+              preview_id: env.kind === 'preview' ? env.id : null,
               keys: reason.keys,
             },
           ]

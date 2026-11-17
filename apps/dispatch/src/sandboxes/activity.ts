@@ -3,47 +3,47 @@ import { and, desc, eq, inArray, max, notInArray } from 'drizzle-orm'
 import { runActiveStatuses } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { conversation, conversation_event, run, sandbox, task, task_inbox } from '../db/schema.ts'
+import { conversation, conversation_event, machine, run, task, task_inbox } from '../db/schema.ts'
 import { tasksInUse } from '../tasks/machine.ts'
 
-type SandboxRow = typeof sandbox.$inferSelect
+type MachineRow = typeof machine.$inferSelect
 
 const latest = (...times: (Date | null | undefined)[]) =>
   times.reduce<Date | null>((best, time) => (time && (!best || time > best) ? time : best), null)
 
-const taskIds = (db: Db, sandboxId: string) =>
+const taskIds = (db: Db, machineId: string) =>
   db
     .select({
       id: task.id,
     })
     .from(task)
-    .where(eq(task.sandbox_id, sandboxId))
+    .where(eq(task.machine_id, machineId))
     .all()
     .map((row) => row.id)
 
-const runnerRunIds = (db: Db, sandboxId: string) =>
+const runnerRunIds = (db: Db, machineId: string) =>
   db
     .select({
       id: conversation.runner_run_id,
     })
     .from(conversation)
     .innerJoin(task, eq(task.id, conversation.task_id))
-    .where(eq(task.sandbox_id, sandboxId))
+    .where(eq(task.machine_id, machineId))
     .all()
     .flatMap((row) => (row.id ? [row.id] : []))
 
-const ownRuns = (db: Db, row: SandboxRow) => [
+const ownRuns = (db: Db, row: MachineRow) => [
   ...(row.workspace ? [row.workspace.setup_run_id] : []),
   ...runnerRunIds(db, row.id),
 ]
 
-export const activityOf = (db: Db, row: SandboxRow) => {
+export const activityOf = (db: Db, row: MachineRow) => {
   const lastRun = db
     .select({
       at: run.created_at,
     })
     .from(run)
-    .where(and(eq(run.sandbox_id, row.id), notInArray(run.id, ownRuns(db, row))))
+    .where(and(eq(run.machine_id, row.id), notInArray(run.id, ownRuns(db, row))))
     .orderBy(desc(run.created_at))
     .limit(1)
     .get()?.at
@@ -70,7 +70,7 @@ export const activityOf = (db: Db, row: SandboxRow) => {
   return latest(row.started_at, lastRun, lastEvent, lastInput)
 }
 
-export const inUse = (db: Db, row: SandboxRow) => {
+export const inUse = (db: Db, row: MachineRow) => {
   if (tasksInUse(db, row.id)) {
     return true
   }
@@ -83,7 +83,7 @@ export const inUse = (db: Db, row: SandboxRow) => {
       .from(run)
       .where(
         and(
-          eq(run.sandbox_id, row.id),
+          eq(run.machine_id, row.id),
           inArray(run.status, [...runActiveStatuses]),
           notInArray(run.id, ownRuns(db, row)),
         ),

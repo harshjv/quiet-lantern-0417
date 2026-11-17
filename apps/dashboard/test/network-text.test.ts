@@ -18,8 +18,8 @@ import {
   stepText,
 } from '../src/lib/network-text.ts'
 
-type MapService = NetworkMap['services'][number]
-type Switch = MapService['switch']
+type MapApp = NetworkMap['apps'][number]
+type Switch = MapApp['switch']
 
 const deployment = {
   id: 'dep_14',
@@ -27,7 +27,7 @@ const deployment = {
   address: '10.20.3.5',
 }
 
-const service = (sw: Partial<Switch>): Pick<MapService, 'name' | 'switch'> => ({
+const app = (sw: Partial<Switch>): Pick<MapApp, 'name' | 'switch'> => ({
   name: 'web',
   switch: {
     state: 'serving',
@@ -40,7 +40,7 @@ const service = (sw: Partial<Switch>): Pick<MapService, 'name' | 'switch'> => ({
 const map = {
   subnets: [
     {
-      station: {
+      server: {
         id: 'sta_home',
         name: 'home',
       },
@@ -51,7 +51,7 @@ const map = {
 test('serving names the deployment and keeps its address as the hint', () => {
   assert.deepEqual(
     servingText(
-      service({
+      app({
         deployment,
       }),
     ),
@@ -63,10 +63,10 @@ test('serving names the deployment and keeps its address as the hint', () => {
   )
 })
 
-test('routing states read as sentences about the service', () => {
+test('routing states read as sentences about the app', () => {
   assert.equal(
     servingText(
-      service({
+      app({
         state: 'pending',
         deployment: {
           ...deployment,
@@ -78,7 +78,7 @@ test('routing states read as sentences about the service', () => {
   )
   assert.equal(
     servingText(
-      service({
+      app({
         state: 'pending',
       }),
     ).label,
@@ -86,14 +86,14 @@ test('routing states read as sentences about the service', () => {
   )
   assert.equal(
     servingText(
-      service({
+      app({
         state: 'no_target',
       }),
     ).label,
     'Not running. Calls to web are refused.',
   )
   const mismatch = servingText(
-    service({
+    app({
       state: 'mismatch',
     }),
   )
@@ -104,10 +104,10 @@ test('routing states read as sentences about the service', () => {
 })
 
 test('draining shows the old deployment finishing its connections', () => {
-  assert.equal(drainingText(service({}).switch), null)
+  assert.equal(drainingText(app({}).switch), null)
   assert.equal(
     drainingText(
-      service({
+      app({
         draining: {
           id: 'dep_13',
           number: 13,
@@ -157,7 +157,7 @@ test('domain state names the first thing that is not live', () => {
         result: null,
       },
     }).label,
-    'Waiting for the station',
+    'Waiting for the server',
   )
   assert.equal(
     domainState({
@@ -167,12 +167,12 @@ test('domain state names the first thing that is not live', () => {
         result: 'failed',
       },
     }).label,
-    'The station couldn’t apply it',
+    'The server couldn’t apply it',
   )
 })
 
-test('a public TCP port without a reported result waits for the station', () => {
-  assert.equal(exposureState(undefined).label, 'Waiting for the station')
+test('a public TCP port without a reported result waits for the server', () => {
+  assert.equal(exposureState(undefined).label, 'Waiting for the server')
   assert.equal(
     exposureState({
       result: 'ok',
@@ -186,8 +186,8 @@ test('a public TCP port reads as words, with or without a public address', () =>
     public: '203.0.113.5:30001',
     port: 5432,
     host_port: 30001,
-    station_id: 'sta_home',
-  } as MapService['exposures'][number]
+    server_id: 'sta_home',
+  } as MapApp['exposures'][number]
 
   assert.equal(exposureText(map, exposure), '203.0.113.5:30001 to port 5432')
   assert.equal(
@@ -201,9 +201,9 @@ test('a public TCP port reads as words, with or without a public address', () =>
     exposureText(map, {
       ...exposure,
       public: null,
-      station_id: 'sta_gone',
+      server_id: 'sta_gone',
     }),
-    'Port 30001 on the station (no public address)',
+    'Port 30001 on the server (no public address)',
   )
 })
 
@@ -244,14 +244,14 @@ test('hop details read as pairs and hide internals', () => {
       reason: 'container exited',
       empty: null,
     }),
-    'Deployment #14 · station home · stable address 10.200.0.7 · container exited',
+    'Deployment #14 · server home · stable address 10.200.0.7 · container exited',
   )
   assert.equal(
     hopDetail({
       path: 'host_address',
       listening: [],
     }),
-    'rule “The station and Stationly’s own services” · listening on nothing',
+    'rule “The server and Stationly’s own apps” · listening on nothing',
   )
   assert.equal(
     hopDetail({
@@ -273,7 +273,7 @@ test('hop details read as pairs and hide internals', () => {
   )
 })
 
-test('steps name the services they check', () => {
+test('steps name the apps they check', () => {
   const entity = {
     from: 'web',
     to: 'db:5432',

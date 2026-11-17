@@ -91,7 +91,7 @@ function useFollowedLines(url: string | null) {
         new ApiFailure(503, {
           code: body.code,
           explanation: body.explanation,
-          fix: 'The station holds the logs; they stream again once it is reachable.',
+          fix: 'The server holds the logs; they stream again once it is reachable.',
         }),
       )
       close()

@@ -13,11 +13,13 @@ import {
 import type { FakeStation } from './helpers/fake-station.ts'
 import { compileResponse } from './helpers/json-schema.ts'
 import {
-  createEnvironment,
+  createMachine,
+  createPreview,
   createProject,
-  createSandbox,
   pinPlatform,
-  waitForSandbox,
+  placed,
+  productionId,
+  waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
@@ -33,10 +35,10 @@ const api = (method: string, path: string, body?: unknown, token = h.admin.token
 before(async () => {
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   station = await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
   })
   doc = (await api('GET', '/openapi/json')).body
 })
@@ -44,32 +46,32 @@ before(async () => {
 after(async () => h.close())
 
 const routes: [string, string, number[]][] = [
-  ['get', '/v1/environments/{environment}/sandboxes', [200]],
-  ['post', '/v1/environments/{environment}/sandboxes', [201]],
-  ['get', '/v1/sandboxes/{sandbox}', [200]],
-  ['patch', '/v1/sandboxes/{sandbox}', [200]],
-  ['delete', '/v1/sandboxes/{sandbox}', [200]],
-  ['post', '/v1/sandboxes/{sandbox}/start', [200]],
-  ['post', '/v1/sandboxes/{sandbox}/stop', [200]],
-  ['post', '/v1/sandboxes/{sandbox}/exec', [201]],
-  ['post', '/v1/sandboxes/{sandbox}/shells', [201]],
-  ['get', '/v1/sandboxes/{sandbox}/runs', [200]],
-  ['get', '/v1/sandboxes/{sandbox}/metrics', [200]],
-  ['get', '/v1/sandboxes/{sandbox}/variables', [200]],
-  ['get', '/v1/sandboxes/{sandbox}/variables/resolved', [200]],
-  ['patch', '/v1/sandboxes/{sandbox}/variables', [200]],
-  ['get', '/v1/sandboxes/{sandbox}/connections', [200]],
-  ['get', '/v1/sandboxes/{sandbox}/dns-log', [200]],
-  ['post', '/v1/sandboxes/{sandbox}/snapshots', [201]],
-  ['get', '/v1/sandboxes/{sandbox}/snapshots', [200]],
-  ['get', '/v1/environments/{environment}/sandbox-snapshots', [200]],
-  ['get', '/v1/sandbox-snapshots/{id}', [200]],
-  ['delete', '/v1/sandbox-snapshots/{id}', [200]],
-  ['post', '/v1/stations/{station}/sandbox-storage/grow', [200, 202]],
+  ['get', '/v1/projects/{project}/machines', [200]],
+  ['post', '/v1/projects/{project}/machines', [201]],
+  ['get', '/v1/machines/{machine}', [200]],
+  ['patch', '/v1/machines/{machine}', [200]],
+  ['delete', '/v1/machines/{machine}', [200]],
+  ['post', '/v1/machines/{machine}/start', [200]],
+  ['post', '/v1/machines/{machine}/stop', [200]],
+  ['post', '/v1/machines/{machine}/exec', [201]],
+  ['post', '/v1/machines/{machine}/shells', [201]],
+  ['get', '/v1/machines/{machine}/runs', [200]],
+  ['get', '/v1/machines/{machine}/metrics', [200]],
+  ['get', '/v1/machines/{machine}/keys', [200]],
+  ['get', '/v1/machines/{machine}/keys/resolved', [200]],
+  ['patch', '/v1/machines/{machine}/keys', [200]],
+  ['get', '/v1/machines/{machine}/connections', [200]],
+  ['get', '/v1/machines/{machine}/dns-log', [200]],
+  ['post', '/v1/machines/{machine}/snapshots', [201]],
+  ['get', '/v1/machines/{machine}/snapshots', [200]],
+  ['get', '/v1/projects/{project}/machine-snapshots', [200]],
+  ['get', '/v1/machine-snapshots/{id}', [200]],
+  ['delete', '/v1/machine-snapshots/{id}', [200]],
+  ['post', '/v1/servers/{server}/machine-storage/grow', [200, 202]],
 ]
 
 describe('the OpenAPI document', () => {
-  test('lists every sandbox route with its success schema registered as a shared component', () => {
+  test('lists every machine route with its success schema registered as a shared component', () => {
     for (const [method, path, statuses] of routes) {
       const operation = doc.paths[path]?.[method]
 
@@ -83,78 +85,73 @@ describe('the OpenAPI document', () => {
     }
 
     for (const name of [
-      'Sandbox',
-      'SandboxCreated',
-      'SandboxDeleted',
-      'SandboxSnapshot',
-      'SandboxSnapshotCreated',
-      'SandboxExec',
-      'SandboxShell',
-      'SandboxConnections',
-      'SandboxVariablesOutcome',
-      'SandboxSnapshotDeleted',
+      'Machine',
+      'MachineCreated',
+      'MachineDeleted',
+      'MachineSnapshot',
+      'MachineSnapshotCreated',
+      'MachineExec',
+      'MachineShell',
+      'MachineConnections',
+      'MachineKeysOutcome',
+      'MachineSnapshotDeleted',
       'StorageGrown',
-      'SandboxSize',
-      'SandboxImage',
-      'SandboxMetricSample',
-      'SandboxRunOutput',
+      'MachineSize',
+      'MachineImage',
+      'MachineMetricSample',
+      'MachineRunOutput',
     ]) {
       assert.ok(doc.components.schemas[name], `component ${name} is not registered`)
     }
   })
 
-  test('every error code and warning of the sandbox area is in the catalog with the documented status', () => {
+  test('every error code and warning of the machine area is in the catalog with the documented status', () => {
     const expected: Record<string, number> = {
-      SANDBOX_NOT_RUNNING: 409,
-      SANDBOX_STATE_CONFLICT: 409,
-      SANDBOX_QUOTA_EXCEEDED: 422,
-      SANDBOX_DISK_FULL: 422,
-      SANDBOX_START_FAILED: 422,
-      SANDBOX_STORAGE_GROW_FAILED: 422,
-      SANDBOX_IMAGE_UNPACK_FAILED: 422,
+      MACHINE_NOT_RUNNING: 409,
+      MACHINE_STATE_CONFLICT: 409,
+      MACHINE_QUOTA_EXCEEDED: 422,
+      MACHINE_DISK_FULL: 422,
+      MACHINE_START_FAILED: 422,
+      MACHINE_STORAGE_GROW_FAILED: 422,
+      MACHINE_IMAGE_UNPACK_FAILED: 422,
     }
 
     for (const [code, http] of Object.entries(expected)) {
       assert.equal(errorCatalog.find((e) => e.code === code)?.http, http, code)
     }
 
-    assert.ok(warningCatalog.includes('SANDBOX_RESTART_REQUIRED'))
-    assert.ok(warningCatalog.includes('SANDBOX_SNAPSHOT_CRASH_CONSISTENT'))
-    assert.ok(doc.components.schemas.ErrorCode.enum.includes('SANDBOX_QUOTA_EXCEEDED'))
+    assert.ok(warningCatalog.includes('MACHINE_RESTART_REQUIRED'))
+    assert.ok(warningCatalog.includes('MACHINE_SNAPSHOT_CRASH_CONSISTENT'))
+    assert.ok(doc.components.schemas.ErrorCode.enum.includes('MACHINE_QUOTA_EXCEEDED'))
   })
 
   test('live replies match their declared schemas, with and without fields', async () => {
-    const project = await createProject(h, 'alpha')
-    const box = await createSandbox(h, project.default_environment_id, {
+    await createProject(h, 'alpha')
+    const dev = await createPreview(h, 'alpha', 'dev')
+    const box = await createMachine(h, dev.id, {
       name: 'checked',
     })
 
-    await waitForSandbox(h, box.id, 'running')
-    const exec = await api('POST', `/v1/sandboxes/${box.id}/exec`, {
+    await waitForMachine(h, box.id, 'running')
+    const exec = await api('POST', `/v1/machines/${box.id}/exec`, {
       command: ['echo', 'x'],
     })
-    const snapshot = await api('POST', `/v1/sandboxes/${box.id}/snapshots`, {
+    const snapshot = await api('POST', `/v1/machines/${box.id}/snapshots`, {
       name: 'checked',
     })
     const reads: [string, string][] = [
-      ['/v1/sandboxes/{sandbox}', `/v1/sandboxes/${box.id}`],
-      ['/v1/sandboxes/{sandbox}', `/v1/sandboxes/${box.id}?fields=*`],
-      [
-        '/v1/environments/{environment}/sandboxes',
-        `/v1/environments/${project.default_environment_id}/sandboxes?fields=*`,
-      ],
-      ['/v1/sandboxes/{sandbox}/runs', `/v1/sandboxes/${box.id}/runs?fields=*`],
-      ['/v1/sandboxes/{sandbox}/metrics', `/v1/sandboxes/${box.id}/metrics`],
-      ['/v1/sandboxes/{sandbox}/connections', `/v1/sandboxes/${box.id}/connections`],
-      ['/v1/sandboxes/{sandbox}/dns-log', `/v1/sandboxes/${box.id}/dns-log`],
-      ['/v1/sandboxes/{sandbox}/snapshots', `/v1/sandboxes/${box.id}/snapshots?fields=*`],
-      [
-        '/v1/environments/{environment}/sandbox-snapshots',
-        `/v1/environments/${project.default_environment_id}/sandbox-snapshots?fields=*`,
-      ],
-      ['/v1/sandbox-snapshots/{id}', `/v1/sandbox-snapshots/${snapshot.body.id}?fields=*`],
-      ['/v1/sandboxes/{sandbox}/variables', `/v1/sandboxes/${box.id}/variables`],
-      ['/v1/sandboxes/{sandbox}/variables/resolved', `/v1/sandboxes/${box.id}/variables/resolved`],
+      ['/v1/machines/{machine}', `/v1/machines/${box.id}`],
+      ['/v1/machines/{machine}', `/v1/machines/${box.id}?fields=*`],
+      ['/v1/projects/{project}/machines', placed(h, dev.id, `machines?fields=*`)],
+      ['/v1/machines/{machine}/runs', `/v1/machines/${box.id}/runs?fields=*`],
+      ['/v1/machines/{machine}/metrics', `/v1/machines/${box.id}/metrics`],
+      ['/v1/machines/{machine}/connections', `/v1/machines/${box.id}/connections`],
+      ['/v1/machines/{machine}/dns-log', `/v1/machines/${box.id}/dns-log`],
+      ['/v1/machines/{machine}/snapshots', `/v1/machines/${box.id}/snapshots?fields=*`],
+      ['/v1/projects/{project}/machine-snapshots', placed(h, dev.id, `machine-snapshots?fields=*`)],
+      ['/v1/machine-snapshots/{id}', `/v1/machine-snapshots/${snapshot.body.id}?fields=*`],
+      ['/v1/machines/{machine}/keys', `/v1/machines/${box.id}/keys`],
+      ['/v1/machines/{machine}/keys/resolved', `/v1/machines/${box.id}/keys/resolved`],
     ]
 
     for (const [path, url] of reads) {
@@ -171,8 +168,8 @@ describe('the OpenAPI document', () => {
     }
 
     const writes: [string, string, any][] = [
-      ['post', '/v1/sandboxes/{sandbox}/exec', exec],
-      ['post', '/v1/sandboxes/{sandbox}/snapshots', snapshot],
+      ['post', '/v1/machines/{machine}/exec', exec],
+      ['post', '/v1/machines/{machine}/snapshots', snapshot],
     ]
 
     for (const [method, path, reply] of writes) {
@@ -185,12 +182,11 @@ describe('the OpenAPI document', () => {
       )
     }
 
-    const patched = await api('PATCH', `/v1/sandboxes/${box.id}`, {
+    const patched = await api('PATCH', `/v1/machines/${box.id}`, {
       docker: true,
     })
     const patchSchema = compileResponse(
-      doc.paths['/v1/sandboxes/{sandbox}'].patch.responses['200'].content['application/json']
-        .schema,
+      doc.paths['/v1/machines/{machine}'].patch.responses['200'].content['application/json'].schema,
       doc.components.schemas,
     )
 
@@ -198,17 +194,17 @@ describe('the OpenAPI document', () => {
   })
 
   test('a request body outside the schema is VALIDATION_FAILED with issue paths', async () => {
-    const project = await createProject(h, 'beta')
-    const envId = project.default_environment_id
+    await createProject(h, 'beta')
+    const envId = (await createPreview(h, 'beta', 'dev')).id
     const cases: [string, unknown][] = [
       [
-        `/v1/environments/${envId}/sandboxes`,
+        placed(h, envId, `machines`),
         {
           network: 'wan',
         },
       ],
       [
-        `/v1/environments/${envId}/sandboxes`,
+        placed(h, envId, `machines`),
         {
           size: {
             cpu_millis: 1,
@@ -216,16 +212,16 @@ describe('the OpenAPI document', () => {
         },
       ],
       [
-        `/v1/environments/${envId}/sandboxes`,
+        placed(h, envId, `machines`),
         {
           unknown: true,
         },
       ],
       [
-        `/v1/environments/${envId}/sandboxes`,
+        placed(h, envId, `machines`),
         {
           from: {
-            sandbox: 'a',
+            machine: 'a',
             snapshot: 'b',
           },
         },
@@ -243,29 +239,35 @@ describe('the OpenAPI document', () => {
 })
 
 describe('the project summary', () => {
-  test('sandbox_count and workspace_count count plain sandboxes and workspaces across every environment of the project', async () => {
+  test('machine_count and workspace_count count plain machines and workspaces across production and every preview', async () => {
     const counted = await createProject(h, 'counted')
     const empty = await createProject(h, 'uncounted')
-    const staging = await createEnvironment(h, counted.id, 'staging')
+    const staging = await createPreview(h, counted.id, 'staging')
     const count = async (id: string) => {
       const list = await api('GET', '/v1/projects')
       const one = await api('GET', `/v1/projects/${id}`)
       const listed = list.body.items.find((p: any) => p.id === id)
 
-      assert.equal(listed.sandbox_count, one.body.sandbox_count)
+      assert.equal(listed.machine_count, one.body.machine_count)
       assert.equal(listed.workspace_count, one.body.workspace_count)
 
-      return [one.body.sandbox_count, one.body.workspace_count]
+      return [one.body.machine_count, one.body.workspace_count]
     }
 
     assert.deepEqual(await count(counted.id), [0, 0])
-    await createSandbox(h, counted.default_environment_id, {
-      name: 'first',
+    const first = await h.call('POST', placed(h, productionId(h, counted.id), 'machines'), {
+      cookie: h.admin.cookie,
+      origin: localOrigin,
+      body: {
+        name: 'first',
+      },
     })
-    await createSandbox(h, staging.id, {
+
+    assert.equal(first.status, 201, first.text)
+    await createMachine(h, staging.id, {
       name: 'second',
     })
-    await createSandbox(h, staging.id, {
+    await createMachine(h, staging.id, {
       name: 'third',
       workspace: {
         agent: 'claude',
@@ -277,11 +279,11 @@ describe('the project summary', () => {
   })
 })
 
-describe('growing the sandbox filesystem', () => {
+describe('growing the machine filesystem', () => {
   const grow = (size_bytes: number, token = h.admin.token) =>
     api(
       'POST',
-      '/v1/stations/station-1/sandbox-storage/grow',
+      '/v1/servers/station-1/machine-storage/grow',
       {
         size_bytes,
       },
@@ -300,11 +302,11 @@ describe('growing the sandbox filesystem', () => {
       .body as any
 
     assert.equal(sent.size_bytes, 161061273600)
-    const stored = (await api('GET', '/v1/stations/station-1?fields=capabilities')).body
-      .capabilities.sandboxes
+    const stored = (await api('GET', '/v1/servers/station-1?fields=capabilities')).body.capabilities
+      .sandboxes
 
     assert.equal(stored.filesystem_bytes, 161061273600)
-    const inventory = (await api('GET', '/v1/inventory')).body.sandbox_storage
+    const inventory = (await api('GET', '/v1/inventory')).body.machine_storage
 
     assert.deepEqual(
       inventory.map((s: any) => [s.backing, s.size_bytes, s.max_size_bytes]),
@@ -327,7 +329,7 @@ describe('growing the sandbox filesystem', () => {
       [
         {
           project_id: '*',
-          environment_id: '*',
+          target: '*',
           level: 'deploy',
         },
       ],
@@ -339,21 +341,21 @@ describe('growing the sandbox filesystem', () => {
     assert.equal(reply.body.error.code, 'INSTANCE_SCOPE_REQUIRED')
   })
 
-  test('a failing step comes back as SANDBOX_STORAGE_GROW_FAILED naming the step', async () => {
+  test('a failing step comes back as MACHINE_STORAGE_GROW_FAILED naming the step', async () => {
     const failing = await startFakeStation(h, 'station-failing', {
-      sandboxes: {
+      machines: {
         growFailure: {
           step: 'resize',
           error: 'btrfs: no space',
         },
       },
     })
-    const reply = await api('POST', '/v1/stations/station-failing/sandbox-storage/grow', {
+    const reply = await api('POST', '/v1/servers/station-failing/machine-storage/grow', {
       size_bytes: 150 * 1024 ** 3,
     })
 
     assert.equal(reply.status, 422)
-    assert.equal(reply.body.error.code, 'SANDBOX_STORAGE_GROW_FAILED')
+    assert.equal(reply.body.error.code, 'MACHINE_STORAGE_GROW_FAILED')
     assert.deepEqual(
       [reply.body.error.details.step, reply.body.error.details.error],
       ['resize', 'btrfs: no space'],
@@ -361,17 +363,17 @@ describe('growing the sandbox filesystem', () => {
     await failing.close()
   })
 
-  test('a station without the capability answers STATION_CAPABILITY_MISSING', async () => {
+  test('a station without the capability answers SERVER_CAPABILITY_MISSING', async () => {
     await startFakeStation(h, 'station-plain')
-    const reply = await api('POST', '/v1/stations/station-plain/sandbox-storage/grow', {
+    const reply = await api('POST', '/v1/servers/station-plain/machine-storage/grow', {
       size_bytes: 1 << 40,
     })
 
     assert.equal(reply.status, 422)
-    assert.equal(reply.body.error.code, 'STATION_CAPABILITY_MISSING')
+    assert.equal(reply.body.error.code, 'SERVER_CAPABILITY_MISSING')
   })
 
-  test('under platform.protected a non-human grow is staged and a human accepts it', async () => {
+  test('under platform.protected a non-human grow waits for approval and a human approves it', async () => {
     const set = await h.call('PATCH', '/v1/settings', {
       cookie: h.admin.cookie,
       origin: localOrigin,
@@ -381,25 +383,27 @@ describe('growing the sandbox filesystem', () => {
     })
 
     assert.equal(set.status, 200, set.text)
-    const staged = await grow(180 * 1024 ** 3)
+    const waiting = await grow(180 * 1024 ** 3)
 
-    assert.equal(staged.status, 202, staged.text)
-    assert.equal(staged.body.changes[0].entity, 'sandbox_storage')
+    assert.equal(waiting.status, 202, waiting.text)
+    assert.equal(waiting.body.changes[0].entity, 'machine_storage')
     assert.equal(
       station.received.filter(
         (m) => m.type === 'sandbox.storage.grow' && (m.body as any).size_bytes === 180 * 1024 ** 3,
       ).length,
       0,
     )
-    const accepted = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, {
+    const approved = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
+      body: {
+        decision: 'approve',
+      },
       cookie: h.admin.cookie,
       origin: localOrigin,
-      body: {},
     })
 
-    assert.equal(accepted.status, 200, accepted.text)
-    assert.equal(accepted.body.grows[0].filesystem_bytes, 193273528320)
-    const human = await h.call('POST', '/v1/stations/station-1/sandbox-storage/grow', {
+    assert.equal(approved.status, 200, approved.text)
+    assert.equal(approved.body.grows[0].filesystem_bytes, 193273528320)
+    const human = await h.call('POST', '/v1/servers/station-1/machine-storage/grow', {
       cookie: h.admin.cookie,
       origin: localOrigin,
       body: {

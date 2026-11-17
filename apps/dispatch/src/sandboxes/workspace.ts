@@ -12,7 +12,7 @@ import {
   workspaceSharedKeys,
   workspaceUser,
   type Actor,
-  type SandboxVariableSet,
+  type MachineKeySet,
   type TaskMachineValue,
   type WorkspaceAgent,
   type WorkspaceSetupStep,
@@ -23,14 +23,14 @@ import { dropToken, extendToken, tokenRow } from '../auth/tokens.ts'
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import {
+  machine,
   machine_user,
-  sandbox,
-  type SandboxWorkspace,
+  type MachineWorkspace,
   type WorkspaceCleanup,
 } from '../db/schema.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
-import { variablesOf } from '../secrets/values.ts'
+import { keysOf } from '../secrets/values.ts'
 
 type ActorValue = Static<typeof Actor>
 
@@ -158,7 +158,7 @@ export const cleanupCommand = (entries: WorkspaceCleanup[]) => [
   cleanupLines(entries),
 ]
 
-export const machineSetupAs = (workspace: Pick<SandboxWorkspace, 'kind'>) =>
+export const machineSetupAs = (workspace: Pick<MachineWorkspace, 'kind'>) =>
   workspace.kind === 'project'
     ? {
         user: 'root',
@@ -209,7 +209,7 @@ export const workspacePath = (repository: string) =>
 
 export const setupCommand = (
   workspace: Pick<
-    SandboxWorkspace,
+    MachineWorkspace,
     'agent' | 'repository' | 'branch' | 'path' | 'task_branch' | 'kind'
   >,
   identity: GitIdentity | null = null,
@@ -231,60 +231,64 @@ export const setupCommand = (
   identity?.email ?? '',
 ]
 
-export const workspaceVariableSets = (
+export const workspaceKeySets = (
   db: Db,
-  context: { project: string; environment: string },
+  context: { project: string; preview: string | null },
   agent: WorkspaceAgent,
   key: string,
   taken: string[],
   kind: TaskMachineValue = 'own',
-): Static<typeof SandboxVariableSet>[] => {
+): Static<typeof MachineKeySet>[] => {
   const shared = kind === 'own'
   const defined = new Set(
-    variablesOf(db, {
+    keysOf(db, {
       scope: 'project',
       id: context.project,
     })
       .all()
-      .map((v) => v.key),
+      .map((v) => v.name),
   )
 
   return [
     ...(shared
       ? [
           {
-            key: workspaceEnv.token,
+            name: workspaceEnv.token,
             kind: 'sealed' as const,
             value: key,
           },
         ]
       : []),
     {
-      key: workspaceEnv.apiUrl,
+      name: workspaceEnv.apiUrl,
       kind: 'literal',
       value: workspaceApiUrl,
     },
     {
-      key: workspaceEnv.project,
+      name: workspaceEnv.project,
       kind: 'literal',
       value: context.project,
     },
-    {
-      key: workspaceEnv.environment,
-      kind: 'literal',
-      value: context.environment,
-    },
+    ...(context.preview
+      ? [
+          {
+            name: workspaceEnv.preview,
+            kind: 'literal' as const,
+            value: context.preview,
+          },
+        ]
+      : []),
     ...Object.entries(workspaceAgents[agent].env)
       .filter(([name]) => !taken.includes(name))
       .map(([name, value]) => ({
-        key: name,
+        name: name,
         kind: 'literal' as const,
         value,
       })),
     ...[...workspaceAgents[agent].keys, ...workspaceSharedKeys]
       .filter((name) => shared && defined.has(name) && !taken.includes(name))
       .map((name) => ({
-        key: name,
+        name: name,
         kind: 'reference' as const,
         reference: `\${{project.${name}}}`,
       })),
@@ -293,7 +297,7 @@ export const workspaceVariableSets = (
 
 export const revokeWorkspaceToken = (
   db: Db,
-  row: { workspace: SandboxWorkspace | null },
+  row: { workspace: MachineWorkspace | null },
   actor: ActorValue,
 ) => {
   const found = row.workspace ? tokenRow(db, row.workspace.token_id) : undefined
@@ -327,10 +331,10 @@ export const renewWorkspaceTokens = async (
   const tokenIds = [
     ...db
       .select({
-        workspace: sandbox.workspace,
+        workspace: machine.workspace,
       })
-      .from(sandbox)
-      .where(isNotNull(sandbox.workspace))
+      .from(machine)
+      .where(isNotNull(machine.workspace))
       .all()
       .map((row) => row.workspace!.token_id),
     ...db

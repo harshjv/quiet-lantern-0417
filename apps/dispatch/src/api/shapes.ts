@@ -15,7 +15,12 @@ import { Elysia, type t } from 'elysia'
 import {
   Actor as ActorSchema,
   agentAttentionKindValues,
+  appKindValues,
   appliedStatusValues,
+  approvalSourceValues,
+  approvalStatusValues,
+  appStatusReasonValues,
+  appStatusValues,
   attestationKindValues,
   baseImageCheckValues,
   BaseImage as BaseImageSchema,
@@ -38,6 +43,20 @@ import {
   ingressValues,
   injectionValues,
   JsonObject,
+  keyKindValues,
+  keyScopeValues,
+  MachineEgressDomain as MachineEgressDomainSchema,
+  machineEgressModeValues,
+  MachineLimits as MachineLimitsSchema,
+  machineNetworkValues,
+  MachineRuntimeAdvice as MachineRuntimeAdviceSchema,
+  MachineRuntime as MachineRuntimeSchema,
+  machineRuntimeValues,
+  MachineSize as MachineSizeSchema,
+  machineSnapshotStatusValues,
+  machineSourceStateValues,
+  machineStatusReasonValues,
+  machineStatusValues,
   networkDirectionValues,
   networkPathIds,
   networkPeerKinds,
@@ -62,38 +81,21 @@ import {
   Resources as ResourcesSchema,
   runKindValues,
   runStatusValues,
-  SandboxEgressDomain as SandboxEgressDomainSchema,
-  sandboxEgressModeValues,
-  SandboxLimits as SandboxLimitsSchema,
-  sandboxNetworkValues,
-  SandboxRuntimeAdvice as SandboxRuntimeAdviceSchema,
-  SandboxRuntime as SandboxRuntimeSchema,
-  sandboxRuntimeValues,
-  SandboxSize as SandboxSizeSchema,
-  sandboxSnapshotStatusValues,
-  sandboxSourceStateValues,
-  sandboxStatusReasonValues,
-  sandboxStatusValues,
   Schedule as ScheduleSchema,
-  serviceKindValues,
-  serviceStatusReasonValues,
-  serviceStatusValues,
-  shipRequestStatusValues,
-  stagedChangeSourceValues,
-  stagedChangeStatusValues,
+  scopeTargetValues,
+  serverStatusValues,
+  shipPhaseValues,
   staleReasonCodeValues,
   stationArchValues,
   StationCapabilities as StationCapabilitiesSchema,
   stationOsValues,
-  stationStatusValues,
   strategyValues,
   StringEnum,
+  targetKindValues,
   taskMachineValues,
   taskStatusValues,
   tokenKindValues,
   tokenLevelValues,
-  variableKindValues,
-  variableScopeValues,
   versionSkewValues,
   volumeOwnerValues,
   volumeSnapshotSourceValues,
@@ -183,6 +185,11 @@ export const NullableEnum = <const T extends readonly string[]>(values: T) =>
 const Str = Type.String()
 const Time = Type.String()
 const NStr = Nullable(Type.String())
+
+const NamedRef = Type.Object({
+  id: Str,
+  name: Str,
+})
 const NTime = Nullable(Type.String())
 const Int = Type.Integer()
 const NInt = Nullable(Type.Integer())
@@ -204,9 +211,9 @@ const Schedule = component('Schedule', ScheduleSchema)
 
 const Resources = component('Resources', ResourcesSchema)
 
-const StationCapabilities = component('StationCapabilities', StationCapabilitiesSchema)
-const SandboxRuntimeAdvice = component('SandboxRuntimeAdvice', SandboxRuntimeAdviceSchema)
-const SandboxRuntime = component('SandboxRuntime', SandboxRuntimeSchema)
+const ServerCapabilities = component('ServerCapabilities', StationCapabilitiesSchema)
+const MachineRuntimeAdvice = component('MachineRuntimeAdvice', MachineRuntimeAdviceSchema)
+const MachineRuntime = component('MachineRuntime', MachineRuntimeSchema)
 
 const BaseImage = component('BaseImage', BaseImageSchema)
 
@@ -311,7 +318,8 @@ export const Scope = component(
   Type.Object(
     {
       project_id: Str,
-      environment_id: Str,
+      target: StringEnum(scopeTargetValues),
+      preview_id: Type.Optional(Str),
       level: StringEnum(tokenLevelValues),
     },
     {
@@ -320,10 +328,10 @@ export const Scope = component(
   ),
 )
 
-export const ServiceStatus = component(
-  'ServiceStatus',
-  StringEnum(serviceStatusValues, {
-    title: 'ServiceStatus',
+export const AppStatus = component(
+  'AppStatus',
+  StringEnum(appStatusValues, {
+    title: 'AppStatus',
   }),
 )
 
@@ -418,8 +426,8 @@ export const EnvSnapshotEntry = component(
   'EnvSnapshotEntry',
   Type.Object(
     {
-      key: Str,
-      variable_id: Str,
+      name: Str,
+      key_id: Str,
       sealed: Bool,
       values: Type.Array(
         Type.Object({
@@ -456,7 +464,7 @@ export const Deployment = component(
     'Deployment',
     {
       ...stamps,
-      service_id: Str,
+      app_id: Str,
       number: Int,
       status: DeploymentStatus,
       trigger: Type.Object({
@@ -481,7 +489,7 @@ export const Deployment = component(
     },
     [
       'id',
-      'service_id',
+      'app_id',
       'number',
       'status',
       'trigger',
@@ -531,7 +539,7 @@ export const Domain = component(
     'Domain',
     {
       ...stamps,
-      service_port_id: Str,
+      app_port_id: Str,
       hostname: Str,
       kind: StringEnum(domainKindValues),
       ingress: StringEnum(ingressValues),
@@ -541,7 +549,7 @@ export const Domain = component(
       dns_instructions: Type.Array(DnsInstruction),
       error: Nullable(Diagnosis),
     },
-    ['id', 'service_port_id', 'hostname', 'kind', 'ingress', 'status', 'certificate'],
+    ['id', 'app_port_id', 'hostname', 'kind', 'ingress', 'status', 'certificate'],
   ),
 )
 
@@ -551,30 +559,30 @@ export const PortAllocation = component(
     'PortAllocation',
     {
       ...stamps,
-      service_port_id: Str,
-      station_id: Str,
+      app_port_id: Str,
+      server_id: Str,
       host_port: Int,
       status: StringEnum(portAllocationStatusValues),
       address: NStr,
     },
-    ['id', 'service_port_id', 'station_id', 'host_port', 'status', 'address'],
+    ['id', 'app_port_id', 'server_id', 'host_port', 'status', 'address'],
   ),
 )
 
-export const ServicePort = component(
-  'ServicePort',
+export const AppPort = component(
+  'AppPort',
   selectable(
-    'ServicePort',
+    'AppPort',
     {
       ...stamps,
-      service_id: Str,
+      app_id: Str,
       port: Int,
       protocol: StringEnum(portProtocolValues),
       grpc: Bool,
       domains: Type.Array(Domain),
       port_allocations: Type.Array(PortAllocation),
     },
-    ['id', 'service_id', 'port', 'protocol', 'grpc'],
+    ['id', 'app_id', 'port', 'protocol', 'grpc'],
   ),
 )
 
@@ -600,7 +608,7 @@ export const BackupTargetShape = Type.Union([
         minLength: 1,
       }),
       prefix: Type.String(),
-      credentials_variable: Type.String({
+      credentials_key: Type.String({
         minLength: 1,
       }),
     },
@@ -616,7 +624,7 @@ export const VolumeSnapshot = component(
     {
       id: Str,
       volume_id: Str,
-      station_id: NStr,
+      server_id: NStr,
       taken_at: Time,
       finished_at: NTime,
       location: Str,
@@ -650,8 +658,8 @@ export const Volume = component(
     {
       ...stamps,
       owner: StringEnum(volumeOwnerValues),
-      service_id: NStr,
-      station_id: Str,
+      app_id: NStr,
+      server_id: Str,
       mount_path: Str,
       docker_name: Str,
       size_bytes: Int,
@@ -659,16 +667,7 @@ export const Volume = component(
       retain_until: NTime,
       backups: Type.Array(VolumeSnapshot),
     },
-    [
-      'id',
-      'owner',
-      'service_id',
-      'station_id',
-      'mount_path',
-      'size_bytes',
-      'status',
-      'retain_until',
-    ],
+    ['id', 'owner', 'app_id', 'server_id', 'mount_path', 'size_bytes', 'status', 'retain_until'],
   ),
 )
 
@@ -678,8 +677,8 @@ export const SecretValue = component(
     'SecretValue',
     {
       id: Str,
-      variable_id: Str,
-      environment_id: NStr,
+      key_id: Str,
+      target: StringEnum(targetKindValues),
       version: Int,
       bytes: NInt,
       created_by: Actor,
@@ -690,8 +689,8 @@ export const SecretValue = component(
     },
     [
       'id',
-      'variable_id',
-      'environment_id',
+      'key_id',
+      'target',
       'version',
       'bytes',
       'created_by',
@@ -703,48 +702,36 @@ export const SecretValue = component(
   ),
 )
 
-export const VariableKind = component(
-  'VariableKind',
-  StringEnum(variableKindValues, {
-    title: 'VariableKind',
+export const KeyKind = component(
+  'KeyKind',
+  StringEnum(keyKindValues, {
+    title: 'KeyKind',
   }),
 )
 
-export const Variable = component(
-  'Variable',
+export const Key = component(
+  'Key',
   selectable(
-    'Variable',
+    'Key',
     {
       ...stamps,
-      scope: StringEnum(variableScopeValues),
+      scope: StringEnum(keyScopeValues),
       project_id: NStr,
-      service_id: NStr,
-      sandbox_id: NStr,
-      key: Str,
-      kind: VariableKind,
+      app_id: NStr,
+      machine_id: NStr,
+      name: Str,
+      kind: KeyKind,
       reference: NStr,
       injection: StringEnum(injectionValues),
       build: Bool,
-      copy_to_clones: Bool,
       head_version: NInt,
       bytes: NInt,
       sealed: Bool,
       value: Type.Null(),
-      environments: Type.Array(Str),
+      targets: Type.Array(StringEnum(targetKindValues)),
       versions: Type.Array(SecretValue),
     },
-    [
-      'id',
-      'scope',
-      'key',
-      'kind',
-      'reference',
-      'injection',
-      'build',
-      'copy_to_clones',
-      'head_version',
-      'bytes',
-    ],
+    ['id', 'scope', 'name', 'kind', 'reference', 'injection', 'build', 'head_version', 'bytes'],
   ),
 )
 
@@ -755,8 +742,8 @@ const repoSource = {
   auth: NullableEnum(repoAuthValues),
 }
 
-export const ServiceSource = component(
-  'ServiceSource',
+export const AppSource = component(
+  'AppSource',
   Type.Union(
     [
       Type.Object({
@@ -784,7 +771,7 @@ export const ServiceSource = component(
       }),
     ],
     {
-      title: 'ServiceSource',
+      title: 'AppSource',
     },
   ),
 )
@@ -803,17 +790,18 @@ export const Export = component(
   ),
 )
 
-export const Service = component(
-  'Service',
+export const App = component(
+  'App',
   selectable(
-    'Service',
+    'App',
     {
       ...stamps,
-      environment_id: Str,
+      project_id: Str,
+      preview_id: NStr,
       name: Str,
-      kind: StringEnum(serviceKindValues),
-      station_id: Str,
-      source: ServiceSource,
+      kind: StringEnum(appKindValues),
+      server_id: Str,
+      source: AppSource,
       command: Nullable(Type.Array(Str)),
       build_args: Nullable(Type.Record(Str, Str)),
       limits: Type.Object({
@@ -847,28 +835,29 @@ export const Service = component(
       pre_deploy: Nullable(Type.Array(Str)),
       schedule: Nullable(Schedule),
       current_deployment_id: NStr,
-      status: ServiceStatus,
-      status_reason: NullableEnum(serviceStatusReasonValues),
+      status: AppStatus,
+      status_reason: NullableEnum(appStatusReasonValues),
       desired_state: StringEnum(desiredStateValues),
       stale: Bool,
       stale_reasons: Type.Array(StaleReason),
-      ports: Type.Array(ServicePort),
+      ports: Type.Array(AppPort),
       volumes: Type.Array(Volume),
       domains: Type.Array(Domain),
       port_allocations: Type.Array(PortAllocation),
       current_deployment: Nullable(Deployment),
-      variables: Type.Array(Variable),
+      keys: Type.Array(Key),
       exports: Type.Array(Export),
     },
     [
       'id',
-      'environment_id',
+      'project_id',
+      'preview_id',
       'name',
       'kind',
       'status',
       'status_reason',
       'desired_state',
-      'station_id',
+      'server_id',
       'source',
       'current_deployment_id',
       'stale',
@@ -881,8 +870,8 @@ export const Edge = component(
   'Edge',
   Type.Object(
     {
-      from_service: Str,
-      to_service: Str,
+      from_app: Str,
+      to_app: Str,
       keys: Type.Array(Str),
     },
     {
@@ -892,58 +881,69 @@ export const Edge = component(
   ),
 )
 
-export const PullRequest = component(
-  'PullRequest',
-  Type.Object(
+export const PreviewOrigin = component(
+  'PreviewOrigin',
+  Type.Union(
+    [
+      Type.Object(
+        {
+          type: Type.Literal('task'),
+          task_id: Str,
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+      Type.Object(
+        {
+          type: Type.Literal('pull_request'),
+          repo: Str,
+          number: Int,
+          head_sha: Str,
+          fork: Bool,
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+      Type.Object(
+        {
+          type: Type.Literal('named'),
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+    ],
     {
-      repo: Str,
-      number: Int,
-      head_sha: Str,
-      fork: Bool,
-    },
-    {
-      title: 'PullRequest',
+      title: 'PreviewOrigin',
     },
   ),
 )
 
-export const Environment = component(
-  'Environment',
+export const Preview = component(
+  'Preview',
   selectable(
-    'Environment',
+    'Preview',
     {
       ...stamps,
       project_id: Str,
       name: Str,
-      protected: Bool,
-      ephemeral: Bool,
-      source_environment_id: NStr,
-      pull_request: Nullable(PullRequest),
-      ttl_seconds: NInt,
-      service_count: Int,
-      pending_staged_changes: Int,
-      services: Type.Array(Service),
+      origin: PreviewOrigin,
+      expires_at: NTime,
+      app_count: Int,
+      apps: Type.Array(App),
       edges: Type.Array(Edge),
     },
-    [
-      'id',
-      'project_id',
-      'name',
-      'protected',
-      'ephemeral',
-      'ttl_seconds',
-      'pull_request',
-      'service_count',
-      'pending_staged_changes',
-    ],
+    ['id', 'project_id', 'name', 'origin', 'expires_at', 'app_count'],
   ),
 )
 
 export const StatusCounts = component(
   'StatusCounts',
   Type.Object(
-    Object.fromEntries(serviceStatusValues.map((s) => [s, Int])) as Record<
-      (typeof serviceStatusValues)[number],
+    Object.fromEntries(appStatusValues.map((s) => [s, Int])) as Record<
+      (typeof appStatusValues)[number],
       typeof Int
     >,
     {
@@ -962,47 +962,101 @@ export const Project = component(
       name: Str,
       shared: Bool,
       manifest_path: NStr,
-      default_environment_id: Str,
       build_cache_bytes: Int,
       workshop_uid_base: Int,
       image_retention_count: Int,
       base_image_auto_rebuild: Bool,
-      pr_environments: Type.Object({
-        enabled: Bool,
-        source_environment_id: NStr,
-      }),
-      environment_count: Int,
-      service_count: Int,
+      pull_request_previews: Bool,
+      preview_count: Int,
+      waiting_approvals: Int,
+      app_count: Int,
       status_counts: StatusCounts,
-      sandbox_count: Int,
+      machine_count: Int,
       workspace_count: Int,
-      environments: Type.Array(Environment),
-      variables: Type.Array(Variable),
+      previews: Type.Array(Preview),
+      apps: Type.Array(App),
+      edges: Type.Array(Edge),
+      keys: Type.Array(Key),
     },
     [
       'id',
       'name',
-      'default_environment_id',
-      'environment_count',
-      'service_count',
+      'preview_count',
+      'waiting_approvals',
+      'app_count',
       'status_counts',
-      'sandbox_count',
+      'machine_count',
       'workspace_count',
     ],
   ),
 )
 
-export const StagedChange = component(
-  'StagedChange',
+export const ApprovalShip = component(
+  'ApprovalShip',
+  Type.Object(
+    {
+      phase: StringEnum(shipPhaseValues),
+      run_id: Str,
+      pull_request: Nullable(
+        Type.Object(
+          {
+            repo: Str,
+            number: Int,
+            url: Str,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+      head_sha: NStr,
+      merge_sha: NStr,
+      reason: NStr,
+    },
+    {
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const approvalSummary = [
+  'id',
+  'project_id',
+  'task_id',
+  'title',
+  'status',
+  'source',
+  'requested_by',
+  'requester',
+  'requester_decides',
+  'decided_by',
+  'decided_at',
+  'self_approved',
+  'reason',
+  'ship',
+  'created_at',
+  'summary',
+] as const
+
+export const Approval = component(
+  'Approval',
   selectable(
-    'StagedChange',
+    'Approval',
     {
       ...stamps,
-      environment_id: NStr,
-      status: StringEnum(stagedChangeStatusValues),
-      source: StringEnum(stagedChangeSourceValues),
-      actor: Actor,
-      accepted_by: Nullable(Actor),
+      project_id: NStr,
+      task_id: NStr,
+      title: Str,
+      status: StringEnum(approvalStatusValues),
+      source: StringEnum(approvalSourceValues),
+      requested_by: Actor,
+      requester: NStr,
+      requester_decides: Bool,
+      decided_by: Nullable(Actor),
+      decided_at: NStr,
+      self_approved: Bool,
+      reason: NStr,
+      ship: Nullable(ApprovalShip),
       summary: Type.Object(
         {
           add: Int,
@@ -1018,7 +1072,7 @@ export const StagedChange = component(
       refs: Type.Record(Str, Str),
       deployments: Type.Array(Str),
     },
-    ['id', 'environment_id', 'status', 'source', 'actor', 'created_at', 'summary'],
+    approvalSummary,
   ),
 )
 
@@ -1029,9 +1083,9 @@ export const DeploymentCreated = component(
   }),
 )
 
-export const Staged = component(
-  'Staged',
-  extend(StagedChange, {
+export const ApprovalDetail = component(
+  'ApprovalDetail',
+  extend(Approval, {
     changes: Type.Array(Change),
     refs: Type.Record(Str, Str),
     deployments: Type.Array(Str),
@@ -1050,7 +1104,7 @@ export const Token = component(
       expires_at: Time,
       last_used_at: NTime,
       client_id: NStr,
-      station_id: NStr,
+      server_id: NStr,
       used_at: NTime,
     },
     ['id', 'name', 'kind', 'scopes', 'expires_at', 'last_used_at', 'client_id'],
@@ -1062,7 +1116,7 @@ export const Component = component(
   Type.Object(
     {
       name: StringEnum(componentNameValues),
-      station_id: NStr,
+      server_id: NStr,
       version: Str,
       digest: NStr,
       lockfile_version: Str,
@@ -1076,14 +1130,14 @@ export const Component = component(
   ),
 )
 
-export const Station = component(
-  'Station',
+export const Server = component(
+  'Server',
   selectable(
-    'Station',
+    'Server',
     {
       ...stamps,
       name: Str,
-      status: StringEnum(stationStatusValues),
+      status: StringEnum(serverStatusValues),
       draining: Bool,
       os: NullableEnum(stationOsValues),
       arch: NullableEnum(stationArchValues),
@@ -1093,11 +1147,11 @@ export const Station = component(
       resources: Nullable(Resources),
       intermittent: Bool,
       public_address: NStr,
-      sandbox_subnet: NStr,
-      sandbox_limits: component('SandboxLimits', SandboxLimitsSchema),
-      default_sandbox_runtime: Nullable(SandboxRuntime),
-      sandbox_runtime_advice: Nullable(SandboxRuntimeAdvice),
-      sandbox_memory: Type.Object({
+      machine_subnet: NStr,
+      machine_limits: component('MachineLimits', MachineLimitsSchema),
+      default_machine_runtime: Nullable(MachineRuntime),
+      machine_runtime_advice: Nullable(MachineRuntimeAdvice),
+      machine_memory: Type.Object({
         limit: Nullable(Int),
         used: Int,
         free: Nullable(Int),
@@ -1106,7 +1160,7 @@ export const Station = component(
       hosts_dispatch: Bool,
       generation: Int,
       revoked_at: NTime,
-      capabilities: Nullable(StationCapabilities),
+      capabilities: Nullable(ServerCapabilities),
       routes: Type.Unknown(),
       generation_failure: Nullable(
         Type.Object({
@@ -1176,13 +1230,13 @@ export const Build = component(
   ),
 )
 
-export const SandboxRunOutput = component(
-  'SandboxRunOutput',
+export const MachineRunOutput = component(
+  'MachineRunOutput',
   Type.Object(
     {
       untrusted: Type.Object(
         {
-          source: Type.Literal('sandbox exec output'),
+          source: Type.Literal('machine exec output'),
           text: Str,
         },
         {
@@ -1193,7 +1247,7 @@ export const SandboxRunOutput = component(
       cursor: NStr,
     },
     {
-      title: 'SandboxRunOutput',
+      title: 'MachineRunOutput',
       additionalProperties: false,
     },
   ),
@@ -1205,8 +1259,8 @@ export const Run = component(
     'Run',
     {
       ...stamps,
-      service_id: NStr,
-      sandbox_id: NStr,
+      app_id: NStr,
+      machine_id: NStr,
       deployment_id: NStr,
       kind: StringEnum(runKindValues),
       command: Type.Array(Str),
@@ -1218,12 +1272,12 @@ export const Run = component(
       finished_at: NTime,
       deadline_at: NTime,
       failure: Nullable(Diagnosis),
-      output: SandboxRunOutput,
+      output: MachineRunOutput,
     },
     [
       'id',
-      'service_id',
-      'sandbox_id',
+      'app_id',
+      'machine_id',
       'deployment_id',
       'kind',
       'command',
@@ -1348,22 +1402,14 @@ export const NetworkMap = component(
   'NetworkMap',
   Type.Object(
     {
-      environment: Type.Object(
-        {
-          id: Str,
-          name: Str,
-          project_id: Str,
-        },
-        {
-          additionalProperties: false,
-        },
-      ),
+      project_id: Str,
+      preview: Nullable(NamedRef),
       computed_at: Time,
       virtual_prefix: Str,
       subnets: Type.Array(
         Type.Object(
           {
-            station: Type.Object(
+            server: Type.Object(
               {
                 id: Str,
                 name: Str,
@@ -1384,14 +1430,14 @@ export const NetworkMap = component(
           },
         ),
       ),
-      services: Type.Array(
+      apps: Type.Array(
         Type.Object(
           {
             id: Str,
             name: Str,
-            kind: StringEnum(serviceKindValues),
-            status: ServiceStatus,
-            station_id: Str,
+            kind: StringEnum(appKindValues),
+            status: AppStatus,
+            server_id: Str,
             dns: Str,
             virtual_ip: NStr,
             ports: Type.Array(
@@ -1432,7 +1478,7 @@ export const NetworkMap = component(
               Type.Object(
                 {
                   id: Str,
-                  service_port_id: Str,
+                  app_port_id: Str,
                   hostname: Str,
                   kind: StringEnum(domainKindValues),
                   ingress: StringEnum(ingressValues),
@@ -1467,8 +1513,8 @@ export const NetworkMap = component(
               Type.Object(
                 {
                   id: Str,
-                  service_port_id: Str,
-                  station_id: Str,
+                  app_port_id: Str,
+                  server_id: Str,
                   host_port: Int,
                   status: StringEnum(portAllocationStatusValues),
                   address: NStr,
@@ -1487,17 +1533,17 @@ export const NetworkMap = component(
           },
         ),
       ),
-      sandboxes: Type.Array(
+      machines: Type.Array(
         Type.Object(
           {
             id: Str,
             name: Str,
-            status: StringEnum(sandboxStatusValues),
-            station_id: Str,
+            status: StringEnum(machineStatusValues),
+            server_id: Str,
             address: NStr,
             egress: Type.Object(
               {
-                mode: StringEnum(sandboxEgressModeValues),
+                mode: StringEnum(machineEgressModeValues),
                 domains: Type.Array(
                   Type.Object(
                     {
@@ -1544,7 +1590,7 @@ export const NetworkMap = component(
                 {
                   kind: Type.Literal('domain'),
                   hostname: Str,
-                  service: Str,
+                  app: Str,
                   port: Int,
                 },
                 {
@@ -1555,7 +1601,7 @@ export const NetworkMap = component(
                 {
                   kind: Type.Literal('tcp'),
                   public: NStr,
-                  service: Str,
+                  app: Str,
                   port: Int,
                 },
                 {
@@ -1573,7 +1619,7 @@ export const NetworkMap = component(
         Type.Object(
           {
             path: StringEnum(pathIdValues),
-            from: StringEnum(['every service', 'internet', 'a sandbox']),
+            from: StringEnum(['every app', 'internet', 'a machine']),
             to: Str,
             verdict: StringEnum(pathVerdictValues),
             rule: Type.Optional(Str),
@@ -1596,7 +1642,7 @@ export const NetworkConnections = component(
   'NetworkConnections',
   Type.Object(
     {
-      service: Type.Object(
+      app: Type.Object(
         {
           id: Str,
           name: Str,
@@ -1627,10 +1673,10 @@ export const NetworkConnections = component(
             peer: Type.Object(
               {
                 kind: StringEnum(networkPeerKinds),
-                service: Type.Optional(Str),
-                service_id: Type.Optional(Str),
-                sandbox: Type.Optional(Str),
-                sandbox_id: Type.Optional(Str),
+                app: Type.Optional(Str),
+                app_id: Type.Optional(Str),
+                machine: Type.Optional(Str),
+                machine_id: Type.Optional(Str),
                 deployment_id: Type.Optional(NStr),
                 address: Type.Optional(Str),
               },
@@ -1797,7 +1843,7 @@ export const NetworkProbe = component(
   'NetworkProbe',
   Type.Object(
     {
-      service: Str,
+      app: Str,
       ...probeShape,
     },
     {
@@ -1807,15 +1853,15 @@ export const NetworkProbe = component(
   ),
 )
 
-export const SandboxNetworkProbe = component(
-  'SandboxNetworkProbe',
+export const MachineNetworkProbe = component(
+  'MachineNetworkProbe',
   Type.Object(
     {
-      sandbox: Str,
+      machine: Str,
       ...probeShape,
     },
     {
-      title: 'SandboxNetworkProbe',
+      title: 'MachineNetworkProbe',
       additionalProperties: false,
     },
   ),
@@ -1860,42 +1906,42 @@ export const DnsLog = component(
   ),
 )
 
-export const SandboxSize = component('SandboxSize', SandboxSizeSchema)
+export const MachineSize = component('MachineSize', MachineSizeSchema)
 
-export const SandboxStatus = component(
-  'SandboxStatus',
-  StringEnum(sandboxStatusValues, {
-    title: 'SandboxStatus',
+export const MachineStatus = component(
+  'MachineStatus',
+  StringEnum(machineStatusValues, {
+    title: 'MachineStatus',
   }),
 )
 
-export const SandboxImage = component(
-  'SandboxImage',
+export const MachineImage = component(
+  'MachineImage',
   Type.Object(
     {
       ref: NStr,
       digest: Str,
     },
     {
-      title: 'SandboxImage',
+      title: 'MachineImage',
       additionalProperties: false,
     },
   ),
 )
 
-const SandboxEgressView = Type.Object(
+const MachineEgressView = Type.Object(
   {
-    mode: StringEnum(sandboxEgressModeValues),
-    domains: Type.Optional(Type.Array(component('SandboxEgressDomain', SandboxEgressDomainSchema))),
+    mode: StringEnum(machineEgressModeValues),
+    domains: Type.Optional(Type.Array(component('MachineEgressDomain', MachineEgressDomainSchema))),
   },
   {
     additionalProperties: false,
   },
 )
 
-const SandboxForkedFrom = Type.Object(
+const MachineForkedFrom = Type.Object(
   {
-    sandbox_id: NStr,
+    machine_id: NStr,
     snapshot_id: NStr,
   },
   {
@@ -1903,7 +1949,7 @@ const SandboxForkedFrom = Type.Object(
   },
 )
 
-const SandboxWorkspace = Type.Object(
+const MachineWorkspace = Type.Object(
   {
     kind: Type.Optional(StringEnum(taskMachineValues)),
     agent: StringEnum(workspaceAgentValues),
@@ -1929,31 +1975,33 @@ const SandboxWorkspace = Type.Object(
   },
 )
 
-export const SandboxSnapshot = component(
-  'SandboxSnapshot',
+export const MachineSnapshot = component(
+  'MachineSnapshot',
   selectable(
-    'SandboxSnapshot',
+    'MachineSnapshot',
     {
       ...stamps,
-      sandbox_id: Str,
-      environment_id: Str,
-      station_id: Str,
+      machine_id: Str,
+      project_id: Str,
+      preview_id: NStr,
+      server_id: Str,
       name: NStr,
-      runtime: StringEnum(sandboxRuntimeValues),
-      status: StringEnum(sandboxSnapshotStatusValues),
-      source_state: StringEnum(sandboxSourceStateValues),
+      runtime: StringEnum(machineRuntimeValues),
+      status: StringEnum(machineSnapshotStatusValues),
+      source_state: StringEnum(machineSourceStateValues),
       taken_at: NTime,
       exclusive_bytes: Int,
       referenced_bytes: Int,
-      image: SandboxImage,
-      size: SandboxSize,
+      image: MachineImage,
+      size: MachineSize,
       failure: Nullable(Diagnosis),
     },
     [
       'id',
-      'sandbox_id',
-      'environment_id',
-      'station_id',
+      'machine_id',
+      'project_id',
+      'preview_id',
+      'server_id',
       'name',
       'runtime',
       'status',
@@ -1965,11 +2013,11 @@ export const SandboxSnapshot = component(
   ),
 )
 
-export const SandboxMetricSample = component(
-  'SandboxMetricSample',
+export const MachineMetricSample = component(
+  'MachineMetricSample',
   Type.Object(
     {
-      sandbox_id: Str,
+      machine_id: Str,
       container_id: Str,
       at: Time,
       cpu_pct: Type.Number(),
@@ -1983,7 +2031,7 @@ export const SandboxMetricSample = component(
       disk_limit_bytes: Type.Optional(Int),
     },
     {
-      title: 'SandboxMetricSample',
+      title: 'MachineMetricSample',
       additionalProperties: false,
     },
   ),
@@ -2052,65 +2100,13 @@ export const AgentEventPage = component(
   ),
 )
 
-const NamedRef = Type.Object({
-  id: Str,
-  name: Str,
-})
-
-export const ShipRequest = component(
-  'ShipRequest',
-  Type.Object(
-    {
-      id: Str,
-      task_id: Str,
-      project_id: Str,
-      title: Str,
-      status: StringEnum(shipRequestStatusValues),
-      pull_request: Nullable(
-        Type.Object(
-          {
-            repo: Str,
-            number: Type.Integer(),
-            url: Str,
-          },
-          {
-            additionalProperties: false,
-          },
-        ),
-      ),
-      preview_environment_id: NStr,
-      head_sha: NStr,
-      reason: NStr,
-      requested_by: Str,
-      decided_by: NStr,
-      decided_at: NStr,
-      created_at: Str,
-    },
-    {
-      additionalProperties: false,
-    },
-  ),
-)
-
-export const ShipRequestList = component(
-  'ShipRequestList',
-  Type.Object(
-    {
-      items: Type.Array(ShipRequest),
-    },
-    {
-      additionalProperties: false,
-    },
-  ),
-)
-
 export const Task = component(
   'Task',
   Type.Object(
     {
       id: Str,
       project: NamedRef,
-      environment: NamedRef,
+      preview_id: NStr,
       owner: Type.Object(
         {
           type: Str,
@@ -2126,14 +2122,17 @@ export const Task = component(
       branch: Str,
       agent: StringEnum(workspaceAgentValues),
       model: NStr,
-      sandbox: NamedRef,
-      machine: StringEnum(taskMachineValues),
+      machine: Type.Object({
+        id: Str,
+        name: Str,
+        kind: StringEnum(taskMachineValues),
+      }),
       port: Nullable(Type.Integer()),
-      ship: Nullable(ShipRequest),
+      ship: Nullable(Approval),
       preview: Nullable(
         Type.Object(
           {
-            environment_id: Str,
+            id: Str,
             name: Str,
             url: NStr,
           },
@@ -2227,45 +2226,47 @@ export const TaskPage = component(
   ),
 )
 
-export const Sandbox = component(
-  'Sandbox',
+export const Machine = component(
+  'Machine',
   selectable(
-    'Sandbox',
+    'Machine',
     {
       ...stamps,
-      environment_id: Str,
-      station_id: Str,
+      project_id: Str,
+      preview_id: NStr,
+      server_id: Str,
       name: Str,
-      status: SandboxStatus,
-      status_reason: NullableEnum(sandboxStatusReasonValues),
+      status: MachineStatus,
+      status_reason: NullableEnum(machineStatusReasonValues),
       desired_state: StringEnum(desiredStateValues),
-      image: SandboxImage,
-      size: SandboxSize,
-      runtime: StringEnum(sandboxRuntimeValues),
-      network: StringEnum(sandboxNetworkValues),
+      image: MachineImage,
+      size: MachineSize,
+      runtime: StringEnum(machineRuntimeValues),
+      network: StringEnum(machineNetworkValues),
       docker: Bool,
-      egress: SandboxEgressView,
+      egress: MachineEgressView,
       ttl_s: NInt,
       stop_at: NTime,
       delete_at: NTime,
       address: NStr,
       disk_used_bytes: Int,
-      forked_from: Nullable(SandboxForkedFrom),
-      workspace: Nullable(SandboxWorkspace),
+      forked_from: Nullable(MachineForkedFrom),
+      workspace: Nullable(MachineWorkspace),
       command: Nullable(Type.Array(Str)),
       exit_code: NInt,
       failure: Nullable(Diagnosis),
       started_at: NTime,
       stopped_at: NTime,
-      snapshots: Type.Array(SandboxSnapshot),
+      snapshots: Type.Array(MachineSnapshot),
       runs: Type.Array(Run),
-      metrics: Nullable(SandboxMetricSample),
-      variables: Type.Array(JsonObject),
+      metrics: Nullable(MachineMetricSample),
+      keys: Type.Array(JsonObject),
     },
     [
       'id',
-      'environment_id',
-      'station_id',
+      'project_id',
+      'preview_id',
+      'server_id',
       'name',
       'status',
       'status_reason',
@@ -2288,39 +2289,39 @@ export const Sandbox = component(
   ),
 )
 
-export const SandboxCreated = component(
-  'SandboxCreated',
-  extend(Sandbox, {
+export const MachineCreated = component(
+  'MachineCreated',
+  extend(Machine, {
     warnings: Warnings,
   }),
 )
 
-export const SandboxDeleted = component(
-  'SandboxDeleted',
+export const MachineDeleted = component(
+  'MachineDeleted',
   Type.Object(
     {
       deleted: Type.Literal(true),
       snapshots_kept: Int,
     },
     {
-      title: 'SandboxDeleted',
+      title: 'MachineDeleted',
       additionalProperties: false,
     },
   ),
 )
 
-export const SandboxSnapshotCreated = component(
-  'SandboxSnapshotCreated',
-  extend(SandboxSnapshot, {
+export const MachineSnapshotCreated = component(
+  'MachineSnapshotCreated',
+  extend(MachineSnapshot, {
     warnings: Warnings,
   }),
 )
 
-export const SandboxConnections = component(
-  'SandboxConnections',
+export const MachineConnections = component(
+  'MachineConnections',
   Type.Object<TProperties>(
     {
-      sandbox: Type.Object(
+      machine: Type.Object(
         {
           id: Str,
           name: Str,
@@ -2331,12 +2332,12 @@ export const SandboxConnections = component(
       ),
       ...Object.fromEntries(
         Object.entries(definitionOf(NetworkConnections).properties).filter(
-          ([key]) => key !== 'service' && key !== 'deployment_id',
+          ([key]) => key !== 'app' && key !== 'deployment_id',
         ),
       ),
     },
     {
-      title: 'SandboxConnections',
+      title: 'MachineConnections',
       additionalProperties: false,
     },
   ),
@@ -2356,42 +2357,42 @@ export const StorageGrown = component(
   ),
 )
 
-export const SandboxExec = component(
-  'SandboxExec',
+export const MachineExec = component(
+  'MachineExec',
   extend(Run, {
     attach_url: Type.Optional(Str),
   }),
 )
 
-export const SandboxShell = component(
-  'SandboxShell',
+export const MachineShell = component(
+  'MachineShell',
   extend(Run, {
     tty: Bool,
     attach_url: Str,
   }),
 )
 
-export const SandboxVariablesOutcome = component(
-  'SandboxVariablesOutcome',
+export const MachineKeysOutcome = component(
+  'MachineKeysOutcome',
   Type.Object(
     {
-      variables: Type.Array(Variable),
+      keys: Type.Array(Key),
     },
     {
-      title: 'SandboxVariablesOutcome',
+      title: 'MachineKeysOutcome',
       additionalProperties: false,
     },
   ),
 )
 
-export const SandboxSnapshotDeleted = component(
-  'SandboxSnapshotDeleted',
+export const MachineSnapshotDeleted = component(
+  'MachineSnapshotDeleted',
   Type.Object(
     {
       deleted: Type.Literal(true),
     },
     {
-      title: 'SandboxSnapshotDeleted',
+      title: 'MachineSnapshotDeleted',
       additionalProperties: false,
     },
   ),
@@ -2549,7 +2550,7 @@ export const TaskPreview = component(
   'TaskPreview',
   Type.Object(
     {
-      environment: Type.Object(
+      preview: Type.Object(
         {
           id: Str,
           name: Str,
@@ -2559,7 +2560,7 @@ export const TaskPreview = component(
         },
       ),
       run_id: Str,
-      services: Type.Array(Str),
+      apps: Type.Array(Str),
       url: NStr,
     },
     {

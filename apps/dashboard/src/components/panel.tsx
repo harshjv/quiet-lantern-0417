@@ -1,5 +1,5 @@
 import { useQueryErrorResetBoundary } from '@tanstack/react-query'
-import { CatchBoundary, useRouter, type ErrorComponentProps } from '@tanstack/react-router'
+import { CatchBoundary } from '@tanstack/react-router'
 import { Suspense, useEffect, type ReactNode } from 'react'
 
 import { ErrorState, Rows } from '@/components/page'
@@ -19,13 +19,6 @@ export function Failure({
 
   return <ErrorState error={error} title={title} onRetry={onRetry} />
 }
-
-export const failurePage = (title: string) =>
-  function PageFailure({ error }: ErrorComponentProps) {
-    const router = useRouter()
-
-    return <Failure error={error} title={title} onRetry={() => void router.invalidate()} />
-  }
 
 export function Panel({
   title,

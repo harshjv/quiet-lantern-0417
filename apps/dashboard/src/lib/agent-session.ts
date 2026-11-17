@@ -621,13 +621,13 @@ export const attentionText = {
 
 type Scope = {
   project_id: string
-  environment_id: string
+  target: string
   level: string
 }
 
 export const isInstanceAdmin = (scopes: readonly Scope[]) =>
   scopes.some(
-    (scope) => scope.level === 'admin' && scope.project_id === '*' && scope.environment_id === '*',
+    (scope) => scope.level === 'admin' && scope.project_id === '*' && scope.target === '*',
   )
 
 export const modelOf = (state: AgentState, sessionId: string) => {

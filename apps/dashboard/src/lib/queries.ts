@@ -9,14 +9,15 @@ import {
 import {
   api,
   unwrap,
+  type App,
   type Deployment,
-  type Environment,
-  type Sandbox,
-  type SandboxSnapshot,
-  type Service,
+  type Machine,
+  type MachineSnapshot,
+  type Preview,
 } from './api'
 import { merge, mergeItem, on, seed, seedItem, type Edit } from './cache'
 import { logTail, type LogSelector } from './logs'
+import { placeKey, placeOf, previewQuery, type Place } from './place'
 import { isTerminal, isTransient, snapshotsBusy } from './status'
 
 export const load = <TQueryFnData, TError, TData, TQueryKey extends QueryKey>(
@@ -66,16 +67,34 @@ export const projectQuery = (project: string) =>
       ),
   })
 
-export const environmentsQuery = (project: string) =>
+export const projectSettingsQuery = (project: string) =>
   queryOptions({
-    queryKey: ['environments', 'of', project],
+    queryKey: ['projects', project, 'settings'],
     queryFn: () =>
       unwrap(
         api.v1
           .projects({
             project,
           })
-          .environments.get({
+          .get({
+            query: {
+              fields:
+                'id,name,shared,manifest_path,build_cache_bytes,image_retention_count,base_image_auto_rebuild,pull_request_previews',
+            },
+          }),
+      ),
+  })
+
+export const previewsQuery = (project: string) =>
+  queryOptions({
+    queryKey: ['previews', 'of', project],
+    queryFn: () =>
+      unwrap(
+        api.v1
+          .projects({
+            project,
+          })
+          .previews.get({
             query: {
               limit: 200,
             },
@@ -83,14 +102,14 @@ export const environmentsQuery = (project: string) =>
       ),
   })
 
-export const environmentQuery = (environment: string) =>
+export const previewQueryOf = (preview: string) =>
   queryOptions({
-    queryKey: ['environments', environment],
+    queryKey: ['previews', preview],
     queryFn: () =>
       unwrap(
         api.v1
-          .environments({
-            environment,
+          .previews({
+            preview,
           })
           .get({
             query: {},
@@ -98,91 +117,92 @@ export const environmentQuery = (environment: string) =>
       ),
   })
 
-export const networkQuery = (environment: string) =>
+export const networkQuery = (place: Place) =>
   queryOptions({
-    queryKey: ['network', environment],
+    queryKey: ['network', placeKey(place)],
     queryFn: () =>
       unwrap(
         api.v1
-          .environments({
-            environment,
+          .projects({
+            project: place.project,
           })
           .network.get({
-            query: {},
+            query: previewQuery(place),
           }),
       ),
   })
 
-export const servicesQuery = (environment: string) =>
+export const appsQuery = (place: Place) =>
   queryOptions({
-    queryKey: ['services', 'of', environment],
+    queryKey: ['apps', 'of', placeKey(place)],
     queryFn: () =>
       unwrap(
         api.v1
-          .environments({
-            environment,
+          .projects({
+            project: place.project,
           })
-          .services.get({
+          .apps.get({
             query: {
+              ...previewQuery(place),
               limit: 200,
               fields:
-                'id,name,kind,status,status_reason,desired_state,source,stale,stale_reasons,current_deployment_id,current_deployment,domains',
+                'id,project_id,preview_id,name,kind,status,status_reason,desired_state,source,stale,stale_reasons,current_deployment_id,current_deployment,domains',
             },
           }),
       ),
   })
 
-export const serviceQuery = (service: string) =>
+export const appQuery = (app: string) =>
   queryOptions({
-    queryKey: ['services', service],
+    queryKey: ['apps', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           .get({
             query: {
               fields:
-                'id,environment_id,name,kind,status,status_reason,desired_state,station_id,source,current_deployment_id,stale,stale_reasons,health,health_default,last_health_change,ports,current_deployment',
+                'id,project_id,preview_id,name,kind,status,status_reason,desired_state,server_id,source,current_deployment_id,stale,stale_reasons,health,health_default,last_health_change,ports,current_deployment',
             },
           }),
       ),
   })
 
-export const deploymentsQuery = (service: string) =>
+export const deploymentsQuery = (app: string) =>
   queryOptions({
-    queryKey: ['deployments', 'of', service],
+    queryKey: ['deployments', 'of', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           .deployments.get({
             query: {
               limit: 50,
               fields:
-                'id,service_id,number,status,trigger,strategy,cancel_reason,started_at,finished_at,failure,image_ref,created_at',
+                'id,app_id,number,status,trigger,strategy,cancel_reason,started_at,finished_at,failure,image_ref,created_at',
             },
           }),
       ),
   })
 
-export const environmentDeploymentsQuery = (environment: string) =>
+export const placeDeploymentsQuery = (place: Place) =>
   queryOptions({
-    queryKey: ['deployments', 'in', environment],
+    queryKey: ['deployments', 'in', placeKey(place)],
     queryFn: () =>
       unwrap(
         api.v1
-          .environments({
-            environment,
+          .projects({
+            project: place.project,
           })
           .deployments.get({
             query: {
+              ...previewQuery(place),
               limit: 10,
-              fields:
-                'id,service_id,number,status,trigger,started_at,finished_at,failure,created_at',
+              fields: 'id,app_id,number,status,trigger,started_at,finished_at,failure,created_at',
             },
           }),
       ),
@@ -200,7 +220,7 @@ export const deploymentQuery = (id: string) =>
           .get({
             query: {
               fields:
-                'id,service_id,number,status,trigger,strategy,cancel_reason,started_at,finished_at,failure,image_ref,build_id,created_at,steps,build',
+                'id,app_id,number,status,trigger,strategy,cancel_reason,started_at,finished_at,failure,image_ref,build_id,created_at,steps,build',
             },
           }),
       ),
@@ -220,46 +240,46 @@ export const diagnosisQuery = (id: string) =>
       ),
   })
 
-export const variablesQuery = (service: string) =>
+export const keysQuery = (app: string) =>
   queryOptions({
-    queryKey: ['variables', 'of', service],
+    queryKey: ['keys', 'of', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
-          .variables.get(),
+          .keys.get(),
       ),
   })
 
-export const projectVariablesQuery = (project: string, environment: string) =>
+export const projectKeysQuery = (project: string, target: 'production' | 'preview') =>
   queryOptions({
-    queryKey: ['variables', 'project', project, environment],
+    queryKey: ['keys', 'project', project, target],
     queryFn: () =>
       unwrap(
         api.v1
           .projects({
             project,
           })
-          .variables.get({
+          .keys.get({
             query: {
-              environment,
+              target,
             },
           }),
       ),
   })
 
-export const resolvedQuery = (service: string) =>
+export const resolvedQuery = (app: string) =>
   queryOptions({
-    queryKey: ['variables', 'resolved', service],
+    queryKey: ['keys', 'resolved', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
-          .variables.resolved.get({
+          .keys.resolved.get({
             query: {},
           }),
       ),
@@ -267,45 +287,45 @@ export const resolvedQuery = (service: string) =>
     gcTime: 0,
   })
 
-export const domainsQuery = (service: string) =>
+export const domainsQuery = (app: string) =>
   queryOptions({
-    queryKey: ['domains', 'of', service],
+    queryKey: ['domains', 'of', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           .domains.get({
             query: {
               fields:
-                'id,service_port_id,hostname,kind,ingress,status,certificate,dns_instructions,error',
+                'id,app_port_id,hostname,kind,ingress,status,certificate,dns_instructions,error',
             },
           }),
       ),
   })
 
-export const portsQuery = (service: string) =>
+export const portsQuery = (app: string) =>
   queryOptions({
-    queryKey: ['ports', 'of', service],
+    queryKey: ['ports', 'of', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           .ports.get(),
       ),
   })
 
-export const allocationsQuery = (service: string) =>
+export const allocationsQuery = (app: string) =>
   queryOptions({
-    queryKey: ['port-allocations', 'of', service],
+    queryKey: ['port-allocations', 'of', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           ['port-allocations'].get({
             query: {
@@ -315,15 +335,15 @@ export const allocationsQuery = (service: string) =>
       ),
   })
 
-export const sandboxStationQuery = queryOptions({
-  queryKey: ['stations', 'online', 'sandbox_memory'],
+export const machineStationQuery = queryOptions({
+  queryKey: ['stations', 'online', 'machine_memory'],
   queryFn: async () => {
     const page = await unwrap(
-      api.v1.stations.get({
+      api.v1.servers.get({
         query: {
           status: 'online',
           limit: 2,
-          fields: 'sandbox_memory',
+          fields: 'machine_memory',
         },
       }),
     )
@@ -336,7 +356,7 @@ export const onlineStationsQuery = queryOptions({
   queryKey: ['stations', 'online'],
   queryFn: () =>
     unwrap(
-      api.v1.stations.get({
+      api.v1.servers.get({
         query: {
           status: 'online',
           limit: 200,
@@ -346,14 +366,14 @@ export const onlineStationsQuery = queryOptions({
   staleTime: 60_000,
 })
 
-export const connectionsQuery = (service: string) =>
+export const connectionsQuery = (app: string) =>
   queryOptions({
-    queryKey: ['connections', service],
+    queryKey: ['connections', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           .connections.get({
             query: {},
@@ -363,14 +383,14 @@ export const connectionsQuery = (service: string) =>
     retry: false,
   })
 
-export const dnsLogQuery = (service: string) =>
+export const dnsLogQuery = (app: string) =>
   queryOptions({
-    queryKey: ['dns-log', service],
+    queryKey: ['dns-log', app],
     queryFn: () =>
       unwrap(
         api.v1
-          .services({
-            service,
+          .apps({
+            app,
           })
           ['dns-log'].get({
             query: {
@@ -404,10 +424,10 @@ export const stationsQuery = queryOptions({
   queryKey: ['stations', 'list'],
   queryFn: () =>
     unwrap(
-      api.v1.stations.get({
+      api.v1.servers.get({
         query: {
           limit: 200,
-          fields: 'id,name,status,arch,capabilities,default_sandbox_runtime,sandbox_runtime_advice',
+          fields: 'id,name,status,arch,capabilities,default_machine_runtime,machine_runtime_advice',
         },
       }),
     ),
@@ -430,8 +450,8 @@ export const stationQuery = (station: string) =>
     queryFn: () =>
       unwrap(
         api.v1
-          .stations({
-            station,
+          .servers({
+            server: station,
           })
           .get({
             query: {
@@ -442,12 +462,12 @@ export const stationQuery = (station: string) =>
     retry: false,
   })
 
-export const stagedQuery = (status: string) =>
+export const approvalsQuery = (status: string) =>
   queryOptions({
-    queryKey: ['staged', 'list', status],
+    queryKey: ['approvals', 'list', status],
     queryFn: () =>
       unwrap(
-        api.v1['staged-changes'].get({
+        api.v1.approvals.get({
           query: {
             status,
             limit: 100,
@@ -456,41 +476,41 @@ export const stagedQuery = (status: string) =>
       ),
   })
 
-export const environmentStagedQuery = (environment: string) =>
+export const projectApprovalsQuery = (project: string) =>
   queryOptions({
-    queryKey: ['staged', 'in', environment],
+    queryKey: ['approvals', 'in', project],
     queryFn: () =>
       unwrap(
-        api.v1
-          .environments({
-            environment,
-          })
-          ['staged-changes'].get({
-            query: {
-              limit: 100,
-            },
-          }),
-      ),
-  })
-
-export const stagedChangeQuery = (id: string) =>
-  queryOptions({
-    queryKey: ['staged', id],
-    queryFn: () =>
-      unwrap(
-        api.v1['staged-changes']({
-          id,
-        }).get({
+        api.v1.approvals.get({
           query: {
-            fields:
-              'id,environment_id,status,source,actor,created_at,summary,changes,refs,deployments,accepted_by',
+            project,
+            status: 'all',
+            limit: 100,
           },
         }),
       ),
   })
 
-const sandboxFields =
-  'id,environment_id,station_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,workspace,created_at,failure,exit_code'
+export const approvalQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['approvals', id],
+    queryFn: () =>
+      unwrap(
+        api.v1
+          .approvals({
+            approval: id,
+          })
+          .get({
+            query: {
+              fields:
+                'id,project_id,task_id,title,status,source,requested_by,requester,requester_decides,decided_by,decided_at,self_approved,reason,ship,created_at,summary,changes,refs,deployments',
+            },
+          }),
+      ),
+  })
+
+const machineFields =
+  'id,project_id,preview_id,server_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,workspace,created_at,failure,exit_code'
 
 export const tasksQuery = queryOptions({
   queryKey: ['tasks'],
@@ -517,19 +537,20 @@ export const taskQuery = (task: string) =>
       ),
   })
 
-export const sandboxesQuery = (environment: string) =>
+export const machinesQuery = (place: Place) =>
   queryOptions({
-    queryKey: ['sandboxes', 'of', environment],
+    queryKey: ['machines', 'of', placeKey(place)],
     queryFn: () =>
       unwrap(
         api.v1
-          .environments({
-            environment,
+          .projects({
+            project: place.project,
           })
-          .sandboxes.get({
+          .machines.get({
             query: {
+              ...previewQuery(place),
               limit: 200,
-              fields: sandboxFields,
+              fields: machineFields,
             },
           }),
       ),
@@ -537,18 +558,18 @@ export const sandboxesQuery = (environment: string) =>
       query.state.data?.items.some((s) => isTransient(s.status)) ? 2000 : false,
   })
 
-export const sandboxQuery = (sandbox: string) =>
+export const machineQuery = (machine: string) =>
   queryOptions({
-    queryKey: ['sandboxes', sandbox],
+    queryKey: ['machines', machine],
     queryFn: () =>
       unwrap(
         api.v1
-          .sandboxes({
-            sandbox,
+          .machines({
+            machine,
           })
           .get({
             query: {
-              fields: `${sandboxFields},metrics`,
+              fields: `${machineFields},metrics`,
             },
           }),
       ),
@@ -560,17 +581,18 @@ export const sandboxQuery = (sandbox: string) =>
         : 2000,
   })
 
-export const sandboxSnapshotsQuery = (environment: string) =>
+export const machineSnapshotsQuery = (place: Place) =>
   queryOptions({
-    queryKey: ['sandbox-snapshots', 'of', environment],
+    queryKey: ['machine-snapshots', 'of', placeKey(place)],
     queryFn: () =>
       unwrap(
         api.v1
-          .environments({
-            environment,
+          .projects({
+            project: place.project,
           })
-          ['sandbox-snapshots'].get({
+          ['machine-snapshots'].get({
             query: {
+              ...previewQuery(place),
               limit: 200,
             },
           }),
@@ -578,14 +600,14 @@ export const sandboxSnapshotsQuery = (environment: string) =>
     refetchInterval: (query) => (snapshotsBusy(query.state.data?.items) ? 2000 : false),
   })
 
-export const sandboxOwnSnapshotsQuery = (sandbox: string) =>
+export const machineOwnSnapshotsQuery = (machine: string) =>
   queryOptions({
-    queryKey: ['sandbox-snapshots', 'from', sandbox],
+    queryKey: ['machine-snapshots', 'from', machine],
     queryFn: () =>
       unwrap(
         api.v1
-          .sandboxes({
-            sandbox,
+          .machines({
+            machine,
           })
           .snapshots.get({
             query: {
@@ -596,65 +618,76 @@ export const sandboxOwnSnapshotsQuery = (sandbox: string) =>
     refetchInterval: (query) => (snapshotsBusy(query.state.data?.items) ? 2000 : false),
   })
 
-export const sandboxVariablesQuery = (sandbox: string) =>
+export const machineKeysQuery = (machine: string) =>
   queryOptions({
-    queryKey: ['variables', 'of-sandbox', sandbox],
+    queryKey: ['keys', 'of-machine', machine],
     queryFn: () =>
       unwrap(
         api.v1
-          .sandboxes({
-            sandbox,
+          .machines({
+            machine,
           })
-          .variables.get({
+          .keys.get({
             query: {},
           }),
       ),
   })
 
-export const sandboxResolvedQuery = (sandbox: string) =>
+export const machineResolvedQuery = (machine: string) =>
   queryOptions({
-    queryKey: ['variables', 'resolved-sandbox', sandbox],
+    queryKey: ['keys', 'resolved-machine', machine],
     queryFn: () =>
       unwrap(
         api.v1
-          .sandboxes({
-            sandbox,
+          .machines({
+            machine,
           })
-          .variables.resolved.get(),
+          .keys.resolved.get(),
       ),
     staleTime: 0,
     gcTime: 0,
   })
 
-export const seedEnvironment = (project: string, environment: Environment) => [
-  seed(environmentQuery(environment.id), environment),
-  seedItem(environmentsQuery(project), environment),
+export const seedPreview = (project: string, preview: Preview) => [
+  seed(previewQueryOf(preview.id), preview),
+  seedItem(previewsQuery(project), preview),
 ]
 
-export const seedService = (service: Service) => [seed(serviceQuery(service.id), service)]
+export const seedApp = (app: App) => [seed(appQuery(app.id), app)]
 
 export const seedDeployment = (deployment: Deployment) => [
   seed(deploymentQuery(deployment.id), deployment),
 ]
 
-export const seedSandbox = (sandbox: Sandbox) => [
-  seed(sandboxQuery(sandbox.id), sandbox),
-  seedItem(sandboxesQuery(sandbox.environment_id), sandbox),
+export const seedMachine = (machine: Machine) => [
+  seed(machineQuery(machine.id), machine),
+  seedItem(machinesQuery(placeOf(machine)), machine),
 ]
 
-export const patchSandbox = (
-  sandbox: Pick<Sandbox, 'id'> & Partial<Pick<Sandbox, 'environment_id'>>,
-  data: Partial<Sandbox>,
+export const patchMachine = (
+  machine: Pick<Machine, 'id'> & Partial<Pick<Machine, 'project_id' | 'preview_id'>>,
+  data: Partial<Machine>,
 ) => [
-  merge(sandboxQuery(sandbox.id), data),
-  ...(sandbox.environment_id
-    ? [mergeItem(sandboxesQuery(sandbox.environment_id), sandbox.id, data)]
+  merge(machineQuery(machine.id), data),
+  ...(machine.project_id
+    ? [
+        mergeItem(
+          machinesQuery(
+            placeOf({
+              project_id: machine.project_id,
+              preview_id: machine.preview_id ?? null,
+            }),
+          ),
+          machine.id,
+          data,
+        ),
+      ]
     : []),
 ]
 
-export const seedSnapshot = (snapshot: SandboxSnapshot) => [
-  seedItem(sandboxOwnSnapshotsQuery(snapshot.sandbox_id), snapshot),
-  seedItem(sandboxSnapshotsQuery(snapshot.environment_id), snapshot),
+export const seedSnapshot = (snapshot: MachineSnapshot) => [
+  seedItem(machineOwnSnapshotsQuery(snapshot.machine_id), snapshot),
+  seedItem(machineSnapshotsQuery(placeOf(snapshot)), snapshot),
 ]
 
 export const apiOriginQuery = queryOptions({
@@ -697,11 +730,11 @@ export const taskStationQuery = queryOptions({
   queryKey: ['stations', 'online', 'task'],
   queryFn: async () => {
     const page = await unwrap(
-      api.v1.stations.get({
+      api.v1.servers.get({
         query: {
           status: 'online',
           limit: 2,
-          fields: 'name,resources,sandbox_memory',
+          fields: 'name,resources,machine_memory',
         },
       }),
     )

@@ -20,15 +20,14 @@ const defaultFix: Partial<Record<ApiCode, string>> = {
   WRONG_HOST:
     'Send API requests to the API hostname and dashboard requests to the dashboard hostname.',
   RATE_LIMITED: 'Wait for the time in Retry-After, then retry.',
-  VARIABLE_REFERENCE_INVALID: 'Fix the reference syntax at details.offset.',
-  VARIABLE_UNRESOLVED: 'Create the referenced variable or value, or send allow_unresolved = true.',
-  VARIABLE_TARGET_MISSING: 'Create the referenced service, or correct the reference.',
-  VARIABLE_NOT_GRANTED: 'Grant the global variable to this project first.',
-  VARIABLE_CYCLE: 'Break the reference cycle listed in details.cycle.',
-  VARIABLE_PROTECTED_SOURCE: 'Set a project default value or a value for this environment.',
+  KEY_REFERENCE_INVALID: 'Fix the reference syntax at details.offset.',
+  KEY_UNRESOLVED: 'Create the referenced key or value, or send allow_unresolved = true.',
+  KEY_TARGET_MISSING: 'Create the referenced app, or correct the reference.',
+  KEY_NOT_GRANTED: 'Grant the global key to this project first.',
+  KEY_CYCLE: 'Break the reference cycle listed in details.cycle.',
   SEALED_VALUE_UNREADABLE: 'Sealed values are write-only; set a new value instead of reading it.',
   SECRETS_NEED_REENTRY: 'Re-enter the values listed in details.',
-  STATION_OFFLINE: 'Wait for the station to reconnect, or place the service on an online station.',
+  SERVER_OFFLINE: 'Wait for the server to reconnect, or place the app on an online server.',
   INTERNAL_ERROR: 'Retry; if it keeps failing, report the request_id.',
 }
 

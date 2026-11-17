@@ -22,17 +22,17 @@ import {
 } from '@stationly/mcp'
 
 import { action, bytes, group, parseJson, seconds, type Program } from './command.ts'
-import { environmentEnv, projectEnv } from './env.ts'
+import { previewEnv, projectEnv } from './env.ts'
 import { Exit, usage } from './errors.ts'
 import {
+  appId,
   connect,
-  environmentId,
   isId,
+  machineId,
+  machineRef,
+  previewId,
   projectId,
   projectRef,
-  sandboxId,
-  sandboxRef,
-  serviceId,
   type Globals,
   type Run,
 } from './kit.ts'
@@ -51,14 +51,14 @@ type Shape =
 
 type Input = Record<string, unknown>
 
-type Target = 'project' | 'environment' | 'service' | 'sandbox'
+type Target = 'project' | 'preview' | 'app' | 'machine'
 
 export type Generated = { endpoint: Endpoint; path: string[] }
 
 const scalars: string[] = ['string', 'integer', 'number', 'boolean']
 
 const plural = (word: string) =>
-  word.endsWith('y')
+  /[^aeiou]y$/.test(word)
     ? `${word.slice(0, -1)}ies`
     : /(s|x|ch|sh)$/.test(word)
       ? `${word}es`
@@ -412,32 +412,33 @@ const optionsOf = (
   ]
 }
 
-const selected = (run: Run, target: 'service' | 'sandbox') =>
-  target === 'sandbox'
-    ? sandboxRef(run)
+const selected = (run: Run, target: 'app' | 'machine') =>
+  target === 'machine'
+    ? machineRef(run)
     : need(run.selection[target], {
-        what: 'Service',
+        what: 'App',
         flag: `--${target} <id or name>`,
       })
 
-const scoped = async (run: Run, entity: 'service' | 'sandbox', ref: string) =>
+const scoped = async (run: Run, entity: 'app' | 'machine', ref: string) =>
   isId(entity, ref)
     ? ref
-    : [await projectRef(run), run.selection.environment ?? (await environmentId(run)), ref].join(
+    : [await projectRef(run), ...(run.selection.preview ? [run.selection.preview] : []), ref].join(
         '/',
       )
 
 const paths: Record<Target, (run: Run) => Promise<string>> = {
   project: projectRef,
-  environment: async (run) => {
-    const ref = run.selection.environment
+  preview: async (run) => {
+    const ref = await need(run.selection.preview, {
+      what: 'Preview',
+      flag: '--preview <id or name>',
+    })
 
-    return ref === undefined || isId('environment', ref)
-      ? environmentId(run, ref)
-      : `${await projectRef(run)}/${ref}`
+    return isId('target', ref) ? ref : `${await projectRef(run)}/${ref}`
   },
-  service: async (run) => scoped(run, 'service', await selected(run, 'service')),
-  sandbox: async (run) => scoped(run, 'sandbox', await selected(run, 'sandbox')),
+  app: async (run) => scoped(run, 'app', await selected(run, 'app')),
+  machine: async (run) => scoped(run, 'machine', await selected(run, 'machine')),
 }
 
 const ids: Record<Target, (run: Run) => Promise<string>> = {
@@ -446,9 +447,9 @@ const ids: Record<Target, (run: Run) => Promise<string>> = {
 
     return isId('project', ref) ? ref : projectId(run, ref)
   },
-  environment: (run) => environmentId(run),
-  service: serviceId,
-  sandbox: async (run) => sandboxId(run, await selected(run, 'sandbox')),
+  preview: async (run) => (await previewId(run)) ?? '',
+  app: appId,
+  machine: async (run) => machineId(run, await selected(run, 'machine')),
 }
 
 export const targetId = (run: Run, target: Target) => ids[target](run)
@@ -699,8 +700,8 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   const pathParameters = parameters.filter((p) => p.in === 'path')
   const contextual = pathParameters.map((p) => p.name).filter(isTarget)
   const last = pathParameters.at(-1)?.name
-  const named = pathParameters.some((p) => p.name === 'sandbox')
-    ? 'sandbox'
+  const named = pathParameters.some((p) => p.name === 'machine')
+    ? 'machine'
     : last !== undefined && isTarget(last) && path.endsWith(`/{${last}}`)
       ? last
       : null
@@ -709,7 +710,7 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   if (contextual.length) {
     command.addHelpText(
       'after',
-      `\nTarget: ${contextual.map((t) => `--${t} <id or name>`).join(', ')}${named ? `, or [${named}] as the last argument` : ''}. Names resolve within --project and --environment, with defaults from ${projectEnv} and ${environmentEnv}, else .stationly/context.json.`,
+      `\nTarget: ${contextual.map((t) => `--${t} <id or name>`).join(', ')}${named ? `, or [${named}] as the last argument` : ''}. Names resolve within --project and --preview (production when --preview is absent), with defaults from ${projectEnv} and ${previewEnv}, else .stationly/context.json.`,
     )
   }
 

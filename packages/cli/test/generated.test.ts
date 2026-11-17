@@ -40,15 +40,12 @@ const shownHelp = (command: CommandUnknownOpts) => {
 }
 
 test('command paths derive from the tag and the operationId', () => {
-  assert.deepEqual(derivedPath('list_services', 'services'), ['services', 'list'])
+  assert.deepEqual(derivedPath('list_apps', 'apps'), ['apps', 'list'])
   assert.deepEqual(derivedPath('add_volume', 'volumes'), ['volumes', 'add'])
   assert.deepEqual(derivedPath('deploy', 'deployments'), ['deploy'])
-  assert.deepEqual(derivedPath('sandbox_exec', 'sandboxes'), ['sandboxes', 'exec'])
-  assert.deepEqual(derivedPath('accept_staged_change', 'staged-changes'), [
-    'staged-changes',
-    'accept',
-  ])
-  assert.deepEqual(derivedPath('list_service_volumes', 'volumes'), ['volumes', 'list-service'])
+  assert.deepEqual(derivedPath('machine_exec', 'machines'), ['machines', 'exec'])
+  assert.deepEqual(derivedPath('decide_approval', 'approvals'), ['approvals', 'decide'])
+  assert.deepEqual(derivedPath('list_app_volumes', 'volumes'), ['volumes', 'list-app'])
 })
 
 test('every operation without cli: false resolves to one command path, and no two collide', () => {
@@ -114,7 +111,7 @@ test('--help of a generated command shows flags typed from the schema', () => {
 
   assert.match(volumes, /--mount-path <string>/)
   assert.match(volumes, /--body <json>/)
-  assert.match(volumes, /Target: --service <id or name>/)
+  assert.match(volumes, /Target: --app <id or name>/)
   const ports = find(program, ['ports', 'add'])!.helpInformation()
 
   assert.match(ports, /--port <integer>/)
@@ -160,11 +157,11 @@ test('every render a route names is a registered renderer, and the command uses 
 })
 
 test('a page renders the scalar summary fields of its item schema as columns', () => {
-  assert.deepEqual(summaryColumns(endpoint('list_service_volumes')), [
+  assert.deepEqual(summaryColumns(endpoint('list_app_volumes')), [
     'id',
     'owner',
-    'service_id',
-    'station_id',
+    'app_id',
+    'server_id',
     'mount_path',
     'size_bytes',
     'status',
@@ -174,7 +171,7 @@ test('a page renders the scalar summary fields of its item schema as columns', (
 
   assert.ok(projects.includes('name'))
   assert.ok(!projects.includes('status_counts'))
-  assert.equal(summaryColumns(endpoint('describe_service')), undefined)
+  assert.equal(summaryColumns(endpoint('describe_app')), undefined)
 })
 
 test('polled operations take --wait and --timeout instead of their wait parameter; streams take -f', () => {
@@ -234,28 +231,25 @@ test('every registered renderer is named by a route, and its exit maps the outco
 test('deploy commands take --wait and follow wait_for_deployment by the id they return', () => {
   const program = buildProgram()
 
-  for (const name of ['deploy', 'redeploy', 'rollback', 'restart_service', 'rebuild_service']) {
+  for (const name of ['deploy', 'redeploy', 'rollback', 'restart_app', 'rebuild_app']) {
     assert.equal(waitedBy(endpoint(name))?.endpoint.name, 'wait_for_deployment', name)
     const path = generatedCommands().find((g) => g.endpoint.name === name)!.path
 
     assert.match(find(program, path)!.helpInformation(), /--wait\s+then repeat wait_for_deployment/)
   }
 
-  assert.equal(waitedBy(endpoint('stop_service')), null)
+  assert.equal(waitedBy(endpoint('stop_app')), null)
 })
 
 test('integer fields named *_bytes take sizes, *_s and *_seconds take durations', () => {
   const program = buildProgram()
 
   assert.match(
-    find(program, ['sandboxes', 'grow-storage'])!.helpInformation(),
+    find(program, ['machines', 'grow-storage'])!.helpInformation(),
     /--size-bytes <size>/,
   )
-  assert.match(find(program, ['sandboxes', 'create'])!.helpInformation(), /--ttl-s <duration>/)
-  assert.match(
-    find(program, ['environments', 'create'])!.helpInformation(),
-    /--ttl-seconds <duration>/,
-  )
+  assert.match(find(program, ['machines', 'create'])!.helpInformation(), /--ttl-s <duration>/)
+  assert.match(find(program, ['previews', 'create'])!.helpInformation(), /--ttl-seconds <duration>/)
 })
 
 test(
@@ -274,14 +268,14 @@ test(
       'export_manifest',
       'get_agent_inbox',
       'get_tool_approval',
-      'open_sandbox_shell',
+      'machine_exec',
+      'open_machine_shell',
       'open_shell',
       'platform_upgrade',
       'post_agent_events',
       'report_runner_exit',
       'request_tool_approval',
       'run_command',
-      'sandbox_exec',
       'upload_blob',
       'validate_manifest',
     ])

@@ -1,7 +1,7 @@
 import { eq, inArray, isNotNull } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
-import { deployment, service, type BaseImageRecord } from '../db/schema.ts'
+import { app, deployment, type BaseImageRecord } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import { log as defaultLog, type Log } from '../log.ts'
 import { every } from '../schedule.ts'
@@ -77,8 +77,8 @@ export const headCheck = async (ref: string): Promise<CheckResult> => {
 
 type Holder = {
   deploymentId: string
-  serviceId: string
-  serviceName: string
+  appId: string
+  appName: string
   index: number
   entry: BaseImageRecord
 }
@@ -86,12 +86,12 @@ type Holder = {
 const holders = (db: Db) => {
   const rows = db
     .select({
-      id: service.id,
-      name: service.name,
-      dep: service.current_deployment_id,
+      id: app.id,
+      name: app.name,
+      dep: app.current_deployment_id,
     })
-    .from(service)
-    .where(isNotNull(service.current_deployment_id))
+    .from(app)
+    .where(isNotNull(app.current_deployment_id))
     .all()
   const deps = rows.length
     ? db
@@ -121,8 +121,8 @@ const holders = (db: Db) => {
         ...(out.get(key) ?? []),
         {
           deploymentId: svc.dep!,
-          serviceId: svc.id,
-          serviceName: svc.name,
+          appId: svc.id,
+          appName: svc.name,
           index,
           entry,
         },
@@ -211,10 +211,10 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
           base_image: result.ref,
           old_digest: first.entry.digest,
           new_digest: first.entry.latest_digest,
-          services: [...new Set(moved.map((m) => m.serviceId))],
+          apps: [...new Set(moved.map((m) => m.appId))],
           auto_rebuild: false,
           platform_changed: null,
-          fix: [...new Set(moved.map((m) => `sly services rebuild --service ${m.serviceId}`))],
+          fix: [...new Set(moved.map((m) => `sly apps rebuild --app ${m.appId}`))],
         },
       )
     }
@@ -224,8 +224,8 @@ export const applyResult = (db: Db, key: string, result: CheckResult, list: Hold
         tx,
         'doctor.finding',
         {
-          entity: 'service',
-          id: f.serviceId,
+          entity: 'app',
+          id: f.appId,
         },
         {
           check: 'base_image',
@@ -316,8 +316,8 @@ export const baseImageInventory = (db: Db) => {
     ref: string
     registry: string
     checks: {
-      service_id: string
-      service: string
+      app_id: string
+      app: string
       deployment_id: string
       digest: string
       check: CheckState
@@ -333,8 +333,8 @@ export const baseImageInventory = (db: Db) => {
       ref: displayRef(r),
       registry: r.apiHost,
       checks: list.map((h) => ({
-        service_id: h.serviceId,
-        service: h.serviceName,
+        app_id: h.appId,
+        app: h.appName,
         deployment_id: h.deploymentId,
         digest: h.entry.digest,
         check: h.entry.check,

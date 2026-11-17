@@ -1,5 +1,4 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import {
   Background,
   Controls,
@@ -29,9 +28,10 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Code, Command } from '@/components/code'
 import { ConnectionsTable } from '@/components/connections-table'
 import { FixActions } from '@/components/fix'
-import { NewService } from '@/components/new-service'
+import { NewApp } from '@/components/new-service'
 import { EmptyState } from '@/components/page'
-import { ServiceStatusDot } from '@/components/status'
+import { PlaceLink } from '@/components/place-link'
+import { AppStatusDot } from '@/components/status'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { Term } from '@/components/term'
 import { Time } from '@/components/time'
@@ -43,27 +43,28 @@ import { Switch } from '@/components/ui/switch'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { Environment, NetworkMap } from '@/lib/api'
-import { commands } from '@/lib/commands'
+import type { NetworkMap } from '@/lib/api'
+import { commands, type Scope } from '@/lib/commands'
 import { findingPlan } from '@/lib/fixes'
 import { ago, plural } from '@/lib/format'
 import {
+  appKind,
   explanationVerdict,
   finding,
   pathFrom,
   path as pathLabel,
   pathResult,
-  serviceKind,
 } from '@/lib/labels'
+import { places } from '@/lib/nav'
 import {
   layoutNetwork,
   overlayLive,
+  type AppData,
   type EntryData,
   type InternetData,
+  type MapApp,
   type MapNode,
-  type MapService,
   type PeerData,
-  type ServiceData,
 } from '@/lib/network-layout'
 import { useLiveNetwork, type LiveNetwork } from '@/lib/network-live'
 import {
@@ -75,6 +76,7 @@ import {
   portSpecText,
   servingText,
 } from '@/lib/network-text'
+import { scopeOf, type PlaceView } from '@/lib/place'
 import { networkQuery } from '@/lib/queries'
 import { toneDot, toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -87,25 +89,22 @@ function None({ children = 'None', className }: { children?: ReactNode; classNam
   return <span className={cn('text-muted-foreground', className)}>{children}</span>
 }
 
-function Serving({ service }: { service: MapService }) {
-  const serving = servingText(service)
-  const draining = drainingText(service.switch)
-  const deployment = service.switch.state === 'serving' ? service.switch.deployment : null
+function Serving({ app }: { app: MapApp }) {
+  const serving = servingText(app)
+  const draining = drainingText(app.switch)
+  const deployment = app.switch.state === 'serving' ? app.switch.deployment : null
   const tone = serving.tone && toneText[serving.tone]
 
   return (
     <span className="flex flex-wrap items-center gap-x-2">
       {deployment ? (
-        <Link
-          to="/deployments/$deployment"
-          params={{
-            deployment: deployment.id,
-          }}
+        <PlaceLink
+          to={places.deployment(deployment.id)}
           title={serving.hint ?? undefined}
           className="underline-offset-4 hover:underline"
         >
           {serving.label}
-        </Link>
+        </PlaceLink>
       ) : serving.hint ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -123,8 +122,8 @@ function Serving({ service }: { service: MapService }) {
   )
 }
 
-function Ports({ service }: { service: MapService }) {
-  return service.ports.length ? service.ports.map(portSpecText).join(' · ') : <None />
+function Ports({ app }: { app: MapApp }) {
+  return app.ports.length ? app.ports.map(portSpecText).join(' · ') : <None />
 }
 
 function InternetNode({ data }: NodeProps<MapNode & { type: 'internet'; data: InternetData }>) {
@@ -138,7 +137,7 @@ function InternetNode({ data }: NodeProps<MapNode & { type: 'internet'; data: In
 }
 
 const noPublicAddress = (station: string | null) =>
-  `${station ? `Station ${station}` : 'The station'} has no public address yet.`
+  `${station ? `Server ${station}` : 'The server'} has no public address yet.`
 
 function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryData }>) {
   const { entry, status, hostPort, station } = data
@@ -186,8 +185,8 @@ function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryDat
   )
 }
 
-function ServiceNode({ data }: NodeProps<MapNode & { type: 'service'; data: ServiceData }>) {
-  const s = data.service
+function AppNode({ data }: NodeProps<MapNode & { type: 'app'; data: AppData }>) {
+  const s = data.app
 
   return (
     <div className="w-72 rounded-lg border bg-card text-card-foreground shadow-xs">
@@ -213,17 +212,14 @@ function ServiceNode({ data }: NodeProps<MapNode & { type: 'service'; data: Serv
         className={hidden}
       />
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <ServiceStatusDot status={s.status} />
-        <Link
-          to="/services/$service"
-          params={{
-            service: s.id,
-          }}
+        <AppStatusDot status={s.status} />
+        <PlaceLink
+          to={places.app(s.id)}
           className="min-w-0 flex-1 truncate text-sm font-semibold underline-offset-4 hover:underline"
         >
           {s.name}
-        </Link>
-        <span className="text-xs text-muted-foreground">{serviceKind[s.kind]}</span>
+        </PlaceLink>
+        <span className="text-xs text-muted-foreground">{appKind[s.kind]}</span>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 py-2 text-xs">
         <dt className="text-muted-foreground">
@@ -240,11 +236,11 @@ function ServiceNode({ data }: NodeProps<MapNode & { type: 'service'; data: Serv
         </dd>
         <dt className="text-muted-foreground">Ports</dt>
         <dd>
-          <Ports service={s} />
+          <Ports app={s} />
         </dd>
         <dt className="text-muted-foreground">Serving</dt>
         <dd>
-          <Serving service={s} />
+          <Serving app={s} />
         </dd>
       </dl>
       <Handle
@@ -325,7 +321,7 @@ function PeerNode({ data }: NodeProps<MapNode & { type: 'peer'; data: PeerData }
 const nodeTypes: NodeTypes = {
   internet: InternetNode,
   entry: EntryNode,
-  service: ServiceNode,
+  app: AppNode,
   peer: PeerNode,
 }
 
@@ -341,7 +337,7 @@ function Legend({ live }: { live: boolean }) {
       </span>
       <span className={item}>
         <span className={cn(line, 'border-foreground')} aria-hidden />
-        Uses, through a variable reference
+        Uses, through a key reference
       </span>
       {live && (
         <>
@@ -392,7 +388,7 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
           }}
           minZoom={0.2}
           maxZoom={1.5}
-          aria-label={`Network map of ${map.environment.name}${live.state === 'off' ? '' : ' with live traffic'}`}
+          aria-label={`Network map of ${map.preview?.name ?? 'production'}${live.state === 'off' ? '' : ' with live traffic'}`}
         >
           <Background gap={20} />
           <Controls showInteractive={false} />
@@ -410,7 +406,7 @@ const resultIcon = {
 } as const
 
 function InboundSummary({ map }: { map: NetworkMap }) {
-  const station = map.subnets[0]?.station.name
+  const station = map.subnets[0]?.server.name
 
   return (
     <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
@@ -438,14 +434,14 @@ function InboundSummary({ map }: { map: NetworkMap }) {
 function TableView({ map }: { map: NetworkMap }) {
   return (
     <div className="space-y-6">
-      <section className="space-y-2" aria-labelledby="network-services">
-        <h2 id="network-services" className="text-sm font-semibold">
-          Services
+      <section className="space-y-2" aria-labelledby="network-apps">
+        <h2 id="network-apps" className="text-sm font-semibold">
+          Apps
         </h2>
         <TableFrame>
           <TableHeader>
             <TableRow>
-              <TableHead>Service</TableHead>
+              <TableHead>App</TableHead>
               <TableHead className="hidden md:table-cell">
                 <Term name="internalName" />
               </TableHead>
@@ -461,19 +457,16 @@ function TableView({ map }: { map: NetworkMap }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {map.services.map((s) => (
+            {map.apps.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>
-                  <Link
-                    to="/services/$service"
-                    params={{
-                      service: s.id,
-                    }}
+                  <PlaceLink
+                    to={places.app(s.id)}
                     className="inline-flex items-center gap-2 font-medium underline-offset-4 hover:underline"
                   >
                     <Box className="size-4 text-muted-foreground" aria-hidden />
                     {s.name}
-                  </Link>
+                  </PlaceLink>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   <Code copy={s.dns}>{s.dns}</Code>
@@ -482,10 +475,10 @@ function TableView({ map }: { map: NetworkMap }) {
                   {s.virtual_ip ? <Code>{s.virtual_ip}</Code> : <None>{notAssigned}</None>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  <Ports service={s} />
+                  <Ports app={s} />
                 </TableCell>
                 <TableCell className="whitespace-normal">
-                  <Serving service={s} />
+                  <Serving app={s} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
                   {s.domains.length ? (
@@ -520,7 +513,7 @@ function TableView({ map }: { map: NetworkMap }) {
             From the internet
           </h2>
           <p className="text-sm text-muted-foreground">
-            Domains and public TCP ports that reach services in this environment.
+            Domains and public TCP ports that reach apps here.
           </p>
         </div>
         <InboundSummary map={map} />
@@ -529,19 +522,17 @@ function TableView({ map }: { map: NetworkMap }) {
             <TableRow>
               <TableHead className="hidden sm:table-cell">Kind</TableHead>
               <TableHead>Address</TableHead>
-              <TableHead>Service</TableHead>
-              <TableHead className="hidden sm:table-cell">Service port</TableHead>
+              <TableHead>App</TableHead>
+              <TableHead className="hidden sm:table-cell">App port</TableHead>
               <TableHead className="hidden md:table-cell">State</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {map.inbound.entries.length === 0 && (
-              <EmptyRow columns={5}>
-                Nothing in this environment is reachable from the internet.
-              </EmptyRow>
+              <EmptyRow columns={5}>Nothing here is reachable from the internet.</EmptyRow>
             )}
             {map.inbound.entries.map((e) => {
-              const svc = map.services.find((s) => s.name === e.service)
+              const svc = map.apps.find((s) => s.name === e.app)
               const domain =
                 e.kind === 'domain'
                   ? svc?.domains.find((d) => d.hostname === e.hostname)
@@ -568,7 +559,7 @@ function TableView({ map }: { map: NetworkMap }) {
                       <None>No public address</None>
                     )}
                   </TableCell>
-                  <TableCell>{e.service}</TableCell>
+                  <TableCell>{e.app}</TableCell>
                   <TableCell className="hidden tabular-nums sm:table-cell">{e.port}</TableCell>
                   <TableCell className={cn('hidden text-sm md:table-cell', toneText[state.tone])}>
                     {state.label}
@@ -592,8 +583,8 @@ function TrafficRules({ map }: { map: NetworkMap }) {
           <Term name="trafficRule">Traffic rules</Term>
         </h2>
         <p className="text-sm text-muted-foreground">
-          What services in this environment can reach, and what can reach them. Stationly enforces
-          these on every station.
+          What apps here can reach, and what can reach them. Stationly enforces these on every
+          server.
         </p>
         <ul className="flex flex-wrap gap-x-5 gap-y-1 pt-1 text-xs text-muted-foreground">
           {(['allowed', 'blocked', 'rejected'] as const).map((verdict) => {
@@ -657,16 +648,16 @@ function TrafficRules({ map }: { map: NetworkMap }) {
 function LiveTables({ live }: { live: LiveNetwork }) {
   const rows = live.samples.flatMap((s) =>
     s.connections.map((connection, i) => ({
-      key: `${s.service.id}-${i}`,
-      service: s.service.name,
+      key: `${s.app.id}-${i}`,
+      app: s.app.name,
       names: s.untrusted.names,
       connection,
     })),
   )
   const refused = live.samples.flatMap((s) =>
     s.refused.map((r, i) => ({
-      key: `${s.service.id}-r${i}`,
-      service: s.service.name,
+      key: `${s.app.id}-r${i}`,
+      app: s.app.name,
       r,
     })),
   )
@@ -700,7 +691,7 @@ function LiveTables({ live }: { live: LiveNetwork }) {
         <TableFrame>
           <TableHeader>
             <TableRow>
-              <TableHead>Service</TableHead>
+              <TableHead>App</TableHead>
               <TableHead>Tried to reach</TableHead>
               <TableHead className="hidden sm:table-cell">Rule</TableHead>
               <TableHead className="hidden text-right sm:table-cell">Attempts</TableHead>
@@ -710,9 +701,9 @@ function LiveTables({ live }: { live: LiveNetwork }) {
             {refused.length === 0 && (
               <EmptyRow columns={4}>Nothing was blocked in the last 10 minutes.</EmptyRow>
             )}
-            {refused.map(({ key, service, r }) => (
+            {refused.map(({ key, app, r }) => (
               <TableRow key={key}>
-                <TableCell>{service}</TableCell>
+                <TableCell>{app}</TableCell>
                 <TableCell>
                   <Code>{endpointText(r)}</Code>
                   <span className="block text-xs text-muted-foreground sm:hidden">
@@ -790,8 +781,8 @@ function Addresses({ map }: { map: NetworkMap }) {
       <HoverCardContent align="start" className="w-80">
         <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-xs">
           {map.subnets.map((s) => (
-            <div key={`${s.station.id}-${s.subnet}`} className="contents">
-              <dt className="text-muted-foreground">Subnet on {s.station.name}</dt>
+            <div key={`${s.server.id}-${s.subnet}`} className="contents">
+              <dt className="text-muted-foreground">Subnet on {s.server.name}</dt>
               <dd>
                 <Code copy={s.subnet}>{s.subnet}</Code>
               </dd>
@@ -819,16 +810,16 @@ function Summary({ map }: { map: NetworkMap }) {
   return (
     <div className="space-y-1 text-sm">
       {map.subnets.map((s, i) => (
-        <p key={`${s.station.id}-${s.subnet}`} className="flex flex-wrap items-center gap-x-1.5">
+        <p key={`${s.server.id}-${s.subnet}`} className="flex flex-wrap items-center gap-x-1.5">
           <Network className="size-4 text-muted-foreground" aria-hidden />
           <span>
-            Network on <span className="font-medium">{s.station.name}</span>
+            Network on <span className="font-medium">{s.server.name}</span>
           </span>
           {s.stale ? (
             <span className={toneText.warning}>
               {s.observed_at
-                ? `· Station ${s.station.name} last reported ${ago(s.observed_at)}. Addresses may be out of date.`
-                : `· Station ${s.station.name} hasn’t reported its network yet.`}
+                ? `· Server ${s.server.name} last reported ${ago(s.observed_at)}. Addresses may be out of date.`
+                : `· Server ${s.server.name} hasn’t reported its network yet.`}
             </span>
           ) : (
             <span className="text-muted-foreground">
@@ -842,14 +833,9 @@ function Summary({ map }: { map: NetworkMap }) {
   )
 }
 
-function Warnings({ map, project }: { map: NetworkMap; project: string }) {
+function Warnings({ map, scope }: { map: NetworkMap; scope: Scope }) {
   if (map.warnings.length === 0) {
     return null
-  }
-
-  const scope = {
-    project,
-    environment: map.environment.name,
   }
 
   return (
@@ -862,7 +848,7 @@ function Warnings({ map, project }: { map: NetworkMap; project: string }) {
       <AlertDescription>
         <ul className="space-y-1.5">
           {map.warnings.map((w, i) => {
-            const plan = findingPlan(w, map.services, scope)
+            const plan = findingPlan(w, map.apps, scope)
 
             return (
               <li key={`${w.code}-${i}`} className="space-y-1.5">
@@ -881,23 +867,17 @@ function Warnings({ map, project }: { map: NetworkMap; project: string }) {
   )
 }
 
-export function NetworkPanel({
-  project,
-  environment,
-}: {
-  project: string
-  environment: Environment
-}) {
-  const { data: map } = useSuspenseQuery(networkQuery(environment.id))
+export function NetworkPanel({ place }: { place: PlaceView }) {
+  const { data: map } = useSuspenseQuery(networkQuery(place))
   const [view, setView] = useState<'map' | 'table'>('map')
   const [liveOn, setLiveOn] = useState(false)
   const [creating, setCreating] = useState(false)
-  const live = useLiveNetwork(environment.id, liveOn)
+  const live = useLiveNetwork(place, liveOn)
 
   return (
     <div className="space-y-4">
       <Summary map={map} />
-      <Warnings map={map} project={project} />
+      <Warnings map={map} scope={scopeOf(place)} />
       <Tabs value={view} onValueChange={(value) => setView(value as 'map' | 'table')}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList aria-label="Network view">
@@ -907,14 +887,14 @@ export function NetworkPanel({
           <LiveToggle enabled={liveOn} onChange={setLiveOn} live={live} />
         </div>
         <TabsContent value="map" className="mt-3 space-y-6">
-          {map.services.length === 0 ? (
+          {map.apps.length === 0 ? (
             <EmptyState
               icon={Network}
-              title="No services yet"
-              description="Services you create here appear on the map with their routes."
+              title="No apps yet"
+              description="Apps you create here appear on the map with their routes."
               action={
                 <Button size="sm" onClick={() => setCreating(true)}>
-                  <Plus /> New service
+                  <Plus /> New app
                 </Button>
               }
             />
@@ -928,9 +908,7 @@ export function NetworkPanel({
           <TableView map={map} />
         </TabsContent>
       </Tabs>
-      {creating && (
-        <NewService environment={environment} open={creating} onOpenChange={setCreating} />
-      )}
+      {creating && <NewApp place={place} open={creating} onOpenChange={setCreating} />}
     </div>
   )
 }

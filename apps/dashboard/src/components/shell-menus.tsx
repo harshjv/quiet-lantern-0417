@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from '@tanstack/react-router'
-import { Keyboard, ListChecks, LogOut, Monitor, Moon, Package, Sun, UserRound } from 'lucide-react'
+import { Keyboard, ListChecks, LogOut, Monitor, Moon, Package, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
+import { PlaceLink } from '@/components/place-link'
 import { ShortcutKeys } from '@/components/shortcut-keys'
-import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,15 +14,22 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { SidebarMenuButton } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { authClient, sessionQuery } from '@/lib/auth'
+import { isInstanceAdmin } from '@/lib/agent-session'
+import { sessionQuery, signOut } from '@/lib/auth'
 import type { StreamState } from '@/lib/event-stream'
-import { setGuideHidden, useGuideHidden } from '@/lib/first-run'
-import { inventoryQuery } from '@/lib/queries'
+import { setGuideHidden } from '@/lib/first-run'
+import { places } from '@/lib/nav'
+import { inventoryQuery, meQuery } from '@/lib/queries'
 import { toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
+import { useVisiblePages } from '@/workbench/outside'
 
 const liveText: Record<StreamState, string> = {
   live: 'Updates on',
@@ -35,109 +42,159 @@ export function LiveIndicator({ state }: { state: StreamState }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground"
+          className="inline-flex items-center gap-1.5 px-2 py-1 font-mono text-xs text-muted-foreground"
           role="status"
           aria-label={liveText[state]}
           tabIndex={0}
         >
           <span
             className={cn(
-              'size-1.5 rounded-full',
+              'size-1.5',
               toneDot[state === 'live' ? 'success' : state === 'connecting' ? 'warning' : 'danger'],
             )}
             aria-hidden
           />
-          {liveText[state]}
+          {state === 'live' ? null : liveText[state]}
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        Status changes appear without refreshing. Reconnects on its own.
+        {liveText[state]}. Status changes appear without refreshing. Reconnects on its own.
       </TooltipContent>
     </Tooltip>
   )
 }
 
-export function ThemeMenu() {
+const themes = [
+  {
+    value: 'light',
+    label: 'Light',
+    icon: Sun,
+  },
+  {
+    value: 'dark',
+    label: 'Dark',
+    icon: Moon,
+  },
+  {
+    value: 'system',
+    label: 'System',
+    icon: Monitor,
+  },
+]
+
+function ThemeChoice() {
   const { theme, setTheme } = useTheme()
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="Theme">
-          <Sun className="dark:hidden" />
-          <Moon className="hidden dark:block" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Theme</DropdownMenuLabel>
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Sun className="dark:hidden" />
+        <Moon className="hidden dark:block" /> Theme
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
         <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
-          <DropdownMenuRadioItem value="light">
-            <Sun /> Light
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="dark">
-            <Moon /> Dark
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="system">
-            <Monitor /> System
-          </DropdownMenuRadioItem>
+          {themes.map((t) => (
+            <DropdownMenuRadioItem key={t.value} value={t.value}>
+              <t.icon /> {t.label}
+            </DropdownMenuRadioItem>
+          ))}
         </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 
-export function UserMenu({ onHelp }: { onHelp: () => void }) {
+const initialsOf = (name: string) =>
+  name
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('') || '?'
+
+function useAccount() {
   const session = useQuery(sessionQuery)
   const inventory = useQuery(inventoryQuery)
-  const version = inventory.data?.release?.version
-  const guideHidden = useGuideHidden()
-  const client = useQueryClient()
-  const navigate = useNavigate()
-  const signOut = async () => {
-    await authClient.signOut()
-    client.clear()
-    await navigate({
-      to: '/login',
-    })
+  const me = useQuery(meQuery)
+  const admin = isInstanceAdmin(me.data?.scopes ?? [])
+  const user = session.data?.user
+
+  return {
+    name: user?.name || user?.email || 'Signed in',
+    detail: user?.email ?? '',
+    role: admin ? 'Admin' : 'Member',
+    admin,
+    version: inventory.data?.release?.version ?? null,
   }
+}
+
+export function AccountMenu({ onHelp }: { onHelp: () => void }) {
+  const account = useAccount()
+  const client = useQueryClient()
+  const { pages } = useVisiblePages()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="flex-1 justify-start text-muted-foreground">
-          <UserRound /> Account
-        </Button>
+        <SidebarMenuButton size="lg">
+          <Avatar className="size-7">
+            <AvatarFallback>{initialsOf(account.name)}</AvatarFallback>
+          </Avatar>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm">{account.name}</span>
+            <span className="text-xs text-muted-foreground">{account.role}</span>
+          </span>
+        </SidebarMenuButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="min-w-56">
-        <DropdownMenuLabel className="font-normal">
-          <span className="block text-xs text-muted-foreground">Signed in as</span>
-          <span className="block truncate text-sm">{session.data?.user.email}</span>
+      <DropdownMenuContent side="top" align="start" className="w-60">
+        <DropdownMenuLabel className="flex flex-col">
+          <span className="truncate">{account.name}</span>
+          <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+            {account.detail}
+          </span>
         </DropdownMenuLabel>
+        {pages
+          .filter((p) => p.id !== 'inbox')
+          .map((p) => (
+            <DropdownMenuItem key={p.id} asChild>
+              <PlaceLink to={places.page(p.id)}>
+                <p.icon /> {p.title}
+              </PlaceLink>
+            </DropdownMenuItem>
+          ))}
         <DropdownMenuSeparator />
+        <ThemeChoice />
         <DropdownMenuItem asChild>
-          <Link to="/account">
-            <UserRound /> Account and sign-in
-          </Link>
+          <PlaceLink
+            to={{
+              mode: 'ship',
+              project: null,
+            }}
+            onClick={() => setGuideHidden(false)}
+          >
+            <ListChecks /> Get started
+          </PlaceLink>
         </DropdownMenuItem>
-        {guideHidden && (
-          <DropdownMenuItem asChild>
-            <Link to="/projects" onClick={() => setGuideHidden(false)}>
-              <ListChecks /> Get started
-            </Link>
-          </DropdownMenuItem>
-        )}
         <DropdownMenuItem onSelect={onHelp}>
           <Keyboard /> Keyboard shortcuts
           <DropdownMenuShortcut>
             <ShortcutKeys id="help" />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/stations">
-            <Package /> {version ? `Stationly v${version}` : 'Stationly version'}
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void signOut()}>
+        {account.version &&
+          (account.admin ? (
+            <DropdownMenuItem asChild>
+              <PlaceLink to={places.page('servers')}>
+                <Package /> Stationly {account.version}
+              </PlaceLink>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem disabled>
+              <Package /> Stationly {account.version}
+            </DropdownMenuItem>
+          ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void signOut(client)}>
           <LogOut /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -15,9 +15,9 @@ import {
 } from '../../../apps/dispatch/test/helpers/dispatch.ts'
 import { FakeRegistry } from '../../../apps/dispatch/test/helpers/registry.ts'
 import {
-  createEnvironment,
+  createApp,
+  createPreview,
   createProject,
-  createService,
 } from '../../../apps/dispatch/test/helpers/seed.ts'
 
 const entry = new URL('../src/index.ts', import.meta.url).pathname
@@ -26,6 +26,7 @@ let h: Dispatch
 let registry: FakeRegistry
 let server: Awaited<ReturnType<typeof serveOverHttp>>
 let home: string
+let stagingId: string
 
 type Result = { code: number; stdout: string; stderr: string }
 
@@ -64,15 +65,7 @@ before(async () => {
   await startFakeStation(h)
   server = await serveOverHttp(h)
   await createProject(h, 'alpha')
-  await createEnvironment(
-    h,
-    'alpha',
-    'prod',
-    {
-      protected: true,
-    },
-    true,
-  )
+  stagingId = (await createPreview(h, 'alpha', 'staging')).id
 })
 
 after(async () => {
@@ -127,14 +120,7 @@ describe('request mapping', () => {
 
   test('projects create sends POST with the name and exits 0', async () => {
     server.requests.length = 0
-    const result = await sly([
-      '--json',
-      'projects',
-      'create',
-      'beta',
-      '--default-environment-name',
-      'live',
-    ])
+    const result = await sly(['--json', 'projects', 'create', 'beta'])
 
     assert.equal(result.code, 0, result.stderr)
     const sent = server.requests.find((r) => r.method === 'POST')!
@@ -142,17 +128,16 @@ describe('request mapping', () => {
     assert.equal(sent.path, '/v1/projects')
     assert.deepEqual(JSON.parse(sent.body), {
       name: 'beta',
-      default_environment_name: 'live',
     })
     assert.equal(JSON.parse(result.stdout).name, 'beta')
   })
 
-  test('services create maps flags, key=value objects and repeated objects to the request body', async () => {
+  test('apps create maps flags, key=value objects and repeated objects to the request body', async () => {
     server.requests.length = 0
     const result = await sly([
       '--project',
       'alpha',
-      'services',
+      'apps',
       'create',
       'web',
       '--kind',
@@ -163,14 +148,14 @@ describe('request mapping', () => {
       'port=80',
       '--no-deploy-on-create',
       '--json',
-      '--environment',
-      'production',
+      '--preview',
+      'staging',
     ])
 
     assert.equal(result.code, 0, result.stderr)
-    const sent = server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!
+    const sent = server.requests.find((r) => r.method === 'POST' && r.path.includes('/apps?'))!
 
-    assert.equal(sent.path, '/v1/projects/alpha/environments/production/services')
+    assert.equal(sent.path, `/v1/projects/alpha/apps?preview=${stagingId}`)
     assert.deepEqual(JSON.parse(sent.body), {
       name: 'web',
       kind: 'web',
@@ -195,9 +180,9 @@ describe('request mapping', () => {
     const local = await sly([
       '--project',
       'alpha',
-      '--environment',
-      'production',
-      'services',
+      '--preview',
+      'staging',
+      'apps',
       'create',
       'docked',
       '--kind',
@@ -214,7 +199,7 @@ describe('request mapping', () => {
 
     assert.equal(local.code, 0, local.stderr)
     const body = JSON.parse(
-      server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/services'))!.body,
+      server.requests.find((r) => r.method === 'POST' && r.path.includes('/apps?'))!.body,
     )
 
     assert.deepEqual(body.source, {
@@ -234,9 +219,9 @@ describe('request mapping', () => {
     const bad = await sly([
       '--project',
       'alpha',
-      '--environment',
-      'production',
-      'services',
+      '--preview',
+      'staging',
+      'apps',
       'create',
       'x',
       '--kind',
@@ -254,10 +239,10 @@ describe('request mapping', () => {
     )
   })
 
-  test('stations update maps every flag to the request body and sends only what was given', async () => {
+  test('servers update maps every flag to the request body and sends only what was given', async () => {
     server.requests.length = 0
     const all = await sly([
-      'stations',
+      'servers',
       'update',
       'station-1',
       '--public-address',
@@ -271,7 +256,7 @@ describe('request mapping', () => {
 
     assert.equal(all.code, 0, all.stderr)
     const sent = server.requests.find(
-      (r) => r.method === 'PATCH' && r.path === '/v1/stations/station-1',
+      (r) => r.method === 'PATCH' && r.path === '/v1/servers/station-1',
     )!
 
     assert.deepEqual(JSON.parse(sent.body), {
@@ -282,7 +267,7 @@ describe('request mapping', () => {
     })
     server.requests.length = 0
     const some = await sly([
-      'stations',
+      'servers',
       'update',
       'station-1',
       '--no-draining',
@@ -298,46 +283,39 @@ describe('request mapping', () => {
     assert.equal(JSON.parse(some.stdout).status, 'online')
   })
 
-  test('stations update with no flag is refused by the API', async () => {
-    const result = await sly(['stations', 'update', 'station-1', '--json'])
+  test('servers update with no flag is refused by the API', async () => {
+    const result = await sly(['servers', 'update', 'station-1', '--json'])
 
     assert.equal(result.code, 1)
     assert.equal(JSON.parse(result.stdout).error.code, 'VALIDATION_FAILED')
   })
 
-  test('services list resolves names and prints a table in human mode', async () => {
-    const result = await sly([
-      '--project',
-      'alpha',
-      '--environment',
-      'production',
-      'services',
-      'list',
-    ])
+  test('apps list resolves names and prints a table in human mode', async () => {
+    const result = await sly(['--project', 'alpha', '--preview', 'staging', 'apps', 'list'])
 
     assert.equal(result.code, 0, result.stderr)
     assert.match(result.stdout, /NAME/)
     assert.match(result.stdout, /web/)
   })
 
-  test('a service given by name is one call to its nested path', async () => {
+  test('an app given by name is one call to its nested path', async () => {
     server.requests.length = 0
     const result = await sly([
       '--project',
       'alpha',
-      '--environment',
-      'production',
-      '--service',
+      '--preview',
+      'staging',
+      '--app',
       'web',
       '--json',
-      'services',
+      'apps',
       'stop',
     ])
 
     assert.equal(result.code, 0, result.stderr)
     assert.deepEqual(
       server.requests.map((r) => `${r.method} ${r.path}`),
-      ['POST /v1/projects/alpha/environments/production/services/web/stop'],
+      ['POST /v1/projects/alpha/previews/staging/apps/web/stop'],
     )
     assert.equal(JSON.parse(result.stdout).desired_state, 'stopped')
   })
@@ -415,14 +393,23 @@ describe('exit codes', () => {
     assert.equal(JSON.parse(result.stdout).error.code, 'NAME_TAKEN')
   })
 
-  test('variables list lists the project variables', async () => {
-    const set = await sly(['--json', '--project', 'alpha', 'variables', 'set', 'LISTED=yes'])
+  test('keys list lists the project keys', async () => {
+    const set = await sly([
+      '--json',
+      '--project',
+      'alpha',
+      '--preview',
+      'staging',
+      'keys',
+      'set',
+      'LISTED=yes',
+    ])
 
     assert.equal(set.code, 0)
-    const listed = await sly(['--json', '--project', 'alpha', 'variables', 'list'])
+    const listed = await sly(['--json', '--project', 'alpha', 'keys', 'list'])
 
     assert.equal(listed.code, 0)
-    assert.ok(JSON.parse(listed.stdout).items.some((v: { key: string }) => v.key === 'LISTED'))
+    assert.ok(JSON.parse(listed.stdout).items.some((v: { name: string }) => v.name === 'LISTED'))
   })
 
   test('an unknown command is a usage error, exit 2', async () => {
@@ -433,7 +420,7 @@ describe('exit codes', () => {
   })
 
   test('--json prints a usage error as an envelope on stdout and still exits 2', async () => {
-    const result = await sly(['--json', 'variables', 'set', 'A=b', '--scope', 'nope'])
+    const result = await sly(['--json', 'keys', 'set', 'A=b', '--scope', 'nope'])
 
     assert.equal(result.code, 2)
     assert.equal(JSON.parse(result.stdout).error.code, 'VALIDATION_FAILED')
@@ -441,19 +428,17 @@ describe('exit codes', () => {
   })
 
   test('a missing required value without a TTY is a usage error, exit 2', async () => {
-    const result = await sly(['services', 'list'])
+    const result = await sly(['apps', 'list'])
 
     assert.equal(result.code, 2)
     assert.equal(lastLine(result.stderr), 'INPUT_REQUIRED')
   })
 
-  test('a staged change in a protected environment exits 3 and says nothing was applied', async () => {
+  test('an approval in production exits 3 and says nothing was applied', async () => {
     const result = await sly([
       '--project',
       'alpha',
-      '--environment',
-      'prod',
-      'services',
+      'apps',
       'create',
       'api',
       '--kind',
@@ -466,8 +451,8 @@ describe('exit codes', () => {
     ])
 
     assert.equal(result.code, 3, result.stderr)
-    assert.equal(JSON.parse(result.stdout).status, 'staged')
-    assert.match(result.stderr, /staged: nothing was applied/)
+    assert.equal(JSON.parse(result.stdout).status, 'waiting')
+    assert.match(result.stderr, /waiting: nothing was applied/)
   })
 
   test('a rejected token is UNAUTHENTICATED, exit 5', async () => {
@@ -541,14 +526,10 @@ describe('exit codes', () => {
 })
 
 describe('generated commands', () => {
-  let service: { id: string }
+  let app: { id: string }
 
   before(async () => {
-    const project = await h.call('GET', '/v1/projects/alpha', {
-      token: h.admin.token,
-    })
-
-    service = await createService(h, project.body.default_environment_id, {
+    app = await createApp(h, stagingId, {
       name: 'store',
       kind: 'worker',
       ref: 'nginx:1.27',
@@ -558,23 +539,15 @@ describe('generated commands', () => {
     })
   })
 
-  test('volumes add --service <id> --mount-path /data --json sends POST /v1/services/{id}/volumes', async () => {
+  test('volumes add --app <id> --mount-path /data --json sends POST /v1/apps/{id}/volumes', async () => {
     server.requests.length = 0
-    const result = await sly([
-      'volumes',
-      'add',
-      '--service',
-      service.id,
-      '--mount-path',
-      '/data',
-      '--json',
-    ])
+    const result = await sly(['volumes', 'add', '--app', app.id, '--mount-path', '/data', '--json'])
 
     assert.equal(result.code, 0, result.stderr)
     const sent = server.requests.filter((r) => r.method === 'POST')
 
     assert.equal(sent.length, 1)
-    assert.equal(sent[0]!.path, `/v1/services/${service.id}/volumes`)
+    assert.equal(sent[0]!.path, `/v1/apps/${app.id}/volumes`)
     assert.deepEqual(JSON.parse(sent[0]!.body), {
       mount_path: '/data',
     })
@@ -582,44 +555,41 @@ describe('generated commands', () => {
     const volume = JSON.parse(result.stdout)
 
     assert.equal(volume.mount_path, '/data')
-    const rest = await h.call('GET', `/v1/services/${service.id}/volumes`, {
+    const rest = await h.call('GET', `/v1/apps/${app.id}/volumes`, {
       token: h.admin.token,
     })
 
     assert.ok(rest.body.items.some((v: { id: string }) => v.id === volume.id))
   })
 
-  test('a service given by name resolves through the nested project path', async () => {
+  test('an app given by name resolves through the nested project path', async () => {
     server.requests.length = 0
     const result = await sly([
       '--project',
       'alpha',
-      '--service',
+      '--preview',
+      'staging',
+      '--app',
       'store',
       'volumes',
-      'list-service',
+      'list-app',
     ])
 
     assert.equal(result.code, 0, result.stderr)
     assert.ok(
       server.requests.some((r) =>
-        /^\/v1\/projects\/alpha\/environments\/env_[A-Z0-9]+\/services\/store\/volumes$/.test(
-          r.path,
-        ),
+        /^\/v1\/projects\/alpha\/previews\/staging\/apps\/store\/volumes$/.test(r.path),
       ),
     )
     const [header, row] = result.stdout.split('\n')
 
-    assert.match(
-      header!,
-      /^ID\s+OWNER\s+SERVICE ID\s+STATION ID\s+MOUNT PATH\s+SIZE BYTES\s+STATUS$/,
-    )
+    assert.match(header!, /^ID\s+OWNER\s+APP ID\s+SERVER ID\s+MOUNT PATH\s+SIZE BYTES\s+STATUS$/)
     assert.match(row!, /^vol_\S+\s+service\s+svc_\S+\s+\S+\s+\/data\s/)
     assert.doesNotMatch(result.stdout, /RETAIN UNTIL|[{}"]/)
   })
 
   test('an entity prints as aligned keys and values, and --json prints the response unmodified', async () => {
-    const listed = await sly(['--service', service.id, '--json', 'volumes', 'list-service'])
+    const listed = await sly(['--app', app.id, '--json', 'volumes', 'list-app'])
     const volume = JSON.parse(listed.stdout).items[0]
     const human = await sly(['volumes', 'get', volume.id])
 
@@ -665,7 +635,7 @@ describe('generated commands', () => {
   })
 
   test('a flag typed integer refuses text as a usage error, exit 2', async () => {
-    const result = await sly(['ports', 'add', '--service', service.id, '--port', 'eighty'])
+    const result = await sly(['ports', 'add', '--app', app.id, '--port', 'eighty'])
 
     assert.equal(result.code, 2)
     assert.match(result.stderr, /eighty is not a number/)
@@ -804,9 +774,9 @@ describe('time flags', () => {
     const result = await sly([
       '--project',
       'alpha',
-      '--environment',
-      'production',
-      '--service',
+      '--preview',
+      'staging',
+      '--app',
       'web',
       '--json',
       'logs',
@@ -828,9 +798,9 @@ describe('time flags', () => {
       const result = await sly([
         '--project',
         'alpha',
-        '--environment',
-        'production',
-        '--service',
+        '--preview',
+        'staging',
+        '--app',
         'web',
         '--json',
         'logs',
@@ -848,7 +818,7 @@ describe('--json stdout', () => {
     const stub = createServer((req, res) => {
       const path = req.url ?? ''
 
-      if (req.method === 'POST' && path.startsWith('/v1/services/svc_STUB/runs')) {
+      if (req.method === 'POST' && path.startsWith('/v1/apps/svc_STUB/runs')) {
         res.writeHead(201, {
           'content-type': 'application/json',
         })
@@ -914,7 +884,7 @@ describe('--json stdout', () => {
     const stub = await runStub()
 
     try {
-      const result = await sly(['--json', '--service', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
+      const result = await sly(['--json', '--app', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
         STATIONLY_API_URL: stub.url,
       })
 
@@ -934,7 +904,7 @@ describe('--json stdout', () => {
     const stub = await runStub()
 
     try {
-      const result = await sly(['--service', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
+      const result = await sly(['--app', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
         STATIONLY_API_URL: stub.url,
       })
 
@@ -949,7 +919,7 @@ describe('--json stdout', () => {
 
     try {
       for (let attempt = 1; attempt <= 5; attempt++) {
-        const result = await sly(['--service', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
+        const result = await sly(['--app', 'svc_STUB', 'run', '--', 'echo', 'hi'], {
           STATIONLY_API_URL: stub.url,
         })
 
@@ -965,7 +935,7 @@ describe('--json stdout', () => {
 
 describe('waiting and streaming', () => {
   const sample = (at: string) => ({
-    service: {
+    app: {
       id: 'svc_LIVE',
       name: 'web',
     },
@@ -1029,7 +999,7 @@ describe('waiting and streaming', () => {
             checks: [],
           }),
         )
-      } else if (req.method === 'POST' && path === '/v1/services/svc_LIVE/deployments') {
+      } else if (req.method === 'POST' && path === '/v1/apps/svc_LIVE/deployments') {
         res.writeHead(201, {
           'content-type': 'application/json',
         })
@@ -1063,8 +1033,8 @@ describe('waiting and streaming', () => {
           })}\n\n`,
         )
         res.write('event: truncated\ndata: {"cursor":"c0"}\n\n')
-        res.end('event: end\ndata: {"reason":"service_deleted"}\n\n')
-      } else if (path.startsWith('/v1/environments/env_LIVE/network/live')) {
+        res.end('event: end\ndata: {"reason":"app_deleted"}\n\n')
+      } else if (path.startsWith('/v1/projects/prj_LIVE/network/live')) {
         res.writeHead(200, {
           'content-type': 'text/event-stream',
         })
@@ -1097,9 +1067,11 @@ describe('waiting and streaming', () => {
   }
 
   const live = [
-    '--environment',
+    '--project',
+    'prj_LIVE',
+    '--preview',
     'env_LIVE',
-    '--service',
+    '--app',
     'svc_LIVE',
     'network',
     'stream-connections',
@@ -1160,7 +1132,7 @@ describe('waiting and streaming', () => {
       assert.equal(result.code, 0, result.stderr)
       assert.match(result.stdout, /^2026-11-10T00:00:00Z web deployment - conntrack entries 3$/m)
       assert.doesNotMatch(result.stdout, /00:00:05/)
-      assert.match(dispatch.seen[0]!.path, /\?service=svc_LIVE$/)
+      assert.match(dispatch.seen[0]!.path, /\?preview=env_LIVE&app=svc_LIVE$/)
     } finally {
       await dispatch.close()
     }
@@ -1196,12 +1168,12 @@ describe('waiting and streaming', () => {
     const dispatch = await stub()
 
     try {
-      const human = await sly(['--service', 'svc_LIVE', 'logs', '-f'], dispatch.env)
+      const human = await sly(['--app', 'svc_LIVE', 'logs', '-f'], dispatch.env)
 
       assert.equal(human.code, 0, human.stderr)
       assert.equal(human.stdout, '2026-11-10T00:00:00Z   ready\n')
-      assert.match(dispatch.seen.at(-1)!.path, /^\/v1\/logs\?service=svc_LIVE&follow=true$/)
-      const json = await sly(['--json', '--service', 'svc_LIVE', 'logs', '-f'], dispatch.env)
+      assert.match(dispatch.seen.at(-1)!.path, /^\/v1\/logs\?app=svc_LIVE&follow=true$/)
+      const json = await sly(['--json', '--app', 'svc_LIVE', 'logs', '-f'], dispatch.env)
 
       assert.equal(JSON.parse(json.stdout).text, 'ready')
     } finally {
@@ -1220,7 +1192,7 @@ describe('waiting and streaming', () => {
       const json = await sly(['--json', 'platform', 'doctor'], dispatch.env)
 
       assert.equal(json.code, 1)
-      const deployed = await sly(['--service', 'svc_LIVE', 'deploy', '--wait'], dispatch.env)
+      const deployed = await sly(['--app', 'svc_LIVE', 'deploy', '--wait'], dispatch.env)
 
       assert.equal(deployed.code, 4, deployed.stderr)
       assert.match(deployed.stdout, /diagnosis: sly deployments diagnosis dep_LIVE/)

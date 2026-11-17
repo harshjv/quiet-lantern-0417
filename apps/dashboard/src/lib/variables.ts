@@ -1,39 +1,39 @@
-import { variableKeyPattern as variableKeySource } from '@stationly/protocol/domain'
+import { keyNamePattern as keyNameSource } from '@stationly/protocol/domain'
 
-import type { Variable } from './api'
+import type { Key } from './api'
 import { optimistic } from './cache.ts'
 import { inputPattern } from './format.ts'
 
-export type VariableKind = Variable['kind']
+export type KeyKind = Key['kind']
 
-export const variableKinds: VariableKind[] = ['literal', 'sealed', 'reference']
+export const keyKinds: KeyKind[] = ['literal', 'sealed', 'reference']
 
-export const variableKeyPattern = inputPattern(variableKeySource)
+export const keyNamePattern = inputPattern(keyNameSource)
 
-export const variableKeyTitle = 'Upper case letters, digits and underscores'
+export const keyNameTitle = 'Upper case letters, digits and underscores'
 
 export const sealedNote =
   'Sealed values are write-only. No endpoint returns them, including to you.'
 
-export const noValueLabel = 'No value in this environment'
+export const noValueLabel = 'No value here'
 
-export const hasNoValue = (variable: Pick<Variable, 'kind' | 'head_version'>) =>
-  variable.kind === 'sealed' && !variable.head_version
+export const hasNoValue = (key: Pick<Key, 'kind' | 'head_version'>) =>
+  key.kind === 'sealed' && !key.head_version
 
 export const buildNote =
-  'Build-time variables reach the Dockerfile as BuildKit secrets: read one with RUN --mount=type=secret,id=KEY. They never become build arguments or image layers.'
+  'Build-time keys reach the Dockerfile as BuildKit secrets: read one with RUN --mount=type=secret,id=KEY. They never become build arguments or image layers.'
 
 export const referencePlaceholder = '${{db.HOST}}'
 
-export type VariableEntry = {
-  key: string
-  kind: VariableKind
+export type KeyEntry = {
+  name: string
+  kind: KeyKind
   value: string
   build: boolean
   injection?: 'env' | 'file'
 }
 
-const valueOf = (kind: VariableKind, value: string) =>
+const valueOf = (kind: KeyKind, value: string) =>
   kind === 'reference'
     ? {
         reference: value,
@@ -42,8 +42,8 @@ const valueOf = (kind: VariableKind, value: string) =>
         value,
       }
 
-export const toVariableInput = ({ key, kind, value, build, injection }: VariableEntry) => ({
-  key,
+export const toKeyInput = ({ name, kind, value, build, injection }: KeyEntry) => ({
+  name,
   kind,
   build,
   ...(injection
@@ -54,35 +54,30 @@ export const toVariableInput = ({ key, kind, value, build, injection }: Variable
   ...valueOf(kind, value),
 })
 
-export const toSandboxVariableInput = ({ key, kind, value }: VariableEntry) => ({
-  key,
+export const toMachineKeyInput = ({ name, kind, value }: KeyEntry) => ({
+  name,
   kind,
   ...valueOf(kind, value),
 })
 
-export const draftVariable = (
-  entry: VariableEntry,
-  scope: Variable['scope'],
-  existing?: Variable,
-): Variable =>
+export const draftKey = (entry: KeyEntry, scope: Key['scope'], existing?: Key): Key =>
   optimistic({
-    id: `draft-${entry.key}`,
+    id: `draft-${entry.name}`,
     head_version: null,
     bytes: null,
-    copy_to_clones: false,
     ...existing,
     scope,
-    key: entry.key,
+    name: entry.name,
     kind: entry.kind,
     reference: entry.kind === 'reference' ? entry.value : null,
     injection: entry.injection ?? existing?.injection ?? 'env',
     build: entry.build,
   })
 
-export const withDraft = (list: Variable[], entry: VariableEntry, scope: Variable['scope']) =>
-  list.some((v) => v.key === entry.key)
-    ? list.map((v) => (v.key === entry.key ? draftVariable(entry, scope, v) : v))
-    : [...list, draftVariable(entry, scope)]
+export const withDraft = (list: Key[], entry: KeyEntry, scope: Key['scope']) =>
+  list.some((v) => v.name === entry.name)
+    ? list.map((v) => (v.name === entry.name ? draftKey(entry, scope, v) : v))
+    : [...list, draftKey(entry, scope)]
 
-export const withoutKeys = (list: Variable[], keys: string[]) =>
-  list.filter((v) => !keys.includes(v.key))
+export const withoutKeys = (list: Key[], names: string[]) =>
+  list.filter((v) => !names.includes(v.name))

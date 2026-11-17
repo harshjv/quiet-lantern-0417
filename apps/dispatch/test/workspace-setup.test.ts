@@ -7,7 +7,7 @@ import { after, before, describe, test } from 'node:test'
 
 import { workspaceEnv } from '@stationly/protocol'
 
-import { setupCommand, workspaceVariableSets } from '../src/sandboxes/workspace.ts'
+import { setupCommand, workspaceKeySets } from '../src/sandboxes/workspace.ts'
 
 import { startDispatch, type Dispatch } from './helpers/dispatch.ts'
 
@@ -117,33 +117,36 @@ describe('workspace setup', () => {
   })
 })
 
-test('a workspace receives its project and environment as literal variables', () => {
-  const sets = workspaceVariableSets(
-    h.db,
-    {
-      project: 'prj_one',
-      environment: 'env_one',
-    },
-    'claude',
-    'key',
-    [],
-  )
+test('a workspace receives its project, and its preview only in a preview, as literal keys', () => {
+  const placed = (preview: string | null) =>
+    workspaceKeySets(
+      h.db,
+      {
+        project: 'prj_one',
+        preview,
+      },
+      'claude',
+      'key',
+      [],
+    ).filter((set) => [workspaceEnv.project, workspaceEnv.preview].includes(set.name as never))
 
-  assert.deepEqual(
-    sets.filter((set) =>
-      [workspaceEnv.project, workspaceEnv.environment].includes(set.key as never),
-    ),
-    [
-      {
-        key: 'STATIONLY_PROJECT',
-        kind: 'literal',
-        value: 'prj_one',
-      },
-      {
-        key: 'STATIONLY_ENVIRONMENT',
-        kind: 'literal',
-        value: 'env_one',
-      },
-    ],
-  )
+  assert.deepEqual(placed('env_one'), [
+    {
+      name: 'STATIONLY_PROJECT',
+      kind: 'literal',
+      value: 'prj_one',
+    },
+    {
+      name: 'STATIONLY_PREVIEW',
+      kind: 'literal',
+      value: 'env_one',
+    },
+  ])
+  assert.deepEqual(placed(null), [
+    {
+      name: 'STATIONLY_PROJECT',
+      kind: 'literal',
+      value: 'prj_one',
+    },
+  ])
 })

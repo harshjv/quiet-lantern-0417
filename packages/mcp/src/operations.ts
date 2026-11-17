@@ -71,12 +71,12 @@ export const componentRef = '#/components/schemas/'
 
 export const slugPaths: Record<string, string> = {
   project: 'project',
-  environment: 'project/environment',
-  service: 'project/environment/service',
-  sandbox: 'project/environment/sandbox',
+  preview: 'project/preview',
+  app: 'project/app, or project/preview/app in a preview',
+  machine: 'project/machine, or project/preview/machine in a preview',
 }
 
-const parents = ['projects', 'environments']
+const parents = ['projects', 'previews']
 
 export const isObject = (value: unknown): value is Json =>
   value !== null && typeof value === 'object' && !Array.isArray(value)

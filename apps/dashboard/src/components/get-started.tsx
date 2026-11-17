@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
@@ -7,19 +6,21 @@ import { releaseConfig } from '@stationly/protocol/release-config'
 
 import { Code } from '@/components/code'
 import { NewProject } from '@/components/new-project'
-import { NewService, type ServicePreset } from '@/components/new-service'
-import { NewSandbox } from '@/components/sandboxes-panel'
-import { ServiceStatusDot } from '@/components/status'
+import { NewApp, type AppPreset } from '@/components/new-service'
+import { PlaceLink } from '@/components/place-link'
+import { NewMachine } from '@/components/sandboxes-panel'
+import { AppStatusDot } from '@/components/status'
 import { Button } from '@/components/ui/button'
 import type { Project } from '@/lib/api'
 import { passkeysAvailable, passkeysQuery, sessionQuery } from '@/lib/auth'
 import { guideProgress, guideVisible, setGuideHidden, useGuideHidden } from '@/lib/first-run'
 import { byName, plural } from '@/lib/format'
 import { client } from '@/lib/labels'
-import { agentTokensQuery, environmentQuery } from '@/lib/queries'
+import { places } from '@/lib/nav'
+import { agentTokensQuery } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
-const hello: ServicePreset = {
+const hello: AppPreset = {
   name: 'hello',
   image: releaseConfig.acceptance_images.whoami,
   port: {
@@ -38,7 +39,7 @@ type Step = {
   action?: (next: boolean) => ReactNode
 }
 
-type Dialog = 'project' | 'service' | 'sandbox' | null
+type Dialog = 'project' | 'app' | 'machine' | null
 
 const variant = (next: boolean) => (next ? 'default' : 'outline')
 
@@ -52,15 +53,13 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
   })
   const first = [...projects].sort(byName)[0]
   const keys = passkeys.data?.length
-  const { healthy, starting, services, sandboxes, workspaces, used, waiting, done } = guideProgress(
-    {
-      projects,
-      totp: session.data ? Boolean(session.data.user.twoFactorEnabled) : undefined,
-      passkeys: keys,
-      passkeysSettled: Boolean(passkeys.data) || passkeys.isError,
-      tokens: tokens.data,
-    },
-  )
+  const { healthy, deploying, apps, machines, workspaces, used, waiting, done } = guideProgress({
+    projects,
+    totp: session.data ? Boolean(session.data.user.twoFactorEnabled) : undefined,
+    passkeys: keys,
+    passkeysSettled: Boolean(passkeys.data) || passkeys.isError,
+    tokens: tokens.data,
+  })
   const needsProject = 'Create a project first.'
 
   const steps: Step[] = [
@@ -77,14 +76,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
           : 'Set up TOTP, so a password alone can’t sign in.',
       action: (next) => (
         <Button asChild size="sm" variant={variant(next)}>
-          <Link
-            to="/account"
-            search={{
-              enroll: true,
-            }}
-          >
-            Secure account
-          </Link>
+          <PlaceLink to={places.page('account')}>Secure account</PlaceLink>
         </Button>
       ),
     },
@@ -96,7 +88,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         ? projects.length > 1
           ? `${first.name} and ${plural(projects.length - 1, 'other')}`
           : first.name
-        : 'A project groups services that deploy together.',
+        : 'A project groups apps that deploy together.',
       action: (next) => (
         <Button size="sm" variant={variant(next)} onClick={() => open('project')}>
           Create project
@@ -104,22 +96,24 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
       ),
     },
     {
-      id: 'service',
-      title: 'Deploy your first service',
-      done: done.service,
+      id: 'app',
+      title: 'Deploy your first app',
+      done: done.app,
       detail:
         healthy > 0 ? (
           <span className="inline-flex items-center gap-2">
-            <ServiceStatusDot status="green" />
-            {plural(healthy, 'healthy service')}
+            <AppStatusDot status="healthy" />
+            {plural(healthy, 'healthy app')}
           </span>
-        ) : starting > 0 ? (
+        ) : deploying > 0 ? (
           <span className="inline-flex items-center gap-2">
-            <ServiceStatusDot status="amber" />
-            Starting. This step checks off when it turns healthy.
+            <AppStatusDot status="deploying" />
+            Deploying. This step checks off when it turns healthy.
           </span>
-        ) : services > 0 ? (
-          'No service is healthy yet.'
+        ) : apps > 0 ? (
+          'No app is healthy yet.'
+        ) : first && first.waiting_approvals > 0 ? (
+          'Your first app waits for an approval. An admin approves it, then it deploys.'
         ) : first ? (
           <>
             Try <Code>{helloSource}</Code>, a small web server that answers with the request it got.
@@ -129,56 +123,61 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         ),
       action: first
         ? (next) =>
-            services > 0 ? (
+            apps > 0 ? (
               <Button asChild size="sm" variant="outline">
-                <Link
-                  to="/projects/$project"
-                  params={{
-                    project: first.name,
-                  }}
-                >
-                  Open {first.name}
-                </Link>
+                <PlaceLink to={places.project(first.name)}>Open {first.name}</PlaceLink>
+              </Button>
+            ) : first.waiting_approvals > 0 ? (
+              <Button asChild size="sm" variant={variant(next)}>
+                <PlaceLink to={places.project(first.name, 'approvals')}>Review approval</PlaceLink>
               </Button>
             ) : (
-              <Button size="sm" variant={variant(next)} onClick={() => open('service')}>
+              <Button size="sm" variant={variant(next)} onClick={() => open('app')}>
                 Deploy {hello.name}
               </Button>
             )
         : undefined,
     },
     {
-      id: 'sandbox',
-      title: 'Open a sandbox',
-      done: done.sandbox,
+      id: 'machine',
+      title: 'Open a machine',
+      done: done.machine,
       detail:
-        sandboxes > 0
-          ? plural(sandboxes, 'sandbox', 'sandboxes')
+        machines > 0
+          ? plural(machines, 'machine', 'machines')
           : first
             ? 'A shell on a fresh machine, right in your browser.'
             : needsProject,
       action: first
         ? (next) => (
-            <Button size="sm" variant={variant(next)} onClick={() => open('sandbox')}>
-              Create sandbox
+            <Button size="sm" variant={variant(next)} onClick={() => open('machine')}>
+              Create machine
             </Button>
           )
         : undefined,
     },
     {
       id: 'workspace',
-      title: 'Start an agent session',
+      title: 'Start a task',
       done: done.workspace,
       detail:
         workspaces > 0
-          ? plural(workspaces, 'workspace')
+          ? plural(workspaces, 'task')
           : first
-            ? 'Start a task: Claude Code works on it in a workspace of its own.'
+            ? 'Start a task: Claude Code works on it on a branch of its own.'
             : needsProject,
       action: first
         ? (next) => (
             <Button asChild size="sm" variant={variant(next)}>
-              <a href="/">New task</a>
+              <PlaceLink
+                to={{
+                  mode: 'build',
+                  project: first.name,
+                  view: 'new',
+                }}
+              >
+                New task
+              </PlaceLink>
             </Button>
           )
         : undefined,
@@ -194,7 +193,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
           : 'Claude Code, Cursor, Codex or any MCP client.',
       action: (next) => (
         <Button asChild size="sm" variant={variant(next)}>
-          <Link to="/connect">Connect agent</Link>
+          <PlaceLink to={places.page('connect')}>Connect agent</PlaceLink>
         </Button>
       ),
     },
@@ -266,10 +265,6 @@ function StepMark({ done }: { done: boolean | undefined }) {
 }
 
 function Dialogs({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
-  const environment = useQuery({
-    ...environmentQuery(guide.first?.default_environment_id ?? ''),
-    enabled: Boolean(guide.first),
-  })
   const close = (open: boolean) => {
     if (!open) {
       guide.setDialog(null)
@@ -280,22 +275,21 @@ function Dialogs({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
     return <NewProject open onOpenChange={close} />
   }
 
-  if (!guide.first || !guide.dialog || !environment.data) {
+  if (!guide.first || !guide.dialog) {
     return null
   }
 
-  return guide.dialog === 'service' ? (
-    <NewService environment={environment.data} preset={hello} open onOpenChange={close} />
+  const place = {
+    project: guide.first.id,
+    preview: null,
+    projectName: guide.first.name,
+    previewName: null,
+  }
+
+  return guide.dialog === 'app' ? (
+    <NewApp place={place} preset={hello} open onOpenChange={close} />
   ) : (
-    <NewSandbox
-      environment={environment.data}
-      scope={{
-        project: guide.first.name,
-        environment: environment.data.name,
-      }}
-      open
-      onOpenChange={close}
-    />
+    <NewMachine place={place} open onOpenChange={close} />
   )
 }
 
@@ -315,7 +309,7 @@ export function GetStarted({ guide }: { guide: ReturnType<typeof useGetStarted> 
           </h2>
           <p className="text-sm text-muted-foreground">
             {guide.complete
-              ? 'Your first service is live, you have a sandbox, an agent session and a connected agent.'
+              ? 'Your first app is live, and you have a machine, a task and a connected agent.'
               : 'From a fresh instance to a live URL, a shell and an agent that deploys.'}
           </p>
         </div>

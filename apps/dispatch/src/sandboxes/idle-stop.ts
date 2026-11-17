@@ -2,17 +2,17 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
-import { sandbox } from '../db/schema.ts'
+import { machine } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 
 import { activityOf, inUse } from './activity.ts'
-import { stopSandbox, systemActor } from './lifecycle.ts'
+import { stopMachine, systemActor } from './lifecycle.ts'
 
 export type IdleStopDeps = { db: Db; stations: { reconcile(stationId?: string): void } }
 
-export const idleStopSeconds = (db: Db) => readSetting(db, 'sandbox.workspace_idle_stop_s')
+export const idleStopSeconds = (db: Db) => readSetting(db, 'machine.workspace_idle_stop_s')
 
 export const runIdleStop = (deps: IdleStopDeps, now = new Date()) => {
   const { db } = deps
@@ -27,12 +27,12 @@ export const runIdleStop = (deps: IdleStopDeps, now = new Date()) => {
 
   for (const row of db
     .select()
-    .from(sandbox)
+    .from(machine)
     .where(
       and(
-        eq(sandbox.status, 'running'),
-        eq(sandbox.desired_state, 'running'),
-        isNotNull(sandbox.workspace),
+        eq(machine.status, 'running'),
+        eq(machine.desired_state, 'running'),
+        isNotNull(machine.workspace),
       ),
     )
     .all()) {
@@ -42,12 +42,12 @@ export const runIdleStop = (deps: IdleStopDeps, now = new Date()) => {
       continue
     }
 
-    stopSandbox(db, row, 'idle')
+    stopMachine(db, row, 'idle')
     recordAudit(db, {
       actor: systemActor,
-      action: 'sandbox.stop',
+      action: 'machine.stop',
       target: {
-        entity: 'sandbox',
+        entity: 'machine',
         id: row.id,
       },
       before: {
@@ -55,7 +55,7 @@ export const runIdleStop = (deps: IdleStopDeps, now = new Date()) => {
       },
     })
     stopped.push(row.id)
-    touched.add(row.station_id)
+    touched.add(row.server_id)
   }
 
   for (const id of touched) {
@@ -66,12 +66,12 @@ export const runIdleStop = (deps: IdleStopDeps, now = new Date()) => {
 }
 
 export const startIdleStop = (deps: IdleStopDeps, log: Log) =>
-  every(60, 'sandbox.idle_stop_failed', log, () => {
+  every(60, 'machine.idle_stop_failed', log, () => {
     const stopped = runIdleStop(deps)
 
     if (stopped.length) {
-      log('sandbox.idle_stop', {
-        sandboxes: stopped,
+      log('machine.idle_stop', {
+        machines: stopped,
       })
     }
   })

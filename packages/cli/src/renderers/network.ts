@@ -1,9 +1,9 @@
 import type { Api, Data } from '../kit.ts'
 import { aligned, table } from '../output.ts'
 
-type NetworkDoc = Data<ReturnType<Api['environments']>['network']['get']>
+type NetworkDoc = Data<ReturnType<Api['projects']>['network']['get']>
 
-const switchCell = (sw: NetworkDoc['services'][number]['switch']) => {
+const switchCell = (sw: NetworkDoc['apps'][number]['switch']) => {
   if (!sw.deployment) {
     return sw.state.replace('_', ' ')
   }
@@ -19,8 +19,8 @@ export const networkText = (doc: NetworkDoc) => {
     process.stderr.write(`warning ${w.code}: ${w.explanation}\n`)
   }
 
-  const services = table(
-    doc.services.map((s) => ({
+  const apps = table(
+    doc.apps.map((s) => ({
       name: s.name,
       dns: s.dns,
       'virtual ip': s.virtual_ip,
@@ -34,7 +34,7 @@ export const networkText = (doc: NetworkDoc) => {
     doc.inbound.entries.map((e) => ({
       kind: e.kind,
       entry: e.kind === 'domain' ? e.hostname : e.public,
-      service: e.service,
+      app: e.app,
       port: e.port,
     })),
   )
@@ -48,7 +48,7 @@ export const networkText = (doc: NetworkDoc) => {
   )
 
   return [
-    services,
+    apps,
     '',
     `inbound (web ports ${doc.inbound.web_ports}, public address ${doc.inbound.public_address ?? '-'}):`,
     inbound,
@@ -57,11 +57,11 @@ export const networkText = (doc: NetworkDoc) => {
   ].join('\n')
 }
 
-export type ConnectionsDoc = Data<ReturnType<Api['services']>['connections']['get']>
+export type ConnectionsDoc = Data<ReturnType<Api['apps']>['connections']['get']>
 
 const peerText = (p: ConnectionsDoc['connections'][number]['peer']) => {
   if (p.kind === 'service') {
-    return `${p.service ?? p.service_id}${p.deployment_id ? ` (${p.deployment_id.slice(-6)})` : ''}`
+    return `${p.app ?? p.app_id}${p.deployment_id ? ` (${p.deployment_id.slice(-6)})` : ''}`
   }
 
   if (p.address) {
@@ -84,7 +84,7 @@ export const connectionsText = (doc: ConnectionsDoc) => {
   ]
     .filter(Boolean)
     .join(', ')
-  const head = `${doc.at} ${doc.service.name} deployment ${doc.deployment_id ?? '-'} conntrack entries ${dash(ct.entries)}${flags ? ` (${flags})` : ''}`
+  const head = `${doc.at} ${doc.app.name} deployment ${doc.deployment_id ?? '-'} conntrack entries ${dash(ct.entries)}${flags ? ` (${flags})` : ''}`
   const rows = [
     [
       'DIR',
@@ -147,13 +147,13 @@ export const connectionsText = (doc: ConnectionsDoc) => {
   ].join('\n')
 }
 
-type ExplanationDoc = Data<ReturnType<Api['environments']>['network']['explain']['get']>
+type ExplanationDoc = Data<ReturnType<Api['projects']>['network']['explain']['get']>
 
 type Probed =
-  | Data<ReturnType<Api['services']>['network']['probe']['post']>
-  | Data<ReturnType<Api['sandboxes']>['network']['probe']['post']>
+  | Data<ReturnType<Api['apps']>['network']['probe']['post']>
+  | Data<ReturnType<Api['machines']>['network']['probe']['post']>
 
-type DnsDoc = Data<ReturnType<Api['services']>['dns-log']['get']>
+type DnsDoc = Data<ReturnType<Api['apps']>['dns-log']['get']>
 
 const detailText = (detail: Record<string, unknown>) =>
   Object.entries(detail)
@@ -202,11 +202,11 @@ export const explanationText = (doc: ExplanationDoc) => {
 
 export const probeText = (doc: Probed) => {
   if ('changes' in doc) {
-    return `staged change ${doc.id} (${doc.status}): the probe is sent when a human accepts it`
+    return `approval ${doc.id} (${doc.status}): the probe is sent when a person approves it`
   }
 
   const lines = [
-    `${doc.at} probe ${doc.kind} from ${'service' in doc ? doc.service : doc.sandbox} to ${doc.to}${doc.port ? `:${doc.port}` : ''}`,
+    `${doc.at} probe ${doc.kind} from ${'app' in doc ? doc.app : doc.machine} to ${doc.to}${doc.port ? `:${doc.port}` : ''}`,
   ]
 
   if (doc.dns) {

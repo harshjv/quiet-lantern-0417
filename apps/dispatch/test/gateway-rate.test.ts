@@ -71,7 +71,7 @@ describe('gateway.rate_per_source', () => {
     }
   })
 
-  test('is staged for a non-human actor under platform.protected', async () => {
+  test('waits for approval for a non-human actor under platform.protected', async () => {
     assert.equal(
       (
         await h.call('PATCH', '/v1/settings', {
@@ -83,15 +83,20 @@ describe('gateway.rate_per_source', () => {
       ).status,
       200,
     )
-    const staged = await patch(60, {
+    const waiting = await patch(60, {
       token: h.admin.token,
     })
 
-    assert.equal(staged.status, 202, staged.text)
-    assert.equal(staged.body.environment_id, null)
-    const accepted = await h.call('POST', `/v1/staged-changes/${staged.body.id}/accept`, human())
+    assert.equal(waiting.status, 202, waiting.text)
+    assert.equal(waiting.body.project_id, null)
+    const approved = await h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
+      ...human(),
+      body: {
+        decision: 'approve',
+      },
+    })
 
-    assert.equal(accepted.status, 200, accepted.text)
+    assert.equal(approved.status, 200, approved.text)
     assert.equal(
       (await station.waitForGeneration((d) => d.station.settings[key] === 60)).station.settings[
         key

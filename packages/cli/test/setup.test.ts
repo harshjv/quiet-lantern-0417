@@ -43,7 +43,7 @@ const setupResult = (params: Record<string, unknown>) => ({
         note: 'replicating Dispatch to the bucket',
       }
     : null,
-  reach: ['ssh -L 7900:127.0.0.1:7900 <station>'],
+  reach: ['ssh -L 7900:127.0.0.1:7900 <server>'],
 })
 
 before(async () => {
@@ -303,27 +303,27 @@ describe('sly setup Litestream bucket, flag form', () => {
   })
 })
 
-describe('sly setup sandbox runtime', () => {
+describe('sly setup machine runtime', () => {
   test('without KVM it says why in one line, asks nothing and sends no runtime', async () => {
     const run = await sly(flags)
 
     assert.equal(run.code, 0, run.stderr)
-    assert.match(run.stderr, /^No KVM on this host, so sandboxes run on gVisor$/m)
+    assert.match(run.stderr, /^No KVM on this host, so machines run on gVisor$/m)
     assert.equal('sandbox_runtime' in setups[0]!, false)
   })
 
-  test('--sandbox-runtime gvisor goes to stationd as sandbox_runtime', async () => {
-    const run = await sly([...flags, '--sandbox-runtime', 'gvisor'])
+  test('--machine-runtime gvisor goes to stationd as sandbox_runtime', async () => {
+    const run = await sly([...flags, '--machine-runtime', 'gvisor'])
 
     assert.equal(run.code, 0, run.stderr)
     assert.equal(setups[0]!.sandbox_runtime, 'gvisor')
   })
 
   test('a runtime the host does not offer exits 2 before anything is sent', async () => {
-    const run = await sly([...flags, '--sandbox-runtime', 'microvm'])
+    const run = await sly([...flags, '--machine-runtime', 'microvm'])
 
     assert.equal(run.code, 2)
-    assert.match(run.stderr, /does not offer the sandbox runtime microvm/)
+    assert.match(run.stderr, /does not offer the machine runtime microvm/)
     assert.equal(setups.length, 0)
   })
 
@@ -357,7 +357,7 @@ describe('sly setup on a terminal', () => {
         },
         {
           expect:
-            '◆  station public IPv4 address \\(Enter to accept, or type another\\)\n│  203\\.0\\.113\\.7',
+            '◆  server public IPv4 address \\(Enter to accept, or type another\\)\n│  203\\.0\\.113\\.7',
           send: '\r',
         },
         {
@@ -391,7 +391,7 @@ describe('sly setup on a terminal', () => {
       [
         ...domainless,
         {
-          expect: '◆  station public IPv4 address',
+          expect: '◆  server public IPv4 address',
           send: 'not-an-ip\r',
         },
         {
@@ -433,7 +433,7 @@ describe('sly setup on a terminal', () => {
           send: '',
         },
         {
-          expect: '◆  station public IPv4 address \\(Enter to skip\\)',
+          expect: '◆  server public IPv4 address \\(Enter to skip\\)',
           send: '\r',
         },
         {
@@ -441,7 +441,7 @@ describe('sly setup on a terminal', () => {
           send: '\r',
         },
         {
-          expect: 'none \\(set it later with sly stations update\\)',
+          expect: 'none \\(set it later with sly servers update\\)',
           send: '',
         },
         {
@@ -465,7 +465,7 @@ describe('sly setup on a terminal', () => {
       [
         ...domainless,
         {
-          expect: '◆  station public IPv4 address',
+          expect: '◆  server public IPv4 address',
           send: '\r',
         },
         {

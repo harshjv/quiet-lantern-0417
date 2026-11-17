@@ -15,9 +15,9 @@ import {
 
 const context: FixContext = {
   project: 'shop',
-  environment: 'production',
+  preview: null,
   subject: {
-    kind: 'service',
+    kind: 'app',
     id: 'svc_web',
     name: 'web',
   },
@@ -30,16 +30,16 @@ const context: FixContext = {
   },
 }
 
-type MapService = NetworkMap['services'][number]
+type MapApp = NetworkMap['apps'][number]
 type Finding = NetworkMap['warnings'][number]
 
-const mapService = (name: string, status: MapService['status']) =>
+const mapApp = (name: string, status: MapApp['status']) =>
   ({
     id: `svc_${name}`,
     name,
     status,
-    station_id: 'sta_home',
-  }) as MapService
+    server_id: 'sta_home',
+  }) as MapApp
 
 test('every remedy in the catalog has a fix and nothing else does', () => {
   assert.deepEqual(Object.keys(remedies).sort(), [...remedyCatalog].sort())
@@ -51,9 +51,9 @@ test('raising memory is one click that patches the limits and redeploys', () => 
       code: 'RAISE_MEMORY',
       text: 'Raise limits.memory_bytes to at least 1073741824.',
       action: {
-        tool: 'update_service',
+        tool: 'update_app',
         input: {
-          service: 'svc_web',
+          app: 'svc_web',
           limits: {
             memory_bytes: 1073741824,
             cpu_millis: 500,
@@ -67,9 +67,9 @@ test('raising memory is one click that patches the limits and redeploys', () => 
   assert.deepEqual(plan.button, {
     label: 'Raise memory to 1 GiB and redeploy',
     run: {
-      tool: 'update_service',
+      tool: 'update_app',
       name: 'web',
-      service: 'svc_web',
+      app: 'svc_web',
       body: {
         limits: {
           memory_bytes: 1073741824,
@@ -80,13 +80,13 @@ test('raising memory is one click that patches the limits and redeploys', () => 
   })
   assert.equal(
     plan.command,
-    'sly --project shop --environment production --service web services update --limits memory_bytes=1073741824',
+    'sly --project shop --app web apps update --limits memory_bytes=1073741824',
   )
   assert.equal(
     plan.prompt,
-    'In shop/production on Stationly, raise web’s memory limit to 1 GiB and redeploy it.',
+    'In shop production on Stationly, raise web’s memory limit to 1 GiB and redeploy it.',
   )
-  assert.equal(plan.tool, 'update_service')
+  assert.equal(plan.tool, 'update_app')
 })
 
 test('a fix without structured input leaves the button out and keeps the prompt', () => {
@@ -111,7 +111,7 @@ test('rollback targets the last good deployment the diagnosis names', () => {
       action: {
         tool: 'rollback',
         input: {
-          service: 'svc_web',
+          app: 'svc_web',
           deployment_id: 'dep_12',
         },
       },
@@ -122,13 +122,10 @@ test('rollback targets the last good deployment the diagnosis names', () => {
   assert.deepEqual(plan.button?.run, {
     tool: 'rollback',
     name: 'web',
-    service: 'svc_web',
+    app: 'svc_web',
     deployment: 'dep_12',
   })
-  assert.equal(
-    plan.command,
-    'sly --project shop --environment production --service web rollback --deployment-id dep_12 --wait',
-  )
+  assert.equal(plan.command, 'sly --project shop --app web rollback --deployment-id dep_12 --wait')
 })
 
 test('log fixes point at the failed deployment, and at its build for a build failure', () => {
@@ -139,7 +136,7 @@ test('log fixes point at the failed deployment, and at its build for a build fai
 
   assert.equal(
     planFix(fix, context).command,
-    'sly --project shop --environment production --service web logs --deployment dep_14',
+    'sly --project shop --app web logs --deployment dep_14',
   )
   assert.equal(
     planFix(fix, {
@@ -149,19 +146,19 @@ test('log fixes point at the failed deployment, and at its build for a build fai
         build: 'bld_14',
       },
     }).command,
-    'sly --project shop --environment production --service web logs --build bld_14',
+    'sly --project shop --app web logs --build bld_14',
   )
 })
 
-test('a fix for another service names that service in the button, command and prompt', () => {
+test('a fix for another app names that app in the button, command and prompt', () => {
   const plan = planFix(
     {
       code: 'START_TARGET',
       text: 'Start db; its current deployment is not running.',
       action: {
-        tool: 'start_service',
+        tool: 'start_app',
         input: {
-          service: 'svc_db',
+          app: 'svc_db',
         },
       },
     },
@@ -169,10 +166,7 @@ test('a fix for another service names that service in the button, command and pr
   )
 
   assert.equal(plan.button?.label, 'Start db')
-  assert.equal(
-    plan.command,
-    'sly --project shop --environment production --service db services start',
-  )
+  assert.equal(plan.command, 'sly --project shop --app db apps start')
   assert.match(plan.prompt, /start db and check/)
 })
 
@@ -187,27 +181,27 @@ test('an unknown fix code still offers the agent prompt', () => {
 
   assert.equal(plan.button, null)
   assert.equal(plan.command, null)
-  assert.equal(plan.prompt, 'In shop/production on Stationly, help me with this: Do the new thing.')
+  assert.equal(plan.prompt, 'In shop production on Stationly, help me with this: Do the new thing.')
 })
 
-test('a stopped service gets Start and a never-deployed one gets Deploy', () => {
+test('a stopped app gets Start and a never-deployed one gets Deploy', () => {
   const finding = {
     code: 'SWITCH_NO_TARGET',
     explanation: 'web has no running deployment.',
     details: {
-      service: 'web',
+      app: 'web',
     },
   } as Finding
   const scope = {
     project: 'shop',
-    environment: 'production',
+    preview: null,
   }
 
   assert.equal(
-    findingPlan(finding, [mapService('web', 'stopped')], scope)?.button?.run.tool,
-    'start_service',
+    findingPlan(finding, [mapApp('web', 'stopped')], scope)?.button?.run.tool,
+    'start_app',
   )
-  assert.equal(findingPlan(finding, [mapService('web', 'red')], scope)?.button?.run.tool, 'deploy')
+  assert.equal(findingPlan(finding, [mapApp('web', 'failing')], scope)?.button?.run.tool, 'deploy')
 })
 
 test('a missing public address offers the station command', () => {
@@ -216,35 +210,35 @@ test('a missing public address offers the station command', () => {
       code: 'NO_PUBLIC_ADDRESS',
       explanation: 'Station home has no public address.',
       details: {
-        service: 'web',
+        app: 'web',
         station: 'sta_home',
       },
     },
-    [mapService('web', 'green')],
+    [mapApp('web', 'healthy')],
     {
       project: 'shop',
-      environment: 'production',
+      preview: null,
     },
   )
 
-  assert.equal(plan?.command, 'sly stations update sta_home --public-address <ipv4>')
+  assert.equal(plan?.command, 'sly servers update sta_home --public-address <ipv4>')
 })
 
-test('findings without a remedy or a known service offer no fix', () => {
-  assert.equal(findingRemedy.STATION_STALE, null)
+test('findings without a remedy or a known app offer no fix', () => {
+  assert.equal(findingRemedy.SERVER_STALE, null)
   assert.equal(
     findingPlan(
       {
         code: 'SWITCH_NO_TARGET',
         explanation: 'gone has no running deployment.',
         details: {
-          service: 'gone',
+          app: 'gone',
         },
       },
       [],
       {
         project: 'shop',
-        environment: 'production',
+        preview: null,
       },
     ),
     null,
@@ -252,27 +246,24 @@ test('findings without a remedy or a known service offer no fix', () => {
 })
 
 test('error codes with a remedy map to a fix that keeps the API fix text', () => {
-  assert.deepEqual(errorFix('SANDBOX_NOT_RUNNING', 'Start it first.'), {
+  assert.deepEqual(errorFix('MACHINE_NOT_RUNNING', 'Start it first.'), {
     code: 'START_TARGET',
     text: 'Start it first.',
   })
-  assert.equal(errorFix('STATION_OFFLINE', 'Wait for the station.'), null)
-  const plan = planFix(errorFix('SANDBOX_NOT_RUNNING', 'Start it first.')!, {
+  assert.equal(errorFix('SERVER_OFFLINE', 'Wait for the station.'), null)
+  const plan = planFix(errorFix('MACHINE_NOT_RUNNING', 'Start it first.')!, {
     ...context,
     subject: {
-      kind: 'sandbox',
+      kind: 'machine',
       id: 'sbx_1',
       name: 'web-sbx',
     },
   })
 
   assert.deepEqual(plan.button?.run, {
-    tool: 'start_sandbox',
+    tool: 'start_machine',
     name: 'web-sbx',
-    sandbox: 'sbx_1',
+    machine: 'sbx_1',
   })
-  assert.equal(
-    plan.command,
-    'sly --project shop --environment production --sandbox web-sbx sandboxes start',
-  )
+  assert.equal(plan.command, 'sly --project shop --machine web-sbx machines start')
 })

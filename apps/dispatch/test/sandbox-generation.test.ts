@@ -7,20 +7,21 @@ import { eq } from 'drizzle-orm'
 import { Generation } from '@stationly/protocol'
 import { releaseRepositories } from '@stationly/protocol/release-config'
 
-import { sandbox } from '../src/db/schema.ts'
+import { machine } from '../src/db/schema.ts'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
-  createEnvironment,
+  createApp,
+  createMachine,
+  createPreview,
   createProject,
-  createSandbox,
-  createService,
   pinPlatform,
+  placed,
   rows,
   toolchainImageDigest,
-  waitForSandbox,
+  waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
@@ -43,13 +44,13 @@ before(async () => {
   registry.publish('alpine:3.20')
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   station = await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
   })
   project = await createProject(h, 'alpha')
-  envId = project.default_environment_id
+  envId = (await createPreview(h, 'alpha', 'dev')).id
 })
 
 after(async () => {
@@ -57,8 +58,8 @@ after(async () => {
   registry.restore()
 })
 
-describe('what a generation holds for sandboxes', () => {
-  test('a station that reports no sandbox capability gets no sandbox keys at all', async () => {
+describe('what a generation holds for machines', () => {
+  test('a station that reports no machine capability gets no machine keys at all', async () => {
     const plain = await startFakeStation(h, 'station-plain')
     const doc = await plain.waitForGeneration()
 
@@ -67,8 +68,8 @@ describe('what a generation holds for sandboxes', () => {
     assert.equal(doc.station.sandbox_network, undefined)
   })
 
-  test('an isolated sandbox with Docker and an allowlist carries every field of the Sandbox object, and the station gets its sandbox network', async () => {
-    const box = await createSandbox(h, envId, {
+  test('an isolated machine with Docker and an allowlist carries every field of the Machine object, and the station gets its machine network', async () => {
+    const box = await createMachine(h, envId, {
       name: 'full',
       docker: true,
       command: ['sleep', 'infinity'],
@@ -166,18 +167,18 @@ describe('what a generation holds for sandboxes', () => {
     assert.deepEqual(doc.sandbox_snapshots, {})
     assert.equal(Value.Check(Generation, doc), true)
     assert.equal(
-      rows<{ sandbox_subnet: string }>(
+      rows<{ machine_subnet: string }>(
         h,
-        'select sandbox_subnet from station where name = ?',
+        'select machine_subnet from server where name = ?',
         'station-1',
-      )[0]!.sandbox_subnet,
+      )[0]!.machine_subnet,
       net.subnet,
     )
   })
 
-  test('a sandbox that joins the environment brings the environment and its virtual IPs into the generation', async () => {
-    const env = await createEnvironment(h, 'alpha', 'joined')
-    const web = await createService(h, env.id, {
+  test('a machine that joins its preview network brings that network and its virtual IPs into the generation', async () => {
+    const env = await createPreview(h, 'alpha', 'joined')
+    const web = await createApp(h, env.id, {
       name: 'web',
       ref: 'nginx:1.27',
       ports: [
@@ -186,10 +187,10 @@ describe('what a generation holds for sandboxes', () => {
         },
       ],
       extra: {
-        station_id: station.stationId,
+        server_id: station.stationId,
       },
     })
-    const box = await createSandbox(h, env.id, {
+    const box = await createMachine(h, env.id, {
       name: 'joiner',
       network: 'environment',
       start: false,
@@ -202,7 +203,7 @@ describe('what a generation holds for sandboxes', () => {
     assert.equal(entry.network, 'environment')
     const vips = rows<{ id: string }>(
       h,
-      'select id from virtual_ip where environment_id = ? and service_id = ?',
+      'select id from virtual_ip where target_id = ? and app_id = ?',
       env.id,
       web.id,
     )
@@ -214,17 +215,17 @@ describe('what a generation holds for sandboxes', () => {
     assert.ok((doc.environments[env.id] as any).network.subnet)
     assert.equal(entry.desired_state, 'stopped')
     assert.equal(entry.stop_at, null)
-    const network = (await api('GET', `/v1/environments/${env.id}/network`)).body
+    const network = (await api('GET', placed(h, env.id, `network`))).body
 
     assert.deepEqual(
-      network.sandboxes.map((s: any) => [s.id, s.name, s.status, s.egress.mode]),
+      network.machines.map((s: any) => [s.id, s.name, s.status, s.egress.mode]),
       [[box.id, 'joiner', 'stopped', 'open']],
     )
     assert.ok(
       network.paths.some((p: any) => p.path === 'sandbox_inbound' && p.verdict === 'blocked'),
     )
     assert.ok(!network.paths.some((p: any) => p.path === 'domain_not_allowed'))
-    await api('PATCH', `/v1/sandboxes/${box.id}`, {
+    await api('PATCH', `/v1/machines/${box.id}`, {
       egress: {
         mode: 'allowlist',
         domains: [
@@ -234,16 +235,16 @@ describe('what a generation holds for sandboxes', () => {
         ],
       },
     })
-    const withList = (await api('GET', `/v1/environments/${env.id}/network`)).body
+    const withList = (await api('GET', placed(h, env.id, `network`))).body
 
     assert.ok(withList.paths.some((p: any) => p.path === 'domain_not_allowed'))
-    const isolatedElsewhere = (await api('GET', `/v1/environments/${envId}/network`)).body
+    const isolatedElsewhere = (await api('GET', placed(h, envId, `network`))).body
 
-    assert.deepEqual(isolatedElsewhere.sandboxes, [])
+    assert.deepEqual(isolatedElsewhere.machines, [])
   })
 
   test('a custom image is pinned by digest as a registry reference', async () => {
-    const box = await createSandbox(h, envId, {
+    const box = await createMachine(h, envId, {
       name: 'pinned',
       image: {
         ref: 'alpine:3.20',
@@ -259,16 +260,16 @@ describe('what a generation holds for sandboxes', () => {
   })
 
   test('stop_at, desired_state and a changed ttl_s follow the row from one generation to the next', async () => {
-    const box = await createSandbox(h, envId, {
+    const box = await createMachine(h, envId, {
       name: 'moving',
       ttl_s: 600,
     })
 
-    await waitForSandbox(h, box.id, 'running')
+    await waitForMachine(h, box.id, 'running')
     const before = (await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined))
       .sandboxes![box.id] as any
 
-    await api('PATCH', `/v1/sandboxes/${box.id}`, {
+    await api('PATCH', `/v1/machines/${box.id}`, {
       ttl_s: 7200,
     })
     const extended = (
@@ -281,7 +282,7 @@ describe('what a generation holds for sandboxes', () => {
 
     assert.ok(Date.parse(extended.stop_at) - Date.parse(before.stop_at) > 6000_000)
     assert.notEqual(extended.hash, before.hash)
-    await api('POST', `/v1/sandboxes/${box.id}/stop`)
+    await api('POST', `/v1/machines/${box.id}/stop`)
     const stopped = (
       await station.waitForGeneration(
         (d) => (d.sandboxes?.[box.id] as any)?.desired_state === 'stopped',
@@ -292,14 +293,14 @@ describe('what a generation holds for sandboxes', () => {
     assert.equal(stopped.status, 'active')
   })
 
-  test('a deleted sandbox is sent with status destroy and leaves the generation once the station reports it deleted', async () => {
-    const box = await createSandbox(h, envId, {
+  test('a deleted machine is sent with status destroy and leaves the generation once the station reports it deleted', async () => {
+    const box = await createMachine(h, envId, {
       name: 'vanishing',
       start: false,
     })
 
     await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined)
-    await api('DELETE', `/v1/sandboxes/${box.id}`)
+    await api('DELETE', `/v1/machines/${box.id}`)
     const destroyedDoc = await station.waitForGeneration(
       (d) => (d.sandboxes?.[box.id] as any)?.status === 'destroy',
     )
@@ -308,7 +309,7 @@ describe('what a generation holds for sandboxes', () => {
     assert.equal(destroyed.desired_state, 'stopped')
     assert.equal(destroyed.stop_at, null)
     await station.waitFor(
-      () => rows(h, 'select id from sandbox where id = ?', box.id).length === 0,
+      () => rows(h, 'select id from machine where id = ?', box.id).length === 0,
       5000,
       'the row to be removed',
     )
@@ -322,40 +323,40 @@ describe('what a generation holds for sandboxes', () => {
   })
 
   test('snapshots are sent active, then destroy, then dropped', async () => {
-    const box = await createSandbox(h, envId, {
+    const box = await createMachine(h, envId, {
       name: 'snapped',
       start: false,
     })
-    const snapshot = (await api('POST', `/v1/sandboxes/${box.id}/snapshots`, {})).body
+    const snapshot = (await api('POST', `/v1/machines/${box.id}/snapshots`, {})).body
     const active = (
       await station.waitForGeneration((d) => d.sandbox_snapshots?.[snapshot.id] !== undefined)
     ).sandbox_snapshots![snapshot.id] as any
 
     assert.deepEqual([active.sandbox_id, active.status], [box.id, 'active'])
     assert.match(active.hash, /^sha256:/)
-    await api('DELETE', `/v1/sandbox-snapshots/${snapshot.id}`)
+    await api('DELETE', `/v1/machine-snapshots/${snapshot.id}`)
     const gone = await station.waitForGeneration(
       (d) => (d.sandbox_snapshots?.[snapshot.id] as any)?.status === 'destroy',
     )
 
     assert.equal((gone.sandbox_snapshots![snapshot.id] as any).status, 'destroy')
     await station.waitFor(
-      () => rows(h, 'select id from sandbox_snapshot where id = ?', snapshot.id).length === 0,
+      () => rows(h, 'select id from machine_snapshot where id = ?', snapshot.id).length === 0,
       5000,
       'the snapshot row to be removed',
     )
   })
 
-  test('a sandbox whose object does not match the schema keeps its last applied version and raises a generation finding', async () => {
-    const box = await createSandbox(h, envId, {
+  test('a machine whose object does not match the schema keeps its last applied version and raises a generation finding', async () => {
+    const box = await createMachine(h, envId, {
       name: 'invalid-later',
     })
     const good = (await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined))
       .sandboxes![box.id] as any
-    const row = h.db.select().from(sandbox).where(eq(sandbox.id, box.id)).get()!
+    const row = h.db.select().from(machine).where(eq(machine.id, box.id)).get()!
 
     h.db
-      .update(sandbox)
+      .update(machine)
       .set({
         image: {
           ref: null,
@@ -363,7 +364,7 @@ describe('what a generation holds for sandboxes', () => {
         },
         ttl_s: 1,
       })
-      .where(eq(sandbox.id, box.id))
+      .where(eq(machine.id, box.id))
       .run()
     h.deps.stations.reconcile()
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -373,16 +374,16 @@ describe('what a generation holds for sandboxes', () => {
 
     assert.ok(
       findings.some((f) => String(f.payload.detail).includes(box.id)),
-      'a generation finding names the sandbox',
+      'a generation finding names the machine',
     )
     assert.equal((latest().sandboxes![box.id] as any).hash, good.hash)
     h.db
-      .update(sandbox)
+      .update(machine)
       .set({
         image: row.image,
         ttl_s: row.ttl_s,
       })
-      .where(eq(sandbox.id, box.id))
+      .where(eq(machine.id, box.id))
       .run()
   })
 

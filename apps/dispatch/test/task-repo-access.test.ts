@@ -7,14 +7,22 @@ import { after, before, describe, test } from 'node:test'
 
 import { eq } from 'drizzle-orm'
 
-import { audit_event, run, sandbox, token } from '../src/db/schema.ts'
+import { audit_event, machine, run, token } from '../src/db/schema.ts'
 import { runIdleStop } from '../src/sandboxes/idle-stop.ts'
 import type { ReadRepository } from '../src/sandboxes/repository-access.ts'
 import { setupFailureOf } from '../src/sandboxes/setup-failure.ts'
 import { setupCommand } from '../src/sandboxes/workspace.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
-import { createProject, createSandbox, pinPlatform, waitForSandbox } from './helpers/seed.ts'
+import {
+  approveWaiting,
+  createMachine,
+  createPreview,
+  createProject,
+  pinPlatform,
+  placed,
+  waitForMachine,
+} from './helpers/seed.ts'
 
 const privateUrl = 'https://github.com/acme/secret'
 const publicUrl = 'https://github.com/acme/open'
@@ -56,7 +64,7 @@ const asAdmin = (method: string, path: string, body?: unknown) =>
   })
 
 const create = (name: string, repository: string, extra: Record<string, unknown> = {}) =>
-  asAdmin('POST', `/v1/environments/${envId}/sandboxes`, {
+  asAdmin('POST', placed(h, envId, `machines`), {
     name,
     workspace: {
       agent: 'claude',
@@ -65,12 +73,12 @@ const create = (name: string, repository: string, extra: Record<string, unknown>
     ...extra,
   })
 
-const setToken = (value: string) =>
-  asHuman('PATCH', `/v1/projects/${project.id}/variables`, {
-    environment: 'default',
+const setToken = (value: string, projectId = project.id, target = 'preview') =>
+  asHuman('PATCH', `/v1/projects/${projectId}/keys`, {
+    target,
     set: [
       {
-        key: 'GH_TOKEN',
+        name: 'GH_TOKEN',
         kind: 'sealed',
         value,
       },
@@ -78,7 +86,7 @@ const setToken = (value: string) =>
   })
 
 const counts = () => ({
-  sandboxes: h.db.select().from(sandbox).all().length,
+  machines: h.db.select().from(machine).all().length,
   runs: h.db.select().from(run).all().length,
   tokens: h.db.select().from(token).all().length,
 })
@@ -88,13 +96,13 @@ before(async () => {
     readRepository: reader,
   })
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
   })
   project = await createProject(h, 'alpha')
-  envId = project.default_environment_id
+  envId = (await createPreview(h, 'alpha', 'dev')).id
 })
 
 after(async () => {
@@ -126,25 +134,25 @@ describe('the repository check at workspace create', () => {
     assert.deepEqual(counts(), before)
   })
 
-  test('a human stores the token as a sealed project variable, a deploy token cannot', async () => {
+  test('a human stores the token as a sealed project key, a deploy token cannot', async () => {
     const minted = await asAdmin('POST', '/v1/tokens', {
       name: 'deployer',
       kind: 'scoped',
       scopes: [
         {
           project_id: project.id,
-          environment_id: envId,
+          target: 'previews',
           level: 'deploy',
         },
       ],
     })
-    const refused = await h.call('PATCH', `/v1/projects/${project.id}/variables`, {
+    const refused = await h.call('PATCH', `/v1/projects/${project.id}/keys`, {
       token: minted.body.key,
       body: {
-        environment: 'default',
+        target: 'preview',
         set: [
           {
-            key: 'GH_TOKEN',
+            name: 'GH_TOKEN',
             kind: 'sealed',
             value: guarded,
           },
@@ -185,9 +193,9 @@ describe('the repository check at workspace create', () => {
 
   test('a GH_TOKEN in the body counts as the project token', async () => {
     const reply = await create('secret-four', 'https://github.com/acme/other', {
-      variables: [
+      keys: [
         {
-          key: 'GH_TOKEN',
+          name: 'GH_TOKEN',
           kind: 'sealed',
           value: guarded,
         },
@@ -199,16 +207,13 @@ describe('the repository check at workspace create', () => {
     assert.equal(seen.at(-1)!.token, guarded)
   })
 
-  test('a project token set for every environment is not read inside a clone of production', async () => {
-    const made = await asAdmin('POST', `/v1/projects/${project.id}/environments`, {
-      name: 'preview',
-      source_environment_id: envId,
-      deploy_on_create: false,
-    })
+  test('a project token set only for production is not read inside a preview', async () => {
+    const beta = await createProject(h, 'beta')
+    const stored = await approveWaiting(h, await setToken(guarded, beta.id, 'production'))
 
-    assert.equal(made.status, 201, made.text)
-
-    const reply = await asAdmin('POST', `/v1/environments/${made.body.id}/sandboxes`, {
+    assert.equal(stored.status, 200, stored.text)
+    const pv = await createPreview(h, 'beta', 'pv')
+    const reply = await asAdmin('POST', placed(h, pv.id, `machines`), {
       name: 'in-preview',
       workspace: {
         agent: 'claude',
@@ -230,9 +235,9 @@ describe('the repository check at workspace create', () => {
 })
 
 describe('workspace size', () => {
-  test('a workspace gets 2 GiB and a plain sandbox 4 GiB', async () => {
+  test('a workspace gets 2 GiB and a plain machine 4 GiB', async () => {
     const workspace = await create('sized', publicUrl)
-    const plain = await createSandbox(h, envId, {
+    const plain = await createMachine(h, envId, {
       name: 'plain',
     })
 
@@ -347,19 +352,19 @@ describe('idle stop', () => {
   const running = async (name: string) => {
     const made = await create(name, publicUrl)
 
-    await waitForSandbox(h, made.body.id, 'running')
+    await waitForMachine(h, made.body.id, 'running')
     h.db
-      .update(sandbox)
+      .update(machine)
       .set({
         started_at: new Date(Date.now() - 3 * 60 * 60_000),
       })
-      .where(eq(sandbox.id, made.body.id))
+      .where(eq(machine.id, made.body.id))
       .run()
 
     return made.body.id as string
   }
 
-  const rowOf = (id: string) => h.db.select().from(sandbox).where(eq(sandbox.id, id)).get()!
+  const rowOf = (id: string) => h.db.select().from(machine).where(eq(machine.id, id)).get()!
 
   test('an unused workspace is stopped as idle, keeping its disk and its place in the audit', async () => {
     const id = await running('idle-one')
@@ -380,7 +385,7 @@ describe('idle stop', () => {
         .select()
         .from(audit_event)
         .all()
-        .some((entry) => entry.action === 'sandbox.stop' && entry.target.id === id),
+        .some((entry) => entry.action === 'machine.stop' && entry.target.id === id),
     )
   })
 
@@ -388,11 +393,11 @@ describe('idle stop', () => {
     const id = await running('idle-recent')
 
     h.db
-      .update(sandbox)
+      .update(machine)
       .set({
         started_at: new Date(),
       })
-      .where(eq(sandbox.id, id))
+      .where(eq(machine.id, id))
       .run()
 
     assert.equal(
@@ -407,7 +412,7 @@ describe('idle stop', () => {
     )
 
     const off = await asAdmin('PATCH', '/v1/settings', {
-      'sandbox.workspace_idle_stop_s': 0,
+      'machine.workspace_idle_stop_s': 0,
     })
 
     assert.equal(off.status, 200, off.text)
@@ -423,12 +428,12 @@ describe('idle stop', () => {
     )
   })
 
-  test('a plain sandbox is left to its time to live', async () => {
-    const plain = await createSandbox(h, envId, {
+  test('a plain machine is left to its time to live', async () => {
+    const plain = await createMachine(h, envId, {
       name: 'plain-idle',
     })
 
-    await waitForSandbox(h, plain.id, 'running')
+    await waitForMachine(h, plain.id, 'running')
     assert.equal(
       runIdleStop(
         {

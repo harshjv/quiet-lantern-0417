@@ -6,18 +6,19 @@ import {
   type OutboxedMessageType,
 } from '@stationly/protocol'
 
+import { recordHealth, refreshAppStatus, refreshDeploymentApp } from '../api/app-status.ts'
 import { refreshStale } from '../api/stale.ts'
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import {
+  app,
   attestation,
   build,
   component,
   deployment,
   deployment_step,
   run,
-  service,
-  station,
+  server,
   station_outbox,
 } from '../db/schema.ts'
 import { isPinned } from '../platform/image-source.ts'
@@ -28,8 +29,7 @@ import { activateDeployment } from '../secrets/deploy.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { recordBackupResult, recordRestoreResult } from '../volumes/backups.ts'
 
-import { emitEvent, serviceSubject } from './events.ts'
-import { setServiceStatus } from './signal.ts'
+import { appSubject, emitEvent } from './events.ts'
 
 export type IngestResult = { status: 'applied' | 'duplicate'; seq: number; reconcile: boolean }
 
@@ -68,7 +68,7 @@ export const failedPayload = (
 export const deploymentSubject = (db: Db, deploymentId: string) => {
   const dep = db
     .select({
-      service_id: deployment.service_id,
+      app_id: deployment.app_id,
     })
     .from(deployment)
     .where(eq(deployment.id, deploymentId))
@@ -76,10 +76,10 @@ export const deploymentSubject = (db: Db, deploymentId: string) => {
 
   return dep
     ? {
-        ...serviceSubject(db, dep.service_id),
+        ...appSubject(db, dep.app_id),
         entity: 'deployment',
         id: deploymentId,
-        service_id: dep.service_id,
+        app_id: dep.app_id,
       }
     : {
         entity: 'deployment',
@@ -110,7 +110,7 @@ export const emitBuildFinished = (
     {
       build: buildId,
       deployment: deploymentId,
-      service: 'service_id' in subject ? subject.service_id : null,
+      app: 'app_id' in subject ? subject.app_id : null,
       status,
       duration_s: durationS,
       code,
@@ -176,15 +176,19 @@ const effects: {
       .run()
 
     if (dep.status === 'queued' || dep.status === 'building') {
-      const subject: { entity: string; id: string; environment_id?: string; project_id?: string } =
-        deploymentSubject(db, dep.id)
+      const subject: {
+        entity: string
+        id: string
+        preview_id?: string | null
+        project_id?: string
+      } = deploymentSubject(db, dep.id)
 
       emitEvent(db, 'deployment.started', subject, {
         deployment: dep.id,
         number: dep.number,
         trigger: dep.trigger.type,
-        service: dep.service_id,
-        environment: subject.environment_id ?? null,
+        app: dep.app_id,
+        preview: subject.preview_id ?? null,
         project: subject.project_id ?? null,
       })
     }
@@ -203,10 +207,10 @@ const effects: {
     if (body.status === 'active') {
       const previous = db
         .select({
-          current: service.current_deployment_id,
+          current: app.current_deployment_id,
         })
-        .from(service)
-        .where(eq(service.id, dep.service_id))
+        .from(app)
+        .where(eq(app.id, dep.app_id))
         .get()?.current
 
       activateDeployment(db, dep.id)
@@ -220,7 +224,8 @@ const effects: {
           .run()
       }
 
-      refreshStale(db, [dep.service_id])
+      refreshStale(db, [dep.app_id])
+      refreshDeploymentApp(db, dep.id)
       const began = dep.started_at ?? dep.created_at
 
       emitEvent(db, 'deployment.active', subject, {
@@ -242,6 +247,7 @@ const effects: {
       })
       .where(eq(deployment.id, dep.id))
       .run()
+    refreshDeploymentApp(db, dep.id)
 
     if (body.status === 'failed') {
       emitEvent(db, 'deployment.failed', subject, failedPayload(dep.id, dep.number, body.failure))
@@ -262,7 +268,7 @@ const effects: {
     db.insert(run)
       .values({
         id: r.id,
-        service_id: r.service_id,
+        app_id: r.service_id,
         deployment_id: r.deployment_id,
         kind: r.kind,
         command: r.command,
@@ -305,13 +311,13 @@ const effects: {
       .run()
     const full = db.select().from(run).where(eq(run.id, body.run_id)).get()
 
-    if (body.status === 'failed' && full && full.sandbox_id === null) {
+    if (body.status === 'failed' && full && full.machine_id === null) {
       emitEvent(
         db,
         'run.failed',
-        full.service_id
+        full.app_id
           ? {
-              ...serviceSubject(db, full.service_id),
+              ...appSubject(db, full.app_id),
               entity: 'run',
               id: body.run_id,
             }
@@ -323,7 +329,7 @@ const effects: {
           run: body.run_id,
           kind: full.kind,
           exit_code: body.exit_code,
-          service: full.service_id,
+          app: full.app_id,
           deployment: full.deployment_id,
           code: body.failure?.code ?? null,
           summary: body.failure?.summary ?? null,
@@ -443,6 +449,7 @@ const effects: {
       })
       .where(eq(deployment.id, dep.id))
       .run()
+    refreshDeploymentApp(db, dep.id)
     emitEvent(
       db,
       'deployment.failed',
@@ -453,9 +460,8 @@ const effects: {
     return true
   },
   'health.result': (db, _k, _s, body) => {
-    const status = body.state === 'passing' ? 'green' : body.state === 'failed' ? 'red' : 'amber'
-
-    setServiceStatus(db, body.service_id, status, {
+    recordHealth(db, body.deployment_id, body.state === 'failed')
+    refreshAppStatus(db, body.service_id, {
       deployment_id: body.deployment_id,
       state: body.state,
       consecutive: body.consecutive,
@@ -469,7 +475,7 @@ const effects: {
       db,
       'disk.pressure',
       {
-        entity: 'station',
+        entity: 'server',
         id: stationId,
       },
       body,
@@ -481,10 +487,10 @@ const effects: {
     const name = body.name as (typeof component.$inferSelect)['name']
     const st = db
       .select({
-        arch: station.arch,
+        arch: server.arch,
       })
-      .from(station)
-      .where(eq(station.id, stationId))
+      .from(server)
+      .where(eq(server.id, stationId))
       .get()
     const pin = effectivePins(db, st?.arch)[name]
     const values = {
@@ -499,7 +505,7 @@ const effects: {
       since: new Date(body.since),
     }
     const scope =
-      name === 'dispatch' ? isNull(component.station_id) : eq(component.station_id, stationId)
+      name === 'dispatch' ? isNull(component.server_id) : eq(component.server_id, stationId)
     const row = db
       .select()
       .from(component)
@@ -508,7 +514,7 @@ const effects: {
 
     if (name !== 'dispatch') {
       db.delete(component)
-        .where(and(isNull(component.station_id), eq(component.name, name)))
+        .where(and(isNull(component.server_id), eq(component.name, name)))
         .run()
     }
 
@@ -517,7 +523,7 @@ const effects: {
     } else {
       db.insert(component)
         .values({
-          station_id: name === 'dispatch' ? null : stationId,
+          server_id: name === 'dispatch' ? null : stationId,
           name,
           ...values,
         })
@@ -529,7 +535,7 @@ const effects: {
         db,
         'doctor.finding',
         {
-          entity: 'station',
+          entity: 'server',
           id: stationId,
         },
         {
@@ -548,7 +554,7 @@ const effects: {
       db,
       'registry.maintenance',
       {
-        entity: 'station',
+        entity: 'server',
         id: stationId,
       },
       body,
@@ -565,7 +571,7 @@ const effects: {
       },
       action: body.action,
       target: body.target,
-      requestId: `station:${stationId}:${body.seq}`,
+      requestId: `server:${stationId}:${body.seq}`,
       purpose: body.purpose,
     })
 
@@ -585,7 +591,7 @@ export const ingest = (
     const row = db
       .select()
       .from(station_outbox)
-      .where(and(eq(station_outbox.station_id, stationId), eq(station_outbox.epoch, epoch)))
+      .where(and(eq(station_outbox.server_id, stationId), eq(station_outbox.epoch, epoch)))
       .get()
     const committed = row?.committed_seq ?? 0
 
@@ -611,7 +617,7 @@ export const ingest = (
     } else {
       db.insert(station_outbox)
         .values({
-          station_id: stationId,
+          server_id: stationId,
           epoch,
           committed_seq: body.seq,
         })
@@ -631,5 +637,5 @@ export const committedSeq = (db: Db, stationId: string, epoch: string) =>
       committed: station_outbox.committed_seq,
     })
     .from(station_outbox)
-    .where(and(eq(station_outbox.station_id, stationId), eq(station_outbox.epoch, epoch)))
+    .where(and(eq(station_outbox.server_id, stationId), eq(station_outbox.epoch, epoch)))
     .get()?.committed ?? null

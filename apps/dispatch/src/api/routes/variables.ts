@@ -2,13 +2,19 @@ import { Type, type Static } from '@sinclair/typebox'
 import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { grantSourceValues, Nullable, StringEnum, variableKeyPattern } from '@stationly/protocol'
+import {
+  grantSourceValues,
+  keyNamePattern,
+  Nullable,
+  StringEnum,
+  targetKindValues,
+} from '@stationly/protocol'
 
-import { deployment, grant, project, secret_value, variable } from '../../db/schema.ts'
+import { deployment, grant, key, project, secret_value } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import type { EnvSnapshot } from '../../secrets/deploy.ts'
 import { leaves } from '../../secrets/resolve.ts'
-import { inEnvironment, variablesOf } from '../../secrets/values.ts'
+import { keysOf, type ValueTarget } from '../../secrets/values.ts'
 import { can } from '../access.ts'
 import { ChangeSet, commit, type CommitResult } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
@@ -16,26 +22,27 @@ import { fail, notFound } from '../errors.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import {
-  environmentInProject,
+  appById,
+  isProduction,
+  keyById,
+  productionOf,
   projectByRef,
-  serviceById,
-  variableById,
-  type EnvironmentRow,
+  type TargetRow,
 } from '../lookup.ts'
 import { getQuery } from '../pagination.ts'
 import { Resolved, resolvedView } from '../resolved.ts'
 import type { TargetInput } from '../route-meta.ts'
-import { VariablesPatch } from '../schemas.ts'
+import { input, KeysPatch } from '../schemas.ts'
 import {
+  Approval,
+  ApprovalDetail,
   Change,
   component,
   extend,
+  Key,
   Page,
   replies,
   SecretValue,
-  Staged,
-  StagedChange,
-  Variable,
   Warnings,
 } from '../shapes.ts'
 import {
@@ -43,18 +50,13 @@ import {
   staleDependents,
   type StaleDependent as StaleDependentRow,
 } from '../stale.ts'
-import {
-  dependentsOf,
-  planVariables,
-  type VariableItem,
-  type VariableScope,
-} from '../variable-changes.ts'
+import { dependentsOf, planKeys, type KeyItem, type KeyScope } from '../variable-changes.ts'
 
 const StaleDependent = Type.Object(
   {
-    service_id: Type.String(),
-    environment_id: Type.String(),
-    protected: Type.Boolean(),
+    app_id: Type.String(),
+    project_id: Type.String(),
+    preview_id: Nullable(Type.String()),
     keys: Type.Array(Type.String()),
   },
   {
@@ -62,24 +64,24 @@ const StaleDependent = Type.Object(
   },
 )
 
-const StagedWithChanges = extend(StagedChange, {
+const ApprovalWithChanges = extend(Approval, {
   changes: Type.Array(Change),
 })
 
 const applied = {
   deployments: Type.Array(Type.String()),
-  staged_changes: Type.Array(StagedWithChanges),
+  approvals: Type.Array(ApprovalWithChanges),
 }
 
 const Applied = Type.Object(applied, {
   additionalProperties: false,
 })
 
-const VariablesOutcome = component(
-  'VariablesOutcome',
+const KeysOutcome = component(
+  'KeysOutcome',
   Type.Object(
     {
-      variables: Type.Array(Variable),
+      keys: Type.Array(Key),
       stale_dependents: Type.Array(StaleDependent),
       ...applied,
     },
@@ -102,7 +104,7 @@ const DeletedWithStale = Type.Object(
 const Grant = Type.Object(
   {
     id: Type.String(),
-    variable_id: Type.String(),
+    key_id: Type.String(),
     project_id: Type.String(),
     alias: Nullable(Type.String()),
     source: StringEnum(grantSourceValues),
@@ -117,22 +119,22 @@ const RevokedValue = extend(SecretValue, {
   warnings: Warnings,
 })
 
-const variablesReplies = replies({
-  200: VariablesOutcome,
-  202: Staged,
+const keysReplies = replies({
+  200: KeysOutcome,
+  202: ApprovalDetail,
 })
 
 type PatchInput = {
-  set?: VariableItem[]
+  set?: KeyItem[]
   unset?: string[]
   apply?: boolean
   allow_unresolved?: boolean
 }
 
-export const variableRoutes = (kit: Kit) => {
+export const keyRoutes = (kit: Kit) => {
   const { db, keyring } = kit.deps
-  const list = (rows: (typeof variable.$inferSelect)[], fields?: string) => ({
-    items: projectAll(kit.views.variable, rows, kit.fields(fields)),
+  const list = (rows: (typeof key.$inferSelect)[], fields?: string) => ({
+    items: projectAll(kit.views.key, rows, kit.fields(fields)),
     next_cursor: null,
   })
 
@@ -140,10 +142,10 @@ export const variableRoutes = (kit: Kit) => {
 
   const applyStale = (call: Call, dependents: StaleDependentRow[]) => {
     const deployments: string[] = []
-    const staged: Static<typeof StagedWithChanges>[] = []
+    const waiting: Static<typeof ApprovalWithChanges>[] = []
 
     for (const dependent of dependents) {
-      const ctx = serviceById(db, dependent.service_id)
+      const ctx = appById(db, dependent.app_id)
 
       if (!can(call.principal, ctx.target, 'deploy')) {
         continue
@@ -151,7 +153,7 @@ export const variableRoutes = (kit: Kit) => {
 
       const changes = new ChangeSet()
 
-      changes.deploy(ctx.service.id, 'variable_change', {
+      changes.deploy(ctx.app.id, 'key_change', {
         reason: `${dependent.keys.join(', ')} changed`,
         supersede: true,
       })
@@ -159,8 +161,8 @@ export const variableRoutes = (kit: Kit) => {
         kit.deps,
         call,
         {
-          environment: ctx.environment,
-          protect: ctx.environment.protected,
+          target: ctx.target_row,
+          protect: isProduction(ctx.target_row),
         },
         changes,
       )
@@ -168,9 +170,9 @@ export const variableRoutes = (kit: Kit) => {
       if (result.applied) {
         deployments.push(...result.deployments)
       } else {
-        staged.push(
-          select(kit.views.staged, result.staged, kit.fields('changes')) as Static<
-            typeof StagedWithChanges
+        waiting.push(
+          select(kit.views.approval, result.approval, kit.fields('changes')) as Static<
+            typeof ApprovalWithChanges
           >,
         )
       }
@@ -178,7 +180,7 @@ export const variableRoutes = (kit: Kit) => {
 
     return {
       deployments,
-      staged_changes: staged,
+      approvals: waiting,
     }
   }
 
@@ -191,7 +193,7 @@ export const variableRoutes = (kit: Kit) => {
     ids: () => string[],
   ) => {
     if (!result.applied) {
-      return kit.stagedBody(result, set)
+      return kit.approvalBody(result, set)
     }
 
     const stale_dependents = staleFor(projectId)
@@ -199,25 +201,25 @@ export const variableRoutes = (kit: Kit) => {
       ? applyStale(call, stale_dependents)
       : {
           deployments: [],
-          staged_changes: [],
+          approvals: [],
         }
-    const variables = ids()
-      .map((id) => db.select().from(variable).where(eq(variable.id, id)).get())
-      .filter((row): row is typeof variable.$inferSelect => row !== undefined)
-      .map((row) => select(kit.views.variable, row, undefined))
+    const keys = ids()
+      .map((id) => db.select().from(key).where(eq(key.id, id)).get())
+      .filter((row): row is typeof key.$inferSelect => row !== undefined)
+      .map((row) => select(kit.views.key, row, undefined))
 
     return {
-      variables,
+      keys,
       stale_dependents,
       deployments: appliedStale.deployments,
-      staged_changes: appliedStale.staged_changes,
+      approvals: appliedStale.approvals,
     }
   }
 
   const patch = (
     call: Call,
-    scope: VariableScope,
-    environmentRow: EnvironmentRow | null,
+    scope: KeyScope,
+    targetRow: TargetRow | null,
     protect: boolean,
     input: PatchInput,
     set: { status?: number | string },
@@ -225,14 +227,14 @@ export const variableRoutes = (kit: Kit) => {
   ) => {
     const changes = new ChangeSet()
 
-    planVariables(db, keyring, call.principal, changes, scope, input)
+    planKeys(db, keyring, call.principal, changes, scope, input)
 
     if (changes.empty) {
       return {
-        variables: [],
+        keys: [],
         stale_dependents: [],
         deployments: [],
-        staged_changes: [],
+        approvals: [],
       }
     }
 
@@ -240,7 +242,7 @@ export const variableRoutes = (kit: Kit) => {
       kit.deps,
       call,
       {
-        environment: environmentRow,
+        target: targetRow,
         protect,
       },
       changes,
@@ -253,7 +255,7 @@ export const variableRoutes = (kit: Kit) => {
             ...changes.changes
               .filter((c) => c.op === 'update')
               .map((c) => (c.op === 'update' ? c.id : '')),
-          ].filter((id) => id.startsWith('var_'))
+          ].filter((id) => id.startsWith('key_'))
         : [],
     )
   }
@@ -274,63 +276,68 @@ export const variableRoutes = (kit: Kit) => {
       )
       .map((d) => d.id)
 
-  const projectScope = (projectRef: string, environmentRef: string) => {
+  const valueTargetQuery = t.Optional(
+    input(
+      StringEnum(targetKindValues, {
+        description: 'production (default) or preview: the value every preview reads',
+      }),
+    ),
+  )
+
+  const projectScope = (projectRef: string, valueTarget: ValueTarget | undefined) => {
     const proj = projectByRef(db, projectRef)
-    const env = environmentRef === 'default' ? null : environmentInProject(db, proj, environmentRef)
+    const chosen = valueTarget ?? 'production'
 
     return {
       proj,
-      env,
+      valueTarget: chosen,
       target: {
         project_id: proj.id,
-        environment_id: env?.id ?? '*',
+        target: chosen === 'production' ? 'production' : 'previews',
       },
     }
   }
 
   return kit
-    .router('variables', '/v1')
+    .router('keys', '/v1')
     .get(
-      '/services/:service/variables',
+      '/apps/:app/keys',
       ({ ctx, query }) => {
         return list(
-          variablesOf(db, {
-            scope: 'service',
-            id: ctx.service.id,
+          keysOf(db, {
+            scope: 'app',
+            id: ctx.app.id,
           })
-            .orderBy(asc(variable.key))
+            .orderBy(asc(key.name))
             .all(),
           query.fields,
         )
       },
       {
-        service: {
-          id: 'list_service_variables',
-          summary: 'List the variables of a service; values are never listed',
+        app: {
+          id: 'list_app_keys',
+          summary: 'List the keys of an app; values are never listed',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(Variable),
+          200: Page(Key),
         }),
       },
     )
     .get(
-      '/projects/:project/variables',
+      '/projects/:project/keys',
       ({ ctx, query }) => {
         const proj = ctx.project
-        let rows = variablesOf(db, {
+        let rows = keysOf(db, {
           scope: 'project',
           id: proj.id,
         })
-          .orderBy(asc(variable.key))
+          .orderBy(asc(key.name))
           .all()
 
-        if (query.environment) {
-          const envId =
-            query.environment === 'default'
-              ? null
-              : environmentInProject(db, proj, query.environment).id
+        if (query.target) {
+          const wanted = query.target
 
           rows = rows.filter((row) =>
             db
@@ -338,7 +345,7 @@ export const variableRoutes = (kit: Kit) => {
                 id: secret_value.id,
               })
               .from(secret_value)
-              .where(and(eq(secret_value.variable_id, row.id), inEnvironment(envId)))
+              .where(and(eq(secret_value.key_id, row.id), eq(secret_value.target, wanted)))
               .get(),
           )
         }
@@ -347,85 +354,73 @@ export const variableRoutes = (kit: Kit) => {
       },
       {
         project: {
-          id: 'list_project_variables',
-          summary: 'List project variables',
+          id: 'list_project_keys',
+          summary: 'List project keys',
           level: 'read',
           cli: {
-            path: ['variables', 'list'],
+            path: ['keys', 'list'],
           },
         },
         query: t.Object({
           ...getQuery,
-          environment: t.Optional(t.String()),
+          target: valueTargetQuery,
         }),
         response: replies({
-          200: Page(Variable),
+          200: Page(Key),
         }),
       },
     )
     .get(
-      '/global-variables',
+      '/global-keys',
       ({ query }) => {
         return list(
-          variablesOf(db, {
+          keysOf(db, {
             scope: 'global',
           })
-            .orderBy(asc(variable.key))
+            .orderBy(asc(key.name))
             .all(),
           query.fields,
         )
       },
       {
         operation: {
-          id: 'list_global_variables',
-          summary: 'List global variables',
+          id: 'list_global_keys',
+          summary: 'List global keys',
           level: 'instance read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(Variable),
+          200: Page(Key),
         }),
       },
     )
     .get(
-      '/variables/:id',
+      '/keys/:id',
       ({ ctx, query }) => {
-        return select(kit.views.variable, ctx.variable, kit.fields(query.fields))
+        return select(kit.views.key, ctx.key, kit.fields(query.fields))
       },
       {
-        variable: {
-          id: 'get_variable',
-          summary: 'Get a variable; never its value',
+        key: {
+          id: 'get_key',
+          summary: 'Get a key; never its value',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Variable,
+          200: Key,
         }),
       },
     )
     .get(
-      '/variables/:id/versions',
+      '/keys/:id/versions',
       ({ ctx, query }) => {
-        const envId =
-          query.environment === undefined
-            ? undefined
-            : query.environment === 'default'
-              ? null
-              : ctx.variable.project_id
-                ? environmentInProject(
-                    db,
-                    projectByRef(db, ctx.variable.project_id),
-                    query.environment,
-                  ).id
-                : notFound('environment', query.environment)
         const rows = db
           .select()
           .from(secret_value)
           .where(
             and(
-              eq(secret_value.variable_id, ctx.variable.id),
-              envId === undefined ? undefined : inEnvironment(envId),
+              eq(secret_value.key_id, ctx.key.id),
+              query.target === undefined ? undefined : eq(secret_value.target, query.target),
               query.revoked === undefined
                 ? undefined
                 : query.revoked
@@ -442,14 +437,14 @@ export const variableRoutes = (kit: Kit) => {
         }
       },
       {
-        variable: {
-          id: 'list_variable_versions',
-          summary: 'List the versions of a variable; never their values',
+        key: {
+          id: 'list_key_versions',
+          summary: 'List the versions of a key; never their values',
           level: 'read',
         },
         query: t.Object({
           ...getQuery,
-          environment: t.Optional(t.String()),
+          target: valueTargetQuery,
           revoked: t.Optional(
             t.BooleanString({
               description: 'Only revoked versions, or with false only live ones',
@@ -462,54 +457,62 @@ export const variableRoutes = (kit: Kit) => {
       },
     )
     .patch(
-      '/services/:service/variables',
+      '/apps/:app/keys',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
+        const { target: valueTarget, ...input } = body
 
         return patch(
           call,
           {
-            scope: 'service',
-            parent: ctx.service.id,
-            serviceId: ctx.service.id,
+            scope: 'app',
+            parent: ctx.app.id,
+            appId: ctx.app.id,
+            valueTarget: valueTarget ?? 'production',
             target: ctx.target,
           },
-          ctx.environment,
-          ctx.environment.protected,
-          body,
+          ctx.target_row,
+          isProduction(ctx.target_row),
+          input,
           set,
           ctx.project.id,
         )
       },
       {
-        service: {
-          id: 'set_service_variables',
-          summary: 'Set and unset service variables',
+        app: {
+          id: 'set_app_keys',
+          summary: 'Set and unset app keys',
           level: 'deploy',
         },
-        body: t.Object(VariablesPatch, {
-          additionalProperties: false,
-        }),
-        response: variablesReplies,
+        body: t.Object(
+          {
+            target: valueTargetQuery,
+            ...KeysPatch,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+        response: keysReplies,
       },
     )
     .patch(
-      '/projects/:project/variables',
+      '/projects/:project/keys',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        const { proj, env, target } = projectScope(params.project, body.environment)
-        const { environment: _e, ...input } = body
+        const { target: chosen, ...input } = body
+        const { proj, valueTarget, target } = projectScope(params.project, chosen)
 
         return patch(
           call,
           {
             scope: 'project',
             parent: proj.id,
-            environmentId: env?.id ?? null,
+            valueTarget,
             target,
           },
-          env,
-          env?.protected ?? false,
+          productionOf(db, proj.id),
+          valueTarget === 'production',
           input,
           set,
           proj.id,
@@ -517,26 +520,27 @@ export const variableRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'set_project_variables',
-          summary: 'Set and unset project variables for one environment or the default',
+          id: 'set_project_keys',
+          summary:
+            "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads",
           level: 'admin',
           target: ({ params, body }: TargetInput) =>
-            projectScope(params.project!, (body as { environment: string }).environment).target,
+            projectScope(params.project!, (body as { target?: ValueTarget }).target).target,
         },
         body: t.Object(
           {
-            environment: t.String(),
-            ...VariablesPatch,
+            target: valueTargetQuery,
+            ...KeysPatch,
           },
           {
             additionalProperties: false,
           },
         ),
-        response: variablesReplies,
+        response: keysReplies,
       },
     )
     .patch(
-      '/global-variables',
+      '/global-keys',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
         const protect = readSetting(db, 'platform.protected') && !call.principal.human
@@ -547,7 +551,7 @@ export const variableRoutes = (kit: Kit) => {
             scope: 'global',
             target: {
               project_id: '*',
-              environment_id: '*',
+              target: '*',
             },
           },
           null,
@@ -559,39 +563,41 @@ export const variableRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'set_global_variables',
-          summary: 'Set and unset global variables',
+          id: 'set_global_keys',
+          summary: 'Set and unset global keys',
           level: 'instance admin',
         },
-        body: t.Object(VariablesPatch, {
+        body: t.Object(KeysPatch, {
           additionalProperties: false,
         }),
-        response: variablesReplies,
+        response: keysReplies,
       },
     )
     .delete(
-      '/variables/:id',
+      '/keys/:id',
       async ({ ctx, request, set }) => {
         const call = await kit.call(request)
         const changes = new ChangeSet()
-        let env: EnvironmentRow | null = null
-        let scope: VariableScope
+        let place: TargetRow | null = null
+        let scope: KeyScope
 
-        if (ctx.variable.scope === 'service') {
-          const svc = serviceById(db, ctx.variable.service_id!)
+        if (ctx.key.scope === 'app') {
+          const svc = appById(db, ctx.key.app_id!)
 
-          env = svc.environment
+          place = svc.target_row
           scope = {
-            scope: 'service',
-            parent: svc.service.id,
-            serviceId: svc.service.id,
+            scope: 'app',
+            parent: svc.app.id,
+            appId: svc.app.id,
+            valueTarget: 'production',
             target: svc.target,
           }
-        } else if (ctx.variable.scope === 'project') {
+        } else if (ctx.key.scope === 'project') {
+          place = productionOf(db, ctx.key.project_id!)
           scope = {
             scope: 'project',
-            parent: ctx.variable.project_id!,
-            environmentId: null,
+            parent: ctx.key.project_id!,
+            valueTarget: 'production',
             target: ctx.target,
           }
         } else {
@@ -601,72 +607,71 @@ export const variableRoutes = (kit: Kit) => {
           }
         }
 
-        planVariables(db, keyring, call.principal, changes, scope, {
-          unset: [ctx.variable.key],
+        planKeys(db, keyring, call.principal, changes, scope, {
+          unset: [ctx.key.name],
         })
-        const protect =
-          ctx.variable.scope === 'service'
-            ? Boolean(env?.protected)
-            : ctx.variable.scope === 'global' &&
-              readSetting(db, 'platform.protected') &&
-              !call.principal.human
+        const protect = place
+          ? isProduction(place)
+          : ctx.key.scope === 'global' &&
+            readSetting(db, 'platform.protected') &&
+            !call.principal.human
         const result = commit(
           kit.deps,
           call,
           {
-            environment: env,
+            target: place,
             protect,
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return {
           deleted: true as const,
-          stale_dependents: staleFor(ctx.variable.project_id),
+          stale_dependents: staleFor(ctx.key.project_id),
         }
       },
       {
-        variable: {
-          id: 'delete_variable',
-          summary: 'Delete a variable',
+        key: {
+          id: 'delete_key',
+          summary: 'Delete a key',
           level: 'deploy',
         },
         response: replies({
           200: DeletedWithStale,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
     .post(
-      '/variables/:id/apply',
+      '/keys/:id/apply',
       async ({ request, params }) => {
         const call = await kit.call(request)
-        const ctx = variableById(db, params.id)
-        const services = new Set(dependentsOf(db, ctx.variable).map((dep) => dep.service_id))
+        const ctx = keyById(db, params.id)
+        const apps = new Set(dependentsOf(db, ctx.key).map((dep) => dep.app_id))
 
-        if (ctx.variable.service_id) {
-          services.add(ctx.variable.service_id)
+        if (ctx.key.app_id) {
+          apps.add(ctx.key.app_id)
         }
 
-        const dependents = staleDependents(db, ctx.variable.project_id, services)
+        const dependents = staleDependents(db, ctx.key.project_id, apps)
         const result = applyStale(call, dependents)
 
         return {
           deployments: result.deployments,
-          staged_changes: result.staged_changes,
+          approvals: result.approvals,
         }
       },
       {
         operation: {
-          id: 'apply_variable_changes',
-          summary: 'Redeploy every stale dependent of a variable',
+          id: 'apply_key_changes',
+          summary: 'Redeploy every stale dependent of a key',
           level: 'any',
           cli: {
-            path: ['variables', 'apply'],
+            path: ['keys', 'apply'],
           },
         },
         response: replies({
@@ -683,8 +688,8 @@ export const variableRoutes = (kit: Kit) => {
         if (pinnedBy.length && !body?.force) {
           fail(
             'SECRET_VERSION_IN_USE',
-            `Version ${ctx.secretValue.version} of ${ctx.variable.key} is pinned by active deployments.`,
-            'Deploy a newer version first, or send force = true; a restart of those services will then fail.',
+            `Version ${ctx.secretValue.version} of ${ctx.key.name} is pinned by active deployments.`,
+            'Deploy a newer version first, or send force = true; a restart of those apps will then fail.',
             {
               deployments: pinnedBy,
             },
@@ -708,7 +713,7 @@ export const variableRoutes = (kit: Kit) => {
           },
           {
             after: {
-              variable_id: ctx.variable.id,
+              key_id: ctx.key.id,
               version: ctx.secretValue.version,
               force: Boolean(body?.force),
             },
@@ -783,7 +788,7 @@ export const variableRoutes = (kit: Kit) => {
           },
           {
             after: {
-              variable_id: ctx.variable.id,
+              key_id: ctx.key.id,
               version: ctx.secretValue.version,
             },
           },
@@ -808,7 +813,7 @@ export const variableRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/services/:service/variables/resolved',
+      '/apps/:app/keys/resolved',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
 
@@ -818,9 +823,9 @@ export const variableRoutes = (kit: Kit) => {
         }) as Static<typeof Resolved>
       },
       {
-        service: {
-          id: 'get_resolved_variables',
-          summary: 'The resolved variables of the next deployment; sealed values never appear',
+        app: {
+          id: 'get_resolved_keys',
+          summary: 'The resolved keys of the next deployment; sealed values never appear',
           level: 'read',
         },
         query: t.Object({
@@ -836,20 +841,20 @@ export const variableRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/variables/:id/grants',
+      '/keys/:id/grants',
       ({ params }) => {
-        const ctx = variableById(db, params.id)
+        const ctx = keyById(db, params.id)
         const rows = db
           .select()
           .from(grant)
-          .where(eq(grant.variable_id, ctx.variable.id))
+          .where(eq(grant.key_id, ctx.key.id))
           .orderBy(desc(grant.id))
           .all()
 
         return {
           items: rows.map((g) => ({
             id: g.id,
-            variable_id: g.variable_id,
+            key_id: g.key_id,
             project_id: g.project_id,
             alias: g.alias,
             source: g.source,
@@ -860,7 +865,7 @@ export const variableRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'list_grants',
-          summary: 'List the grants of a global variable',
+          summary: 'List the grants of a global key',
           level: 'instance read',
         },
         response: replies({
@@ -869,17 +874,17 @@ export const variableRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/variables/:id/grants',
+      '/keys/:id/grants',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        const ctx = variableById(db, params.id)
+        const ctx = keyById(db, params.id)
 
-        if (ctx.variable.scope !== 'global') {
-          fail('VALIDATION_FAILED', 'Only global variables are granted.', undefined, {
+        if (ctx.key.scope !== 'global') {
+          fail('VALIDATION_FAILED', 'Only global keys are granted.', undefined, {
             issues: [
               {
                 path: '/id',
-                message: `variable is ${ctx.variable.scope}`,
+                message: `key is ${ctx.key.scope}`,
               },
             ],
           })
@@ -888,17 +893,17 @@ export const variableRoutes = (kit: Kit) => {
         const proj =
           db.select().from(project).where(eq(project.id, body.project_id)).get() ??
           notFound('project', body.project_id)
-        const name = body.alias ?? ctx.variable.key
+        const name = body.alias ?? ctx.key.name
         const taken = db
           .select({
             alias: grant.alias,
-            key: variable.key,
+            name: key.name,
           })
           .from(grant)
-          .innerJoin(variable, eq(variable.id, grant.variable_id))
+          .innerJoin(key, eq(key.id, grant.key_id))
           .where(eq(grant.project_id, proj.id))
           .all()
-          .some((g) => (g.alias ?? g.key) === name)
+          .some((g) => (g.alias ?? g.name) === name)
 
         if (taken) {
           fail(
@@ -914,7 +919,7 @@ export const variableRoutes = (kit: Kit) => {
         const id = db
           .insert(grant)
           .values({
-            variable_id: ctx.variable.id,
+            key_id: ctx.key.id,
             project_id: proj.id,
             alias: body.alias ?? null,
             source: 'manual',
@@ -935,7 +940,7 @@ export const variableRoutes = (kit: Kit) => {
           },
           {
             after: {
-              variable_id: ctx.variable.id,
+              key_id: ctx.key.id,
               project_id: proj.id,
               alias: body.alias ?? null,
             },
@@ -945,7 +950,7 @@ export const variableRoutes = (kit: Kit) => {
 
         return {
           id,
-          variable_id: ctx.variable.id,
+          key_id: ctx.key.id,
           project_id: proj.id,
           alias: body.alias ?? null,
           source: 'manual' as const,
@@ -953,18 +958,18 @@ export const variableRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'grant_variable',
-          summary: 'Grant a global variable to a project',
+          id: 'grant_key',
+          summary: 'Grant a global key to a project',
           level: 'instance admin',
         },
         body: t.Object(
           {
             project_id: t.String({
-              description: 'The project to grant the variable to',
+              description: 'The project to grant the key to',
             }),
             alias: t.Optional(
               t.String({
-                pattern: variableKeyPattern,
+                pattern: keyNamePattern,
                 description: 'The key inside the project, when the global key would collide',
               }),
             ),
@@ -998,7 +1003,7 @@ export const variableRoutes = (kit: Kit) => {
           },
           {
             before: {
-              variable_id: row.variable_id,
+              key_id: row.key_id,
               project_id: row.project_id,
               alias: row.alias,
             },

@@ -4,7 +4,7 @@ import { anyTarget, atLeast, levelAt, type Level, type Target } from '../auth/sc
 import { fail } from './errors.ts'
 
 const describe = (target: Target) =>
-  `project ${target.project_id === '*' ? '*' : target.project_id}, environment ${target.environment_id === '*' ? '*' : target.environment_id}`
+  `project ${target.project_id}, ${target.target === '*' ? 'production and previews' : target.target}`
 
 export const can = (principal: Principal, target: Target, level: Level) =>
   atLeast(levelAt(principal.scopes, target), level)
@@ -36,8 +36,8 @@ export const requireInstance = (principal: Principal, level: Level) => {
 
   fail(
     'INSTANCE_SCOPE_REQUIRED',
-    `This operation is instance-level and needs ${level} on every project and environment.`,
-    `Use a personal token, a signed-in session, or a scoped token with ${level} on project * and environment *.`,
+    `This operation is instance-level and needs ${level} on every project.`,
+    `Use a personal token, a signed-in session, or a scoped token with ${level} on project * and target *.`,
     {
       required: {
         ...anyTarget,
@@ -57,7 +57,7 @@ export const requireHuman = (
   }
 
   fail(
-    'PROTECTED_ENVIRONMENT',
+    'HUMAN_REQUIRED',
     `${what} needs a human actor; tokens and OAuth clients are never human.`,
     'Ask the admin to do this from the dashboard or an interactive sly session.',
     {
@@ -71,20 +71,15 @@ export const seesProject = (principal: Principal, projectId: string) =>
   principal.scopes.some((scope) => scope.project_id === '*' || scope.project_id === projectId)
 
 export const authorize = (principal: Principal, target: Target, level: Level) => {
-  if (target.project_id === '*' && target.environment_id === '*') {
+  if (target.project_id === '*' && target.target === '*') {
     return requireInstance(principal, level)
   }
 
-  if (
-    level === 'read' &&
-    target.environment_id === '*' &&
-    seesProject(principal, target.project_id)
-  ) {
+  if (level === 'read' && target.target === '*' && seesProject(principal, target.project_id)) {
     return
   }
 
   requireLevel(principal, target, level)
 }
 
-export const seesEnvironment = (principal: Principal, target: Target) =>
-  can(principal, target, 'read')
+export const seesTarget = (principal: Principal, target: Target) => can(principal, target, 'read')

@@ -35,7 +35,7 @@ export const refsOf = (node: SourceNode) =>
         }
       : {
           export: {
-            service_id: leaf.service_id,
+            service_id: leaf.app_id,
             key: leaf.key,
           },
         },

@@ -1,23 +1,22 @@
 import { useMutation } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { failureText } from './api'
+import { toastWaiting } from './approval'
 import { applyOptimistic, rollback, write, type Edit } from './cache'
 import { toastFailure } from './failure'
 import { invalidateGroups, type Group } from './invalidate'
-import { toastStaged } from './staged'
 
 export type Message = string | { title: string; description?: string }
 
-type Outcome = { staged: false; body: unknown } | { staged: true; body: { id: string } }
+type Outcome = { waiting: false; body: unknown } | { waiting: true; body: { id: string } }
 
-type Body<R> = R extends { staged: false; body: infer B } ? B : never
+type Body<R> = R extends { waiting: false; body: infer B } ? B : never
 
 type Warning = { code: string; explanation: string; fix?: string }
 
 export const done = <B>(body: B) => ({
-  staged: false as const,
+  waiting: false as const,
   body,
 })
 
@@ -46,24 +45,23 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
   optimistic?: (vars: V) => Edit[]
   seed?: (body: Body<R>, vars: V) => Edit[]
   invalidate?: Group[]
-  staged?: (vars: V) => string
+  waiting?: (vars: V) => string
   success?: (body: Body<R>, vars: V) => Message | void
   onSuccess?: (result: R, vars: V) => void
   failure?: (vars: V) => string
   intercept?: (failure: unknown, vars: V) => boolean
 }) {
-  const navigate = useNavigate()
   const mutation = useMutation({
     mutationFn: options.mutationFn,
     onMutate: (vars, { client }) =>
       options.optimistic ? applyOptimistic(client, options.optimistic(vars)) : undefined,
     onSuccess: (result, vars, snapshot, { client }) => {
-      if (result.staged) {
+      if (result.waiting) {
         if (snapshot) {
           rollback(client, snapshot)
         }
 
-        toastStaged(navigate, result.body.id, options.staged?.(vars))
+        toastWaiting(result.body.id, options.waiting?.(vars))
       } else {
         write(client, options.seed?.(result.body as Body<R>, vars) ?? [])
         const message = options.success?.(result.body as Body<R>, vars)
@@ -97,7 +95,7 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
     onSettled: (result, _failure, _vars, _snapshot, { client }) =>
       invalidateGroups(client, [
         ...(options.invalidate ?? []),
-        ...(result?.staged ? (['staged'] as const) : []),
+        ...(result?.waiting ? (['approvals'] as const) : []),
       ]),
   })
 

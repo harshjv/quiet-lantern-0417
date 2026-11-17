@@ -4,9 +4,9 @@ import { eq } from 'drizzle-orm'
 import { remedy, type Diagnosis, type ErrorBody, type Observed } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { domain, service, service_port } from '../db/schema.ts'
+import { app, app_port, domain } from '../db/schema.ts'
 
-import { emitEvent, serviceSubject } from './events.ts'
+import { appSubject, emitEvent } from './events.ts'
 
 type DomainRow = typeof domain.$inferSelect
 type Route = Observed['gateway']['routes'][string]
@@ -18,7 +18,7 @@ type Certificate = NonNullable<DomainRow['certificate']>
 const checkDns = (hostname: string) =>
   remedy(
     'CHECK_DNS_RECORD',
-    `Point the A record of ${hostname} at the station's public address, then wait for the Gateway's next attempt.`,
+    `Point the A record of ${hostname} at the server's public address, then wait for the Gateway's next attempt.`,
   )
 
 const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
@@ -28,7 +28,7 @@ const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
     return {
       phase: 'route',
       code: 'ROUTE_NOT_APPLIED',
-      summary: `The Gateway route for ${d.hostname} is blocked on the station by ${route.blocked_by ?? 'a failed dependency'}.`,
+      summary: `The Gateway route for ${d.hostname} is blocked on the server by ${route.blocked_by ?? 'a failed dependency'}.`,
       details: {
         blocked_by: route.blocked_by ?? null,
       },
@@ -45,7 +45,7 @@ const routeDiagnosis = (d: DomainRow, route: Route): DiagnosisValue => {
     phase: 'route',
     code: failure?.code ?? 'ROUTE_NOT_APPLIED',
     summary:
-      failure?.explanation ?? `The Gateway route for ${d.hostname} failed to apply on the station.`,
+      failure?.explanation ?? `The Gateway route for ${d.hostname} failed to apply on the server.`,
     ...(failure?.details
       ? {
           details: failure.details,
@@ -180,16 +180,16 @@ export const ingestRoutes = (
   const rows = db
     .select({
       d: domain,
-      service_id: service.id,
+      app_id: app.id,
     })
     .from(domain)
-    .innerJoin(service_port, eq(service_port.id, domain.service_port_id))
-    .innerJoin(service, eq(service.id, service_port.service_id))
-    .where(eq(service.station_id, stationId))
+    .innerJoin(app_port, eq(app_port.id, domain.app_port_id))
+    .innerJoin(app, eq(app.id, app_port.app_id))
+    .where(eq(app.server_id, stationId))
     .all()
   const changed: { domain: string; from: Status; to: Status }[] = []
 
-  for (const { d, service_id } of rows) {
+  for (const { d, app_id } of rows) {
     const route = routes[d.id]
 
     if (!route) {
@@ -230,7 +230,7 @@ export const ingestRoutes = (
       db,
       'domain.changed',
       {
-        ...serviceSubject(db, service_id),
+        ...appSubject(db, app_id),
         entity: 'domain',
         id: d.id,
         domain_id: d.id,

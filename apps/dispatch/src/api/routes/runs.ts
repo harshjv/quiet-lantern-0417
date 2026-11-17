@@ -15,16 +15,17 @@ import { runDiagnosis } from '../diagnosis.ts'
 import { ApiError, fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
+import { isProduction } from '../lookup.ts'
 import { getQuery } from '../pagination.ts'
 import {
   listRuns,
+  machineRunOutput,
   runListQuery,
   runRow,
-  sandboxRunOutput,
   terminalRun,
   waitForRun,
 } from '../runs.ts'
-import { Diagnosis, extend, Page, replies, Run, Staged } from '../shapes.ts'
+import { ApprovalDetail, Diagnosis, extend, Page, replies, Run } from '../shapes.ts'
 
 const Shell = extend(Run, {
   tty: Type.Boolean(),
@@ -40,13 +41,13 @@ export const stationError = (error: unknown): never => {
     const code =
       error.code === 'RUN_DEPLOYMENT_UNKNOWN'
         ? 'NO_CURRENT_DEPLOYMENT'
-        : ['STATION_OFFLINE', 'STATION_VERSION_SKEW', 'NOT_FOUND', 'VALIDATION_FAILED'].includes(
+        : ['SERVER_OFFLINE', 'SERVER_VERSION_SKEW', 'NOT_FOUND', 'VALIDATION_FAILED'].includes(
               error.code,
             )
           ? error.code
-          : 'STATION_OFFLINE'
+          : 'SERVER_OFFLINE'
 
-    throw new ApiError(code as 'STATION_OFFLINE', error.message, undefined, {
+    throw new ApiError(code as 'SERVER_OFFLINE', error.message, undefined, {
       station_code: error.code,
       ...error.details,
     })
@@ -61,21 +62,17 @@ export const runRoutes = (kit: Kit) => {
 
   return kit
     .router('runs', '/v1')
-    .get(
-      '/services/:service/runs',
-      ({ ctx, query }) => listRuns(kit, eq(run.service_id, ctx.service.id), query),
-      {
-        service: {
-          id: 'list_runs',
-          summary: 'List the runs of a service',
-          level: 'read',
-        },
-        query: runListQuery,
-        response: replies({
-          200: Page(Run),
-        }),
+    .get('/apps/:app/runs', ({ ctx, query }) => listRuns(kit, eq(run.app_id, ctx.app.id), query), {
+      app: {
+        id: 'list_runs',
+        summary: 'List the runs of an app',
+        level: 'read',
       },
-    )
+      query: runListQuery,
+      response: replies({
+        200: Page(Run),
+      }),
+    })
     .get(
       '/runs/:id',
       async ({ request, params, query }) => {
@@ -87,10 +84,10 @@ export const runRoutes = (kit: Kit) => {
           done,
         }
 
-        return row.sandbox_id && done
+        return row.machine_id && done
           ? {
               ...shown,
-              output: await sandboxRunOutput(kit, row, await kit.call(request)),
+              output: await machineRunOutput(kit, row, await kit.call(request)),
             }
           : shown
       },
@@ -122,26 +119,26 @@ export const runRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/runs',
+      '/apps/:app/runs',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        if (!ctx.service.current_deployment_id) {
+        if (!ctx.app.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
-            `${ctx.service.name} has no current deployment to run the command in.`,
-            'Deploy the service first.',
+            `${ctx.app.name} has no current deployment to run the command in.`,
+            'Deploy the app first.',
           )
         }
 
-        const staged = ctx.environment.protected && !call.principal.human
+        const protect = isProduction(ctx.target_row) && !call.principal.human
 
-        if (!staged) {
-          requireConnected(kit.deps, ctx.service.station_id)
+        if (!protect) {
+          requireConnected(kit.deps, ctx.app.server_id)
         }
 
         const changes = new ChangeSet()
-        const ref = changes.add('run', ctx.service.id, {
+        const ref = changes.add('run', ctx.app.id, {
           kind: 'one_off',
           command: body.command,
         })
@@ -149,14 +146,14 @@ export const runRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: staged,
+            target: ctx.target_row,
+            protect,
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         const id = result.refs[ref]!
@@ -172,20 +169,20 @@ export const runRoutes = (kit: Kit) => {
           {
             after: {
               command: body.command,
-              deployment_id: ctx.service.current_deployment_id,
+              deployment_id: ctx.app.current_deployment_id,
             },
           },
         )
-        stations.reconcile(ctx.service.station_id)
+        stations.reconcile(ctx.app.server_id)
         set.status = 201
         const row = await waitForRun(db, id, body.wait_s ?? 10, request.signal)
 
         return select(kit.views.run, row, kit.fields('failure'))
       },
       {
-        service: {
+        app: {
           id: 'run_command',
-          summary: "Run a one-off command in the service's current image and variables",
+          summary: "Run a one-off command in the app's current image and keys",
           level: 'deploy',
           cli: false,
         },
@@ -207,41 +204,39 @@ export const runRoutes = (kit: Kit) => {
         ),
         response: replies({
           201: Run,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
     .post(
-      '/services/:service/shells',
+      '/apps/:app/shells',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        if (ctx.environment.protected) {
-          requireHuman(call.principal, 'A shell in a protected environment', {
-            environment_id: ctx.environment.id,
-          })
+        if (isProduction(ctx.target_row)) {
+          requireHuman(call.principal, 'A shell in production', ctx.target)
         }
 
-        if (!ctx.service.current_deployment_id) {
+        if (!ctx.app.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
-            `${ctx.service.name} has no current deployment to open a shell in.`,
-            'Deploy the service first.',
+            `${ctx.app.name} has no current deployment to open a shell in.`,
+            'Deploy the app first.',
           )
         }
 
-        requireConnected(kit.deps, ctx.service.station_id)
+        requireConnected(kit.deps, ctx.app.server_id)
         const id = newId('run')
 
         db.insert(run)
           .values({
             id,
-            service_id: ctx.service.id,
-            deployment_id: ctx.service.current_deployment_id,
+            app_id: ctx.app.id,
+            deployment_id: ctx.app.current_deployment_id,
             kind: 'shell',
             command: body.command ?? ['/bin/sh'],
             status: 'queued',
-            log_ref: `logs/${ctx.service.id}/${ctx.service.current_deployment_id}/${id}`,
+            log_ref: `logs/${ctx.app.id}/${ctx.app.current_deployment_id}/${id}`,
             tty: body.tty ?? true,
             actor: call.principal.actor,
           })
@@ -270,7 +265,7 @@ export const runRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'open_shell',
           summary: 'Create a shell run; attach to it over the WebSocket at attach_url',
           level: 'deploy',
@@ -312,16 +307,16 @@ export const runRoutes = (kit: Kit) => {
           })
         }
 
-        if (stations.isConnected(ctx.station_id)) {
+        if (stations.isConnected(ctx.server_id)) {
           await stations
-            .ask(ctx.station_id, 'run.cancel', {
+            .ask(ctx.server_id, 'run.cancel', {
               run_id: r.id,
             })
             .catch(stationError)
         } else if (r.status !== 'queued') {
           fail(
-            'STATION_OFFLINE',
-            `Station ${ctx.station_id} is not connected, so the running run cannot be stopped.`,
+            'SERVER_OFFLINE',
+            `Server ${ctx.server_id} is not connected, so the running run cannot be stopped.`,
           )
         }
 
@@ -355,7 +350,7 @@ export const runRoutes = (kit: Kit) => {
       {
         run: {
           id: 'cancel_run',
-          summary: 'Cancel a queued or running run; never staged',
+          summary: 'Cancel a queued or running run; never needs approval',
           level: 'deploy',
         },
         response: replies({
@@ -368,8 +363,8 @@ export const runRoutes = (kit: Kit) => {
       async ({ request, params }) => {
         const call = await kit.call(request)
         const r = rowOf(params.id)
-        const redact = r.sandbox_id
-          ? kit.sandboxRedaction([r.sandbox_id], call.principal.actor, call.request_id)
+        const redact = r.machine_id
+          ? kit.machineRedaction([r.machine_id], call.principal.actor, call.request_id)
           : kit.redaction(
               r.deployment_id ? [r.deployment_id] : [],
               call.principal.actor,

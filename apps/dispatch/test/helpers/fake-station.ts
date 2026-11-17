@@ -77,7 +77,7 @@ export type FakeStationConfig = {
   autoFinish?: boolean
   verdict?: { verdict: string; path: string; rule: string }
   runOutput?: string[]
-  sandboxes?: {
+  machines?: {
     hold?: boolean
     interactiveShell?: boolean
     growFailure?: { step: string | null; error: string }
@@ -102,7 +102,7 @@ const capabilities = {
   docker_version: '29.0.0',
   stationd_version: '0.0.0',
 }
-const sandboxCapability = {
+const machineCapability = {
   runtimes: ['gvisor'],
   runsc_version: 'release-20261102.0',
   platform: 'systrap',
@@ -120,17 +120,17 @@ const hostProbe = {
   memory_bytes: 274877906944,
   sandbox_free_bytes: 85899345920,
 }
-const withSandboxes = (sandboxes: FakeStationConfig['sandboxes']) =>
-  sandboxes
+const withMachines = (machines: FakeStationConfig['machines']) =>
+  machines
     ? {
         ...capabilities,
         host: {
           ...hostProbe,
-          ...sandboxes.host,
+          ...machines.host,
         },
         sandboxes: {
-          ...sandboxCapability,
-          runtimes: sandboxes.runtimes ?? sandboxCapability.runtimes,
+          ...machineCapability,
+          runtimes: machines.runtimes ?? machineCapability.runtimes,
         },
       }
     : capabilities
@@ -174,7 +174,7 @@ const connect = (url: string) =>
 export const enrollFakeStation = async (
   url: string,
   enrollToken: string,
-  sandboxes?: FakeStationConfig['sandboxes'],
+  machines?: FakeStationConfig['machines'],
 ): Promise<Keys> => {
   const identity = generateKeyPairSync('ed25519')
   const wireguard = generateKeyPairSync('ed25519')
@@ -195,7 +195,7 @@ export const enrollFakeStation = async (
       signature,
       os: 'linux',
       arch: 'arm64',
-      capabilities: withSandboxes(sandboxes),
+      capabilities: withMachines(machines),
       routes: [],
       resources,
       stationd_version: '0.0.0',
@@ -242,7 +242,7 @@ export class FakeStation {
     values: Record<string, string>
     digest: string
   }[] = []
-  readonly sandboxStates = new Map<
+  readonly machineStates = new Map<
     string,
     {
       status: string
@@ -252,10 +252,10 @@ export class FakeStation {
       hash: string
     }
   >()
-  readonly sandboxRuns = new Map<string, string[]>()
+  readonly machineRuns = new Map<string, string[]>()
   readonly forwarded: { sandbox_id: string; port: number; data: string[] }[] = []
   private readonly snapshotsTaken = new Map<string, string>()
-  private readonly sandboxEnvs = new Map<string, Record<string, string>>()
+  private readonly machineEnvs = new Map<string, Record<string, string>>()
   private readonly runEnvs = new Map<string, Record<string, string>>()
   private readonly forwardStreams = new Map<
     number,
@@ -287,7 +287,7 @@ export class FakeStation {
   static async enrollAndStart(url: string, enrollToken: string, config: FakeStationConfig = {}) {
     return FakeStation.start(
       url,
-      await enrollFakeStation(url, enrollToken, config.sandboxes),
+      await enrollFakeStation(url, enrollToken, config.machines),
       config,
     )
   }
@@ -345,7 +345,7 @@ export class FakeStation {
         'network.v1',
         'exec.tty',
         'forward.tcp',
-        ...(this.config.sandboxes ? ['sandbox.v1'] : []),
+        ...(this.config.machines ? ['sandbox.v1'] : []),
       ],
       applied: this.applied,
       outbox: {
@@ -498,6 +498,18 @@ export class FakeStation {
     }
   }
 
+  reportHealth(body: {
+    service_id: string
+    deployment_id: string
+    state: 'passing' | 'failing' | 'failed'
+    consecutive: number
+  }) {
+    this.record('health.result', {
+      ...body,
+      last_check: now(),
+    })
+  }
+
   release(deploymentId: string) {
     if (!this.held.delete(deploymentId)) {
       throw new Error(`${deploymentId} is not held`)
@@ -575,7 +587,7 @@ export class FakeStation {
       station: {
         resources,
         routes: [],
-        capabilities: withSandboxes(this.config.sandboxes),
+        capabilities: withMachines(this.config.machines),
         clock_skew_ms: 0,
         docker_version: '29.0.0',
         registry: {
@@ -645,7 +657,7 @@ export class FakeStation {
       ),
       workshops: {},
       system_targets: {},
-      ...(this.config.sandboxes ? this.observedSandboxes(doc) : {}),
+      ...(this.config.machines ? this.observedMachines(doc) : {}),
       unknown: [],
     }
   }
@@ -667,7 +679,7 @@ export class FakeStation {
     return out
   }
 
-  private sandboxRecord(id: string, status: string, extra: Record<string, unknown> = {}) {
+  private machineRecord(id: string, status: string, extra: Record<string, unknown> = {}) {
     this.record('sandbox.status', {
       sandbox_id: id,
       status,
@@ -681,11 +693,11 @@ export class FakeStation {
     })
   }
 
-  private observedSandboxes(doc: Doc) {
+  private observedMachines(doc: Doc) {
     return {
       sandboxes: Object.fromEntries(
         Object.entries(doc.sandboxes ?? {}).flatMap(([id, box]) => {
-          const state = this.sandboxStates.get(id)
+          const state = this.machineStates.get(id)
 
           if (!state) {
             return []
@@ -707,7 +719,7 @@ export class FakeStation {
                   exclusive_bytes: 524288000,
                   limit_bytes: box.size.disk_bytes,
                 },
-                runsc_version: sandboxCapability.runsc_version,
+                runsc_version: machineCapability.runsc_version,
               },
             ],
           ]
@@ -735,17 +747,17 @@ export class FakeStation {
     }
   }
 
-  private applySandboxes(doc: Doc) {
-    if (!this.config.sandboxes) {
+  private applyMachines(doc: Doc) {
+    if (!this.config.machines) {
       return
     }
 
     for (const [id, box] of Object.entries(doc.sandboxes ?? {})) {
-      const state = this.sandboxStates.get(id)
+      const state = this.machineStates.get(id)
 
       if (box.status === 'destroy') {
-        this.sandboxStates.delete(id)
-        this.sandboxRecord(id, 'deleted')
+        this.machineStates.delete(id)
+        this.machineRecord(id, 'deleted')
         continue
       }
 
@@ -754,7 +766,7 @@ export class FakeStation {
         (box.stop_at === null || Date.parse(box.stop_at) > Date.now())
 
       if (!state) {
-        this.sandboxStates.set(id, {
+        this.machineStates.set(id, {
           status: 'stopped',
           started_at: null,
           stop_at: null,
@@ -763,15 +775,15 @@ export class FakeStation {
         })
       }
 
-      const current = this.sandboxStates.get(id)!
+      const current = this.machineStates.get(id)!
 
       current.hash = box.hash
 
       if (wanted && current.status !== 'running') {
-        if (this.config.sandboxes.hold) {
+        if (this.config.machines.hold) {
           if (current.status !== 'starting') {
             current.status = 'starting'
-            this.sandboxRecord(id, 'creating')
+            this.machineRecord(id, 'creating')
           }
 
           continue
@@ -779,22 +791,22 @@ export class FakeStation {
 
         const startedAt = now()
 
-        this.sandboxRecord(id, 'creating')
-        this.sandboxRecord(id, 'starting')
-        this.sandboxRecord(id, 'running', {
+        this.machineRecord(id, 'creating')
+        this.machineRecord(id, 'starting')
+        this.machineRecord(id, 'running', {
           started_at: startedAt,
         })
         Object.assign(current, {
           status: 'running',
           started_at: startedAt,
           stop_at: box.stop_at,
-          address: `10.201.0.${10 + this.sandboxStates.size}`,
+          address: `10.201.0.${10 + this.machineStates.size}`,
         })
       } else if (!wanted && current.status === 'running') {
-        this.sandboxRecord(id, 'stopping', {
+        this.machineRecord(id, 'stopping', {
           reason: 'user',
         })
-        this.sandboxRecord(id, 'stopped', {
+        this.machineRecord(id, 'stopped', {
           reason: 'user',
           stopped_at: now(),
         })
@@ -819,7 +831,7 @@ export class FakeStation {
           referenced_bytes: 0,
           failure: null,
         })
-      } else if (!this.snapshotsTaken.has(id) && !this.config.sandboxes.hold) {
+      } else if (!this.snapshotsTaken.has(id) && !this.config.machines.hold) {
         const takenAt = now()
 
         this.snapshotsTaken.set(id, takenAt)
@@ -835,18 +847,18 @@ export class FakeStation {
     }
   }
 
-  expireSandbox(
+  expireMachine(
     id: string,
     reason: 'ttl' | 'exited' | 'oom' = 'ttl',
     exitCode: number | null = null,
   ) {
-    const state = this.sandboxStates.get(id)
+    const state = this.machineStates.get(id)
 
     if (!state || state.status !== 'running') {
       throw new Error(`${id} is not running on the fake station`)
     }
 
-    this.sandboxRecord(id, 'stopped', {
+    this.machineRecord(id, 'stopped', {
       reason,
       stopped_at: now(),
       exit_code: exitCode,
@@ -859,11 +871,11 @@ export class FakeStation {
     })
   }
 
-  failSandbox(id: string, failure: Record<string, unknown>) {
-    this.sandboxRecord(id, 'failed', {
+  failMachine(id: string, failure: Record<string, unknown>) {
+    this.machineRecord(id, 'failed', {
       failure,
     })
-    const state = this.sandboxStates.get(id)
+    const state = this.machineStates.get(id)
 
     if (state) {
       Object.assign(state, {
@@ -873,13 +885,13 @@ export class FakeStation {
     }
   }
 
-  releaseSandboxes() {
-    if (this.config.sandboxes) {
-      this.config.sandboxes.hold = false
+  releaseMachines() {
+    if (this.config.machines) {
+      this.config.machines.hold = false
     }
 
     if (this.last) {
-      this.applySandboxes(this.last)
+      this.applyMachines(this.last)
     }
 
     this.report()
@@ -968,7 +980,7 @@ export class FakeStation {
     })
   }
 
-  private sandboxExec(m: StationMessage) {
+  private machineExec(m: StationMessage) {
     const b = m.body as {
       run_id: string
       sandbox_id: string
@@ -979,13 +991,13 @@ export class FakeStation {
       rows?: number | null
       cols?: number | null
     }
-    const state = this.sandboxStates.get(b.sandbox_id)
+    const state = this.machineStates.get(b.sandbox_id)
 
     if (!state || state.status !== 'running') {
       return this.send(
         'error',
         {
-          code: 'SANDBOX_NOT_RUNNING',
+          code: 'MACHINE_NOT_RUNNING',
           explanation: `sandbox ${b.sandbox_id} is not running`,
           fix: 'Start the sandbox.',
         },
@@ -994,12 +1006,12 @@ export class FakeStation {
     }
 
     const env = {
-      ...this.sandboxEnvs.get(b.sandbox_id),
+      ...this.machineEnvs.get(b.sandbox_id),
       ...this.runEnvs.get(b.run_id),
     }
-    const lines = this.config.sandboxes?.runOutput?.(b.command, env) ?? [`$ ${b.command.join(' ')}`]
+    const lines = this.config.machines?.runOutput?.(b.command, env) ?? [`$ ${b.command.join(' ')}`]
 
-    this.sandboxRuns.set(
+    this.machineRuns.set(
       b.run_id,
       b.stdin ? [...lines, `stdin: ${Buffer.from(b.stdin, 'base64url').toString()}`] : lines,
     )
@@ -1079,7 +1091,7 @@ export class FakeStation {
       m.id,
     )
 
-    if (b.kind === 'shell' && this.config.sandboxes?.interactiveShell) {
+    if (b.kind === 'shell' && this.config.machines?.interactiveShell) {
       this.shells.set(stream, {
         run_id: b.run_id,
         rows: b.rows ?? 24,
@@ -1103,7 +1115,7 @@ export class FakeStation {
     }
 
     setTimeout(() => {
-      this.ws.send(this.frame(stream, 1, `${this.sandboxRuns.get(b.run_id)!.join('\n')}\n`), {
+      this.ws.send(this.frame(stream, 1, `${this.machineRuns.get(b.run_id)!.join('\n')}\n`), {
         binary: true,
       })
       finish(stream)
@@ -1257,7 +1269,7 @@ export class FakeStation {
     }
   }
 
-  private sandboxSample(id: string) {
+  private machineSample(id: string) {
     return {
       sandbox_id: id,
       at: now(),
@@ -1341,7 +1353,7 @@ export class FakeStation {
         this.rollouts(doc, this.addresses(doc))
       }
 
-      this.applySandboxes(doc)
+      this.applyMachines(doc)
       this.send('observed.report', this.observed(doc))
       this.heartbeat()
     }
@@ -1349,7 +1361,7 @@ export class FakeStation {
     if (m.type === 'network.sample') {
       const body = m.body as { service_ids?: string[]; sandbox_ids?: string[] }
       const boxes = (body.sandbox_ids ?? []).flatMap((id) =>
-        this.sandboxStates.get(id)?.status === 'running' ? [this.sandboxSample(id)] : [],
+        this.machineStates.get(id)?.status === 'running' ? [this.machineSample(id)] : [],
       )
 
       this.send(
@@ -1493,12 +1505,12 @@ export class FakeStation {
       m.type === 'logs.query' &&
       logBody.source === 'run' &&
       logBody.run_id &&
-      this.sandboxRuns.has(logBody.run_id)
+      this.machineRuns.has(logBody.run_id)
     ) {
       this.send(
         'logs.page',
         {
-          lines: this.sandboxRuns.get(logBody.run_id)!.map((text, i) => ({
+          lines: this.machineRuns.get(logBody.run_id)!.map((text, i) => ({
             at: now(),
             role: 'run',
             stream: 'stdout',
@@ -1627,7 +1639,7 @@ export class FakeStation {
       const body = m.body as { service_ids?: string[]; sandbox_ids?: string[] }
       const ids = body.service_ids ?? []
       const boxes = (body.sandbox_ids ?? []).flatMap((id) =>
-        this.sandboxStates.get(id)?.status === 'running'
+        this.machineStates.get(id)?.status === 'running'
           ? [
               {
                 sandbox_id: id,
@@ -1700,7 +1712,7 @@ export class FakeStation {
       })
 
       if (b.target.sandbox_id) {
-        this.sandboxEnvs.set(b.target.sandbox_id, values)
+        this.machineEnvs.set(b.target.sandbox_id, values)
       }
 
       if (b.target.run_id) {
@@ -1718,7 +1730,7 @@ export class FakeStation {
     }
 
     if (m.type === 'run.start' && (m.body as { sandbox_id?: string }).sandbox_id) {
-      this.sandboxExec(m)
+      this.machineExec(m)
     }
 
     if (m.type === 'run.cancel') {
@@ -1733,13 +1745,13 @@ export class FakeStation {
 
     if (m.type === 'forward.open') {
       const b = m.body as { sandbox_id?: string; port: number }
-      const state = b.sandbox_id ? this.sandboxStates.get(b.sandbox_id) : undefined
+      const state = b.sandbox_id ? this.machineStates.get(b.sandbox_id) : undefined
 
       if (!b.sandbox_id || !state || state.status !== 'running') {
         this.send(
           'error',
           {
-            code: 'SANDBOX_NOT_RUNNING',
+            code: 'MACHINE_NOT_RUNNING',
             explanation: 'the sandbox is not running',
             fix: 'Start the sandbox.',
           },
@@ -1809,7 +1821,7 @@ export class FakeStation {
 
     if (m.type === 'sandbox.storage.grow') {
       const size = (m.body as { size_bytes: number }).size_bytes
-      const failure = this.config.sandboxes?.growFailure
+      const failure = this.config.machines?.growFailure
 
       this.send(
         'sandbox.storage.grown',
@@ -1818,8 +1830,8 @@ export class FakeStation {
               status: 'failed',
               step: failure.step,
               error: failure.error,
-              filesystem_bytes: sandboxCapability.filesystem_bytes,
-              filesystem_free_bytes: sandboxCapability.filesystem_free_bytes,
+              filesystem_bytes: machineCapability.filesystem_bytes,
+              filesystem_free_bytes: machineCapability.filesystem_free_bytes,
             }
           : {
               status: 'grown',

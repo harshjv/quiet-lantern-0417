@@ -1,9 +1,9 @@
-import { slugPattern, variableKeyPattern } from '@stationly/protocol'
+import { keyNamePattern, slugPattern } from '@stationly/protocol'
 
 import { SecretsError } from './errors.ts'
 
 export type Target =
-  | { type: 'service'; service: string; key: string }
+  | { type: 'app'; app: string; key: string }
   | { type: 'project'; key: string }
   | { type: 'global'; key: string }
   | { type: 'shared'; alias: string; key: string }
@@ -13,12 +13,12 @@ export type Segment =
   | { type: 'text'; text: string }
   | { type: 'reference'; offset: number; raw: string; target: Target }
 
-export const keyPattern = new RegExp(variableKeyPattern)
+export const keyPattern = new RegExp(keyNamePattern)
 const slug = new RegExp(slugPattern)
 const generatorPattern = /^secret\((\d{1,3})\)$/
 
 const invalid = (value: string, offset: number, reason: string) =>
-  new SecretsError('VARIABLE_REFERENCE_INVALID', `${reason} at offset ${offset}`, {
+  new SecretsError('KEY_REFERENCE_INVALID', `${reason} at offset ${offset}`, {
     offset,
     value_length: value.length,
     reason,
@@ -43,7 +43,7 @@ const parseTarget = (value: string, text: string, offset: number): Target => {
   const parts = text.split('.')
   const checkKey = (key: string | undefined, at: number) => {
     if (key === undefined || !keyPattern.test(key)) {
-      throw invalid(value, at, `"${key ?? ''}" is not a variable key (${variableKeyPattern})`)
+      throw invalid(value, at, `"${key ?? ''}" is not a key name (${keyNamePattern})`)
     }
 
     return key
@@ -78,12 +78,12 @@ const parseTarget = (value: string, text: string, offset: number): Target => {
 
   if (parts.length === 2) {
     if (!slug.test(parts[0]!)) {
-      throw invalid(value, offset, `"${parts[0]}" is not a service name`)
+      throw invalid(value, offset, `"${parts[0]}" is not an app name`)
     }
 
     return {
-      type: 'service',
-      service: parts[0]!,
+      type: 'app',
+      app: parts[0]!,
       key: checkKey(parts[1], keyOffset),
     }
   }

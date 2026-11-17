@@ -11,9 +11,9 @@ import type { CommitResult } from './changes.ts'
 import { callOf, type Deps } from './context.ts'
 import { fail } from './errors.ts'
 import { parseFields, project, type FieldTree } from './fields.ts'
-import { createRedaction, createSandboxRedaction } from './redaction.ts'
+import { createMachineRedaction, createRedaction } from './redaction.ts'
 import { routeMeta } from './route-meta.ts'
-import { models, type Staged } from './shapes.ts'
+import { models, type ApprovalDetail } from './shapes.ts'
 import { createViews } from './views.ts'
 
 export const createKit = (deps: Deps) => {
@@ -25,7 +25,7 @@ export const createKit = (deps: Deps) => {
     deps,
     views,
     redaction: createRedaction(deps.db, deps.keyring),
-    sandboxRedaction: createSandboxRedaction(deps.db, deps.keyring),
+    machineRedaction: createMachineRedaction(deps.db, deps.keyring),
     live: createLiveHub(deps.stations),
     probeLimit: createProbeLimits(),
     principal,
@@ -39,17 +39,17 @@ export const createKit = (deps: Deps) => {
         .use(operations),
     call: async (request: Request) => callOf(request, await principal(request)),
     fields: (text: string | undefined): FieldTree | undefined => parseFields(text),
-    stagedBody: (
+    approvalBody: (
       result: Extract<CommitResult, { applied: false }>,
       set: { status?: number | string },
     ) => {
       set.status = 202
 
       return project(
-        views.staged,
-        result.staged,
+        views.approval,
+        result.approval,
         parseFields('changes,refs,deployments'),
-      ) as Static<typeof Staged>
+      ) as Static<typeof ApprovalDetail>
     },
   }
 }

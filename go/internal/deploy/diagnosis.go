@@ -223,8 +223,8 @@ func fixesFor(code protocol.ErrorCode, r *rollout) []protocol.DiagnosisFixesElem
 		return []protocol.DiagnosisFixesElem{{
 			Code: "RAISE_MEMORY",
 			Text: fmt.Sprintf("The kernel killed the process at the memory limit. Raise limits.memory_bytes to at least %d.", next),
-			Action: &protocol.DiagnosisFixesElemAction{Tool: "update_service", Input: protocol.DiagnosisFixesElemActionInput{
-				"service": r.ServiceID, "limits": map[string]any{"memory_bytes": next},
+			Action: &protocol.DiagnosisFixesElemAction{Tool: "update_app", Input: protocol.DiagnosisFixesElemActionInput{
+				"app": r.ServiceID, "limits": map[string]any{"memory_bytes": next},
 			}},
 		}}
 	case protocol.ErrorCodeExitNonzero:

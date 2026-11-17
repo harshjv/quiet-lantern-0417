@@ -1,6 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox'
 
 import {
+  AppKind,
   CancelReason,
   DesiredState,
   FirewallMode,
@@ -8,13 +9,12 @@ import {
   Ingress,
   Injection,
   Limits,
+  MachineEgress,
+  MachineNetwork,
+  MachineRuntime,
+  MachineSize,
   PortProtocol,
-  SandboxEgress,
-  SandboxNetwork,
-  SandboxRuntime,
-  SandboxSize,
   Schedule,
-  ServiceKind,
   Strategy,
   volumeOwnerValues,
 } from './model.ts'
@@ -147,7 +147,7 @@ export const DnsRecord = Type.Object(
     kind: StringEnum(['service', 'alias'], {
       title: 'DnsRecordKind',
     }),
-    target_service_id: Id('service'),
+    target_service_id: Id('app'),
   },
   {
     title: 'DnsRecord',
@@ -158,7 +158,7 @@ export const EnvironmentVirtualIp = Type.Object(
   {
     id: Id('virtual_ip'),
     address: Type.String(),
-    service_id: Id('service'),
+    service_id: Id('app'),
   },
   {
     title: 'EnvironmentVirtualIp',
@@ -169,7 +169,7 @@ export const DesiredAttachment = Type.Object(
   {
     id: Id('attachment'),
     alias: Type.String(),
-    shared_service_id: Id('service'),
+    shared_service_id: Id('app'),
     virtual_ip: Type.String(),
     address_on_bridge: Type.String(),
   },
@@ -215,7 +215,7 @@ export const EnvRef = Type.Union(
     Type.Object({
       export: Type.Object(
         {
-          service_id: Id('service'),
+          service_id: Id('app'),
           key: Type.String(),
         },
         {
@@ -253,7 +253,7 @@ export const ContainerSpec = Type.Object(
     ports: Type.Array(
       Type.Object(
         {
-          id: Id('service_port'),
+          id: Id('app_port'),
           port: Port,
           protocol: PortProtocol,
           grpc: Type.Boolean(),
@@ -320,7 +320,7 @@ export const DesiredService = Type.Object(
     environment_id: Id('environment'),
     project_id: Id('project'),
     name: Type.String(),
-    kind: ServiceKind,
+    kind: AppKind,
     desired_state: DesiredState,
     virtual_ip: Type.String(),
     current: Nullable(
@@ -358,7 +358,7 @@ export const DesiredService = Type.Object(
 export const DesiredDeployment = Type.Object(
   {
     hash: Digest,
-    service_id: Id('service'),
+    service_id: Id('app'),
     number: Count,
     target: ContainerSpec,
     from_deployment_id: Nullable(Id('deployment')),
@@ -398,7 +398,7 @@ export const DesiredVolume = Type.Object(
     owner: StringEnum(volumeOwnerValues, {
       title: 'VolumeOwner',
     }),
-    service_id: Nullable(Id('service')),
+    service_id: Nullable(Id('app')),
     docker_name: Type.String(),
     status: StringEnum(['active', 'retained', 'destroy'], {
       title: 'DesiredVolumeStatus',
@@ -413,7 +413,7 @@ export const DesiredVolume = Type.Object(
 export const RouteTarget = Type.Union(
   [
     Type.Object({
-      service_id: Id('service'),
+      service_id: Id('app'),
       virtual_ip: Type.String(),
       port: Port,
     }),
@@ -475,8 +475,8 @@ export const DesiredGateway = Type.Object(
 export const DesiredPortAllocation = Type.Object(
   {
     hash: Digest,
-    service_port_id: Id('service_port'),
-    service_id: Id('service'),
+    service_port_id: Id('app_port'),
+    service_id: Id('app'),
     host_port: Port,
     protocol: Type.Literal('tcp'),
     virtual_ip: Type.String(),
@@ -552,7 +552,7 @@ export const DesiredSandbox = Type.Object(
     }),
     desired_state: DesiredState,
     stop_at: Nullable(Timestamp),
-    runtime: Type.Optional(SandboxRuntime),
+    runtime: Type.Optional(MachineRuntime),
     image: Type.Object(
       {
         ref: Nullable(Type.String()),
@@ -566,21 +566,21 @@ export const DesiredSandbox = Type.Object(
       },
     ),
     command: Nullable(Type.Array(Type.String())),
-    size: SandboxSize,
+    size: MachineSize,
     docker: Type.Boolean(),
     env_digest: Digest,
-    network: SandboxNetwork,
-    egress: SandboxEgress,
+    network: MachineNetwork,
+    egress: MachineEgress,
     disk: Type.Object(
       {
         from: Nullable(
           Type.Union(
             [
               Type.Object({
-                snapshot_id: Id('sandbox_snapshot'),
+                snapshot_id: Id('machine_snapshot'),
               }),
               Type.Object({
-                sandbox_id: Id('sandbox'),
+                sandbox_id: Id('machine'),
               }),
             ],
             {
@@ -604,7 +604,7 @@ export const DesiredSandbox = Type.Object(
 export const DesiredSandboxSnapshot = Type.Object(
   {
     hash: Digest,
-    sandbox_id: Id('sandbox'),
+    sandbox_id: Id('machine'),
     status: StringEnum(['active', 'destroy'], {
       title: 'DesiredSandboxSnapshotStatus',
     }),
@@ -618,7 +618,7 @@ export const Generation = Type.Object(
   {
     schema: Type.Literal(1),
     instance_id: Id('instance'),
-    station_id: Id('station'),
+    station_id: Id('server'),
     number: Count,
     previous: Nullable(Count),
     hash: Digest,

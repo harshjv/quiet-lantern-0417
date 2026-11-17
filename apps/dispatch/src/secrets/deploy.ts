@@ -6,13 +6,13 @@ import { EnvEntry, type Actor, type MessageBody } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { deployment, service, service_port } from '../db/schema.ts'
+import { app, app_port, deployment } from '../db/schema.ts'
 import { sha256Digest } from '../generation/hash.ts'
 
 import { knownRedaction, refsOf, renderedDelivery } from './deliver.ts'
 import { SecretsError } from './errors.ts'
 import type { Keyring } from './keyring.ts'
-import { isFallback, isSealed, Resolver, type SourceNode } from './resolve.ts'
+import { isSealed, Resolver, type SourceNode } from './resolve.ts'
 
 type ActorValue = Static<typeof Actor>
 type EnvEntryValue = Static<typeof EnvEntry>
@@ -21,20 +21,19 @@ type Purpose = SecretsDeliver['purpose']
 
 export type SnapshotEntry = {
   key: string
-  variable_id: string
+  key_id: string
   kind: 'literal' | 'reference' | 'sealed'
   injection: 'env' | 'file'
   build: boolean
   sealed: boolean
-  fallback_from_protected: boolean
   node: SourceNode
 }
 
 export type EnvSnapshot = { resolved_at: string; entries: SnapshotEntry[] }
 
-export const snapshotOf = (db: Db, serviceId: string): EnvSnapshot => {
-  const resolver = Resolver.forService(db, serviceId)
-  const entries = resolver.serviceVariables().map((v) => {
+export const snapshotOf = (db: Db, appId: string): EnvSnapshot => {
+  const resolver = Resolver.forApp(db, appId)
+  const entries = resolver.appKeys().map((v) => {
     let node: SourceNode
 
     try {
@@ -42,7 +41,7 @@ export const snapshotOf = (db: Db, serviceId: string): EnvSnapshot => {
     } catch (error) {
       if (error instanceof SecretsError) {
         Object.assign(error.details, {
-          key: v.key,
+          key: v.name,
         })
       }
 
@@ -50,13 +49,12 @@ export const snapshotOf = (db: Db, serviceId: string): EnvSnapshot => {
     }
 
     return {
-      key: v.key,
-      variable_id: v.id,
+      key: v.name,
+      key_id: v.id,
       kind: v.kind,
       injection: v.injection,
       build: v.build,
       sealed: isSealed(node),
-      fallback_from_protected: isFallback(node),
       node,
     }
   })
@@ -70,16 +68,16 @@ export const snapshotOf = (db: Db, serviceId: string): EnvSnapshot => {
 export const createDeployment = (
   db: Db,
   input: {
-    service_id: string
+    app_id: string
     image_ref: string
-    trigger: 'manual' | 'variable_change' | 'redeploy'
+    trigger: 'manual' | 'key_change' | 'redeploy'
     actor: ActorValue
   },
 ) => {
-  const svc = db.select().from(service).where(eq(service.id, input.service_id)).get()
+  const svc = db.select().from(app).where(eq(app.id, input.app_id)).get()
 
   if (!svc) {
-    throw new SecretsError('NOT_FOUND', `service ${input.service_id} does not exist`)
+    throw new SecretsError('NOT_FOUND', `app ${input.app_id} does not exist`)
   }
 
   const env_snapshot = snapshotOf(db, svc.id)
@@ -88,7 +86,7 @@ export const createDeployment = (
       number: deployment.number,
     })
     .from(deployment)
-    .where(eq(deployment.service_id, svc.id))
+    .where(eq(deployment.app_id, svc.id))
     .orderBy(desc(deployment.number))
     .limit(1)
     .get()
@@ -99,7 +97,7 @@ export const createDeployment = (
   db.insert(deployment)
     .values({
       id,
-      service_id: svc.id,
+      app_id: svc.id,
       number,
       trigger: {
         type: input.trigger,
@@ -135,14 +133,14 @@ export const activateDeployment = (db: Db, deploymentId: string) => {
     })
     .where(eq(deployment.id, deploymentId))
     .run()
-  db.update(service)
+  db.update(app)
     .set({
       current_deployment_id: deploymentId,
     })
-    .where(eq(service.id, dep.service_id))
+    .where(eq(app.id, dep.app_id))
     .run()
 
-  return dep.service_id
+  return dep.app_id
 }
 
 const snapshotFor = (db: Db, deploymentId: string) => {
@@ -166,19 +164,19 @@ export const envDigest = (env: EnvEntryValue[]) => {
 
 export const envOf = (
   db: Db,
-  ids: { service_id: string; environment_id: string; deployment_id: string },
+  ids: { app_id: string; target_id: string; deployment_id: string },
   entries: Pick<SnapshotEntry, 'key' | 'injection' | 'node'>[],
 ): EnvEntryValue[] => {
   const port = db
     .select()
-    .from(service_port)
-    .where(eq(service_port.service_id, ids.service_id))
-    .orderBy(asc(service_port.created_at), asc(service_port.port))
+    .from(app_port)
+    .where(eq(app_port.app_id, ids.app_id))
+    .orderBy(asc(app_port.created_at), asc(app_port.port))
     .get()
   const platform: [string, string][] = [
     ...(port ? ([['PORT', String(port.port)]] as [string, string][]) : []),
-    ['STATIONLY_SERVICE_ID', ids.service_id],
-    ['STATIONLY_ENVIRONMENT_ID', ids.environment_id],
+    ['STATIONLY_SERVICE_ID', ids.app_id],
+    ['STATIONLY_ENVIRONMENT_ID', ids.target_id],
     ['STATIONLY_DEPLOYMENT_ID', ids.deployment_id],
   ]
 
@@ -201,16 +199,16 @@ export const envOf = (
 
 export const generationEnv = (db: Db, deploymentId: string) => {
   const { dep, snapshot } = snapshotFor(db, deploymentId)
-  const svc = db.select().from(service).where(eq(service.id, dep.service_id)).get()!
+  const svc = db.select().from(app).where(eq(app.id, dep.app_id)).get()!
   const config = dep.config_snapshot as {
-    environment_id: string
+    target_id: string
     secrets_owner: { uid: number; gid: number } | null
   }
   const env = envOf(
     db,
     {
-      service_id: svc.id,
-      environment_id: config.environment_id,
+      app_id: svc.id,
+      target_id: config.target_id,
       deployment_id: dep.id,
     },
     snapshot.entries,
@@ -227,7 +225,7 @@ export const generationEnv = (db: Db, deploymentId: string) => {
   return {
     deployment_id: dep.id,
     number: dep.number,
-    service_id: svc.id,
+    app_id: svc.id,
     env,
     env_digest: envDigest(env),
     secrets_owner: config.secrets_owner,

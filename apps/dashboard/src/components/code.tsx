@@ -1,11 +1,12 @@
-import { Link } from '@tanstack/react-router'
 import { Terminal } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 
 import { CopyButton } from '@/components/copy'
+import { PlaceLink } from '@/components/place-link'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { placeholders, type Tool } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
+import { places } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 const chip = 'rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem] text-foreground'
@@ -180,13 +181,13 @@ export function AlsoWith({
       {tool && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link
-              to="/connect"
+            <PlaceLink
+              to={places.page('connect')}
               className="inline-flex items-center gap-1.5 rounded-sm hover:text-foreground"
             >
               <entityIcon.agent className="size-3.5 shrink-0" aria-label="Your agent" />
               <Code className="text-xs">{tool}</Code>
-            </Link>
+            </PlaceLink>
           </TooltipTrigger>
           <TooltipContent>Your agent’s tool for this. Connect an agent to use it.</TooltipContent>
         </Tooltip>

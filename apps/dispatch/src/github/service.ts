@@ -3,24 +3,25 @@ import { createHash } from 'node:crypto'
 import type { Cron } from 'croner'
 import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm'
 
-import { ChangeSet, commit } from '../api/changes.ts'
+import { ChangeSet, commit, isTransient, placeName } from '../api/changes.ts'
 import type { Call } from '../api/context.ts'
 import { ApiError } from '../api/errors.ts'
 import type { AuthService } from '../auth/auth.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
 import {
+  app,
+  approval,
   build,
   deployment,
-  environment,
   event,
   github_app,
   github_delivery,
   github_installation,
   github_status,
   project,
-  service,
   source_poll,
+  target,
   task,
 } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
@@ -43,9 +44,9 @@ import {
   type GitHubResponse,
 } from './client.ts'
 
-type AppRow = typeof github_app.$inferSelect
+type GitHubAppRow = typeof github_app.$inferSelect
 type InstallationRow = typeof github_installation.$inferSelect
-type ServiceRow = typeof service.$inferSelect
+type AppRow = typeof app.$inferSelect
 type Json = Record<string, unknown>
 type RepoSource = {
   type: 'dockerfile' | 'railpack'
@@ -73,14 +74,14 @@ export const signInApp = (db: Db, keyring: Keyring) => {
     : null
 }
 
-export const repoServices = (db: Db) =>
+export const repoApps = (db: Db) =>
   db
     .select({
-      svc: service,
-      env: environment,
+      svc: app,
+      env: target,
     })
-    .from(service)
-    .innerJoin(environment, eq(environment.id, service.environment_id))
+    .from(app)
+    .innerJoin(target, eq(target.id, app.target_id))
     .all()
     .filter(({ svc }) => {
       const source = svc.source
@@ -108,7 +109,7 @@ export const systemCall = (client: string, requestId: string): Call => ({
     scopes: [
       {
         project_id: '*',
-        environment_id: '*',
+        target: '*',
         level: 'admin',
       },
     ],
@@ -120,7 +121,7 @@ export const systemCall = (client: string, requestId: string): Call => ({
 })
 
 const infraCodes = new Set([
-  'STATION_OFFLINE',
+  'SERVER_OFFLINE',
   'SECRETS_UNAVAILABLE',
   'PROTOCOL_LIMIT',
   'INTERNAL_ERROR',
@@ -132,7 +133,7 @@ export const createGitHub = (deps: GitHubDeps) => {
   const jobs: Cron[] = []
   let stopped = false
 
-  const secretsOf = (app: AppRow) => ({
+  const secretsOf = (app: GitHubAppRow) => ({
     pem: keyring.decrypt(aad(app, 'private_key'), app.data_key_id!, app.private_key),
     webhookSecret: app.webhook_secret
       ? keyring.decrypt(aad(app, 'webhook_secret'), app.data_key_id!, app.webhook_secret)
@@ -150,10 +151,10 @@ export const createGitHub = (deps: GitHubDeps) => {
       value,
     )
 
-  const jwtFor = (app: AppRow) => appJwt(app.client_id, secretsOf(app).pem)
+  const jwtFor = (app: GitHubAppRow) => appJwt(app.client_id, secretsOf(app).pem)
 
   const installationToken = async (
-    app: AppRow,
+    app: GitHubAppRow,
     installationId: number,
     repositories: string[] | null,
     permissions: Record<string, string>,
@@ -197,7 +198,7 @@ export const createGitHub = (deps: GitHubDeps) => {
   const appForOwner = (owner: string) =>
     db.select().from(github_app).where(eq(github_app.owner, owner.toLowerCase())).get()
 
-  const installUrl = (app: AppRow) => `${githubWeb()}/apps/${app.slug}/installations/new`
+  const installUrl = (app: GitHubAppRow) => `${githubWeb()}/apps/${app.slug}/installations/new`
 
   const connectUrl = () => `${deps.auth.surface.dashboardOrigin}/github/connect`
 
@@ -361,8 +362,8 @@ export const createGitHub = (deps: GitHubDeps) => {
 
   const dashboardLink = (path: string) => `${deps.auth.surface.dashboardOrigin}${path}`
 
-  const contexts = (svc: ServiceRow) => {
-    const env = db.select().from(environment).where(eq(environment.id, svc.environment_id)).get()!
+  const contexts = (svc: AppRow) => {
+    const env = db.select().from(target).where(eq(target.id, svc.target_id)).get()!
 
     return {
       build: `stationly/build/${svc.name}`,
@@ -370,7 +371,7 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
   }
 
-  const buildStarted = (buildRow: typeof build.$inferSelect, svc: ServiceRow, sha: string) => {
+  const buildStarted = (buildRow: typeof build.$inferSelect, svc: AppRow, sha: string) => {
     const source = svc.source as RepoSource
 
     if (source.auth !== 'app') {
@@ -406,7 +407,7 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
 
     const b = db.select().from(build).where(eq(build.id, dep.build_id)).get()
-    const svc = db.select().from(service).where(eq(service.id, dep.service_id)).get()
+    const svc = db.select().from(app).where(eq(app.id, dep.app_id)).get()
     const sha = (b?.source as { sha?: string } | undefined)?.sha
 
     if (!b || !svc || !sha) {
@@ -559,18 +560,38 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
   }
 
-  const alreadyDeployed = (serviceId: string, sha: string) =>
+  const alreadyDeployed = (appId: string, sha: string) =>
     db
       .select({
         id: deployment.id,
         trigger: deployment.trigger,
       })
       .from(deployment)
-      .where(eq(deployment.service_id, serviceId))
+      .where(eq(deployment.app_id, appId))
       .orderBy(desc(deployment.number))
       .limit(20)
       .all()
       .some((d) => d.trigger.source_sha === sha)
+
+  const shippedBy = (projectId: string, sha: string) =>
+    db
+      .select({
+        id: approval.id,
+        ship: approval.ship,
+        deployments: approval.deployments,
+      })
+      .from(approval)
+      .where(
+        and(
+          eq(approval.project_id, projectId),
+          eq(approval.source, 'task'),
+          eq(approval.status, 'approved'),
+        ),
+      )
+      .orderBy(desc(approval.decided_at))
+      .limit(50)
+      .all()
+      .find((row) => row.ship?.merge_sha === sha)
 
   const triggerPush = (
     repo: string,
@@ -586,9 +607,9 @@ export const createGitHub = (deps: GitHubDeps) => {
       })
       .where(and(eq(source_poll.repo, repo), eq(source_poll.branch, branch)))
       .run()
-    const targets = repoServices(db).filter(
+    const targets = repoApps(db).filter(
       ({ svc, env }) =>
-        !env.ephemeral &&
+        !isTransient(env) &&
         (svc.source as RepoSource).repo === repo &&
         (svc.source as RepoSource).branch === branch,
     )
@@ -607,12 +628,13 @@ export const createGitHub = (deps: GitHubDeps) => {
       })
 
       try {
+        const shipped = env.kind === 'production' ? shippedBy(env.project_id, sha) : undefined
         const result = commit(
           deps,
           systemCall(`github/${via}`, requestId),
           {
-            environment: env,
-            protect: env.protected,
+            target: env,
+            protect: env.kind === 'production' && !shipped,
             source: 'api',
           },
           set,
@@ -620,14 +642,23 @@ export const createGitHub = (deps: GitHubDeps) => {
 
         if (result.applied) {
           created.push(...result.deployments)
+
+          if (shipped) {
+            db.update(approval)
+              .set({
+                deployments: [...shipped.deployments, ...result.deployments],
+              })
+              .where(eq(approval.id, shipped.id))
+              .run()
+          }
         } else if ((svc.source as RepoSource).auth === 'app') {
           enqueueStatus(
             repo,
             sha,
             contexts(svc).deploy,
             'pending',
-            `Staged in protected ${env.name}; a human must accept ${result.staged.id}`,
-            dashboardLink(`/staged-changes/${result.staged.id}`),
+            `Waiting for approval in ${placeName(env)}: ${result.approval.id}`,
+            dashboardLink(`/approvals/${result.approval.id}`),
           )
         }
 
@@ -636,10 +667,11 @@ export const createGitHub = (deps: GitHubDeps) => {
           branch,
           sha,
           via,
-          service_id: svc.id,
+          app_id: svc.id,
           applied: result.applied,
+          shipped: shipped?.id ?? null,
           deployments: result.applied ? result.deployments : [],
-          staged_change: result.applied ? null : result.staged.id,
+          approval: result.applied ? null : result.approval.id,
         })
       } catch (error) {
         log('github.push_deploy_failed', {
@@ -647,7 +679,7 @@ export const createGitHub = (deps: GitHubDeps) => {
           branch,
           sha,
           via,
-          service_id: svc.id,
+          app_id: svc.id,
           explanation: (error as Error).message,
         })
       }
@@ -657,7 +689,7 @@ export const createGitHub = (deps: GitHubDeps) => {
   }
 
   const upsertInstallation = (
-    app: AppRow,
+    app: GitHubAppRow,
     data: {
       id: number
       account: { login: string }
@@ -700,7 +732,7 @@ export const createGitHub = (deps: GitHubDeps) => {
   }
 
   const refreshAuth = async (owner: string) => {
-    for (const { svc } of repoServices(db)) {
+    for (const { svc } of repoApps(db)) {
       const source = svc.source as RepoSource
 
       if (splitRepo(source.repo).owner !== owner.toLowerCase()) {
@@ -711,17 +743,17 @@ export const createGitHub = (deps: GitHubDeps) => {
         const resolved = await resolveRepo(source.repo)
 
         if (resolved.auth !== source.auth) {
-          db.update(service)
+          db.update(app)
             .set({
               source: {
                 ...source,
                 auth: resolved.auth,
               },
             })
-            .where(eq(service.id, svc.id))
+            .where(eq(app.id, svc.id))
             .run()
           log('github.auth_changed', {
-            service_id: svc.id,
+            app_id: svc.id,
             repo: source.repo,
             from: source.auth ?? null,
             to: resolved.auth,
@@ -729,7 +761,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         }
       } catch (error) {
         log('github.auth_unresolved', {
-          service_id: svc.id,
+          app_id: svc.id,
           repo: source.repo,
           explanation: (error as Error).message,
         })
@@ -737,7 +769,7 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
   }
 
-  const syncInstallations = async (app: AppRow) => {
+  const syncInstallations = async (app: GitHubAppRow) => {
     const found: InstallationRow[] = []
 
     for (let page = 1; page < 20; page++) {
@@ -778,25 +810,25 @@ export const createGitHub = (deps: GitHubDeps) => {
     return found
   }
 
-  const prEnvironmentName = (number: number) => `pr-${number}`
+  const prPreviewName = (number: number) => `pr-${number}`
 
   const taskPreviewFor = (projectId: string, repo: string, branch: string) => {
     const owner = db
       .select({
-        environment_id: task.preview_environment_id,
+        preview_id: task.preview_id,
         repository: task.repository,
       })
       .from(task)
       .where(and(eq(task.project_id, projectId), eq(task.branch, branch)))
       .all()
-      .find((row) => row.environment_id && repoOf(repositoryLabel(row.repository)) === repo)
+      .find((row) => row.preview_id && repoOf(repositoryLabel(row.repository)) === repo)
 
     return owner
-      ? db.select().from(environment).where(eq(environment.id, owner.environment_id!)).get()
+      ? db.select().from(target).where(eq(target.id, owner.preview_id!)).get()
       : undefined
   }
 
-  const onPullRequest = async (app: AppRow, payload: Json, guid: string) => {
+  const onPullRequest = async (githubApp: GitHubAppRow, payload: Json, guid: string) => {
     const action = payload.action as string
     const pr = payload.pull_request as {
       number: number
@@ -806,25 +838,28 @@ export const createGitHub = (deps: GitHubDeps) => {
     const base = repoOf(pr.base.repo.full_name)
     const fork =
       !pr.head.repo || pr.head.repo.full_name.toLowerCase() !== pr.base.repo.full_name.toLowerCase()
-    const { cloneInto } = await import('../api/routes/environments.ts')
+    const { createPreview } = await import('../api/routes/previews.ts')
     const results: Json[] = []
 
     for (const proj of db.select().from(project).all()) {
-      if (!proj.pr_environments?.enabled) {
+      if (!proj.pull_request_previews) {
         continue
       }
 
-      const sourceEnvId = proj.pr_environments.source_environment_id ?? proj.default_environment_id
-      const sourceEnv = db.select().from(environment).where(eq(environment.id, sourceEnvId)).get()
+      const production = db
+        .select()
+        .from(target)
+        .where(and(eq(target.project_id, proj.id), eq(target.kind, 'production')))
+        .get()
 
-      if (!sourceEnv) {
+      if (!production) {
         continue
       }
 
       const tracked = db
         .select()
-        .from(service)
-        .where(eq(service.environment_id, sourceEnv.id))
+        .from(app)
+        .where(eq(app.target_id, production.id))
         .all()
         .some((s) => (s.source as RepoSource).repo === base)
 
@@ -832,26 +867,30 @@ export const createGitHub = (deps: GitHubDeps) => {
         continue
       }
 
-      const name = prEnvironmentName(pr.number)
+      const name = prPreviewName(pr.number)
       const existing =
         db
           .select()
-          .from(environment)
-          .where(and(eq(environment.project_id, proj.id), eq(environment.name, name)))
+          .from(target)
+          .where(
+            and(eq(target.project_id, proj.id), eq(target.kind, 'preview'), eq(target.name, name)),
+          )
           .get() ??
         db
           .select()
-          .from(environment)
+          .from(target)
           .where(
             and(
-              eq(environment.project_id, proj.id),
-              sql`json_extract(${environment.pull_request}, '$.repo') = ${base}`,
-              sql`json_extract(${environment.pull_request}, '$.number') = ${pr.number}`,
+              eq(target.project_id, proj.id),
+              eq(target.kind, 'preview'),
+              sql`json_extract(${target.origin}, '$.type') = 'pull_request'`,
+              sql`json_extract(${target.origin}, '$.repo') = ${base}`,
+              sql`json_extract(${target.origin}, '$.number') = ${pr.number}`,
             ),
           )
           .get() ??
         taskPreviewFor(proj.id, base, pr.head.ref)
-      const call = systemCall(`github/${app.slug}`, `gh_${guid}`)
+      const call = systemCall(`github/${githubApp.slug}`, `gh_${guid}`)
 
       if (action === 'closed') {
         if (!existing) {
@@ -860,14 +899,14 @@ export const createGitHub = (deps: GitHubDeps) => {
 
         const set = new ChangeSet()
 
-        set.remove('environment', existing.id, {
+        set.remove('preview', existing.id, {
           name,
         })
         commit(
           deps,
           call,
           {
-            environment: existing,
+            target: existing,
             protect: false,
             source: 'api',
           },
@@ -875,7 +914,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         )
         results.push({
           project: proj.name,
-          environment: name,
+          preview: name,
           action: 'deleted',
         })
         continue
@@ -886,6 +925,7 @@ export const createGitHub = (deps: GitHubDeps) => {
       }
 
       const pullRequest = {
+        type: 'pull_request' as const,
         repo: base,
         number: pr.number,
         head_sha: pr.head.sha,
@@ -894,72 +934,56 @@ export const createGitHub = (deps: GitHubDeps) => {
       let env = existing
 
       if (!env) {
-        const id = newId('environment')
-
-        db.insert(environment)
-          .values({
-            id,
-            project_id: proj.id,
-            name,
-            protected: false,
-            ephemeral: true,
-            source_environment_id: sourceEnv.id,
-            ttl_seconds: 7 * 24 * 3600,
-            pull_request: pullRequest,
-          })
-          .run()
-        env = db.select().from(environment).where(eq(environment.id, id)).get()!
-        cloneInto(
+        env = createPreview(
           {
             deps,
           },
           call,
           proj,
-          sourceEnv,
-          env,
-          false,
-        )
+          {
+            name,
+            origin: pullRequest,
+            expires_at: null,
+            deploy: false,
+          },
+        ).preview
 
-        for (const svc of db
-          .select()
-          .from(service)
-          .where(eq(service.environment_id, env.id))
-          .all()) {
+        for (const svc of db.select().from(app).where(eq(app.target_id, env.id)).all()) {
           const source = svc.source as RepoSource
 
           if (source.repo === base && !fork) {
-            db.update(service)
+            db.update(app)
               .set({
                 source: {
                   ...source,
                   branch: pr.head.ref,
                 },
               })
-              .where(eq(service.id, svc.id))
+              .where(eq(app.id, svc.id))
               .run()
           }
         }
       } else {
-        db.update(environment)
+        db.update(target)
           .set({
-            pull_request: pullRequest,
+            origin: pullRequest,
           })
-          .where(eq(environment.id, env.id))
+          .where(eq(target.id, env.id))
           .run()
-        env = db.select().from(environment).where(eq(environment.id, env.id)).get()!
+        env = db.select().from(target).where(eq(target.id, env.id)).get()!
       }
 
       if (fork) {
         results.push({
           project: proj.name,
-          environment: name,
+          preview: name,
           action: existing ? 'updated' : 'created',
           fork: true,
           deployments: [],
         })
         log('github.pr_fork_waiting', {
           project_id: proj.id,
-          environment_id: env.id,
+          preview_id: env.id,
           number: pr.number,
           head_sha: pr.head.sha,
         })
@@ -968,7 +992,7 @@ export const createGitHub = (deps: GitHubDeps) => {
 
       const set = new ChangeSet()
 
-      for (const svc of db.select().from(service).where(eq(service.environment_id, env.id)).all()) {
+      for (const svc of db.select().from(app).where(eq(app.target_id, env.id)).all()) {
         const source = svc.source as RepoSource
 
         if (source.repo === base) {
@@ -980,7 +1004,7 @@ export const createGitHub = (deps: GitHubDeps) => {
           }
         } else if (!existing) {
           set.deploy(svc.id, 'manual', {
-            reason: `pull request #${pr.number} environment created`,
+            reason: `pull request #${pr.number} preview created`,
           })
         }
       }
@@ -991,7 +1015,7 @@ export const createGitHub = (deps: GitHubDeps) => {
             deps,
             call,
             {
-              environment: env,
+              target: env,
               protect: false,
               source: 'api',
             },
@@ -1000,7 +1024,7 @@ export const createGitHub = (deps: GitHubDeps) => {
 
       results.push({
         project: proj.name,
-        environment: name,
+        preview: name,
         action: existing ? 'updated' : 'created',
         fork: false,
         deployments: result?.applied ? result.deployments : [],
@@ -1333,8 +1357,8 @@ export const createGitHub = (deps: GitHubDeps) => {
     const pollingOwners = new Set(pollingApps.map((a) => a.owner))
     const tracked = new Map<string, { repo: string; branch: string; auth: string }>()
 
-    for (const { svc, env } of repoServices(db)) {
-      if (env.ephemeral) {
+    for (const { svc, env } of repoApps(db)) {
+      if (isTransient(env)) {
         continue
       }
 

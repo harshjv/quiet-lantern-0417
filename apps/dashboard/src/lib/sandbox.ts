@@ -38,11 +38,11 @@ export const secondsUntil = (iso: string | null | undefined, nowMs: number) => {
 export type Clock = { label: 'left' | 'until deletion'; text: string; urgent: boolean }
 
 export const remaining = (
-  sandbox: { status: string; stop_at: string | null; delete_at: string | null },
+  machine: { status: string; stop_at: string | null; delete_at: string | null },
   nowMs: number,
 ): Clock | null => {
-  const stopped = isIdle(sandbox.status)
-  const seconds = secondsUntil(stopped ? sandbox.delete_at : sandbox.stop_at, nowMs)
+  const stopped = isIdle(machine.status)
+  const seconds = secondsUntil(stopped ? machine.delete_at : machine.stop_at, nowMs)
 
   if (seconds === null) {
     return null

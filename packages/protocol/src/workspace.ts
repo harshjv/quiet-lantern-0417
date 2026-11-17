@@ -181,7 +181,7 @@ export const workspaceEnv = {
   token: 'STATIONLY_TOKEN',
   apiUrl: 'STATIONLY_API_URL',
   project: 'STATIONLY_PROJECT',
-  environment: 'STATIONLY_ENVIRONMENT',
+  preview: 'STATIONLY_PREVIEW',
 } as const
 
 export const workspaceEgress = (agent: WorkspaceAgent) => ({
@@ -189,7 +189,7 @@ export const workspaceEgress = (agent: WorkspaceAgent) => ({
   domains: [...workspaceAgents[agent].domains, ...workspaceSharedDomains],
 })
 
-export const SandboxWorkspaceInput = Type.Object(
+export const MachineWorkspaceInput = Type.Object(
   {
     agent: StringEnum(workspaceAgentValues, {
       description: 'The agent CLI to install: claude or codex',
@@ -214,6 +214,6 @@ export const SandboxWorkspaceInput = Type.Object(
   {
     additionalProperties: false,
     description:
-      'Make the sandbox a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token',
+      'Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token',
   },
 )

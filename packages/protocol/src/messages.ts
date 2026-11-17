@@ -3,6 +3,7 @@ import { Type, type Static, type TSchema } from '@sinclair/typebox'
 import { EnvRef, Generation } from './desired-state.ts'
 import {
   Actor,
+  AppHealth,
   AppliedGeneration,
   AppliedStatus,
   AttestationKind,
@@ -22,15 +23,14 @@ import {
   FlowRollupRow,
   Injection,
   ListeningSocket,
+  MachineReportStatus,
+  MachineStatusReason,
   networkDirectionValues,
   networkProtocolValues,
   Resources,
   RunKind,
   RunRow,
   RunStatus,
-  SandboxReportStatus,
-  SandboxStatusReason,
-  ServiceHealth,
   StationArch,
   StationCapabilities,
   StationOs,
@@ -145,7 +145,7 @@ const ChallengeBody = Type.Object(
 
 const HelloBody = Type.Object(
   {
-    station_id: Id('station'),
+    station_id: Id('server'),
     timestamp: UnixMillis,
     signature: Base64UrlBytes64,
     stationd_version: Type.String(),
@@ -211,7 +211,7 @@ const EnrollBody = Type.Object(
         {
           ipam_pool: Type.String(),
           registry_subnet: Type.String(),
-          station_id: Type.Optional(Id('station')),
+          station_id: Type.Optional(Id('server')),
         },
         {
           title: 'EnrollInstall',
@@ -226,7 +226,7 @@ const EnrollBody = Type.Object(
 
 const EnrolledBody = Type.Object(
   {
-    station_id: Id('station'),
+    station_id: Id('server'),
     instance_id: Id('instance'),
     registry_subnet: Type.String(),
     registry_address: Type.String(),
@@ -262,7 +262,7 @@ const HeartbeatBody = Type.Object(
       Type.Object(
         {
           status_hint: StatusHint,
-          health: ServiceHealth,
+          health: AppHealth,
         },
         {
           title: 'ServiceHeartbeat',
@@ -431,7 +431,7 @@ const BuildResultBody = Type.Object(
 const HealthResultBody = Type.Object(
   {
     seq,
-    service_id: Id('service'),
+    service_id: Id('app'),
     deployment_id: Id('deployment'),
     state: StringEnum(['passing', 'failing', 'failed'], {
       title: 'HealthResultState',
@@ -449,7 +449,7 @@ const ContainerExitedBody = Type.Object(
     seq,
     container_id: Type.String(),
     role: Type.String(),
-    service_id: Nullable(Id('service')),
+    service_id: Nullable(Id('app')),
     deployment_id: Nullable(Id('deployment')),
     exit_code: Type.Integer(),
     oom_killed: Type.Boolean(),
@@ -492,7 +492,7 @@ const RegistryMaintenanceBody = Type.Object(
 const ComponentStatusBody = Type.Object(
   {
     seq,
-    station_id: Nullable(Id('station')),
+    station_id: Nullable(Id('server')),
     name: Type.String(),
     container_id: Nullable(Type.String()),
     version: Type.String(),
@@ -536,7 +536,7 @@ const AuditRecordBody = Type.Object(
 const GuardAckBody = Type.Object(
   {
     seq,
-    service_id: Id('service'),
+    service_id: Id('app'),
     policy_id: Id('firewall_policy'),
     generation: Count,
   },
@@ -580,9 +580,9 @@ const ScanResultBody = Type.Object(
 const SandboxStatusBody = Type.Object(
   {
     seq,
-    sandbox_id: Id('sandbox'),
-    status: SandboxReportStatus,
-    reason: Nullable(SandboxStatusReason),
+    sandbox_id: Id('machine'),
+    status: MachineReportStatus,
+    reason: Nullable(MachineStatusReason),
     exit_code: Nullable(Type.Integer()),
     oom_killed: Type.Boolean(),
     started_at: Nullable(Timestamp),
@@ -597,7 +597,7 @@ const SandboxStatusBody = Type.Object(
 const SandboxSnapshotStatusBody = Type.Object(
   {
     seq,
-    snapshot_id: Id('sandbox_snapshot'),
+    snapshot_id: Id('machine_snapshot'),
     status: StringEnum(['ready', 'failed', 'deleted'], {
       title: 'SandboxSnapshotReportStatus',
     }),
@@ -667,7 +667,7 @@ const BuildStartBody = Type.Object(
     build_id: Id('build'),
     deployment_id: Id('deployment'),
     project_id: Id('project'),
-    service_id: Id('service'),
+    service_id: Id('app'),
     builder: Builder,
     source: BuildSource,
     railpack: Nullable(
@@ -715,9 +715,9 @@ export const sandboxStdinMaxBytes = 256 * 1024
 const RunStartBody = Type.Object(
   {
     run_id: Id('run'),
-    service_id: Nullable(Id('service')),
+    service_id: Nullable(Id('app')),
     deployment_id: Nullable(Id('deployment')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    sandbox_id: Type.Optional(Id('machine')),
     kind: RunKind,
     command: Type.Array(Type.String()),
     tty: Type.Boolean(),
@@ -766,8 +766,8 @@ const LogSelector = Type.Object(
     source: StringEnum(['runtime', 'build', 'run', 'system', 'sandbox'], {
       title: 'LogSource',
     }),
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     deployment_id: Type.Optional(Id('deployment')),
     build_id: Type.Optional(Id('build')),
     run_id: Type.Optional(Id('run')),
@@ -818,8 +818,8 @@ const LogsPageBody = Type.Object(
 
 const MetricsSubscribeBody = Type.Object(
   {
-    service_ids: Type.Optional(Type.Array(Id('service'))),
-    sandbox_ids: Type.Optional(Type.Array(Id('sandbox'))),
+    service_ids: Type.Optional(Type.Array(Id('app'))),
+    sandbox_ids: Type.Optional(Type.Array(Id('machine'))),
   },
   {
     title: 'MetricsSubscribeBody',
@@ -828,8 +828,8 @@ const MetricsSubscribeBody = Type.Object(
 
 const MetricsSampleBody = Type.Object(
   {
-    service_ids: Type.Optional(Type.Array(Id('service'))),
-    sandbox_ids: Type.Optional(Type.Array(Id('sandbox'))),
+    service_ids: Type.Optional(Type.Array(Id('app'))),
+    sandbox_ids: Type.Optional(Type.Array(Id('machine'))),
   },
   {
     title: 'MetricsSampleBody',
@@ -838,8 +838,8 @@ const MetricsSampleBody = Type.Object(
 
 const MetricSample = Type.Object(
   {
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
     container_id: Type.String(),
     at: Timestamp,
@@ -872,11 +872,11 @@ const MetricsSampleResultBody = Type.Object(
 
 export const networkServiceIdsMax = 300
 
-const NetworkServiceIds = Type.Array(Id('service'), {
+const NetworkServiceIds = Type.Array(Id('app'), {
   maxItems: networkServiceIdsMax,
 })
 
-const NetworkSandboxIds = Type.Array(Id('sandbox'), {
+const NetworkSandboxIds = Type.Array(Id('machine'), {
   maxItems: networkServiceIdsMax,
 })
 
@@ -926,8 +926,8 @@ const NetworkPeer = Type.Object(
     kind: StringEnum(networkPeerKinds, {
       title: 'NetworkPeerKind',
     }),
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
     address: Type.Optional(Type.String()),
   },
@@ -1002,8 +1002,8 @@ const NetworkConntrack = Type.Object(
 
 const NetworkSample = Type.Object(
   {
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
     at: Timestamp,
     conntrack: NetworkConntrack,
@@ -1043,8 +1043,8 @@ const NetworkCheckKind = StringEnum(networkCheckKinds, {
 const NetworkCheck = Type.Object(
   {
     kind: NetworkCheckKind,
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     address: Type.Optional(Type.String()),
     port: Type.Optional(PortNumber),
     protocol: Type.Optional(NetworkProtocolEnum),
@@ -1153,8 +1153,8 @@ const ProbeKind = StringEnum(probeKinds, {
 
 const NetworkProbeBody = Type.Object(
   {
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     kind: ProbeKind,
     to: Type.String({
       minLength: 1,
@@ -1210,8 +1210,8 @@ const ProbeTcp = Type.Object(
 
 const NetworkProbeResultBody = Type.Object(
   {
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     deployment_id: Type.Optional(Nullable(Id('deployment'))),
     kind: ProbeKind,
     to: Type.String(),
@@ -1233,8 +1233,8 @@ export const dnsLogTail = {
 
 const DnsLogBody = Type.Object(
   {
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     tail: Type.Optional(
       Type.Integer({
         minimum: 1,
@@ -1322,8 +1322,8 @@ const StreamRefBody = Type.Object(
 const ForwardOpenBody = Type.Object(
   {
     environment_id: Type.Optional(Id('environment')),
-    service_id: Type.Optional(Id('service')),
-    sandbox_id: Type.Optional(Id('sandbox')),
+    service_id: Type.Optional(Id('app')),
+    sandbox_id: Type.Optional(Id('machine')),
     port: Port,
   },
   {
@@ -1390,7 +1390,7 @@ const SecretTarget = Type.Union(
       snapshot_id: Id('volume_snapshot'),
     }),
     Type.Object({
-      sandbox_id: Id('sandbox'),
+      sandbox_id: Id('machine'),
     }),
   ],
   {
@@ -1680,7 +1680,7 @@ const VolumeBackupBody = Type.Object(
     snapshot_id: Id('volume_snapshot'),
     volume_id: Id('volume'),
     docker_name: Type.String(),
-    service_id: Nullable(Id('service')),
+    service_id: Nullable(Id('app')),
     environment_id: Nullable(Id('environment')),
     deployment_id: Nullable(Id('deployment')),
     image_ref: Nullable(Type.String()),

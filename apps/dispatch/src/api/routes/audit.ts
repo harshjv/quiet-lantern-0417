@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, like, lte, sql } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import type { Target } from '../../auth/scopes.ts'
+import { anyTarget, type Target } from '../../auth/scopes.ts'
 import { audit_event } from '../../db/schema.ts'
 import { can } from '../access.ts'
 import { ApiError } from '../errors.ts'
@@ -34,14 +34,7 @@ export const auditRoutes = (kit: Kit) => {
     '/audit',
     async ({ request, query }) => {
       const principal = await kit.principal(request)
-      const instance = can(
-        principal,
-        {
-          project_id: '*',
-          environment_id: '*',
-        },
-        'read',
-      )
+      const instance = can(principal, anyTarget, 'read')
       const since = parseTime(query.since, '/since')
       const until = parseTime(query.until, '/until')
       const page = collect(
@@ -117,12 +110,12 @@ export const auditRoutes = (kit: Kit) => {
         ),
         action: t.Optional(
           t.String({
-            description: 'Only actions starting with this, such as service. or deploy',
+            description: 'Only actions starting with this, such as app. or deploy',
           }),
         ),
         target_entity: t.Optional(
           t.String({
-            description: 'Only events on this kind of entity, such as service',
+            description: 'Only events on this kind of entity, such as app',
           }),
         ),
         target_id: t.Optional(

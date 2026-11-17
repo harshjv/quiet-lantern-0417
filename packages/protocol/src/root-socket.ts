@@ -1,7 +1,7 @@
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
 
 import { messages } from './messages.ts'
-import { ErrorBody, HostProbe, SandboxRuntime } from './model.ts'
+import { ErrorBody, HostProbe, MachineRuntime } from './model.ts'
 import { JsonObject, Nullable } from './primitives.ts'
 
 export const rootSocketVersion = 1
@@ -80,7 +80,7 @@ const SetupParams = Type.Object(
       }),
     ),
     public_address: Type.Optional(Type.String()),
-    sandbox_runtime: Type.Optional(SandboxRuntime),
+    sandbox_runtime: Type.Optional(MachineRuntime),
     litestream: Type.Optional(
       Type.Object({
         bucket: Type.String(),
@@ -163,7 +163,7 @@ const DetectedAddress = Type.Object(
 const HostProbeResult = Type.Object(
   {
     host: HostProbe,
-    runtimes: Type.Array(SandboxRuntime),
+    runtimes: Type.Array(MachineRuntime),
   },
   {
     title: 'RootSocketHostProbe',

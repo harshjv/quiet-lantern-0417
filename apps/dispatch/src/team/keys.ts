@@ -119,8 +119,8 @@ export const githubTokenOf = async (auth: AuthService, db: Db, userId: string | 
     .catch(() => null)
 }
 
-export const memberSecrets = (db: Db, keyring: Keyring, sandboxId: string) => {
-  const members = db.select().from(machine_user).where(eq(machine_user.sandbox_id, sandboxId)).all()
+export const memberSecrets = (db: Db, keyring: Keyring, machineId: string) => {
+  const members = db.select().from(machine_user).where(eq(machine_user.machine_id, machineId)).all()
   const found: { key: string; value: string }[] = []
 
   for (const member of members) {
@@ -128,7 +128,7 @@ export const memberSecrets = (db: Db, keyring: Keyring, sandboxId: string) => {
       found.push({
         key: 'STATIONLY_TOKEN',
         value: keyring.decrypt(
-          `machine_user:${member.sandbox_id}:${member.user_id}`,
+          `machine_user:${member.machine_id}:${member.user_id}`,
           member.data_key_id,
           member.token_key,
         ),
@@ -150,7 +150,7 @@ export const memberSecrets = (db: Db, keyring: Keyring, sandboxId: string) => {
   return found
 }
 
-type Scope = { project: string; environment: string }
+type Scope = { project: string; target: string }
 
 export const projectKeyEnv = (
   db: Db,

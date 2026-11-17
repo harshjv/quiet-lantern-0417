@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
-import { slugPattern, variableKeyPattern } from '../packages/protocol/src/domain.ts'
+import { keyNamePattern, slugPattern } from '../packages/protocol/src/domain.ts'
 import { defaultRegistryAddress, networkLayout } from '../packages/protocol/src/network.ts'
 import { resourcePrefix, tokenPrefix } from '../packages/protocol/src/primitives.ts'
 import { releaseConfig } from '../packages/protocol/src/release-config.ts'
@@ -100,9 +100,9 @@ const constants: Constant[] = [
     pattern: regexSource(slugPattern),
   },
   {
-    name: 'variable key pattern',
+    name: 'key name pattern',
     home: 'packages/protocol/src/domain.ts',
-    pattern: regexSource(variableKeyPattern),
+    pattern: regexSource(keyNamePattern),
   },
   {
     name: 'Dispatch port',
@@ -163,7 +163,7 @@ const exceptions: { file: string; constant: string; reason: string }[] = [
     reason: 'Hetzner box names for acceptance runs are not host resources',
   },
   {
-    file: 'installer/acceptance/rows/35-sandboxes.sh',
+    file: 'installer/acceptance/rows/35-machines.sh',
     constant: 'token prefix',
     reason: 'sly_run is the acceptance helper that runs sly, not a token',
   },

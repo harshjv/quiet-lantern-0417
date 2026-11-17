@@ -5,8 +5,10 @@ import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './h
 import { enrollFakeStation, FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
+  createApp,
+  createPreview,
   createProject,
-  createService,
+  placed,
   rows,
   seedLockfile,
   waitForDeployment,
@@ -23,7 +25,7 @@ before(async () => {
   h = await startDispatch()
   seedLockfile(h)
   station = await startFakeStation(h)
-  environmentId = (await createProject(h)).default_environment_id
+  environmentId = (await createPreview(h, (await createProject(h)).name, 'staging')).id
 })
 
 after(async () => {
@@ -35,7 +37,7 @@ const setStatus = (status: string, id = station.stationId) =>
   (
     h.db as unknown as { $client: { prepare(sql: string): { run(...p: unknown[]): unknown } } }
   ).$client
-    .prepare('update station set status = ? where id = ?')
+    .prepare('update server set status = ? where id = ?')
     .run(status, id)
 const token = () => h.admin.token
 const patch = (
@@ -45,7 +47,7 @@ const patch = (
     token: token(),
   },
 ) =>
-  h.call('PATCH', `/v1/stations/${reference}`, {
+  h.call('PATCH', `/v1/servers/${reference}`, {
     ...auth,
     body,
   })
@@ -55,7 +57,7 @@ const human = () => ({
 })
 const describeStation = async () =>
   (
-    await h.call('GET', `/v1/stations/${station.stationId}?fields=*`, {
+    await h.call('GET', `/v1/servers/${station.stationId}?fields=*`, {
       token: token(),
     })
   ).body
@@ -139,7 +141,7 @@ describe('validation', () => {
   })
 
   test('only an enrolled station can be drained', async () => {
-    const added = await h.call('POST', '/v1/stations', {
+    const added = await h.call('POST', '/v1/servers', {
       token: token(),
       body: {
         name: 'pending',
@@ -157,15 +159,15 @@ describe('validation', () => {
     assert.equal(
       rows<{ status: string }>(
         h,
-        'select status from station where id = ?',
-        added.body.station.id,
+        'select status from server where id = ?',
+        added.body.server.id,
       )[0]!.status,
       'enrolling',
     )
   })
 
   test('a scoped token without instance admin is refused', async () => {
-    const reply = await h.call('PATCH', `/v1/stations/${station.stationId}`, {
+    const reply = await h.call('PATCH', `/v1/servers/${station.stationId}`, {
       token: await scopedReadToken(),
       body: {
         concurrency_cap: 3,
@@ -200,7 +202,7 @@ const scopedReadToken = async () => {
       scopes: [
         {
           project_id: '*',
-          environment_id: '*',
+          target: '*',
           level: 'read',
         },
       ],
@@ -241,7 +243,7 @@ describe('intermittent', () => {
   })
 
   test('false on an asleep station makes it offline', async () => {
-    const added = await h.call('POST', '/v1/stations', {
+    const added = await h.call('POST', '/v1/servers', {
       token: token(),
       body: {
         name: 'napper',
@@ -249,7 +251,7 @@ describe('intermittent', () => {
       },
     })
 
-    setStatus('asleep', added.body.station.id)
+    setStatus('asleep', added.body.server.id)
     const reply = await patch(
       {
         intermittent: false,
@@ -290,7 +292,7 @@ describe('concurrency_cap', () => {
     const mark = station.generations.length
     const created = await Promise.all(
       ['cap-a', 'cap-b', 'cap-c'].map((name) =>
-        createService(h, environmentId, {
+        createApp(h, environmentId, {
           name,
           ref: 'nginx:1.27',
           ports: [
@@ -342,7 +344,7 @@ describe('draining', () => {
   let svc: any
 
   before(async () => {
-    svc = await createService(h, environmentId, {
+    svc = await createApp(h, environmentId, {
       name: 'drainee',
       ref: 'nginx:1.27',
       ports: [
@@ -372,13 +374,13 @@ describe('draining', () => {
     assert.equal(
       rows<{ draining: number }>(
         h,
-        'select draining from station where id = ?',
+        'select draining from server where id = ?',
         station.stationId,
       )[0]!.draining,
       1,
     )
     const listed = (
-      await h.call('GET', '/v1/stations', {
+      await h.call('GET', '/v1/servers', {
         token: token(),
       })
     ).body.items.find((s: { id: string }) => s.id === station.stationId)
@@ -386,22 +388,22 @@ describe('draining', () => {
     assert.equal(listed.draining, true)
   })
 
-  test('no new deployment is placed: deploy, redeploy and creating a deployed service refuse', async () => {
-    const deploy = await h.call('POST', `/v1/services/${svc.id}/deployments`, {
+  test('no new deployment is placed: deploy, redeploy and creating a deployed app refuse', async () => {
+    const deploy = await h.call('POST', `/v1/apps/${svc.id}/deployments`, {
       token: token(),
       body: {},
     })
 
     assert.equal(deploy.status, 503, deploy.text)
-    assert.equal(deploy.body.error.code, 'STATION_OFFLINE')
+    assert.equal(deploy.body.error.code, 'SERVER_OFFLINE')
     assert.equal(deploy.body.error.details.draining, true)
     assert.match(deploy.body.error.explanation, /draining/)
-    const redeploy = await h.call('POST', `/v1/services/${svc.id}/redeploy`, {
+    const redeploy = await h.call('POST', `/v1/apps/${svc.id}/redeploy`, {
       token: token(),
     })
 
-    assert.equal(redeploy.body.error.code, 'STATION_OFFLINE')
-    const created = await h.call('POST', `/v1/environments/${environmentId}/services`, {
+    assert.equal(redeploy.body.error.code, 'SERVER_OFFLINE')
+    const created = await h.call('POST', placed(h, environmentId, `apps`), {
       token: token(),
       body: {
         name: 'refused',
@@ -415,21 +417,21 @@ describe('draining', () => {
             port: 80,
           },
         ],
-        station_id: station.stationId,
+        server_id: station.stationId,
         deploy_on_create: true,
       },
     })
 
     assert.equal(created.status, 400, created.text)
-    assert.deepEqual(issuePaths(created), ['/station_id'])
-    assert.equal(rows(h, "select id from service where name = 'refused'").length, 0)
+    assert.deepEqual(issuePaths(created), ['/server_id'])
+    assert.equal(rows(h, "select id from app where name = 'refused'").length, 0)
   })
 
-  test('services that are already running keep their current deployment and stay in the generation', async () => {
+  test('apps that are already running keep their current deployment and stay in the generation', async () => {
     const doc = station.generations.at(-1)!
 
     assert.ok(svc.id in doc.services)
-    const fresh = await h.call('GET', `/v1/services/${svc.id}`, {
+    const fresh = await h.call('GET', `/v1/apps/${svc.id}`, {
       token: token(),
     })
 
@@ -443,7 +445,7 @@ describe('draining', () => {
 
     assert.equal(reply.status, 200, reply.text)
     assert.deepEqual([reply.body.status, reply.body.draining], ['online', false])
-    const deploy = await h.call('POST', `/v1/services/${svc.id}/deployments`, {
+    const deploy = await h.call('POST', `/v1/apps/${svc.id}/deployments`, {
       token: token(),
       body: {},
     })
@@ -489,20 +491,20 @@ describe('under platform.protected', () => {
     })
 
     assert.equal(reply.status, 202, reply.text)
-    assert.equal(reply.body.status, 'staged')
-    assert.equal(reply.body.environment_id, null)
-    const staged = (
-      await h.call('GET', `/v1/staged-changes/${reply.body.id}?fields=changes`, {
+    assert.equal(reply.body.status, 'waiting')
+    assert.equal(reply.body.project_id, null)
+    const waiting = (
+      await h.call('GET', `/v1/approvals/${reply.body.id}?fields=changes`, {
         token: token(),
       })
     ).body
 
     assert.deepEqual(
-      staged.changes.map((c: any) => [c.entity, c.path, c.before, c.after]),
+      waiting.changes.map((c: any) => [c.entity, c.path, c.before, c.after]),
       [
-        ['station', '/concurrency_cap', 3, 4],
-        ['station', '/draining', false, true],
-        ['station', '/intermittent', false, true],
+        ['server', '/concurrency_cap', 3, 4],
+        ['server', '/draining', false, true],
+        ['server', '/intermittent', false, true],
       ],
     )
     const after = await describeStation()
@@ -511,20 +513,28 @@ describe('under platform.protected', () => {
     assert.equal(after.draining, false)
   })
 
-  test('a token cannot accept it; a human accepts and every field applies', async () => {
-    const staged = (
-      await h.call('GET', '/v1/staged-changes?status=staged&scope=instance', {
+  test('a token cannot approve it; a human approves and every field applies', async () => {
+    const waiting = (
+      await h.call('GET', '/v1/approvals?status=waiting&scope=instance', {
         token: token(),
       })
     ).body.items[0]
-    const byToken = await h.call('POST', `/v1/staged-changes/${staged.id}/accept`, {
+    const byToken = await h.call('POST', `/v1/approvals/${waiting.id}/decision`, {
+      body: {
+        decision: 'approve',
+      },
       token: token(),
     })
 
-    assert.equal(byToken.body.error.code, 'PROTECTED_ENVIRONMENT')
-    const accepted = await h.call('POST', `/v1/staged-changes/${staged.id}/accept`, human())
+    assert.equal(byToken.body.error.code, 'HUMAN_REQUIRED')
+    const approved = await h.call('POST', `/v1/approvals/${waiting.id}/decision`, {
+      ...human(),
+      body: {
+        decision: 'approve',
+      },
+    })
 
-    assert.equal(accepted.status, 200, accepted.text)
+    assert.equal(approved.status, 200, approved.text)
     const row = await describeStation()
 
     assert.equal(row.concurrency_cap, 4)
@@ -547,9 +557,10 @@ describe('under platform.protected', () => {
     })
 
     assert.equal(reply.status, 202)
-    const rejected = await h.call('POST', `/v1/staged-changes/${reply.body.id}/reject`, {
+    const rejected = await h.call('POST', `/v1/approvals/${reply.body.id}/decision`, {
       ...human(),
       body: {
+        decision: 'reject',
         reason: 'no',
       },
     })
@@ -588,17 +599,17 @@ describe('a drain across a lost heartbeat', () => {
   const stationRow = () =>
     rows<{ status: string; draining: number }>(
       h,
-      'select status, draining from station where id = ?',
+      'select status, draining from server where id = ?',
       keys.station_id,
     )[0]!
   const backdate = () =>
     (
       h.db as unknown as { $client: { prepare(sql: string): { run(...p: unknown[]): unknown } } }
     ).$client
-      .prepare('update station set last_seen_at = ? where id = ?')
+      .prepare('update server set last_seen_at = ? where id = ?')
       .run(Date.now() - 10 * 60_000, keys.station_id)
   const placeOnWanderer = () =>
-    h.call('POST', `/v1/environments/${environmentId}/services`, {
+    h.call('POST', placed(h, environmentId, `apps`), {
       token: token(),
       body: {
         name: `placed-${Date.now()}`,
@@ -612,14 +623,14 @@ describe('a drain across a lost heartbeat', () => {
             port: 80,
           },
         ],
-        station_id: keys.station_id,
+        server_id: keys.station_id,
         deploy_on_create: true,
       },
     })
 
   before(async () => {
     url = await h.stationUrl()
-    const added = await h.call('POST', '/v1/stations', {
+    const added = await h.call('POST', '/v1/servers', {
       token: token(),
       body: {
         name,
@@ -653,7 +664,7 @@ describe('a drain across a lost heartbeat', () => {
     )
     assert.equal(stationRow().draining, 1)
     const whileOffline = (
-      await h.call('GET', `/v1/stations/${name}`, {
+      await h.call('GET', `/v1/servers/${name}`, {
         token: token(),
       })
     ).body
@@ -664,7 +675,7 @@ describe('a drain across a lost heartbeat', () => {
     h.fakeStations.push(wanderer)
     await wanderer.waitFor(() => stationRow().status === 'online', 5000, 'the station back online')
     const back = (
-      await h.call('GET', `/v1/stations/${name}`, {
+      await h.call('GET', `/v1/servers/${name}`, {
         token: token(),
       })
     ).body
@@ -676,7 +687,7 @@ describe('a drain across a lost heartbeat', () => {
     const refused = await placeOnWanderer()
 
     assert.equal(refused.status, 400, refused.text)
-    assert.deepEqual(issuePaths(refused), ['/station_id'])
+    assert.deepEqual(issuePaths(refused), ['/server_id'])
     assert.match(refused.body.error.details.issues[0].message, /draining/)
   })
 

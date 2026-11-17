@@ -17,48 +17,49 @@ import {
   type Dispatch,
 } from '../../../apps/dispatch/test/helpers/dispatch.ts'
 import {
+  createPreview,
   createProject,
   pinPlatform,
   rows,
-  waitForSandbox,
+  waitForMachine,
 } from '../../../apps/dispatch/test/helpers/seed.ts'
 
 const entry = new URL('../src/index.ts', import.meta.url).pathname
 
-const localTools = ['push_local_source', 'forward_sandbox_port']
+const localTools = ['push_local_source', 'forward_machine_port']
 
 const readTools = [
-  'list_sandboxes',
-  'get_sandbox',
-  'list_sandbox_variables',
-  'get_sandbox_resolved_variables',
-  'get_sandbox_connections',
-  'get_sandbox_dns_log',
-  'list_sandbox_snapshots',
-  'list_environment_sandbox_snapshots',
+  'list_machines',
+  'get_machine',
+  'list_machine_keys',
+  'get_machine_resolved_keys',
+  'get_machine_connections',
+  'get_machine_dns_log',
+  'list_machine_snapshots',
+  'list_project_machine_snapshots',
   'get_logs',
   'wait_for_run',
 ]
 
 const writeTools = [
-  'create_sandbox',
-  'update_sandbox',
-  'start_sandbox',
-  'stop_sandbox',
-  'sandbox_exec',
-  'set_sandbox_variables',
-  'probe_sandbox_network',
-  'snapshot_sandbox',
+  'create_machine',
+  'update_machine',
+  'start_machine',
+  'stop_machine',
+  'machine_exec',
+  'set_machine_keys',
+  'probe_machine_network',
+  'snapshot_machine',
 ]
 
-const destroyTools = ['delete_sandbox', 'delete_sandbox_snapshot']
+const destroyTools = ['delete_machine', 'delete_machine_snapshot']
 
 let h: Dispatch
 let home: string
 let url: string
 let close: () => Promise<void>
 let client: Client
-let project: { id: string; default_environment_id: string }
+let previewId: string
 let deployToken: string
 let station: Awaited<ReturnType<typeof startFakeStation>>
 
@@ -127,17 +128,18 @@ before(async () => {
   home = mkdtempSync(join(tmpdir(), 'sly-mcp-sbx-'))
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   station = await startFakeStation(h, 'station-1', {
-    sandboxes: {
+    machines: {
       runOutput: (command, vars) => [
         `ran ${command.join(' ')}`,
         ...Object.entries(vars).map(([key, value]) => `${key}=${value}`),
       ],
     },
   })
-  project = await createProject(h, 'alpha')
+  await createProject(h, 'alpha')
+  previewId = (await createPreview(h, 'alpha', 'staging')).id
   ;({ url, close } = await serveOverHttp(h, {
     attach: true,
   }))
@@ -159,7 +161,7 @@ before(async () => {
     [
       {
         project_id: '*',
-        environment_id: '*',
+        target: '*',
         level: 'deploy',
       },
     ],
@@ -184,7 +186,7 @@ describe('tool listing', () => {
     assert.deepEqual(names, [...(await remoteTools()), ...localTools])
   })
 
-  test('the generated sandbox tools carry the annotations of their method', async () => {
+  test('the generated machine tools carry the annotations of their method', async () => {
     const by = new Map((await client.listTools()).tools.map((t) => [t.name, t]))
 
     for (const name of readTools) {
@@ -218,7 +220,7 @@ describe('tool listing', () => {
     )
   })
 
-  test('the remote /mcp lists the generated sandbox tools but neither client-local tool', async () => {
+  test('the remote /mcp lists the generated machine tools but neither client-local tool', async () => {
     const remote = await remoteTools()
 
     for (const name of [...readTools, ...writeTools, ...destroyTools]) {
@@ -234,9 +236,10 @@ describe('tool listing', () => {
 describe('tool calls', () => {
   let id: string
 
-  test('create_sandbox returns what REST returns, and an idempotency_key replays', async () => {
-    const first = await ok('create_sandbox', {
-      environment: 'alpha/production',
+  test('create_machine returns what REST returns, and an idempotency_key replays', async () => {
+    const first = await ok('create_machine', {
+      project: 'alpha',
+      preview: 'staging',
       name: 'agent-box',
       ttl_s: 7200,
       idempotency_key: 'mcp-sbx-1',
@@ -245,46 +248,40 @@ describe('tool calls', () => {
     assert.equal(first.name, 'agent-box')
     assert.equal(first.ttl_s, 7200)
     id = first.id
-    const again = await ok('create_sandbox', {
-      environment: 'alpha/production',
+    const again = await ok('create_machine', {
+      project: 'alpha',
+      preview: 'staging',
       name: 'agent-box',
       ttl_s: 7200,
       idempotency_key: 'mcp-sbx-1',
     })
 
     assert.equal(again.id, id)
-    const rest = await h.call(
-      'GET',
-      `/v1/environments/${project.default_environment_id}/sandboxes`,
-      {
-        token: h.admin.token,
-      },
-    )
+    const rest = await h.call('GET', `/v1/projects/alpha/machines?preview=${previewId}`, {
+      token: h.admin.token,
+    })
 
     assert.equal(rest.body.items.filter((s: any) => s.name === 'agent-box').length, 1)
-    await waitForSandbox(h, id, 'running')
+    await waitForMachine(h, id, 'running')
   })
 
-  test('list_sandboxes matches REST, and get_sandbox resolves a slug path', async () => {
-    const listed = await ok('list_sandboxes', {
-      environment: 'alpha/production',
+  test('list_machines matches REST, and get_machine resolves a slug path', async () => {
+    const listed = await ok('list_machines', {
+      project: 'alpha',
+      preview: 'staging',
     })
-    const rest = await h.call(
-      'GET',
-      `/v1/environments/${project.default_environment_id}/sandboxes`,
-      {
-        token: h.admin.token,
-      },
-    )
+    const rest = await h.call('GET', `/v1/projects/alpha/machines?preview=${previewId}`, {
+      token: h.admin.token,
+    })
 
     assert.deepEqual(listed, rest.body)
-    const one = await ok('get_sandbox', {
-      sandbox: 'alpha/production/agent-box',
+    const one = await ok('get_machine', {
+      machine: 'alpha/staging/agent-box',
     })
 
     assert.equal(one.id, id)
-    const withEgress = await ok('get_sandbox', {
-      sandbox: id,
+    const withEgress = await ok('get_machine', {
+      machine: id,
       fields: 'egress',
     })
 
@@ -292,17 +289,17 @@ describe('tool calls', () => {
   })
 
   test('an API refusal comes back as an error result carrying the envelope', async () => {
-    const result = await call('stop_sandbox', {
-      sandbox: 'sbx_01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    const result = await call('stop_machine', {
+      machine: 'sbx_01ARZ3NDEKTSV4RRFFQ69G5FAV',
     })
 
     assert.equal(result.isError, true)
     assert.equal(JSON.parse(result.content[0]!.text).error.code, 'NOT_FOUND')
   })
 
-  test('sandbox_exec creates the run and wait_for_run follows it to done with the output as untrusted data', async () => {
-    const created = await ok('sandbox_exec', {
-      sandbox: id,
+  test('machine_exec creates the run and wait_for_run follows it to done with the output as untrusted data', async () => {
+    const created = await ok('machine_exec', {
+      machine: id,
       command: ['echo', 'hi'],
       env: {
         CI: '1',
@@ -318,7 +315,7 @@ describe('tool calls', () => {
 
     assert.equal(run.done, true)
     assert.equal(run.status, 'succeeded')
-    assert.equal(run.output.untrusted.source, 'sandbox exec output')
+    assert.equal(run.output.untrusted.source, 'machine exec output')
     assert.match(run.output.untrusted.text, /ran echo hi/)
     assert.ok(station.secrets.some((s) => s.purpose === 'run' && s.values.CI === '1'))
     const stored = JSON.stringify(rows(h, 'select * from run'))
@@ -327,8 +324,8 @@ describe('tool calls', () => {
   })
 
   test('wait_for_run returns done false when timeout_s passes first, with progress, and the run keeps going', async () => {
-    const created = await ok('sandbox_exec', {
-      sandbox: id,
+    const created = await ok('machine_exec', {
+      machine: id,
       command: ['sleep', '100'],
       wait_s: 0,
     })
@@ -358,36 +355,36 @@ describe('tool calls', () => {
     assert.ok(['queued', 'running'].includes(run.body.status))
   })
 
-  test('set_sandbox_variables and the variable reads never expose values, and exec output is redacted', async () => {
-    const set = await ok('set_sandbox_variables', {
-      sandbox: id,
+  test('set_machine_keys and the key reads never expose values, and exec output is redacted', async () => {
+    const set = await ok('set_machine_keys', {
+      machine: id,
       set: [
         {
-          key: 'GH_TOKEN',
+          name: 'GH_TOKEN',
           kind: 'literal',
           value: 'ghp_supersecretvalue123',
         },
       ],
     })
 
-    assert.equal(set.variables[0].key, 'GH_TOKEN')
-    const listed = await ok('list_sandbox_variables', {
-      sandbox: id,
+    assert.equal(set.keys[0].name, 'GH_TOKEN')
+    const listed = await ok('list_machine_keys', {
+      machine: id,
     })
 
     assert.equal(listed.items.length, 1)
     assert.ok(!JSON.stringify(listed).includes('ghp_supersecretvalue123'))
-    const resolved = await ok('get_sandbox_resolved_variables', {
-      sandbox: id,
+    const resolved = await ok('get_machine_resolved_keys', {
+      machine: id,
     })
 
-    assert.equal(resolved.variables[0].key, 'GH_TOKEN')
-    const sealed = await h.call('PATCH', `/v1/sandboxes/${id}/variables`, {
+    assert.equal(resolved.keys[0].name, 'GH_TOKEN')
+    const sealed = await h.call('PATCH', `/v1/machines/${id}/keys`, {
       token: h.admin.token,
       body: {
         set: [
           {
-            key: 'SEALED_TOKEN',
+            name: 'SEALED_TOKEN',
             kind: 'sealed',
             value: 'ghp_sealedsecretvalue456',
           },
@@ -399,10 +396,10 @@ describe('tool calls', () => {
     await station.waitFor(
       () => station.secrets.find((s) => s.purpose === 'sandbox' && s.values.SEALED_TOKEN),
       5000,
-      'sandbox secrets',
+      'machine secrets',
     )
-    const created = await ok('sandbox_exec', {
-      sandbox: id,
+    const created = await ok('machine_exec', {
+      machine: id,
       command: ['printenv'],
       wait_s: 0,
     })
@@ -416,21 +413,21 @@ describe('tool calls', () => {
     assert.ok(exec.structuredContent.output.untrusted.text.includes('ghp_supersecretvalue123'))
   })
 
-  test('get_logs, get_sandbox_connections and get_sandbox_dns_log return untrusted data', async () => {
+  test('get_logs, get_machine_connections and get_machine_dns_log return untrusted data', async () => {
     const logs = await ok('get_logs', {
-      sandbox: id,
+      machine: id,
     })
 
-    assert.equal(logs.untrusted.source, 'sandbox log')
+    assert.equal(logs.untrusted.source, 'machine log')
     assert.ok(logs.untrusted.lines.some((line: any) => /sandbox init started/.test(line.text)))
-    const connections = await ok('get_sandbox_connections', {
-      sandbox: id,
+    const connections = await ok('get_machine_connections', {
+      machine: id,
     })
 
     assert.ok(connections.connections.length >= 1)
     assert.equal(connections.refused[0].path, 'domain_not_allowed')
-    const dns = await ok('get_sandbox_dns_log', {
-      sandbox: id,
+    const dns = await ok('get_machine_dns_log', {
+      machine: id,
     })
 
     assert.ok(dns.untrusted.entries.some((e: any) => e.refused === 'domain_not_allowed'))
@@ -439,33 +436,34 @@ describe('tool calls', () => {
     assert.equal(bad.isError, true)
   })
 
-  test('explain_network and probe_sandbox_network answer from the sandbox', async () => {
+  test('explain_network and probe_machine_network answer from the machine', async () => {
     const explained = await ok('explain_network', {
-      environment: 'alpha/production',
+      project: 'alpha',
+      preview: 'staging',
       from: id,
       to: 'registry.npmjs.org:443',
     })
 
     assert.equal(explained.entity.to, 'registry.npmjs.org:443/tcp')
     assert.ok(explained.hops.some((hop: any) => hop.hop === 'firewall'))
-    const probed = await ok('probe_sandbox_network', {
-      sandbox: id,
+    const probed = await ok('probe_machine_network', {
+      machine: id,
       to: 'registry.npmjs.org',
       kind: 'dns',
     })
 
     assert.equal(probed.dns.rcode, 'NOERROR')
-    assert.equal(probed.sandbox.length > 0, true)
+    assert.equal(probed.machine.length > 0, true)
   })
 
-  test('forward_sandbox_port listens on loopback, returns the same listener twice and echoes through the station', async () => {
-    const first = await ok('forward_sandbox_port', {
-      sandbox: 'alpha/production/agent-box',
+  test('forward_machine_port listens on loopback, returns the same listener twice and echoes through the station', async () => {
+    const first = await ok('forward_machine_port', {
+      machine: 'alpha/staging/agent-box',
       port: 8080,
       local_port: 0,
     })
-    const second = await ok('forward_sandbox_port', {
-      sandbox: id,
+    const second = await ok('forward_machine_port', {
+      machine: id,
       port: 8080,
     })
 
@@ -487,29 +485,31 @@ describe('tool calls', () => {
     assert.equal(echoed, 'HELLO')
   })
 
-  test('snapshot_sandbox, the snapshot lists, a fork through create_sandbox and delete_sandbox_snapshot', async () => {
-    const snap = await ok('snapshot_sandbox', {
-      sandbox: id,
+  test('snapshot_machine, the snapshot lists, a fork through create_machine and delete_machine_snapshot', async () => {
+    const snap = await ok('snapshot_machine', {
+      machine: id,
       name: 'before',
     })
 
     assert.equal(snap.status, 'ready')
-    const listed = await ok('list_sandbox_snapshots', {
-      sandbox: id,
+    const listed = await ok('list_machine_snapshots', {
+      machine: id,
     })
 
     assert.deepEqual(
       listed.items.map((s: any) => s.id),
       [snap.id],
     )
-    const byEnv = await ok('list_environment_sandbox_snapshots', {
-      environment: 'alpha/production',
+    const byEnv = await ok('list_project_machine_snapshots', {
+      project: 'alpha',
+      preview: 'staging',
     })
 
     assert.equal(byEnv.items.length, 1)
     assert.equal(listed.items[0].name, 'before')
-    const fork = await ok('create_sandbox', {
-      environment: 'alpha/production',
+    const fork = await ok('create_machine', {
+      project: 'alpha',
+      preview: 'staging',
       from: {
         snapshot: snap.id,
       },
@@ -517,49 +517,49 @@ describe('tool calls', () => {
     })
 
     assert.equal(fork.forked_from.snapshot_id, snap.id)
-    const removed = await ok('delete_sandbox_snapshot', {
+    const removed = await ok('delete_machine_snapshot', {
       id: snap.id,
     })
 
     assert.equal(removed.deleted, true)
   })
 
-  test('update_sandbox, stop_sandbox, start_sandbox and delete_sandbox follow the REST states', async () => {
-    const updated = await ok('update_sandbox', {
-      sandbox: id,
+  test('update_machine, stop_machine, start_machine and delete_machine follow the REST states', async () => {
+    const updated = await ok('update_machine', {
+      machine: id,
       ttl_s: 900,
     })
 
     assert.equal(updated.ttl_s, 900)
     assert.equal(updated.warnings.length, 0)
-    const stopped = await ok('stop_sandbox', {
-      sandbox: id,
+    const stopped = await ok('stop_machine', {
+      machine: id,
     })
 
     assert.equal(stopped.desired_state, 'stopped')
-    await waitForSandbox(h, id, 'stopped')
-    const started = await ok('start_sandbox', {
-      sandbox: id,
+    await waitForMachine(h, id, 'stopped')
+    const started = await ok('start_machine', {
+      machine: id,
       ttl_s: 600,
     })
 
     assert.equal(started.ttl_s, 600)
-    await waitForSandbox(h, id, 'running')
-    const deleted = await ok('delete_sandbox', {
-      sandbox: id,
+    await waitForMachine(h, id, 'running')
+    const deleted = await ok('delete_machine', {
+      machine: id,
     })
 
     assert.equal(deleted.deleted, true)
     assert.equal(deleted.snapshots_kept, 0)
   })
 
-  test('grow_sandbox_storage is instance admin: a deploy-level token neither lists nor calls it', async () => {
+  test('grow_machine_storage is instance admin: a deploy-level token neither lists nor calls it', async () => {
     const names = (await client.listTools()).tools.map((t) => t.name)
 
-    assert.ok(!names.includes('grow_sandbox_storage'))
+    assert.ok(!names.includes('grow_machine_storage'))
     const refused = await client
       .callTool({
-        name: 'grow_sandbox_storage',
+        name: 'grow_machine_storage',
         arguments: {
           station: 'station-1',
           size_bytes: 1,
@@ -574,21 +574,17 @@ describe('tool calls', () => {
   })
 
   test('push_local_source uploads a directory and deploys it through the generated deploy', async () => {
-    const created = await h.call(
-      'POST',
-      `/v1/environments/${project.default_environment_id}/services`,
-      {
-        token: h.admin.token,
-        body: {
-          name: 'pushed',
-          kind: 'worker',
-          source: {
-            type: 'local',
-          },
-          deploy_on_create: false,
+    const created = await h.call('POST', `/v1/projects/alpha/apps?preview=${previewId}`, {
+      token: h.admin.token,
+      body: {
+        name: 'pushed',
+        kind: 'worker',
+        source: {
+          type: 'local',
         },
+        deploy_on_create: false,
       },
-    )
+    })
 
     assert.equal(created.status, 201, created.text)
     const dir = join(home, 'app')
@@ -598,13 +594,13 @@ describe('tool calls', () => {
     })
     writeFileSync(join(dir, 'Dockerfile'), 'FROM scratch\n')
     const deployed = await ok('push_local_source', {
-      service: 'alpha/production/pushed',
+      app: 'alpha/staging/pushed',
       path: dir,
       idempotency_key: 'mcp-push-1',
     })
 
-    assert.equal(deployed.service_id, created.body.id)
-    const blobs = await h.call('GET', `/v1/services/${created.body.id}/deployments`, {
+    assert.equal(deployed.app_id, created.body.id)
+    const blobs = await h.call('GET', `/v1/apps/${created.body.id}/deployments`, {
       token: h.admin.token,
     })
 
@@ -613,7 +609,7 @@ describe('tool calls', () => {
       [deployed.id],
     )
     const missing = await call('push_local_source', {
-      service: 'alpha/production/nope',
+      app: 'alpha/staging/nope',
       path: dir,
     })
 

@@ -11,9 +11,9 @@ import {
   type Issue as LocatedIssue,
   type ManifestDoc,
 } from '@stationly/manifest-schema'
-import { JsonObject } from '@stationly/protocol'
+import { JsonObject, Nullable } from '@stationly/protocol'
 
-import { project, service } from '../../db/schema.ts'
+import { app, project } from '../../db/schema.ts'
 import { exportManifest, manifestYaml } from '../../manifest/export.ts'
 import { planManifest, requireDiffLevel } from '../../manifest/plan.ts'
 import { seesProject } from '../access.ts'
@@ -22,13 +22,17 @@ import { ApiError } from '../errors.ts'
 import { parseFields, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import {
-  environmentInProject,
+  isProduction,
+  previewIdOf,
+  previewInProject,
   projectByRef,
-  type EnvironmentRow,
+  scopeOf,
+  targetInProject,
   type ProjectRow,
+  type TargetRow,
 } from '../lookup.ts'
 import type { TargetInput } from '../route-meta.ts'
-import { Actor, Change, Deployment, extend, replies, Staged } from '../shapes.ts'
+import { Actor, ApprovalDetail, Change, Deployment, extend, replies } from '../shapes.ts'
 
 import { respond } from './services.ts'
 
@@ -47,9 +51,8 @@ const Unmanaged = Type.Object(
   {
     entity: Type.String(),
     id: Type.String(),
-    service: Type.Optional(Type.String()),
+    app: Type.Optional(Type.String()),
     name: Type.Optional(Type.String()),
-    key: Type.Optional(Type.String()),
     hostname: Type.Optional(Type.String()),
     port: Type.Optional(Type.Integer()),
     mount_path: Type.Optional(Type.String()),
@@ -67,10 +70,11 @@ const planned = {
 const ManifestPlan = Type.Object(
   {
     id: Type.Null(),
-    environment_id: Type.String(),
-    status: Type.Union([Type.Literal('plan'), Type.Literal('accepted')]),
+    project_id: Type.String(),
+    preview_id: Nullable(Type.String()),
+    status: Type.Union([Type.Literal('plan'), Type.Literal('approved')]),
     source: Type.Literal('manifest'),
-    actor: Actor,
+    requested_by: Actor,
     changes: Type.Array(Change),
     refs: Type.Record(Type.String(), Type.String()),
     deployments: Type.Array(Type.String()),
@@ -81,12 +85,12 @@ const ManifestPlan = Type.Object(
   },
 )
 
-const ManifestApplied = extend(Staged, {
+const ManifestApplied = extend(ApprovalDetail, {
   deployments: Type.Array(Deployment),
   ...planned,
 })
 
-const ManifestStaged = extend(Staged, planned)
+const ManifestWaiting = extend(ApprovalDetail, planned)
 
 const LocatedIssueSchema = Type.Object(
   {
@@ -155,7 +159,7 @@ export const manifestRoutes = (kit: Kit) => {
   const evaluate = async (
     input: unknown,
     proj: ProjectRow,
-    env: EnvironmentRow,
+    place: TargetRow,
     options: { prune: boolean; allowUnresolved: boolean },
   ) => {
     const parsed = validateSchema(input)
@@ -169,7 +173,7 @@ export const manifestRoutes = (kit: Kit) => {
       db,
       keyring,
       project: proj,
-      environment: env,
+      place,
       doc,
       prune: options.prune,
       allowUnresolved: options.allowUnresolved,
@@ -185,16 +189,18 @@ export const manifestRoutes = (kit: Kit) => {
   }
 
   const target = (proj: ProjectRow, ref: string | undefined) => {
-    const env = environmentInProject(db, proj, ref ?? proj.default_environment_id)
+    const place = targetInProject(db, proj, ref)
 
     return {
-      env,
-      scope: {
-        project_id: proj.id,
-        environment_id: env.id,
-      },
+      place,
+      scope: scopeOf(place),
     }
   }
+
+  const placeIds = (place: TargetRow) => ({
+    project_id: place.project_id,
+    preview_id: previewIdOf(place),
+  })
 
   return kit
     .router('manifest', '')
@@ -237,13 +243,15 @@ export const manifestRoutes = (kit: Kit) => {
         body,
         set,
       }): Promise<
-        Static<typeof ManifestPlan> | Static<typeof ManifestApplied> | Static<typeof ManifestStaged>
+        | Static<typeof ManifestPlan>
+        | Static<typeof ManifestApplied>
+        | Static<typeof ManifestWaiting>
       > => {
         const call = await kit.call(request)
         const proj = projectByRef(db, params.project)
-        const { env, scope } = target(proj, body.environment)
+        const { place, scope } = target(proj, body.preview)
         const planOnly = body.plan ?? true
-        const { plan, locate } = await evaluate(body.manifest, proj, env, {
+        const { plan, locate } = await evaluate(body.manifest, proj, place, {
           prune: body.prune ?? false,
           allowUnresolved: body.allow_unresolved ?? true,
         })
@@ -270,10 +278,10 @@ export const manifestRoutes = (kit: Kit) => {
 
           return {
             id: null,
-            environment_id: env.id,
+            ...placeIds(place),
             status: 'plan' as const,
             source: 'manifest' as const,
-            actor: call.principal.actor,
+            requested_by: call.principal.actor,
             changes: stripValues(changes),
             refs: {},
             deployments: [],
@@ -284,7 +292,7 @@ export const manifestRoutes = (kit: Kit) => {
                   {
                     code: 'DOWNTIME_EXPECTED',
                     explanation:
-                      'A service with strategy = replace stops its old container before the new one is healthy.',
+                      'An app with strategy = replace stops its old container before the new one is healthy.',
                   },
                 ]
               : warnings,
@@ -296,10 +304,10 @@ export const manifestRoutes = (kit: Kit) => {
         if (plan.set.empty) {
           return {
             id: null,
-            environment_id: env.id,
-            status: 'accepted' as const,
+            ...placeIds(place),
+            status: 'approved' as const,
             source: 'manifest' as const,
-            actor: call.principal.actor,
+            requested_by: call.principal.actor,
             changes: [],
             refs: {},
             deployments: [],
@@ -312,8 +320,8 @@ export const manifestRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: env,
-            protect: env.protected,
+            target: place,
+            protect: isProduction(place),
             source: 'manifest',
           },
           plan.set,
@@ -321,7 +329,7 @@ export const manifestRoutes = (kit: Kit) => {
 
         if (!result.applied) {
           return {
-            ...kit.stagedBody(result, set),
+            ...kit.approvalBody(result, set),
             unmanaged: plan.unmanaged,
             warnings,
           }
@@ -332,7 +340,7 @@ export const manifestRoutes = (kit: Kit) => {
           set,
           result,
           () => ({
-            ...select(kit.views.staged, result.staged, parseFields('changes,refs,deployments')),
+            ...select(kit.views.approval, result.approval, parseFields('changes,refs,deployments')),
             unmanaged: plan.unmanaged,
           }),
           warnings,
@@ -341,21 +349,18 @@ export const manifestRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'apply_manifest',
-          summary: 'Validate and plan or apply a Manifest against one environment',
+          summary: 'Validate and plan or apply a Manifest against production or one preview',
           level: 'deploy',
           cli: false,
           target: ({ params, body }: TargetInput) =>
-            target(
-              projectByRef(db, params.project!),
-              (body as { environment?: string }).environment,
-            ).scope,
+            target(projectByRef(db, params.project!), (body as { preview?: string }).preview).scope,
         },
         body: t.Object(
           {
             manifest: ManifestInput,
-            environment: t.Optional(
+            preview: t.Optional(
               t.String({
-                description: 'Environment id or name; the project default when omitted',
+                description: 'A preview by id or name; production when omitted',
               }),
             ),
             plan: t.Optional(
@@ -380,7 +385,7 @@ export const manifestRoutes = (kit: Kit) => {
         ),
         response: replies({
           200: Type.Union([ManifestPlan, ManifestApplied]),
-          202: ManifestStaged,
+          202: ManifestWaiting,
         }),
       },
     )
@@ -414,8 +419,8 @@ export const manifestRoutes = (kit: Kit) => {
           }
         }
 
-        const { env } = target(proj, body.environment)
-        const { plan, locate } = await evaluate(body.manifest, proj, env, {
+        const { place } = target(proj, body.preview)
+        const { plan, locate } = await evaluate(body.manifest, proj, place, {
           prune: false,
           allowUnresolved: true,
         })
@@ -437,7 +442,7 @@ export const manifestRoutes = (kit: Kit) => {
         body: t.Object(
           {
             manifest: ManifestInput,
-            environment: t.Optional(t.String()),
+            preview: t.Optional(t.String()),
           },
           {
             additionalProperties: false,
@@ -452,8 +457,8 @@ export const manifestRoutes = (kit: Kit) => {
       '/v1/projects/:project/manifest',
       ({ request, params, query }) => {
         const proj = projectByRef(db, params.project)
-        const env = query.environment ? environmentInProject(db, proj, query.environment) : null
-        const doc = exportManifest(db, keyring, proj, env)
+        const place = query.preview ? previewInProject(db, proj, query.preview) : null
+        const doc = exportManifest(db, keyring, proj, place)
 
         if ((request.headers.get('accept') ?? '').includes('application/json')) {
           return doc
@@ -468,7 +473,12 @@ export const manifestRoutes = (kit: Kit) => {
           level: 'read',
           cli: false,
           target: ({ params, query }: TargetInput) =>
-            target(projectByRef(db, params.project!), query.environment).scope,
+            query.preview
+              ? target(projectByRef(db, params.project!), query.preview).scope
+              : {
+                  project_id: projectByRef(db, params.project!).id,
+                  target: '*',
+                },
         },
         mapResponse: ({ responseValue, set }) => {
           if (typeof responseValue !== 'string') {
@@ -484,10 +494,10 @@ export const manifestRoutes = (kit: Kit) => {
           })
         },
         query: t.Object({
-          environment: t.Optional(
+          preview: t.Optional(
             t.String({
               description:
-                'Export this environment as the base; omit to write every environment as overrides',
+                'Export this preview alone; omit to export production with named previews as overrides',
             }),
           ),
         }),
@@ -514,14 +524,14 @@ const isReplace = (
     return false
   }
 
-  const added = changes.find((c) => c.op === 'add' && c.entity === 'service' && c.ref === parent)
+  const added = changes.find((c) => c.op === 'add' && c.entity === 'app' && c.ref === parent)
 
   if (added) {
     return (added.after as { strategy?: string }).strategy === 'replace'
   }
 
   const changed = changes.find(
-    (c) => c.op === 'update' && c.entity === 'service' && c.id === parent && c.path === '/strategy',
+    (c) => c.op === 'update' && c.entity === 'app' && c.id === parent && c.path === '/strategy',
   )
 
   if (changed) {
@@ -531,10 +541,10 @@ const isReplace = (
   return (
     db
       .select({
-        strategy: service.strategy,
+        strategy: app.strategy,
       })
-      .from(service)
-      .where(eq(service.id, parent))
+      .from(app)
+      .where(eq(app.id, parent))
       .get()?.strategy === 'replace'
   )
 }

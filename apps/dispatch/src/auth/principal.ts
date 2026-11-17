@@ -163,7 +163,9 @@ const isScopeList = (value: unknown): value is Scope[] =>
       item !== null &&
       typeof item === 'object' &&
       typeof (item as Scope).project_id === 'string' &&
-      typeof (item as Scope).environment_id === 'string' &&
+      typeof (item as Scope).target === 'string' &&
+      ((item as Scope).preview_id === undefined ||
+        typeof (item as Scope).preview_id === 'string') &&
       tokenLevelValues.includes((item as Scope).level),
   )
 

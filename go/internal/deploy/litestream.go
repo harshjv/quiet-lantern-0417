@@ -27,6 +27,7 @@ const (
 	litestreamTaskTimeout = 5 * time.Minute
 	litestreamLtxTimeout  = 45 * time.Second
 	litestreamStopS       = 30
+	litestreamHealthWait  = time.Second
 	configDir             = "config"
 	litestreamConfigFile  = "litestream.yml"
 	dispatchUID           = 1000
@@ -144,6 +145,30 @@ func ownDispatchVolume(ctx context.Context, dc *docker.Client) error {
 	return os.Chown(v.Mountpoint, dispatchUID, dispatchGID)
 }
 
+func restoreDispatchDatabase(ctx context.Context, dc *docker.Client, l dispatchLaunch) error {
+	plan, err := l.litestreamPlan()
+	if err != nil || plan == nil {
+		return err
+	}
+	if err := plan.writeConfig(); err != nil {
+		return fmt.Errorf("write %s: %w", plan.files.ConfigHost, err)
+	}
+	if err := dc.EnsureImage(ctx, plan.image); err != nil {
+		return fmt.Errorf("pull %s: %w", plan.image, err)
+	}
+	if err := ownDispatchVolume(ctx, dc); err != nil {
+		return fmt.Errorf("give the Dispatch volume to uid %d: %w", dispatchUID, err)
+	}
+	started := time.Now()
+	restore := docker.LitestreamTask(l.stationID, plan.image, plan.files, plan.env, "restore", []string{"-if-db-not-exists", "-if-replica-exists"}, docker.DispatchDatabase)
+	out, err := runLitestreamTask(ctx, dc, restore, l.stateDir, litestreamTaskTimeout)
+	if err != nil {
+		return fmt.Errorf("litestream restore: %w", err)
+	}
+	l.log.Info("Litestream restore finished", "took_ms", time.Since(started).Milliseconds(), "bucket", plan.host.Bucket, "output", lastLines(out, 3, " | "))
+	return nil
+}
+
 func ensureLitestream(ctx context.Context, dc *docker.Client, l dispatchLaunch) error {
 	plan, err := l.litestreamPlan()
 	if err != nil {
@@ -178,16 +203,6 @@ func ensureLitestream(ctx context.Context, dc *docker.Client, l dispatchLaunch) 
 	if err := dc.EnsureImage(ctx, plan.image); err != nil {
 		return fmt.Errorf("pull %s: %w", plan.image, err)
 	}
-	if err := ownDispatchVolume(ctx, dc); err != nil {
-		return fmt.Errorf("give the Dispatch volume to uid %d: %w", dispatchUID, err)
-	}
-	started := time.Now()
-	restore := docker.LitestreamTask(l.stationID, plan.image, plan.files, plan.env, "restore", []string{"-if-db-not-exists", "-if-replica-exists"}, docker.DispatchDatabase)
-	out, err := runLitestreamTask(ctx, dc, restore, l.stateDir, litestreamTaskTimeout)
-	if err != nil {
-		return fmt.Errorf("litestream restore: %w", err)
-	}
-	l.log.Info("Litestream restore finished", "took_ms", time.Since(started).Milliseconds(), "bucket", plan.host.Bucket, "output", lastLines(out, 3, " | "))
 	id, err := dc.CreateContainer(ctx, spec.Create)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", spec.Name, err)
@@ -206,6 +221,9 @@ func lastLines(s string, n int, sep string) string {
 
 func (s *Station) ensureLitestream(ctx context.Context) {
 	if p := s.procs["litestream"]; p != nil && p.Running {
+		return
+	}
+	if _, err := dispatchHealthy(ctx, litestreamHealthWait); err != nil {
 		return
 	}
 	if err := ensureLitestream(ctx, s.docker, s.dispatchLaunch()); err != nil {

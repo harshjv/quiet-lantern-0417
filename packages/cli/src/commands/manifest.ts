@@ -56,7 +56,7 @@ const apply = async (
       })
       .manifest.apply.post({
         manifest: text,
-        environment: run.selection.environment,
+        preview: run.selection.preview,
         plan: Boolean(options.plan),
         prune: Boolean(options.prune),
         allow_unresolved: options.allowUnresolved,
@@ -81,7 +81,9 @@ export const manifestCommands = (program: Program) => {
   const manifest = group(program, 'manifest')
 
   applyOptions(
-    manifest.command('apply').description('Plan or apply a Manifest against one environment'),
+    manifest
+      .command('apply')
+      .description('Plan or apply a Manifest against production, or one preview with --preview'),
   )
   manifest
     .command('export')
@@ -108,7 +110,7 @@ export const manifestCommands = (program: Program) => {
                 })
                 .manifest.get({
                   query: {
-                    environment: run.selection.environment,
+                    preview: run.selection.preview,
                   },
                   headers: {
                     accept: 'application/json',
@@ -125,7 +127,7 @@ export const manifestCommands = (program: Program) => {
             })
             .manifest.get({
               query: {
-                environment: run.selection.environment,
+                preview: run.selection.preview,
               },
               headers: {
                 accept: 'text/yaml',
@@ -176,7 +178,7 @@ export const manifestCommands = (program: Program) => {
           await send(
             run.api.v1.manifest.validate.post({
               manifest: text,
-              environment: run.selection.environment,
+              preview: run.selection.preview,
             }),
           )
         ).data

@@ -6,8 +6,8 @@ import { eq } from 'drizzle-orm'
 import type { MessageBody } from '@stationly/protocol'
 
 import { newId } from '../src/db/ids.ts'
-import { audit_event, event, setting, station, volume, volume_snapshot } from '../src/db/schema.ts'
-import { setVariable } from '../src/secrets/variables.ts'
+import { audit_event, event, server, setting, volume, volume_snapshot } from '../src/db/schema.ts'
+import { setKey } from '../src/secrets/variables.ts'
 import {
   BackupError,
   backupPlan,
@@ -19,7 +19,7 @@ import {
 import { endpointIssue, s3TargetIssues } from '../src/volumes/s3-target.ts'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
-import { createProject, createService, seedLockfile } from './helpers/seed.ts'
+import { createApp, createProject, productionId, seedLockfile } from './helpers/seed.ts'
 
 const accessKey = 'AKIAEXAMPLEKEY12345'
 const secretKey = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
@@ -33,7 +33,7 @@ const target = {
   endpoint: 'http://10.0.0.5:9000',
   bucket: 'my-backups',
   prefix: 'prod/volumes',
-  credentials_variable: 'BACKUP_S3',
+  credentials_key: 'BACKUP_S3',
 }
 
 type Sent = { station: string; type: string; body: any }
@@ -105,9 +105,9 @@ describe('S3 volume backup targets', () => {
       .run()
 
   const setCredentials = (value: string, sealed = true) =>
-    setVariable(h.db, h.deps.keyring, {
+    setKey(h.db, h.deps.keyring, {
       scope: 'global',
-      key: 'BACKUP_S3',
+      name: 'BACKUP_S3',
       value,
       sealed,
       actor,
@@ -126,7 +126,7 @@ describe('S3 volume backup targets', () => {
     const project = await createProject(h, 'shop')
 
     projectId = project.id
-    const db = await createService(h, project.default_environment_id, {
+    const db = await createApp(h, productionId(h, project.id), {
       name: 'db',
       kind: 'worker',
       ref: 'postgres:17',
@@ -137,7 +137,7 @@ describe('S3 volume backup targets', () => {
           },
         ],
         strategy: 'replace',
-        station_id: stationId,
+        server_id: stationId,
       },
     })
 
@@ -146,7 +146,7 @@ describe('S3 volume backup targets', () => {
         .select()
         .from(volume)
         .all()
-        .find((v) => v.service_id === db.id) ?? h.db.select().from(volume).get()!
+        .find((v) => v.app_id === db.id) ?? h.db.select().from(volume).get()!
     ).id
     setSetting('volume_backup.target', target)
     setCredentials(`${accessKey}:${secretKey}`)
@@ -186,7 +186,7 @@ describe('S3 volume backup targets', () => {
     }
   })
 
-  test('bucket, prefix and variable names are checked', () => {
+  test('bucket, prefix and key names are checked', () => {
     assert.deepEqual(s3TargetIssues(target), [])
     assert.deepEqual(
       s3TargetIssues({
@@ -216,7 +216,7 @@ describe('S3 volume backup targets', () => {
         prefix: 'a b',
       },
       {
-        credentials_variable: 'lower',
+        credentials_key: 'lower',
       },
     ]) {
       assert.notEqual(
@@ -251,10 +251,10 @@ describe('S3 volume backup targets', () => {
     assert.ok(accepted.status === 200 || accepted.status === 202, accepted.text)
   })
 
-  test('a plan refuses a missing, a non-sealed and a malformed credentials variable', () => {
+  test('a plan refuses a missing, a non-sealed and a malformed credentials key', () => {
     const missing = {
       ...target,
-      credentials_variable: 'NOT_THERE',
+      credentials_key: 'NOT_THERE',
     }
 
     assert.throws(
@@ -262,11 +262,11 @@ describe('S3 volume backup targets', () => {
       (e: unknown) =>
         e instanceof BackupError &&
         e.code === 'VALIDATION_FAILED' &&
-        /not a global variable/.test(e.message),
+        /not a global key/.test(e.message),
     )
-    setVariable(h.db, h.deps.keyring, {
+    setKey(h.db, h.deps.keyring, {
       scope: 'global',
-      key: 'PLAIN_S3',
+      name: 'PLAIN_S3',
       value: 'a:b',
       sealed: false,
       actor,
@@ -276,7 +276,7 @@ describe('S3 volume backup targets', () => {
       () =>
         backupPlan(h.db, volumeId, {
           ...target,
-          credentials_variable: 'PLAIN_S3',
+          credentials_key: 'PLAIN_S3',
         }),
       (e: unknown) => e instanceof BackupError && /not sealed/.test(e.message),
     )
@@ -412,7 +412,7 @@ describe('S3 volume backup targets', () => {
         .values({
           id,
           volume_id: volumeId,
-          station_id: stationFor,
+          server_id: stationFor,
           taken_at: new Date(Date.UTC(2026, 10, i + 1)),
           location: `s3://my-backups/prod/volumes/${name}.tar.zst`,
           source: 'tar',
@@ -457,7 +457,7 @@ describe('S3 volume backup targets', () => {
         (i) =>
           i.target.type === 's3' &&
           i.target.bucket === 'my-backups' &&
-          !JSON.stringify(i).includes('credentials_variable'),
+          !JSON.stringify(i).includes('credentials_key'),
       ),
     )
     const delivered = sent.slice(0, 2).map((s) => (s.body as MessageBody<'secrets.deliver'>).target)
@@ -496,7 +496,7 @@ describe('S3 volume backup targets', () => {
     assert.deepEqual(again.expired, [ids[0]!])
   })
 
-  test('retention with a missing credentials variable expires nothing and sends no delete', async () => {
+  test('retention with a missing credentials key expires nothing and sends no delete', async () => {
     const ids = completeSnapshots(3, stationId)
 
     setSetting('volume_backup.keep', 1)
@@ -511,7 +511,7 @@ describe('S3 volume backup targets', () => {
       .set({
         target: {
           ...target,
-          credentials_variable: 'GONE',
+          credentials_key: 'GONE',
         },
       })
       .where(eq(volume_snapshot.id, original.id))
@@ -521,7 +521,7 @@ describe('S3 volume backup targets', () => {
       .set({
         target: {
           ...target,
-          credentials_variable: 'GONE',
+          credentials_key: 'GONE',
         },
       })
       .where(eq(volume_snapshot.id, ids[1]!))
@@ -539,7 +539,7 @@ describe('S3 volume backup targets', () => {
     sent.length = 0
     const restored = await restoreBackup(deps(), volumeId, ids[0]!, actor, otherStationId)
 
-    assert.equal(restored.station_id, otherStationId)
+    assert.equal(restored.server_id, otherStationId)
     assert.deepEqual(
       sent.map((s) => [s.station, s.type]),
       [
@@ -553,7 +553,7 @@ describe('S3 volume backup targets', () => {
     assert.equal(job.sha256, 'a'.repeat(64))
     const row = h.db.select().from(volume).where(eq(volume.id, restored.volume_id)).get()!
 
-    assert.equal(row.station_id, otherStationId)
+    assert.equal(row.server_id, otherStationId)
     assert.equal(row.status, 'retained')
     assert.equal(row.project_id, projectId)
   })
@@ -566,7 +566,7 @@ describe('S3 volume backup targets', () => {
       .values({
         id,
         volume_id: volumeId,
-        station_id: stationId,
+        server_id: stationId,
         taken_at: new Date(),
         location: 'x/y.tar.zst',
         source: 'tar',
@@ -601,11 +601,11 @@ describe('S3 volume backup targets', () => {
       (e: unknown) => e instanceof BackupError && e.code === 'NOT_FOUND',
     )
     h.db
-      .update(station)
+      .update(server)
       .set({
         revoked_at: new Date(),
       })
-      .where(eq(station.id, otherStationId))
+      .where(eq(server.id, otherStationId))
       .run()
     await assert.rejects(
       restoreBackup(deps(), volumeId, ids[0]!, actor, otherStationId),

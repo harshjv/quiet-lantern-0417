@@ -7,25 +7,25 @@ import { guideProgress, guideVisible } from '../src/lib/first-run.ts'
 const project = (name: string, counts: Partial<Project> = {}): Project => ({
   id: `prj_${name}`,
   name,
-  default_environment_id: `env_${name}`,
-  environment_count: 1,
-  service_count: 0,
-  sandbox_count: 0,
+  preview_count: 0,
+  waiting_approvals: 0,
+  app_count: 0,
+  machine_count: 0,
   workspace_count: 0,
   status_counts: {
-    green: 0,
-    amber: 0,
-    red: 0,
+    healthy: 0,
+    deploying: 0,
+    failing: 0,
     stopped: 0,
     asleep: 0,
   },
   ...counts,
 })
 
-const counts = (green: number, amber = 0) => ({
-  green,
-  amber,
-  red: 0,
+const counts = (healthy: number, deploying = 0) => ({
+  healthy,
+  deploying,
+  failing: 0,
   stopped: 0,
   asleep: 0,
 })
@@ -42,8 +42,8 @@ test('a fresh instance has every step to do', () => {
   assert.deepEqual(guideProgress(fresh).done, {
     secure: false,
     project: false,
-    service: false,
-    sandbox: false,
+    app: false,
+    machine: false,
     workspace: false,
     agent: false,
   })
@@ -95,54 +95,54 @@ test('TOTP or a passkey secures the account', () => {
   )
 })
 
-test('only a healthy service checks off the deploy step', () => {
-  const starting = guideProgress({
+test('only a healthy app checks off the deploy step', () => {
+  const deploying = guideProgress({
     ...fresh,
     projects: [
       project('web', {
-        service_count: 1,
+        app_count: 1,
         status_counts: counts(0, 1),
       }),
     ],
   })
 
-  assert.equal(starting.done.service, false)
-  assert.equal(starting.starting, 1)
-  assert.equal(starting.services, 1)
+  assert.equal(deploying.done.app, false)
+  assert.equal(deploying.deploying, 1)
+  assert.equal(deploying.apps, 1)
   const healthy = guideProgress({
     ...fresh,
     projects: [
       project('web', {
-        service_count: 2,
+        app_count: 2,
         status_counts: counts(1),
       }),
       project('api', {
-        service_count: 1,
+        app_count: 1,
         status_counts: counts(1),
       }),
     ],
   })
 
-  assert.equal(healthy.done.service, true)
+  assert.equal(healthy.done.app, true)
   assert.equal(healthy.healthy, 2)
-  assert.equal(healthy.services, 3)
+  assert.equal(healthy.apps, 3)
 })
 
-test('sandboxes count across projects', () => {
+test('machines count across projects', () => {
   const progress = guideProgress({
     ...fresh,
     projects: [
       project('web'),
       project('api', {
-        sandbox_count: 2,
+        machine_count: 2,
         workspace_count: 1,
       }),
     ],
   })
 
   assert.equal(progress.done.project, true)
-  assert.equal(progress.done.sandbox, true)
-  assert.equal(progress.sandboxes, 2)
+  assert.equal(progress.done.machine, true)
+  assert.equal(progress.machines, 2)
   assert.equal(progress.done.workspace, true)
   assert.equal(progress.workspaces, 1)
 })

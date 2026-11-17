@@ -4,7 +4,7 @@ import { and, asc, desc, eq, inArray, lt } from 'drizzle-orm'
 import { remedy, type Diagnosis, type RemedyCode } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { build, deployment, deployment_step, run, service } from '../db/schema.ts'
+import { app, build, deployment, deployment_step, run } from '../db/schema.ts'
 import type { EnvSnapshot } from '../secrets/deploy.ts'
 import { leaves } from '../secrets/resolve.ts'
 
@@ -75,7 +75,7 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
     .from(deployment)
     .where(
       and(
-        eq(deployment.service_id, dep.service_id),
+        eq(deployment.app_id, dep.app_id),
         inArray(deployment.status, ['active', 'superseded']),
         lt(deployment.id, dep.id),
       ),
@@ -90,7 +90,7 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
 
   const from = versionsOf(good.env_snapshot as EnvSnapshot)
   const to = versionsOf(dep.env_snapshot as EnvSnapshot)
-  const variables = [...new Set([...from.keys(), ...to.keys()])]
+  const keys = [...new Set([...from.keys(), ...to.keys()])]
     .filter((k) => from.get(k) !== to.get(k))
     .map((k) => ({
       key: k,
@@ -130,9 +130,9 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
           },
         }
       : {}),
-    ...(variables.length
+    ...(keys.length
       ? {
-          variables,
+          variables: keys,
         }
       : {}),
     ...(config.length
@@ -148,7 +148,7 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
   }
 }
 
-const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): Fix[] => {
+const remedies = (dep: DeploymentRow, d: DiagnosisValue, appName: string): Fix[] => {
   const fixes: Fix[] = [...(d.fixes ?? [])]
   const has = (code: RemedyCode) => fixes.some((f) => f.code === code)
   const limits = dep.config_snapshot.limits as
@@ -160,9 +160,9 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
       'RAISE_MEMORY',
       `The kernel killed the process at its ${limits.memory_bytes}-byte limit. Raise limits.memory_bytes to at least ${memory}.`,
       {
-        tool: 'update_service',
+        tool: 'update_app',
         input: {
-          service: dep.service_id,
+          app: dep.app_id,
           limits: {
             ...limits,
             memory_bytes: memory,
@@ -185,7 +185,7 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
     fixes.push(
       remedy(
         'CHECK_HEALTH_PATH',
-        `Confirm ${serviceName} listens on ${health?.port ?? 'its port'} on all interfaces and answers ${health?.path ?? 'the health check'}.`,
+        `Confirm ${appName} listens on ${health?.port ?? 'its port'} on all interfaces and answers ${health?.path ?? 'the health check'}.`,
       ),
     )
   }
@@ -216,7 +216,7 @@ const remedies = (dep: DeploymentRow, d: DiagnosisValue, serviceName: string): F
         {
           tool: 'rollback',
           input: {
-            service: dep.service_id,
+            app: dep.app_id,
             deployment_id: d.diff_from_last_good.deployment_id,
           },
         },
@@ -268,10 +268,10 @@ export const deploymentDiagnosis = (
 
   const svc = db
     .select({
-      name: service.name,
+      name: app.name,
     })
-    .from(service)
-    .where(eq(service.id, dep.service_id))
+    .from(app)
+    .where(eq(app.id, dep.app_id))
     .get()
   const b: BuildRow | undefined = dep.build_id
     ? db.select().from(build).where(eq(build.id, dep.build_id)).get()
@@ -314,7 +314,7 @@ export const deploymentDiagnosis = (
     d.diff_from_last_good = diff
   }
 
-  d.fixes = remedies(dep, d, svc?.name ?? dep.service_id)
+  d.fixes = remedies(dep, d, svc?.name ?? dep.app_id)
 
   if (!d.logs) {
     delete d.logs

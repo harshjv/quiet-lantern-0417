@@ -4,12 +4,14 @@ import { after, before, describe, test } from 'node:test'
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
+  createApp,
+  createMachine,
+  createPreview,
   createProject,
-  createSandbox,
-  createService,
   pinPlatform,
+  placed,
   waitForActive,
-  waitForSandbox,
+  waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
@@ -25,7 +27,7 @@ const api = (method: string, path: string, body?: unknown) =>
     body,
   })
 const explain = (query: Record<string, string>) =>
-  api('GET', `/v1/environments/${envId}/network/explain?${new URLSearchParams(query).toString()}`)
+  api('GET', placed(h, envId, `network/explain?${new URLSearchParams(query).toString()}`))
 const hopOf = (doc: any, name: string) => doc.hops.find((hop: any) => hop.hop === name)
 
 before(async () => {
@@ -33,20 +35,20 @@ before(async () => {
   registry.publish('traefik/whoami:v1')
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
     verdict: {
       verdict: 'accept',
       path: 'public_internet',
       rule: 'ip daddr != @private_ranges accept',
     },
   })
-  const project = await createProject(h, 'boxes')
+  await createProject(h, 'boxes')
 
-  envId = project.default_environment_id
-  const web = await createService(h, envId, {
+  envId = (await createPreview(h, 'boxes', 'dev')).id
+  const web = await createApp(h, envId, {
     name: 'web',
     ref: 'traefik/whoami:v1',
     ports: [
@@ -58,7 +60,7 @@ before(async () => {
   })
 
   await waitForActive(h, web.id)
-  isolated = await createSandbox(h, envId, {
+  isolated = await createMachine(h, envId, {
     name: 'locked',
     egress: {
       mode: 'allowlist',
@@ -74,16 +76,16 @@ before(async () => {
       ],
     },
   })
-  joined = await createSandbox(h, envId, {
+  joined = await createMachine(h, envId, {
     name: 'joined',
     network: 'environment',
   })
-  open = await createSandbox(h, envId, {
+  open = await createMachine(h, envId, {
     name: 'open',
   })
 
   for (const box of [isolated, joined, open]) {
-    await waitForSandbox(h, box.id, 'running')
+    await waitForMachine(h, box.id, 'running')
   }
 })
 
@@ -92,7 +94,7 @@ after(async () => {
   registry?.restore()
 })
 
-describe('explain from a sandbox', () => {
+describe('explain from a machine', () => {
   test('a name the allowlist does not list is blocked at allowlist with DOMAIN_NOT_ALLOWED and a fix that extends the list', async () => {
     const reply = await explain({
       from: 'locked',
@@ -110,8 +112,8 @@ describe('explain from a sandbox', () => {
     assert.equal(hopOf(doc, 'firewall').status, 'skipped')
     const fix = doc.fixes.find((f: any) => f.code === 'ALLOW_DOMAIN')
 
-    assert.equal(fix.action.tool, 'update_sandbox')
-    assert.equal(fix.action.input.sandbox, isolated.id)
+    assert.equal(fix.action.tool, 'update_machine')
+    assert.equal(fix.action.input.machine, isolated.id)
     assert.deepEqual(
       fix.action.input.egress.domains.map((d: any) => d.domain),
       ['registry.npmjs.org', 'github.com', 'example.com'],
@@ -148,7 +150,7 @@ describe('explain from a sandbox', () => {
     assert.equal(hopOf(wildcard, 'allowlist').detail.matched, 'github.com')
   })
 
-  test('a listed name that the resolver answered is judged by the sandbox verdict and ends at probe_required', async () => {
+  test('a listed name that the resolver answered is judged by the machine verdict and ends at probe_required', async () => {
     const doc = (
       await explain({
         from: 'locked',
@@ -164,11 +166,11 @@ describe('explain from a sandbox', () => {
     assert.equal(hopOf(doc, 'probe_required').status, 'unknown')
     const probe = doc.fixes.find((f: any) => f.code === 'RUN_PROBE')
 
-    assert.equal(probe.action.input.sandbox, isolated.id)
-    assert.equal(probe.action.input.service, undefined)
+    assert.equal(probe.action.input.machine, isolated.id)
+    assert.equal(probe.action.input.app, undefined)
   })
 
-  test('an open sandbox has no allowlist hop and an isolated one gets NXDOMAIN for a .internal name with a join fix', async () => {
+  test('an open machine has no allowlist hop and an isolated one gets NXDOMAIN for a .internal name with a join fix', async () => {
     const publicName = (
       await explain({
         from: 'open',
@@ -186,19 +188,19 @@ describe('explain from a sandbox', () => {
 
     assert.equal(internal.verdict, 'broken')
     assert.equal(internal.phase, 'dns')
-    assert.equal(internal.code, 'NAME_NOT_IN_ENVIRONMENT')
+    assert.equal(internal.code, 'NAME_NOT_IN_NETWORK')
     const fix = internal.fixes.find((f: any) => f.code === 'JOIN_ENVIRONMENT')
 
     assert.deepEqual(fix.action, {
-      tool: 'update_sandbox',
+      tool: 'update_machine',
       input: {
-        sandbox: open.id,
+        machine: open.id,
         network: 'environment',
       },
     })
   })
 
-  test('a joined sandbox reaches a service through the Switch and reads the target service as a service source does', async () => {
+  test('a joined machine reaches an app through the Switch and reads the target app as an app source does', async () => {
     const doc = (
       await explain({
         from: 'joined',
@@ -215,8 +217,8 @@ describe('explain from a sandbox', () => {
     assert.ok(Buffer.byteLength(JSON.stringify(doc)) < 8192)
   })
 
-  test('a sandbox that is not running is a failed source hop and an unknown name is NETWORK_TARGET_INVALID', async () => {
-    const stopped = await createSandbox(h, envId, {
+  test('a machine that is not running is a failed source hop and an unknown name is NETWORK_TARGET_INVALID', async () => {
+    const stopped = await createMachine(h, envId, {
       name: 'asleep',
       start: false,
     })
@@ -230,9 +232,9 @@ describe('explain from a sandbox', () => {
     assert.equal(doc.phase, 'source')
     assert.equal(doc.code, 'TARGET_NOT_RUNNING')
     assert.deepEqual(doc.fixes[0].action, {
-      tool: 'start_sandbox',
+      tool: 'start_machine',
       input: {
-        sandbox: stopped.id,
+        machine: stopped.id,
       },
     })
     const missing = await explain({
@@ -245,18 +247,18 @@ describe('explain from a sandbox', () => {
   })
 })
 
-describe('probe from a sandbox', () => {
-  test('a dns probe and a tcp probe come back with the sandbox name, are audited and are rate limited', async () => {
-    const dns = await api('POST', `/v1/sandboxes/${isolated.id}/network/probe`, {
+describe('probe from a machine', () => {
+  test('a dns probe and a tcp probe come back with the machine name, are audited and are rate limited', async () => {
+    const dns = await api('POST', `/v1/machines/${isolated.id}/network/probe`, {
       to: 'registry.npmjs.org',
       kind: 'dns',
     })
 
     assert.equal(dns.status, 200, dns.text)
-    assert.equal(dns.body.sandbox, 'locked')
-    assert.equal(dns.body.service, undefined)
+    assert.equal(dns.body.machine, 'locked')
+    assert.equal(dns.body.app, undefined)
     assert.equal(dns.body.dns.rcode, 'NOERROR')
-    const tcp = await api('POST', `/v1/sandboxes/${isolated.id}/network/probe`, {
+    const tcp = await api('POST', `/v1/machines/${isolated.id}/network/probe`, {
       to: 'registry.npmjs.org:443',
     })
 
@@ -273,7 +275,7 @@ describe('probe from a sandbox', () => {
     for (let i = 0; i < 6; i++) {
       if (
         (
-          await api('POST', `/v1/sandboxes/${isolated.id}/network/probe`, {
+          await api('POST', `/v1/machines/${isolated.id}/network/probe`, {
             to: 'registry.npmjs.org',
             kind: 'dns',
           })
@@ -286,18 +288,18 @@ describe('probe from a sandbox', () => {
     assert.ok(limited > 0)
   })
 
-  test('a stopped sandbox is a state conflict and a bad target is NETWORK_TARGET_INVALID', async () => {
-    const stopped = await createSandbox(h, envId, {
+  test('a stopped machine is a state conflict and a bad target is NETWORK_TARGET_INVALID', async () => {
+    const stopped = await createMachine(h, envId, {
       name: 'probe-asleep',
       start: false,
     })
-    const reply = await api('POST', `/v1/sandboxes/${stopped.id}/network/probe`, {
+    const reply = await api('POST', `/v1/machines/${stopped.id}/network/probe`, {
       to: 'example.com:443',
     })
 
     assert.equal(reply.status, 409)
-    assert.equal(reply.body.error.code, 'SANDBOX_STATE_CONFLICT')
-    const invalid = await api('POST', `/v1/sandboxes/${open.id}/network/probe`, {
+    assert.equal(reply.body.error.code, 'MACHINE_STATE_CONFLICT')
+    const invalid = await api('POST', `/v1/machines/${open.id}/network/probe`, {
       to: '10.0.0.1',
     })
 

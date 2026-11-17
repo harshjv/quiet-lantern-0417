@@ -1,0 +1,254 @@
+import { Gauge, SlidersHorizontal } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
+
+import { gibibyte } from '@stationly/protocol/format'
+
+import { Field, Suffixed } from '@/components/field'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { api, idempotency, send } from '@/lib/api'
+import { useApiMutation } from '@/lib/mutation'
+
+import { Section } from './parts'
+import { patchServer, type ServerView } from './server-data'
+
+type ServerChange = NonNullable<Parameters<ReturnType<typeof api.v1.servers>['patch']>[0]>
+
+type MachineLimits = ServerView['machine_limits']
+
+const useServerUpdate = (server: ServerView) =>
+  useApiMutation({
+    mutationFn: (body: ServerChange) =>
+      send(
+        api.v1
+          .servers({
+            server: server.id,
+          })
+          .patch(body, idempotency()),
+      ),
+    optimistic: (body) =>
+      patchServer(server.id, {
+        ...body,
+        machine_limits: {
+          ...server.machine_limits,
+          ...body.machine_limits,
+        },
+      } as Partial<ServerView>),
+    invalidate: ['stations'],
+    waiting: () => `The change to ${server.name}`,
+    success: () => `${server.name} saved`,
+    failure: () => `change ${server.name}`,
+  })
+
+const gibText = (value: number | null) => (value === null ? '' : String(value / gibibyte))
+
+const gibValue = (text: string) => (text.trim() === '' ? null : Math.round(Number(text) * gibibyte))
+
+function SaveRow({ pending, disabled }: { pending: boolean; disabled: boolean }) {
+  return (
+    <div>
+      <Button type="submit" size="sm" disabled={pending || disabled}>
+        Save
+      </Button>
+    </div>
+  )
+}
+
+function Toggle({
+  id,
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string
+  label: string
+  hint: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 border p-3">
+      <div className="flex flex-col gap-0.5">
+        <Label htmlFor={id}>{label}</Label>
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      </div>
+      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+export function Placement({ server }: { server: ServerView }) {
+  const update = useServerUpdate(server)
+  const [address, setAddress] = useState(server.public_address ?? '')
+  const [cap, setCap] = useState(String(server.concurrency_cap))
+  const change: ServerChange = {
+    ...(address.trim() && address.trim() !== server.public_address
+      ? {
+          public_address: address.trim(),
+        }
+      : {}),
+    ...(Number(cap) !== server.concurrency_cap
+      ? {
+          concurrency_cap: Number(cap),
+        }
+      : {}),
+  }
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    update.mutate(change)
+  }
+
+  return (
+    <Section icon={SlidersHorizontal} title="Placement">
+      <Toggle
+        id={`draining-${server.id}`}
+        label="Draining"
+        hint="New deployments go elsewhere. Running apps stay."
+        checked={server.draining}
+        disabled={server.status === 'enrolling'}
+        onChange={(draining) =>
+          update.mutate({
+            draining,
+          })
+        }
+      />
+      <Toggle
+        id={`intermittent-${server.id}`}
+        label="Sleeps at times"
+        hint="Shown as asleep, not offline, when its heartbeats stop."
+        checked={server.intermittent}
+        onChange={(intermittent) =>
+          update.mutate({
+            intermittent,
+          })
+        }
+      />
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
+        <Field
+          id={`address-${server.id}`}
+          label="Public address"
+          hint="The IPv4 address your domains point at."
+        >
+          <Input
+            id={`address-${server.id}`}
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="203.0.113.10"
+            inputMode="decimal"
+            className="font-mono"
+          />
+        </Field>
+        <Field id={`cap-${server.id}`} label="Deployments at once" hint="The rest wait in a queue.">
+          <Input
+            id={`cap-${server.id}`}
+            type="number"
+            min={1}
+            step={1}
+            required
+            value={cap}
+            onChange={(e) => setCap(e.target.value)}
+          />
+        </Field>
+        <SaveRow pending={update.isPending} disabled={Object.keys(change).length === 0} />
+      </form>
+    </Section>
+  )
+}
+
+export function Limits({ server }: { server: ServerView }) {
+  const update = useServerUpdate(server)
+  const limits = server.machine_limits
+  const [maxMachines, setMaxMachines] = useState(String(limits.max_machines))
+  const [maxRunning, setMaxRunning] = useState(String(limits.max_running))
+  const [memory, setMemory] = useState(gibText(limits.memory_bytes))
+  const [minFree, setMinFree] = useState(gibText(limits.min_free_bytes))
+  const wanted: MachineLimits = {
+    max_machines: Number(maxMachines),
+    max_running: Number(maxRunning),
+    memory_bytes: gibValue(memory),
+    min_free_bytes: gibValue(minFree),
+  }
+  const changed = Object.fromEntries(
+    Object.entries(wanted).filter(([key, value]) => limits[key as keyof MachineLimits] !== value),
+  ) as Partial<MachineLimits>
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    update.mutate({
+      machine_limits: changed,
+    })
+  }
+  const limitField = (
+    id: string,
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    hint: ReactNode,
+    unit?: string,
+  ) => {
+    const input = (
+      <Input
+        id={id}
+        type="number"
+        min={0}
+        step={unit ? 'any' : 1}
+        required={!unit}
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        placeholder={unit ? 'No limit' : undefined}
+      />
+    )
+
+    return (
+      <Field id={id} label={label} hint={hint}>
+        {unit ? <Suffixed suffix={unit}>{input}</Suffixed> : input}
+      </Field>
+    )
+  }
+
+  return (
+    <Section
+      icon={Gauge}
+      title="Machine slots"
+      note="How many machines this server holds and runs at once, and the memory they may take."
+    >
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
+        {limitField(
+          `max-machines-${server.id}`,
+          'Machines in all',
+          maxMachines,
+          setMaxMachines,
+          'Running and stopped.',
+        )}
+        {limitField(
+          `max-running-${server.id}`,
+          'Running at once',
+          maxRunning,
+          setMaxRunning,
+          'The rest wait stopped.',
+        )}
+        {limitField(
+          `memory-${server.id}`,
+          'Memory for machines',
+          memory,
+          setMemory,
+          'Empty leaves it to the host.',
+          'GiB',
+        )}
+        {limitField(
+          `min-free-${server.id}`,
+          'Keep free on the host',
+          minFree,
+          setMinFree,
+          'Memory machines never take.',
+          'GiB',
+        )}
+        <SaveRow pending={update.isPending} disabled={Object.keys(changed).length === 0} />
+      </form>
+    </Section>
+  )
+}

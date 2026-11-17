@@ -17,13 +17,13 @@ const (
 	ErrorCodeForbiddenScope              ErrorCode = "FORBIDDEN_SCOPE"
 	ErrorCodeInstanceScopeRequired       ErrorCode = "INSTANCE_SCOPE_REQUIRED"
 	ErrorCodeRateLimited                 ErrorCode = "RATE_LIMITED"
-	ErrorCodeProtectedEnvironment        ErrorCode = "PROTECTED_ENVIRONMENT"
-	ErrorCodeStagedChangeSuperseded      ErrorCode = "STAGED_CHANGE_SUPERSEDED"
+	ErrorCodeHumanRequired               ErrorCode = "HUMAN_REQUIRED"
+	ErrorCodeApprovalSuperseded          ErrorCode = "APPROVAL_SUPERSEDED"
 	ErrorCodeDeployInProgress            ErrorCode = "DEPLOY_IN_PROGRESS"
 	ErrorCodeDeployPreflightFailed       ErrorCode = "DEPLOY_PREFLIGHT_FAILED"
 	ErrorCodeNoCurrentDeployment         ErrorCode = "NO_CURRENT_DEPLOYMENT"
 	ErrorCodeDeploymentNotCancellable    ErrorCode = "DEPLOYMENT_NOT_CANCELLABLE"
-	ErrorCodeSharedServiceIntermittent   ErrorCode = "SHARED_SERVICE_INTERMITTENT"
+	ErrorCodeSharedAppIntermittent       ErrorCode = "SHARED_APP_INTERMITTENT"
 	ErrorCodeRollbackSecretRevoked       ErrorCode = "ROLLBACK_SECRET_REVOKED"
 	ErrorCodeStaleSecretsConfirmRequired ErrorCode = "STALE_SECRETS_CONFIRM_REQUIRED"
 	ErrorCodeStrategyVolumeConflict      ErrorCode = "STRATEGY_VOLUME_CONFLICT"
@@ -44,12 +44,11 @@ const (
 	ErrorCodeNetworkTargetInvalid        ErrorCode = "NETWORK_TARGET_INVALID"
 	ErrorCodeCertificateRateLimited      ErrorCode = "CERTIFICATE_RATE_LIMITED"
 	ErrorCodeCertificateIssuanceFailed   ErrorCode = "CERTIFICATE_ISSUANCE_FAILED"
-	ErrorCodeVariableReferenceInvalid    ErrorCode = "VARIABLE_REFERENCE_INVALID"
-	ErrorCodeVariableUnresolved          ErrorCode = "VARIABLE_UNRESOLVED"
-	ErrorCodeVariableTargetMissing       ErrorCode = "VARIABLE_TARGET_MISSING"
-	ErrorCodeVariableNotGranted          ErrorCode = "VARIABLE_NOT_GRANTED"
-	ErrorCodeVariableCycle               ErrorCode = "VARIABLE_CYCLE"
-	ErrorCodeVariableProtectedSource     ErrorCode = "VARIABLE_PROTECTED_SOURCE"
+	ErrorCodeKeyReferenceInvalid         ErrorCode = "KEY_REFERENCE_INVALID"
+	ErrorCodeKeyUnresolved               ErrorCode = "KEY_UNRESOLVED"
+	ErrorCodeKeyTargetMissing            ErrorCode = "KEY_TARGET_MISSING"
+	ErrorCodeKeyNotGranted               ErrorCode = "KEY_NOT_GRANTED"
+	ErrorCodeKeyCycle                    ErrorCode = "KEY_CYCLE"
 	ErrorCodeSecretsNeedReentry          ErrorCode = "SECRETS_NEED_REENTRY"
 	ErrorCodeSealedValueUnreadable       ErrorCode = "SEALED_VALUE_UNREADABLE"
 	ErrorCodeSecretVersionInUse          ErrorCode = "SECRET_VERSION_IN_USE"
@@ -66,21 +65,20 @@ const (
 	ErrorCodeAttachHookFailed            ErrorCode = "ATTACH_HOOK_FAILED"
 	ErrorCodeAttachmentAliasTaken        ErrorCode = "ATTACHMENT_ALIAS_TAKEN"
 	ErrorCodeFirewallCidrReserved        ErrorCode = "FIREWALL_CIDR_RESERVED"
-	ErrorCodeStationOffline              ErrorCode = "STATION_OFFLINE"
-	ErrorCodeStationVersionSkew          ErrorCode = "STATION_VERSION_SKEW"
-	ErrorCodeStationCapabilityMissing    ErrorCode = "STATION_CAPABILITY_MISSING"
+	ErrorCodeServerOffline               ErrorCode = "SERVER_OFFLINE"
+	ErrorCodeServerVersionSkew           ErrorCode = "SERVER_VERSION_SKEW"
+	ErrorCodeServerCapabilityMissing     ErrorCode = "SERVER_CAPABILITY_MISSING"
 	ErrorCodeRepoAccessRequired          ErrorCode = "REPO_ACCESS_REQUIRED"
 	ErrorCodeRepoAccessDenied            ErrorCode = "REPO_ACCESS_DENIED"
 	ErrorCodeApprovalClosed              ErrorCode = "APPROVAL_CLOSED"
-	ErrorCodeSandboxNotRunning           ErrorCode = "SANDBOX_NOT_RUNNING"
-	ErrorCodeSandboxStateConflict        ErrorCode = "SANDBOX_STATE_CONFLICT"
-	ErrorCodeSandboxQuotaExceeded        ErrorCode = "SANDBOX_QUOTA_EXCEEDED"
-	ErrorCodeSandboxDiskFull             ErrorCode = "SANDBOX_DISK_FULL"
-	ErrorCodeSandboxStartFailed          ErrorCode = "SANDBOX_START_FAILED"
-	ErrorCodeSandboxStorageGrowFailed    ErrorCode = "SANDBOX_STORAGE_GROW_FAILED"
-	ErrorCodeSandboxImageUnpackFailed    ErrorCode = "SANDBOX_IMAGE_UNPACK_FAILED"
-	ErrorCodeSandboxRuntimeUnavailable   ErrorCode = "SANDBOX_RUNTIME_UNAVAILABLE"
-	ErrorCodeEnvironmentIsDefault        ErrorCode = "ENVIRONMENT_IS_DEFAULT"
+	ErrorCodeMachineNotRunning           ErrorCode = "MACHINE_NOT_RUNNING"
+	ErrorCodeMachineStateConflict        ErrorCode = "MACHINE_STATE_CONFLICT"
+	ErrorCodeMachineQuotaExceeded        ErrorCode = "MACHINE_QUOTA_EXCEEDED"
+	ErrorCodeMachineDiskFull             ErrorCode = "MACHINE_DISK_FULL"
+	ErrorCodeMachineStartFailed          ErrorCode = "MACHINE_START_FAILED"
+	ErrorCodeMachineStorageGrowFailed    ErrorCode = "MACHINE_STORAGE_GROW_FAILED"
+	ErrorCodeMachineImageUnpackFailed    ErrorCode = "MACHINE_IMAGE_UNPACK_FAILED"
+	ErrorCodeMachineRuntimeUnavailable   ErrorCode = "MACHINE_RUNTIME_UNAVAILABLE"
 	ErrorCodeDeleteHasDependents         ErrorCode = "DELETE_HAS_DEPENDENTS"
 	ErrorCodeNotFound                    ErrorCode = "NOT_FOUND"
 	ErrorCodeInternalError               ErrorCode = "INTERNAL_ERROR"
@@ -129,13 +127,13 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeForbiddenScope:              {HTTPStatus: 403, Area: "scope", CloseCode: 0},
 	ErrorCodeInstanceScopeRequired:       {HTTPStatus: 403, Area: "scope", CloseCode: 0},
 	ErrorCodeRateLimited:                 {HTTPStatus: 429, Area: "auth", CloseCode: 0},
-	ErrorCodeProtectedEnvironment:        {HTTPStatus: 403, Area: "protected", CloseCode: 0},
-	ErrorCodeStagedChangeSuperseded:      {HTTPStatus: 409, Area: "protected", CloseCode: 0},
+	ErrorCodeHumanRequired:               {HTTPStatus: 403, Area: "protected", CloseCode: 0},
+	ErrorCodeApprovalSuperseded:          {HTTPStatus: 409, Area: "protected", CloseCode: 0},
 	ErrorCodeDeployInProgress:            {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
 	ErrorCodeDeployPreflightFailed:       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
 	ErrorCodeNoCurrentDeployment:         {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
 	ErrorCodeDeploymentNotCancellable:    {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
-	ErrorCodeSharedServiceIntermittent:   {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeSharedAppIntermittent:       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
 	ErrorCodeRollbackSecretRevoked:       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
 	ErrorCodeStaleSecretsConfirmRequired: {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
 	ErrorCodeStrategyVolumeConflict:      {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
@@ -143,7 +141,7 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeOomKilled:                   {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
 	ErrorCodeExitNonzero:                 {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
 	ErrorCodeImagePruned:                 {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeStationInvariantViolation:   {HTTPStatus: 422, Area: "station", CloseCode: 0},
+	ErrorCodeStationInvariantViolation:   {HTTPStatus: 422, Area: "server", CloseCode: 0},
 	ErrorCodeBuildFailed:                 {HTTPStatus: 422, Area: "build", CloseCode: 0},
 	ErrorCodeSourceUnreachable:           {HTTPStatus: 422, Area: "build", CloseCode: 0},
 	ErrorCodeSourceShaMismatch:           {HTTPStatus: 409, Area: "build", CloseCode: 0},
@@ -156,12 +154,11 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeNetworkTargetInvalid:        {HTTPStatus: 422, Area: "network", CloseCode: 0},
 	ErrorCodeCertificateRateLimited:      {HTTPStatus: 422, Area: "network", CloseCode: 0},
 	ErrorCodeCertificateIssuanceFailed:   {HTTPStatus: 422, Area: "network", CloseCode: 0},
-	ErrorCodeVariableReferenceInvalid:    {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeVariableUnresolved:          {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeVariableTargetMissing:       {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeVariableNotGranted:          {HTTPStatus: 403, Area: "secret", CloseCode: 0},
-	ErrorCodeVariableCycle:               {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeVariableProtectedSource:     {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeKeyReferenceInvalid:         {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeKeyUnresolved:               {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeKeyTargetMissing:            {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeKeyNotGranted:               {HTTPStatus: 403, Area: "secret", CloseCode: 0},
+	ErrorCodeKeyCycle:                    {HTTPStatus: 422, Area: "secret", CloseCode: 0},
 	ErrorCodeSecretsNeedReentry:          {HTTPStatus: 422, Area: "secret", CloseCode: 0},
 	ErrorCodeSealedValueUnreadable:       {HTTPStatus: 403, Area: "secret", CloseCode: 0},
 	ErrorCodeSecretVersionInUse:          {HTTPStatus: 409, Area: "secret", CloseCode: 0},
@@ -178,21 +175,20 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeAttachHookFailed:            {HTTPStatus: 422, Area: "attachment", CloseCode: 0},
 	ErrorCodeAttachmentAliasTaken:        {HTTPStatus: 409, Area: "attachment", CloseCode: 0},
 	ErrorCodeFirewallCidrReserved:        {HTTPStatus: 422, Area: "firewall", CloseCode: 0},
-	ErrorCodeStationOffline:              {HTTPStatus: 503, Area: "station", CloseCode: 0},
-	ErrorCodeStationVersionSkew:          {HTTPStatus: 503, Area: "station", CloseCode: 0},
-	ErrorCodeStationCapabilityMissing:    {HTTPStatus: 422, Area: "station", CloseCode: 0},
-	ErrorCodeRepoAccessRequired:          {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeRepoAccessDenied:            {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeApprovalClosed:              {HTTPStatus: 409, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxNotRunning:           {HTTPStatus: 409, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxStateConflict:        {HTTPStatus: 409, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxQuotaExceeded:        {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxDiskFull:             {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxStartFailed:          {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxStorageGrowFailed:    {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxImageUnpackFailed:    {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeSandboxRuntimeUnavailable:   {HTTPStatus: 422, Area: "sandbox", CloseCode: 0},
-	ErrorCodeEnvironmentIsDefault:        {HTTPStatus: 409, Area: "lifecycle", CloseCode: 0},
+	ErrorCodeServerOffline:               {HTTPStatus: 503, Area: "server", CloseCode: 0},
+	ErrorCodeServerVersionSkew:           {HTTPStatus: 503, Area: "server", CloseCode: 0},
+	ErrorCodeServerCapabilityMissing:     {HTTPStatus: 422, Area: "server", CloseCode: 0},
+	ErrorCodeRepoAccessRequired:          {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeRepoAccessDenied:            {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeApprovalClosed:              {HTTPStatus: 409, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineNotRunning:           {HTTPStatus: 409, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineStateConflict:        {HTTPStatus: 409, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineQuotaExceeded:        {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineDiskFull:             {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineStartFailed:          {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineStorageGrowFailed:    {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineImageUnpackFailed:    {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineRuntimeUnavailable:   {HTTPStatus: 422, Area: "machine", CloseCode: 0},
 	ErrorCodeDeleteHasDependents:         {HTTPStatus: 409, Area: "lifecycle", CloseCode: 0},
 	ErrorCodeNotFound:                    {HTTPStatus: 404, Area: "lifecycle", CloseCode: 0},
 	ErrorCodeInternalError:               {HTTPStatus: 500, Area: "internal", CloseCode: 0},
@@ -225,12 +221,12 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 type WarningCode string
 
 const (
-	WarningCodeSharesStatefulService          WarningCode = "SHARES_STATEFUL_SERVICE"
+	WarningCodeSharesStatefulApp              WarningCode = "SHARES_STATEFUL_APP"
 	WarningCodeStaleSecretVersions            WarningCode = "STALE_SECRET_VERSIONS"
 	WarningCodeDowntimeExpected               WarningCode = "DOWNTIME_EXPECTED"
-	WarningCodeBackupStopsService             WarningCode = "BACKUP_STOPS_SERVICE"
+	WarningCodeBackupStopsApp                 WarningCode = "BACKUP_STOPS_APP"
 	WarningCodeSealedValueMissing             WarningCode = "SEALED_VALUE_MISSING"
 	WarningCodeSourcePolling                  WarningCode = "SOURCE_POLLING"
-	WarningCodeSandboxRestartRequired         WarningCode = "SANDBOX_RESTART_REQUIRED"
-	WarningCodeSandboxSnapshotCrashConsistent WarningCode = "SANDBOX_SNAPSHOT_CRASH_CONSISTENT"
+	WarningCodeMachineRestartRequired         WarningCode = "MACHINE_RESTART_REQUIRED"
+	WarningCodeMachineSnapshotCrashConsistent WarningCode = "MACHINE_SNAPSHOT_CRASH_CONSISTENT"
 )

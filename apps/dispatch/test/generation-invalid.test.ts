@@ -4,13 +4,19 @@ import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 
 import { newId } from '../src/db/ids.ts'
-import { deployment, service } from '../src/db/schema.ts'
+import { app, deployment } from '../src/db/schema.ts'
 import { snapshotOf } from '../src/secrets/deploy.ts'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createProject, createService, seedLockfile, waitForDeployment } from './helpers/seed.ts'
+import {
+  createApp,
+  createPreview,
+  createProject,
+  seedLockfile,
+  waitForDeployment,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
@@ -23,7 +29,7 @@ before(async () => {
   h = await startDispatch()
   seedLockfile(h)
   station = await startFakeStation(h)
-  environmentId = (await createProject(h)).default_environment_id
+  environmentId = (await createPreview(h, (await createProject(h)).name, 'staging')).id
 })
 
 after(async () => {
@@ -31,8 +37,8 @@ after(async () => {
   registry.restore()
 })
 
-const plantQueuedDeployment = (serviceId: string, imageRef: string | null) => {
-  const svc = h.db.select().from(service).where(eq(service.id, serviceId)).get()!
+const plantQueuedDeployment = (appId: string, imageRef: string | null) => {
+  const svc = h.db.select().from(app).where(eq(app.id, appId)).get()!
   const { id: _id, created_at: _c, updated_at: _u, ...config } = svc
   const id = newId('deployment')
 
@@ -40,7 +46,7 @@ const plantQueuedDeployment = (serviceId: string, imageRef: string | null) => {
     .insert(deployment)
     .values({
       id,
-      service_id: serviceId,
+      app_id: appId,
       number: 1,
       trigger: {
         type: 'manual',
@@ -53,7 +59,7 @@ const plantQueuedDeployment = (serviceId: string, imageRef: string | null) => {
         rollback_of: null,
       },
       image_ref: imageRef,
-      env_snapshot: snapshotOf(h.db, serviceId) as never,
+      env_snapshot: snapshotOf(h.db, appId) as never,
       config_snapshot: config as never,
       strategy: svc.strategy,
       base_images: [],
@@ -72,7 +78,7 @@ const failureOf = async (deploymentId: string) =>
 
 describe('an undeliverable deployment', () => {
   test('fails with GENERATION_INVALID naming the image_ref path and never reaches the station', async () => {
-    const healthy = await createService(h, environmentId, {
+    const healthy = await createApp(h, environmentId, {
       name: 'healthy',
       ref: 'nginx:1.27',
       ports: [
@@ -84,7 +90,7 @@ describe('an undeliverable deployment', () => {
     })
 
     await waitForDeployment(h, healthy.deployments[0].id, 'active')
-    const broken = await createService(h, environmentId, {
+    const broken = await createApp(h, environmentId, {
       name: 'broken',
       ref: 'nginx:1.27',
       ports: [
@@ -115,7 +121,7 @@ describe('an undeliverable deployment', () => {
 
   test('the station keeps receiving every other change, and later deployments run', async () => {
     const before = station.generations.length
-    const later = await createService(h, environmentId, {
+    const later = await createApp(h, environmentId, {
       name: 'later',
       ref: 'nginx:1.27',
       ports: [
@@ -150,7 +156,7 @@ describe('an undeliverable deployment', () => {
   })
 
   test('a container spec that fails its schema elsewhere than image_ref fails with a configuration fix', async () => {
-    const svc = await createService(h, environmentId, {
+    const svc = await createApp(h, environmentId, {
       name: 'bad-limits',
       ref: 'nginx:1.27',
       ports: [
@@ -160,17 +166,17 @@ describe('an undeliverable deployment', () => {
       ],
       deploy: false,
     })
-    const row = h.db.select().from(service).where(eq(service.id, svc.id)).get()!
+    const row = h.db.select().from(app).where(eq(app.id, svc.id)).get()!
 
     h.db
-      .update(service)
+      .update(app)
       .set({
         limits: {
           cpu_millis: -5,
           memory_bytes: row.limits.memory_bytes,
         },
       })
-      .where(eq(service.id, svc.id))
+      .where(eq(app.id, svc.id))
       .run()
     const planted = plantQueuedDeployment(
       svc.id,

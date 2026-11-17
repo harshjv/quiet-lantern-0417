@@ -1,41 +1,38 @@
 import { and, asc, eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { service_port } from '../../db/schema.ts'
+import { app_port } from '../../db/schema.ts'
 import { ChangeSet, commit, requireNoPortDependents } from '../changes.ts'
 import { configDeployTrigger, requireStationReady } from '../deployments.ts'
 import { fail } from '../errors.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
+import { isProduction } from '../lookup.ts'
 import { getQuery } from '../pagination.ts'
 import { PortInput } from '../schemas.ts'
-import { Deleted, Page, replies, ServicePort, Staged } from '../shapes.ts'
+import { AppPort, ApprovalDetail, Deleted, Page, replies } from '../shapes.ts'
 
 import { respond, withDeployments } from './services.ts'
 
-const PortWritten = withDeployments(ServicePort)
+const PortWritten = withDeployments(AppPort)
 
 const PortRemoved = withDeployments(Deleted)
 
 export const portRoutes = (kit: Kit) => {
   const { db } = kit.deps
   const view = (id: string) =>
-    select(
-      kit.views.port,
-      db.select().from(service_port).where(eq(service_port.id, id)).get()!,
-      undefined,
-    )
+    select(kit.views.port, db.select().from(app_port).where(eq(app_port.id, id)).get()!, undefined)
 
   return kit
     .router('ports', '/v1')
     .get(
-      '/services/:service/ports',
+      '/apps/:app/ports',
       ({ ctx, query }) => {
         const rows = db
           .select()
-          .from(service_port)
-          .where(eq(service_port.service_id, ctx.service.id))
-          .orderBy(asc(service_port.port))
+          .from(app_port)
+          .where(eq(app_port.app_id, ctx.app.id))
+          .orderBy(asc(app_port.port))
           .all()
 
         return {
@@ -44,28 +41,28 @@ export const portRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'list_ports',
-          summary: 'List the ports of a service',
+          summary: 'List the ports of an app',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(ServicePort),
+          200: Page(AppPort),
         }),
       },
     )
     .post(
-      '/services/:service/ports',
+      '/apps/:app/ports',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        if (ctx.service.kind !== 'web') {
-          fail('VALIDATION_FAILED', `A ${ctx.service.kind} service has no ports.`, undefined, {
+        if (ctx.app.kind !== 'web') {
+          fail('VALIDATION_FAILED', `A ${ctx.app.kind} app has no ports.`, undefined, {
             issues: [
               {
                 path: '/port',
-                message: `kind ${ctx.service.kind} takes no ports`,
+                message: `kind ${ctx.app.kind} takes no ports`,
               },
             ],
           })
@@ -74,29 +71,27 @@ export const portRoutes = (kit: Kit) => {
         if (
           db
             .select()
-            .from(service_port)
-            .where(
-              and(eq(service_port.service_id, ctx.service.id), eq(service_port.port, body.port)),
-            )
+            .from(app_port)
+            .where(and(eq(app_port.app_id, ctx.app.id), eq(app_port.port, body.port)))
             .get()
         ) {
-          fail('NAME_TAKEN', `${ctx.service.name} already has port ${body.port}.`, undefined, {
+          fail('NAME_TAKEN', `${ctx.app.name} already has port ${body.port}.`, undefined, {
             port: body.port,
           })
         }
 
-        requireStationReady(db, ctx.service.station_id)
+        requireStationReady(db, ctx.app.server_id)
         const changes = new ChangeSet()
 
-        changes.add('service_port', ctx.service.id, {
+        changes.add('app_port', ctx.app.id, {
           port: body.port,
           protocol: body.protocol ?? 'http',
           grpc: body.grpc ?? false,
         })
-        const trigger = configDeployTrigger(ctx.service, ctx.service.source)
+        const trigger = configDeployTrigger(ctx.app, ctx.app.source)
 
         if (trigger) {
-          changes.deploy(ctx.service.id, trigger, {
+          changes.deploy(ctx.app.id, trigger, {
             reason: `port ${body.port} added`,
           })
         }
@@ -105,8 +100,8 @@ export const portRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
@@ -116,11 +111,11 @@ export const portRoutes = (kit: Kit) => {
         }
 
         return respond(kit, set, result, () =>
-          view(result.applied ? result.refs['new:service_port:1']! : ''),
+          view(result.applied ? result.refs['new:app_port:1']! : ''),
         )
       },
       {
-        service: {
+        app: {
           id: 'add_port',
           summary: 'Add a port; deploys',
           level: 'deploy',
@@ -128,7 +123,7 @@ export const portRoutes = (kit: Kit) => {
         body: PortInput,
         response: replies({
           201: PortWritten,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -143,25 +138,25 @@ export const portRoutes = (kit: Kit) => {
 
         const changes = new ChangeSet()
 
-        changes.update('service_port', ctx.port.id, '/grpc', ctx.port.grpc, body.grpc)
+        changes.update('app_port', ctx.port.id, '/grpc', ctx.port.grpc, body.grpc)
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return view(ctx.port.id)
       },
       {
-        service_port: {
+        app_port: {
           id: 'update_port',
           summary: 'Mark a port as gRPC',
           level: 'deploy',
@@ -175,8 +170,8 @@ export const portRoutes = (kit: Kit) => {
           },
         ),
         response: replies({
-          200: ServicePort,
-          202: Staged,
+          200: AppPort,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -186,14 +181,14 @@ export const portRoutes = (kit: Kit) => {
         const call = await kit.call(request)
 
         requireNoPortDependents(db, ctx.port.id)
-        requireStationReady(db, ctx.service.station_id)
+        requireStationReady(db, ctx.app.server_id)
         const changes = new ChangeSet()
 
-        changes.remove('service_port', ctx.port.id, select(kit.views.port, ctx.port, undefined))
-        const trigger = configDeployTrigger(ctx.service, ctx.service.source)
+        changes.remove('app_port', ctx.port.id, select(kit.views.port, ctx.port, undefined))
+        const trigger = configDeployTrigger(ctx.app, ctx.app.source)
 
         if (trigger) {
-          changes.deploy(ctx.service.id, trigger, {
+          changes.deploy(ctx.app.id, trigger, {
             reason: `port ${ctx.port.port} removed`,
           })
         }
@@ -202,8 +197,8 @@ export const portRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
@@ -213,14 +208,14 @@ export const portRoutes = (kit: Kit) => {
         }))
       },
       {
-        service_port: {
+        app_port: {
           id: 'remove_port',
           summary: 'Remove a port; deploys',
           level: 'deploy',
         },
         response: replies({
           200: PortRemoved,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )

@@ -1,21 +1,21 @@
 import { Optional, Type, type Static, type TSchema } from '@sinclair/typebox'
 
 import {
+  appFieldText,
+  appKindValues,
   desiredStateValues,
   domainFieldText,
   firewallModeValues,
   ingressValues,
   injectionValues,
+  keyNamePattern,
   portFieldText,
   portProtocolValues,
   portRange,
   scheduleConcurrencyValues,
-  serviceFieldText,
-  serviceKindValues,
   slugPattern,
   strategyValues,
   StringEnum,
-  variableKeyPattern,
   volumeFieldText,
 } from '@stationly/protocol'
 
@@ -41,7 +41,7 @@ const SlugMap = <T extends TSchema>(value: T, description: string) =>
 const KeyMap = <T extends TSchema>(value: T, description: string) =>
   Type.Record(
     Type.String({
-      pattern: variableKeyPattern,
+      pattern: keyNamePattern,
     }),
     value,
     {
@@ -165,7 +165,7 @@ export const Source = Type.Union(
   },
 )
 
-const ServicePort = Type.Object(
+const AppPort = Type.Object(
   {
     port: Type.Integer({
       ...portRange,
@@ -185,7 +185,7 @@ const ServicePort = Type.Object(
     ),
   },
   {
-    description: 'A port the service listens on',
+    description: 'A port the app listens on',
     ...strict,
   },
 )
@@ -195,7 +195,7 @@ export const Health = Type.Object(
     type: Optional(
       StringEnum(['http', 'tcp', 'image', 'alive'], {
         description:
-          'http on the first http port for web, tcp for a web service with only tcp ports, alive for worker',
+          'http on the first http port for web, tcp for a web app with only tcp ports, alive for worker',
       }),
     ),
     path: Optional(
@@ -209,7 +209,7 @@ export const Health = Type.Object(
       Type.String({
         pattern: '^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$',
         description:
-          "http only: the Host header the check sends; the service's first domain, else <service>.internal",
+          "http only: the Host header the check sends; the app's first domain, else <app>.internal",
       }),
     ),
     port: Optional(
@@ -254,7 +254,7 @@ export const Health = Type.Object(
         minimum: 1,
         maximum: 100,
         default: 3,
-        description: 'Consecutive failures before red',
+        description: 'Consecutive failures before failing',
       }),
     ),
     seconds: Optional(
@@ -267,7 +267,7 @@ export const Health = Type.Object(
     ),
   },
   {
-    description: serviceFieldText.health,
+    description: appFieldText.health,
     ...strict,
   },
 )
@@ -278,19 +278,19 @@ export const Limits = Type.Object(
       Type.Integer({
         minimum: 10,
         default: 1000,
-        description: "CPU in millicores, up to the station's resources.cpu_millis",
+        description: "CPU in millicores, up to the server's resources.cpu_millis",
       }),
     ),
     memory_bytes: Optional(
       Type.Integer({
         minimum: 8388608,
         default: 536870912,
-        description: "Memory in bytes, up to the station's resources.memory_bytes",
+        description: "Memory in bytes, up to the server's resources.memory_bytes",
       }),
     ),
   },
   {
-    description: serviceFieldText.limits,
+    description: appFieldText.limits,
     ...strict,
   },
 )
@@ -316,7 +316,7 @@ export const Schedule = Type.Object(
     ),
   },
   {
-    description: serviceFieldText.schedule,
+    description: appFieldText.schedule,
     ...strict,
   },
 )
@@ -327,10 +327,10 @@ const Volume = Type.Object(
       pattern: '^/',
       description: volumeFieldText.mount_path,
     }),
-    station_volume: Optional(
+    server_volume: Optional(
       Type.String({
         minLength: 1,
-        description: 'A station-owned volume to mount (phase 2)',
+        description: 'A server-owned volume to mount (phase 2)',
       }),
     ),
   },
@@ -356,7 +356,7 @@ export const Domain = Type.Object(
     port: Optional(
       Type.Integer({
         ...portRange,
-        description: "A declared http port; the service's first http port by default",
+        description: "A declared http port; the app's first http port by default",
       }),
     ),
     ingress: Optional(
@@ -373,7 +373,7 @@ export const Domain = Type.Object(
 
 const Scalar = Type.Union([Type.String(), Type.Number(), Type.Boolean()])
 
-const VariableObject = Type.Object(
+const KeyObject = Type.Object(
   {
     value: Optional(
       Type.String({
@@ -404,38 +404,39 @@ const VariableObject = Type.Object(
     ),
   },
   {
-    description: 'The object form of a service variable',
+    description: 'The object form of an app key',
     ...strict,
   },
 )
 
-export const ServiceVariable = Type.Union([Scalar, VariableObject], {
+export const AppKey = Type.Union([Scalar, KeyObject], {
   description: 'A literal, a reference, an interpolation, or an object form',
 })
 
-const ProjectVariableObject = Type.Object(
+const ProjectKeyObject = Type.Object(
   {
-    default: Optional(Scalar),
-    environments: Optional(SlugMap(Scalar, 'Literal values per environment name')),
+    production: Optional(Scalar),
+    preview: Optional(Scalar),
     sealed: Optional(
       Type.Literal(true, {
-        description: 'Declared; values are set per environment with set_project_variables',
+        description: 'Declared; production and preview values are set with set_project_keys',
       }),
     ),
     reference: Optional(
       Type.String({
-        description: '${{secret(N)}} with sealed: each environment gets its own generated value',
+        description:
+          '${{secret(N)}} with sealed: production and previews get their own generated values',
       }),
     ),
   },
   {
-    description: 'The object form of a project variable',
+    description: 'The object form of a project key',
     ...strict,
   },
 )
 
-export const ProjectVariable = Type.Union([Scalar, ProjectVariableObject], {
-  description: 'A project default, per-environment values, or a sealed declaration',
+export const ProjectKey = Type.Union([Scalar, ProjectKeyObject], {
+  description: 'A production value, production and preview values, or a sealed declaration',
 })
 
 const FirewallRule = Type.Object(
@@ -443,7 +444,7 @@ const FirewallRule = Type.Object(
     domain: Optional(Type.String()),
     wildcard: Optional(Type.Boolean()),
     cidr: Optional(Type.String()),
-    service: Optional(Type.String()),
+    app: Optional(Type.String()),
     preset: Optional(Type.String()),
     ports: Optional(
       Type.Array(
@@ -476,42 +477,42 @@ const Firewall = Type.Object(
   },
 )
 
-export const Service = Type.Object(
+export const App = Type.Object(
   {
-    kind: StringEnum(serviceKindValues, {
-      description: serviceFieldText.kind,
+    kind: StringEnum(appKindValues, {
+      description: appFieldText.kind,
     }),
     source: Source,
-    station: Optional(
+    server: Optional(
       Type.String({
         minLength: 1,
-        description: 'An enrolled station name; the only online station by default',
+        description: 'An enrolled server name; the only online server by default',
       }),
     ),
     command: Optional(
       Type.Union([Type.Array(Type.String()), Type.Null()], {
         default: null,
-        description: serviceFieldText.command,
+        description: appFieldText.command,
       }),
     ),
-    build_args: Optional(KeyMap(Type.String(), serviceFieldText.build_args)),
+    build_args: Optional(KeyMap(Type.String(), appFieldText.build_args)),
     ports: Optional(
-      Type.Array(ServicePort, {
+      Type.Array(AppPort, {
         default: [],
-        description: serviceFieldText.ports,
+        description: appFieldText.ports,
       }),
     ),
     health: Optional(Health),
     limits: Optional(Limits),
     strategy: Optional(
       StringEnum(strategyValues, {
-        description: serviceFieldText.strategy,
+        description: appFieldText.strategy,
       }),
     ),
     multi_writer_safe: Optional(
       Type.Boolean({
         default: false,
-        description: serviceFieldText.multi_writer_safe,
+        description: appFieldText.multi_writer_safe,
       }),
     ),
     drain_timeout_s: Optional(
@@ -519,13 +520,13 @@ export const Service = Type.Object(
         minimum: 0,
         maximum: 3600,
         default: 30,
-        description: serviceFieldText.drain_timeout_s,
+        description: appFieldText.drain_timeout_s,
       }),
     ),
     readonly_rootfs: Optional(
       Type.Boolean({
         default: false,
-        description: serviceFieldText.readonly_rootfs,
+        description: appFieldText.readonly_rootfs,
       }),
     ),
     secrets_owner: Optional(
@@ -546,14 +547,14 @@ export const Service = Type.Object(
         ],
         {
           default: null,
-          description: serviceFieldText.secrets_owner,
+          description: appFieldText.secrets_owner,
         },
       ),
     ),
     pre_deploy: Optional(
       Type.Union([Type.Array(Type.String()), Type.Null()], {
         default: null,
-        description: serviceFieldText.pre_deploy,
+        description: appFieldText.pre_deploy,
       }),
     ),
     schedule: Optional(Schedule),
@@ -572,9 +573,7 @@ export const Service = Type.Object(
         description: 'Declared tcp ports exposed on a host port',
       }),
     ),
-    variables: Optional(
-      KeyMap(ServiceVariable, 'Service variables; absent: not managed by the Manifest'),
-    ),
+    keys: Optional(KeyMap(AppKey, 'App keys; absent: not managed by the Manifest')),
     desired_state: Optional(
       StringEnum(desiredStateValues, {
         default: 'running',
@@ -595,12 +594,12 @@ export const Service = Type.Object(
     ),
   },
   {
-    description: 'A service; the map key is its name and DNS label',
+    description: 'An app; the map key is its name and DNS label',
     ...strict,
   },
 )
 
-export const ServiceOverride = Type.Object(
+export const AppOverride = Type.Object(
   {
     source: Optional(
       Type.Object(
@@ -618,7 +617,7 @@ export const ServiceOverride = Type.Object(
         },
       ),
     ),
-    station: Optional(
+    server: Optional(
       Type.Union([
         Type.String({
           minLength: 1,
@@ -631,31 +630,29 @@ export const ServiceOverride = Type.Object(
     expose_tcp: Optional(Type.Union([Type.Array(Type.Integer(portRange)), Type.Null()])),
     desired_state: Optional(Type.Union([StringEnum(desiredStateValues), Type.Null()])),
     schedule: Optional(Type.Union([Schedule, Type.Null()])),
-    variables: Optional(
-      Type.Union([KeyMap(ServiceVariable, 'Variables merged key by key'), Type.Null()]),
-    ),
+    keys: Optional(Type.Union([KeyMap(AppKey, 'Keys merged one by one'), Type.Null()])),
   },
   {
-    description: 'Keys that may differ in one environment; null resets a key to its default',
+    description: 'Keys that may differ in one preview; null resets a key to its production value',
     ...strict,
   },
 )
 
-const EnvironmentOverride = Type.Object(
+const PreviewOverride = Type.Object(
   {
-    services: Optional(SlugMap(ServiceOverride, 'Per-service overrides')),
+    apps: Optional(SlugMap(AppOverride, 'Per-app overrides')),
   },
   {
-    description: 'Overrides for one environment',
+    description: 'Overrides for one preview',
     ...strict,
   },
 )
 
 const Attachment = Type.Object(
   {
-    service: Type.String({
+    app: Type.String({
       pattern: slugPattern.replace('^', '^shared/'),
-      description: 'shared/<service name>',
+      description: 'shared/<app name>',
     }),
   },
   {
@@ -673,39 +670,43 @@ export const Manifest = Type.Object(
       pattern: slugPattern,
       description: 'The project name; checked, never written',
     }),
-    variables: Optional(
-      KeyMap(ProjectVariable, 'Project variables; absent: not managed by the Manifest'),
+    keys: Optional(KeyMap(ProjectKey, 'Project keys; absent: not managed by the Manifest')),
+    apps: Optional(
+      SlugMap(
+        App,
+        'Apps in production or the preview it is applied to; absent: not managed by the Manifest',
+      ),
     ),
-    services: Optional(
-      SlugMap(Service, 'Services in the target environment; absent: not managed by the Manifest'),
+    previews: Optional(
+      SlugMap(
+        PreviewOverride,
+        'Overrides applied when the Manifest is applied to the preview of this name',
+      ),
     ),
-    environments: Optional(
-      SlugMap(EnvironmentOverride, 'Overrides applied when the name equals the target environment'),
-    ),
-    shared: Optional(SlugMap(Attachment, 'Attachments to shared services (phase 1b)')),
+    shared: Optional(SlugMap(Attachment, 'Attachments to shared apps (phase 1b)')),
   },
   {
     title: 'Stationly Manifest',
-    description: 'stationly.yaml: one project, applied to one environment at a time',
+    description: 'stationly.yaml: one project, applied to production or one preview at a time',
     ...strict,
   },
 )
 
 export type ManifestDoc = Static<typeof Manifest>
-export type ServiceDoc = Static<typeof Service>
-export type ServiceOverrideDoc = Static<typeof ServiceOverride>
-export type ServiceVariableDoc = Static<typeof ServiceVariable>
-export type ProjectVariableDoc = Static<typeof ProjectVariable>
+export type AppDoc = Static<typeof App>
+export type AppOverrideDoc = Static<typeof AppOverride>
+export type AppKeyDoc = Static<typeof AppKey>
+export type ProjectKeyDoc = Static<typeof ProjectKey>
 export type DomainDoc = Static<typeof Domain>
 export type HealthDoc = Static<typeof Health>
 
 export const overridableKeys = [
   'source',
-  'station',
+  'server',
   'limits',
   'domains',
   'expose_tcp',
   'desired_state',
   'schedule',
-  'variables',
+  'keys',
 ] as const

@@ -14,15 +14,9 @@ export const toolApprovalClosedValues = ['allowed', 'denied', 'expired'] as cons
 
 export type ToolApprovalStatusValue = (typeof toolApprovalStatusValues)[number]
 
-export const shipRequestStatusValues = [
-  'pushing',
-  'pending',
-  'rejected',
-  'merged',
-  'failed',
-] as const
+export const shipPhaseValues = ['pushing', 'open', 'failed', 'merged'] as const
 
-export type ShipRequestStatusValue = (typeof shipRequestStatusValues)[number]
+export type ShipPhaseValue = (typeof shipPhaseValues)[number]
 
 export const toolApprovalWaitS = 600
 
@@ -73,8 +67,8 @@ export const agentEventLimits = {
   toolOutput: 4096,
   partsHeld: 65536,
   partsIdleS: 60,
-  perSandboxBytes: 64 * 1024 * 1024,
-  perSandboxCount: 100000,
+  perMachineBytes: 64 * 1024 * 1024,
+  perMachineCount: 100000,
   requestsPerMinute: 240,
   requestsPerExtraSlot: 60,
   staleWorkingS: 300,

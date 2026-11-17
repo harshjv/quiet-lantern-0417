@@ -4,7 +4,7 @@ import { t } from 'elysia'
 import { runKindValues, runStatusValues, runTerminalStatuses } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { run, sandbox } from '../db/schema.ts'
+import { machine, run } from '../db/schema.ts'
 
 import type { Call } from './context.ts'
 import { notFound } from './errors.ts'
@@ -88,14 +88,14 @@ export const listRuns = (kit: Kit, owner: SQL, query: typeof runListQuery.static
   }
 }
 
-export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
+export const machineRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
   const { db, stations } = kit.deps
   const box = db
     .select({
-      station_id: sandbox.station_id,
+      server_id: machine.server_id,
     })
-    .from(sandbox)
-    .where(eq(sandbox.id, row.sandbox_id!))
+    .from(machine)
+    .where(eq(machine.id, row.machine_id!))
     .get()
 
   if (!box) {
@@ -104,7 +104,7 @@ export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
 
   try {
     const reply = await stations.ask(
-      box.station_id,
+      box.server_id,
       'logs.query',
       {
         source: 'run',
@@ -116,7 +116,7 @@ export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
       },
     )
     const page = reply.body
-    const redact = kit.sandboxRedaction([row.sandbox_id!], call.principal.actor, call.request_id)
+    const redact = kit.machineRedaction([row.machine_id!], call.principal.actor, call.request_id)
     const lines = page.lines.map((line) => `${line.stream}: ${redact(line.text)}`)
     let size = 0
     let kept = lines.length
@@ -129,7 +129,7 @@ export const sandboxRunOutput = async (kit: Kit, row: RunRow, call: Call) => {
 
     return {
       untrusted: {
-        source: 'sandbox exec output' as const,
+        source: 'machine exec output' as const,
         text: shown.length ? `${shown.join('\n')}\n` : '',
       },
       truncated: page.truncated || kept > 0,

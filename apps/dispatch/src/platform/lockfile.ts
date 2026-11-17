@@ -193,7 +193,7 @@ export const recordDispatchComponent = (db: Db, version: string) => {
   const row = db
     .select()
     .from(component)
-    .where(and(isNull(component.station_id), eq(component.name, 'dispatch')))
+    .where(and(isNull(component.server_id), eq(component.name, 'dispatch')))
     .get()
 
   if (row) {

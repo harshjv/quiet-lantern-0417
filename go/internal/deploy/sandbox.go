@@ -431,7 +431,7 @@ func (s *Station) reconcileSandboxes(ctx context.Context, now time.Time) {
 		if !ready {
 			if d.Status == protocol.DesiredSandboxStatusActive && st.rec.Status != protocol.SandboxReportStatusFailed {
 				st.rec.Hash = d.Hash
-				s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeStationCapabilityMissing, "disk", "this station has no usable sandbox filesystem: %s", s.sandboxUnavailable()))
+				s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeServerCapabilityMissing, "disk", "this station has no usable sandbox filesystem: %s", s.sandboxUnavailable()))
 			}
 			continue
 		}
@@ -537,7 +537,7 @@ func (s *Station) makeSandboxDisk(ctx context.Context, st *sbxState, d protocol.
 		return
 	}
 	if free := s.sbx.info.FreeBytes; free < s.minFreeBytes() {
-		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeSandboxDiskFull, "disk", "the sandbox filesystem has %d bytes free, below min_free_bytes %d", free, s.minFreeBytes()))
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineDiskFull, "disk", "the sandbox filesystem has %d bytes free, below min_free_bytes %d", free, s.minFreeBytes()))
 		return
 	}
 	var source string
@@ -547,7 +547,7 @@ func (s *Station) makeSandboxDisk(ctx context.Context, st *sbxState, d protocol.
 			if _, pending := s.plan.Generation.SandboxSnapshots[*f.SnapshotId]; pending {
 				return
 			}
-			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeSandboxStartFailed, "disk", "snapshot %s is not on this station", *f.SnapshotId))
+			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineStartFailed, "disk", "snapshot %s is not on this station", *f.SnapshotId))
 			return
 		}
 		source = fs.SnapshotPath(*f.SnapshotId)
@@ -556,7 +556,7 @@ func (s *Station) makeSandboxDisk(ctx context.Context, st *sbxState, d protocol.
 			if src := s.sbx.states[*f.SandboxId]; src != nil && !src.rec.DiskReady {
 				return
 			}
-			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeSandboxStartFailed, "disk", "sandbox %s has no disk on this station", *f.SandboxId))
+			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineStartFailed, "disk", "sandbox %s has no disk on this station", *f.SandboxId))
 			return
 		}
 		source = fs.DiskPath(*f.SandboxId)
@@ -572,7 +572,7 @@ func (s *Station) makeSandboxDisk(ctx context.Context, st *sbxState, d protocol.
 	}
 	start := time.Now()
 	if err := fs.MakeDisk(ctx, rec.ID, source, limit); err != nil {
-		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeSandboxStartFailed, "disk", "make the disk from %s: %v", source, err))
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineStartFailed, "disk", "make the disk from %s: %v", source, err))
 		return
 	}
 	if cfg, err := s.docker.ImageConfig(ctx, d.Image.ImageRef); err == nil {
@@ -682,7 +682,7 @@ func (s *Station) placement(d protocol.DesiredSandbox) (sbxPlacement, *protocol.
 	if d.Network == protocol.SandboxNetworkEnvironment {
 		env := s.envs[d.EnvironmentId]
 		if env == nil || env.networkID == "" {
-			return sbxPlacement{}, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeSandboxStartFailed, "coupler", "the network of environment %s is not up", d.EnvironmentId)
+			return sbxPlacement{}, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeMachineStartFailed, "coupler", "the network of environment %s is not up", d.EnvironmentId)
 		}
 		n := s.envNet(d.EnvironmentId)
 		return sbxPlacement{networkID: env.networkID, networkName: n.bridge, cursorKey: d.EnvironmentId, net: n}, nil
@@ -693,7 +693,7 @@ func (s *Station) placement(d protocol.DesiredSandbox) (sbxPlacement, *protocol.
 		if s.sbx.netFail != nil {
 			detail = s.sbx.netFail.Explanation
 		}
-		return sbxPlacement{}, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeSandboxStartFailed, "coupler", "the sandbox network is not up: %s", detail)
+		return sbxPlacement{}, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeMachineStartFailed, "coupler", "the sandbox network is not up: %s", detail)
 	}
 	return sbxPlacement{networkID: s.sbx.netID, networkName: s.plan.Generation.Station.SandboxNetwork.BridgeName, cursorKey: docker.SandboxBridge, net: n}, nil
 }
@@ -790,7 +790,7 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 	rec := st.rec
 	version, ok := s.pinnedRunsc()
 	if !ok {
-		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeSandboxStartFailed, "create", "the pinned runsc %q is not installed on this station", version))
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeMachineStartFailed, "create", "the pinned runsc %q is not installed on this station", version))
 		return
 	}
 	env, held := s.sandboxEnv(rec.ID, d)
@@ -800,7 +800,7 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 		}
 		s.requestSandboxSecrets(st, d.EnvDigest)
 		if time.Since(st.secretsSince) > sandboxSecretsWait {
-			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeSandboxStartFailed, "secrets", "the sandbox's variables (env_digest %s) did not arrive within %s", d.EnvDigest, sandboxSecretsWait))
+			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeMachineStartFailed, "secrets", "the sandbox's variables (env_digest %s) did not arrive within %s", d.EnvDigest, sandboxSecretsWait))
 		}
 		return
 	}
@@ -810,7 +810,7 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 		return
 	}
 	if d.Runtime != nil && *d.Runtime != s.sbx.rt.Name() {
-		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeSandboxRuntimeUnavailable, "runtime", "this station runs sandboxes on %s, not %s", s.sbx.rt.Name(), *d.Runtime))
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeMachineRuntimeUnavailable, "runtime", "this station runs sandboxes on %s, not %s", s.sbx.rt.Name(), *d.Runtime))
 		return
 	}
 	s.reportSandbox(st, protocol.SandboxReportStatusStarting, reason)
@@ -823,7 +823,7 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 	}
 	spec := docker.SandboxCoupler(s.plan.Generation.StationId, d.EnvironmentId, rec.ID, s.plan.couplerImage, p.networkName)
 	if err := s.docker.EnsureImage(ctx, s.plan.couplerImage); err != nil {
-		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeSandboxStartFailed, "coupler", "pull %s: %v", s.plan.couplerImage, err))
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeMachineStartFailed, "coupler", "pull %s: %v", s.plan.couplerImage, err))
 		return
 	}
 	cid, err := s.docker.CreateContainer(ctx, spec.At(p.networkName, addr))
@@ -832,7 +832,7 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 	}
 	if err != nil {
 		s.removeNamed(ctx, spec.Name)
-		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeSandboxStartFailed, "coupler", "start the Coupler %s: %v", spec.Name, err))
+		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseNetwork, protocol.ErrorCodeMachineStartFailed, "coupler", "start the Coupler %s: %v", spec.Name, err))
 		return
 	}
 	v := s.inspectID(ctx, cid, p.networkName)
@@ -889,7 +889,7 @@ func (j startJob) run(ctx context.Context) startResult {
 		if step == "namespace" || step == "coupler" {
 			phase = protocol.DiagnosisPhaseNetwork
 		}
-		return startResult{failure: sandboxFailure(phase, protocol.ErrorCodeSandboxStartFailed, step, format, args...)}
+		return startResult{failure: sandboxFailure(phase, protocol.ErrorCodeMachineStartFailed, step, format, args...)}
 	}
 	coupler, err := netns.Open(j.pid)
 	if err != nil {
@@ -1444,20 +1444,20 @@ func (s *Station) reconcileSnapshots(ctx context.Context) {
 				continue
 			}
 			rec.Status = protocol.SandboxSnapshotReportStatusFailed
-			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeSandboxStateConflict), Phase: protocol.DiagnosisPhaseDisk, Summary: "sandbox " + d.SandboxId + " has no disk on this station"}
+			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeMachineStateConflict), Phase: protocol.DiagnosisPhaseDisk, Summary: "sandbox " + d.SandboxId + " has no disk on this station"}
 			s.reportSnapshot(rec)
 			continue
 		}
 		if free := s.sbx.info.FreeBytes; free < s.minFreeBytes() {
 			rec.Status = protocol.SandboxSnapshotReportStatusFailed
-			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeSandboxDiskFull), Phase: protocol.DiagnosisPhaseDisk, Summary: fmt.Sprintf("the sandbox filesystem has %d bytes free, below min_free_bytes %d", free, s.minFreeBytes())}
+			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeMachineDiskFull), Phase: protocol.DiagnosisPhaseDisk, Summary: fmt.Sprintf("the sandbox filesystem has %d bytes free, below min_free_bytes %d", free, s.minFreeBytes())}
 			s.reportSnapshot(rec)
 			continue
 		}
 		start := time.Now()
 		if err := fs.Snapshot(ctx, d.SandboxId, id); err != nil {
 			rec.Status = protocol.SandboxSnapshotReportStatusFailed
-			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeSandboxStartFailed), Phase: protocol.DiagnosisPhaseDisk, Summary: err.Error()}
+			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeMachineStartFailed), Phase: protocol.DiagnosisPhaseDisk, Summary: err.Error()}
 			s.reportSnapshot(rec)
 			continue
 		}

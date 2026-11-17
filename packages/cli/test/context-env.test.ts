@@ -54,32 +54,32 @@ const sly = (args: string[], env: Record<string, string>) =>
     )
   })
 
-test('STATIONLY_PROJECT and STATIONLY_ENVIRONMENT select the target, and a flag overrides them', async () => {
+test('STATIONLY_PROJECT and STATIONLY_PREVIEW select the target, and a flag overrides them', async () => {
   requests.length = 0
-  await sly(['--json', 'sandboxes', 'list'], {
+  await sly(['--json', 'machines', 'list'], {
     STATIONLY_PROJECT: 'prj_fromenv',
-    STATIONLY_ENVIRONMENT: 'env_fromenv',
+    STATIONLY_PREVIEW: 'env_fromenv',
   })
-  await sly(['--json', 'environments', 'list'], {
+  await sly(['--json', 'previews', 'list'], {
     STATIONLY_PROJECT: 'prj_fromenv',
   })
-  await sly(['--json', '--environment', 'env_flag', 'sandboxes', 'list'], {
+  await sly(['--json', '--preview', 'env_flag', 'machines', 'list'], {
     STATIONLY_PROJECT: 'prj_fromenv',
-    STATIONLY_ENVIRONMENT: 'env_fromenv',
+    STATIONLY_PREVIEW: 'env_fromenv',
   })
 
   assert.deepEqual(requests, [
-    '/v1/environments/env_fromenv/sandboxes',
-    '/v1/projects/prj_fromenv/environments',
-    '/v1/environments/env_flag/sandboxes',
+    '/v1/projects/prj_fromenv/machines?preview=env_fromenv',
+    '/v1/projects/prj_fromenv/previews',
+    '/v1/projects/prj_fromenv/machines?preview=env_flag',
   ])
 })
 
-test('a --project flag drops the environment default of the environment variables', async () => {
+test('a --project flag drops the preview default of the environment variables', async () => {
   requests.length = 0
-  await sly(['--json', '--project', 'prj_flag', 'sandboxes', 'list'], {
+  await sly(['--json', '--project', 'prj_flag', 'machines', 'list'], {
     STATIONLY_PROJECT: 'prj_fromenv',
-    STATIONLY_ENVIRONMENT: 'env_fromenv',
+    STATIONLY_PREVIEW: 'env_fromenv',
   })
 
   assert.ok(requests.length > 0)

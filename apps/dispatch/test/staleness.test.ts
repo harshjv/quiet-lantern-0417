@@ -3,11 +3,17 @@ import { after, before, describe, test } from 'node:test'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createProject, createService, seedLockfile, waitForDeployment } from './helpers/seed.ts'
+import {
+  createApp,
+  createPreview,
+  createProject,
+  seedLockfile,
+  waitForDeployment,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
-let environmentId: string
+let previewId: string
 
 const token = () => h.admin.token
 
@@ -17,7 +23,7 @@ before(async () => {
   h = await startDispatch()
   seedLockfile(h)
   await startFakeStation(h)
-  environmentId = (await createProject(h)).default_environment_id
+  previewId = (await createPreview(h, (await createProject(h)).id, 'staging')).id
 })
 
 after(async () => {
@@ -25,8 +31,8 @@ after(async () => {
   registry.restore()
 })
 
-const activeService = async (name: string, variables: unknown[] = []) => {
-  const created = await createService(h, environmentId, {
+const activeApp = async (name: string, keys: unknown[] = []) => {
+  const created = await createApp(h, previewId, {
     name,
     ref: 'nginx:1.27',
     ports: [
@@ -34,7 +40,7 @@ const activeService = async (name: string, variables: unknown[] = []) => {
         port: 80,
       },
     ],
-    variables,
+    keys,
     deploy: true,
   })
 
@@ -45,7 +51,7 @@ const activeService = async (name: string, variables: unknown[] = []) => {
 
 const stateOf = async (id: string) =>
   (
-    await h.call('GET', `/v1/services/${id}`, {
+    await h.call('GET', `/v1/apps/${id}`, {
       token: token(),
     })
   ).body as {
@@ -53,13 +59,13 @@ const stateOf = async (id: string) =>
     stale_reasons: { code: string; keys: string[] }[]
   }
 
-const setVariable = (id: string, value: string, key = 'FOO') =>
-  h.call('PATCH', `/v1/services/${id}/variables`, {
+const setKey = (id: string, value: string, name = 'FOO') =>
+  h.call('PATCH', `/v1/apps/${id}/keys`, {
     token: token(),
     body: {
       set: [
         {
-          key,
+          name,
           kind: 'literal',
           value,
         },
@@ -68,8 +74,8 @@ const setVariable = (id: string, value: string, key = 'FOO') =>
     },
   })
 
-const patchService = (id: string, body: Record<string, unknown>) =>
-  h.call('PATCH', `/v1/services/${id}`, {
+const patchApp = (id: string, body: Record<string, unknown>) =>
+  h.call('PATCH', `/v1/apps/${id}`, {
     token: token(),
     body: {
       deploy: false,
@@ -77,11 +83,11 @@ const patchService = (id: string, body: Record<string, unknown>) =>
     },
   })
 
-describe('variables', () => {
-  test('a service with a current deployment and unchanged variables is not stale', async () => {
-    const id = await activeService('fresh', [
+describe('keys', () => {
+  test('an app with a current deployment and unchanged keys is not stale', async () => {
+    const id = await activeApp('fresh', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
@@ -94,8 +100,8 @@ describe('variables', () => {
     })
   })
 
-  test('a service without a current deployment is never stale', async () => {
-    const created = await createService(h, environmentId, {
+  test('an app without a current deployment is never stale', async () => {
+    const created = await createApp(h, previewId, {
       name: 'never-deployed',
       ref: 'nginx:1.27',
       ports: [
@@ -106,65 +112,65 @@ describe('variables', () => {
       deploy: false,
     })
 
-    await setVariable(created.id, 'x')
+    await setKey(created.id, 'x')
     assert.equal((await stateOf(created.id)).stale, false)
   })
 
-  test('changing a value marks the service stale with VARIABLES_CHANGED naming the key', async () => {
-    const id = await activeService('changed', [
+  test('changing a value marks the app stale with KEYS_CHANGED naming the key', async () => {
+    const id = await activeApp('changed', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
-    const reply = await setVariable(id, 'b')
+    const reply = await setKey(id, 'b')
 
     assert.equal(reply.status, 200)
     const state = await stateOf(id)
 
     assert.equal(state.stale, true)
-    assert.equal(state.stale_reasons[0]!.code, 'VARIABLES_CHANGED')
+    assert.equal(state.stale_reasons[0]!.code, 'KEYS_CHANGED')
     assert.deepEqual(state.stale_reasons[0]!.keys, ['FOO'])
   })
 
-  test('setting the value it already has is a no-op and leaves the service not stale', async () => {
-    const id = await activeService('noop', [
+  test('setting the value it already has is a no-op and leaves the app not stale', async () => {
+    const id = await activeApp('noop', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
-    const reply = await setVariable(id, 'a')
+    const reply = await setKey(id, 'a')
 
     assert.equal(reply.status, 200)
     assert.equal((await stateOf(id)).stale, false)
   })
 
-  test('writing the old value again is a new secret version, so the service stays stale until deployed', async () => {
-    const id = await activeService('restored', [
+  test('writing the old value again is a new secret version, so the app stays stale until deployed', async () => {
+    const id = await activeApp('restored', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
 
-    await setVariable(id, 'b')
-    await setVariable(id, 'a')
+    await setKey(id, 'b')
+    await setKey(id, 'a')
     assert.equal((await stateOf(id)).stale, true)
   })
 
-  test('a removed key marks the service stale', async () => {
-    const id = await activeService('removed', [
+  test('a removed key marks the app stale', async () => {
+    const id = await activeApp('removed', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
-    const reply = await h.call('PATCH', `/v1/services/${id}/variables`, {
+    const reply = await h.call('PATCH', `/v1/apps/${id}/keys`, {
       token: token(),
       body: {
         unset: ['FOO'],
@@ -180,17 +186,17 @@ describe('variables', () => {
   })
 
   test('staleness clears when a deployment carrying the new digest becomes active', async () => {
-    const id = await activeService('activated', [
+    const id = await activeApp('activated', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
 
-    await setVariable(id, 'b')
+    await setKey(id, 'b')
     assert.equal((await stateOf(id)).stale, true)
-    const deployed = await h.call('POST', `/v1/services/${id}/deployments`, {
+    const deployed = await h.call('POST', `/v1/apps/${id}/deployments`, {
       token: token(),
       body: {},
     })
@@ -201,17 +207,17 @@ describe('variables', () => {
     assert.equal((await stateOf(id)).stale, false)
   })
 
-  test('a plain redeploy takes the current variable versions and clears staleness', async () => {
-    const id = await activeService('redeploy-takes', [
+  test('a plain redeploy takes the current key versions and clears staleness', async () => {
+    const id = await activeApp('redeploy-takes', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
 
-    await setVariable(id, 'b')
-    const redeployed = await h.call('POST', `/v1/services/${id}/redeploy`, {
+    await setKey(id, 'b')
+    const redeployed = await h.call('POST', `/v1/apps/${id}/redeploy`, {
       token: token(),
       body: {},
     })
@@ -221,17 +227,17 @@ describe('variables', () => {
     assert.equal((await stateOf(id)).stale, false)
   })
 
-  test('restart pins the current deployment environment, so the service stays stale', async () => {
-    const id = await activeService('restart-pins', [
+  test('restart pins the current deployment environment, so the app stays stale', async () => {
+    const id = await activeApp('restart-pins', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
 
-    await setVariable(id, 'b')
-    const restarted = await h.call('POST', `/v1/services/${id}/restart`, {
+    await setKey(id, 'b')
+    const restarted = await h.call('POST', `/v1/apps/${id}/restart`, {
       token: token(),
     })
 
@@ -243,8 +249,8 @@ describe('variables', () => {
 
 describe('configuration', () => {
   test('a limits change recorded against the deployment snapshot marks CONFIG_CHANGED naming the field', async () => {
-    const id = await activeService('limits')
-    const reply = await patchService(id, {
+    const id = await activeApp('limits')
+    const reply = await patchApp(id, {
       limits: {
         memory_bytes: 268435456,
       },
@@ -259,15 +265,15 @@ describe('configuration', () => {
   })
 
   test('patching a field back to its snapshot value clears staleness', async () => {
-    const id = await activeService('limits-back')
+    const id = await activeApp('limits-back')
 
-    await patchService(id, {
+    await patchApp(id, {
       limits: {
         memory_bytes: 268435456,
       },
     })
     assert.equal((await stateOf(id)).stale, true)
-    await patchService(id, {
+    await patchApp(id, {
       limits: {
         memory_bytes: 536870912,
       },
@@ -276,8 +282,8 @@ describe('configuration', () => {
   })
 
   test('patching a field to the value it already has is a no-op', async () => {
-    const id = await activeService('limits-same')
-    const reply = await patchService(id, {
+    const id = await activeApp('limits-same')
+    const reply = await patchApp(id, {
       limits: {
         memory_bytes: 536870912,
       },
@@ -288,14 +294,14 @@ describe('configuration', () => {
   })
 
   test('deploying the changed configuration clears CONFIG_CHANGED on activation', async () => {
-    const id = await activeService('limits-deploy')
+    const id = await activeApp('limits-deploy')
 
-    await patchService(id, {
+    await patchApp(id, {
       limits: {
         memory_bytes: 268435456,
       },
     })
-    const deployed = await h.call('POST', `/v1/services/${id}/deployments`, {
+    const deployed = await h.call('POST', `/v1/apps/${id}/deployments`, {
       token: token(),
       body: {},
     })
@@ -304,23 +310,23 @@ describe('configuration', () => {
     assert.equal((await stateOf(id)).stale, false)
   })
 
-  test('variables and configuration reasons are reported together', async () => {
-    const id = await activeService('both', [
+  test('keys and configuration reasons are reported together', async () => {
+    const id = await activeApp('both', [
       {
-        key: 'FOO',
+        name: 'FOO',
         kind: 'literal',
         value: 'a',
       },
     ])
 
-    await setVariable(id, 'b')
-    await patchService(id, {
+    await setKey(id, 'b')
+    await patchApp(id, {
       limits: {
         memory_bytes: 268435456,
       },
     })
     const codes = (await stateOf(id)).stale_reasons.map((r) => r.code).sort()
 
-    assert.deepEqual(codes, ['CONFIG_CHANGED', 'VARIABLES_CHANGED'])
+    assert.deepEqual(codes, ['CONFIG_CHANGED', 'KEYS_CHANGED'])
   })
 })

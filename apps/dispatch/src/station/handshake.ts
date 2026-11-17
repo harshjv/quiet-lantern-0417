@@ -58,7 +58,7 @@ const timestampBytes = (timestampMs: number) => {
 
 export const helloMessage = (nonce: Buffer, stationId: string, timestampMs: number) => {
   if (!stationIdPattern.test(stationId)) {
-    throw new Error('station id is not stn_ plus 26 Crockford base32 characters')
+    throw new Error('server id is not stn_ plus 26 Crockford base32 characters')
   }
 
   return Buffer.concat([
@@ -178,8 +178,8 @@ const checkSkew = (timestamp: number, now: number) => {
     return refuse(
       'PROTOCOL_CLOCK_SKEW',
       closeCodes.authFailed,
-      `The station clock is ${Math.round(skew / 1000)} s from Dispatch's clock.`,
-      'Fix NTP on the station host.',
+      `The server clock is ${Math.round(skew / 1000)} s from Dispatch's clock.`,
+      'Fix NTP on the server host.',
       {
         dispatch_time: new Date(now).toISOString(),
         skew_ms: skew,
@@ -219,8 +219,8 @@ export const verifyHello = (
     return refuse(
       'PROTOCOL_AUTH_FAILED',
       closeCodes.authFailed,
-      'The station is unknown or its signature does not verify.',
-      'Check identity/ on the station; enroll it again if the key was lost.',
+      'The server is unknown or its signature does not verify.',
+      'Check identity/ on the server; enroll it again if the key was lost.',
     )
   }
 
@@ -247,8 +247,8 @@ export const verifyHello = (
     return refuse(
       'PROTOCOL_AUTH_FAILED',
       closeCodes.authFailed,
-      'The station is unknown or its signature does not verify.',
-      'Check identity/ on the station; enroll it again if the key was lost.',
+      'The server is unknown or its signature does not verify.',
+      'Check identity/ on the server; enroll it again if the key was lost.',
     )
   }
 
@@ -256,8 +256,8 @@ export const verifyHello = (
     return refuse(
       'STATION_REVOKED',
       closeCodes.revoked,
-      `The station was removed at ${station.revoked_at.toISOString()}.`,
-      'Enroll the host again with a new token from sly stations enroll.',
+      `The server was removed at ${station.revoked_at.toISOString()}.`,
+      'Enroll the host again with a new token from sly servers enroll.',
       {
         revoked_at: station.revoked_at.toISOString(),
       },
@@ -291,7 +291,7 @@ export const verifyEnroll = (
       'ENROLL_TOKEN_INVALID',
       closeCodes.revoked,
       'The enrollment token is unknown or already used.',
-      'Create a new token with sly stations enroll.',
+      'Create a new token with sly servers enroll.',
     )
   }
 
@@ -300,7 +300,7 @@ export const verifyEnroll = (
       'ENROLL_TOKEN_EXPIRED',
       closeCodes.revoked,
       'The enrollment token expired.',
-      'Create a new token with sly stations enroll.',
+      'Create a new token with sly servers enroll.',
     )
   }
 

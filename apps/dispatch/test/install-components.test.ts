@@ -85,11 +85,11 @@ describe('install records the platform components', () => {
     )
 
     const rows = h.db.select().from(component).all()
-    const instance = rows.filter((row) => row.station_id === null).map((row) => row.name)
+    const instance = rows.filter((row) => row.server_id === null).map((row) => row.name)
 
     assert.ok(instance.every((name) => name === 'dispatch'))
     assert.deepEqual(
-      rows.filter((row) => row.station_id === hostId).map((row) => row.name),
+      rows.filter((row) => row.server_id === hostId).map((row) => row.name),
       ['stationd'],
     )
   })

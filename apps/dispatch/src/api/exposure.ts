@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
-import { port_allocation, station } from '../db/schema.ts'
+import { port_allocation, server } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import { effectivePins, readLockfile } from '../platform/lockfile.ts'
 
@@ -12,12 +12,12 @@ const sslipHost = (address: string) =>
 
 export const generatedHostname = (
   db: Db,
-  serviceName: string,
-  environmentName: string,
+  appName: string,
+  targetName: string,
   stationId: string,
 ) => {
   const zone = readSetting(db, 'domains.zone')
-  const label = `${serviceName}-${environmentName}`
+  const label = `${appName}-${targetName}`
 
   if (zone) {
     return `${label}.${zone}`
@@ -25,10 +25,10 @@ export const generatedHostname = (
 
   const address = db
     .select({
-      public_address: station.public_address,
+      public_address: server.public_address,
     })
-    .from(station)
-    .where(eq(station.id, stationId))
+    .from(server)
+    .where(eq(server.id, stationId))
     .get()?.public_address
 
   return address ? `${label}.${sslipHost(address)}.sslip.io` : null
@@ -45,7 +45,7 @@ export const hostPortPicker = (db: Db, stationId: string) => {
         host_port: port_allocation.host_port,
       })
       .from(port_allocation)
-      .where(and(eq(port_allocation.station_id, stationId), eq(port_allocation.status, 'active')))
+      .where(and(eq(port_allocation.server_id, stationId), eq(port_allocation.status, 'active')))
       .all()
       .map((a) => a.host_port),
   )
@@ -69,10 +69,10 @@ export const hostPortPicker = (db: Db, stationId: string) => {
 export const requireGatewayPin = (db: Db, stationId: string) => {
   const arch = db
     .select({
-      arch: station.arch,
+      arch: server.arch,
     })
-    .from(station)
-    .where(eq(station.id, stationId))
+    .from(server)
+    .where(eq(server.id, stationId))
     .get()?.arch
   const lockfile = readLockfile(db)
 
@@ -83,14 +83,14 @@ export const requireGatewayPin = (db: Db, stationId: string) => {
   fail(
     'GATEWAY_NOT_PINNED',
     lockfile
-      ? `The lockfile pins release ${lockfile.release}, which has no gateway component, so no Gateway runs on this station and a domain would never be served.`
-      : 'No lockfile is written yet, so no Gateway runs on this station and a domain would never be served.',
+      ? `The lockfile pins release ${lockfile.release}, which has no gateway component, so no Gateway runs on this server and a domain would never be served.`
+      : 'No lockfile is written yet, so no Gateway runs on this server and a domain would never be served.',
     lockfile
       ? 'Upgrade to a release that pins the Gateway (sly platform upgrade --version <release>), then add the domain.'
-      : 'Run sly setup on the station host first, then add the domain.',
+      : 'Run sly setup on the server host first, then add the domain.',
     {
       release: lockfile?.release ?? null,
-      station_id: stationId,
+      server_id: stationId,
     },
   )
 }

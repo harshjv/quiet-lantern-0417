@@ -14,15 +14,15 @@ export const runStartBody = (
   session: Session,
 ): MessageBody<'run.start'> => ({
   run_id: r.id,
-  service_id: r.service_id,
+  service_id: r.app_id,
   deployment_id: r.deployment_id,
   kind: r.kind,
   command: r.command,
   ...session,
   actor,
-  ...(r.sandbox_id
+  ...(r.machine_id
     ? {
-        sandbox_id: r.sandbox_id,
+        sandbox_id: r.machine_id,
         ...(r.exec?.user
           ? {
               user: r.exec.user,

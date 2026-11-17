@@ -10,7 +10,7 @@ import { gitChanges } from '../agent/changes.ts'
 import { claudeAdapter, runnerDir } from '../agent/claude.ts'
 import { runSession, type InboxItem } from '../agent/runner.ts'
 import { action, type Program } from '../command.ts'
-import { env, sandboxIdEnv } from '../env.ts'
+import { env, machineIdEnv } from '../env.ts'
 import { exitCodes, usage } from '../errors.ts'
 import { credentialHeaders } from '../http.ts'
 import { connect, type Run } from '../kit.ts'
@@ -43,13 +43,13 @@ const clientOf = ({ credentials, userAgent }: Run) =>
     return fetch(request)
   })
 
-const poster = (run: Run, sandbox: string) => {
+const poster = (run: Run, machine: string) => {
   const api = clientOf(run)
 
   return async (events: AgentEventInputValue[]) => {
     const { status, response, error } = await api.v1
-      .sandboxes({
-        sandbox,
+      .machines({
+        machine,
       })
       .agent.events.post({
         events,
@@ -105,10 +105,10 @@ const holdLock = (session: string) => {
     })
 }
 
-const inboxOf = (run: Run, sandbox: string, session: string) => {
+const inboxOf = (run: Run, machine: string, session: string) => {
   const api = clientOf(run)
-  const agentApi = api.v1.sandboxes({
-    sandbox,
+  const agentApi = api.v1.machines({
+    machine,
   }).agent
   const box = agentApi.inbox
 
@@ -174,9 +174,9 @@ const decisionLine = (behavior: 'allow' | 'deny', message: string | null) =>
 
 const textOf = (value: unknown) => (typeof value === 'string' ? value : '')
 
-const approve = async (run: Run, sandbox: string, hook: Record<string, unknown>) => {
-  const api = clientOf(run).v1.sandboxes({
-    sandbox,
+const approve = async (run: Run, machine: string, hook: Record<string, unknown>) => {
+  const api = clientOf(run).v1.machines({
+    machine,
   }).agent.approvals
   const id = `${process.hrtime.bigint()}-${process.pid}`
   const posted = await api.post({
@@ -238,18 +238,18 @@ export const agentCommands = (program: Program) => {
     )
     .action(
       action(async (options) => {
-        const sandbox = env[sandboxIdEnv]
+        const machine = env[machineIdEnv]
 
-        if (!sandbox) {
+        if (!machine) {
           throw usage(
-            `${sandboxIdEnv} is not set.`,
-            'The relay runs inside a sandbox, started by its agent hook.',
+            `${machineIdEnv} is not set.`,
+            'The relay runs inside a machine, started by its agent hook.',
           )
         }
 
         const run = await connect(options)
 
-        await relay(await realDeps(poster(run, sandbox)))
+        await relay(await realDeps(poster(run, machine)))
 
         return exitCodes.ok
       }),
@@ -264,17 +264,17 @@ export const agentCommands = (program: Program) => {
     )
     .action(
       action(async (options) => {
-        const sandbox = env[sandboxIdEnv]
+        const machine = env[machineIdEnv]
         const input = await readStdin()
 
-        if (!sandbox || process.env.STATIONLY_RUNNER !== '1') {
+        if (!machine || process.env.STATIONLY_RUNNER !== '1') {
           return exitCodes.ok
         }
 
         try {
           const line = await approve(
             await connect(options),
-            sandbox,
+            machine,
             JSON.parse(input) as Record<string, unknown>,
           )
 
@@ -302,11 +302,11 @@ export const agentCommands = (program: Program) => {
     .option('--resume', 'resume the session instead of starting it')
     .action(
       action(async (options) => {
-        const sandbox = env[sandboxIdEnv]
+        const machine = env[machineIdEnv]
 
-        if (!sandbox) {
+        if (!machine) {
           throw usage(
-            `${sandboxIdEnv} is not set.`,
+            `${machineIdEnv} is not set.`,
             'The runner runs inside a workspace, started by Dispatch.',
           )
         }
@@ -323,7 +323,7 @@ export const agentCommands = (program: Program) => {
 
         try {
           const run = await connect(options)
-          const post = poster(run, sandbox)
+          const post = poster(run, machine)
 
           return await runSession({
             adapter: claudeAdapter(),
@@ -333,7 +333,7 @@ export const agentCommands = (program: Program) => {
               model: options.model ?? null,
               cwd: process.cwd(),
             },
-            ...inboxOf(run, sandbox, options.session),
+            ...inboxOf(run, machine, options.session),
             post: async (events) => {
               await post(events)
             },

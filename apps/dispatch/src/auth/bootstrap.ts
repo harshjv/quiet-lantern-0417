@@ -5,14 +5,14 @@ import { and, eq, isNull } from 'drizzle-orm'
 import {
   dispatchAddress,
   networkLayout,
-  type sandboxRuntimeValues,
+  type machineRuntimeValues,
   type SettingKey,
 } from '@stationly/protocol'
 
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { component, member, station } from '../db/schema.ts'
+import { component, member, server } from '../db/schema.ts'
 import { readSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { DomainError } from '../errors.ts'
 import { cidrProblem } from '../net/cidr.ts'
@@ -44,7 +44,7 @@ export type SetupInput = {
   hostnames?: { dashboard: string; api: string }
   'ipam.pool'?: string
   public_address?: string
-  sandbox_runtime?: (typeof sandboxRuntimeValues)[number]
+  sandbox_runtime?: (typeof machineRuntimeValues)[number]
   release?: InstalledRelease | null
 }
 
@@ -119,8 +119,8 @@ export const setupInstance = async (
     actor.type === 'station' && actor.id
       ? db
           .select()
-          .from(station)
-          .where(and(eq(station.id, actor.id), eq(station.hosts_dispatch, true)))
+          .from(server)
+          .where(and(eq(server.id, actor.id), eq(server.hosts_dispatch, true)))
           .get()
       : undefined
 
@@ -128,7 +128,7 @@ export const setupInstance = async (
     if (input[key] !== undefined && !host) {
       throw new SetupError(
         'VALIDATION_FAILED',
-        `${key} needs the station that hosts Dispatch to have enrolled.`,
+        `${key} needs the server that hosts Dispatch to have enrolled.`,
       )
     }
   }
@@ -196,12 +196,12 @@ export const setupInstance = async (
     keyring.wrapForPassword(userId, input.password)
 
     if (host && (input.public_address !== undefined || input.sandbox_runtime !== undefined)) {
-      tx.update(station)
+      tx.update(server)
         .set({
           public_address: input.public_address ?? host.public_address,
-          default_sandbox_runtime: input.sandbox_runtime ?? host.default_sandbox_runtime,
+          default_machine_runtime: input.sandbox_runtime ?? host.default_machine_runtime,
         })
-        .where(eq(station.id, host.id))
+        .where(eq(server.id, host.id))
         .run()
     }
 
@@ -245,13 +245,13 @@ export const setupInstance = async (
               lockfile_digest: pin.digest,
               signature: values.signature,
             })
-            .where(and(isNull(component.station_id), eq(component.name, 'dispatch')))
+            .where(and(isNull(component.server_id), eq(component.name, 'dispatch')))
             .run()
         } else if (host) {
           tx.insert(component)
             .values({
               ...values,
-              station_id: host.id,
+              server_id: host.id,
             })
             .run()
         }
@@ -317,7 +317,7 @@ export const setupInstance = async (
             `https://${input.hostnames.dashboard} once its DNS resolves and its certificate is issued`,
           ]
         : []),
-      `ssh -L ${networkLayout.dispatchPort}:${dispatchAddress} <station>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`,
+      `ssh -L ${networkLayout.dispatchPort}:${dispatchAddress} <server>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`,
     ],
   }
 }

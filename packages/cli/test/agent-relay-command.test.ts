@@ -98,15 +98,15 @@ const spool = (name: string, payload: Record<string, unknown>) => {
   writeFileSync(join(spoolDir(), name), JSON.stringify(payload))
 }
 
-const env = (sandbox: string | null) => ({
+const env = (machine: string | null) => ({
   PATH: process.env.PATH,
   HOME: home,
   XDG_CONFIG_HOME: join(home, 'config'),
   STATIONLY_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
   STATIONLY_TOKEN: 'tok_workspace',
-  ...(sandbox
+  ...(machine
     ? {
-        STATIONLY_SANDBOX_ID: sandbox,
+        STATIONLY_SANDBOX_ID: machine,
       }
     : {}),
 })
@@ -117,7 +117,7 @@ const until = async (condition: () => boolean) => {
   }
 }
 
-test('the relay posts the spooled events to the sandbox with the workspace token and deletes the file', async () => {
+test('the relay posts the spooled events to the machine with the workspace token and deletes the file', async () => {
   const name = '1731412345000000001-7.json'
 
   spool(name, {
@@ -131,7 +131,7 @@ test('the relay posts the spooled events to the sandbox with the workspace token
   await until(() => seen.length > 0 && !existsSync(join(spoolDir(), name)))
 
   assert.equal(seen.length, 1)
-  assert.equal(seen[0]!.url, '/v1/sandboxes/sbx_01/agent/events')
+  assert.equal(seen[0]!.url, '/v1/machines/sbx_01/agent/events')
   assert.equal(seen[0]!.authorization, 'Bearer tok_workspace')
   assert.deepEqual(
     seen[0]!.body.events.map((event) => [event.id, event.type]),
@@ -159,7 +159,7 @@ test('a refusal other than 429 is final: the relay deletes the batch and exits',
   assert.equal(existsSync(join(spoolDir(), name)), false)
 })
 
-test('the relay needs the sandbox id the runtime sets', () => {
+test('the relay needs the machine id the runtime sets', () => {
   const result = spawnSync(process.execPath, [entry, 'agent', 'relay'], {
     env: env(null),
     encoding: 'utf8',

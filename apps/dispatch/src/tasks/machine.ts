@@ -2,23 +2,25 @@ import type { Static } from '@sinclair/typebox'
 import { and, asc, eq, inArray, max } from 'drizzle-orm'
 
 import {
-  sandboxExecLimits,
+  machineExecLimits,
   taskPortRange,
   taskSlotMemoryBytes,
   workspaceUser,
   type Actor,
 } from '@stationly/protocol'
 
+import { scopeOf } from '../api/lookup.ts'
 import { scopedTokenMaxSeconds, type AuthService } from '../auth/auth.ts'
 import { dropToken, mintToken } from '../auth/tokens.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
 import {
   conversation,
+  machine,
   machine_user,
   project,
   run,
-  sandbox,
+  target,
   task,
   token,
   type WorkspaceCleanup,
@@ -39,7 +41,7 @@ import { closePendingApprovals } from './approvals.ts'
 import { latestConversation, runnerLive, startTimeoutMs, wantRunner } from './runner.ts'
 import { saveActivity, taskChanged, wakeTask, type TaskRow } from './status.ts'
 
-type SandboxRow = typeof sandbox.$inferSelect
+type MachineRow = typeof machine.$inferSelect
 type ProjectRow = typeof project.$inferSelect
 
 const setupActor: Static<typeof Actor> = {
@@ -53,13 +55,13 @@ const slotStatuses = ['setting_up', 'working', 'waiting'] as const
 const liveMachineStatuses = ['creating', 'starting', 'running', 'stopped']
 
 export const projectMachine = (db: Db, row: Pick<ProjectRow, 'machine'>) => {
-  const id = row.machine?.sandbox_id
+  const id = row.machine?.machine_id
 
   if (!id) {
     return null
   }
 
-  const box = db.select().from(sandbox).where(eq(sandbox.id, id)).get()
+  const box = db.select().from(machine).where(eq(machine.id, id)).get()
 
   return box && box.deletion === null && liveMachineStatuses.includes(box.status) ? box : null
 }
@@ -67,7 +69,7 @@ export const projectMachine = (db: Db, row: Pick<ProjectRow, 'machine'>) => {
 export const slotsFor = (memoryBytes: number) =>
   Math.max(1, Math.floor(memoryBytes / taskSlotMemoryBytes))
 
-const slotsOf = (db: Db, box: SandboxRow) =>
+const slotsOf = (db: Db, box: MachineRow) =>
   db.select().from(project).where(eq(project.id, box.project_id)).get()?.machine?.slots ??
   slotsFor(box.size.memory_bytes)
 
@@ -85,10 +87,10 @@ export const holdsSlot = (db: Db, row: TaskRow) => {
   return !!session && runnerLive(session)
 }
 
-const tasksOn = (db: Db, sandboxId: string) =>
-  db.select().from(task).where(eq(task.sandbox_id, sandboxId)).all()
+const tasksOn = (db: Db, machineId: string) =>
+  db.select().from(task).where(eq(task.machine_id, machineId)).all()
 
-export const freeSlots = (db: Db, box: SandboxRow, except?: string) =>
+export const freeSlots = (db: Db, box: MachineRow, except?: string) =>
   slotsOf(db, box) -
   tasksOn(db, box.id).filter((row) => row.id !== except && holdsSlot(db, row)).length
 
@@ -97,7 +99,7 @@ export const claimSlot = (db: Db, row: TaskRow, now = new Date()) => {
     return true
   }
 
-  const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+  const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
   if (box && freeSlots(db, box, row.id) > 0) {
     return true
@@ -127,7 +129,7 @@ export const resumeTask = (db: Db, row: TaskRow, now = new Date()) => {
   const session = latestConversation(db, row.id)
 
   if (row.machine === 'project' && !setupSucceeded(db, row.setup_run_id)) {
-    const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+    const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
     if (box) {
       machineSetupRerun(db, box)
@@ -166,15 +168,15 @@ export const queuePosition = (db: Db, row: TaskRow) =>
           queued_at: task.queued_at,
         })
         .from(task)
-        .where(and(eq(task.sandbox_id, row.sandbox_id), eq(task.status, 'queued')))
+        .where(and(eq(task.machine_id, row.machine_id), eq(task.status, 'queued')))
         .all()
         .filter((other) => other.queued_at! < row.queued_at!).length
 
 export const promoteQueued = (db: Db) => {
   const machines = db
     .select()
-    .from(sandbox)
-    .where(inArray(sandbox.status, ['creating', 'starting', 'running']))
+    .from(machine)
+    .where(inArray(machine.status, ['creating', 'starting', 'running']))
     .all()
     .filter((box) => box.workspace?.kind === 'project')
 
@@ -188,7 +190,7 @@ export const promoteQueued = (db: Db) => {
     const queued = db
       .select()
       .from(task)
-      .where(and(eq(task.sandbox_id, box.id), eq(task.status, 'queued')))
+      .where(and(eq(task.machine_id, box.id), eq(task.status, 'queued')))
       .orderBy(asc(task.queued_at))
       .all()
 
@@ -203,8 +205,8 @@ export const promoteQueued = (db: Db) => {
   }
 }
 
-export const nextPort = (db: Db, sandboxId: string) => {
-  const taken = new Set(tasksOn(db, sandboxId).map((row) => row.port))
+export const nextPort = (db: Db, machineId: string) => {
+  const taken = new Set(tasksOn(db, machineId).map((row) => row.port))
 
   for (let port: number = taskPortRange.first; port <= taskPortRange.last; port += 1) {
     if (!taken.has(port)) {
@@ -219,19 +221,19 @@ const firstMachineUid = 2000
 
 export const homeOf = (name: string) => `/home/${name}`
 
-const machineUserRow = (db: Db, sandboxId: string, userId: string) =>
+const machineUserRow = (db: Db, machineId: string, userId: string) =>
   db
     .select()
     .from(machine_user)
-    .where(and(eq(machine_user.sandbox_id, sandboxId), eq(machine_user.user_id, userId)))
+    .where(and(eq(machine_user.machine_id, machineId), eq(machine_user.user_id, userId)))
     .get()
 
-const tokenAad = (sandboxId: string, userId: string) => `machine_user:${sandboxId}:${userId}`
+const tokenAad = (machineId: string, userId: string) => `machine_user:${machineId}:${userId}`
 
 export const machineUserFor = async (
   db: Db,
   deps: Pick<MachineDeps, 'auth' | 'keyring'>,
-  box: Pick<SandboxRow, 'id' | 'name' | 'project_id' | 'environment_id'>,
+  box: Pick<MachineRow, 'id' | 'name' | 'project_id' | 'target_id'>,
   userId: string,
   now = new Date(),
 ) => {
@@ -247,13 +249,13 @@ export const machineUserFor = async (
         uid: max(machine_user.uid),
       })
       .from(machine_user)
-      .where(eq(machine_user.sandbox_id, box.id))
+      .where(eq(machine_user.machine_id, box.id))
       .get()?.uid
     const uid = highest ? highest + 1 : firstMachineUid
 
     db.insert(machine_user)
       .values({
-        sandbox_id: box.id,
+        machine_id: box.id,
         user_id: userId,
         uid,
         name: `m${uid}`,
@@ -269,8 +271,7 @@ export const machineUserFor = async (
     kind: 'scoped',
     scopes: [
       {
-        project_id: box.project_id,
-        environment_id: box.environment_id,
+        ...scopeOf(db.select().from(target).where(eq(target.id, box.target_id)).get()!),
         level: 'read',
       },
     ],
@@ -284,7 +285,7 @@ export const machineUserFor = async (
       token_key: sealed.ciphertext,
       data_key_id: sealed.data_key_id,
     })
-    .where(and(eq(machine_user.sandbox_id, box.id), eq(machine_user.user_id, userId)))
+    .where(and(eq(machine_user.machine_id, box.id), eq(machine_user.user_id, userId)))
     .run()
 
   return machineUserRow(db, box.id, userId)!
@@ -299,7 +300,7 @@ export const memberEnv = (
         [
           'STATIONLY_TOKEN',
           keyring.decrypt(
-            tokenAad(member.sandbox_id, member.user_id),
+            tokenAad(member.machine_id, member.user_id),
             member.data_key_id,
             member.token_key,
           ),
@@ -308,22 +309,22 @@ export const memberEnv = (
       ]
     : [['STATIONLY_MEMBER', member.name]]
 
-export const machineUserByToken = (db: Db, sandboxId: string, tokenId: string | null) =>
+export const machineUserByToken = (db: Db, machineId: string, tokenId: string | null) =>
   tokenId
     ? db
         .select()
         .from(machine_user)
-        .where(and(eq(machine_user.sandbox_id, sandboxId), eq(machine_user.token_id, tokenId)))
+        .where(and(eq(machine_user.machine_id, machineId), eq(machine_user.token_id, tokenId)))
         .get()
     : undefined
 
-export const machineUserOf = (db: Db, row: Pick<TaskRow, 'machine' | 'sandbox_id' | 'owner'>) =>
+export const machineUserOf = (db: Db, row: Pick<TaskRow, 'machine' | 'machine_id' | 'owner'>) =>
   row.machine === 'project' && row.owner.id
     ? db
         .select()
         .from(machine_user)
         .where(
-          and(eq(machine_user.sandbox_id, row.sandbox_id), eq(machine_user.user_id, row.owner.id)),
+          and(eq(machine_user.machine_id, row.machine_id), eq(machine_user.user_id, row.owner.id)),
         )
         .get()
     : undefined
@@ -337,7 +338,7 @@ export const cloneOf = (repository: string, home: string) =>
 type RunAs = { user: string; cwd: string; envKeys?: string[] }
 
 export const execRun = (
-  box: SandboxRow,
+  box: MachineRow,
   id: string,
   command: string[],
   as: RunAs = {
@@ -346,8 +347,8 @@ export const execRun = (
   },
 ) => ({
   id,
-  service_id: null,
-  sandbox_id: box.id,
+  app_id: null,
+  machine_id: box.id,
   deployment_id: null,
   kind: 'exec' as const,
   command,
@@ -358,7 +359,7 @@ export const execRun = (
   exec: {
     cwd: as.cwd,
     user: as.user,
-    timeout_s: sandboxExecLimits.timeoutS.default,
+    timeout_s: machineExecLimits.timeoutS.default,
     stdin: null,
     env_keys: as.envKeys ?? [],
     attach: false,
@@ -380,14 +381,14 @@ export type MachineDeps = {
 
 export const deliveredRun = async (
   deps: MachineDeps,
-  box: SandboxRow,
+  box: MachineRow,
   id: string,
   entries: [string, string][],
 ) => {
   const sorted = [...entries].sort(([a], [b]) => a.localeCompare(b))
 
   if (sorted.length) {
-    await deps.deliver(box.station_id, id, sorted)
+    await deps.deliver(box.server_id, id, sorted)
   }
 
   return sorted.map(([key]) => key)
@@ -410,10 +411,10 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
   const pending = db
     .select({
       task,
-      box: sandbox,
+      box: machine,
     })
     .from(task)
-    .innerJoin(sandbox, eq(sandbox.id, task.sandbox_id))
+    .innerJoin(machine, eq(machine.id, task.machine_id))
     .where(and(eq(task.machine, 'project'), eq(task.status, 'setting_up')))
     .all()
 
@@ -455,7 +456,7 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
 
     const token = await runGitHubToken(deps.auth, db, deps.keyring, row.owner.id, {
       project: box.project_id,
-      environment: box.environment_id,
+      target: box.target_id,
     })
     const envKeys = await deliveredRun(deps, box, id, [
       ...memberEnv(deps.keyring, member),
@@ -505,18 +506,18 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
 
       if (cleanup.length) {
         tdb
-          .update(sandbox)
+          .update(machine)
           .set({
             workspace: {
               ...box.workspace!,
               cleanup: (box.workspace?.cleanup ?? []).filter((entry) => entry.user !== member.name),
             },
           })
-          .where(eq(sandbox.id, box.id))
+          .where(eq(machine.id, box.id))
           .run()
       }
     })
-    deps.reconcile(box.station_id)
+    deps.reconcile(box.server_id)
   }
 }
 
@@ -524,7 +525,7 @@ export const taskSetupReady = (db: Db, row: Pick<TaskRow, 'machine' | 'setup_run
   row.machine !== 'project' || setupSucceeded(db, row.setup_run_id)
 
 export const removeWorktree = (db: Db, row: TaskRow, reconcile: (station: string) => void) => {
-  const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+  const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
   const member = machineUserOf(db, row)
 
   if (!box?.workspace || !row.worktree || !member) {
@@ -547,19 +548,19 @@ export const removeWorktree = (db: Db, row: TaskRow, reconcile: (station: string
         }),
       )
       .run()
-    reconcile(box.station_id)
+    reconcile(box.server_id)
 
     return
   }
 
-  db.update(sandbox)
+  db.update(machine)
     .set({
       workspace: {
         ...box.workspace,
         cleanup: [...(box.workspace.cleanup ?? []), entry],
       },
     })
-    .where(eq(sandbox.id, box.id))
+    .where(eq(machine.id, box.id))
     .run()
 }
 
@@ -585,8 +586,8 @@ export const stopTask = (db: Db, row: TaskRow, now = new Date()) => {
   })
 }
 
-export const stopMachineTasks = (db: Db, sandboxId: string, now: Date) => {
-  for (const row of tasksOn(db, sandboxId)) {
+export const stopMachineTasks = (db: Db, machineId: string, now: Date) => {
+  for (const row of tasksOn(db, machineId)) {
     db.update(conversation)
       .set({
         runner_seen_at: null,
@@ -600,7 +601,7 @@ export const stopMachineTasks = (db: Db, sandboxId: string, now: Date) => {
   }
 }
 
-export const tasksInUse = (db: Db, sandboxId: string) =>
+export const tasksInUse = (db: Db, machineId: string) =>
   db
     .select({
       id: task.id,
@@ -608,15 +609,15 @@ export const tasksInUse = (db: Db, sandboxId: string) =>
     .from(task)
     .where(
       and(
-        eq(task.sandbox_id, sandboxId),
+        eq(task.machine_id, machineId),
         inArray(task.status, ['queued', 'setting_up', 'working', 'waiting']),
       ),
     )
     .limit(1)
     .get() !== undefined
 
-export const taskOnSandbox = (db: Db, sandboxId: string, cwd: string | undefined) => {
-  const all = tasksOn(db, sandboxId)
+export const taskOnMachine = (db: Db, machineId: string, cwd: string | undefined) => {
+  const all = tasksOn(db, machineId)
 
   if (all.length === 1 && all[0]!.machine === 'own') {
     return all[0]!
@@ -633,7 +634,7 @@ export const taskOnSandbox = (db: Db, sandboxId: string, cwd: string | undefined
   )
 }
 
-export const machineSetupRerun = (db: Db, box: SandboxRow) => {
+export const machineSetupRerun = (db: Db, box: MachineRow) => {
   const status = runStatus(db, box.workspace?.setup_run_id)
 
   if (!box.workspace || (status !== 'failed' && status !== 'cancelled')) {
@@ -657,14 +658,14 @@ export const machineSetupRerun = (db: Db, box: SandboxRow) => {
       )
       .run()
     tdb
-      .update(sandbox)
+      .update(machine)
       .set({
         workspace: {
           ...box.workspace!,
           setup_run_id: id,
         },
       })
-      .where(eq(sandbox.id, box.id))
+      .where(eq(machine.id, box.id))
       .run()
   })
 }
@@ -693,10 +694,10 @@ export const removeMachineUsers = (
         token_key: null,
         data_key_id: null,
       })
-      .where(and(eq(machine_user.sandbox_id, member.sandbox_id), eq(machine_user.user_id, userId)))
+      .where(and(eq(machine_user.machine_id, member.machine_id), eq(machine_user.user_id, userId)))
       .run()
 
-    const box = db.select().from(sandbox).where(eq(sandbox.id, member.sandbox_id)).get()
+    const box = db.select().from(machine).where(eq(machine.id, member.machine_id)).get()
 
     if (box?.status === 'running') {
       db.insert(run)
@@ -712,7 +713,7 @@ export const removeMachineUsers = (
           ),
         )
         .run()
-      reconcile(box.station_id)
+      reconcile(box.server_id)
     }
   }
 }

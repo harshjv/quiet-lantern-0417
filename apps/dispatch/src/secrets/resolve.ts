@@ -1,56 +1,47 @@
 import { and, asc, eq } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
-import {
-  environment,
-  grant,
-  project,
-  sandbox,
-  service,
-  service_port,
-  variable,
-} from '../db/schema.ts'
+import { app, app_port, grant, key, machine, project, target } from '../db/schema.ts'
 
 import { SecretsError } from './errors.ts'
 import { parseValue, type Segment } from './reference.ts'
-import { headValue, isClone, type SecretValueRow } from './values.ts'
+import { headValue, type SecretValueRow, type ValueTarget } from './values.ts'
 
 export const maxHops = 8
 
 export type ValueNode = {
   kind: 'value'
   from: string
-  variable_id: string
+  key_id: string
   key: string
-  service_id: string | null
-  environment_id: string | null
+  app_id: string | null
+  target: ValueTarget
   secret_value_id: string
   version: number
   sealed: boolean
   generated?: boolean
-  fallback_from_protected: boolean
 }
 
 export type ExportNode = {
   kind: 'export'
   from: 'export'
-  service_id: string
+  app_id: string
   key: string
   value: string
 }
 
 export type TemplateNode = {
   kind: 'template'
-  variable_id: string
+  key_id: string
   template: string
   parts: SourceNode[]
 }
 
 export type SourceNode = ValueNode | ExportNode | TemplateNode
 
-type ServiceRow = typeof service.$inferSelect
-type SandboxRow = typeof sandbox.$inferSelect
-type VariableRow = typeof variable.$inferSelect
+type AppRow = typeof app.$inferSelect
+type MachineRow = typeof machine.$inferSelect
+type KeyRow = typeof key.$inferSelect
 type ReferenceSegment = Extract<Segment, { type: 'reference' }>
 
 export const isSealed = (node: SourceNode): boolean =>
@@ -60,13 +51,6 @@ export const isRedacted = (leaf: ValueNode) => leaf.sealed || leaf.generated ===
 
 export const holdsRedacted = (node: SourceNode) =>
   leaves(node).some((leaf) => leaf.kind === 'value' && isRedacted(leaf))
-
-export const isFallback = (node: SourceNode): boolean =>
-  node.kind === 'value'
-    ? node.fallback_from_protected
-    : node.kind === 'template'
-      ? node.parts.some(isFallback)
-      : false
 
 export const leaves = (node: SourceNode): (ValueNode | ExportNode)[] =>
   node.kind === 'template' ? node.parts.flatMap(leaves) : [node]
@@ -102,72 +86,72 @@ const withReference = (error: unknown, segment: ReferenceSegment, chain: string[
 
 export class Resolver {
   private readonly db: Db
-  private readonly svc: ServiceRow | null
-  private readonly box: SandboxRow | null
-  private readonly env: typeof environment.$inferSelect
+  private readonly svc: AppRow | null
+  private readonly box: MachineRow | null
+  private readonly place: typeof target.$inferSelect
   private readonly projectId: string
 
-  constructor(db: Db, owner: { service: ServiceRow } | { sandbox: SandboxRow }) {
+  constructor(db: Db, owner: { app: AppRow } | { machine: MachineRow }) {
     this.db = db
-    this.svc = 'service' in owner ? owner.service : null
-    this.box = 'sandbox' in owner ? owner.sandbox : null
-    const environmentId = this.svc?.environment_id ?? this.box!.environment_id
+    this.svc = 'app' in owner ? owner.app : null
+    this.box = 'machine' in owner ? owner.machine : null
+    const targetId = this.svc?.target_id ?? this.box!.target_id
 
-    this.env = db.select().from(environment).where(eq(environment.id, environmentId)).get()!
-    this.projectId = this.env.project_id
+    this.place = db.select().from(target).where(eq(target.id, targetId)).get()!
+    this.projectId = this.place.project_id
   }
 
-  static forService(db: Db, serviceId: string) {
-    const row = db.select().from(service).where(eq(service.id, serviceId)).get()
+  static forApp(db: Db, appId: string) {
+    const row = db.select().from(app).where(eq(app.id, appId)).get()
 
     if (!row) {
-      throw new SecretsError('NOT_FOUND', `service ${serviceId} does not exist`)
+      throw new SecretsError('NOT_FOUND', `app ${appId} does not exist`)
     }
 
     return new Resolver(db, {
-      service: row,
+      app: row,
     })
   }
 
-  static forSandbox(db: Db, sandboxId: string) {
-    const row = db.select().from(sandbox).where(eq(sandbox.id, sandboxId)).get()
+  static forMachine(db: Db, machineId: string) {
+    const row = db.select().from(machine).where(eq(machine.id, machineId)).get()
 
     if (!row) {
-      throw new SecretsError('NOT_FOUND', `sandbox ${sandboxId} does not exist`)
+      throw new SecretsError('NOT_FOUND', `machine ${machineId} does not exist`)
     }
 
     return new Resolver(db, {
-      sandbox: row,
+      machine: row,
     })
   }
 
-  serviceVariables() {
+  appKeys() {
     return this.db
       .select()
-      .from(variable)
-      .where(and(eq(variable.scope, 'service'), eq(variable.service_id, this.svc!.id)))
-      .orderBy(asc(variable.key))
+      .from(key)
+      .where(and(eq(key.scope, 'app'), eq(key.app_id, this.svc!.id)))
+      .orderBy(asc(key.name))
       .all()
   }
 
-  sandboxVariables() {
+  machineKeys() {
     return this.db
       .select()
-      .from(variable)
-      .where(and(eq(variable.scope, 'sandbox'), eq(variable.sandbox_id, this.box!.id)))
-      .orderBy(asc(variable.key))
+      .from(key)
+      .where(and(eq(key.scope, 'machine'), eq(key.machine_id, this.box!.id)))
+      .orderBy(asc(key.name))
       .all()
   }
 
-  resolve(v: VariableRow): SourceNode {
-    return this.resolveServiceVariable(this.svc!, v, [])
+  resolve(v: KeyRow): SourceNode {
+    return this.resolveAppKey(this.svc!, v, [])
   }
 
-  resolveSandbox(v: VariableRow): SourceNode {
+  resolveMachine(v: KeyRow): SourceNode {
     const box = this.box!
 
     if (v.kind === 'reference' && v.reference !== null) {
-      const chain = [`${box.name}.${v.key}`]
+      const chain = [`${box.name}.${v.name}`]
       const parts = parseValue(v.reference)
         .filter((s): s is ReferenceSegment => s.type === 'reference')
         .map((segment) => {
@@ -181,8 +165,8 @@ export class Resolver {
             }
 
             throw new SecretsError(
-              'VARIABLE_REFERENCE_INVALID',
-              'a sandbox variable references project or global variables only',
+              'KEY_REFERENCE_INVALID',
+              'a machine key references project or global keys only',
               {
                 offset: segment.offset,
               },
@@ -194,77 +178,77 @@ export class Resolver {
 
       return {
         kind: 'template',
-        variable_id: v.id,
+        key_id: v.id,
         template: v.reference,
         parts,
       }
     }
 
-    const row = headValue(this.db, v.id, null)
+    const row = headValue(this.db, v.id, 'production')
 
     if (!row) {
-      throw new SecretsError('VARIABLE_UNRESOLVED', `${box.name}.${v.key} has no value`, {
-        key: v.key,
-        sandbox_id: box.id,
+      throw new SecretsError('KEY_UNRESOLVED', `${box.name}.${v.name} has no value`, {
+        key: v.name,
+        machine_id: box.id,
       })
     }
 
-    return this.valueNode(v, row, 'sandbox', null)
+    return this.valueNode(v, row, 'machine', null)
   }
 
-  private missing(label: string, v: VariableRow, details: Record<string, unknown>) {
-    const source = this.env.source_environment_id
-      ? this.db
-          .select({
-            name: environment.name,
-          })
-          .from(environment)
-          .where(eq(environment.id, this.env.source_environment_id))
-          .get()?.name
-      : undefined
-    const set = `Set a value for ${v.key} in ${this.env.name}`
+  private get where() {
+    return this.place.kind === 'production' ? 'production' : `preview ${this.place.name}`
+  }
 
+  private missing(label: string, v: KeyRow, details: Record<string, unknown>) {
     return new SecretsError(
-      'VARIABLE_UNRESOLVED',
-      `${label} has no value in environment ${this.env.name}`,
+      'KEY_UNRESOLVED',
+      `${label} has no value in ${this.where}`,
       {
-        key: v.key,
-        environment: this.env.name,
+        key: v.name,
+        preview: this.place.kind === 'preview' ? this.place.name : null,
         ...details,
       },
-      v.kind === 'sealed' && source
-        ? `${set}, or mark it to be copied to new environments in ${source}.`
-        : `${set}.`,
+      this.place.kind === 'preview' && v.kind === 'sealed'
+        ? `Set a preview value for ${v.name}; previews never read production's sealed values.`
+        : `Set a value for ${v.name}.`,
     )
   }
 
-  private label(v: VariableRow, owner: ServiceRow) {
-    return `${owner.name}.${v.key}`
+  private headFor(v: KeyRow) {
+    if (this.place.kind === 'production') {
+      return headValue(this.db, v.id, 'production')
+    }
+
+    const preview = headValue(this.db, v.id, 'preview')
+
+    if (preview || (v.kind === 'sealed' && v.scope !== 'app')) {
+      return preview
+    }
+
+    return headValue(this.db, v.id, 'production')
   }
 
-  private valueNode(
-    v: VariableRow,
-    row: SecretValueRow,
-    from: string,
-    serviceId: string | null,
-    fallback = false,
-  ): ValueNode {
+  private label(v: KeyRow, owner: AppRow) {
+    return `${owner.name}.${v.name}`
+  }
+
+  private valueNode(v: KeyRow, row: SecretValueRow, from: string, appId: string | null): ValueNode {
     return {
       kind: 'value',
       from,
-      variable_id: v.id,
-      key: v.key,
-      service_id: serviceId,
-      environment_id: row.environment_id,
+      key_id: v.id,
+      key: v.name,
+      app_id: appId,
+      target: row.target,
       secret_value_id: row.id,
       version: row.version,
       sealed: v.kind === 'sealed',
       generated: v.kind === 'literal' && v.reference !== null,
-      fallback_from_protected: fallback,
     }
   }
 
-  private resolveServiceVariable(owner: ServiceRow, v: VariableRow, chain: string[]): SourceNode {
+  private resolveAppKey(owner: AppRow, v: KeyRow, chain: string[]): SourceNode {
     const here = [...chain, this.label(v, owner)]
 
     if (v.kind === 'reference' && v.reference !== null) {
@@ -281,34 +265,34 @@ export class Resolver {
 
       return {
         kind: 'template',
-        variable_id: v.id,
+        key_id: v.id,
         template: v.reference,
         parts,
       }
     }
 
-    const row = headValue(this.db, v.id, null)
+    const row = this.headFor(v)
 
     if (!row) {
       throw this.missing(this.label(v, owner), v, {
-        service_id: owner.id,
+        app_id: owner.id,
       })
     }
 
-    return this.valueNode(v, row, 'service', owner.id)
+    return this.valueNode(v, row, 'app', owner.id)
   }
 
   private resolveTarget(
-    owner: ServiceRow,
+    owner: AppRow,
     segment: ReferenceSegment,
     chain: string[],
-    fromVariable: string,
+    fromKey: string,
   ): SourceNode {
-    const target = segment.target
+    const ref = segment.target
 
     if (chain.length > maxHops) {
       throw new SecretsError(
-        'VARIABLE_REFERENCE_INVALID',
+        'KEY_REFERENCE_INVALID',
         `reference chain ${chain.join(' -> ')} is longer than ${maxHops} hops`,
         {
           hops: chain.length,
@@ -316,40 +300,32 @@ export class Resolver {
       )
     }
 
-    switch (target.type) {
-      case 'service': {
+    switch (ref.type) {
+      case 'app': {
         const svc = this.db
           .select()
-          .from(service)
-          .where(
-            and(eq(service.environment_id, owner.environment_id), eq(service.name, target.service)),
-          )
+          .from(app)
+          .where(and(eq(app.target_id, owner.target_id), eq(app.name, ref.app)))
           .get()
 
         if (!svc) {
           throw new SecretsError(
-            'VARIABLE_TARGET_MISSING',
-            `service ${target.service} does not exist in environment ${this.env.name}`,
+            'KEY_TARGET_MISSING',
+            `app ${ref.app} does not exist in ${this.where}`,
             {},
           )
         }
 
         const v = this.db
           .select()
-          .from(variable)
-          .where(
-            and(
-              eq(variable.scope, 'service'),
-              eq(variable.service_id, svc.id),
-              eq(variable.key, target.key),
-            ),
-          )
+          .from(key)
+          .where(and(eq(key.scope, 'app'), eq(key.app_id, svc.id), eq(key.name, ref.key)))
           .get()
 
         if (v) {
-          if (v.id === fromVariable || chain.includes(this.label(v, svc))) {
+          if (v.id === fromKey || chain.includes(this.label(v, svc))) {
             throw new SecretsError(
-              'VARIABLE_CYCLE',
+              'KEY_CYCLE',
               `reference chain returns to itself: ${[...chain, this.label(v, svc)].join(' -> ')}`,
               {
                 cycle: [...chain, this.label(v, svc)],
@@ -357,15 +333,15 @@ export class Resolver {
             )
           }
 
-          return this.resolveServiceVariable(svc, v, chain)
+          return this.resolveAppKey(svc, v, chain)
         }
 
-        const value = this.exportOf(svc, target.key)
+        const value = this.exportOf(svc, ref.key)
 
         if (value === undefined) {
           throw new SecretsError(
-            'VARIABLE_UNRESOLVED',
-            `service ${svc.name} has no variable or export ${target.key}`,
+            'KEY_UNRESOLVED',
+            `app ${svc.name} has no key or export ${ref.key}`,
             {},
           )
         }
@@ -373,38 +349,34 @@ export class Resolver {
         return {
           kind: 'export',
           from: 'export',
-          service_id: svc.id,
-          key: target.key,
+          app_id: svc.id,
+          key: ref.key,
           value,
         }
       }
 
       case 'project':
-        return this.resolveProject(target.key)
+        return this.resolveProject(ref.key)
       case 'global':
-        return this.resolveGlobal(target.key)
+        return this.resolveGlobal(ref.key)
       case 'shared':
         throw new SecretsError(
-          'VARIABLE_TARGET_MISSING',
-          `attachment ${target.alias} does not exist in environment ${this.env.name}; attachments arrive in phase 1b`,
+          'KEY_TARGET_MISSING',
+          `attachment ${ref.alias} does not exist in ${this.where}; attachments arrive in phase 1b`,
           {},
         )
       case 'generator':
-        throw new SecretsError(
-          'VARIABLE_REFERENCE_INVALID',
-          'secret(N) must be the entire value',
-          {},
-        )
+        throw new SecretsError('KEY_REFERENCE_INVALID', 'secret(N) must be the entire value', {})
     }
   }
 
-  private exportOf(svc: ServiceRow, key: string) {
+  private exportOf(svc: AppRow, key: string) {
     const host = `${svc.name}.internal`
     const port = this.db
       .select()
-      .from(service_port)
-      .where(eq(service_port.service_id, svc.id))
-      .orderBy(asc(service_port.created_at), asc(service_port.port))
+      .from(app_port)
+      .where(eq(app_port.app_id, svc.id))
+      .orderBy(asc(app_port.created_at), asc(app_port.port))
       .get()
 
     if (key === 'HOST') {
@@ -422,113 +394,77 @@ export class Resolver {
     return undefined
   }
 
-  private resolveProject(key: string): ValueNode {
+  private resolveProject(name: string): ValueNode {
     const v = this.db
       .select()
-      .from(variable)
-      .where(
-        and(
-          eq(variable.scope, 'project'),
-          eq(variable.project_id, this.projectId),
-          eq(variable.key, key),
-        ),
-      )
+      .from(key)
+      .where(and(eq(key.scope, 'project'), eq(key.project_id, this.projectId), eq(key.name, name)))
       .get()
 
     if (!v) {
-      throw new SecretsError('VARIABLE_UNRESOLVED', `project variable ${key} does not exist`, {})
+      throw new SecretsError('KEY_UNRESOLVED', `project key ${name} does not exist`, {})
     }
 
-    const own = headValue(this.db, v.id, this.env.id)
+    const row = this.headFor(v)
 
-    if (own) {
-      return this.valueNode(v, own, `project:${this.env.name}`, null)
+    if (!row) {
+      throw this.missing(`project key ${name}`, v, {})
     }
 
-    if (isClone(this.env) && v.kind === 'sealed' && !v.copy_to_clones) {
-      throw this.missing(`project variable ${key}`, v, {})
-    }
-
-    const protectedValues = this.env.protected
-      ? []
-      : this.db
-          .select({
-            id: environment.id,
-          })
-          .from(environment)
-          .where(and(eq(environment.project_id, this.projectId), eq(environment.protected, true)))
-          .all()
-          .filter((e) => headValue(this.db, v.id, e.id) !== undefined)
-    const fallback = headValue(this.db, v.id, null)
-
-    if (fallback) {
-      return this.valueNode(v, fallback, 'project:default', null, protectedValues.length > 0)
-    }
-
-    if (protectedValues.length > 0) {
-      throw new SecretsError(
-        'VARIABLE_PROTECTED_SOURCE',
-        `project variable ${key} has values only in protected environments and no default`,
-        {
-          protected_environments: protectedValues.map((e) => e.id),
-        },
-      )
-    }
-
-    throw this.missing(`project variable ${key}`, v, {})
+    return this.valueNode(v, row, `project:${row.target}`, null)
   }
 
-  private resolveGlobal(key: string): ValueNode {
+  private resolveGlobal(name: string): ValueNode {
     const granted = this.db
       .select({
-        v: variable,
+        v: key,
         alias: grant.alias,
       })
       .from(grant)
-      .innerJoin(variable, eq(variable.id, grant.variable_id))
-      .where(and(eq(grant.project_id, this.projectId), eq(variable.scope, 'global')))
+      .innerJoin(key, eq(key.id, grant.key_id))
+      .where(and(eq(grant.project_id, this.projectId), eq(key.scope, 'global')))
       .all()
-      .find((g) => (g.alias ?? g.v.key) === key)
+      .find((g) => (g.alias ?? g.v.name) === name)
 
     if (!granted) {
       const exists = this.db
         .select({
-          id: variable.id,
+          id: key.id,
         })
-        .from(variable)
-        .where(and(eq(variable.scope, 'global'), eq(variable.key, key)))
+        .from(key)
+        .where(and(eq(key.scope, 'global'), eq(key.name, name)))
         .get()
 
       if (exists) {
         throw new SecretsError(
-          'VARIABLE_NOT_GRANTED',
-          `global variable ${key} exists but project ${this.projectId} holds no grant for it`,
+          'KEY_NOT_GRANTED',
+          `global key ${name} exists but project ${this.projectId} holds no grant for it`,
           {},
         )
       }
 
-      throw new SecretsError('VARIABLE_UNRESOLVED', `global variable ${key} does not exist`, {})
+      throw new SecretsError('KEY_UNRESOLVED', `global key ${name} does not exist`, {})
     }
 
-    const row = headValue(this.db, granted.v.id, null)
+    const row = headValue(this.db, granted.v.id, 'production')
 
     if (!row) {
-      throw new SecretsError('VARIABLE_UNRESOLVED', `global variable ${key} has no value`, {})
+      throw new SecretsError('KEY_UNRESOLVED', `global key ${name} has no value`, {})
     }
 
     return this.valueNode(granted.v, row, 'global', null)
   }
 }
 
-export const projectOf = (db: Db, serviceId: string) =>
+export const projectOf = (db: Db, appId: string) =>
   db
     .select({
       project: project,
-      environment: environment,
-      service: service,
+      target: target,
+      app: app,
     })
-    .from(service)
-    .innerJoin(environment, eq(environment.id, service.environment_id))
-    .innerJoin(project, eq(project.id, environment.project_id))
-    .where(eq(service.id, serviceId))
+    .from(app)
+    .innerJoin(target, eq(target.id, app.target_id))
+    .innerJoin(project, eq(project.id, target.project_id))
+    .where(eq(app.id, appId))
     .get()

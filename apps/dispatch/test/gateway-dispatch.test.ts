@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import type { Generation } from '@stationly/protocol'
 
 import { setupInstance } from '../src/auth/bootstrap.ts'
-import { setting, station } from '../src/db/schema.ts'
+import { server, setting } from '../src/db/schema.ts'
 
 import {
   adminEmail,
@@ -16,7 +16,13 @@ import {
   type Dispatch,
 } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
-import { createProject, createService, pinPlatform, seedLockfile } from './helpers/seed.ts'
+import {
+  createApp,
+  createPreview,
+  createProject,
+  pinPlatform,
+  seedLockfile,
+} from './helpers/seed.ts'
 
 const publicAddress = '198.51.100.10'
 const dashboard = 'dash.sly.test'
@@ -55,11 +61,11 @@ describe('the generation carries Dispatch routes', () => {
     seedLockfile(h)
     fake = await startFakeStation(h)
     h.db
-      .update(station)
+      .update(server)
       .set({
         hosts_dispatch: true,
       })
-      .where(eq(station.id, fake.stationId))
+      .where(eq(server.id, fake.stationId))
       .run()
   })
 
@@ -112,11 +118,11 @@ describe('the generation carries Dispatch routes', () => {
 
   test('with a public address both hostnames route directly to Dispatch with the classic resolver and redirect HTTP', async () => {
     h.db
-      .update(station)
+      .update(server)
       .set({
         public_address: publicAddress,
       })
-      .where(eq(station.id, fake.stationId))
+      .where(eq(server.id, fake.stationId))
       .run()
     const doc = await next((d) => 'system-api' in d.gateway.routes)
 
@@ -162,33 +168,34 @@ describe('the generation carries Dispatch routes', () => {
 
   test('a station that does not host Dispatch gets neither the target nor the routes', async () => {
     h.db
-      .update(station)
+      .update(server)
       .set({
         hosts_dispatch: false,
       })
-      .where(eq(station.id, fake.stationId))
+      .where(eq(server.id, fake.stationId))
       .run()
     const doc = await next((d) => !('dispatch' in d.system_targets))
 
     assert.deepEqual(doc.system_targets, {})
     assert.deepEqual(Object.keys(doc.gateway.routes), [])
     h.db
-      .update(station)
+      .update(server)
       .set({
         hosts_dispatch: true,
       })
-      .where(eq(station.id, fake.stationId))
+      .where(eq(server.id, fake.stationId))
       .run()
   })
 
-  test('a service domain cannot take Dispatch hostname, and Dispatch cannot take a routed one', async () => {
+  test('an app domain cannot take Dispatch hostname, and Dispatch cannot take a routed one', async () => {
     putSetting(h, 'hostnames.dashboard', dashboard)
     putSetting(h, 'hostnames.api', api)
     pinPlatform(h, {
       gateway: true,
     })
-    const environmentId = (await createProject(h, 'gw')).default_environment_id
-    const web = await createService(h, environmentId, {
+    const environmentId = (await createPreview(h, (await createProject(h, 'gw')).name, 'staging'))
+      .id
+    const web = await createApp(h, environmentId, {
       name: 'web',
       ref: 'nginx:1.27',
       ports: [
@@ -417,13 +424,13 @@ describe('a domainless station answers on its public address', () => {
     const fake = await startFakeStation(h)
 
     h.db
-      .update(station)
+      .update(server)
       .set({
         hosts_dispatch: true,
       })
-      .where(eq(station.id, fake.stationId))
+      .where(eq(server.id, fake.stationId))
       .run()
-    const updated = await h.call('PATCH', `/v1/stations/${fake.stationId}`, {
+    const updated = await h.call('PATCH', `/v1/servers/${fake.stationId}`, {
       token: h.admin.token,
       body: {
         public_address: publicAddress,

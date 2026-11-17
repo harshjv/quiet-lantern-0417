@@ -24,7 +24,7 @@ export const blobFile = (dir: string, blobId: string) => join(dir, blobId)
 export const storeBlob = (
   db: Db,
   dir: string,
-  input: { kind: BlobKind; bytes: Buffer; ttlMs: number; service_id?: string | null },
+  input: { kind: BlobKind; bytes: Buffer; ttlMs: number; app_id?: string | null },
 ) => {
   const id = newId('blob')
   const sha256 = createHash('sha256').update(input.bytes).digest('hex')
@@ -43,7 +43,7 @@ export const storeBlob = (
       size_bytes: input.bytes.length,
       sha256,
       expires_at,
-      service_id: input.service_id ?? null,
+      app_id: input.app_id ?? null,
     })
     .run()
 
@@ -92,7 +92,7 @@ export const mintGrant = (
   db.update(blob)
     .set({
       grant_sha256: digest(token),
-      grant_station_id: stationId,
+      grant_server_id: stationId,
       grant_expires_at: expires,
     })
     .where(eq(blob.id, blobId))
@@ -142,7 +142,7 @@ export const serveBlob = (db: Db, dir: string, req: IncomingMessage, res: Server
   const row = db
     .select()
     .from(blob)
-    .where(and(eq(blob.id, blobId!), eq(blob.grant_station_id, stationId!)))
+    .where(and(eq(blob.id, blobId!), eq(blob.grant_server_id, stationId!)))
     .get()
   const presented = token ? digest(token) : ''
   const valid =
@@ -153,7 +153,7 @@ export const serveBlob = (db: Db, dir: string, req: IncomingMessage, res: Server
     Date.now() < row.grant_expires_at.getTime()
 
   if (!row || !valid) {
-    send(res, 401, 'UNAUTHENTICATED', 'the blob grant is unknown, for another station, or expired')
+    send(res, 401, 'UNAUTHENTICATED', 'the blob grant is unknown, for another server, or expired')
 
     return true
   }

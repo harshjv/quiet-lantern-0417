@@ -3,97 +3,100 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { Principal } from '../auth/principal.ts'
 import type { Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
-import { environment, service, variable } from '../db/schema.ts'
+import { app, key, target } from '../db/schema.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { hasReference, parseValue } from '../secrets/reference.ts'
-import { decryptValue, headValue, nextValueVersion, variablesOf } from '../secrets/values.ts'
+import {
+  decryptValue,
+  headValue,
+  keysOf,
+  nextValueVersion,
+  type ValueTarget,
+} from '../secrets/values.ts'
 
-import { requireHuman, requireInstance, requireLevel } from './access.ts'
+import { requireInstance, requireLevel } from './access.ts'
 import type { ChangeSet } from './changes.ts'
 import { fail, invalid } from './errors.ts'
-import type { VariableRow } from './lookup.ts'
+import type { KeyRow } from './lookup.ts'
 
-export type VariableItem = {
-  key: string
+export type KeyItem = {
+  name: string
   kind: 'literal' | 'reference' | 'sealed'
   value?: string
   reference?: string
   injection?: 'env' | 'file'
   build?: boolean
-  copy_to_clones?: boolean
 }
 
-export type VariableScope =
-  | { scope: 'service'; parent: string; serviceId: string | null; target: Target }
-  | { scope: 'project'; parent: string; environmentId: string | null; target: Target }
-  | { scope: 'sandbox'; parent: string; sandboxId: string; target: Target }
+export type KeyScope =
+  | { scope: 'app'; parent: string; appId: string | null; valueTarget: ValueTarget; target: Target }
+  | { scope: 'project'; parent: string; valueTarget: ValueTarget; target: Target }
+  | { scope: 'machine'; parent: string; machineId: string; target: Target }
   | { scope: 'global'; target: Target }
 
-export const existingVariables = (db: Db, scope: VariableScope): VariableRow[] => {
-  if (scope.scope === 'service') {
-    if (!scope.serviceId) {
+export const existingKeys = (db: Db, scope: KeyScope): KeyRow[] => {
+  if (scope.scope === 'app') {
+    if (!scope.appId) {
       return []
     }
 
-    return variablesOf(db, {
-      scope: 'service',
-      id: scope.serviceId,
+    return keysOf(db, {
+      scope: 'app',
+      id: scope.appId,
     }).all()
   }
 
-  if (scope.scope === 'sandbox') {
-    return variablesOf(db, {
-      scope: 'sandbox',
-      id: scope.sandboxId,
+  if (scope.scope === 'machine') {
+    return keysOf(db, {
+      scope: 'machine',
+      id: scope.machineId,
     }).all()
   }
 
   if (scope.scope === 'project') {
-    return variablesOf(db, {
+    return keysOf(db, {
       scope: 'project',
       id: scope.parent,
     }).all()
   }
 
-  return variablesOf(db, {
+  return keysOf(db, {
     scope: 'global',
   }).all()
 }
 
-export const dependentsOf = (db: Db, row: VariableRow) => {
+export const dependentsOf = (db: Db, row: KeyRow) => {
   const candidates = db
     .select()
-    .from(variable)
-    .where(and(eq(variable.scope, 'service'), eq(variable.kind, 'reference')))
+    .from(key)
+    .where(and(eq(key.scope, 'app'), eq(key.kind, 'reference')))
     .all()
   const owner =
-    row.scope === 'service'
-      ? db.select().from(service).where(eq(service.id, row.service_id!)).get()
-      : undefined
-  const projectEnvs =
+    row.scope === 'app' ? db.select().from(app).where(eq(app.id, row.app_id!)).get() : undefined
+  const projectTargets =
     row.scope === 'project'
       ? db
           .select({
-            id: environment.id,
+            id: target.id,
           })
-          .from(environment)
-          .where(eq(environment.project_id, row.project_id!))
+          .from(target)
+          .where(eq(target.project_id, row.project_id!))
           .all()
           .map((e) => e.id)
       : []
-  const projectServices = projectEnvs.length
+  const projectApps = projectTargets.length
     ? new Set(
         db
           .select({
-            id: service.id,
+            id: app.id,
           })
-          .from(service)
-          .where(inArray(service.environment_id, projectEnvs))
+          .from(app)
+          .where(inArray(app.target_id, projectTargets))
           .all()
           .map((s) => s.id),
       )
     : new Set<string>()
-  const out: { entity: 'variable'; id: string; key: string; service_id: string }[] = []
+  const out: { entity: 'key'; id: string; name: string; app_id: string }[] = []
 
   for (const candidate of candidates) {
     if (candidate.id === row.id || !candidate.reference) {
@@ -113,30 +116,30 @@ export const dependentsOf = (db: Db, row: VariableRow) => {
         return false
       }
 
-      const target = segment.target
+      const ref = segment.target
 
-      if (row.scope === 'service' && target.type === 'service' && owner) {
-        if (target.service !== owner.name || target.key !== row.key) {
+      if (row.scope === 'app' && ref.type === 'app' && owner) {
+        if (ref.app !== owner.name || ref.key !== row.name) {
           return false
         }
 
         const candidateOwner = db
           .select({
-            environment_id: service.environment_id,
+            target_id: app.target_id,
           })
-          .from(service)
-          .where(eq(service.id, candidate.service_id!))
+          .from(app)
+          .where(eq(app.id, candidate.app_id!))
           .get()
 
-        return candidateOwner?.environment_id === owner.environment_id
+        return candidateOwner?.target_id === owner.target_id
       }
 
-      if (row.scope === 'project' && target.type === 'project') {
-        return target.key === row.key && projectServices.has(candidate.service_id!)
+      if (row.scope === 'project' && ref.type === 'project') {
+        return ref.key === row.name && projectApps.has(candidate.app_id!)
       }
 
-      if (row.scope === 'global' && target.type === 'global') {
-        return target.key === row.key
+      if (row.scope === 'global' && ref.type === 'global') {
+        return ref.key === row.name
       }
 
       return false
@@ -144,10 +147,10 @@ export const dependentsOf = (db: Db, row: VariableRow) => {
 
     if (hit) {
       out.push({
-        entity: 'variable',
+        entity: 'key',
         id: candidate.id,
-        key: candidate.key,
-        service_id: candidate.service_id!,
+        name: candidate.name,
+        app_id: candidate.app_id!,
       })
     }
   }
@@ -155,7 +158,7 @@ export const dependentsOf = (db: Db, row: VariableRow) => {
   return out
 }
 
-const levelFor = (principal: Principal, scope: VariableScope, kind: string) => {
+const levelFor = (principal: Principal, scope: KeyScope, kind: string) => {
   if (scope.scope === 'global') {
     return requireInstance(principal, 'admin')
   }
@@ -170,9 +173,9 @@ const levelFor = (principal: Principal, scope: VariableScope, kind: string) => {
 const unchanged = (
   db: Db,
   keyring: Keyring,
-  prior: VariableRow | undefined,
-  item: VariableItem,
-  environmentId: string | null,
+  prior: KeyRow | undefined,
+  item: KeyItem,
+  valueTarget: ValueTarget,
 ) => {
   if (!prior || prior.kind !== item.kind) {
     return false
@@ -180,8 +183,7 @@ const unchanged = (
 
   if (
     (item.injection ?? prior.injection) !== prior.injection ||
-    (item.build ?? prior.build) !== prior.build ||
-    (item.copy_to_clones ?? prior.copy_to_clones) !== prior.copy_to_clones
+    (item.build ?? prior.build) !== prior.build
   ) {
     return false
   }
@@ -199,21 +201,21 @@ const unchanged = (
     return false
   }
 
-  const head = headValue(db, prior.id, environmentId, 'unset')
+  const head = headValue(db, prior.id, valueTarget, 'unset')
 
   return head !== undefined && decryptValue(keyring, head) === item.value
 }
 
-export const planVariables = (
+export const planKeys = (
   db: Db,
   keyring: Keyring,
   principal: Principal,
   set: ChangeSet,
-  scope: VariableScope,
-  input: { set?: VariableItem[]; unset?: string[]; allow_unresolved?: boolean },
+  scope: KeyScope,
+  input: { set?: KeyItem[]; unset?: string[]; allow_unresolved?: boolean },
   options: { replaceAll?: boolean } = {},
 ) => {
-  const existing = new Map(existingVariables(db, scope).map((v) => [v.key, v]))
+  const existing = new Map(existingKeys(db, scope).map((v) => [v.name, v]))
   const issues: { path: string; message: string }[] = []
   const items = input.set ?? []
 
@@ -221,10 +223,10 @@ export const planVariables = (
     const path = `/set/${i}`
 
     if (item.kind === 'reference') {
-      if (scope.scope !== 'service' && scope.scope !== 'sandbox') {
+      if (scope.scope !== 'app' && scope.scope !== 'machine') {
         issues.push({
           path: `${path}/kind`,
-          message: `${scope.scope} variables hold values, not references`,
+          message: `${scope.scope} keys hold values, not references`,
         })
       }
 
@@ -239,7 +241,7 @@ export const planVariables = (
           message: 'contains no ${{...}} reference',
         })
       } else if (
-        scope.scope === 'sandbox' &&
+        scope.scope === 'machine' &&
         parseValue(item.reference).some(
           (segment) =>
             segment.type === 'reference' &&
@@ -250,13 +252,13 @@ export const planVariables = (
         issues.push({
           path: `${path}/reference`,
           message:
-            'a sandbox variable references ${{project.KEY}}, ${{global.KEY}} or ${{secret(N)}} only, never a service',
+            'a machine key references ${{project.KEY}}, ${{global.KEY}} or ${{secret(N)}} only, never an app',
         })
       }
     } else if (
       item.value === undefined &&
       !(item.kind === 'literal' && item.reference !== undefined) &&
-      !(item.kind === 'sealed' && existing.get(item.key)?.kind === 'sealed')
+      !(item.kind === 'sealed' && existing.get(item.name)?.kind === 'sealed')
     ) {
       issues.push({
         path: `${path}/value`,
@@ -290,35 +292,28 @@ export const planVariables = (
       }
     }
 
-    const prior = existing.get(item.key)
-
-    if (item.copy_to_clones !== undefined && item.kind !== 'sealed') {
-      issues.push({
-        path: `${path}/copy_to_clones`,
-        message: 'only a sealed variable can be copied to clones',
-      })
-    }
+    const prior = existing.get(item.name)
 
     if (prior?.kind === 'sealed' && item.kind !== 'sealed') {
       issues.push({
         path: `${path}/kind`,
-        message: `${item.key} is sealed; converting a sealed variable is not possible`,
+        message: `${item.name} is sealed; converting a sealed key is not possible`,
       })
     }
 
-    if (items.findIndex((other) => other.key === item.key) !== i) {
+    if (items.findIndex((other) => other.name === item.name) !== i) {
       issues.push({
-        path: `${path}/key`,
-        message: 'key appears twice',
+        path: `${path}/name`,
+        message: 'name appears twice',
       })
     }
   })
 
-  for (const [i, key] of (input.unset ?? []).entries()) {
-    if (!existing.has(key)) {
+  for (const [i, name] of (input.unset ?? []).entries()) {
+    if (!existing.has(name)) {
       issues.push({
         path: `/unset/${i}`,
-        message: `${key} does not exist`,
+        message: `${name} does not exist`,
       })
     }
   }
@@ -327,21 +322,15 @@ export const planVariables = (
     invalid(issues)
   }
 
-  const environmentId = scope.scope === 'project' ? scope.environmentId : null
+  const valueTarget =
+    scope.scope === 'project' || scope.scope === 'app' ? scope.valueTarget : 'production'
   const parent = scope.scope === 'global' ? null : scope.parent
 
   for (const item of items) {
     levelFor(principal, scope, item.kind)
-    const prior = existing.get(item.key)
+    const prior = existing.get(item.name)
 
-    if (
-      item.copy_to_clones !== undefined &&
-      item.copy_to_clones !== (prior?.copy_to_clones ?? false)
-    ) {
-      requireHuman(principal, `Changing copy_to_clones of ${item.key}`, scope.target)
-    }
-
-    if (unchanged(db, keyring, prior, item, environmentId)) {
+    if (unchanged(db, keyring, prior, item, valueTarget)) {
       continue
     }
 
@@ -354,25 +343,20 @@ export const planVariables = (
     const plaintext = item.kind === 'reference' || reference !== null ? null : (item.value ?? null)
     const after: Record<string, unknown> = {
       scope: scope.scope,
-      key: item.key,
+      name: item.name,
       kind: item.kind,
       reference,
       injection: item.injection ?? prior?.injection ?? 'env',
       build: item.build ?? prior?.build ?? false,
-      copy_to_clones: item.copy_to_clones ?? prior?.copy_to_clones ?? false,
       value_length: plaintext === null ? null : Buffer.byteLength(plaintext, 'utf8'),
       version:
         plaintext === null && reference === null
           ? null
           : prior
-            ? nextValueVersion(db, prior.id, environmentId)
+            ? nextValueVersion(db, prior.id, valueTarget)
             : 1,
       allow_unresolved: input.allow_unresolved ?? false,
-      ...(environmentId
-        ? {
-            environment_id: environmentId,
-          }
-        : {}),
+      target: valueTarget,
       ...(plaintext === null
         ? {}
         : {
@@ -382,33 +366,33 @@ export const planVariables = (
 
     if (prior) {
       set.update(
-        'variable',
+        'key',
         prior.id,
         '',
         {
-          key: prior.key,
+          name: prior.name,
           kind: prior.kind,
           reference: prior.reference,
         },
         after,
       )
     } else {
-      set.add('variable', parent, after)
+      set.add('key', parent, after)
     }
   }
 
   const unset = new Set(input.unset ?? [])
 
   if (options.replaceAll) {
-    for (const key of existing.keys()) {
-      if (!items.some((item) => item.key === key)) {
-        unset.add(key)
+    for (const name of existing.keys()) {
+      if (!items.some((item) => item.name === name)) {
+        unset.add(name)
       }
     }
   }
 
-  for (const key of unset) {
-    const prior = existing.get(key)!
+  for (const name of unset) {
+    const prior = existing.get(name)!
 
     levelFor(principal, scope, prior.kind)
     const dependents = dependentsOf(db, prior)
@@ -416,7 +400,7 @@ export const planVariables = (
     if (dependents.length) {
       fail(
         'DELETE_HAS_DEPENDENTS',
-        `${key} is referenced by ${dependents.map((d) => d.key).join(', ')}.`,
+        `${name} is referenced by ${dependents.map((d) => d.name).join(', ')}.`,
         'Remove or change the references first.',
         {
           dependents,
@@ -424,8 +408,8 @@ export const planVariables = (
       )
     }
 
-    set.remove('variable', prior.id, {
-      key: prior.key,
+    set.remove('key', prior.id, {
+      name: prior.name,
       kind: prior.kind,
     })
   }

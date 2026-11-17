@@ -1,5 +1,5 @@
 import { passkeyClient } from '@better-auth/passkey/client'
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, type QueryClient } from '@tanstack/react-query'
 import { createAuthClient } from 'better-auth/client'
 import { twoFactorClient } from 'better-auth/client/plugins'
 
@@ -66,9 +66,13 @@ export const safeNext = (next: string | undefined) =>
 export const serverPage = (path: string) =>
   path === '/device' || path.startsWith('/device?') || path.startsWith('/github/')
 
-export const workbenchPage = (path: string) => path === '/' || path.startsWith('/#')
-
 export const authMessage = (
   error: { message?: string; code?: string; status?: number } | null | undefined,
   fallback: string,
 ) => error?.message || (error?.code ? error.code.replaceAll('_', ' ').toLowerCase() : fallback)
+
+export const signOut = async (client: QueryClient) => {
+  await authClient.signOut()
+  client.clear()
+  window.location.assign('/login')
+}

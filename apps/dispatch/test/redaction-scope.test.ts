@@ -6,7 +6,15 @@ import { redactionKnown, secretsDeliver } from '../src/secrets/deploy.ts'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createProject, createService, seedLockfile, waitForDeployment } from './helpers/seed.ts'
+import {
+  approveWaiting,
+  createApp,
+  createProject,
+  productionId,
+  seedLockfile,
+  waitForActive,
+  waitForDeployment,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
@@ -28,28 +36,30 @@ before(async () => {
   seedLockfile(h)
   await startFakeStation(h)
   const project = await createProject(h, 'redaction')
-  const set = await h.call('PATCH', `/v1/projects/${project.id}/variables`, {
-    token: h.admin.token,
-    body: {
-      environment: 'default',
-      set: [
-        {
-          key: 'PROJ_SEALED',
-          kind: 'sealed',
-          value: projectSealed,
-        },
-        {
-          key: 'PROJ_LITERAL',
-          kind: 'literal',
-          value: projectLiteral,
-        },
-      ],
-      apply: false,
-    },
-  })
+  const set = await approveWaiting(
+    h,
+    await h.call('PATCH', `/v1/projects/${project.id}/keys`, {
+      token: h.admin.token,
+      body: {
+        set: [
+          {
+            name: 'PROJ_SEALED',
+            kind: 'sealed',
+            value: projectSealed,
+          },
+          {
+            name: 'PROJ_LITERAL',
+            kind: 'literal',
+            value: projectLiteral,
+          },
+        ],
+        apply: false,
+      },
+    }),
+  )
 
   assert.equal(set.status, 200, set.text)
-  const created = await createService(h, project.default_environment_id, {
+  const created = await createApp(h, productionId(h, project.id), {
     name: 'web',
     ref: 'nginx:1.27',
     ports: [
@@ -58,36 +68,36 @@ before(async () => {
       },
     ],
     deploy: true,
-    variables: [
+    keys: [
       {
-        key: 'BASE_URL',
+        name: 'BASE_URL',
         kind: 'literal',
         value: literalValue,
       },
       {
-        key: 'API_KEY',
+        name: 'API_KEY',
         kind: 'sealed',
         value: sealedValue,
       },
       {
-        key: 'SECRET_KEY',
+        name: 'SECRET_KEY',
         kind: 'reference',
         reference: '${{secret(32)}}',
       },
       {
-        key: 'DB_URL',
+        name: 'DB_URL',
         kind: 'reference',
         reference: 'postgres://u:${{project.PROJ_SEALED}}@db/app',
       },
       {
-        key: 'SITE',
+        name: 'SITE',
         kind: 'reference',
         reference: 'https://${{project.PROJ_LITERAL}}/x',
       },
     ],
   })
 
-  deploymentId = created.deployments[0].id
+  deploymentId = (await waitForActive(h, created.id)).current_deployment_id
   await waitForDeployment(h, deploymentId, 'active')
 })
 

@@ -3,53 +3,61 @@ import { Option } from '@commander-js/extra-typings'
 import { action, group, integer, type Program } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
 import { targetId } from '../generated.ts'
-import { connect, environmentId, send, serviceId, type Run } from '../kit.ts'
-import { json, print, staged } from '../output.ts'
+import { appId, connect, previewId, projectRef, send, type Run } from '../kit.ts'
+import { json, print, waiting } from '../output.ts'
 import { explanationText, probeText } from '../renderers/network.ts'
 
-type Origin = { from: string; environment: string; kind: 'service' | 'sandbox' | 'internet' }
+type Origin = {
+  from: string
+  project: string
+  preview: string | undefined
+  kind: 'app' | 'machine' | 'internet'
+}
 
 const originOf = async (run: Run, fromInternet: boolean): Promise<Origin> => {
   if (fromInternet) {
     return {
       from: 'internet',
-      environment: await environmentId(run),
+      project: await projectRef(run),
+      preview: await previewId(run),
       kind: 'internet',
     }
   }
 
-  if (run.selection.sandbox) {
-    const sandbox = await targetId(run, 'sandbox')
+  if (run.selection.machine) {
+    const machine = await targetId(run, 'machine')
     const box = (
       await send(
         run.api.v1
-          .sandboxes({
-            sandbox,
+          .machines({
+            machine,
           })
           .get(),
       )
     ).data
 
     return {
-      from: sandbox,
-      environment: box.environment_id,
-      kind: 'sandbox',
+      from: machine,
+      project: box.project_id,
+      preview: box.preview_id ?? undefined,
+      kind: 'machine',
     }
   }
 
   return {
-    from: await serviceId(run),
-    environment: await environmentId(run),
-    kind: 'service',
+    from: await appId(run),
+    project: await projectRef(run),
+    preview: await previewId(run),
+    kind: 'app',
   }
 }
 
 const probe = async (run: Run, origin: Origin, to: string, port: number | undefined) =>
-  origin.kind === 'sandbox'
+  origin.kind === 'machine'
     ? send(
         run.api.v1
-          .sandboxes({
-            sandbox: origin.from,
+          .machines({
+            machine: origin.from,
           })
           .network.probe.post({
             to,
@@ -58,8 +66,8 @@ const probe = async (run: Run, origin: Origin, to: string, port: number | undefi
       )
     : send(
         run.api.v1
-          .services({
-            service: origin.from,
+          .apps({
+            app: origin.from,
           })
           .network.probe.post({
             to,
@@ -71,17 +79,17 @@ export const networkCommands = (program: Program) => {
   group(program, 'network')
     .command('explain')
     .description(
-      'Why the selected service or sandbox can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain or TCP exposure), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.',
+      'Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain or TCP exposure), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.',
     )
     .option('--from-internet', 'explain the inbound path from the internet')
     .requiredOption(
       '--to <target>',
-      'a service, service:port, a .internal name or host:port; with --from-internet a domain hostname or public address:port',
+      'an app, app:port, a .internal name or host:port; with --from-internet a domain hostname or public address:port',
     )
     .option('--port <port>', "port; defaults to the target's only declared port", integer)
     .option('--udp', 'judge UDP instead of TCP')
     .addOption(
-      new Option('--probe', 'then send the probe from the service or sandbox').conflicts(
+      new Option('--probe', 'then send the probe from the app or machine').conflicts(
         'fromInternet',
       ),
     )
@@ -89,9 +97,9 @@ export const networkCommands = (program: Program) => {
       action(async (options) => {
         const fromInternet = Boolean(options.fromInternet)
 
-        if (fromInternet && (options.service || options.sandbox)) {
+        if (fromInternet && (options.app || options.machine)) {
           throw usage(
-            'Give --service, --sandbox or --from-internet, not two of them.',
+            'Give --app, --machine or --from-internet, not two of them.',
             'sly network explain --from-internet --to web.example.com',
           )
         }
@@ -100,11 +108,12 @@ export const networkCommands = (program: Program) => {
         const origin = await originOf(run, fromInternet)
         const explained = await send(
           run.api.v1
-            .environments({
-              environment: origin.environment,
+            .projects({
+              project: origin.project,
             })
             .network.explain.get({
               query: {
+                preview: origin.preview,
                 from: origin.from,
                 to: options.to,
                 port: options.port,
@@ -128,7 +137,7 @@ export const networkCommands = (program: Program) => {
           process.stdout.write(`${explanationText(explained.data)}\n\n${probeText(probed.data)}\n`)
         }
 
-        return probed.status === 202 ? staged(probed, 'sent') : exitCodes.ok
+        return probed.status === 202 ? waiting(probed, 'sent') : exitCodes.ok
       }),
     )
 }

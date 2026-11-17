@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
@@ -18,40 +17,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  VariableKeyInput,
-  VariableKindSelect,
-  VariableNotes,
-  VariableValueInput,
-} from '@/components/variable-fields'
-import { api, idempotency, send, type Environment } from '@/lib/api'
+import { KeyKindSelect, KeyNameInput, KeyNotes, KeyValueInput } from '@/components/variable-fields'
+import { api, idempotency, send } from '@/lib/api'
 import { commands } from '@/lib/commands'
-import { serviceKind } from '@/lib/labels'
+import { appKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import { onlineStationsQuery, projectQuery, seedService } from '@/lib/queries'
+import { go, places } from '@/lib/nav'
+import { placeName, previewQuery, scopeOf, type PlaceView } from '@/lib/place'
+import { onlineStationsQuery, seedApp } from '@/lib/queries'
 import { useRows } from '@/lib/use-rows'
-import { toVariableInput, type VariableEntry } from '@/lib/variables'
+import { toKeyInput, type KeyEntry } from '@/lib/variables'
 
 type Kind = 'web' | 'worker'
 
 type PortEntry = { port: string; protocol: 'http' | 'tcp' }
 
-export type ServicePreset = { name: string; image: string; port: PortEntry }
+export type AppPreset = { name: string; image: string; port: PortEntry }
 
-export function NewService({
-  environment,
+export function NewApp({
+  place,
   preset,
   open,
   onOpenChange,
 }: {
-  environment: Environment
-  preset?: ServicePreset
+  place: PlaceView
+  preset?: AppPreset
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const navigate = useNavigate()
   const stations = useQuery(onlineStationsQuery)
-  const project = useQuery(projectQuery(environment.project_id))
   const [name, setName] = useState(preset?.name ?? '')
   const [kind, setKind] = useState<Kind>('web')
   const [image, setImage] = useState(preset?.image ?? '')
@@ -67,8 +61,8 @@ export function NewService({
       protocol: 'http',
     }),
   )
-  const variables = useRows<VariableEntry>([], () => ({
-    key: '',
+  const keys = useRows<KeyEntry>([], () => ({
+    name: '',
     kind: 'literal',
     value: '',
     build: false,
@@ -81,10 +75,10 @@ export function NewService({
     mutationFn: () =>
       send(
         api.v1
-          .environments({
-            environment: environment.id,
+          .projects({
+            project: place.project,
           })
-          .services.post(
+          .apps.post(
             {
               name,
               kind,
@@ -99,16 +93,19 @@ export function NewService({
                       protocol: p.protocol,
                     }))
                   : [],
-              variables: variables.rows.map(toVariableInput),
-              station_id: station || undefined,
+              keys: keys.rows.map(toKeyInput),
+              server_id: station || undefined,
               deploy_on_create: deploy,
             },
-            idempotency(),
+            {
+              ...idempotency(),
+              query: previewQuery(place),
+            },
           ),
       ),
-    seed: seedService,
-    invalidate: ['services'],
-    staged: () => `Create ${name} in ${environment.name}`,
+    seed: seedApp,
+    invalidate: ['apps'],
+    waiting: () => `Create ${name} in ${placeName(place)}`,
     success: (body) => ({
       title: `${body.name} created`,
       description: body.deployments.length
@@ -118,14 +115,7 @@ export function NewService({
     onSuccess: (result) => {
       onOpenChange(false)
 
-      if (!result.staged) {
-        void navigate({
-          to: '/services/$service',
-          params: {
-            service: result.body.id,
-          },
-        })
-      }
+      go(result.waiting ? places.approval(result.body.id) : places.app(result.body.id))
     },
   })
 
@@ -140,7 +130,7 @@ export function NewService({
         onOpenChange(next)
       }}
       size="lg"
-      title={`New service in ${environment.name}`}
+      title={`New app in ${placeName(place)}`}
       description={
         <>
           Runs a container image. For a repository or a template, use sly or a{' '}
@@ -148,56 +138,48 @@ export function NewService({
         </>
       }
       error={mutation.errorText}
-      also={
-        <AlsoWith
-          cli={commands.createService({
-            project: project.data?.name ?? environment.project_id,
-            environment: environment.name,
-          })}
-          tool="create_service"
-        />
-      }
-      submitLabel="Create service"
+      also={<AlsoWith cli={commands.createApp(scopeOf(place))} tool="create_app" />}
+      submitLabel="Create app"
       pending={mutation.isPending}
       submitDisabled={choices.length > 1 && !station}
       onSubmit={() => mutation.mutate()}
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_9rem]">
-        <Field id="service-name" label="Name">
+        <Field id="app-name" label="Name">
           <SlugInput
-            id="service-name"
+            id="app-name"
             required
             value={name}
             onValueChange={setName}
             placeholder="web"
           />
         </Field>
-        <Field id="service-kind" label="Kind">
+        <Field id="app-kind" label="Kind">
           <Select value={kind} onValueChange={(v) => setKind(v as Kind)}>
-            <SelectTrigger id="service-kind" className="w-full">
+            <SelectTrigger id="app-kind" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="web">{serviceKind.web}</SelectItem>
-              <SelectItem value="worker">{serviceKind.worker}</SelectItem>
+              <SelectItem value="web">{appKind.web}</SelectItem>
+              <SelectItem value="worker">{appKind.worker}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
       </div>
       <Field
-        id="service-image"
+        id="app-image"
         label="Image"
-        hint="Use a tag like nginx:1.27 or a digest. Stationly pins the tag to a digest when you create the service. Deploy picks up a newer image for the tag; Redeploy keeps the pinned one."
+        hint="Use a tag like nginx:1.27 or a digest. Stationly pins the tag to a digest when you create the app. Deploy picks up a newer image for the tag; Redeploy keeps the pinned one."
       >
         <Input
-          id="service-image"
+          id="app-image"
           required
           value={image}
           onChange={(e) => setImage(e.target.value)}
           className="font-mono"
           placeholder="traefik/whoami@sha256:…"
           spellCheck={false}
-          aria-describedby={hintId('service-image')}
+          aria-describedby={hintId('app-image')}
         />
       </Field>
 
@@ -260,39 +242,39 @@ export function NewService({
         </FieldSet>
       )}
 
-      <FieldSet legend="Variables (optional)">
-        {variables.rows.length > 0 && (
+      <FieldSet legend="Keys (optional)">
+        {keys.rows.length > 0 && (
           <ul className="space-y-2">
-            {variables.rows.map((v, i) => (
+            {keys.rows.map((v, i) => (
               <li
                 key={v.row}
                 className="grid grid-cols-[1fr_7rem_auto] items-center gap-2 sm:grid-cols-[10rem_7rem_1fr_auto]"
               >
-                <VariableKeyInput
-                  aria-label={`Variable ${i + 1} key`}
-                  value={v.key}
-                  onValueChange={(key) =>
-                    variables.update(v.row, {
-                      key,
+                <KeyNameInput
+                  aria-label={`Key ${i + 1} name`}
+                  value={v.name}
+                  onValueChange={(name) =>
+                    keys.update(v.row, {
+                      name,
                     })
                   }
                   placeholder="KEY"
                 />
-                <VariableKindSelect
-                  label={`Variable ${i + 1} kind`}
+                <KeyKindSelect
+                  label={`Key ${i + 1} kind`}
                   value={v.kind}
                   onValueChange={(kind) =>
-                    variables.update(v.row, {
+                    keys.update(v.row, {
                       kind,
                     })
                   }
                 />
-                <VariableValueInput
+                <KeyValueInput
                   kind={v.kind}
-                  label={`Variable ${i + 1} ${v.kind === 'reference' ? 'reference' : 'value'}`}
+                  label={`Key ${i + 1} ${v.kind === 'reference' ? 'reference' : 'value'}`}
                   value={v.value}
                   onValueChange={(value) =>
-                    variables.update(v.row, {
+                    keys.update(v.row, {
                       value,
                     })
                   }
@@ -301,16 +283,16 @@ export function NewService({
                 />
                 <RemoveButton
                   type="button"
-                  label={`Remove variable ${i + 1}`}
+                  label={`Remove key ${i + 1}`}
                   className="col-start-3 row-start-1 sm:col-start-4"
-                  onClick={() => variables.remove(v.row)}
+                  onClick={() => keys.remove(v.row)}
                 />
                 <CheckboxField
-                  id={`variable-${v.row}-build`}
+                  id={`key-${v.row}-build`}
                   className="col-span-full"
                   checked={v.build}
                   onCheckedChange={(build) =>
-                    variables.update(v.row, {
+                    keys.update(v.row, {
                       build,
                     })
                   }
@@ -321,26 +303,20 @@ export function NewService({
             ))}
           </ul>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="self-start"
-          onClick={variables.add}
-        >
-          <Plus /> Add variable
+        <Button type="button" variant="outline" size="sm" className="self-start" onClick={keys.add}>
+          <Plus /> Add key
         </Button>
-        <VariableNotes
-          sealed={variables.rows.some((v) => v.kind === 'sealed')}
-          build={variables.rows.some((v) => v.build)}
+        <KeyNotes
+          sealed={keys.rows.some((v) => v.kind === 'sealed')}
+          build={keys.rows.some((v) => v.build)}
         />
       </FieldSet>
 
       {choices.length > 1 && (
-        <Field id="service-station" label="Station">
+        <Field id="app-station" label="Server">
           <Select value={station} onValueChange={setStation}>
-            <SelectTrigger id="service-station" className="w-full">
-              <SelectValue placeholder="Choose a station" />
+            <SelectTrigger id="app-station" className="w-full">
+              <SelectValue placeholder="Choose a server" />
             </SelectTrigger>
             <SelectContent>
               {choices.map((s) => (
@@ -354,7 +330,7 @@ export function NewService({
       )}
 
       <CheckboxField
-        id="service-deploy"
+        id="app-deploy"
         checked={deploy}
         onCheckedChange={setDeploy}
         label="Deploy when created"

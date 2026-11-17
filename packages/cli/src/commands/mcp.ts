@@ -5,13 +5,13 @@ import { isSea } from 'node:sea'
 import { Argument, Option } from '@commander-js/extra-typings'
 
 import { serveBridge } from '@stationly/mcp'
-import { tokenLevelValues } from '@stationly/protocol'
+import { scopeTargetValues, tokenLevelValues } from '@stationly/protocol'
 
 import { action, seconds, type Program } from '../command.ts'
 import { readCredentials, updateCredentials } from '../config.ts'
 import { version } from '../env.ts'
 import { Exit, exitCodes, inputRequired, notLoggedIn } from '../errors.ts'
-import { connect, environmentId, projectId, resolveInstance, send } from '../kit.ts'
+import { connect, projectId, resolveInstance, send } from '../kit.ts'
 import { localTools } from '../mcp-local.ts'
 import { print, progress } from '../output.ts'
 
@@ -140,6 +140,11 @@ export const mcpCommands = (program: Program) => {
     .addOption(
       new Option('--level <level>', 'token level').choices(tokenLevelValues).default('deploy'),
     )
+    .addOption(
+      new Option('--target <target>', 'production, previews, or * for both (default *)').choices(
+        scopeTargetValues,
+      ),
+    )
     .option('--ttl <duration>', 'token lifetime, at most 30d', seconds, 30 * 86400)
     .action(
       action(async (options, client) => {
@@ -156,10 +161,7 @@ export const mcpCommands = (program: Program) => {
 
         const server = await launcher(client)
         const project = projectRef === '*' ? '*' : await projectId(run, projectRef)
-        const environment =
-          !run.selection.environment || run.selection.environment === '*'
-            ? '*'
-            : await environmentId(run)
+        const target = options.target ?? '*'
         const sent = await send(
           run.api.v1.tokens.post({
             name: `mcp/${client}`,
@@ -167,7 +169,7 @@ export const mcpCommands = (program: Program) => {
             scopes: [
               {
                 project_id: project,
-                environment_id: environment,
+                target,
                 level,
               },
             ],

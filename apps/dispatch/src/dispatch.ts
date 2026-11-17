@@ -6,7 +6,7 @@ import { migrateCommand } from './scripts/migrate.ts'
 import { openapiCommand } from './scripts/openapi.ts'
 
 const program = new Command('dispatch')
-  .description('Stationly Dispatch: the instance API, dashboard and station server')
+  .description('Stationly Dispatch: the instance API, dashboard and server server')
   .exitOverride()
 
 program

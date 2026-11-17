@@ -3,7 +3,7 @@ import { isatty } from 'node:tty'
 import { action, collect, type Program } from '../command.ts'
 import { Exit, exitCodes } from '../errors.ts'
 import { endpointNamed, runOperation, waitOptions, type Flow } from '../generated.ts'
-import { connect, send, serviceId } from '../kit.ts'
+import { appId, connect, send } from '../kit.ts'
 import { streamLogs } from '../logs.ts'
 import { print, progress } from '../output.ts'
 import { uploadSource } from '../push.ts'
@@ -12,22 +12,22 @@ import { attachRun, shellExit } from '../sockets.ts'
 
 const deploy = endpointNamed('deploy')
 
-export const serviceCommands = (program: Program) => {
+export const appCommands = (program: Program) => {
   program
     .command('run')
     .description(
-      "Run a one-off command in the service's image and variables, streaming its output; put the command after --",
+      "Run a one-off command in the app's image and keys, streaming its output; put the command after --",
     )
     .argument('<command...>')
     .option('--detach', 'return once the run is created')
     .action(
       action(async (options, command) => {
         const run = await connect(options)
-        const service = await serviceId(run)
+        const app = await appId(run)
         const sent = await send(
           run.api.v1
-            .services({
-              service,
+            .apps({
+              app,
             })
             .runs.post({
               command,
@@ -64,20 +64,20 @@ export const serviceCommands = (program: Program) => {
   program
     .command('shell')
     .description(
-      'Interactive shell in a fresh run of the service; a human actor is required in protected environments',
+      'Interactive shell in a fresh run of the app; a human actor is required in production',
     )
     .option('--command <arg>', 'command argument, repeatable (default /bin/sh)', collect)
     .option('--no-tty', 'no terminal, for scripted input')
     .action(
       action(async (options) => {
         const run = await connect(options)
-        const service = await serviceId(run)
+        const app = await appId(run)
         const tty = options.tty && isatty(0)
         const created = (
           await send(
             run.api.v1
-              .services({
-                service,
+              .apps({
+                app,
               })
               .shells.post({
                 command: options.command,
@@ -100,10 +100,10 @@ export const serviceCommands = (program: Program) => {
   const push = program
     .command('push')
     .description(
-      'Upload a local directory (honoring .dockerignore) as the service source and deploy it',
+      'Upload a local directory (honoring .dockerignore) as the app source and deploy it',
     )
     .argument('[path]', 'directory to push', '.')
-    .option('--via <transport>', 'ssh lands the tarball on the station directly')
+    .option('--via <transport>', 'ssh lands the tarball on the server directly')
 
   waitOptions(push, deploy)
   push.action(
@@ -120,15 +120,15 @@ export const serviceCommands = (program: Program) => {
       }
 
       const run = await connect(options)
-      const service = await serviceId(run)
-      const blob = (await uploadSource(run, service, path, progress)).data
+      const app = await appId(run)
+      const blob = (await uploadSource(run, app, path, progress)).data
 
       return runOperation(
         options,
         run,
         deploy,
         {
-          service,
+          app,
           blob_id: blob.blob_id,
         },
         options as Flow,

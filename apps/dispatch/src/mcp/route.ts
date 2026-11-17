@@ -171,7 +171,7 @@ export const createMcpRoute = (deps: Deps): McpRoute => {
           return {
             token,
             clientId: principal.token_id ?? principal.actor.id ?? principal.user_id,
-            scopes: principal.scopes.map((s) => `${s.project_id}:${s.environment_id}:${s.level}`),
+            scopes: principal.scopes.map((s) => `${s.project_id}:${s.target}:${s.level}`),
             expiresAt: Math.floor(principal.expires_at.getTime() / 1000),
             resource: principal.resource ? new URL(principal.resource) : resource,
             extra: {

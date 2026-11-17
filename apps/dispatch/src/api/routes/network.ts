@@ -11,7 +11,7 @@ import {
   type MessageBody,
 } from '@stationly/protocol'
 
-import { service } from '../../db/schema.ts'
+import { app } from '../../db/schema.ts'
 import { shapeSamples, type ConnectionsDoc } from '../../net/connections.ts'
 import { explainNetwork, probeTarget, type Check } from '../../net/explain.ts'
 import type { LiveTick } from '../../net/live.ts'
@@ -20,16 +20,17 @@ import { sendProbe } from '../../net/probe.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail, invalid } from '../errors.ts'
 import { csv, type Kit } from '../kit.ts'
-import { getQuery } from '../pagination.ts'
+import { isProduction, placeName } from '../lookup.ts'
+import { getQuery, previewQuery } from '../pagination.ts'
 import { DnsLogQuery, input, ProbeBody } from '../schemas.ts'
 import {
+  ApprovalDetail,
   DnsLog,
   NetworkConnections,
   NetworkExplanation,
   NetworkMap,
   NetworkProbe,
   replies,
-  Staged,
 } from '../shapes.ts'
 import { createSse } from '../sse.ts'
 
@@ -91,29 +92,30 @@ export const networkRoutes = (kit: Kit) => {
   return kit
     .router('network', '/v1')
     .get(
-      '/environments/:environment/network',
+      '/projects/:project/network',
       ({ ctx, query }) => {
         const fields = kit.fields(query.fields)
 
-        return networkMap(sources, ctx.environment, {
-          service: query.service,
+        return networkMap(sources, ctx.target_row, {
+          app: query.app,
           rules: selects(fields, 'paths', 'rule'),
           bridges: selects(fields, 'subnets', 'bridge'),
         })
       },
       {
-        environment: {
+        place: {
           id: 'describe_network',
           summary:
-            "Get an environment's network map: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path",
+            'Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path',
           level: 'read',
           cli: {
             render: 'network-map',
           },
         },
         query: t.Object({
+          ...previewQuery,
           ...getQuery,
-          service: t.Optional(
+          app: t.Optional(
             t.String({
               minLength: 1,
             }),
@@ -125,30 +127,30 @@ export const networkRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/services/:service/connections',
+      '/apps/:app/connections',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
         const reply = await stations
           .ask(
-            ctx.service.station_id,
+            ctx.app.server_id,
             'network.sample',
             {
-              service_ids: [ctx.service.id],
+              service_ids: [ctx.app.id],
             },
             {
               timeoutMs: 10_000,
             },
           )
           .catch(stationError)
-        const sample = reply.body.samples.find((s) => s.service_id === ctx.service.id)
+        const sample = reply.body.samples.find((s) => s.service_id === ctx.app.id)
 
         if (!sample) {
           fail(
             'NOT_FOUND',
-            `The station returned no connection sample for ${ctx.service.name}.`,
-            `Read the connections again; check the station with sly stations get ${ctx.service.station_id}.`,
+            `The server returned no connection sample for ${ctx.app.name}.`,
+            `Read the connections again; check the server with sly servers get ${ctx.app.server_id}.`,
             {
-              service_id: ctx.service.id,
+              app_id: ctx.app.id,
             },
           )
         }
@@ -165,10 +167,10 @@ export const networkRoutes = (kit: Kit) => {
         )[0]!
       },
       {
-        service: {
+        app: {
           id: 'get_connections',
           summary:
-            'Live connections of a service grouped by peer, and refused attempts with the path that refused them; one sample',
+            'Live connections of an app grouped by peer, and refused attempts with the path that refused them; one sample',
           level: 'read',
           cli: {
             render: 'connections',
@@ -183,38 +185,38 @@ export const networkRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/environments/:environment/network/live',
+      '/projects/:project/network/live',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
-        const refs = csv(query.service)
+        const refs = csv(query.app)
         const rows = refs?.length
           ? db
               .select({
-                id: service.id,
-                name: service.name,
-                station_id: service.station_id,
+                id: app.id,
+                name: app.name,
+                server_id: app.server_id,
               })
-              .from(service)
+              .from(app)
               .where(
                 and(
-                  eq(service.environment_id, ctx.environment.id),
-                  or(inArray(service.id, refs), inArray(service.name, refs)),
+                  eq(app.target_id, ctx.target_row.id),
+                  or(inArray(app.id, refs), inArray(app.name, refs)),
                 ),
               )
               .all()
           : db
               .select({
-                id: service.id,
-                name: service.name,
-                station_id: service.station_id,
+                id: app.id,
+                name: app.name,
+                server_id: app.server_id,
               })
-              .from(service)
+              .from(app)
               .where(
                 and(
-                  eq(service.environment_id, ctx.environment.id),
-                  eq(service.desired_state, 'running'),
-                  isNotNull(service.current_deployment_id),
-                  inArray(service.kind, ['web', 'worker']),
+                  eq(app.target_id, ctx.target_row.id),
+                  eq(app.desired_state, 'running'),
+                  isNotNull(app.current_deployment_id),
+                  inArray(app.kind, ['web', 'worker']),
                 ),
               )
               .all()
@@ -225,8 +227,8 @@ export const networkRoutes = (kit: Kit) => {
           if (missing.length) {
             invalid(
               missing.map((m) => ({
-                path: '/service',
-                message: `no service ${m} in environment ${ctx.environment.name}`,
+                path: '/app',
+                message: `no app ${m} in ${placeName(ctx.target_row)}`,
               })),
             )
           }
@@ -235,7 +237,7 @@ export const networkRoutes = (kit: Kit) => {
         const byStation = new Map<string, Set<string>>()
 
         for (const s of rows) {
-          byStation.set(s.station_id, new Set([...(byStation.get(s.station_id) ?? []), s.id]))
+          byStation.set(s.server_id, new Set([...(byStation.get(s.server_id) ?? []), s.id]))
         }
 
         const shape = {
@@ -275,12 +277,12 @@ export const networkRoutes = (kit: Kit) => {
 
         if (!byStation.size) {
           void sse.send('empty', {
-            explanation: 'no running service in this environment',
+            explanation: 'no running app here',
           })
         }
 
         const leaves = [...byStation].map(([stationId, ids]) =>
-          kit.live.subscribe(stationId, ctx.environment.id, {
+          kit.live.subscribe(stationId, ctx.target_row.id, {
             ids,
             deliver: (tick) => {
               pending.set(stationId, tick)
@@ -289,7 +291,7 @@ export const networkRoutes = (kit: Kit) => {
             notify: (event, data) => void sse.send(event, data),
           }),
         )
-        const unclaim = kit.live.claim(call.principal.credential, ctx.environment.id, () => {
+        const unclaim = kit.live.claim(call.principal.credential, ctx.target_row.id, () => {
           void sse.send('end', {
             reason: 'replaced by a newer live stream from the same credential',
           })
@@ -307,10 +309,10 @@ export const networkRoutes = (kit: Kit) => {
         return sse.response
       },
       {
-        environment: {
+        place: {
           id: 'stream_connections',
           summary:
-            'SSE: one connections sample per watched service every 5 s, as event network with { at, samples }',
+            'SSE: one connections sample per watched app every 5 s, as event network with { at, samples }',
           level: 'read',
           mcp: false,
           cli: {
@@ -319,7 +321,8 @@ export const networkRoutes = (kit: Kit) => {
           stream: true,
         },
         query: t.Object({
-          service: t.Optional(
+          ...previewQuery,
+          app: t.Optional(
             t.String({
               minLength: 1,
             }),
@@ -329,9 +332,9 @@ export const networkRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/environments/:environment/network/explain',
+      '/projects/:project/network/explain',
       async ({ ctx, query }) => {
-        return explainNetwork(explainSources, ctx.environment, {
+        return explainNetwork(explainSources, ctx.target_row, {
           from: query.from,
           to: query.to,
           port: query.port,
@@ -339,23 +342,24 @@ export const networkRoutes = (kit: Kit) => {
         })
       },
       {
-        environment: {
+        place: {
           id: 'explain_network',
           summary:
-            'Explain why a service can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes',
+            'Explain why an app can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes',
           level: 'read',
           cli: false,
         },
         query: t.Object({
+          ...previewQuery,
           from: t.String({
             minLength: 1,
-            description: 'A service of the environment (id or name), or internet',
+            description: 'An app (id or name), or internet',
           }),
           to: t.String({
             minLength: 1,
             maxLength: 260,
             description:
-              'A service, service:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port',
+              'An app, app:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port',
           }),
           port: t.Optional(t.Numeric(portRange)),
           protocol: t.Optional(input(StringEnum(networkProtocolValues))),
@@ -366,13 +370,13 @@ export const networkRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/network/probe',
+      '/apps/:app/network/probe',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        kit.probeLimit(ctx.service.id, ctx.environment.id)
+        kit.probeLimit(ctx.app.id, ctx.target_row.id)
         const kind = body.kind ?? 'tcp'
-        const target = probeTarget(db, ctx.environment, body.to, body.port, kind)
+        const target = probeTarget(db, ctx.target_row, body.to, body.port, kind)
         const probe = {
           kind,
           to: target.to,
@@ -380,32 +384,32 @@ export const networkRoutes = (kit: Kit) => {
           timeout_s: body.timeout_s ?? probeTimeout.defaultS,
         }
 
-        if (ctx.environment.protected && !call.principal.human) {
+        if (isProduction(ctx.target_row) && !call.principal.human) {
           const changes = new ChangeSet()
 
-          changes.add('network_probe', ctx.service.id, probe)
+          changes.add('network_probe', ctx.app.id, probe)
           const result = commit(
             kit.deps,
             call,
             {
-              environment: ctx.environment,
+              target: ctx.target_row,
               protect: true,
             },
             changes,
           )
 
           if (!result.applied) {
-            return kit.stagedBody(result, set)
+            return kit.approvalBody(result, set)
           }
         }
 
-        return sendProbe(kit.deps, call, ctx.service, probe)
+        return sendProbe(kit.deps, call, ctx.app, probe)
       },
       {
-        service: {
+        app: {
           id: 'probe_network',
           summary:
-            "Send one TCP handshake or one DNS query from inside the service's own namespace, under its own rules; staged for a non-human actor in a protected environment",
+            "Send one TCP handshake or one DNS query from inside the app's own namespace, under its own rules; needs approval for a non-human actor in production",
           level: 'deploy',
           cli: {
             render: 'probe',
@@ -414,20 +418,20 @@ export const networkRoutes = (kit: Kit) => {
         body: ProbeBody,
         response: replies({
           200: NetworkProbe,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
     .get(
-      '/services/:service/dns-log',
+      '/apps/:app/dns-log',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
         const reply = await stations
           .ask(
-            ctx.service.station_id,
+            ctx.app.server_id,
             'dns.log',
             {
-              service_id: ctx.service.id,
+              service_id: ctx.app.id,
               tail: query.tail ?? dnsLogTail.default,
               ...(query.name
                 ? {
@@ -452,8 +456,8 @@ export const networkRoutes = (kit: Kit) => {
         const redact = kit.redaction(
           deployments.length
             ? deployments
-            : ctx.service.current_deployment_id
-              ? [ctx.service.current_deployment_id]
+            : ctx.app.current_deployment_id
+              ? [ctx.app.current_deployment_id]
               : [],
           call.principal.actor,
           call.request_id,
@@ -470,10 +474,10 @@ export const networkRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'get_dns_log',
           summary:
-            "The service's recent DNS queries from the resolver's ring, newest first, as untrusted data",
+            "The app's recent DNS queries from the resolver's ring, newest first, as untrusted data",
           level: 'read',
           cli: {
             render: 'dns-log',

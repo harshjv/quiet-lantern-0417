@@ -13,11 +13,13 @@ import {
 } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import {
-  createEnvironment,
+  createMachine,
+  createPreview,
   createProject,
-  createSandbox,
   pinPlatform,
-  waitForSandbox,
+  placed,
+  productionId,
+  waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
@@ -126,39 +128,29 @@ const bearer = (token: string) => ({
 before(async () => {
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   station = await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
   })
   server = await serveOverHttp(h, {
     attach: true,
   })
   project = await createProject(h, 'alpha')
-  envId = project.default_environment_id
-  lockedId = (
-    await createEnvironment(
-      h,
-      'alpha',
-      'locked',
-      {
-        protected: true,
-      },
-      true,
-    )
-  ).id
+  envId = (await createPreview(h, 'alpha', 'dev')).id
+  lockedId = productionId(h, project.id)
   boxId = (
-    await createSandbox(h, envId, {
+    await createMachine(h, envId, {
       name: 'previewable',
     })
   ).id
-  await waitForSandbox(h, boxId, 'running')
+  await waitForMachine(h, boxId, 'running')
   deployToken = await mintToken(
     h,
     [
       {
         project_id: project.id,
-        environment_id: '*',
+        target: '*',
         level: 'deploy',
       },
     ],
@@ -169,7 +161,7 @@ before(async () => {
     [
       {
         project_id: project.id,
-        environment_id: '*',
+        target: '*',
         level: 'deploy',
       },
     ],
@@ -180,7 +172,7 @@ before(async () => {
     [
       {
         project_id: project.id,
-        environment_id: '*',
+        target: '*',
         level: 'read',
       },
     ],
@@ -195,45 +187,45 @@ after(async () => {
 
 describe('the port forward WebSocket', () => {
   test('a request without credentials is 401 and read access is 403', async () => {
-    const anonymous = await refused(`/v1/sandboxes/${boxId}/forward?port=3000`, {})
+    const anonymous = await refused(`/v1/machines/${boxId}/forward?port=3000`, {})
 
     assert.equal(anonymous.status, 401)
     assert.equal(anonymous.body.error.code, 'UNAUTHENTICATED')
-    const reader = await refused(`/v1/sandboxes/${boxId}/forward?port=3000`, bearer(readToken))
+    const reader = await refused(`/v1/machines/${boxId}/forward?port=3000`, bearer(readToken))
 
     assert.equal(reader.status, 403)
     assert.equal(reader.body.error.code, 'FORBIDDEN_SCOPE')
     assert.equal(reader.body.error.details.required.level, 'deploy')
   })
 
-  test('an unknown sandbox is 404, a port outside 1 to 65535 is 400 and a stopped sandbox is 409', async () => {
+  test('an unknown machine is 404, a port outside 1 to 65535 is 400 and a stopped machine is 409', async () => {
     const unknown = await refused(
-      '/v1/sandboxes/sbx_01ARZ3NDEKTSV4RRFFQ69G5FAV/forward?port=3000',
+      '/v1/machines/sbx_01ARZ3NDEKTSV4RRFFQ69G5FAV/forward?port=3000',
       bearer(deployToken),
     )
 
     assert.equal(unknown.status, 404)
 
     for (const port of ['0', '70000', 'abc', '']) {
-      const bad = await refused(`/v1/sandboxes/${boxId}/forward?port=${port}`, bearer(deployToken))
+      const bad = await refused(`/v1/machines/${boxId}/forward?port=${port}`, bearer(deployToken))
 
       assert.equal(bad.status, 400, port)
       assert.equal(bad.body.error.code, 'VALIDATION_FAILED')
     }
 
-    const cold = await createSandbox(h, envId, {
+    const cold = await createMachine(h, envId, {
       name: 'cold-forward',
       start: false,
     })
-    const stopped = await refused(`/v1/sandboxes/${cold.id}/forward?port=3000`, bearer(deployToken))
+    const stopped = await refused(`/v1/machines/${cold.id}/forward?port=3000`, bearer(deployToken))
 
     assert.equal(stopped.status, 409)
-    assert.equal(stopped.body.error.code, 'SANDBOX_NOT_RUNNING')
-    assert.match(stopped.body.error.fix, /start_sandbox/)
+    assert.equal(stopped.body.error.code, 'MACHINE_NOT_RUNNING')
+    assert.match(stopped.body.error.fix, /start_machine/)
   })
 
-  test('in a protected environment a token is refused and a human session is accepted', async () => {
-    const locked = await h.call('POST', `/v1/environments/${lockedId}/sandboxes`, {
+  test('in production a token is refused and a human session is accepted', async () => {
+    const locked = await h.call('POST', placed(h, lockedId, `machines`), {
       cookie: h.admin.cookie,
       origin: localOrigin,
       body: {
@@ -242,16 +234,16 @@ describe('the port forward WebSocket', () => {
     })
 
     assert.equal(locked.status, 201, locked.text)
-    await waitForSandbox(h, locked.body.id, 'running')
+    await waitForMachine(h, locked.body.id, 'running')
     const token = await refused(
-      `/v1/sandboxes/${locked.body.id}/forward?port=8080`,
+      `/v1/machines/${locked.body.id}/forward?port=8080`,
       bearer(h.admin.token),
     )
 
     assert.equal(token.status, 403)
-    assert.equal(token.body.error.code, 'PROTECTED_ENVIRONMENT')
+    assert.equal(token.body.error.code, 'HUMAN_REQUIRED')
     assert.equal(token.body.error.details.reason, 'human_required')
-    const session = await open(`/v1/sandboxes/${locked.body.id}/forward?port=8080`, {
+    const session = await open(`/v1/machines/${locked.body.id}/forward?port=8080`, {
       cookie: h.admin.cookie,
       origin: localOrigin,
     })
@@ -265,13 +257,13 @@ describe('the port forward WebSocket', () => {
   })
 
   test('an accepted forward moves bytes both ways through stationd on the channel-0 frames', async () => {
-    const session = await open(`/v1/sandboxes/${boxId}/forward?port=3000`, bearer(deployToken))
+    const session = await open(`/v1/machines/${boxId}/forward?port=3000`, bearer(deployToken))
     const ready = await until(
       () => session.control.find((m) => m.type === 'forwarding'),
       'the forwarding message',
     )
 
-    assert.deepEqual([ready.sandbox_id, ready.port], [boxId, 3000])
+    assert.deepEqual([ready.machine_id, ready.port], [boxId, 3000])
     const opened = station.received.find(
       (m) => m.type === 'forward.open' && (m.body as any).sandbox_id === boxId,
     )!.body as any
@@ -299,19 +291,19 @@ describe('the port forward WebSocket', () => {
   })
 
   test('a connection stationd cannot make ends the stream with reason connect_failed', async () => {
-    const session = await open(`/v1/sandboxes/${boxId}/forward?port=9`, bearer(deployToken))
+    const session = await open(`/v1/machines/${boxId}/forward?port=9`, bearer(deployToken))
     const end = await until(() => session.control.find((m) => m.type === 'end'), 'the end message')
 
     assert.equal(end.reason, 'connect_failed')
     await session.closed
   })
 
-  test('at most 16 forwards are open per sandbox', async () => {
+  test('at most 16 forwards are open per machine', async () => {
     const sessions: Session[] = []
 
     for (let i = 0; i < 16; i++) {
       sessions.push(
-        await open(`/v1/sandboxes/${boxId}/forward?port=${4000 + i}`, bearer(deployToken)),
+        await open(`/v1/machines/${boxId}/forward?port=${4000 + i}`, bearer(deployToken)),
       )
     }
 
@@ -319,7 +311,7 @@ describe('the port forward WebSocket', () => {
       await until(() => s.control.find((m) => m.type === 'forwarding'), 'forwarding')
     }
 
-    const extra = await refused(`/v1/sandboxes/${boxId}/forward?port=5000`, bearer(deployToken))
+    const extra = await refused(`/v1/machines/${boxId}/forward?port=5000`, bearer(deployToken))
 
     assert.equal(extra.status, 429)
     assert.equal(extra.body.error.code, 'RATE_LIMITED')
@@ -331,9 +323,9 @@ describe('the port forward WebSocket', () => {
   })
 })
 
-describe('the attach WebSocket for sandbox runs', () => {
+describe('the attach WebSocket for machine runs', () => {
   test('an exec created with attach = true streams its output and reports its exit', async () => {
-    const created = await h.call('POST', `/v1/sandboxes/${boxId}/exec`, {
+    const created = await h.call('POST', `/v1/machines/${boxId}/exec`, {
       token: deployToken,
       body: {
         command: ['echo', 'attached'],
@@ -365,7 +357,7 @@ describe('the attach WebSocket for sandbox runs', () => {
   })
 
   test('a shell attaches once, only by the actor that created it, and a second attach is refused', async () => {
-    const shell = await h.call('POST', `/v1/sandboxes/${boxId}/shells`, {
+    const shell = await h.call('POST', `/v1/machines/${boxId}/shells`, {
       token: deployToken,
       body: {
         cwd: '/root',
@@ -403,17 +395,17 @@ describe('the attach WebSocket for sandbox runs', () => {
 
   test('control frames that are not a valid resize or eof are dropped and the shell keeps running', async () => {
     const interactive = await startFakeStation(h, 'station-2', {
-      sandboxes: {
+      machines: {
         interactiveShell: true,
       },
     })
-    const box = await createSandbox(h, envId, {
+    const box = await createMachine(h, envId, {
       name: 'interactive',
-      station_id: 'station-2',
+      server_id: 'station-2',
     })
 
-    await waitForSandbox(h, box.id, 'running')
-    const shell = await h.call('POST', `/v1/sandboxes/${box.id}/shells`, {
+    await waitForMachine(h, box.id, 'running')
+    const shell = await h.call('POST', `/v1/machines/${box.id}/shells`, {
       token: deployToken,
       body: {},
     })
@@ -452,7 +444,7 @@ describe('the attach WebSocket for sandbox runs', () => {
   })
 
   test('a detached exec cannot be attached', async () => {
-    const detached = await h.call('POST', `/v1/sandboxes/${boxId}/exec`, {
+    const detached = await h.call('POST', `/v1/machines/${boxId}/exec`, {
       token: deployToken,
       body: {
         command: ['true'],

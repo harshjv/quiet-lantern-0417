@@ -27,7 +27,7 @@ type Group = {
 
 export type LiveOptions = { lingerMs?: number; flushMs?: number; retryMs?: number }
 
-const errorCode = (error: unknown) => (error as { code?: string }).code ?? 'STATION_OFFLINE'
+const errorCode = (error: unknown) => (error as { code?: string }).code ?? 'SERVER_OFFLINE'
 
 export const createLiveHub = (
   stations: Pick<StationServer, 'openStream'>,
@@ -157,7 +157,7 @@ export const createLiveHub = (
 
             for (const sub of g.subscribers) {
               sub.notify('end', {
-                station_id: g.stationId,
+                server_id: g.stationId,
                 reason,
               })
             }
@@ -169,7 +169,7 @@ export const createLiveHub = (
     } catch (error) {
       for (const sub of g.subscribers) {
         sub.notify('error', {
-          station_id: g.stationId,
+          server_id: g.stationId,
           code: errorCode(error),
           explanation: (error as Error).message,
         })
@@ -205,7 +205,7 @@ export const createLiveHub = (
       .then(() => (g.dirty ? open(g) : undefined))
       .catch((error: unknown) =>
         logError('network.live_reconfigure_failed', {
-          station_id: g.stationId,
+          server_id: g.stationId,
           message: error instanceof Error ? error.message : String(error),
         }),
       )
@@ -244,8 +244,8 @@ export const createLiveHub = (
     }, lingerMs)
   }
 
-  const subscribe = (stationId: string, environmentId: string, sub: LiveSubscriber) => {
-    const key = `${stationId}|${environmentId}`
+  const subscribe = (stationId: string, targetId: string, sub: LiveSubscriber) => {
+    const key = `${stationId}|${targetId}`
     let g = groups.get(key)
 
     if (!g) {
@@ -286,8 +286,8 @@ export const createLiveHub = (
     }
   }
 
-  const claim = (credential: string, environmentId: string, release: () => void) => {
-    const key = `${credential}|${environmentId}`
+  const claim = (credential: string, targetId: string, release: () => void) => {
+    const key = `${credential}|${targetId}`
     const previous = claims.get(key)
 
     claims.set(key, release)

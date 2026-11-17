@@ -3,7 +3,7 @@ import { differenceInSeconds, format, formatDistanceStrict, isValid, parseISO } 
 import { slugPattern as slugSource } from '@stationly/protocol/domain'
 import { bytesText } from '@stationly/protocol/format'
 
-import type { Service } from './api'
+import type { App } from './api'
 
 const parsed = (value: string | null | undefined) => {
   if (!value) {
@@ -87,8 +87,8 @@ export const json = (value: unknown) =>
 export const shortDigest = (ref: string) =>
   ref.replace(/@sha256:([a-f0-9]{12})[a-f0-9]{52}$/, '@sha256:$1…')
 
-export const sourceText = (service: Pick<Service, 'source'>) => {
-  const s = service.source
+export const sourceText = (app: Pick<App, 'source'>) => {
+  const s = app.source
 
   if (s.type === 'image') {
     return shortDigest(s.ref.includes('@') ? s.ref : `${s.ref}@${s.digest}`)

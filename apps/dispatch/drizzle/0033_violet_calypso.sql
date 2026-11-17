@@ -1,1 +1,0 @@
-ALTER TABLE `task` ADD `preview_environment_id` text;

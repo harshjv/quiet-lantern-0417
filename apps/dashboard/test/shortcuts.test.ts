@@ -70,7 +70,7 @@ test('sequences read as steps and ranges collapse into one key', () => {
     keySteps('g>p', false).map((step) => step.map((key) => key.text)),
     [['G'], ['P']],
   )
-  assert.equal(spokenShortcut('projects', true), 'G then P')
+  assert.equal(spokenShortcut('ship', true), 'G then S')
   assert.deepEqual(
     shortcutKeys('tab', true).map((keys) => keys.map((key) => key.text)),
     [['G'], ['1–6']],

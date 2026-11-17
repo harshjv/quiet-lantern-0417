@@ -1,6 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox'
 
 import {
+  AppHealth,
   AppliedGeneration,
   CancelReason,
   ComponentStatus,
@@ -9,12 +10,11 @@ import {
   DeploymentStepStatus,
   Diagnosis,
   ErrorBody,
+  MachineReportStatus,
+  MachineStatusReason,
   Resources,
   RunKind,
   RunStatus,
-  SandboxReportStatus,
-  SandboxStatusReason,
-  ServiceHealth,
   StationCapabilities,
   StationRoutes,
   StatusHint,
@@ -111,7 +111,7 @@ export const ObservedService = Type.Object(
     applied_hash: appliedHash,
     ...outcome,
     status_hint: StatusHint,
-    health: ServiceHealth,
+    health: AppHealth,
     containers: Type.Array(ObservedContainer),
     switch_address: Nullable(Type.String()),
   },
@@ -166,7 +166,7 @@ export const ObservedVolume = Type.Object(
 
 export const ObservedRun = Type.Object(
   {
-    service_id: Id('service'),
+    service_id: Id('app'),
     deployment_id: Nullable(Id('deployment')),
     kind: RunKind,
     command: Type.Array(Type.String()),
@@ -266,8 +266,8 @@ export const ObservedSandbox = Type.Object(
   {
     applied_hash: appliedHash,
     ...outcome,
-    status: SandboxReportStatus,
-    reason: Nullable(SandboxStatusReason),
+    status: MachineReportStatus,
+    reason: Nullable(MachineStatusReason),
     started_at: Nullable(Timestamp),
     stop_at: Nullable(Timestamp),
     address: Nullable(Type.String()),
@@ -345,7 +345,7 @@ const observedMaps = {
 
 export const Observed = Type.Object(
   {
-    station_id: Id('station'),
+    station_id: Id('server'),
     observed_at: Timestamp,
     applied: AppliedGeneration,
     station: ObservedStation,

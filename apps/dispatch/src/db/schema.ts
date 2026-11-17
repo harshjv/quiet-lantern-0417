@@ -12,7 +12,12 @@ import {
 } from 'drizzle-orm/sqlite-core'
 
 import {
+  appKindValues,
   appliedStatusValues,
+  approvalSourceValues,
+  approvalStatusValues,
+  appStatusReasonValues,
+  appStatusValues,
   attestationKindValues,
   baseImageCheckValues,
   builderValues,
@@ -34,6 +39,14 @@ import {
   grantSourceValues,
   ingressValues,
   injectionValues,
+  keyKindValues,
+  keyScopeValues,
+  machineNetworkValues,
+  machineRuntimeValues,
+  machineSnapshotStatusValues,
+  machineSourceStateValues,
+  machineStatusReasonValues,
+  machineStatusValues,
   notificationChannelKindValues,
   notificationChannelStatusValues,
   platformUpgradeStatusValues,
@@ -43,26 +56,14 @@ import {
   repoAuthValues,
   runKindValues,
   runStatusValues,
-  sandboxNetworkValues,
-  sandboxRuntimeValues,
-  sandboxSnapshotStatusValues,
-  sandboxSourceStateValues,
-  sandboxStatusReasonValues,
-  sandboxStatusValues,
-  serviceKindValues,
-  serviceStatusReasonValues,
-  serviceStatusValues,
+  serverStatusValues,
   signatureStateValues,
-  stagedChangeSourceValues,
-  stagedChangeStatusValues,
   staleReasonCodeValues,
   stationArchValues,
   stationOsValues,
-  stationStatusValues,
   strategyValues,
+  targetKindValues,
   tokenKindValues,
-  variableKindValues,
-  variableScopeValues,
   versionSkewValues,
   volumeOwnerValues,
   volumeSnapshotSourceValues,
@@ -75,12 +76,12 @@ import {
   type ErrorBody,
   type Generation,
   type IdEntity,
+  type MachineEgress,
+  type MachineLimits,
+  type MachineSize,
   type ReleaseManifestDoc,
   type Resources,
-  type SandboxEgress,
-  type SandboxLimits,
-  type SandboxSize,
-  type ShipRequestStatusValue,
+  type ShipPhaseValue,
   type StationCapabilities,
   type WorkspaceAgent as TaskAgent,
   type TaskMachineValue,
@@ -141,10 +142,10 @@ const entity = (kind: IdEntity) => ({
     .$onUpdateFn(() => new Date()),
 })
 
-export const station = sqliteTable(
-  'station',
+export const server = sqliteTable(
+  'server',
   {
-    ...entity('station'),
+    ...entity('server'),
     name: text('name').notNull(),
     public_key: text('public_key'),
     endpoint: text('endpoint'),
@@ -160,7 +161,7 @@ export const station = sqliteTable(
     routes: json<unknown>('routes'),
     resources: json<Static<typeof Resources>>('resources'),
     status: text('status', {
-      enum: stationStatusValues,
+      enum: serverStatusValues,
     })
       .notNull()
       .default('enrolling'),
@@ -178,15 +179,15 @@ export const station = sqliteTable(
     registry_address: text('registry_address'),
     hosts_dispatch: bool('hosts_dispatch').notNull().default(false),
     generation_hash: text('generation_hash'),
-    sandbox_subnet: text('sandbox_subnet'),
-    sandbox_limits: json<Static<typeof SandboxLimits>>('sandbox_limits').notNull().default({
-      max_sandboxes: 100,
+    machine_subnet: text('machine_subnet'),
+    machine_limits: json<Static<typeof MachineLimits>>('machine_limits').notNull().default({
+      max_machines: 100,
       max_running: 20,
       memory_bytes: null,
       min_free_bytes: null,
     }),
-    default_sandbox_runtime: text('default_sandbox_runtime', {
-      enum: sandboxRuntimeValues,
+    default_machine_runtime: text('default_machine_runtime', {
+      enum: machineRuntimeValues,
     }),
     cloudflare_tunnel_id: text('cloudflare_tunnel_id'),
     public_address: text('public_address'),
@@ -194,7 +195,7 @@ export const station = sqliteTable(
     sleep_schedule: json<unknown>('sleep_schedule'),
     revoked_at: timestamp('revoked_at'),
   },
-  (table) => [uniqueIndex('station_name_unique').on(table.name)],
+  (table) => [uniqueIndex('server_name_unique').on(table.name)],
 )
 
 export const project = sqliteTable(
@@ -204,7 +205,6 @@ export const project = sqliteTable(
     name: text('name').notNull(),
     shared: bool('shared').notNull().default(false),
     manifest_path: text('manifest_path'),
-    default_environment_id: text('default_environment_id').notNull(),
     build_policy_id: text('build_policy_id'),
     build_cache_bytes: integer('build_cache_bytes')
       .notNull()
@@ -212,10 +212,8 @@ export const project = sqliteTable(
     workshop_uid_base: integer('workshop_uid_base').notNull(),
     image_retention_count: integer('image_retention_count').notNull().default(5),
     base_image_auto_rebuild: bool('base_image_auto_rebuild').notNull().default(false),
-    pr_environments: json<{ enabled: boolean; source_environment_id: string | null }>(
-      'pr_environments',
-    ).notNull(),
-    machine: json<{ slots: number; sandbox_id: string | null }>('machine'),
+    pull_request_previews: bool('pull_request_previews').notNull().default(true),
+    machine: json<{ slots: number; machine_id: string | null }>('machine'),
   },
   (table) => [
     uniqueIndex('project_name_unique').on(table.name),
@@ -223,39 +221,47 @@ export const project = sqliteTable(
   ],
 )
 
-export const environment = sqliteTable(
-  'environment',
+export type PreviewOrigin =
+  | { type: 'task'; task_id: string }
+  | { type: 'pull_request'; repo: string; number: number; head_sha: string; fork: boolean }
+  | { type: 'named' }
+
+export const target = sqliteTable(
+  'target',
   {
-    ...entity('environment'),
+    ...entity('target'),
     project_id: text('project_id')
       .notNull()
       .references(() => project.id),
+    kind: text('kind', {
+      enum: targetKindValues,
+    }).notNull(),
     name: text('name').notNull(),
-    protected: bool('protected').notNull().default(false),
-    ephemeral: bool('ephemeral').notNull().default(false),
-    source_environment_id: text('source_environment_id'),
-    pull_request: json<{ repo: string; number: number; head_sha: string; fork: boolean }>(
-      'pull_request',
-    ),
-    ttl_seconds: integer('ttl_seconds'),
+    origin: json<PreviewOrigin>('origin'),
+    expires_at: timestamp('expires_at'),
   },
-  (table) => [uniqueIndex('environment_project_name_unique').on(table.project_id, table.name)],
+  (table) => [
+    uniqueIndex('target_project_name_unique').on(table.project_id, table.name),
+    uniqueIndex('target_production_unique')
+      .on(table.project_id)
+      .where(sql`kind = 'production'`),
+  ],
 )
 
-export const service = sqliteTable(
-  'service',
+export const app = sqliteTable(
+  'app',
   {
-    ...entity('service'),
-    environment_id: text('environment_id')
+    ...entity('app'),
+    target_id: text('target_id')
       .notNull()
-      .references(() => environment.id),
+      .references(() => target.id),
     name: text('name').notNull(),
     kind: text('kind', {
-      enum: serviceKindValues,
+      enum: appKindValues,
     }).notNull(),
-    station_id: text('station_id')
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     source: json<JsonObject>('source').notNull(),
     stale: bool('stale').notNull().default(false),
     stale_reasons: json<StaleReasonValue[]>('stale_reasons').notNull().default([]),
@@ -284,12 +290,10 @@ export const service = sqliteTable(
     exports: json<string[]>('exports').notNull(),
     current_deployment_id: text('current_deployment_id'),
     status: text('status', {
-      enum: serviceStatusValues,
-    })
-      .notNull()
-      .default('amber'),
+      enum: appStatusValues,
+    }).notNull(),
     status_reason: text('status_reason', {
-      enum: serviceStatusReasonValues,
+      enum: appStatusReasonValues,
     }),
     desired_state: text('desired_state', {
       enum: desiredStateValues,
@@ -297,14 +301,14 @@ export const service = sqliteTable(
       .notNull()
       .default('running'),
   },
-  (table) => [uniqueIndex('service_environment_name_unique').on(table.environment_id, table.name)],
+  (table) => [uniqueIndex('app_target_name_unique').on(table.target_id, table.name)],
 )
 
-export type SandboxFailure = DiagnosisValue
+export type MachineFailure = DiagnosisValue
 
 export type WorkspaceCleanup = { clone: string; worktree: string; branch: string; user?: string }
 
-export type SandboxWorkspace = {
+export type MachineWorkspace = {
   kind?: TaskMachineValue
   agent: WorkspaceAgent
   repository: string | null
@@ -317,45 +321,45 @@ export type SandboxWorkspace = {
   cleanup?: WorkspaceCleanup[]
 }
 
-export const sandbox = sqliteTable(
-  'sandbox',
+export const machine = sqliteTable(
+  'machine',
   {
-    ...entity('sandbox'),
-    environment_id: text('environment_id').notNull(),
+    ...entity('machine'),
+    target_id: text('target_id').notNull(),
     project_id: text('project_id').notNull(),
-    station_id: text('station_id')
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     name: text('name').notNull(),
     image: json<{ ref: string | null; digest: string }>('image').notNull(),
     command: json<string[]>('command'),
-    size: json<Static<typeof SandboxSize>>('size').notNull(),
+    size: json<Static<typeof MachineSize>>('size').notNull(),
     runtime: text('runtime', {
-      enum: sandboxRuntimeValues,
+      enum: machineRuntimeValues,
     })
       .notNull()
       .default('gvisor'),
     network: text('network', {
-      enum: sandboxNetworkValues,
+      enum: machineNetworkValues,
     })
       .notNull()
       .default('isolated'),
     docker: bool('docker').notNull().default(false),
-    egress: json<Static<typeof SandboxEgress>>('egress').notNull(),
+    egress: json<Static<typeof MachineEgress>>('egress').notNull(),
     ttl_s: integer('ttl_s'),
     desired_state: text('desired_state', {
       enum: desiredStateValues,
     }).notNull(),
     stop_at: timestamp('stop_at'),
     status: text('status', {
-      enum: sandboxStatusValues,
+      enum: machineStatusValues,
     }).notNull(),
     status_reason: text('status_reason', {
-      enum: sandboxStatusReasonValues,
+      enum: machineStatusReasonValues,
     }),
     exit_code: integer('exit_code'),
-    failure: json<SandboxFailure>('failure'),
-    forked_from: json<{ sandbox_id: string | null; snapshot_id: string | null }>('forked_from'),
+    failure: json<MachineFailure>('failure'),
+    forked_from: json<{ machine_id: string | null; snapshot_id: string | null }>('forked_from'),
     disk_from: json<{ snapshot_id: string } | { sandbox_id: string }>('disk_from'),
     address: text('address'),
     disk_used_bytes: integer('disk_used_bytes').notNull().default(0),
@@ -364,22 +368,22 @@ export const sandbox = sqliteTable(
     expiring_notified_at: timestamp('expiring_notified_at'),
     deletion: json<{
       actor: ActorValue
-      reason: 'user' | 'retention' | 'environment'
+      reason: 'user' | 'retention' | 'preview'
       requested_at: string
     }>('deletion'),
-    workspace: json<SandboxWorkspace>('workspace'),
+    workspace: json<MachineWorkspace>('workspace'),
     created_by: json<ActorValue>('created_by').notNull(),
   },
   (table) => [
-    uniqueIndex('sandbox_environment_name_unique').on(table.environment_id, table.name),
-    index('sandbox_station').on(table.station_id),
+    uniqueIndex('machine_target_name_unique').on(table.target_id, table.name),
+    index('machine_server').on(table.server_id),
   ],
 )
 
-export type SandboxSnapshotSettings = {
-  network: (typeof sandboxNetworkValues)[number]
+export type MachineSnapshotSettings = {
+  network: (typeof machineNetworkValues)[number]
   docker: boolean
-  egress: Static<typeof SandboxEgress>
+  egress: Static<typeof MachineEgress>
   command: string[] | null
   ttl_s: number | null
 }
@@ -389,7 +393,7 @@ export const task = sqliteTable(
   {
     ...entity('task'),
     project_id: text('project_id').notNull(),
-    environment_id: text('environment_id').notNull(),
+    target_id: text('target_id').notNull(),
     owner: json<{ type: string; id: string | null }>('owner').notNull(),
     title: text('title').notNull(),
     repository: text('repository').notNull(),
@@ -397,13 +401,13 @@ export const task = sqliteTable(
     branch: text('branch').notNull(),
     agent: text('agent').$type<TaskAgent>().notNull(),
     model: text('model'),
-    sandbox_id: text('sandbox_id').notNull(),
+    machine_id: text('machine_id').notNull(),
     machine: text('machine').$type<TaskMachineValue>().notNull().default('own'),
     worktree: text('worktree'),
     port: integer('port'),
     setup_run_id: text('setup_run_id'),
     queued_at: timestamp('queued_at'),
-    preview_environment_id: text('preview_environment_id'),
+    preview_id: text('preview_id'),
     pull_request: json<{ repo: string; number: number; url: string }>('pull_request'),
     status: text('status').$type<TaskStatusValue>().notNull().default('setting_up'),
     attention: json<{ kind: NonNullable<AgentStatusRecord['kind']>; since: string }>('attention'),
@@ -412,7 +416,7 @@ export const task = sqliteTable(
     archived_at: timestamp('archived_at'),
   },
   (table) => [
-    index('task_sandbox').on(table.sandbox_id),
+    index('task_machine').on(table.machine_id),
     index('task_project').on(table.project_id),
   ],
 )
@@ -574,7 +578,7 @@ export const member_key = sqliteTable(
 export const machine_user = sqliteTable(
   'machine_user',
   {
-    sandbox_id: text('sandbox_id').notNull(),
+    machine_id: text('machine_id').notNull(),
     user_id: text('user_id').notNull(),
     uid: integer('uid').notNull(),
     name: text('name').notNull(),
@@ -585,9 +589,9 @@ export const machine_user = sqliteTable(
   },
   (table) => [
     primaryKey({
-      columns: [table.sandbox_id, table.user_id],
+      columns: [table.machine_id, table.user_id],
     }),
-    uniqueIndex('machine_user_uid_unique').on(table.sandbox_id, table.uid),
+    uniqueIndex('machine_user_uid_unique').on(table.machine_id, table.uid),
   ],
 )
 
@@ -619,49 +623,25 @@ export const tool_approval = sqliteTable(
   ],
 )
 
-export const ship_request = sqliteTable(
-  'ship_request',
+export const machine_snapshot = sqliteTable(
+  'machine_snapshot',
   {
-    ...entity('ship_request'),
-    task_id: text('task_id')
-      .notNull()
-      .references(() => task.id, {
-        onDelete: 'cascade',
-      }),
+    ...entity('machine_snapshot'),
+    machine_id: text('machine_id').notNull(),
+    target_id: text('target_id').notNull(),
     project_id: text('project_id').notNull(),
-    status: text('status').$type<ShipRequestStatusValue>().notNull(),
-    requested_by: text('requested_by').notNull(),
-    run_id: text('run_id').notNull(),
-    head_sha: text('head_sha'),
-    reason: text('reason'),
-    decided_by: text('decided_by'),
-    decided_at: timestamp('decided_at'),
-  },
-  (table) => [
-    index('ship_request_task').on(table.task_id),
-    index('ship_request_status').on(table.status),
-  ],
-)
-
-export const sandbox_snapshot = sqliteTable(
-  'sandbox_snapshot',
-  {
-    ...entity('sandbox_snapshot'),
-    sandbox_id: text('sandbox_id').notNull(),
-    environment_id: text('environment_id').notNull(),
-    project_id: text('project_id').notNull(),
-    station_id: text('station_id')
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     name: text('name'),
     image: json<{ ref: string | null; digest: string }>('image').notNull(),
-    size: json<Static<typeof SandboxSize>>('size').notNull(),
+    size: json<Static<typeof MachineSize>>('size').notNull(),
     runtime: text('runtime', {
-      enum: sandboxRuntimeValues,
+      enum: machineRuntimeValues,
     })
       .notNull()
       .default('gvisor'),
-    settings: json<SandboxSnapshotSettings>('settings')
+    settings: json<MachineSnapshotSettings>('settings')
       .notNull()
       .default({
         network: 'isolated',
@@ -674,10 +654,10 @@ export const sandbox_snapshot = sqliteTable(
         ttl_s: 3600,
       }),
     source_state: text('source_state', {
-      enum: sandboxSourceStateValues,
+      enum: machineSourceStateValues,
     }).notNull(),
     status: text('status', {
-      enum: sandboxSnapshotStatusValues,
+      enum: machineSnapshotStatusValues,
     }).notNull(),
     taken_at: timestamp('taken_at'),
     exclusive_bytes: integer('exclusive_bytes').notNull().default(0),
@@ -686,26 +666,26 @@ export const sandbox_snapshot = sqliteTable(
     created_by: json<ActorValue>('created_by').notNull(),
   },
   (table) => [
-    uniqueIndex('sandbox_snapshot_environment_name_unique')
-      .on(table.environment_id, table.name)
+    uniqueIndex('machine_snapshot_target_name_unique')
+      .on(table.target_id, table.name)
       .where(sql`name is not null`),
   ],
 )
 
-export const service_port = sqliteTable(
-  'service_port',
+export const app_port = sqliteTable(
+  'app_port',
   {
-    ...entity('service_port'),
-    service_id: text('service_id')
+    ...entity('app_port'),
+    app_id: text('app_id')
       .notNull()
-      .references(() => service.id),
+      .references(() => app.id),
     port: integer('port').notNull(),
     protocol: text('protocol', {
       enum: portProtocolValues,
     }).notNull(),
     grpc: bool('grpc').notNull().default(false),
   },
-  (table) => [uniqueIndex('service_port_service_port_unique').on(table.service_id, table.port)],
+  (table) => [uniqueIndex('app_port_app_port_unique').on(table.app_id, table.port)],
 )
 
 export const volume = sqliteTable('volume', {
@@ -713,12 +693,12 @@ export const volume = sqliteTable('volume', {
   owner: text('owner', {
     enum: volumeOwnerValues,
   }).notNull(),
-  service_id: text('service_id').references(() => service.id),
+  app_id: text('app_id').references(() => app.id),
   project_id: text('project_id').references(() => project.id),
   mount_path: text('mount_path').notNull(),
-  station_id: text('station_id')
+  server_id: text('server_id')
     .notNull()
-    .references(() => station.id),
+    .references(() => server.id),
   docker_name: text('docker_name').notNull(),
   size_bytes: integer('size_bytes').notNull().default(0),
   status: text('status', {
@@ -733,9 +713,9 @@ export const domain = sqliteTable(
   'domain',
   {
     ...entity('domain'),
-    service_port_id: text('service_port_id')
+    app_port_id: text('app_port_id')
       .notNull()
-      .references(() => service_port.id),
+      .references(() => app_port.id),
     hostname: text('hostname').notNull(),
     kind: text('kind', {
       enum: domainKindValues,
@@ -765,12 +745,12 @@ export const port_allocation = sqliteTable(
   'port_allocation',
   {
     ...entity('port_allocation'),
-    service_port_id: text('service_port_id')
+    app_port_id: text('app_port_id')
       .notNull()
-      .references(() => service_port.id),
-    station_id: text('station_id')
+      .references(() => app_port.id),
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     host_port: integer('host_port').notNull(),
     status: text('status', {
       enum: portAllocationStatusValues,
@@ -779,8 +759,8 @@ export const port_allocation = sqliteTable(
       .default('active'),
   },
   (table) => [
-    uniqueIndex('port_allocation_station_host_port_active_unique')
-      .on(table.station_id, table.host_port)
+    uniqueIndex('port_allocation_server_host_port_active_unique')
+      .on(table.server_id, table.host_port)
       .where(sql`status = 'active'`),
   ],
 )
@@ -789,7 +769,7 @@ export const deployment = sqliteTable(
   'deployment',
   {
     ...entity('deployment'),
-    service_id: text('service_id').notNull(),
+    app_id: text('app_id').notNull(),
     number: integer('number').notNull(),
     trigger: json<{
       type: (typeof deploymentTriggerValues)[number]
@@ -817,8 +797,9 @@ export const deployment = sqliteTable(
     finished_at: timestamp('finished_at'),
     base_images: json<BaseImageRecord[]>('base_images').notNull(),
     image_pruned_at: timestamp('image_pruned_at'),
+    health_failed: bool('health_failed').notNull().default(false),
   },
-  (table) => [uniqueIndex('deployment_service_number_unique').on(table.service_id, table.number)],
+  (table) => [uniqueIndex('deployment_app_number_unique').on(table.app_id, table.number)],
 )
 
 export const deployment_step = sqliteTable(
@@ -884,8 +865,8 @@ export type RunExec = {
 
 export const run = sqliteTable('run', {
   ...entity('run'),
-  service_id: text('service_id'),
-  sandbox_id: text('sandbox_id'),
+  app_id: text('app_id'),
+  machine_id: text('machine_id'),
   exec: json<RunExec>('exec'),
   deployment_id: text('deployment_id').references(() => deployment.id),
   kind: text('kind', {
@@ -906,19 +887,19 @@ export const run = sqliteTable('run', {
   actor: json<ActorValue>('actor'),
 })
 
-export const variable = sqliteTable(
-  'variable',
+export const key = sqliteTable(
+  'key',
   {
-    ...entity('variable'),
+    ...entity('key'),
     scope: text('scope', {
-      enum: variableScopeValues,
+      enum: keyScopeValues,
     }).notNull(),
     project_id: text('project_id').references(() => project.id),
-    service_id: text('service_id').references(() => service.id),
-    sandbox_id: text('sandbox_id').references(() => sandbox.id),
-    key: text('key').notNull(),
+    app_id: text('app_id').references(() => app.id),
+    machine_id: text('machine_id').references(() => machine.id),
+    name: text('name').notNull(),
     kind: text('kind', {
-      enum: variableKindValues,
+      enum: keyKindValues,
     }).notNull(),
     reference: text('reference'),
     injection: text('injection', {
@@ -927,22 +908,21 @@ export const variable = sqliteTable(
       .notNull()
       .default('env'),
     build: bool('build').notNull().default(false),
-    copy_to_clones: bool('copy_to_clones').notNull().default(false),
     current_value_id: text('current_value_id'),
   },
   (table) => [
-    uniqueIndex('variable_global_key_unique')
-      .on(table.key)
+    uniqueIndex('key_global_name_unique')
+      .on(table.name)
       .where(sql`scope = 'global'`),
-    uniqueIndex('variable_project_key_unique')
-      .on(table.project_id, table.key)
+    uniqueIndex('key_project_name_unique')
+      .on(table.project_id, table.name)
       .where(sql`scope = 'project'`),
-    uniqueIndex('variable_service_key_unique')
-      .on(table.service_id, table.key)
-      .where(sql`scope = 'service'`),
-    uniqueIndex('variable_sandbox_key_unique')
-      .on(table.sandbox_id, table.key)
-      .where(sql`scope = 'sandbox'`),
+    uniqueIndex('key_app_name_unique')
+      .on(table.app_id, table.name)
+      .where(sql`scope = 'app'`),
+    uniqueIndex('key_machine_name_unique')
+      .on(table.machine_id, table.name)
+      .where(sql`scope = 'machine'`),
   ],
 )
 
@@ -974,10 +954,14 @@ export const secret_value = sqliteTable(
   'secret_value',
   {
     ...entity('secret_value'),
-    variable_id: text('variable_id')
+    key_id: text('key_id')
       .notNull()
-      .references(() => variable.id),
-    environment_id: text('environment_id').references(() => environment.id),
+      .references(() => key.id),
+    target: text('target', {
+      enum: targetKindValues,
+    })
+      .notNull()
+      .default('production'),
     version: integer('version').notNull(),
     ciphertext: bytes('ciphertext').notNull(),
     data_key_id: text('data_key_id')
@@ -988,20 +972,15 @@ export const secret_value = sqliteTable(
     needs_reentry: bool('needs_reentry').notNull().default(false),
   },
   (table) => [
-    uniqueIndex('secret_value_default_version_unique')
-      .on(table.variable_id, table.version)
-      .where(sql`environment_id is null`),
-    uniqueIndex('secret_value_environment_version_unique')
-      .on(table.variable_id, table.environment_id, table.version)
-      .where(sql`environment_id is not null`),
+    uniqueIndex('secret_value_target_version_unique').on(table.key_id, table.target, table.version),
   ],
 )
 
 export const grant = sqliteTable('grant', {
   ...entity('grant'),
-  variable_id: text('variable_id')
+  key_id: text('key_id')
     .notNull()
-    .references(() => variable.id),
+    .references(() => key.id),
   project_id: text('project_id')
     .notNull()
     .references(() => project.id),
@@ -1016,12 +995,12 @@ export const attachment = sqliteTable(
   'attachment',
   {
     ...entity('attachment'),
-    environment_id: text('environment_id')
+    target_id: text('target_id')
       .notNull()
-      .references(() => environment.id),
-    shared_service_id: text('shared_service_id')
+      .references(() => target.id),
+    shared_app_id: text('shared_app_id')
       .notNull()
-      .references(() => service.id),
+      .references(() => app.id),
     alias: text('alias').notNull(),
     status: text('status', {
       enum: ['pending', 'attached', 'failed', 'detaching'],
@@ -1032,26 +1011,47 @@ export const attachment = sqliteTable(
     hook_run_id: text('hook_run_id').references(() => run.id),
     error: json<DiagnosisValue>('error'),
   },
-  (table) => [
-    uniqueIndex('attachment_environment_alias_unique').on(table.environment_id, table.alias),
-  ],
+  (table) => [uniqueIndex('attachment_target_alias_unique').on(table.target_id, table.alias)],
 )
 
-export const staged_change = sqliteTable('staged_change', {
-  ...entity('staged_change'),
-  environment_id: text('environment_id'),
-  actor: json<ActorValue>('actor').notNull(),
-  changes: json<JsonObject[]>('changes').notNull(),
-  refs: json<Record<string, string>>('refs').notNull(),
-  source: text('source', {
-    enum: stagedChangeSourceValues,
-  }).notNull(),
-  status: text('status', {
-    enum: stagedChangeStatusValues,
-  }).notNull(),
-  accepted_by: json<ActorValue>('accepted_by'),
-  deployments: json<string[]>('deployments').notNull(),
-})
+export type ApprovalShip = {
+  phase: ShipPhaseValue
+  run_id: string
+  pull_request: { repo: string; number: number; url: string } | null
+  head_sha: string | null
+  merge_sha: string | null
+  reason: string | null
+}
+
+export const approval = sqliteTable(
+  'approval',
+  {
+    ...entity('approval'),
+    project_id: text('project_id'),
+    task_id: text('task_id'),
+    title: text('title').notNull(),
+    requested_by: json<ActorValue>('requested_by').notNull(),
+    requester: text('requester'),
+    changes: json<JsonObject[]>('changes').notNull(),
+    refs: json<Record<string, string>>('refs').notNull(),
+    source: text('source', {
+      enum: approvalSourceValues,
+    }).notNull(),
+    status: text('status', {
+      enum: approvalStatusValues,
+    }).notNull(),
+    decided_by: json<ActorValue>('decided_by'),
+    decided_at: timestamp('decided_at'),
+    self_approved: bool('self_approved').notNull().default(false),
+    reason: text('reason'),
+    deployments: json<string[]>('deployments').notNull(),
+    ship: json<ApprovalShip>('ship'),
+  },
+  (table) => [
+    index('approval_status').on(table.status, table.project_id),
+    index('approval_task').on(table.task_id),
+  ],
+)
 
 export const template = sqliteTable(
   'template',
@@ -1083,7 +1083,7 @@ export const template_version = sqliteTable(
 
 export const firewall_policy = sqliteTable('firewall_policy', {
   ...entity('firewall_policy'),
-  owner: json<{ type: 'service' | 'project' | 'system'; id: string | null }>('owner').notNull(),
+  owner: json<{ type: 'app' | 'project' | 'system'; id: string | null }>('owner').notNull(),
   kind: text('kind', {
     enum: ['runtime', 'build', 'system'],
   }).notNull(),
@@ -1108,12 +1108,12 @@ export const firewall_rule = sqliteTable('firewall_rule', {
 
 export const flow_rollup = sqliteTable('flow_rollup', {
   ...entity('flow_rollup'),
-  service_id: text('service_id').notNull(),
+  app_id: text('app_id').notNull(),
   deployment_id: text('deployment_id')
     .notNull()
     .references(() => deployment.id),
   minute: timestamp('minute').notNull(),
-  destination: json<{ domain: string } | { ip: string } | { service_id: string }>(
+  destination: json<{ domain: string } | { ip: string } | { app_id: string }>(
     'destination',
   ).notNull(),
   port: integer('port').notNull(),
@@ -1130,22 +1130,19 @@ export const ipam_allocation = sqliteTable(
   'ipam_allocation',
   {
     ...entity('ipam_allocation'),
-    environment_id: text('environment_id')
+    target_id: text('target_id')
       .notNull()
-      .references(() => environment.id),
-    station_id: text('station_id')
+      .references(() => target.id),
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     subnet: text('subnet').notNull(),
     gateway: text('gateway').notNull(),
     docker_network_id: text('docker_network_id'),
   },
   (table) => [
-    uniqueIndex('ipam_allocation_environment_station_unique').on(
-      table.environment_id,
-      table.station_id,
-    ),
-    uniqueIndex('ipam_allocation_station_subnet_unique').on(table.station_id, table.subnet),
+    uniqueIndex('ipam_allocation_target_server_unique').on(table.target_id, table.server_id),
+    uniqueIndex('ipam_allocation_server_subnet_unique').on(table.server_id, table.subnet),
   ],
 )
 
@@ -1153,11 +1150,11 @@ export const virtual_ip = sqliteTable(
   'virtual_ip',
   {
     ...entity('virtual_ip'),
-    service_id: text('service_id').references(() => service.id),
+    app_id: text('app_id').references(() => app.id),
     component: text('component'),
-    environment_id: text('environment_id')
+    target_id: text('target_id')
       .notNull()
-      .references(() => environment.id),
+      .references(() => target.id),
     address: text('address').notNull(),
   },
   (table) => [uniqueIndex('virtual_ip_address_unique').on(table.address)],
@@ -1167,7 +1164,7 @@ export const component = sqliteTable(
   'component',
   {
     ...entity('component'),
-    station_id: text('station_id').references(() => station.id),
+    server_id: text('server_id').references(() => server.id),
     name: text('name', {
       enum: componentNameValues,
     }).notNull(),
@@ -1192,10 +1189,10 @@ export const component = sqliteTable(
   (table) => [
     uniqueIndex('component_instance_name_unique')
       .on(table.name)
-      .where(sql`station_id is null`),
-    uniqueIndex('component_station_name_unique')
-      .on(table.station_id, table.name)
-      .where(sql`station_id is not null`),
+      .where(sql`server_id is null`),
+    uniqueIndex('component_server_name_unique')
+      .on(table.server_id, table.name)
+      .where(sql`server_id is not null`),
   ],
 )
 
@@ -1221,7 +1218,7 @@ export const attestation = sqliteTable(
 
 export type StoredBackupTarget =
   | { type: 'path'; path: string }
-  | { type: 's3'; endpoint: string; bucket: string; prefix: string; credentials_variable: string }
+  | { type: 's3'; endpoint: string; bucket: string; prefix: string; credentials_key: string }
 
 export const volume_snapshot = sqliteTable('volume_snapshot', {
   ...entity('volume_snapshot'),
@@ -1239,7 +1236,7 @@ export const volume_snapshot = sqliteTable('volume_snapshot', {
   })
     .notNull()
     .default('running'),
-  station_id: text('station_id').references(() => station.id),
+  server_id: text('server_id').references(() => server.id),
   trigger: text('trigger', {
     enum: volumeSnapshotTriggerValues,
   })
@@ -1298,7 +1295,7 @@ export const token = sqliteTable(
       enum: tokenKindValues,
     }).notNull(),
     scopes:
-      json<{ project_id: string; environment_id: string; level: 'read' | 'deploy' | 'admin' }[]>(
+      json<{ project_id: string; target: string; level: 'read' | 'deploy' | 'admin' }[]>(
         'scopes',
       ).notNull(),
     expires_at: timestamp('expires_at').notNull(),
@@ -1306,7 +1303,7 @@ export const token = sqliteTable(
     client_id: text('client_id'),
     api_key_id: text('api_key_id'),
     secret_sha256: text('secret_sha256'),
-    station_id: text('station_id').references(() => station.id),
+    server_id: text('server_id').references(() => server.id),
     used_at: timestamp('used_at'),
   },
   (table) => [
@@ -1336,11 +1333,11 @@ export const idempotency_record = sqliteTable(
   ],
 )
 
-export const staged_value = sqliteTable('staged_value', {
+export const approval_value = sqliteTable('approval_value', {
   id: text('id').primaryKey(),
-  staged_change_id: text('staged_change_id')
+  approval_id: text('approval_id')
     .notNull()
-    .references(() => staged_change.id),
+    .references(() => approval.id),
   ciphertext: bytes('ciphertext').notNull(),
   data_key_id: text('data_key_id')
     .notNull()
@@ -1430,9 +1427,9 @@ export const station_generation = sqliteTable(
   'station_generation',
   {
     ...entity('station_generation'),
-    station_id: text('station_id')
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     generation: integer('generation').notNull(),
     document: json<Generation>('document').notNull(),
     hash: text('hash').notNull(),
@@ -1442,10 +1439,7 @@ export const station_generation = sqliteTable(
     failure: json<ErrorBodyValue>('failure'),
   },
   (table) => [
-    uniqueIndex('station_generation_station_generation_unique').on(
-      table.station_id,
-      table.generation,
-    ),
+    uniqueIndex('server_generation_server_generation_unique').on(table.server_id, table.generation),
   ],
 )
 
@@ -1453,20 +1447,20 @@ export const station_outbox = sqliteTable(
   'station_outbox',
   {
     ...entity('station_outbox'),
-    station_id: text('station_id')
+    server_id: text('server_id')
       .notNull()
-      .references(() => station.id),
+      .references(() => server.id),
     epoch: text('epoch').notNull(),
     committed_seq: integer('committed_seq').notNull().default(0),
   },
-  (table) => [uniqueIndex('station_outbox_station_epoch_unique').on(table.station_id, table.epoch)],
+  (table) => [uniqueIndex('server_outbox_server_epoch_unique').on(table.server_id, table.epoch)],
 )
 
 export const drift = sqliteTable('drift', {
   ...entity('drift'),
-  station_id: text('station_id')
+  server_id: text('server_id')
     .notNull()
-    .references(() => station.id),
+    .references(() => server.id),
   object: json<string>('object').notNull(),
   observed: json<unknown>('observed'),
   desired: json<unknown>('desired'),
@@ -1499,7 +1493,7 @@ export type UpgradePin = { version: string; digest: string | null }
 
 export type UpgradeStep = {
   component: string
-  station_id: string | null
+  server_id: string | null
   from: UpgradePin
   to: UpgradePin
   status: 'pending' | 'running' | 'done' | 'failed' | 'reverting' | 'reverted' | 'revert_failed'
@@ -1513,8 +1507,8 @@ export const platform_upgrade = sqliteTable(
   'platform_upgrade',
   {
     ...entity('platform_upgrade'),
-    staged_change_id: text('staged_change_id'),
-    station_id: text('station_id').references(() => station.id),
+    approval_id: text('approval_id'),
+    server_id: text('server_id').references(() => server.id),
     release_from: text('release_from').notNull(),
     release_to: text('release_to').notNull(),
     lockfile_before: json<JsonObject>('lockfile_before').notNull(),
@@ -1539,9 +1533,9 @@ export const blob = sqliteTable('blob', {
   size_bytes: integer('size_bytes').notNull(),
   sha256: text('sha256').notNull(),
   expires_at: timestamp('expires_at').notNull(),
-  service_id: text('service_id'),
+  app_id: text('app_id'),
   grant_sha256: text('grant_sha256'),
-  grant_station_id: text('grant_station_id'),
+  grant_server_id: text('grant_server_id'),
   grant_expires_at: timestamp('grant_expires_at'),
 })
 
@@ -1641,7 +1635,7 @@ export const doctor_check = sqliteTable(
   'doctor_check',
   {
     name: text('name').notNull(),
-    station: text('station').notNull(),
+    server: text('server').notNull(),
     status: text('status', {
       enum: doctorStatusValues,
     }).notNull(),
@@ -1650,7 +1644,7 @@ export const doctor_check = sqliteTable(
   },
   (table) => [
     primaryKey({
-      columns: [table.name, table.station],
+      columns: [table.name, table.server],
     }),
   ],
 )

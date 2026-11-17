@@ -14,9 +14,9 @@ import {
 } from './labels.ts'
 import type { Tone } from './tone.ts'
 
-type MapService = NetworkMap['services'][number]
-type MapDomain = MapService['domains'][number]
-type MapExposure = MapService['exposures'][number]
+type MapApp = NetworkMap['apps'][number]
+type MapDomain = MapApp['domains'][number]
+type MapExposure = MapApp['exposures'][number]
 type Peer = Connections['connections'][number]['peer']
 type Hop = Explanation['hops'][number]
 
@@ -55,11 +55,11 @@ export const ageText = (seconds: number | null) => (seconds === null ? blank : s
 
 export const peerText = (peer: Peer) => {
   if (peer.kind === 'service') {
-    return peer.service ?? peer.service_id ?? peerKind.service
+    return peer.app ?? peer.app_id ?? peerKind.service
   }
 
   if (peer.kind === 'sandbox') {
-    return peer.sandbox ?? peer.sandbox_id ?? peerKind.sandbox
+    return peer.machine ?? peer.machine_id ?? peerKind.sandbox
   }
 
   if (peer.kind === 'public' && peer.address) {
@@ -75,8 +75,8 @@ export const peerText = (peer: Peer) => {
 
 export const deploymentText = (number: number) => `Deployment #${number}`
 
-export const servingText = (service: Pick<MapService, 'name' | 'switch'>): Serving => {
-  const { state, deployment } = service.switch
+export const servingText = (app: Pick<MapApp, 'name' | 'switch'>): Serving => {
+  const { state, deployment } = app.switch
 
   if (state === 'serving') {
     return {
@@ -98,18 +98,18 @@ export const servingText = (service: Pick<MapService, 'name' | 'switch'>): Servi
     return {
       label: routing.mismatch.label,
       tone: routing.mismatch.tone,
-      hint: `Traffic still goes to an old container. Redeploy ${service.name} or wait for the station to catch up.`,
+      hint: `Traffic still goes to an old container. Redeploy ${app.name} or wait for the server to catch up.`,
     }
   }
 
   return {
-    label: `${routing.no_target.label}. Calls to ${service.name} are refused.`,
+    label: `${routing.no_target.label}. Calls to ${app.name} are refused.`,
     tone: routing.no_target.tone,
     hint: null,
   }
 }
 
-export const drainingText = (sw: MapService['switch']) =>
+export const drainingText = (sw: MapApp['switch']) =>
   sw.draining ? `#${sw.draining.number} finishing open connections` : null
 
 export const domainState = (
@@ -134,12 +134,12 @@ export const exposureState = (exposure: Pick<MapExposure, 'result'> | undefined)
   routeResult[exposure?.result ?? 'pending']
 
 export const stationName = (map: Pick<NetworkMap, 'subnets'>, id: string) =>
-  map.subnets.find((s) => s.station.id === id)?.station.name ?? 'the station'
+  map.subnets.find((s) => s.server.id === id)?.server.name ?? 'the server'
 
 export const exposureText = (map: Pick<NetworkMap, 'subnets'>, exposure: MapExposure) =>
   exposure.public
     ? `${exposure.public} to port ${exposure.port}`
-    : `Port ${exposure.host_port} on ${stationName(map, exposure.station_id)} (no public address)`
+    : `Port ${exposure.host_port} on ${stationName(map, exposure.server_id)} (no public address)`
 
 export const blockedText = (count: number) =>
   `Blocked ${count === 1 ? 'once' : plural(count, 'time')}`

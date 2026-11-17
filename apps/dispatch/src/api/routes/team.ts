@@ -29,7 +29,7 @@ import {
   memberKeyNames,
   setKey,
 } from '../../team/keys.ts'
-import { memberOf, projectsOf } from '../../team/members.ts'
+import { activeAdminIds, memberOf, projectsOf } from '../../team/members.ts'
 import { requireHuman } from '../access.ts'
 import { audit, type Call } from '../context.ts'
 import { fail, invalid, notFound } from '../errors.ts'
@@ -161,12 +161,7 @@ export const teamRoutes = (kit: Kit) => {
     }
   }
 
-  const activeAdmins = () =>
-    db
-      .select()
-      .from(member)
-      .where(and(eq(member.role, 'admin'), isNull(member.removed_at)))
-      .all().length
+  const activeAdmins = () => activeAdminIds(db).length
 
   const setProjects = (call: Call, userId: string, ids: string[], now: Date) => {
     db.delete(project_member).where(eq(project_member.user_id, userId)).run()

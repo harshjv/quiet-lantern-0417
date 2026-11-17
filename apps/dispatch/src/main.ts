@@ -21,7 +21,7 @@ import { startBaseImageChecker } from './platform/base-images.ts'
 import { recordDispatchComponent } from './platform/lockfile.ts'
 import { createUpgradeDriver } from './platform/upgrade.ts'
 import { startIdleStop } from './sandboxes/idle-stop.ts'
-import { startSandboxRetention } from './sandboxes/lifecycle.ts'
+import { startMachineRetention } from './sandboxes/lifecycle.ts'
 import { readRepository } from './sandboxes/repository-access.ts'
 import { startWorkspaceTokenRenewal } from './sandboxes/workspace.ts'
 import { ephemeralDelivery } from './secrets/deliver.ts'
@@ -136,7 +136,7 @@ const onRecord = (stationId: string, type: string, body: unknown) => {
         (r) =>
           r.expired.length &&
           log('volume_backup.pruned', {
-            station_id: stationId,
+            server_id: stationId,
             volume_id: b.volume_id,
             expired: r.expired,
             kept: r.kept,
@@ -199,7 +199,7 @@ const backupSchedule = startBackupScheduler(
   },
   log,
 )
-const sandboxRetention = startSandboxRetention(
+const machineRetention = startMachineRetention(
   {
     db,
     stations,
@@ -283,7 +283,7 @@ const shutdown = async () => {
   notifier.stop()
   baseImages.stop()
   backupSchedule.stop()
-  sandboxRetention.stop()
+  machineRetention.stop()
   agentEventSweep.stop()
   agentRunners.stop()
   shipAdvance.stop()

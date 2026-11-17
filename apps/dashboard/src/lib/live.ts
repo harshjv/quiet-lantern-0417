@@ -1,12 +1,12 @@
 import { noop, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import type { Event as EventRow } from './api'
 import { completionOf, completionText, startedByAgent } from './completion'
 import { useEventStream } from './event-stream'
-import { invalidateGroups, stagedDecided, type Group } from './invalidate'
-import { deploymentQuery, serviceQuery } from './queries'
+import { approvalDecided, invalidateGroups, type Group } from './invalidate'
+import { currentPlace, go } from './nav'
+import { appQuery, deploymentQuery } from './queries'
 
 const watched = [
   'deployment.*',
@@ -14,11 +14,11 @@ const watched = [
   'run.*',
   'health.changed',
   'domain.changed',
-  'staged_change.*',
-  'environment.*',
+  'approval.*',
+  'preview.*',
   'secret.changed',
-  'station.*',
-  'sandbox.*',
+  'server.*',
+  'machine.*',
   'task.*',
 ]
 
@@ -31,20 +31,20 @@ const listened = [
   'run.failed',
   'health.changed',
   'domain.changed',
-  'staged_change.created',
-  'staged_change.accepted',
-  'staged_change.rejected',
-  'environment.created',
-  'environment.deleted',
+  'approval.created',
+  'approval.approved',
+  'approval.rejected',
+  'preview.created',
+  'preview.deleted',
   'secret.changed',
-  'station.online',
-  'station.offline',
-  'station.drift',
-  'station.asleep',
-  'sandbox.started',
-  'sandbox.stopped',
-  'sandbox.failed',
-  'sandbox.deleted',
+  'server.online',
+  'server.offline',
+  'server.drift',
+  'server.asleep',
+  'machine.started',
+  'machine.stopped',
+  'machine.failed',
+  'machine.deleted',
   'task.created',
   'task.changed',
   'task.deleted',
@@ -59,15 +59,15 @@ const groupsFor = (event: EventRow): Group[] => {
     return ['deployments']
   }
 
-  if (event.type.startsWith('sandbox.')) {
-    return ['sandboxes']
+  if (event.type.startsWith('machine.')) {
+    return ['machines']
   }
 
   if (event.type.startsWith('task.')) {
     return ['tasks']
   }
 
-  if (event.type === 'health.changed' || event.type.startsWith('station.')) {
+  if (event.type === 'health.changed' || event.type.startsWith('server.')) {
     return ['health']
   }
 
@@ -75,16 +75,16 @@ const groupsFor = (event: EventRow): Group[] => {
     return ['domains']
   }
 
-  if (event.type.startsWith('staged_change.')) {
-    return stagedDecided
+  if (event.type.startsWith('approval.')) {
+    return approvalDecided
   }
 
-  if (event.type.startsWith('environment.')) {
-    return ['environments']
+  if (event.type.startsWith('preview.')) {
+    return ['previews']
   }
 
   if (event.type === 'secret.changed') {
-    return ['variables']
+    return ['keys']
   }
 
   return []
@@ -106,26 +106,17 @@ const followed = new Set<string>()
 
 export const follow = (deployment: string) => followed.add(deployment)
 
-type Router = ReturnType<typeof useRouter>
-
-const notify = async (client: QueryClient, router: Router, event: EventRow) => {
+const notify = async (client: QueryClient, event: EventRow) => {
   const completion = completionOf(event)
 
   if (!completion) {
     return
   }
 
-  const params = {
-    deployment: completion.deployment,
-  }
+  const view = `deployment:${completion.deployment}`
   const mine = followed.delete(completion.deployment)
 
-  if (
-    router.matchRoute({
-      to: '/deployments/$deployment',
-      params,
-    })
-  ) {
+  if (currentPlace().view === view) {
     return
   }
 
@@ -135,17 +126,17 @@ const notify = async (client: QueryClient, router: Router, event: EventRow) => {
     return
   }
 
-  const service = await client.ensureQueryData(serviceQuery(deployment.service_id))
-  const text = completionText(completion, service.name)
+  const app = await client.ensureQueryData(appQuery(deployment.app_id))
+  const text = completionText(completion, app.name)
 
   toast[completion.outcome === 'active' ? 'success' : 'error'](text.title, {
     description: text.description,
     action: {
       label: text.action,
       onClick: () =>
-        void router.navigate({
-          to: '/deployments/$deployment',
-          params,
+        go({
+          mode: 'ship',
+          view,
         }),
     },
   })
@@ -153,10 +144,9 @@ const notify = async (client: QueryClient, router: Router, event: EventRow) => {
 
 export const useLiveEvents = () => {
   const client = useQueryClient()
-  const router = useRouter()
   const onEvent = (event: EventRow) => {
     apply(client, event)
-    notify(client, router, event).then(noop, noop)
+    notify(client, event).then(noop, noop)
   }
 
   return useEventStream(

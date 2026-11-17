@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://stationly.harshjv.com/schema/manifest/v1/manifest.schema.json",
   "title": "Stationly Manifest",
-  "description": "stationly.yaml: one project, applied to one environment at a time",
+  "description": "stationly.yaml: one project, applied to production or one preview at a time",
   "additionalProperties": false,
   "type": "object",
   "required": [
@@ -19,13 +19,13 @@
       "description": "The project name; checked, never written",
       "type": "string"
     },
-    "variables": {
-      "description": "Project variables; absent: not managed by the Manifest",
+    "keys": {
+      "description": "Project keys; absent: not managed by the Manifest",
       "additionalProperties": false,
       "type": "object",
       "patternProperties": {
         "^[A-Z_][A-Z0-9_]*$": {
-          "description": "A project default, per-environment values, or a sealed declaration",
+          "description": "A production value, production and preview values, or a sealed declaration",
           "anyOf": [
             {
               "anyOf": [
@@ -41,11 +41,11 @@
               ]
             },
             {
-              "description": "The object form of a project variable",
+              "description": "The object form of a project key",
               "additionalProperties": false,
               "type": "object",
               "properties": {
-                "default": {
+                "production": {
                   "anyOf": [
                     {
                       "type": "string"
@@ -58,33 +58,26 @@
                     }
                   ]
                 },
-                "environments": {
-                  "description": "Literal values per environment name",
-                  "additionalProperties": false,
-                  "type": "object",
-                  "patternProperties": {
-                    "^[a-z0-9][a-z0-9-]{0,62}$": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "boolean"
-                        }
-                      ]
+                "preview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
                     }
-                  }
+                  ]
                 },
                 "sealed": {
-                  "description": "Declared; values are set per environment with set_project_variables",
+                  "description": "Declared; production and preview values are set with set_project_keys",
                   "const": true,
                   "type": "boolean"
                 },
                 "reference": {
-                  "description": "${{secret(N)}} with sealed: each environment gets its own generated value",
+                  "description": "${{secret(N)}} with sealed: production and previews get their own generated values",
                   "type": "string"
                 }
               }
@@ -93,13 +86,13 @@
         }
       }
     },
-    "services": {
-      "description": "Services in the target environment; absent: not managed by the Manifest",
+    "apps": {
+      "description": "Apps in production or the preview it is applied to; absent: not managed by the Manifest",
       "additionalProperties": false,
       "type": "object",
       "patternProperties": {
         "^[a-z0-9][a-z0-9-]{0,62}$": {
-          "description": "A service; the map key is its name and DNS label",
+          "description": "An app; the map key is its name and DNS label",
           "additionalProperties": false,
           "type": "object",
           "required": [
@@ -270,9 +263,9 @@
                 }
               ]
             },
-            "station": {
+            "server": {
               "minLength": 1,
-              "description": "An enrolled station name; the only online station by default",
+              "description": "An enrolled server name; the only online server by default",
               "type": "string"
             },
             "command": {
@@ -305,7 +298,7 @@
               "description": "At least one for web, none for other kinds",
               "type": "array",
               "items": {
-                "description": "A port the service listens on",
+                "description": "A port the app listens on",
                 "additionalProperties": false,
                 "type": "object",
                 "required": [
@@ -315,7 +308,7 @@
                   "port": {
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The container port, unique per service",
+                    "description": "The container port, unique per app",
                     "type": "integer"
                   },
                   "protocol": {
@@ -341,12 +334,12 @@
               }
             },
             "health": {
-              "description": "The Signal health check",
+              "description": "The health check",
               "additionalProperties": false,
               "type": "object",
               "properties": {
                 "type": {
-                  "description": "http on the first http port for web, tcp for a web service with only tcp ports, alive for worker",
+                  "description": "http on the first http port for web, tcp for a web app with only tcp ports, alive for worker",
                   "anyOf": [
                     {
                       "const": "http",
@@ -374,7 +367,7 @@
                 },
                 "host": {
                   "pattern": "^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$",
-                  "description": "http only: the Host header the check sends; the service's first domain, else <service>.internal",
+                  "description": "http only: the Host header the check sends; the app's first domain, else <app>.internal",
                   "type": "string"
                 },
                 "port": {
@@ -414,7 +407,7 @@
                   "minimum": 1,
                   "maximum": 100,
                   "default": 3,
-                  "description": "Consecutive failures before red",
+                  "description": "Consecutive failures before failing",
                   "type": "integer"
                 },
                 "seconds": {
@@ -434,13 +427,13 @@
                 "cpu_millis": {
                   "minimum": 10,
                   "default": 1000,
-                  "description": "CPU in millicores, up to the station's resources.cpu_millis",
+                  "description": "CPU in millicores, up to the server's resources.cpu_millis",
                   "type": "integer"
                 },
                 "memory_bytes": {
                   "minimum": 8388608,
                   "default": 536870912,
-                  "description": "Memory in bytes, up to the station's resources.memory_bytes",
+                  "description": "Memory in bytes, up to the server's resources.memory_bytes",
                   "type": "integer"
                 }
               }
@@ -518,7 +511,7 @@
               ]
             },
             "schedule": {
-              "description": "The Timetable for a cron service",
+              "description": "The Timetable for a cron app",
               "additionalProperties": false,
               "type": "object",
               "required": [
@@ -565,12 +558,12 @@
                 "properties": {
                   "mount_path": {
                     "pattern": "^/",
-                    "description": "Absolute, unique per service, not /run/secrets",
+                    "description": "Absolute, unique per app, not /run/secrets",
                     "type": "string"
                   },
-                  "station_volume": {
+                  "server_volume": {
                     "minLength": 1,
-                    "description": "A station-owned volume to mount (phase 2)",
+                    "description": "A server-owned volume to mount (phase 2)",
                     "type": "string"
                   }
                 }
@@ -597,7 +590,7 @@
                   "port": {
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "A declared http port; the service's first http port by default",
+                    "description": "A declared http port; the app's first http port by default",
                     "type": "integer"
                   },
                   "ingress": {
@@ -625,8 +618,8 @@
                 "type": "integer"
               }
             },
-            "variables": {
-              "description": "Service variables; absent: not managed by the Manifest",
+            "keys": {
+              "description": "App keys; absent: not managed by the Manifest",
               "additionalProperties": false,
               "type": "object",
               "patternProperties": {
@@ -647,7 +640,7 @@
                       ]
                     },
                     {
-                      "description": "The object form of a service variable",
+                      "description": "The object form of an app key",
                       "additionalProperties": false,
                       "type": "object",
                       "properties": {
@@ -742,7 +735,7 @@
                       "cidr": {
                         "type": "string"
                       },
-                      "service": {
+                      "app": {
                         "type": "string"
                       },
                       "preset": {
@@ -800,23 +793,23 @@
         }
       }
     },
-    "environments": {
-      "description": "Overrides applied when the name equals the target environment",
+    "previews": {
+      "description": "Overrides applied when the Manifest is applied to the preview of this name",
       "additionalProperties": false,
       "type": "object",
       "patternProperties": {
         "^[a-z0-9][a-z0-9-]{0,62}$": {
-          "description": "Overrides for one environment",
+          "description": "Overrides for one preview",
           "additionalProperties": false,
           "type": "object",
           "properties": {
-            "services": {
-              "description": "Per-service overrides",
+            "apps": {
+              "description": "Per-app overrides",
               "additionalProperties": false,
               "type": "object",
               "patternProperties": {
                 "^[a-z0-9][a-z0-9-]{0,62}$": {
-                  "description": "Keys that may differ in one environment; null resets a key to its default",
+                  "description": "Keys that may differ in one preview; null resets a key to its production value",
                   "additionalProperties": false,
                   "type": "object",
                   "properties": {
@@ -836,7 +829,7 @@
                         }
                       }
                     },
-                    "station": {
+                    "server": {
                       "anyOf": [
                         {
                           "minLength": 1,
@@ -857,13 +850,13 @@
                             "cpu_millis": {
                               "minimum": 10,
                               "default": 1000,
-                              "description": "CPU in millicores, up to the station's resources.cpu_millis",
+                              "description": "CPU in millicores, up to the server's resources.cpu_millis",
                               "type": "integer"
                             },
                             "memory_bytes": {
                               "minimum": 8388608,
                               "default": 536870912,
-                              "description": "Memory in bytes, up to the station's resources.memory_bytes",
+                              "description": "Memory in bytes, up to the server's resources.memory_bytes",
                               "type": "integer"
                             }
                           }
@@ -895,7 +888,7 @@
                               "port": {
                                 "minimum": 1,
                                 "maximum": 65535,
-                                "description": "A declared http port; the service's first http port by default",
+                                "description": "A declared http port; the app's first http port by default",
                                 "type": "integer"
                               },
                               "ingress": {
@@ -956,7 +949,7 @@
                     "schedule": {
                       "anyOf": [
                         {
-                          "description": "The Timetable for a cron service",
+                          "description": "The Timetable for a cron app",
                           "additionalProperties": false,
                           "type": "object",
                           "required": [
@@ -995,10 +988,10 @@
                         }
                       ]
                     },
-                    "variables": {
+                    "keys": {
                       "anyOf": [
                         {
-                          "description": "Variables merged key by key",
+                          "description": "Keys merged one by one",
                           "additionalProperties": false,
                           "type": "object",
                           "patternProperties": {
@@ -1019,7 +1012,7 @@
                                   ]
                                 },
                                 {
-                                  "description": "The object form of a service variable",
+                                  "description": "The object form of an app key",
                                   "additionalProperties": false,
                                   "type": "object",
                                   "properties": {
@@ -1075,7 +1068,7 @@
       }
     },
     "shared": {
-      "description": "Attachments to shared services (phase 1b)",
+      "description": "Attachments to shared apps (phase 1b)",
       "additionalProperties": false,
       "type": "object",
       "patternProperties": {
@@ -1084,12 +1077,12 @@
           "additionalProperties": false,
           "type": "object",
           "required": [
-            "service"
+            "app"
           ],
           "properties": {
-            "service": {
+            "app": {
               "pattern": "^shared/[a-z0-9][a-z0-9-]{0,62}$",
-              "description": "shared/<service name>",
+              "description": "shared/<app name>",
               "type": "string"
             }
           }

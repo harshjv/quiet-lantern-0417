@@ -9,24 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AppRouteImport } from './routes/_app'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as AppIndexRouteImport } from './routes/_app/index'
-import { Route as AppAccountRouteImport } from './routes/_app/account'
-import { Route as AppConnectRouteImport } from './routes/_app/connect'
-import { Route as AppStationsRouteImport } from './routes/_app/stations'
 import { Route as JoinCodeRouteImport } from './routes/join.$code'
-import { Route as AppDeploymentsDeploymentRouteImport } from './routes/_app/deployments/$deployment'
-import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
-import { Route as AppSandboxesSandboxRouteImport } from './routes/_app/sandboxes/$sandbox'
-import { Route as AppServicesServiceRouteImport } from './routes/_app/services/$service'
-import { Route as AppStagedIndexRouteImport } from './routes/_app/staged/index'
-import { Route as AppStagedChangeRouteImport } from './routes/_app/staged/$change'
-import { Route as AppProjectsProjectIndexRouteImport } from './routes/_app/projects/$project/index'
-import { Route as AppProjectsProjectEnvironmentRouteImport } from './routes/_app/projects/$project/$environment'
 
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -34,189 +23,49 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppIndexRoute = AppIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppAccountRoute = AppAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppConnectRoute = AppConnectRouteImport.update({
-  id: '/connect',
-  path: '/connect',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppStationsRoute = AppStationsRouteImport.update({
-  id: '/stations',
-  path: '/stations',
-  getParentRoute: () => AppRoute,
-} as any)
 const JoinCodeRoute = JoinCodeRouteImport.update({
   id: '/join/$code',
   path: '/join/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppDeploymentsDeploymentRoute =
-  AppDeploymentsDeploymentRouteImport.update({
-    id: '/deployments/$deployment',
-    path: '/deployments/$deployment',
-    getParentRoute: () => AppRoute,
-  } as any)
-const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
-  id: '/projects/',
-  path: '/projects/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSandboxesSandboxRoute = AppSandboxesSandboxRouteImport.update({
-  id: '/sandboxes/$sandbox',
-  path: '/sandboxes/$sandbox',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppServicesServiceRoute = AppServicesServiceRouteImport.update({
-  id: '/services/$service',
-  path: '/services/$service',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppStagedIndexRoute = AppStagedIndexRouteImport.update({
-  id: '/staged/',
-  path: '/staged/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppStagedChangeRoute = AppStagedChangeRouteImport.update({
-  id: '/staged/$change',
-  path: '/staged/$change',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppProjectsProjectIndexRoute = AppProjectsProjectIndexRouteImport.update({
-  id: '/projects/$project/',
-  path: '/projects/$project/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppProjectsProjectEnvironmentRoute =
-  AppProjectsProjectEnvironmentRouteImport.update({
-    id: '/projects/$project/$environment',
-    path: '/projects/$project/$environment',
-    getParentRoute: () => AppRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof AppIndexRoute
+  '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/account': typeof AppAccountRoute
-  '/connect': typeof AppConnectRoute
-  '/stations': typeof AppStationsRoute
   '/join/$code': typeof JoinCodeRoute
-  '/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
-  '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
-  '/services/$service': typeof AppServicesServiceRoute
-  '/staged/$change': typeof AppStagedChangeRoute
-  '/projects/': typeof AppProjectsIndexRoute
-  '/staged/': typeof AppStagedIndexRoute
-  '/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
-  '/projects/$project/': typeof AppProjectsProjectIndexRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/account': typeof AppAccountRoute
-  '/connect': typeof AppConnectRoute
-  '/stations': typeof AppStationsRoute
   '/join/$code': typeof JoinCodeRoute
-  '/': typeof AppIndexRoute
-  '/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
-  '/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
-  '/services/$service': typeof AppServicesServiceRoute
-  '/staged/$change': typeof AppStagedChangeRoute
-  '/projects': typeof AppProjectsIndexRoute
-  '/staged': typeof AppStagedIndexRoute
-  '/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
-  '/projects/$project': typeof AppProjectsProjectIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_app': typeof AppRouteWithChildren
+  '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/_app/account': typeof AppAccountRoute
-  '/_app/connect': typeof AppConnectRoute
-  '/_app/stations': typeof AppStationsRoute
   '/join/$code': typeof JoinCodeRoute
-  '/_app/': typeof AppIndexRoute
-  '/_app/deployments/$deployment': typeof AppDeploymentsDeploymentRoute
-  '/_app/sandboxes/$sandbox': typeof AppSandboxesSandboxRoute
-  '/_app/services/$service': typeof AppServicesServiceRoute
-  '/_app/staged/$change': typeof AppStagedChangeRoute
-  '/_app/projects/': typeof AppProjectsIndexRoute
-  '/_app/staged/': typeof AppStagedIndexRoute
-  '/_app/projects/$project/$environment': typeof AppProjectsProjectEnvironmentRoute
-  '/_app/projects/$project/': typeof AppProjectsProjectIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/login'
-    | '/account'
-    | '/connect'
-    | '/stations'
-    | '/join/$code'
-    | '/deployments/$deployment'
-    | '/sandboxes/$sandbox'
-    | '/services/$service'
-    | '/staged/$change'
-    | '/projects/'
-    | '/staged/'
-    | '/projects/$project/$environment'
-    | '/projects/$project/'
+  fullPaths: '/' | '/login' | '/join/$code'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/login'
-    | '/account'
-    | '/connect'
-    | '/stations'
-    | '/join/$code'
-    | '/'
-    | '/deployments/$deployment'
-    | '/sandboxes/$sandbox'
-    | '/services/$service'
-    | '/staged/$change'
-    | '/projects'
-    | '/staged'
-    | '/projects/$project/$environment'
-    | '/projects/$project'
-  id:
-    | '__root__'
-    | '/_app'
-    | '/login'
-    | '/_app/account'
-    | '/_app/connect'
-    | '/_app/stations'
-    | '/join/$code'
-    | '/_app/'
-    | '/_app/deployments/$deployment'
-    | '/_app/sandboxes/$sandbox'
-    | '/_app/services/$service'
-    | '/_app/staged/$change'
-    | '/_app/projects/'
-    | '/_app/staged/'
-    | '/_app/projects/$project/$environment'
-    | '/_app/projects/$project/'
+  to: '/' | '/login' | '/join/$code'
+  id: '__root__' | '/' | '/login' | '/join/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  AppRoute: typeof AppRouteWithChildren
+  IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   JoinCodeRoute: typeof JoinCodeRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_app': {
-      id: '/_app'
-      path: ''
+    '/': {
+      id: '/'
+      path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -226,34 +75,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/': {
-      id: '/_app/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof AppIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/account': {
-      id: '/_app/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AppAccountRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/connect': {
-      id: '/_app/connect'
-      path: '/connect'
-      fullPath: '/connect'
-      preLoaderRoute: typeof AppConnectRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/stations': {
-      id: '/_app/stations'
-      path: '/stations'
-      fullPath: '/stations'
-      preLoaderRoute: typeof AppStationsRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/join/$code': {
       id: '/join/$code'
       path: '/join/$code'
@@ -261,99 +82,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JoinCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/deployments/$deployment': {
-      id: '/_app/deployments/$deployment'
-      path: '/deployments/$deployment'
-      fullPath: '/deployments/$deployment'
-      preLoaderRoute: typeof AppDeploymentsDeploymentRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/projects/': {
-      id: '/_app/projects/'
-      path: '/projects'
-      fullPath: '/projects/'
-      preLoaderRoute: typeof AppProjectsIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/sandboxes/$sandbox': {
-      id: '/_app/sandboxes/$sandbox'
-      path: '/sandboxes/$sandbox'
-      fullPath: '/sandboxes/$sandbox'
-      preLoaderRoute: typeof AppSandboxesSandboxRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/services/$service': {
-      id: '/_app/services/$service'
-      path: '/services/$service'
-      fullPath: '/services/$service'
-      preLoaderRoute: typeof AppServicesServiceRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/staged/': {
-      id: '/_app/staged/'
-      path: '/staged'
-      fullPath: '/staged/'
-      preLoaderRoute: typeof AppStagedIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/staged/$change': {
-      id: '/_app/staged/$change'
-      path: '/staged/$change'
-      fullPath: '/staged/$change'
-      preLoaderRoute: typeof AppStagedChangeRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/projects/$project/': {
-      id: '/_app/projects/$project/'
-      path: '/projects/$project'
-      fullPath: '/projects/$project/'
-      preLoaderRoute: typeof AppProjectsProjectIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/projects/$project/$environment': {
-      id: '/_app/projects/$project/$environment'
-      path: '/projects/$project/$environment'
-      fullPath: '/projects/$project/$environment'
-      preLoaderRoute: typeof AppProjectsProjectEnvironmentRouteImport
-      parentRoute: typeof AppRoute
-    }
   }
 }
 
-interface AppRouteChildren {
-  AppAccountRoute: typeof AppAccountRoute
-  AppConnectRoute: typeof AppConnectRoute
-  AppStationsRoute: typeof AppStationsRoute
-  AppIndexRoute: typeof AppIndexRoute
-  AppDeploymentsDeploymentRoute: typeof AppDeploymentsDeploymentRoute
-  AppSandboxesSandboxRoute: typeof AppSandboxesSandboxRoute
-  AppServicesServiceRoute: typeof AppServicesServiceRoute
-  AppStagedChangeRoute: typeof AppStagedChangeRoute
-  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
-  AppStagedIndexRoute: typeof AppStagedIndexRoute
-  AppProjectsProjectEnvironmentRoute: typeof AppProjectsProjectEnvironmentRoute
-  AppProjectsProjectIndexRoute: typeof AppProjectsProjectIndexRoute
-}
-
-const AppRouteChildren: AppRouteChildren = {
-  AppAccountRoute: AppAccountRoute,
-  AppConnectRoute: AppConnectRoute,
-  AppStationsRoute: AppStationsRoute,
-  AppIndexRoute: AppIndexRoute,
-  AppDeploymentsDeploymentRoute: AppDeploymentsDeploymentRoute,
-  AppSandboxesSandboxRoute: AppSandboxesSandboxRoute,
-  AppServicesServiceRoute: AppServicesServiceRoute,
-  AppStagedChangeRoute: AppStagedChangeRoute,
-  AppProjectsIndexRoute: AppProjectsIndexRoute,
-  AppStagedIndexRoute: AppStagedIndexRoute,
-  AppProjectsProjectEnvironmentRoute: AppProjectsProjectEnvironmentRoute,
-  AppProjectsProjectIndexRoute: AppProjectsProjectIndexRoute,
-}
-
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
-  AppRoute: AppRouteWithChildren,
+  IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   JoinCodeRoute: JoinCodeRoute,
 }

@@ -29,7 +29,7 @@ export const renderUpgrade = (u: UpgradeView) => {
 
   for (const v of u.verification ?? []) {
     lines.push(
-      `verified on ${v.station_id}: release-manifest.json ${v.release?.signature ?? '-'}${v.release?.identity ? ` (${v.release.identity})` : ''}`,
+      `verified on ${v.server_id}: release-manifest.json ${v.release?.signature ?? '-'}${v.release?.identity ? ` (${v.release.identity})` : ''}`,
     )
 
     for (const i of v.items) {
@@ -47,7 +47,7 @@ export const renderDoctor = (d: DoctorView) => {
 
   for (const c of d.checks) {
     lines.push(
-      `${c.status.toUpperCase().padEnd(5)} ${c.name.padEnd(22)} ${(c.station ?? 'instance').padEnd(16)} ${c.code ? `[${c.code}] ` : ''}${c.finding}`,
+      `${c.status.toUpperCase().padEnd(5)} ${c.name.padEnd(22)} ${(c.server ?? 'instance').padEnd(16)} ${c.code ? `[${c.code}] ` : ''}${c.finding}`,
     )
 
     if (c.fix && c.status !== 'ok') {
@@ -73,7 +73,7 @@ export const renderInventory = (inv: InventoryView) => {
 
   for (const c of inv.items) {
     lines.push(
-      `  ${(c.station_id ?? 'instance').padEnd(30)} ${c.name.padEnd(18)} ${c.version.padEnd(14)} ${short(c.digest).padEnd(20)} ${c.signature.padEnd(16)} ${c.status}${c.drift ? ` drift (lockfile ${c.lockfile_version})` : ''}`,
+      `  ${(c.server_id ?? 'instance').padEnd(30)} ${c.name.padEnd(18)} ${c.version.padEnd(14)} ${short(c.digest).padEnd(20)} ${c.signature.padEnd(16)} ${c.status}${c.drift ? ` drift (lockfile ${c.lockfile_version})` : ''}`,
     )
   }
 
@@ -85,7 +85,7 @@ export const renderInventory = (inv: InventoryView) => {
   for (const b of inv.base_images) {
     for (const c of b.checks) {
       lines.push(
-        `  ${b.ref.padEnd(40)} ${c.service.padEnd(16)} ${short(c.digest).padEnd(20)} ${c.check}${c.check === 'moved' ? ` -> ${short(c.latest_digest)} (sly services rebuild --service ${c.service})` : ''}`,
+        `  ${b.ref.padEnd(40)} ${c.app.padEnd(16)} ${short(c.digest).padEnd(20)} ${c.check}${c.check === 'moved' ? ` -> ${short(c.latest_digest)} (sly apps rebuild --app ${c.app})` : ''}`,
       )
     }
   }

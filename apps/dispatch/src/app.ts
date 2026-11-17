@@ -17,7 +17,7 @@ import {
 import { rememberSentUrl } from './auth/proof.ts'
 import type { Dashboard } from './dashboard.ts'
 import type { Db } from './db/client.ts'
-import { environment, project, sandbox, service } from './db/schema.ts'
+import { app, machine, project, target } from './db/schema.ts'
 import { createMcpRoute } from './mcp/route.ts'
 
 export const createApp = (deps: Deps) => {
@@ -140,20 +140,62 @@ const byRef = (ref: string, prefix: string) => ref.startsWith(`${prefix}_`)
 
 type Missing = { entity: string; ref: string }
 
-const flatPath = (db: Db, pathname: string): string | Missing | null => {
-  const parts = pathname.split('/').slice(2)
+const inTarget = (db: Db, targetId: string, rest: string[], previewId: string | null) => {
+  if (rest[0] === 'apps' && rest.length >= 2) {
+    const svc = db
+      .select({
+        id: app.id,
+      })
+      .from(app)
+      .where(
+        and(
+          eq(app.target_id, targetId),
+          byRef(rest[1]!, 'svc') ? eq(app.id, rest[1]!) : eq(app.name, rest[1]!),
+        ),
+      )
+      .get()
 
-  if (parts[0] !== 'projects' || parts.length < 4 || parts[2] !== 'environments') {
+    return svc
+      ? ['/v1/apps', svc.id, ...rest.slice(2)].join('/')
+      : {
+          entity: 'app',
+          ref: rest[1]!,
+        }
+  }
+
+  if (rest[0] === 'machines' && rest.length >= 2) {
+    const box = db
+      .select({
+        id: machine.id,
+      })
+      .from(machine)
+      .where(
+        and(
+          eq(machine.target_id, targetId),
+          byRef(rest[1]!, 'sbx') ? eq(machine.id, rest[1]!) : eq(machine.name, rest[1]!),
+        ),
+      )
+      .get()
+
+    return box
+      ? ['/v1/machines', box.id, ...rest.slice(2)].join('/')
+      : {
+          entity: 'machine',
+          ref: rest[1]!,
+        }
+  }
+
+  return previewId ? ['/v1/previews', previewId, ...rest].join('/') : null
+}
+
+const flatPath = (db: Db, pathname: string): string | Missing | null => {
+  const parts = pathname.split('/').slice(2).map(decodeURIComponent)
+
+  if (parts[0] !== 'projects' || parts.length < 4) {
     return null
   }
 
-  const [, projectRef, , environmentRef, ...rest] = parts.map(decodeURIComponent) as [
-    string,
-    string,
-    string,
-    string,
-    ...string[],
-  ]
+  const [, projectRef, ...rest] = parts as [string, string, ...string[]]
   const proj = db
     .select({
       id: project.id,
@@ -169,77 +211,41 @@ const flatPath = (db: Db, pathname: string): string | Missing | null => {
     }
   }
 
-  const env = db
+  if (rest[0] !== 'previews') {
+    const production = db
+      .select({
+        id: target.id,
+      })
+      .from(target)
+      .where(and(eq(target.project_id, proj.id), eq(target.kind, 'production')))
+      .get()
+
+    return production ? inTarget(db, production.id, rest, null) : null
+  }
+
+  const previewRef = rest[1]!
+  const preview = db
     .select({
-      id: environment.id,
+      id: target.id,
     })
-    .from(environment)
+    .from(target)
     .where(
       and(
-        eq(environment.project_id, proj.id),
-        byRef(environmentRef, 'env')
-          ? eq(environment.id, environmentRef)
-          : eq(environment.name, environmentRef),
+        eq(target.project_id, proj.id),
+        eq(target.kind, 'preview'),
+        byRef(previewRef, 'env') ? eq(target.id, previewRef) : eq(target.name, previewRef),
       ),
     )
     .get()
 
-  if (!env) {
+  if (!preview) {
     return {
-      entity: 'environment',
-      ref: environmentRef,
+      entity: 'preview',
+      ref: previewRef,
     }
   }
 
-  if (rest[0] === 'services' && rest.length >= 2) {
-    const svc = db
-      .select({
-        id: service.id,
-      })
-      .from(service)
-      .where(
-        and(
-          eq(service.environment_id, env.id),
-          byRef(rest[1]!, 'svc') ? eq(service.id, rest[1]!) : eq(service.name, rest[1]!),
-        ),
-      )
-      .get()
-
-    if (!svc) {
-      return {
-        entity: 'service',
-        ref: rest[1]!,
-      }
-    }
-
-    return ['/v1/services', svc.id, ...rest.slice(2)].join('/')
-  }
-
-  if (rest[0] === 'sandboxes' && rest.length >= 2) {
-    const box = db
-      .select({
-        id: sandbox.id,
-      })
-      .from(sandbox)
-      .where(
-        and(
-          eq(sandbox.environment_id, env.id),
-          byRef(rest[1]!, 'sbx') ? eq(sandbox.id, rest[1]!) : eq(sandbox.name, rest[1]!),
-        ),
-      )
-      .get()
-
-    if (!box) {
-      return {
-        entity: 'sandbox',
-        ref: rest[1]!,
-      }
-    }
-
-    return ['/v1/sandboxes', box.id, ...rest.slice(2)].join('/')
-  }
-
-  return ['/v1/environments', env.id, ...rest].join('/')
+  return inTarget(db, preview.id, rest.slice(2), preview.id)
 }
 
 const missingTarget = async (deps: Deps, request: Request, missing: Missing) => {

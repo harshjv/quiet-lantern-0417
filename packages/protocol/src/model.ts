@@ -12,7 +12,7 @@ import {
   StringEnum,
   Timestamp,
 } from './primitives.ts'
-import { sandboxRuntimeKindValues } from './sandbox-runtime.ts'
+import { machineRuntimeKindValues } from './sandbox-runtime.ts'
 
 export const stationOsValues = ['linux', 'wsl2'] as const
 
@@ -32,9 +32,9 @@ export const VersionSkew = StringEnum(versionSkewValues, {
   title: 'VersionSkew',
 })
 
-export const serviceKindValues = ['web', 'worker', 'cron', 'one_off'] as const
+export const appKindValues = ['web', 'worker', 'cron', 'one_off'] as const
 
-export const ServiceKind = StringEnum(serviceKindValues, {
+export const AppKind = StringEnum(appKindValues, {
   title: 'ServiceKind',
 })
 
@@ -423,9 +423,9 @@ export const Resources = Type.Object(
   },
 )
 
-export const sandboxRuntimeValues = ['gvisor'] as const
+export const machineRuntimeValues = ['gvisor'] as const
 
-export const SandboxRuntime = StringEnum(sandboxRuntimeValues, {
+export const MachineRuntime = StringEnum(machineRuntimeValues, {
   title: 'SandboxRuntime',
 })
 
@@ -450,10 +450,10 @@ export const HostProbe = Type.Object(
   },
 )
 
-export const SandboxRuntimeOption = Type.Object(
+export const MachineRuntimeOption = Type.Object(
   {
-    runtime: StringEnum(sandboxRuntimeKindValues, {
-      title: 'SandboxRuntimeKind',
+    runtime: StringEnum(machineRuntimeKindValues, {
+      title: 'MachineRuntimeKind',
     }),
     installed: Type.Boolean(),
     recommended: Type.Boolean(),
@@ -461,19 +461,19 @@ export const SandboxRuntimeOption = Type.Object(
     cons: Type.Array(Type.String()),
   },
   {
-    title: 'SandboxRuntimeOption',
+    title: 'MachineRuntimeOption',
     additionalProperties: false,
   },
 )
 
-export const SandboxRuntimeAdvice = Type.Object(
+export const MachineRuntimeAdvice = Type.Object(
   {
-    default: SandboxRuntime,
+    default: MachineRuntime,
     reasons: Type.Array(Type.String()),
-    options: Type.Array(SandboxRuntimeOption),
+    options: Type.Array(MachineRuntimeOption),
   },
   {
-    title: 'SandboxRuntimeAdvice',
+    title: 'MachineRuntimeAdvice',
     additionalProperties: false,
   },
 )
@@ -504,7 +504,7 @@ export const StationCapabilities = Type.Object(
       Nullable(
         Type.Object(
           {
-            runtimes: Type.Optional(Type.Array(SandboxRuntime)),
+            runtimes: Type.Optional(Type.Array(MachineRuntime)),
             runsc_version: Type.String(),
             platform: Type.Literal('systrap'),
             filesystem_backing: StringEnum(['device', 'loop_file'], {
@@ -594,7 +594,7 @@ export const HealthState = StringEnum(healthStateValues, {
   title: 'HealthState',
 })
 
-export const ServiceHealth = Type.Object(
+export const AppHealth = Type.Object(
   {
     state: HealthState,
     consecutive: Count,
@@ -656,7 +656,7 @@ export const BaseImage = Type.Object(
 export const RunRow = Type.Object(
   {
     id: Id('run'),
-    service_id: Id('service'),
+    service_id: Id('app'),
     deployment_id: Nullable(Id('deployment')),
     kind: RunKind,
     command: Type.Array(Type.String()),
@@ -674,7 +674,7 @@ export const RunRow = Type.Object(
 
 export const FlowRollupRow = Type.Object(
   {
-    service_id: Id('service'),
+    service_id: Id('app'),
     deployment_id: Id('deployment'),
     minute: Timestamp,
     destination: Type.Union([
@@ -685,7 +685,7 @@ export const FlowRollupRow = Type.Object(
         ip: Type.String(),
       }),
       Type.Object({
-        service_id: Id('service'),
+        service_id: Id('app'),
       }),
     ]),
     port: Port,
@@ -700,13 +700,13 @@ export const FlowRollupRow = Type.Object(
   },
 )
 
-export const sandboxNetworkValues = ['isolated', 'environment'] as const
+export const machineNetworkValues = ['isolated', 'environment'] as const
 
-export const SandboxNetwork = StringEnum(sandboxNetworkValues, {
+export const MachineNetwork = StringEnum(machineNetworkValues, {
   title: 'SandboxNetwork',
 })
 
-export const sandboxStatusValues = [
+export const machineStatusValues = [
   'creating',
   'starting',
   'running',
@@ -716,7 +716,7 @@ export const sandboxStatusValues = [
   'deleting',
 ] as const
 
-export const sandboxReportStatusValues = [
+export const machineReportStatusValues = [
   'creating',
   'starting',
   'running',
@@ -726,11 +726,11 @@ export const sandboxReportStatusValues = [
   'deleted',
 ] as const
 
-export const SandboxReportStatus = StringEnum(sandboxReportStatusValues, {
+export const MachineReportStatus = StringEnum(machineReportStatusValues, {
   title: 'SandboxReportStatus',
 })
 
-export const sandboxStatusReasonValues = [
+export const machineStatusReasonValues = [
   'user',
   'ttl',
   'exited',
@@ -740,35 +740,35 @@ export const sandboxStatusReasonValues = [
   'idle',
 ] as const
 
-export const SandboxStatusReason = StringEnum(sandboxStatusReasonValues, {
+export const MachineStatusReason = StringEnum(machineStatusReasonValues, {
   title: 'SandboxStatusReason',
 })
 
-export const sandboxSnapshotStatusValues = ['creating', 'ready', 'failed', 'deleting'] as const
+export const machineSnapshotStatusValues = ['creating', 'ready', 'failed', 'deleting'] as const
 
-export const sandboxSourceStateValues = ['running', 'stopped'] as const
+export const machineSourceStateValues = ['running', 'stopped'] as const
 
-export const sandboxEgressModeValues = ['open', 'allowlist'] as const
+export const machineEgressModeValues = ['open', 'allowlist'] as const
 
-export const sandboxLimitsDefaults = {
-  max_sandboxes: 100,
+export const machineLimitsDefaults = {
+  max_machines: 100,
   max_running: 20,
   memory_bytes: null,
   min_free_bytes: null,
 } as const
 
-export const sandboxTtl = {
+export const machineTtl = {
   min: 60,
   max: 2592000,
   default: 3600,
 } as const
 
-export const sandboxEgressLimits = {
+export const machineEgressLimits = {
   domains: 256,
   ports: 8,
 } as const
 
-export const SandboxSize = Type.Object(
+export const MachineSize = Type.Object(
   {
     cpu_millis: Type.Integer({
       minimum: 1,
@@ -785,7 +785,7 @@ export const SandboxSize = Type.Object(
   },
 )
 
-export const SandboxEgressDomain = Type.Object(
+export const MachineEgressDomain = Type.Object(
   {
     domain: Type.String(),
     wildcard: Type.Boolean(),
@@ -796,26 +796,26 @@ export const SandboxEgressDomain = Type.Object(
   },
 )
 
-export const SandboxEgress = Type.Object(
+export const MachineEgress = Type.Object(
   {
-    mode: StringEnum(sandboxEgressModeValues, {
+    mode: StringEnum(machineEgressModeValues, {
       title: 'SandboxEgressMode',
     }),
-    domains: Type.Array(SandboxEgressDomain),
+    domains: Type.Array(MachineEgressDomain),
   },
   {
     title: 'SandboxEgress',
   },
 )
 
-export const SandboxLimits = Type.Object(
+export const MachineLimits = Type.Object(
   {
-    max_sandboxes: Count,
+    max_machines: Count,
     max_running: Count,
     memory_bytes: Nullable(Bytes),
     min_free_bytes: Nullable(Bytes),
   },
   {
-    title: 'SandboxLimits',
+    title: 'MachineLimits',
   },
 )

@@ -14,12 +14,12 @@ import {
 } from './idempotency.ts'
 import { createKit } from './kit.ts'
 import { agentEventRoutes } from './routes/agent-events.ts'
+import { approvalRoutes } from './routes/approvals.ts'
 import { auditRoutes } from './routes/audit.ts'
 import { blobRoutes } from './routes/blobs.ts'
 import { deployActionRoutes } from './routes/deploy-actions.ts'
 import { deploymentRoutes } from './routes/deployments.ts'
 import { domainRoutes } from './routes/domains.ts'
-import { environmentRoutes } from './routes/environments.ts'
 import { eventRoutes } from './routes/events.ts'
 import { githubRoutes } from './routes/github.ts'
 import { logRoutes } from './routes/logs.ts'
@@ -29,17 +29,17 @@ import { networkRoutes } from './routes/network.ts'
 import { notificationRoutes } from './routes/notifications.ts'
 import { platformRoutes } from './routes/platform.ts'
 import { portRoutes } from './routes/ports.ts'
+import { previewRoutes } from './routes/previews.ts'
 import { projectRoutes } from './routes/projects.ts'
 import { runRoutes } from './routes/runs.ts'
-import { sandboxRoutes } from './routes/sandboxes.ts'
-import { serviceRoutes } from './routes/services.ts'
+import { machineRoutes } from './routes/sandboxes.ts'
+import { appRoutes } from './routes/services.ts'
 import { settingRoutes } from './routes/settings.ts'
-import { stagedRoutes } from './routes/staged.ts'
 import { stationRoutes } from './routes/stations.ts'
 import { taskRoutes } from './routes/tasks.ts'
 import { teamRoutes } from './routes/team.ts'
 import { tokenRoutes } from './routes/tokens.ts'
-import { variableRoutes } from './routes/variables.ts'
+import { keyRoutes } from './routes/variables.ts'
 import { volumeRoutes } from './routes/volumes.ts'
 import { models } from './shapes.ts'
 
@@ -128,7 +128,7 @@ const toApiError = (code: string | number, error: unknown): ApiError => {
 
 export const createApi = (deps: Deps) => {
   const kit = createKit(deps)
-  const sandboxes = sandboxRoutes(kit)
+  const machines = machineRoutes(kit)
   const idempotencyKeys = new WeakMap<Request, string>()
 
   return new Elysia({
@@ -237,8 +237,8 @@ export const createApi = (deps: Deps) => {
     )
     .use(meRoutes(kit))
     .use(projectRoutes(kit))
-    .use(environmentRoutes(kit))
-    .use(serviceRoutes(kit))
+    .use(previewRoutes(kit))
+    .use(appRoutes(kit))
     .use(portRoutes(kit))
     .use(volumeRoutes(kit))
     .use(domainRoutes(kit))
@@ -246,16 +246,16 @@ export const createApi = (deps: Deps) => {
     .use(deploymentRoutes(kit))
     .use(deployActionRoutes(kit))
     .use(runRoutes(kit))
-    .use(sandboxes.routes)
+    .use(machines.routes)
     .use(agentEventRoutes(kit))
-    .use(taskRoutes(kit, sandboxes.createSandbox))
+    .use(taskRoutes(kit, machines.createMachine))
     .use(teamRoutes(kit))
     .use(blobRoutes(kit))
     .use(logRoutes(kit))
     .use(eventRoutes(kit))
     .use(notificationRoutes(kit))
-    .use(variableRoutes(kit))
-    .use(stagedRoutes(kit))
+    .use(keyRoutes(kit))
+    .use(approvalRoutes(kit))
     .use(settingRoutes(kit))
     .use(tokenRoutes(kit))
     .use(stationRoutes(kit))

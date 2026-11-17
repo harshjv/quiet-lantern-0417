@@ -3,17 +3,17 @@ import { inArray } from 'drizzle-orm'
 
 import type { MessageBody } from '@stationly/protocol'
 
-import type { Redaction, SandboxRedaction } from '../api/redaction.ts'
-import type { NetworkConnections, SandboxConnections } from '../api/shapes.ts'
+import type { MachineRedaction, Redaction } from '../api/redaction.ts'
+import type { MachineConnections, NetworkConnections } from '../api/shapes.ts'
 import type { ActorValue } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { sandbox, service } from '../db/schema.ts'
+import { app, machine } from '../db/schema.ts'
 
 export type StationSample = MessageBody<'network.sample.result'>['samples'][number]
 
 export type ConnectionsDoc = Static<typeof NetworkConnections>
 
-export type SandboxConnectionsDoc = Static<typeof SandboxConnections>
+export type MachineConnectionsDoc = Static<typeof MachineConnections>
 
 export type Direction = 'in' | 'out'
 
@@ -24,26 +24,26 @@ const namesOf = (db: Db, ids: Set<string>) =>
     (ids.size
       ? db
           .select({
-            id: service.id,
-            name: service.name,
+            id: app.id,
+            name: app.name,
           })
-          .from(service)
-          .where(inArray(service.id, [...ids]))
+          .from(app)
+          .where(inArray(app.id, [...ids]))
           .all()
       : []
     ).map((r) => [r.id, r.name]),
   )
 
-const sandboxNamesOf = (db: Db, ids: Set<string>) =>
+const machineNamesOf = (db: Db, ids: Set<string>) =>
   new Map(
     (ids.size
       ? db
           .select({
-            id: sandbox.id,
-            name: sandbox.name,
+            id: machine.id,
+            name: machine.name,
           })
-          .from(sandbox)
-          .where(inArray(sandbox.id, [...ids]))
+          .from(machine)
+          .where(inArray(machine.id, [...ids]))
           .all()
       : []
     ).map((r) => [r.id, r.name]),
@@ -58,19 +58,19 @@ const shapeConnections = (
   s.connections
     .filter((c) => !direction || c.direction === direction)
     .map((c) => {
-      const { kind, service_id, sandbox_id, deployment_id, address } = c.peer
+      const { kind, service_id: app_id, sandbox_id: machine_id, deployment_id, address } = c.peer
       const peer: ConnectionsDoc['connections'][number]['peer'] = {
         kind,
       }
 
-      if (service_id !== undefined) {
-        peer.service_id = service_id
-        peer.service = names.get(service_id) ?? service_id
+      if (app_id !== undefined) {
+        peer.app_id = app_id
+        peer.app = names.get(app_id) ?? app_id
       }
 
-      if (sandbox_id !== undefined) {
-        peer.sandbox_id = sandbox_id
-        peer.sandbox = boxes.get(sandbox_id) ?? sandbox_id
+      if (machine_id !== undefined) {
+        peer.machine_id = machine_id
+        peer.machine = boxes.get(machine_id) ?? machine_id
       }
 
       if (deployment_id !== undefined) {
@@ -87,22 +87,22 @@ const shapeConnections = (
       }
     })
 
-export const shapeSandboxSample = (
-  ctx: ShapeContext & { sandboxRedaction: SandboxRedaction },
+export const shapeMachineSample = (
+  ctx: ShapeContext & { machineRedaction: MachineRedaction },
   s: StationSample,
   row: { id: string; name: string },
   direction?: Direction,
-): SandboxConnectionsDoc => {
+): MachineConnectionsDoc => {
   const peers = new Set(
     s.connections.flatMap((c) => (c.peer.service_id ? [c.peer.service_id] : [])),
   )
   const boxes = new Set(
     s.connections.flatMap((c) => (c.peer.sandbox_id ? [c.peer.sandbox_id] : [])),
   )
-  const redact = ctx.sandboxRedaction([row.id], ctx.actor, ctx.requestId)
+  const redact = ctx.machineRedaction([row.id], ctx.actor, ctx.requestId)
 
   return {
-    sandbox: {
+    machine: {
       id: row.id,
       name: row.name,
     },
@@ -111,7 +111,7 @@ export const shapeSandboxSample = (
     connections: shapeConnections(
       s,
       namesOf(ctx.db, peers),
-      sandboxNamesOf(ctx.db, boxes),
+      machineNamesOf(ctx.db, boxes),
       direction,
     ),
     refused: s.refused,
@@ -148,14 +148,14 @@ export const shapeSamples = (
   }
 
   const names = namesOf(ctx.db, ids)
-  const boxes = sandboxNamesOf(ctx.db, boxIds)
+  const boxes = machineNamesOf(ctx.db, boxIds)
 
   return samples.map((s) => {
     const redact = ctx.redaction(s.deployment_id ? [s.deployment_id] : [], ctx.actor, ctx.requestId)
     const connections = shapeConnections(s, names, boxes, direction)
 
     return {
-      service: {
+      app: {
         id: s.service_id!,
         name: names.get(s.service_id!) ?? s.service_id!,
       },

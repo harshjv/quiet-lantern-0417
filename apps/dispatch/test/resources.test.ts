@@ -6,10 +6,13 @@ import { virtual_ip } from '../src/db/schema.ts'
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
-  createEnvironment,
+  approveWaiting,
+  createApp,
+  createPreview,
   createProject,
-  createService,
   pinPlatform,
+  placed,
+  productionId,
   waitForActive,
 } from './helpers/seed.ts'
 
@@ -42,10 +45,10 @@ after(async () => {
 const addresses = () => h.db.select().from(virtual_ip).all()
 
 describe('virtual IPs', () => {
-  test('services with the same name in two environments get different virtual IPs', async () => {
+  test('apps with the same name in two environments get different virtual IPs', async () => {
     const project = await createProject(h, 'vip')
-    const staging = await createEnvironment(h, project.name, 'staging')
-    const prod = await createService(h, project.default_environment_id, {
+    const staging = await createPreview(h, project.name, 'staging')
+    const prod = await createApp(h, productionId(h, project.id), {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -55,7 +58,7 @@ describe('virtual IPs', () => {
       ],
       deploy: true,
     })
-    const stage = await createService(h, staging.id, {
+    const stage = await createApp(h, staging.id, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -65,31 +68,27 @@ describe('virtual IPs', () => {
       ],
       deploy: true,
     })
-    const prodMap = (await api('GET', `/v1/environments/${project.default_environment_id}/network`))
-      .body
-    const stageMap = (await api('GET', `/v1/environments/${staging.id}/network`)).body
-    const prodVip = prodMap.services.find((s: any) => s.id === prod.id).virtual_ip
-    const stageVip = stageMap.services.find((s: any) => s.id === stage.id).virtual_ip
+    const prodMap = (await api('GET', placed(h, productionId(h, project.id), `network`))).body
+    const stageMap = (await api('GET', placed(h, staging.id, `network`))).body
+    const prodVip = prodMap.apps.find((s: any) => s.id === prod.id).virtual_ip
+    const stageVip = stageMap.apps.find((s: any) => s.id === stage.id).virtual_ip
 
     assert.match(prodVip, /^100\.64\./)
     assert.match(stageVip, /^100\.64\./)
     assert.notEqual(prodVip, stageVip)
-    assert.equal(prodMap.services.find((s: any) => s.id === prod.id).dns, 'web.internal')
-    assert.equal(stageMap.services.find((s: any) => s.id === stage.id).dns, 'web.internal')
+    assert.equal(prodMap.apps.find((s: any) => s.id === prod.id).dns, 'web.internal')
+    assert.equal(stageMap.apps.find((s: any) => s.id === stage.id).dns, 'web.internal')
   })
 
-  test('every virtual IP row is unique across the instance after deletes and new services', async () => {
+  test('every virtual IP row is unique across the instance after deletes and new apps', async () => {
     const project = await createProject(h, 'vip-churn')
-    const envs = [
-      project.default_environment_id,
-      (await createEnvironment(h, project.name, 'qa')).id,
-    ]
+    const envs = [productionId(h, project.id), (await createPreview(h, project.name, 'qa')).id]
     const created: any[] = []
 
     for (const env of envs) {
       for (const name of ['a', 'b', 'c']) {
         created.push(
-          await createService(h, env, {
+          await createApp(h, env, {
             name,
             ref: 'traefik/whoami:v1',
             ports: [
@@ -104,12 +103,12 @@ describe('virtual IPs', () => {
     }
 
     const doomed = created[1]
-    const deleted = await api('DELETE', `/v1/services/${doomed.id}`)
+    const deleted = await approveWaiting(h, await api('DELETE', `/v1/apps/${doomed.id}`))
 
     assert.equal(deleted.status, 200)
 
     for (const env of envs) {
-      await createService(h, env, {
+      await createApp(h, env, {
         name: 'late',
         ref: 'traefik/whoami:v1',
         ports: [
@@ -131,7 +130,7 @@ describe('virtual IPs', () => {
 describe('ports', () => {
   test('changing a port protocol keeps the port row and its id', async () => {
     const project = await createProject(h, 'ports')
-    const svc = await createService(h, project.default_environment_id, {
+    const svc = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'db',
       ref: 'postgres:16',
       ports: [
@@ -143,7 +142,7 @@ describe('ports', () => {
       deploy: true,
     })
     const before = svc.ports[0]
-    const patched = await api('PATCH', `/v1/services/${svc.id}`, {
+    const patched = await api('PATCH', `/v1/apps/${svc.id}`, {
       ports: [
         {
           port: 5432,
@@ -156,7 +155,7 @@ describe('ports', () => {
     assert.equal(patched.body.ports.length, 1)
     assert.equal(patched.body.ports[0].id, before.id)
     assert.equal(patched.body.ports[0].protocol, 'http')
-    const listed = (await api('GET', `/v1/services/${svc.id}/ports`)).body.items
+    const listed = (await api('GET', `/v1/apps/${svc.id}/ports`)).body.items
 
     assert.deepEqual(
       listed.map((p: any) => [p.id, p.protocol]),
@@ -169,8 +168,8 @@ describe('ports', () => {
       gateway: true,
     })
     const project = await createProject(h, 'ports-dependents')
-    const env = project.default_environment_id
-    const tcp = await createService(h, env, {
+    const env = (await createPreview(h, project.id, 'staging')).id
+    const tcp = await createApp(h, env, {
       name: 'db',
       ref: 'postgres:16',
       ports: [
@@ -181,7 +180,7 @@ describe('ports', () => {
       ],
       deploy: true,
     })
-    const web = await createService(h, env, {
+    const web = await createApp(h, env, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -194,7 +193,7 @@ describe('ports', () => {
     const allocation = await api('POST', `/v1/ports/${tcp.ports[0].id}/port-allocations`, {})
 
     assert.equal(allocation.status, 201)
-    const toHttp = await api('PATCH', `/v1/services/${tcp.id}`, {
+    const toHttp = await api('PATCH', `/v1/apps/${tcp.id}`, {
       ports: [
         {
           port: 5432,
@@ -211,7 +210,7 @@ describe('ports', () => {
     })
 
     assert.equal(domain.status, 201)
-    const toTcp = await api('PATCH', `/v1/services/${web.id}`, {
+    const toTcp = await api('PATCH', `/v1/apps/${web.id}`, {
       ports: [
         {
           port: 3000,
@@ -223,7 +222,7 @@ describe('ports', () => {
     assert.equal(toTcp.status, 409)
     assert.equal(toTcp.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.equal(toTcp.body.error.details.dependents[0].id, domain.body.id)
-    const still = (await api('GET', `/v1/services/${web.id}/ports`)).body.items[0]
+    const still = (await api('GET', `/v1/apps/${web.id}/ports`)).body.items[0]
 
     assert.equal(still.protocol, 'http')
     assert.equal(still.id, web.ports[0].id)
@@ -231,7 +230,7 @@ describe('ports', () => {
 
   test('removing a port that a domain uses is refused with DELETE_HAS_DEPENDENTS', async () => {
     const project = await createProject(h, 'ports-delete')
-    const web = await createService(h, project.default_environment_id, {
+    const web = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -259,11 +258,11 @@ describe('ports', () => {
   })
 })
 
-describe('service dependents', () => {
-  test('deleting a service that another service references is refused until the reference goes', async () => {
+describe('app dependents', () => {
+  test('deleting an app that another app references is refused until the reference goes', async () => {
     const project = await createProject(h, 'dependents')
-    const env = project.default_environment_id
-    const db = await createService(h, env, {
+    const env = (await createPreview(h, project.id, 'staging')).id
+    const db = await createApp(h, env, {
       name: 'db',
       ref: 'postgres:16',
       ports: [
@@ -273,7 +272,7 @@ describe('service dependents', () => {
         },
       ],
     })
-    const web = await createService(h, env, {
+    const web = await createApp(h, env, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -281,37 +280,37 @@ describe('service dependents', () => {
           port: 3000,
         },
       ],
-      variables: [
+      keys: [
         {
-          key: 'DATABASE_URL',
+          name: 'DATABASE_URL',
           kind: 'reference',
           reference: 'postgres://app@${{db.HOST}}:5432/app',
         },
       ],
     })
-    const refused = await api('DELETE', `/v1/services/${db.id}`)
+    const refused = await api('DELETE', `/v1/apps/${db.id}`)
 
     assert.equal(refused.status, 409)
     assert.equal(refused.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.deepEqual(
-      refused.body.error.details.dependents.map((d: any) => [d.entity, d.key, d.service_id]),
-      [['variable', 'DATABASE_URL', web.id]],
+      refused.body.error.details.dependents.map((d: any) => [d.entity, d.name, d.app_id]),
+      [['key', 'DATABASE_URL', web.id]],
     )
-    assert.equal((await api('GET', `/v1/services/${db.id}`)).status, 200)
-    const cleared = await api('PATCH', `/v1/services/${web.id}`, {
-      variables: [],
+    assert.equal((await api('GET', `/v1/apps/${db.id}`)).status, 200)
+    const cleared = await api('PATCH', `/v1/apps/${web.id}`, {
+      keys: [],
       deploy: false,
     })
 
     assert.equal(cleared.status, 200)
-    assert.equal((await api('DELETE', `/v1/services/${db.id}`)).status, 200)
+    assert.equal((await api('DELETE', `/v1/apps/${db.id}`)).status, 200)
   })
 })
 
 describe('no current deployment', () => {
-  test('restart, redeploy and start answer NO_CURRENT_DEPLOYMENT for a service that never deployed', async () => {
+  test('restart, redeploy and start answer NO_CURRENT_DEPLOYMENT for an app that never deployed', async () => {
     const project = await createProject(h, 'nocurrent')
-    const svc = await createService(h, project.default_environment_id, {
+    const svc = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -322,18 +321,18 @@ describe('no current deployment', () => {
     })
 
     for (const action of ['restart', 'redeploy', 'start']) {
-      const reply = await api('POST', `/v1/services/${svc.id}/${action}`)
+      const reply = await api('POST', `/v1/apps/${svc.id}/${action}`)
 
       assert.equal(reply.status, 409, action)
       assert.equal(reply.body.error.code, 'NO_CURRENT_DEPLOYMENT', action)
     }
 
-    assert.equal((await api('GET', `/v1/services/${svc.id}/deployments`)).body.items.length, 0)
+    assert.equal((await api('GET', `/v1/apps/${svc.id}/deployments`)).body.items.length, 0)
   })
 
-  test('a configuration change on a service with no current deployment creates a manual deployment', async () => {
+  test('a configuration change on an app with no current deployment creates a manual deployment', async () => {
     const project = await createProject(h, 'nocurrent-config')
-    const svc = await createService(h, project.default_environment_id, {
+    const svc = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -342,7 +341,7 @@ describe('no current deployment', () => {
         },
       ],
     })
-    const patched = await api('PATCH', `/v1/services/${svc.id}`, {
+    const patched = await api('PATCH', `/v1/apps/${svc.id}`, {
       limits: {
         cpu_millis: 500,
       },
@@ -358,7 +357,7 @@ describe('no current deployment', () => {
 
   test('the same change with deploy = false creates nothing', async () => {
     const project = await createProject(h, 'nocurrent-hold')
-    const svc = await createService(h, project.default_environment_id, {
+    const svc = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -367,7 +366,7 @@ describe('no current deployment', () => {
         },
       ],
     })
-    const patched = await api('PATCH', `/v1/services/${svc.id}`, {
+    const patched = await api('PATCH', `/v1/apps/${svc.id}`, {
       limits: {
         cpu_millis: 500,
       },
@@ -385,7 +384,7 @@ describe('domains and the Gateway pin', () => {
       gateway: false,
     })
     const project = await createProject(h, 'gateway')
-    const web = await createService(h, project.default_environment_id, {
+    const web = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'web',
       ref: 'traefik/whoami:v1',
       ports: [
@@ -401,7 +400,7 @@ describe('domains and the Gateway pin', () => {
     assert.equal(refused.status, 409)
     assert.equal(refused.body.error.code, 'GATEWAY_NOT_PINNED')
     assert.equal(refused.body.error.details.release, '0.0.0-test')
-    assert.equal((await api('GET', `/v1/services/${web.id}/domains`)).body.items.length, 0)
+    assert.equal((await api('GET', `/v1/apps/${web.id}/domains`)).body.items.length, 0)
     pinPlatform(h, {
       gateway: true,
     })
@@ -415,7 +414,7 @@ describe('domains and the Gateway pin', () => {
 
   test('a domain on a tcp port is refused as invalid, not as an unpinned gateway', async () => {
     const project = await createProject(h, 'gateway-tcp')
-    const db = await createService(h, project.default_environment_id, {
+    const db = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'db',
       ref: 'postgres:16',
       ports: [

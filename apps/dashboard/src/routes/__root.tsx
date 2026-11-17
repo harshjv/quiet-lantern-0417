@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { createRootRouteWithContext, HeadContent, Link, Outlet } from '@tanstack/react-router'
+import { createRootRouteWithContext, HeadContent, Outlet } from '@tanstack/react-router'
 import { MapPinOff } from 'lucide-react'
 
 import { EmptyState } from '@/components/page'
@@ -31,10 +31,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       <EmptyState
         icon={MapPinOff}
         title="This page doesn’t exist"
-        description="Check the address, or start again from your projects."
+        description="Check the address, or start again from the home page."
         action={
           <Button asChild size="sm" variant="outline">
-            <Link to="/projects">Go to projects</Link>
+            <a href="/">Go home</a>
           </Button>
         }
       />

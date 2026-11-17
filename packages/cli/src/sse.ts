@@ -71,7 +71,7 @@ export const streamFailure = (data: string) => {
     error: {
       code: failure.code,
       explanation: failure.explanation,
-      fix: 'Retry when the station is connected.',
+      fix: 'Retry when the server is connected.',
     },
   })
 }

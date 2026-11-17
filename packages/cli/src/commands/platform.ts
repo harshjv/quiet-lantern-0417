@@ -17,7 +17,7 @@ export const platformCommands = (program: Program) => {
     .option('--digest <digest>')
     .option('--reason <text>')
     .option('--reset', 'remove the override for <component>')
-    .option('--station <station>')
+    .option('--server <server>')
     .option('--plan', 'print the diff and the signature checks without staging')
     .option('--wait', 'wait until the upgrade is done, failed or reverted')
     .option('--timeout <duration>', 'with --wait, give up after this long', seconds, 900)
@@ -36,7 +36,7 @@ export const platformCommands = (program: Program) => {
           const sent = await send(
             run.api.v1.platform.upgrade.post({
               version: options.version,
-              station: options.station,
+              server: options.server,
               plan: Boolean(options.plan),
             }),
           )
@@ -76,7 +76,7 @@ export const platformCommands = (program: Program) => {
               overrides: {
                 [component]: override,
               },
-              station: options.station,
+              server: options.server,
               plan: Boolean(options.plan),
             }),
           ),

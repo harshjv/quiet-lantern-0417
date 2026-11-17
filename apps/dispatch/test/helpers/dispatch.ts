@@ -255,7 +255,7 @@ const seedAdmin = async (h: Booting) => {
 
 export const mintToken = async (
   h: Dispatch,
-  scopes: { project_id: string; environment_id: string; level: 'read' | 'deploy' | 'admin' }[],
+  scopes: { project_id: string; target: string; level: 'read' | 'deploy' | 'admin' }[],
   name = 'scoped',
 ) => {
   const reply = await h.call('POST', '/v1/tokens', {
@@ -280,7 +280,7 @@ export const startFakeStation = async (
   config: FakeStationConfig = {},
 ) => {
   const url = await h.stationUrl()
-  const added = await h.call('POST', '/v1/stations', {
+  const added = await h.call('POST', '/v1/servers', {
     token: h.admin.token,
     body: {
       name,
@@ -298,7 +298,7 @@ export const startFakeStation = async (
 
   while (
     (
-      await h.call('GET', `/v1/stations/${name}`, {
+      await h.call('GET', `/v1/servers/${name}`, {
         token: h.admin.token,
       })
     ).body?.status !== 'online'

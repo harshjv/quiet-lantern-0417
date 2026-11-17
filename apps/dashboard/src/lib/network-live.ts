@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { Connections } from './api'
 import { useEventStream, type StreamState } from './event-stream'
+import type { Place } from './place'
 
 export type LiveNetwork = {
   state: StreamState | 'off'
@@ -27,10 +28,13 @@ const silence: Heard = {
   problem: null,
 }
 
-const byName = (a: Connections, b: Connections) => a.service.name.localeCompare(b.service.name)
+const byName = (a: Connections, b: Connections) => a.app.name.localeCompare(b.app.name)
 
-export const useLiveNetwork = (environment: string, enabled: boolean): LiveNetwork => {
-  const url = enabled ? `/v1/environments/${encodeURIComponent(environment)}/network/live` : null
+export const useLiveNetwork = (place: Place, enabled: boolean): LiveNetwork => {
+  const search = place.preview ? `?preview=${encodeURIComponent(place.preview)}` : ''
+  const url = enabled
+    ? `/v1/projects/${encodeURIComponent(place.project)}/network/live${search}`
+    : null
   const [heard, setHeard] = useState(silence)
   const [heardFrom, setHeardFrom] = useState(url)
 
@@ -56,10 +60,10 @@ export const useLiveNetwork = (environment: string, enabled: boolean): LiveNetwo
   }>(url, {
     network: (tick) =>
       setHeard((prev) => {
-        const latest = new Map(prev.samples.map((sample) => [sample.service.id, sample]))
+        const latest = new Map(prev.samples.map((sample) => [sample.app.id, sample]))
 
         for (const sample of tick.samples) {
-          latest.set(sample.service.id, sample)
+          latest.set(sample.app.id, sample)
         }
 
         return {
@@ -75,7 +79,7 @@ export const useLiveNetwork = (environment: string, enabled: boolean): LiveNetwo
       setHeard((prev) => ({
         ...prev,
         heard: true,
-        problem: 'No service in this environment is running.',
+        problem: 'No app here is running.',
       })),
   })
 

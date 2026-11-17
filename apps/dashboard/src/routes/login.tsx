@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
@@ -18,10 +18,8 @@ import {
   safeNext,
   serverPage,
   sessionQuery,
-  workbenchPage,
 } from '@/lib/auth'
 import { commands } from '@/lib/commands'
-import { nextLocation } from '@/lib/next-location'
 import { titled } from '@/lib/title'
 import { z } from '@/lib/zod'
 
@@ -33,20 +31,8 @@ export const Route = createFileRoute('/login')({
     const session = await context.queryClient.query(sessionQuery)
     const next = safeNext(search.next)
 
-    if (session && next && workbenchPage(next)) {
-      window.location.assign(next)
-
-      return
-    }
-
-    if (session && !next) {
-      window.location.assign('/')
-
-      return
-    }
-
-    if (session && next && !serverPage(next)) {
-      throw redirect(nextLocation(next))
+    if (session && !(next && serverPage(next))) {
+      window.location.assign(next ?? '/')
     }
   },
   head: () => titled('Sign in'),
@@ -55,7 +41,6 @@ export const Route = createFileRoute('/login')({
 
 function Login() {
   const { next } = Route.useSearch()
-  const navigate = useNavigate()
   const client = useQueryClient()
   const [step, setStep] = useState<'credentials' | 'totp'>('credentials')
   const [email, setEmail] = useState('')
@@ -73,7 +58,7 @@ function Login() {
     })
     const target = safeNext(next)
 
-    if (target && (serverPage(target) || workbenchPage(target))) {
+    if (target && serverPage(target)) {
       window.location.assign(target)
 
       return
@@ -85,23 +70,12 @@ function Login() {
       : []
 
     if (session && !session.user.twoFactorEnabled && keys.length === 0) {
-      await navigate({
-        to: '/account',
-        search: {
-          enroll: true,
-        },
-      })
+      window.location.assign('/#outside/account')
 
       return
     }
 
-    if (!target) {
-      window.location.assign('/')
-
-      return
-    }
-
-    await navigate(nextLocation(target))
+    window.location.assign(target ?? '/')
   }
 
   const withPasskey = async () => {
@@ -362,7 +336,7 @@ function Login() {
         </CardContent>
       </Card>
       <p className="mt-6 max-w-sm text-center text-xs text-muted-foreground">
-        Forgot your password? Reset it as root on the station host.
+        Forgot your password? Reset it as root on the server.
       </p>
     </main>
   )

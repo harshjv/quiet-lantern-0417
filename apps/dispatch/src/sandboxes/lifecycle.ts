@@ -5,7 +5,7 @@ import { runActiveStatuses, type Actor, type MessageBody, type Observed } from '
 
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { run, sandbox, sandbox_snapshot, secret_value, station, variable } from '../db/schema.ts'
+import { key, machine, machine_snapshot, run, secret_value, server } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
@@ -13,44 +13,44 @@ import { emitEvent } from '../station/events.ts'
 import { stopMachineTasks } from '../tasks/machine.ts'
 
 import { requireQuota } from './limits.ts'
-import { sandboxSubject } from './subject.ts'
+import { machineSubject } from './subject.ts'
 import { revokeWorkspaceToken } from './workspace.ts'
 
 type ActorValue = Static<typeof Actor>
-type SandboxRow = typeof sandbox.$inferSelect
+type MachineRow = typeof machine.$inferSelect
 
 export const systemActor: ActorValue = {
   type: 'system',
   id: null,
-  client: 'dispatch/sandboxes',
+  client: 'dispatch/machines',
 }
 
 export const expiringLeadS = 86400
 
-type StationRow = typeof station.$inferSelect
+type StationRow = typeof server.$inferSelect
 
 export const stopAtFrom = (ttl: number | null) =>
   ttl === null ? null : new Date(Date.now() + ttl * 1000)
 
-export const startSandbox = (
+export const startMachine = (
   db: Db,
   st: StationRow,
   principal: Principal,
-  row: SandboxRow,
+  row: MachineRow,
   ttl_s: number | null,
 ) => {
   requireQuota(
     db,
     st,
     {
-      sandboxId: row.id,
-      newSandbox: false,
+      machineId: row.id,
+      newMachine: false,
       running: true,
       memoryBytes: row.size.memory_bytes,
     },
     principal,
   )
-  db.update(sandbox)
+  db.update(machine)
     .set({
       ttl_s,
       desired_state: 'running',
@@ -61,16 +61,16 @@ export const startSandbox = (
       exit_code: null,
       expiring_notified_at: null,
     })
-    .where(eq(sandbox.id, row.id))
+    .where(eq(machine.id, row.id))
     .run()
 }
 
-export const stopSandbox = (db: Db, row: SandboxRow, reason: 'idle' | null = null) => {
+export const stopMachine = (db: Db, row: MachineRow, reason: 'idle' | null = null) => {
   if (row.status === 'stopped' || row.status === 'failed') {
     return
   }
 
-  db.update(sandbox)
+  db.update(machine)
     .set({
       desired_state: 'stopped',
       stop_at: null,
@@ -81,36 +81,36 @@ export const stopSandbox = (db: Db, row: SandboxRow, reason: 'idle' | null = nul
           }
         : {}),
     })
-    .where(eq(sandbox.id, row.id))
+    .where(eq(machine.id, row.id))
     .run()
 }
 
-export const retentionSeconds = (db: Db) => readSetting(db, 'sandbox.stopped_retention_s')
+export const retentionSeconds = (db: Db) => readSetting(db, 'machine.stopped_retention_s')
 
 export const deleteAt = (
-  row: Pick<SandboxRow, 'status' | 'stopped_at' | 'workspace'>,
+  row: Pick<MachineRow, 'status' | 'stopped_at' | 'workspace'>,
   retention: number,
 ) =>
   row.status === 'stopped' && retention > 0 && row.stopped_at && !row.workspace
     ? new Date(row.stopped_at.getTime() + retention * 1000)
     : null
 
-export const snapshotsKept = (db: Db, sandboxId: string) =>
+export const snapshotsKept = (db: Db, machineId: string) =>
   db
     .select({
       n: count(),
     })
-    .from(sandbox_snapshot)
-    .where(and(eq(sandbox_snapshot.sandbox_id, sandboxId), ne(sandbox_snapshot.status, 'deleting')))
+    .from(machine_snapshot)
+    .where(and(eq(machine_snapshot.machine_id, machineId), ne(machine_snapshot.status, 'deleting')))
     .get()?.n ?? 0
 
-const dropVariables = (db: Db, sandboxId: string) => {
+const dropKeys = (db: Db, machineId: string) => {
   const ids = db
     .select({
-      id: variable.id,
+      id: key.id,
     })
-    .from(variable)
-    .where(eq(variable.sandbox_id, sandboxId))
+    .from(key)
+    .where(eq(key.machine_id, machineId))
     .all()
     .map((v) => v.id)
 
@@ -118,24 +118,24 @@ const dropVariables = (db: Db, sandboxId: string) => {
     return
   }
 
-  db.delete(secret_value).where(inArray(secret_value.variable_id, ids)).run()
-  db.delete(variable).where(inArray(variable.id, ids)).run()
+  db.delete(secret_value).where(inArray(secret_value.key_id, ids)).run()
+  db.delete(key).where(inArray(key.id, ids)).run()
 }
 
-const endRuns = (db: Db, sandboxId: string) =>
+const endRuns = (db: Db, machineId: string) =>
   db
     .update(run)
     .set({
       status: 'cancelled',
       finished_at: new Date(),
     })
-    .where(and(eq(run.sandbox_id, sandboxId), inArray(run.status, [...runActiveStatuses])))
+    .where(and(eq(run.machine_id, machineId), inArray(run.status, [...runActiveStatuses])))
     .run()
 
 export const requestDeletion = (
   db: Db,
-  row: SandboxRow,
-  by: { actor: ActorValue; reason: 'user' | 'retention' | 'environment' },
+  row: MachineRow,
+  by: { actor: ActorValue; reason: 'user' | 'retention' | 'preview' },
 ) => {
   if (row.status === 'deleting') {
     return snapshotsKept(db, row.id)
@@ -145,7 +145,7 @@ export const requestDeletion = (
     const tdb = tx as unknown as Db
 
     tdb
-      .update(sandbox)
+      .update(machine)
       .set({
         status: 'deleting',
         desired_state: 'stopped',
@@ -156,9 +156,9 @@ export const requestDeletion = (
           requested_at: new Date().toISOString(),
         },
       })
-      .where(eq(sandbox.id, row.id))
+      .where(eq(machine.id, row.id))
       .run()
-    dropVariables(tdb, row.id)
+    dropKeys(tdb, row.id)
     endRuns(tdb, row.id)
     revokeWorkspaceToken(tdb, row, by.actor)
   })
@@ -166,17 +166,17 @@ export const requestDeletion = (
   return snapshotsKept(db, row.id)
 }
 
-export const removeSandbox = (db: Db, row: SandboxRow) => {
+export const removeMachine = (db: Db, row: MachineRow) => {
   const kept = snapshotsKept(db, row.id)
 
   db.transaction((tx) => {
     const tdb = tx as unknown as Db
 
-    dropVariables(tdb, row.id)
+    dropKeys(tdb, row.id)
     stopMachineTasks(tdb, row.id, new Date())
-    tdb.delete(sandbox).where(eq(sandbox.id, row.id)).run()
-    emitEvent(tdb, 'sandbox.deleted', sandboxSubject(row), {
-      sandbox: row.id,
+    tdb.delete(machine).where(eq(machine.id, row.id)).run()
+    emitEvent(tdb, 'machine.deleted', machineSubject(row), {
+      machine: row.id,
       snapshots_kept: kept,
       actor: row.deletion?.actor ?? systemActor,
       reason: row.deletion?.reason ?? 'user',
@@ -187,15 +187,15 @@ export const removeSandbox = (db: Db, row: SandboxRow) => {
 const date = (value: string | null | undefined) => (value ? new Date(value) : null)
 
 export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbox.status'>) => {
-  const row = db.select().from(sandbox).where(eq(sandbox.id, body.sandbox_id)).get()
+  const row = db.select().from(machine).where(eq(machine.id, body.sandbox_id)).get()
 
-  if (!row || row.station_id !== stationId) {
+  if (!row || row.server_id !== stationId) {
     return false
   }
 
   if (body.status === 'deleted') {
     if (row.status === 'deleting') {
-      removeSandbox(db, row)
+      removeMachine(db, row)
     }
 
     return true
@@ -205,25 +205,25 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
     return false
   }
 
-  const subject = sandboxSubject(row)
+  const subject = machineSubject(row)
   const now = new Date()
 
   switch (body.status) {
     case 'creating':
     case 'starting':
     case 'stopping':
-      db.update(sandbox)
+      db.update(machine)
         .set({
           status: body.status,
           status_reason: body.reason ?? row.status_reason,
         })
-        .where(eq(sandbox.id, row.id))
+        .where(eq(machine.id, row.id))
         .run()
 
       return true
 
     case 'running': {
-      db.update(sandbox)
+      db.update(machine)
         .set({
           status: 'running',
           status_reason: null,
@@ -232,17 +232,17 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
           exit_code: null,
           failure: null,
         })
-        .where(eq(sandbox.id, row.id))
+        .where(eq(machine.id, row.id))
         .run()
 
       if (row.status !== 'running') {
         const reason =
           body.reason === 'station_restart' ? 'station_restart' : row.started_at ? 'user' : 'create'
 
-        emitEvent(db, 'sandbox.started', subject, {
-          sandbox: row.id,
-          environment: row.environment_id,
-          station: row.station_id,
+        emitEvent(db, 'machine.started', subject, {
+          machine: row.id,
+          target: row.target_id,
+          server: row.server_id,
           reason,
           forked_from: row.forked_from,
           stop_at: row.stop_at?.toISOString() ?? null,
@@ -258,7 +258,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
       const ended = reason === 'ttl' || reason === 'exited' || reason === 'oom'
       const stoppedAt = date(body.stopped_at) ?? now
 
-      db.update(sandbox)
+      db.update(machine)
         .set({
           status: 'stopped',
           status_reason: reason,
@@ -272,14 +272,14 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
               }
             : {}),
         })
-        .where(eq(sandbox.id, row.id))
+        .where(eq(machine.id, row.id))
         .run()
       endRuns(db, row.id)
       stopMachineTasks(db, row.id, new Date())
 
       if (row.status !== 'stopped') {
-        emitEvent(db, 'sandbox.stopped', subject, {
-          sandbox: row.id,
+        emitEvent(db, 'machine.stopped', subject, {
+          machine: row.id,
           reason,
           exit_code: body.exit_code,
           ran_for_s: row.started_at
@@ -292,7 +292,7 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
     }
 
     case 'failed': {
-      db.update(sandbox)
+      db.update(machine)
         .set({
           status: 'failed',
           status_reason: null,
@@ -302,17 +302,17 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
           stop_at: null,
           address: null,
         })
-        .where(eq(sandbox.id, row.id))
+        .where(eq(machine.id, row.id))
         .run()
       endRuns(db, row.id)
       stopMachineTasks(db, row.id, new Date())
 
       if (row.status !== 'failed') {
-        emitEvent(db, 'sandbox.failed', subject, {
-          sandbox: row.id,
+        emitEvent(db, 'machine.failed', subject, {
+          machine: row.id,
           phase: body.failure?.phase ?? 'start',
-          code: body.failure?.code ?? 'SANDBOX_START_FAILED',
-          summary: body.failure?.summary ?? 'the station reported the sandbox failed',
+          code: body.failure?.code ?? 'MACHINE_START_FAILED',
+          summary: body.failure?.summary ?? 'the server reported the machine failed',
         })
       }
 
@@ -328,16 +328,16 @@ export const applySnapshotStatus = (
 ) => {
   const row = db
     .select()
-    .from(sandbox_snapshot)
-    .where(eq(sandbox_snapshot.id, body.snapshot_id))
+    .from(machine_snapshot)
+    .where(eq(machine_snapshot.id, body.snapshot_id))
     .get()
 
-  if (!row || row.station_id !== stationId) {
+  if (!row || row.server_id !== stationId) {
     return false
   }
 
   if (body.status === 'deleted') {
-    db.delete(sandbox_snapshot).where(eq(sandbox_snapshot.id, row.id)).run()
+    db.delete(machine_snapshot).where(eq(machine_snapshot.id, row.id)).run()
 
     return true
   }
@@ -346,7 +346,7 @@ export const applySnapshotStatus = (
     return false
   }
 
-  db.update(sandbox_snapshot)
+  db.update(machine_snapshot)
     .set({
       status: body.status,
       taken_at: date(body.taken_at) ?? row.taken_at,
@@ -354,55 +354,55 @@ export const applySnapshotStatus = (
       referenced_bytes: body.referenced_bytes,
       failure: body.failure,
     })
-    .where(eq(sandbox_snapshot.id, row.id))
+    .where(eq(machine_snapshot.id, row.id))
     .run()
 
   return true
 }
 
-export const ingestObservedSandboxes = (db: Db, stationId: string, observed: Observed) => {
+export const ingestObservedMachines = (db: Db, stationId: string, observed: Observed) => {
   const capabilities = observed.station.capabilities
   const st = db
     .select({
-      capabilities: station.capabilities,
+      capabilities: server.capabilities,
     })
-    .from(station)
-    .where(eq(station.id, stationId))
+    .from(server)
+    .where(eq(server.id, stationId))
     .get()
 
   if (st && JSON.stringify(st.capabilities) !== JSON.stringify(capabilities)) {
-    db.update(station)
+    db.update(server)
       .set({
         capabilities,
       })
-      .where(eq(station.id, stationId))
+      .where(eq(server.id, stationId))
       .run()
   }
 
   for (const [id, seen] of Object.entries(observed.sandboxes ?? {})) {
-    const row = db.select().from(sandbox).where(eq(sandbox.id, id)).get()
+    const row = db.select().from(machine).where(eq(machine.id, id)).get()
 
-    if (!row || row.station_id !== stationId || row.status === 'deleting') {
+    if (!row || row.server_id !== stationId || row.status === 'deleting') {
       continue
     }
 
     const address = seen.status === 'running' ? seen.address : null
 
     if (row.address !== address || row.disk_used_bytes !== seen.disk.referenced_bytes) {
-      db.update(sandbox)
+      db.update(machine)
         .set({
           address,
           disk_used_bytes: seen.disk.referenced_bytes,
         })
-        .where(eq(sandbox.id, id))
+        .where(eq(machine.id, id))
         .run()
     }
   }
 
   for (const [id, seen] of Object.entries(observed.sandbox_snapshots ?? {})) {
-    const row = db.select().from(sandbox_snapshot).where(eq(sandbox_snapshot.id, id)).get()
+    const row = db.select().from(machine_snapshot).where(eq(machine_snapshot.id, id)).get()
 
-    if (!row || row.station_id !== stationId) {
+    if (!row || row.server_id !== stationId) {
       continue
     }
 
@@ -410,12 +410,12 @@ export const ingestObservedSandboxes = (db: Db, stationId: string, observed: Obs
       row.referenced_bytes !== seen.referenced_bytes ||
       row.exclusive_bytes !== seen.exclusive_bytes
     ) {
-      db.update(sandbox_snapshot)
+      db.update(machine_snapshot)
         .set({
           referenced_bytes: seen.referenced_bytes,
           exclusive_bytes: seen.exclusive_bytes,
         })
-        .where(eq(sandbox_snapshot.id, id))
+        .where(eq(machine_snapshot.id, id))
         .run()
     }
   }
@@ -439,9 +439,9 @@ export const runRetention = (deps: RetentionDeps, now = new Date()) => {
 
   for (const row of db
     .select()
-    .from(sandbox)
+    .from(machine)
     .where(
-      and(eq(sandbox.status, 'stopped'), isNotNull(sandbox.stopped_at), isNull(sandbox.workspace)),
+      and(eq(machine.status, 'stopped'), isNotNull(machine.stopped_at), isNull(machine.workspace)),
     )
     .all()) {
     const at = deleteAt(row, retention)!
@@ -452,20 +452,20 @@ export const runRetention = (deps: RetentionDeps, now = new Date()) => {
         reason: 'retention',
       })
       result.deleted.push(row.id)
-      touched.add(row.station_id)
+      touched.add(row.server_id)
     } else if (
       now.getTime() >= at.getTime() - expiringLeadS * 1000 &&
       (!row.expiring_notified_at || row.expiring_notified_at.getTime() < row.stopped_at!.getTime())
     ) {
-      emitEvent(db, 'sandbox.expiring', sandboxSubject(row), {
-        sandbox: row.id,
+      emitEvent(db, 'machine.expiring', machineSubject(row), {
+        machine: row.id,
         delete_at: at.toISOString(),
       })
-      db.update(sandbox)
+      db.update(machine)
         .set({
           expiring_notified_at: now,
         })
-        .where(eq(sandbox.id, row.id))
+        .where(eq(machine.id, row.id))
         .run()
       result.expiring.push(row.id)
     }
@@ -478,11 +478,11 @@ export const runRetention = (deps: RetentionDeps, now = new Date()) => {
   return result
 }
 
-export const startSandboxRetention = (deps: RetentionDeps, log: Log) =>
-  every(60, 'sandbox.retention_failed', log, () => {
+export const startMachineRetention = (deps: RetentionDeps, log: Log) =>
+  every(60, 'machine.retention_failed', log, () => {
     const result = runRetention(deps)
 
     if (result.deleted.length || result.expiring.length) {
-      log('sandbox.retention', result)
+      log('machine.retention', result)
     }
   })

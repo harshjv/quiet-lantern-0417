@@ -5,6 +5,7 @@ import { t } from 'elysia'
 import { Nullable } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
+import { anyTarget } from '../../auth/scopes.ts'
 import { idTime } from '../../db/ids.ts'
 import { event } from '../../db/schema.ts'
 import { eventBus } from '../../station/events.ts'
@@ -33,7 +34,7 @@ const fallbackPollMs = 1000
 
 type EventRow = typeof event.$inferSelect
 
-type Filter = { types?: string[]; project?: string; environment?: string; service?: string }
+type Filter = { types?: string[]; project?: string; preview?: string; app?: string }
 
 export const typeMatches = (types: string[] | undefined, type: string) =>
   !types ||
@@ -41,24 +42,22 @@ export const typeMatches = (types: string[] | undefined, type: string) =>
   types.some((t) => (t.endsWith('*') ? type.startsWith(t.slice(0, -1)) : t === type))
 
 export const visibleTo = (principal: Principal, row: EventRow) => {
-  const subject = row.subject as { project_id?: string; environment_id?: string }
+  const subject = row.subject as { project_id?: string; preview_id?: string | null }
 
   if (!subject.project_id) {
-    return can(
-      principal,
-      {
-        project_id: '*',
-        environment_id: '*',
-      },
-      'read',
-    )
+    return can(principal, anyTarget, 'read')
   }
 
   return can(
     principal,
     {
       project_id: subject.project_id,
-      environment_id: subject.environment_id ?? '*',
+      target:
+        subject.preview_id === undefined
+          ? '*'
+          : subject.preview_id === null
+            ? 'production'
+            : 'previews',
     },
     'read',
   )
@@ -67,8 +66,8 @@ export const visibleTo = (principal: Principal, row: EventRow) => {
 const matches = (principal: Principal, filter: Filter) => (row: EventRow) => {
   const subject = row.subject as {
     project_id?: string
-    environment_id?: string
-    service_id?: string
+    preview_id?: string | null
+    app_id?: string
     id: string
   }
 
@@ -80,11 +79,11 @@ const matches = (principal: Principal, filter: Filter) => (row: EventRow) => {
     return false
   }
 
-  if (filter.environment && subject.environment_id !== filter.environment) {
+  if (filter.preview && subject.preview_id !== filter.preview) {
     return false
   }
 
-  if (filter.service && subject.service_id !== filter.service && subject.id !== filter.service) {
+  if (filter.app && subject.app_id !== filter.app && subject.id !== filter.app) {
     return false
   }
 
@@ -103,8 +102,12 @@ const eventQuery = t.Object({
     }),
   ),
   project: t.Optional(t.String()),
-  environment: t.Optional(t.String()),
-  service: t.Optional(t.String()),
+  preview: t.Optional(
+    t.String({
+      description: 'Only events of this preview id',
+    }),
+  ),
+  app: t.Optional(t.String()),
   ...listQuery,
 })
 
@@ -128,7 +131,7 @@ const checkSince = (since: string) => {
     fail(
       'EVENT_CURSOR_EXPIRED',
       `The cursor is from ${new Date(at).toISOString()}, older than the 14-day event retention.`,
-      'Read the current state with describe_environment, then follow events without since.',
+      'Read the current state again, then follow events without since.',
       {
         since,
         retained_from: new Date(Date.now() - eventRetentionMs).toISOString(),
@@ -156,8 +159,8 @@ export const eventRoutes = (kit: Kit) => {
     const filter: Filter = {
       types: csv(query.types),
       project: query.project,
-      environment: query.environment,
-      service: query.service,
+      preview: query.preview,
+      app: query.app,
     }
     const resume = request.headers.get('last-event-id') ?? query.since
 

@@ -6,10 +6,10 @@ import { Option } from '@commander-js/extra-typings'
 import { call, group, type Program } from '../command.ts'
 import { inputRequired, usage } from '../errors.ts'
 import { targetId } from '../generated.ts'
-import { isId, projectRef, serviceId, type Api, type Run } from '../kit.ts'
+import { appId, projectRef, type Api, type Run } from '../kit.ts'
 import { interactive, need, readStdin } from '../prompt.ts'
 
-const scopes = ['service', 'project', 'global', 'sandbox'] as const
+const scopes = ['app', 'project', 'global', 'machine'] as const
 
 type Scope = (typeof scopes)[number]
 
@@ -18,29 +18,15 @@ const scopeOf = (run: Run, chosen: Scope | undefined): Scope => {
     return chosen
   }
 
-  if (run.selection.sandbox) {
-    return 'sandbox'
+  if (run.selection.machine) {
+    return 'machine'
   }
 
-  return run.selection.service ? 'service' : 'project'
+  return run.selection.app ? 'app' : 'project'
 }
 
-const projectEnvironment = (run: Run) => {
-  const environment = run.selection.environment
-
-  if (!environment || environment === 'default') {
-    return 'default'
-  }
-
-  if (isId('environment', environment)) {
-    throw usage(
-      'Project variables take an environment name, not an id.',
-      'Pass --environment <name> or --environment default.',
-    )
-  }
-
-  return environment
-}
+const valueTarget = (run: Run) =>
+  run.selection.preview ? ('preview' as const) : ('production' as const)
 
 export const assignmentOf = (assignment: string) => {
   const at = assignment.indexOf('=')
@@ -109,8 +95,8 @@ const pairs = async (options: { file?: string; sealed?: true }, assignments: str
 }
 
 const toSet = (
-  options: { sealed?: true; build?: true; copyToClones?: boolean },
-  [key, value]: readonly [string, string],
+  options: { sealed?: true; build?: true },
+  [name, value]: readonly [string, string],
 ) => {
   const build = {
     ...(options.build
@@ -118,16 +104,11 @@ const toSet = (
           build: true,
         }
       : {}),
-    ...(options.copyToClones === undefined
-      ? {}
-      : {
-          copy_to_clones: options.copyToClones,
-        }),
   }
 
   if (options.sealed) {
     return {
-      key,
+      name,
       kind: 'sealed' as const,
       value,
       ...build,
@@ -136,7 +117,7 @@ const toSet = (
 
   if (value.includes('${{')) {
     return {
-      key,
+      name,
       kind: 'reference' as const,
       reference: value,
       ...build,
@@ -144,26 +125,26 @@ const toSet = (
   }
 
   return {
-    key,
+    name,
     kind: 'literal' as const,
     value,
     ...build,
   }
 }
 
-type Patch = NonNullable<Parameters<Api['global-variables']['patch']>[0]>
+type Patch = NonNullable<Parameters<Api['global-keys']['patch']>[0]>
 
 const patch = async (run: Run, scope: Scope, body: Patch) => {
   if (scope === 'global') {
-    return run.api.v1['global-variables'].patch(body)
+    return run.api.v1['global-keys'].patch(body)
   }
 
-  if (scope === 'sandbox') {
+  if (scope === 'machine') {
     return run.api.v1
-      .sandboxes({
-        sandbox: await targetId(run, 'sandbox'),
+      .machines({
+        machine: await targetId(run, 'machine'),
       })
-      .variables.patch(body)
+      .keys.patch(body)
   }
 
   if (scope === 'project') {
@@ -171,24 +152,24 @@ const patch = async (run: Run, scope: Scope, body: Patch) => {
       .projects({
         project: await projectRef(run),
       })
-      .variables.patch({
-        environment: projectEnvironment(run),
+      .keys.patch({
+        target: valueTarget(run),
         ...body,
       })
   }
 
   return run.api.v1
-    .services({
-      service: await serviceId(run),
+    .apps({
+      app: await appId(run),
     })
-    .variables.patch(body)
+    .keys.patch(body)
 }
 
-export const variableCommands = (program: Program) => {
-  group(program, 'variables')
+export const keyCommands = (program: Program) => {
+  group(program, 'keys')
     .command('set')
     .description(
-      'Set variables from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --sealed',
+      'Set keys from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --sealed',
     )
     .argument(
       '[assignments...]',
@@ -197,41 +178,22 @@ export const variableCommands = (program: Program) => {
     .addOption(
       new Option(
         '--scope <scope>',
-        'default sandbox when --sandbox is selected, service when --service is, else project',
+        'default machine when --machine is selected, app when --app is, else project',
       ).choices(scopes),
     )
     .option('--sealed', 'store as sealed: write-only, never returned')
     .option('--file <path>', 'read KEY=VALUE lines from a file, or - for stdin')
     .option('--build', 'also pass to the build')
-    .option(
-      '--copy-to-clones',
-      'sealed only: copy the value into clones of this environment; a bare KEY changes only this flag',
-    )
-    .option('--no-copy-to-clones', 'sealed only: keep the value out of clones, the default')
     .option('--apply', 'redeploy stale dependents')
     .option('--allow-unresolved', 'accept references whose target does not exist yet')
     .action(
       call(async (run, options, assignments) => {
         const scope = scopeOf(run, options.scope)
-        const flagOnly = options.copyToClones !== undefined && !options.file
-        const bare = flagOnly ? assignments.filter((assignment) => !assignmentOf(assignment)) : []
-        const given = flagOnly
-          ? assignments.filter((assignment) => assignmentOf(assignment))
-          : assignments
-        const set = [
-          ...bare.map((key) => ({
-            key,
-            kind: 'sealed' as const,
-            copy_to_clones: options.copyToClones,
-          })),
-          ...(given.length || options.file || !bare.length ? await pairs(options, given) : []).map(
-            (pair) => toSet(options, pair),
-          ),
-        ]
+        const set = (await pairs(options, assignments)).map((pair) => toSet(options, pair))
 
         return patch(run, scope, {
           set,
-          apply: scope === 'sandbox' ? undefined : options.apply,
+          apply: scope === 'machine' ? undefined : options.apply,
           allow_unresolved: options.allowUnresolved,
         })
       }),

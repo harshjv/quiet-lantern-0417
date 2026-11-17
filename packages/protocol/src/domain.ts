@@ -1,18 +1,25 @@
-import type { runStatusValues, sandboxStatusValues } from './model.ts'
+import type { machineStatusValues, runStatusValues } from './model.ts'
 
 type RunStatus = (typeof runStatusValues)[number]
 
-type SandboxStatus = (typeof sandboxStatusValues)[number]
+type MachineStatus = (typeof machineStatusValues)[number]
 
 export const slugPattern = '^[a-z0-9][a-z0-9-]{0,62}$'
 
-export const variableKeyPattern = '^[A-Z_][A-Z0-9_]*$'
+export const keyNamePattern = '^[A-Z_][A-Z0-9_]*$'
 
-export const stationStatusValues = ['enrolling', 'online', 'offline', 'asleep'] as const
+export const serverStatusValues = ['enrolling', 'online', 'offline', 'asleep'] as const
 
-export const serviceStatusValues = ['green', 'amber', 'red', 'stopped', 'asleep'] as const
+export const appStatusValues = [
+  'healthy',
+  'deploying',
+  'failing',
+  'stopped',
+  'asleep',
+  'not_deployed',
+] as const
 
-export const serviceStatusReasonValues = ['station_asleep', 'gaming_mode', 'schedule'] as const
+export const appStatusReasonValues = ['server_asleep', 'gaming_mode', 'schedule'] as const
 
 export const volumeStatusValues = ['active', 'retained', 'destroyed'] as const
 
@@ -28,23 +35,21 @@ export const domainStatusValues = ['pending', 'active', 'error'] as const
 
 export const portAllocationStatusValues = ['active', 'removed'] as const
 
-export const variableScopeValues = ['global', 'project', 'service', 'sandbox'] as const
+export const keyScopeValues = ['global', 'project', 'app', 'machine'] as const
 
-export const variableKindValues = ['literal', 'reference', 'sealed'] as const
+export const keyKindValues = ['literal', 'reference', 'sealed'] as const
+
+export const targetKindValues = ['production', 'preview'] as const
+
+export const scopeTargetValues = ['production', 'previews', '*'] as const
 
 export const grantSourceValues = ['manual', 'attachment'] as const
 
-export const stagedChangeStatusValues = ['staged', 'accepted', 'rejected', 'superseded'] as const
+export const approvalStatusValues = ['waiting', 'approved', 'rejected', 'superseded'] as const
 
-export const stagedChangeSourceValues = [
-  'api',
-  'manifest',
-  'compose_import',
-  'agent',
-  'ui',
-] as const
+export const approvalSourceValues = ['api', 'manifest', 'compose_import', 'task', 'ui'] as const
 
-export const tokenKindValues = ['personal', 'scoped', 'station_enroll', 'oauth'] as const
+export const tokenKindValues = ['personal', 'scoped', 'server_enroll', 'oauth'] as const
 
 export const tokenLevelValues = ['read', 'deploy', 'admin'] as const
 
@@ -74,13 +79,13 @@ export const baseImageCheckValues = [
   'unreachable',
 ] as const
 
-export const staleReasonCodeValues = ['VARIABLES_CHANGED', 'CONFIG_CHANGED'] as const
+export const staleReasonCodeValues = ['KEYS_CHANGED', 'CONFIG_CHANGED'] as const
 
 export const deploymentTriggerValues = [
   'push',
   'manual',
   'rollback',
-  'variable_change',
+  'key_change',
   'redeploy',
   'base_image',
   'agent',
@@ -118,32 +123,32 @@ export const runTerminalStatuses = [
   'cancelled',
 ] as const satisfies readonly RunStatus[]
 
-export const sandboxIdleStatuses = ['stopped', 'failed'] as const satisfies readonly SandboxStatus[]
+export const machineIdleStatuses = ['stopped', 'failed'] as const satisfies readonly MachineStatus[]
 
-export const sandboxSteadyStatuses = [
+export const machineSteadyStatuses = [
   'running',
-  ...sandboxIdleStatuses,
-] as const satisfies readonly SandboxStatus[]
+  ...machineIdleStatuses,
+] as const satisfies readonly MachineStatus[]
 
-export const sandboxSizeDefaults = {
+export const machineSizeDefaults = {
   cpu_millis: 2000,
   memory_bytes: 4294967296,
   disk_bytes: 21474836480,
 } as const
 
-export const sandboxMemoryStep = 268435456
+export const machineMemoryStep = 268435456
 
-export const sandboxMemoryMinimum = 536870912
+export const machineMemoryMinimum = 536870912
 
-export const fitSandboxMemory = (
+export const fitMachineMemory = (
   free: number | null,
-  wanted: number = sandboxSizeDefaults.memory_bytes,
+  wanted: number = machineSizeDefaults.memory_bytes,
 ) => {
   if (free === null) {
     return wanted
   }
 
-  const fitted = Math.min(wanted, Math.floor(free / sandboxMemoryStep) * sandboxMemoryStep)
+  const fitted = Math.min(wanted, Math.floor(free / machineMemoryStep) * machineMemoryStep)
 
-  return fitted >= sandboxMemoryMinimum ? fitted : wanted
+  return fitted >= machineMemoryMinimum ? fitted : wanted
 }

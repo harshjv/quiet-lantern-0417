@@ -1,26 +1,26 @@
 import type { Static } from '@sinclair/typebox'
 
 import { bytesText, gibibyte } from './format.ts'
-import type { HostProbe, SandboxRuntimeAdvice, sandboxRuntimeValues } from './model.ts'
+import type { HostProbe, MachineRuntimeAdvice, machineRuntimeValues } from './model.ts'
 
-type InstalledRuntime = (typeof sandboxRuntimeValues)[number]
+type InstalledRuntime = (typeof machineRuntimeValues)[number]
 
-export const sandboxRuntimeKindValues = ['gvisor', 'microvm'] as const
+export const machineRuntimeKindValues = ['gvisor', 'microvm'] as const
 
-export type SandboxRuntimeKind = (typeof sandboxRuntimeKindValues)[number]
+export type MachineRuntimeKind = (typeof machineRuntimeKindValues)[number]
 
 export const microVmMemoryToSpare = 32 * gibibyte
 
-export const sandboxRuntimeTradeoffs: Record<
-  SandboxRuntimeKind,
+export const machineRuntimeTradeoffs: Record<
+  MachineRuntimeKind,
   { label: string; pros: string[]; cons: string[] }
 > = {
   gvisor: {
     label: 'gVisor',
     pros: [
       'Runs on any Linux host, with or without KVM',
-      'Starts in under a second and uses little memory, so more sandboxes fit on a host',
-      'A kernel in user space stands between each sandbox and the host kernel',
+      'Starts in under a second and uses little memory, so more machines fit on a host',
+      'A kernel in user space stands between each machine and the host kernel',
     ],
     cons: [
       'Some system calls and kernel features are missing, so a few programs fail',
@@ -30,13 +30,13 @@ export const sandboxRuntimeTradeoffs: Record<
   microvm: {
     label: 'Micro-VM',
     pros: [
-      'Hardware virtualization separates each sandbox from the host',
+      'Hardware virtualization separates each machine from the host',
       'Full Linux compatibility, with native Docker and databases',
       'Close to native speed for work heavy on system calls',
     ],
     cons: [
       'Needs KVM, which most cloud VMs do not offer',
-      'Each sandbox boots its own kernel and holds its memory, so fewer fit on a host',
+      'Each machine boots its own kernel and holds its memory, so fewer fit on a host',
       'Runs slower nested inside another virtual machine',
     ],
   },
@@ -44,33 +44,33 @@ export const sandboxRuntimeTradeoffs: Record<
 
 type Host = Static<typeof HostProbe>
 
-export type SandboxRuntimeAdviceDoc = Static<typeof SandboxRuntimeAdvice>
+export type MachineRuntimeAdviceDoc = Static<typeof MachineRuntimeAdvice>
 
 const option = (
-  runtime: SandboxRuntimeKind,
+  runtime: MachineRuntimeKind,
   offered: readonly InstalledRuntime[],
-  recommended: SandboxRuntimeKind,
+  recommended: MachineRuntimeKind,
 ) => ({
   runtime,
   installed: (offered as readonly string[]).includes(runtime),
   recommended: runtime === recommended,
-  pros: sandboxRuntimeTradeoffs[runtime].pros,
-  cons: sandboxRuntimeTradeoffs[runtime].cons,
+  pros: machineRuntimeTradeoffs[runtime].pros,
+  cons: machineRuntimeTradeoffs[runtime].cons,
 })
 
 const noKvmReason = (host: Host) => {
   if (host.kvm_present) {
-    return '/dev/kvm exists but cannot be opened, so sandboxes run on gVisor'
+    return '/dev/kvm exists but cannot be opened, so machines run on gVisor'
   }
 
   if (host.hypervisor) {
-    return `This host is a ${host.hypervisor} virtual machine without nested virtualization, so sandboxes run on gVisor`
+    return `This host is a ${host.hypervisor} virtual machine without nested virtualization, so machines run on gVisor`
   }
 
-  return 'No KVM on this host, so sandboxes run on gVisor'
+  return 'No KVM on this host, so machines run on gVisor'
 }
 
-const kvmPreference = (host: Host): { runtime: SandboxRuntimeKind; reason: string } => {
+const kvmPreference = (host: Host): { runtime: MachineRuntimeKind; reason: string } => {
   if (host.hypervisor) {
     return {
       runtime: 'gvisor',
@@ -81,7 +81,7 @@ const kvmPreference = (host: Host): { runtime: SandboxRuntimeKind; reason: strin
   if (host.memory_bytes < microVmMemoryToSpare) {
     return {
       runtime: 'gvisor',
-      reason: `This host has ${bytesText(host.memory_bytes)} of memory, and gVisor fits more sandboxes into it`,
+      reason: `This host has ${bytesText(host.memory_bytes)} of memory, and gVisor fits more machines into it`,
     }
   }
 
@@ -91,10 +91,10 @@ const kvmPreference = (host: Host): { runtime: SandboxRuntimeKind; reason: strin
   }
 }
 
-export const adviseSandboxRuntime = (
+export const adviseMachineRuntime = (
   host: Host,
   offered: readonly InstalledRuntime[],
-): SandboxRuntimeAdviceDoc | null => {
+): MachineRuntimeAdviceDoc | null => {
   if (!offered.length) {
     return null
   }
@@ -108,7 +108,7 @@ export const adviseSandboxRuntime = (
   }
 
   const preference = kvmPreference(host)
-  const options = sandboxRuntimeKindValues.map((runtime) =>
+  const options = machineRuntimeKindValues.map((runtime) =>
     option(runtime, offered, preference.runtime),
   )
   const chosen = options.find((o) => o.recommended && o.installed)
@@ -125,11 +125,11 @@ export const adviseSandboxRuntime = (
     default: offered[0]!,
     reasons: [
       preference.reason,
-      `${sandboxRuntimeTradeoffs[preference.runtime].label} sandboxes are not installed in this release, so sandboxes run on ${sandboxRuntimeTradeoffs[offered[0]!].label}`,
+      `${machineRuntimeTradeoffs[preference.runtime].label} machines are not installed in this release, so machines run on ${machineRuntimeTradeoffs[offered[0]!].label}`,
     ],
     options,
   }
 }
 
-export const sandboxRuntimeChoice = (advice: SandboxRuntimeAdviceDoc) =>
+export const machineRuntimeChoice = (advice: MachineRuntimeAdviceDoc) =>
   advice.options.filter((o) => o.installed).length > 1

@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto'
 
 import type { Static } from '@sinclair/typebox'
-import { desc, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
 import {
   agentPromptLimit,
-  SandboxCreateBody,
+  MachineCreateBody,
   taskMachineValues,
   taskSlotMemoryBytes,
   taskSlotsDefault,
@@ -19,12 +19,12 @@ import type { Principal } from '../../auth/principal.ts'
 import { fullAdmin, isInstanceAdmin } from '../../auth/scopes.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { project, sandbox, ship_request, station, task } from '../../db/schema.ts'
-import { requestDeletion, startSandbox } from '../../sandboxes/lifecycle.ts'
+import { approval, machine, project, server, task } from '../../db/schema.ts'
+import { requestDeletion, startMachine } from '../../sandboxes/lifecycle.ts'
 import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
 import { isRepositoryName, repositoryName } from '../../sandboxes/workspace.ts'
 import { ephemeralDelivery } from '../../secrets/deliver.ts'
-import { variablesOf } from '../../secrets/values.ts'
+import { keysOf } from '../../secrets/values.ts'
 import { emitEvent } from '../../station/events.ts'
 import { approvalOf, approvalState, decideApproval } from '../../tasks/approvals.ts'
 import {
@@ -58,25 +58,25 @@ import {
   startConversation,
   wantRunner,
 } from '../../tasks/runner.ts'
-import { decideShip, shipView, startShip } from '../../tasks/ship.ts'
+import { shipView, startShip } from '../../tasks/ship.ts'
 import { taskChanged, taskSubject, type TaskRow } from '../../tasks/status.ts'
 import { branchSlug, listTasks, taskItem, titleOf, uniqueBranch } from '../../tasks/views.ts'
 import { githubTokenOf, listKeys } from '../../team/keys.ts'
 import { memberLevel } from '../../team/members.ts'
 import { requireHuman, requireLevel, seesProject } from '../access.ts'
+import { supersedeWaiting } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
 import { requireConnected } from '../deployments.ts'
 import { ApiError, fail, invalid, notFound } from '../errors.ts'
 import type { Kit } from '../kit.ts'
-import { environmentById, environmentInProject, projectByRef } from '../lookup.ts'
+import { projectByRef, scopeOf, targetById, targetInProject } from '../lookup.ts'
 import {
   AgentApprovalState,
   AgentEventPage,
   AgentInputAccepted,
   AgentInterruptAccepted,
+  Approval,
   replies,
-  ShipRequest,
-  ShipRequestList,
   Task,
   TaskDeleted,
   TaskPage,
@@ -86,10 +86,10 @@ import { createSse } from '../sse.ts'
 
 import { deployPreview, removePreview } from './task-preview.ts'
 
-type CreateSandbox = (
+type CreateMachine = (
   call: Call,
-  ctx: ReturnType<typeof environmentById>,
-  body: Static<typeof SandboxCreateBody>,
+  ctx: ReturnType<typeof targetById>,
+  body: Static<typeof MachineCreateBody>,
   options?: {
     taskBranch?: string | null
     kind?: TaskMachineValue
@@ -178,12 +178,12 @@ const requireKey = (
 ) => {
   const preset = workspaceAgents[agent]
   const keys = new Set(
-    variablesOf(db, {
+    keysOf(db, {
       scope: 'project',
       id: projectId,
     })
       .all()
-      .map((variable) => variable.key),
+      .map((key) => key.name),
   )
 
   for (const own of listKeys(db, userId)) {
@@ -202,11 +202,11 @@ const requireKey = (
   }
 }
 
-export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
+export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
   const { db } = kit.deps
 
   const redactor = (row: TaskRow, principal: Principal, requestId: string) => () =>
-    kit.sandboxRedaction([row.sandbox_id], principal.actor, requestId)
+    kit.machineRedaction([row.machine_id], principal.actor, requestId)
 
   const personOf = (principal: Principal) =>
     principal.token_kind === 'session' || principal.token_kind === 'personal'
@@ -237,20 +237,20 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     )
 
   const wake = (call: Call, row: TaskRow, refusal: string) => {
-    const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+    const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
     return wakeBox(call, box, `task ${row.title}`, refusal)
   }
 
   const wakeBox = (
     call: Call,
-    box: typeof sandbox.$inferSelect | undefined,
+    box: typeof machine.$inferSelect | undefined,
     owner: string,
     refusal: string,
   ) => {
     if (!box) {
       fail(
-        'SANDBOX_NOT_RUNNING',
+        'MACHINE_NOT_RUNNING',
         `The workspace of ${owner} is gone, so ${refusal}.`,
         'Start a new task.',
         {
@@ -260,10 +260,10 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     }
 
     if (box!.status === 'stopped') {
-      requireConnected(kit.deps, box!.station_id)
-      startSandbox(
+      requireConnected(kit.deps, box!.server_id)
+      startMachine(
         db,
-        db.select().from(station).where(eq(station.id, box!.station_id)).get()!,
+        db.select().from(server).where(eq(server.id, box!.server_id)).get()!,
         call.principal,
         box!,
         null,
@@ -271,9 +271,9 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       audit(
         db,
         call,
-        'sandbox.start',
+        'machine.start',
         {
-          entity: 'sandbox',
+          entity: 'machine',
           id: box!.id,
         },
         {
@@ -282,14 +282,14 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           },
         },
       )
-      kit.deps.stations.reconcile(box!.station_id)
+      kit.deps.stations.reconcile(box!.server_id)
 
       return true
     }
 
     if (!['creating', 'starting', 'running'].includes(box!.status)) {
       fail(
-        'SANDBOX_NOT_RUNNING',
+        'MACHINE_NOT_RUNNING',
         `The workspace of ${owner} is ${box!.status}, so ${refusal}.`,
         'Start a new task.',
         {
@@ -301,9 +301,9 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     return false
   }
 
-  const createMachine = async (
+  const createProjectMachine = async (
     call: Call,
-    ctx: ReturnType<typeof environmentById>,
+    ctx: ReturnType<typeof targetById>,
     proj: typeof project.$inferSelect,
     body: { agent: (typeof workspaceAgentValues)[number]; repository: string },
     readable: boolean,
@@ -317,7 +317,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
     for (const [attempt, name] of names.entries()) {
       try {
-        created = await createSandbox(
+        created = await createMachine(
           call,
           ctx,
           {
@@ -346,13 +346,13 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
       }
     }
 
-    const box = db.select().from(sandbox).where(eq(sandbox.id, created!.id)).get()!
+    const box = db.select().from(machine).where(eq(machine.id, created!.id)).get()!
 
     db.update(project)
       .set({
         machine: {
           slots: Math.min(taskSlotsDefault, slotsFor(box.size.memory_bytes)),
-          sandbox_id: box.id,
+          machine_id: box.id,
         },
       })
       .where(eq(project.id, proj.id))
@@ -363,7 +363,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
   const machineFor = async (
     call: Call,
-    ctx: ReturnType<typeof environmentById>,
+    ctx: ReturnType<typeof targetById>,
     proj: typeof project.$inferSelect,
     body: { agent: (typeof workspaceAgentValues)[number]; repository: string },
     readable: boolean,
@@ -371,7 +371,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     const found = projectMachine(db, proj)
 
     if (!found) {
-      return createMachine(call, ctx, proj, body, readable)
+      return createProjectMachine(call, ctx, proj, body, readable)
     }
 
     if (!isRepositoryName(repositoryName(body.repository))) {
@@ -386,17 +386,17 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
     if (!readable) {
       await requireRepositoryAccess(kit.deps, {
         project: proj,
-        environment: ctx.environment.id,
+        target: ctx.target_row.id,
         repository: body.repository,
-        variables: undefined,
+        keys: undefined,
       })
     }
 
     wakeBox(call, found, `project ${proj.name}`, 'it cannot start a task')
     machineSetupRerun(db, found)
-    kit.deps.stations.reconcile(found.station_id)
+    kit.deps.stations.reconcile(found.server_id)
 
-    return db.select().from(sandbox).where(eq(sandbox.id, found.id)).get()!
+    return db.select().from(machine).where(eq(machine.id, found.id)).get()!
   }
 
   const start = (row: TaskRow, since: number | undefined, conversationId: string | undefined) => {
@@ -509,8 +509,8 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           limit: query.limit ?? defaultPageSize,
           cursor: query.cursor,
           archived: query.archived ?? false,
-          redactor: (sandboxId) =>
-            kit.sandboxRedaction([sandboxId], call.principal.actor, call.request_id),
+          redactor: (machineId) =>
+            kit.machineRedaction([machineId], call.principal.actor, call.request_id),
         })
 
         return {
@@ -566,35 +566,26 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
         const proj = projectByRef(db, body.project)
         const onProject = (body.machine ?? 'project') === 'project'
-        const env = body.environment
-          ? environmentInProject(db, proj, body.environment)
-          : environmentById(db, proj.default_environment_id).environment
+        const env = targetInProject(db, proj, body.preview)
 
-        requireLevel(
-          call.principal,
-          {
-            project_id: proj.id,
-            environment_id: env.id,
-          },
-          memberLevel,
-        )
+        requireLevel(call.principal, scopeOf(env), memberLevel)
 
         const actingCall = onBehalf(call)
         const ownToken = await githubTokenOf(kit.deps.auth, db, call.principal.user_id)
         const readable =
           !!ownToken && (await kit.deps.readRepository(body.repository, ownToken)) === 'readable'
 
-        if (onProject && env.id !== proj.default_environment_id) {
+        if (onProject && env.kind !== 'production') {
           invalid([
             {
-              path: '/environment',
+              path: '/preview',
               message:
-                "a task on the project machine runs in the project's default environment; ask for machine own to use another",
+                "a task on the project machine runs in the project's production; ask for machine own to use a preview",
             },
           ])
         }
 
-        const ctx = environmentById(db, env.id)
+        const ctx = targetById(db, env.id)
         const preset = workspaceAgents[body.agent]
 
         if (!preset.runner) {
@@ -637,11 +628,11 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
         const queued =
           onProject &&
-          freeSlots(db, db.select().from(sandbox).where(eq(sandbox.id, created!.id)).get()!) <= 0
+          freeSlots(db, db.select().from(machine).where(eq(machine.id, created!.id)).get()!) <= 0
 
         for (let attempt = 0; !created; attempt += 1) {
           try {
-            created = await createSandbox(
+            created = await createMachine(
               actingCall,
               ctx,
               {
@@ -677,7 +668,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           ? await machineUserFor(
               db,
               kit.deps,
-              db.select().from(sandbox).where(eq(sandbox.id, created.id)).get()!,
+              db.select().from(machine).where(eq(machine.id, created.id)).get()!,
               call.principal.user_id,
             )
           : null
@@ -691,7 +682,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
             .values({
               id,
               project_id: proj.id,
-              environment_id: env.id,
+              target_id: env.id,
               owner: {
                 type: call.principal.actor.type,
                 id: call.principal.actor.id,
@@ -702,7 +693,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
               branch,
               agent: body.agent,
               model,
-              sandbox_id: created.id,
+              machine_id: created.id,
               machine: onProject ? 'project' : 'own',
               worktree: member ? worktreeOf(branch, id, homeOf(member.name)) : null,
               port,
@@ -729,7 +720,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
             taskSubject({
               id,
               project_id: proj.id,
-              environment_id: env.id,
+              preview_id: null,
             }),
             {
               task: id,
@@ -750,7 +741,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
                 branch,
                 agent: body.agent,
                 machine: onProject ? 'project' : 'own',
-                sandbox_id: created.id,
+                machine_id: created.id,
               },
             },
           )
@@ -775,10 +766,10 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           project: t.String({
             description: 'The project, an id or a name',
           }),
-          environment: t.Optional(
+          preview: t.Optional(
             t.String({
               description:
-                "Where the task's workspace lives; the project's default environment by default",
+                "A preview, by id or name, for the task's own machine to join; production by default",
             }),
           ),
           repository: t.String({
@@ -1026,7 +1017,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           },
           {
             after: {
-              environment: deployed.environment.id,
+              preview: deployed.preview.id,
               run_id: deployed.run_id,
             },
           },
@@ -1035,14 +1026,14 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
 
         return {
           ...deployed,
-          url: previewAddress(db, deployed.environment.id),
+          url: previewAddress(db, deployed.preview.id),
         }
       },
       {
         operation: {
           id: 'deploy_task_preview',
           summary:
-            "Deploy a task's worktree into its own preview environment, made the first time; needs a human, the task's owner or an admin",
+            "Deploy a task's worktree into its own preview, made the first time; needs a human, the task's owner or an admin",
           level: 'any',
           mcp: false,
           cli: {
@@ -1083,7 +1074,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
             reconcile: (station) => kit.deps.stations.reconcile(station),
           },
           row,
-          call.principal.user_id,
+          call,
         )
 
         audit(
@@ -1096,8 +1087,8 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           },
           {
             after: {
-              ship_request: shipped.id,
-              run_id: shipped.run_id,
+              approval: shipped.id,
+              run_id: shipped.ship?.run_id ?? null,
             },
           },
         )
@@ -1109,7 +1100,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
         operation: {
           id: 'ship_task',
           summary:
-            "Push a task's branch, open its pull request and ask an admin to merge it; needs a human, the task's owner or an admin",
+            "Push a task's branch, open its pull request and ask an admin to approve merging it; needs a human, the task's owner or an admin",
           level: 'any',
           mcp: false,
           cli: {
@@ -1118,130 +1109,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
           },
         },
         response: replies({
-          202: ShipRequest,
-        }),
-      },
-    )
-    .get(
-      '/ship-requests',
-      async ({ request }) => {
-        const call = await kit.call(request)
-        const admin = isInstanceAdmin(call.principal.scopes)
-
-        return {
-          items: db
-            .select()
-            .from(ship_request)
-            .where(eq(ship_request.status, 'pending'))
-            .orderBy(desc(ship_request.created_at))
-            .all()
-            .filter((entry) => admin || entry.requested_by === call.principal.user_id)
-            .map((entry) => shipView(db, entry)),
-        }
-      },
-      {
-        operation: {
-          id: 'list_ship_requests',
-          summary: 'List ship requests waiting for a decision; admins see all, others their own',
-          level: 'any',
-          mcp: false,
-          cli: {
-            path: ['ship-requests', 'list'],
-          },
-        },
-        response: replies({
-          200: ShipRequestList,
-        }),
-      },
-    )
-    .post(
-      '/ship-requests/:request/decision',
-      async ({ params, request, body }) => {
-        const call = await kit.call(request)
-
-        requireHuman(call.principal, 'Deciding a ship request')
-
-        if (!isInstanceAdmin(call.principal.scopes)) {
-          throw new ApiError(
-            'FORBIDDEN_SCOPE',
-            'Only an admin approves shipping to production.',
-            'Ask an admin to decide.',
-            {
-              required: fullAdmin[0],
-            },
-          )
-        }
-
-        const found = db
-          .select()
-          .from(ship_request)
-          .where(eq(ship_request.id, params.request))
-          .get()
-
-        if (!found) {
-          notFound('ship request', params.request)
-        }
-
-        await decideShip(
-          {
-            db,
-            github: kit.deps.github,
-          },
-          found!,
-          {
-            approve: body.decision === 'approve',
-            reason: body.reason ?? null,
-          },
-          call.principal.user_id,
-        )
-        audit(
-          db,
-          call,
-          'ship.decide',
-          {
-            entity: 'task',
-            id: found!.task_id,
-          },
-          {
-            after: {
-              ship_request: found!.id,
-              decision: body.decision,
-            },
-          },
-        )
-
-        return shipView(
-          db,
-          db.select().from(ship_request).where(eq(ship_request.id, found!.id)).get()!,
-        )
-      },
-      {
-        operation: {
-          id: 'decide_ship_request',
-          summary:
-            'Approve a ship request, which merges its pull request and deploys production, or reject it with a reason; an admin and a human',
-          level: 'any',
-          mcp: false,
-          cli: {
-            path: ['ship-requests', 'decide'],
-            args: ['request'],
-          },
-        },
-        body: t.Object(
-          {
-            decision: t.Union([t.Literal('approve'), t.Literal('reject')]),
-            reason: t.Optional(
-              t.String({
-                maxLength: 2000,
-              }),
-            ),
-          },
-          {
-            additionalProperties: false,
-          },
-        ),
-        response: replies({
-          200: ShipRequest,
+          202: Approval,
         }),
       },
     )
@@ -1332,12 +1200,13 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
         requireHuman(call.principal, 'Deleting a task')
 
         const row = visibleTask(call, params.task)
-        const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+        const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
         db.transaction((tx) => {
           const tdb = tx as unknown as Db
 
           tdb.delete(task).where(eq(task.id, row.id)).run()
+          supersedeWaiting(tdb, eq(approval.task_id, row.id))
           emitEvent(tdb, 'task.deleted', taskSubject(row), {
             task: row.id,
           })
@@ -1353,7 +1222,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
               before: {
                 title: row.title,
                 branch: row.branch,
-                sandbox_id: row.sandbox_id,
+                machine_id: row.machine_id,
               },
             },
           )
@@ -1368,7 +1237,7 @@ export const taskRoutes = (kit: Kit, createSandbox: CreateSandbox) => {
             actor: call.principal.actor,
             reason: 'user',
           })
-          kit.deps.stations.reconcile(box.station_id)
+          kit.deps.stations.reconcile(box.server_id)
         }
 
         return {

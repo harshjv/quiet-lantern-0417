@@ -10,19 +10,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { variableKind } from '@/lib/labels'
+import { keyKind } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 import {
   buildNote,
+  keyKinds,
+  keyNamePattern,
+  keyNameTitle,
   referencePlaceholder,
   sealedNote,
-  variableKeyPattern,
-  variableKeyTitle,
-  variableKinds,
-  type VariableKind,
+  type KeyKind,
 } from '@/lib/variables'
 
-export function VariableKeyInput({
+export function KeyNameInput({
   value,
   onValueChange,
   className,
@@ -37,14 +37,14 @@ export function VariableKeyInput({
       {...props}
       value={value}
       onChange={(e) => onValueChange(e.target.value.toUpperCase())}
-      pattern={variableKeyPattern}
-      title={variableKeyTitle}
+      pattern={keyNamePattern}
+      title={keyNameTitle}
       className={cn('font-mono', className)}
     />
   )
 }
 
-export function VariableKindSelect({
+export function KeyKindSelect({
   id,
   label,
   value,
@@ -52,18 +52,18 @@ export function VariableKindSelect({
 }: {
   id?: string
   label?: string
-  value: VariableKind
-  onValueChange: (kind: VariableKind) => void
+  value: KeyKind
+  onValueChange: (kind: KeyKind) => void
 }) {
   return (
-    <Select value={value} onValueChange={(v) => onValueChange(v as VariableKind)}>
+    <Select value={value} onValueChange={(v) => onValueChange(v as KeyKind)}>
       <SelectTrigger id={id} aria-label={label} className="w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {variableKinds.map((kind) => (
+        {keyKinds.map((kind) => (
           <SelectItem key={kind} value={kind}>
-            {variableKind[kind]}
+            {keyKind[kind]}
           </SelectItem>
         ))}
       </SelectContent>
@@ -72,7 +72,7 @@ export function VariableKindSelect({
 }
 
 type ValueProps = {
-  kind: VariableKind
+  kind: KeyKind
   value: string
   onValueChange: (value: string) => void
   multiline?: boolean
@@ -82,7 +82,7 @@ type ValueProps = {
   className?: string
 }
 
-export function VariableValueInput({
+export function KeyValueInput({
   kind,
   value,
   onValueChange,
@@ -123,7 +123,7 @@ export function VariableValueInput({
   )
 }
 
-export function VariableNotes({ sealed, build }: { sealed: boolean; build: boolean }) {
+export function KeyNotes({ sealed, build }: { sealed: boolean; build: boolean }) {
   return (
     <>
       {sealed && <Hint>{sealedNote}</Hint>}

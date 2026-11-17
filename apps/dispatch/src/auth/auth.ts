@@ -96,10 +96,10 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
   if (!dashboard || !api) {
     const address = db
       .select({
-        public_address: schema.station.public_address,
+        public_address: schema.server.public_address,
       })
-      .from(schema.station)
-      .where(eq(schema.station.hosts_dispatch, true))
+      .from(schema.server)
+      .where(eq(schema.server.hosts_dispatch, true))
       .get()?.public_address
     const addressOrigin = address ? `https://${address}` : null
 

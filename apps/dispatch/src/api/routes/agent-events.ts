@@ -19,12 +19,12 @@ import { conversation, project, task, tool_approval } from '../../db/schema.ts'
 import { log } from '../../log.ts'
 import { approvalState, requestApproval } from '../../tasks/approvals.ts'
 import { ingestAgentEvents } from '../../tasks/events.ts'
-import { machineUserByToken, taskOnSandbox } from '../../tasks/machine.ts'
-import { ackSandboxInputs, inboxItems, runnerExited, touchRunner } from '../../tasks/runner.ts'
+import { machineUserByToken, taskOnMachine } from '../../tasks/machine.ts'
+import { ackMachineInputs, inboxItems, runnerExited, touchRunner } from '../../tasks/runner.ts'
 import type { TaskRow } from '../../tasks/status.ts'
 import { fail, invalid } from '../errors.ts'
 import type { Kit } from '../kit.ts'
-import type { SandboxRow } from '../lookup.ts'
+import type { MachineRow } from '../lookup.ts'
 import { input } from '../schemas.ts'
 import {
   AgentApprovalRequest,
@@ -53,7 +53,7 @@ const budgetFor = (limit: number) => {
 export const agentEventRoutes = (kit: Kit) => {
   const { db } = kit.deps
 
-  const holderOf = (row: SandboxRow, principal: Principal) => {
+  const holderOf = (row: MachineRow, principal: Principal) => {
     if (
       row.workspace &&
       row.workspace.kind !== 'project' &&
@@ -73,7 +73,7 @@ export const agentEventRoutes = (kit: Kit) => {
       : null
   }
 
-  const requireWorkspaceToken = (row: SandboxRow, principal: Principal) => {
+  const requireWorkspaceToken = (row: MachineRow, principal: Principal) => {
     const holder = holderOf(row, principal)
 
     if (!holder) {
@@ -83,10 +83,10 @@ export const agentEventRoutes = (kit: Kit) => {
     if (!row.workspace) {
       fail(
         'NOT_FOUND',
-        `Sandbox ${row.name} is not a workspace, so it takes no agent events.`,
+        `Machine ${row.name} is not a workspace, so it takes no agent events.`,
         'Only a workspace reports its agent session.',
         {
-          sandbox_id: row.id,
+          machine_id: row.id,
         },
       )
     }
@@ -97,7 +97,7 @@ export const agentEventRoutes = (kit: Kit) => {
         `Only the token of workspace ${row.name}, or of one of its members, may report its agent events.`,
         'Run the relay inside the workspace, where STATIONLY_TOKEN is that token.',
         {
-          sandbox_id: row.id,
+          machine_id: row.id,
         },
       )
     }
@@ -108,7 +108,7 @@ export const agentEventRoutes = (kit: Kit) => {
   const ownedBy = (owner: string | null) =>
     owner === null ? undefined : sql`json_extract(${task.owner}, '$.id') = ${owner}`
 
-  const limitOf = (row: SandboxRow) => {
+  const limitOf = (row: MachineRow) => {
     const slots =
       row.workspace?.kind === 'project'
         ? (db.select().from(project).where(eq(project.id, row.project_id)).get()?.machine?.slots ??
@@ -118,17 +118,17 @@ export const agentEventRoutes = (kit: Kit) => {
     return agentEventLimits.requestsPerMinute + agentEventLimits.requestsPerExtraSlot * (slots - 1)
   }
 
-  const approvalOnSandbox = (row: SandboxRow, id: string, owner: string | null) =>
+  const approvalOnMachine = (row: MachineRow, id: string, owner: string | null) =>
     db
       .select({
         approval: tool_approval,
       })
       .from(tool_approval)
       .innerJoin(task, eq(task.id, tool_approval.task_id))
-      .where(and(eq(task.sandbox_id, row.id), eq(tool_approval.id, id), ownedBy(owner)))
+      .where(and(eq(task.machine_id, row.id), eq(tool_approval.id, id), ownedBy(owner)))
       .get()?.approval
 
-  const sessionOf = (row: SandboxRow, agentSessionId: string, owner: string | null) =>
+  const sessionOf = (row: MachineRow, agentSessionId: string, owner: string | null) =>
     db
       .select({
         session: conversation,
@@ -137,29 +137,29 @@ export const agentEventRoutes = (kit: Kit) => {
       .innerJoin(task, eq(task.id, conversation.task_id))
       .where(
         and(
-          eq(task.sandbox_id, row.id),
+          eq(task.machine_id, row.id),
           eq(conversation.agent_session_id, agentSessionId),
           ownedBy(owner),
         ),
       )
       .get()?.session ?? null
 
-  const taskForEvent = (row: SandboxRow, event: AgentEventInputValue, owner: string | null) => {
+  const taskForEvent = (row: MachineRow, event: AgentEventInputValue, owner: string | null) => {
     const session = sessionOf(row, event.session_id, owner)
     const found = session
       ? db.select().from(task).where(eq(task.id, session.task_id)).get()
-      : taskOnSandbox(db, row.id, (event.data as { cwd?: string }).cwd)
+      : taskOnMachine(db, row.id, (event.data as { cwd?: string }).cwd)
 
     return found && (owner === null || found.owner.id === owner) ? found : null
   }
 
   return kit
-    .router('sandboxes', '/v1')
+    .router('machines', '/v1')
     .get(
-      '/sandboxes/:sandbox/agent/inbox',
+      '/machines/:machine/agent/inbox',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
-        const row = ctx.sandbox
+        const row = ctx.machine
 
         const holder = requireWorkspaceToken(row, call.principal)
         const session = sessionOf(row, query.session, holder)
@@ -193,7 +193,7 @@ export const agentEventRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
+        machine: {
           id: 'get_agent_inbox',
           summary:
             "The operator's undelivered prompts and interrupts for a session, waiting up to wait_s; only the workspace token is accepted",
@@ -222,20 +222,20 @@ export const agentEventRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/sandboxes/:sandbox/agent/inbox/ack',
+      '/machines/:machine/agent/inbox/ack',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        const holder = requireWorkspaceToken(ctx.sandbox, call.principal)
+        const holder = requireWorkspaceToken(ctx.machine, call.principal)
 
         set.status = 202
 
         return {
-          acked: ackSandboxInputs(db, ctx.sandbox.id, body.ids, holder),
+          acked: ackMachineInputs(db, ctx.machine.id, body.ids, holder),
         }
       },
       {
-        sandbox: {
+        machine: {
           id: 'ack_agent_inbox',
           summary:
             'Mark inbox items as delivered to the agent process; only the workspace token is accepted',
@@ -251,12 +251,12 @@ export const agentEventRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/sandboxes/:sandbox/agent/approvals',
+      '/machines/:machine/agent/approvals',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        const holder = requireWorkspaceToken(ctx.sandbox, call.principal)
-        const session = sessionOf(ctx.sandbox, body.session_id, holder)
+        const holder = requireWorkspaceToken(ctx.machine, call.principal)
+        const session = sessionOf(ctx.machine, body.session_id, holder)
         const owner = session
           ? db.select().from(task).where(eq(task.id, session.task_id)).get()
           : null
@@ -264,10 +264,10 @@ export const agentEventRoutes = (kit: Kit) => {
         if (!session || !owner || session.origin !== 'dashboard') {
           fail(
             'NOT_FOUND',
-            `Session ${body.session_id} is not a runner session of workspace ${ctx.sandbox.name}.`,
+            `Session ${body.session_id} is not a runner session of workspace ${ctx.machine.name}.`,
             'Only a task started from the dashboard asks for approvals here.',
             {
-              sandbox_id: ctx.sandbox.id,
+              machine_id: ctx.machine.id,
             },
           )
         }
@@ -289,12 +289,12 @@ export const agentEventRoutes = (kit: Kit) => {
             owner!,
             session!,
             body,
-            kit.sandboxRedaction([ctx.sandbox.id], call.principal.actor, call.request_id),
+            kit.machineRedaction([ctx.machine.id], call.principal.actor, call.request_id),
           ),
         )
       },
       {
-        sandbox: {
+        machine: {
           id: 'request_tool_approval',
           summary:
             "Ask the task's owner to allow or deny a tool call of a runner session; only the workspace token is accepted",
@@ -310,20 +310,20 @@ export const agentEventRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/sandboxes/:sandbox/agent/approvals/:approval',
+      '/machines/:machine/agent/approvals/:approval',
       async ({ ctx, request, params, query }) => {
         const call = await kit.call(request)
 
-        const holder = requireWorkspaceToken(ctx.sandbox, call.principal)
+        const holder = requireWorkspaceToken(ctx.machine, call.principal)
         const deadline = Date.now() + Math.min(query.wait_s ?? 0, maxInboxWaitS) * 1000
 
         for (;;) {
-          const found = approvalOnSandbox(ctx.sandbox, params.approval, holder)
+          const found = approvalOnMachine(ctx.machine, params.approval, holder)
 
           if (!found) {
             fail(
               'NOT_FOUND',
-              `Workspace ${ctx.sandbox.name} has no approval ${params.approval}.`,
+              `Workspace ${ctx.machine.name} has no approval ${params.approval}.`,
               'Ask for it with request_tool_approval first.',
               {
                 approval: params.approval,
@@ -339,7 +339,7 @@ export const agentEventRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
+        machine: {
           id: 'get_tool_approval',
           summary:
             'An approval of a runner session, waiting up to wait_s for a decision; only the workspace token is accepted',
@@ -362,12 +362,12 @@ export const agentEventRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/sandboxes/:sandbox/agent/runner/exit',
+      '/machines/:machine/agent/runner/exit',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        const holder = requireWorkspaceToken(ctx.sandbox, call.principal)
-        const session = sessionOf(ctx.sandbox, body.session, holder)
+        const holder = requireWorkspaceToken(ctx.machine, call.principal)
+        const session = sessionOf(ctx.machine, body.session, holder)
 
         set.status = 202
 
@@ -376,7 +376,7 @@ export const agentEventRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
+        machine: {
           id: 'report_runner_exit',
           summary:
             "Report that a session's runner exited, so a prompt waiting for it starts the next one; only the workspace token is accepted",
@@ -392,10 +392,10 @@ export const agentEventRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/sandboxes/:sandbox/agent/events',
+      '/machines/:machine/agent/events',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const row = ctx.sandbox
+        const row = ctx.machine
 
         const holder = requireWorkspaceToken(row, call.principal)
         const limit = limitOf(row)
@@ -404,7 +404,7 @@ export const agentEventRoutes = (kit: Kit) => {
 
         if (retry !== null) {
           throw rateLimited(
-            `This sandbox posted ${limit} agent event batches in the last minute, its limit.`,
+            `This machine posted ${limit} agent event batches in the last minute, its limit.`,
             retry,
           )
         }
@@ -412,7 +412,7 @@ export const agentEventRoutes = (kit: Kit) => {
         budget.add(row.id)
         set.status = 202
 
-        const redact = kit.sandboxRedaction([row.id], call.principal.actor, call.request_id)
+        const redact = kit.machineRedaction([row.id], call.principal.actor, call.request_id)
         const groups = new Map<string, { row: TaskRow; events: AgentEventInputValue[] }>()
         const bySession = new Map<string, TaskRow>()
         let dropped = 0
@@ -451,7 +451,7 @@ export const agentEventRoutes = (kit: Kit) => {
         }
       },
       {
-        sandbox: {
+        machine: {
           id: 'post_agent_events',
           summary:
             'Report events of the agent session in a workspace; only the workspace token is accepted',

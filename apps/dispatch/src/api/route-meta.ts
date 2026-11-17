@@ -7,7 +7,7 @@ import { anyTarget, type Level, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 
 import { authorize, requireInstance, requireLevel } from './access.ts'
-import { targets } from './lookup.ts'
+import { placeContext, targets } from './lookup.ts'
 
 export type RouteLevel = 'public' | 'any' | Level | 'instance read' | 'instance admin'
 
@@ -110,6 +110,20 @@ export const routeMeta = (
       },
     })
 
+  const onPlace = (operation: EntityOperation) => ({
+    detail: documented(operation),
+    resolve: async (context: RouteContext) => {
+      const principal = await principalOf(context.request)
+      const ctx = placeContext(db, context.params.project!, context.query.preview)
+
+      authorize(principal, ctx.target, operation.level)
+
+      return {
+        ctx,
+      }
+    },
+  })
+
   return new Elysia({
     name: 'stationly.route-meta',
   }).macro({
@@ -155,19 +169,20 @@ export const routeMeta = (
       },
     }),
     project: onEntity(targets.project),
-    environment: onEntity(targets.environment),
-    service: onEntity(targets.service),
-    service_port: onEntity(targets.service_port),
+    preview: onEntity(targets.preview),
+    place: onPlace,
+    app: onEntity(targets.app),
+    app_port: onEntity(targets.app_port),
     domain: onEntity(targets.domain),
     port_allocation: onEntity(targets.port_allocation),
     deployment: onEntity(targets.deployment),
     build: onEntity(targets.build),
     run: onEntity(targets.run),
     volume: onEntity(targets.volume),
-    variable: onEntity(targets.variable),
+    key: onEntity(targets.key),
     secret_value: onEntity(targets.secret_value),
-    staged_change: onEntity(targets.staged_change),
-    sandbox: onEntity(targets.sandbox),
-    sandbox_snapshot: onEntity(targets.sandbox_snapshot),
+    approval: onEntity(targets.approval),
+    machine: onEntity(targets.machine),
+    machine_snapshot: onEntity(targets.machine_snapshot),
   })
 }

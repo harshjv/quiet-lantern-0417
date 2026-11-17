@@ -17,10 +17,11 @@ import { buildDiagnosis, deploymentDiagnosis } from '../diagnosis.ts'
 import { ApiError, fail, notFound } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { warning, type Kit } from '../kit.ts'
-import { type DeploymentRow, type ServiceContext } from '../lookup.ts'
+import { isProduction, type AppContext, type DeploymentRow } from '../lookup.ts'
 import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
 import { supersede } from '../schemas.ts'
 import {
+  ApprovalDetail,
   Build,
   Deployment,
   DeploymentCreated,
@@ -29,7 +30,6 @@ import {
   extend,
   Page,
   replies,
-  Staged,
 } from '../shapes.ts'
 
 const Waited = extend(Deployment, {
@@ -37,7 +37,7 @@ const Waited = extend(Deployment, {
 })
 const deployReplies = replies({
   201: DeploymentCreated,
-  202: Staged,
+  202: ApprovalDetail,
 })
 
 const waitPollMs = 200
@@ -61,7 +61,7 @@ const leafVersions = (snapshot: EnvSnapshot) => {
   for (const entry of snapshot.entries) {
     for (const leaf of leaves(entry.node)) {
       if (leaf.kind === 'value') {
-        out.set(`${leaf.variable_id}|${leaf.environment_id ?? ''}`, {
+        out.set(`${leaf.key_id}|${leaf.target}`, {
           key: entry.key,
           secret_value_id: leaf.secret_value_id,
           version: leaf.version,
@@ -90,28 +90,28 @@ export const deployActionRoutes = (kit: Kit) => {
 
   const deployOne = (
     call: Awaited<ReturnType<Kit['call']>>,
-    ctx: ServiceContext,
+    ctx: AppContext,
     set: { status?: number | string },
     trigger: 'redeploy' | 'manual' | 'rollback' | 'base_image',
     extra: Record<string, unknown>,
     warnings: { code: string; explanation: string }[] = [],
   ) => {
-    requireStationReady(db, ctx.service.station_id)
+    requireStationReady(db, ctx.app.server_id)
     const changes = new ChangeSet()
 
-    changes.deploy(ctx.service.id, trigger, extra)
+    changes.deploy(ctx.app.id, trigger, extra)
     const result = commit(
       kit.deps,
       call,
       {
-        environment: ctx.environment,
-        protect: ctx.environment.protected,
+        target: ctx.target_row,
+        protect: isProduction(ctx.target_row),
       },
       changes,
     )
 
     if (!result.applied) {
-      return kit.stagedBody(result, set)
+      return kit.approvalBody(result, set)
     }
 
     set.status = 201
@@ -132,21 +132,19 @@ export const deployActionRoutes = (kit: Kit) => {
     }
   }
 
-  const rollbackTarget = (ctx: ServiceContext, ref: string | undefined): DeploymentRow => {
+  const rollbackTarget = (ctx: AppContext, ref: string | undefined): DeploymentRow => {
     if (ref) {
       const byId = ref.startsWith('dep_')
         ? db
             .select()
             .from(deployment)
-            .where(and(eq(deployment.id, ref), eq(deployment.service_id, ctx.service.id)))
+            .where(and(eq(deployment.id, ref), eq(deployment.app_id, ctx.app.id)))
             .get()
         : /^\d+$/.test(ref)
           ? db
               .select()
               .from(deployment)
-              .where(
-                and(eq(deployment.number, Number(ref)), eq(deployment.service_id, ctx.service.id)),
-              )
+              .where(and(eq(deployment.number, Number(ref)), eq(deployment.app_id, ctx.app.id)))
               .get()
           : undefined
 
@@ -157,20 +155,20 @@ export const deployActionRoutes = (kit: Kit) => {
       db
         .select()
         .from(deployment)
-        .where(and(eq(deployment.service_id, ctx.service.id), eq(deployment.status, 'superseded')))
+        .where(and(eq(deployment.app_id, ctx.app.id), eq(deployment.status, 'superseded')))
         .orderBy(desc(deployment.number))
         .limit(1)
         .get() ??
       fail(
         'NO_CURRENT_DEPLOYMENT',
-        `${ctx.service.name} has no earlier deployment to roll back to.`,
+        `${ctx.app.name} has no earlier deployment to roll back to.`,
         'Name a deployment with deployment_id.',
       )
     )
   }
 
-  const checkRollback = (ctx: ServiceContext, target: DeploymentRow, confirm: boolean) => {
-    if (target.id === ctx.service.current_deployment_id) {
+  const checkRollback = (ctx: AppContext, target: DeploymentRow, confirm: boolean) => {
+    if (target.id === ctx.app.current_deployment_id) {
       fail(
         'VALIDATION_FAILED',
         `Deployment ${target.number} is already current.`,
@@ -206,7 +204,7 @@ export const deployActionRoutes = (kit: Kit) => {
       fail(
         'IMAGE_PRUNED',
         `The image of deployment ${target.number} was pruned from Depot at ${target.image_pruned_at.toISOString()}.`,
-        'Rebuild the service from source instead.',
+        'Rebuild the app from source instead.',
         {
           deployment_id: target.id,
           image_ref: target.image_ref,
@@ -247,7 +245,7 @@ export const deployActionRoutes = (kit: Kit) => {
     let heads: ReturnType<typeof leafVersions>
 
     try {
-      heads = leafVersions(snapshotOf(db, ctx.service.id))
+      heads = leafVersions(snapshotOf(db, ctx.app.id))
     } catch {
       heads = new Map()
     }
@@ -420,15 +418,15 @@ export const deployActionRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/redeploy',
+      '/apps/:app/redeploy',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        if (!ctx.service.current_deployment_id) {
+        if (!ctx.app.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
-            `${ctx.service.name} has no current deployment to redeploy.`,
-            'Call deploy (POST /v1/services/{service}/deployments) first.',
+            `${ctx.app.name} has no current deployment to redeploy.`,
+            'Call deploy (POST /v1/apps/{app}/deployments) first.',
           )
         }
 
@@ -437,9 +435,9 @@ export const deployActionRoutes = (kit: Kit) => {
         })
       },
       {
-        service: {
+        app: {
           id: 'redeploy',
-          summary: 'Redeploy the current image with current variables',
+          summary: 'Redeploy the current image with current keys',
           level: 'deploy',
           cli: {
             wait: 'wait_for_deployment',
@@ -459,22 +457,22 @@ export const deployActionRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/rebuild',
+      '/apps/:app/rebuild',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        if (!ctx.service.current_deployment_id) {
+        if (!ctx.app.current_deployment_id) {
           fail(
             'NO_CURRENT_DEPLOYMENT',
-            `${ctx.service.name} has no current deployment to rebuild.`,
-            'Call deploy (POST /v1/services/{service}/deployments) first.',
+            `${ctx.app.name} has no current deployment to rebuild.`,
+            'Call deploy (POST /v1/apps/{app}/deployments) first.',
           )
         }
 
-        if ((ctx.service.source as { type: string }).type === 'image') {
+        if ((ctx.app.source as { type: string }).type === 'image') {
           fail(
             'SOURCE_UNREACHABLE',
-            `${ctx.service.name} deploys an image and has no source to rebuild.`,
+            `${ctx.app.name} deploys an image and has no source to rebuild.`,
             'Use redeploy, or deploy a new image.',
           )
         }
@@ -485,12 +483,12 @@ export const deployActionRoutes = (kit: Kit) => {
         })
       },
       {
-        service: {
-          id: 'rebuild_service',
+        app: {
+          id: 'rebuild_app',
           summary: 'Rebuild from the same source and deploy',
           level: 'deploy',
           cli: {
-            path: ['services', 'rebuild'],
+            path: ['apps', 'rebuild'],
             wait: 'wait_for_deployment',
           },
         },
@@ -508,7 +506,7 @@ export const deployActionRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/rollback',
+      '/apps/:app/rollback',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
         const target = rollbackTarget(ctx, body?.deployment_id)
@@ -527,7 +525,7 @@ export const deployActionRoutes = (kit: Kit) => {
         )
       },
       {
-        service: {
+        app: {
           id: 'rollback',
           summary: 'Roll back to a previous deployment',
           level: 'deploy',
@@ -563,14 +561,14 @@ export const deployActionRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/services/:service/builds',
+      '/apps/:app/builds',
       ({ ctx, query }) => {
         const deploymentIds = db
           .select({
             id: deployment.id,
           })
           .from(deployment)
-          .where(eq(deployment.service_id, ctx.service.id))
+          .where(eq(deployment.app_id, ctx.app.id))
           .all()
           .map((d) => d.id)
         const page = deploymentIds.length
@@ -602,9 +600,9 @@ export const deployActionRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'list_builds',
-          summary: 'List the builds of a service',
+          summary: 'List the builds of an app',
           level: 'read',
         },
         query: t.Object({

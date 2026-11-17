@@ -1,11 +1,11 @@
 import { action, type Program } from '../command.ts'
 import { exitCodes } from '../errors.ts'
 import {
+  appId,
   connect,
-  environmentId,
+  previewId,
   projectId,
   projectRef,
-  serviceId,
   writeContext,
   type Context,
 } from '../kit.ts'
@@ -15,7 +15,7 @@ export const linkCommands = (program: Program) => {
   program
     .command('link')
     .description(
-      'Write .stationly/context.json in the working directory: the instance, project, environment and service later commands default to',
+      'Write .stationly/context.json in the working directory: the instance, project, preview and app later commands default to',
     )
     .action(
       action(async (options) => {
@@ -31,11 +31,11 @@ export const linkCommands = (program: Program) => {
         const context: Context = {
           instance: run.credentials.instance,
           project,
-          environment: await environmentId(scoped),
+          preview: await previewId(scoped),
         }
 
-        if (run.selection.service) {
-          context.service = await serviceId(scoped)
+        if (run.selection.app) {
+          context.app = await appId(scoped)
         }
 
         const path = await writeContext(context)

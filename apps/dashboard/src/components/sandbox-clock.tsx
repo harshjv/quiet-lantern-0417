@@ -17,13 +17,13 @@ export const useNow = (intervalMs = 1000) => {
 }
 
 export function TimeLeft({
-  sandbox,
+  machine,
   className,
 }: {
-  sandbox: { status: string; stop_at: string | null; delete_at: string | null }
+  machine: { status: string; stop_at: string | null; delete_at: string | null }
   className?: string
 }) {
-  const clock = remaining(sandbox, useNow())
+  const clock = remaining(machine, useNow())
 
   if (!clock) {
     return <span className="text-muted-foreground">—</span>

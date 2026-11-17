@@ -138,7 +138,7 @@ const handWritten = (command: Tree, path: string[] = []): string[] =>
   ])
 
 test(
-  'every route has one row in 22-rest-endpoints.md or 24-sandboxes.md, and its Level, Tool and sly columns match the route',
+  'every route has one row in 22-rest-endpoints.md or 24-machines.md, and its Level, Tool and sly columns match the route',
   {
     skip: docsSkip,
   },
@@ -148,7 +148,7 @@ test(
         token: h.admin.token,
       })
     ).body
-    const rows = [...catalogRows('22-rest-endpoints.md'), ...catalogRows('24-sandboxes.md')]
+    const rows = [...catalogRows('22-rest-endpoints.md'), ...catalogRows('24-machines.md')]
     const commands = new Map(
       generatedCommands(doc as OpenApiDocument).map((g) => [g.endpoint.name, g.path.join(' ')]),
     )

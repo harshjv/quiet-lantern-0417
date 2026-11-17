@@ -203,13 +203,13 @@ func DeploymentStatus(d protocol.ObservedDeployment) string {
 func derivedStatus(svc protocol.ObservedService, checked bool) string {
 	switch {
 	case svc.Result == protocol.ObjectResultFailed || svc.Result == protocol.ObjectResultBlocked || svc.Health.State == protocol.HealthStateFailed:
-		return "red"
+		return "failing"
 	case svc.StatusHint == protocol.StatusHintStopped:
 		return "stopped"
 	case svc.StatusHint == protocol.StatusHintRunning && (svc.Health.State == protocol.HealthStatePassing || svc.Health.State == protocol.HealthStateNone && !checked):
-		return "green"
+		return "healthy"
 	default:
-		return "amber"
+		return "deploying"
 	}
 }
 

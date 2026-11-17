@@ -4,9 +4,9 @@ import type { MessageBody } from '@stationly/protocol'
 
 import { audit, type Call, type Deps } from '../api/context.ts'
 import { ApiError } from '../api/errors.ts'
-import type { SandboxRow, ServiceRow } from '../api/lookup.ts'
+import type { AppRow, MachineRow } from '../api/lookup.ts'
 import { stationError } from '../api/routes/runs.ts'
-import type { NetworkProbe, SandboxNetworkProbe } from '../api/shapes.ts'
+import type { MachineNetworkProbe, NetworkProbe } from '../api/shapes.ts'
 import type { ActorValue } from '../auth/principal.ts'
 import { StationRequestError } from '../station/server.ts'
 
@@ -19,13 +19,13 @@ export type ProbeRequest = {
 
 export type ProbeDoc = Static<typeof NetworkProbe>
 
-export type SandboxProbeDoc = Static<typeof SandboxNetworkProbe>
+export type MachineProbeDoc = Static<typeof MachineNetworkProbe>
 
 type ProbeReply = MessageBody<'network.probe.result'>
 
 const windowMs = 60_000
 
-export const createProbeLimits = (perService = 6, perEnvironment = 30) => {
+export const createProbeLimits = (perApp = 6, perTarget = 30) => {
   const hits = new Map<string, number[]>()
   const recent = (key: string, now: number) => {
     const list = (hits.get(key) ?? []).filter((at) => now - at < windowMs)
@@ -35,21 +35,21 @@ export const createProbeLimits = (perService = 6, perEnvironment = 30) => {
     return list
   }
 
-  return (serviceId: string, environmentId: string, now = Date.now()) => {
-    const svc = recent(`service:${serviceId}`, now)
-    const env = recent(`environment:${environmentId}`, now)
+  return (appId: string, targetId: string, now = Date.now()) => {
+    const svc = recent(`app:${appId}`, now)
+    const env = recent(`target:${targetId}`, now)
     const full =
-      svc.length >= perService
+      svc.length >= perApp
         ? {
             list: svc,
-            limit: perService,
-            scope: 'service',
+            limit: perApp,
+            scope: 'app',
           }
-        : env.length >= perEnvironment
+        : env.length >= perTarget
           ? {
               list: env,
-              limit: perEnvironment,
-              scope: 'environment',
+              limit: perTarget,
+              scope: 'preview',
             }
           : null
 
@@ -102,26 +102,26 @@ const probeFields = (r: ProbeReply) => ({
 })
 
 export const shapeProbe = (name: string, r: ProbeReply): ProbeDoc => ({
-  service: name,
+  app: name,
   ...probeFields(r),
 })
 
-export const shapeSandboxProbe = (name: string, r: ProbeReply): SandboxProbeDoc => ({
-  sandbox: name,
+export const shapeMachineProbe = (name: string, r: ProbeReply): MachineProbeDoc => ({
+  machine: name,
   ...probeFields(r),
 })
 
-type Source = { entity: 'service' | 'sandbox'; id: string; name: string; station_id: string }
+type Source = { entity: 'app' | 'machine'; id: string; name: string; server_id: string }
 
 const askProbe = async (deps: Pick<Deps, 'stations'>, source: Source, probe: ProbeRequest) => {
   const reply = await deps.stations
     .ask(
-      source.station_id,
+      source.server_id,
       'network.probe',
       {
-        ...(source.entity === 'service'
+        ...(source.entity === 'app'
           ? {
-              service_id: source.id,
+              app_id: source.id,
             }
           : {
               sandbox_id: source.id,
@@ -143,7 +143,7 @@ const askProbe = async (deps: Pick<Deps, 'stations'>, source: Source, probe: Pro
       if (error instanceof StationRequestError && error.code === 'PROTOCOL_LIMIT') {
         throw new ApiError(
           'RATE_LIMITED',
-          `The station is already running a probe from ${source.name}, or four probes at once.`,
+          `The server is already running a probe from ${source.name}, or four probes at once.`,
           undefined,
           {
             retry_after_s: 1,
@@ -200,7 +200,7 @@ const auditProbe = (
         ms: r.tcp?.ms ?? r.dns?.ms ?? null,
         ...(requestedBy
           ? {
-              accepted_by: call.principal.actor,
+              approved_by: call.principal.actor,
             }
           : {}),
       },
@@ -211,15 +211,15 @@ const auditProbe = (
 export const sendProbe = async (
   deps: Pick<Deps, 'db' | 'stations'>,
   call: Call,
-  svc: ServiceRow,
+  svc: AppRow,
   probe: ProbeRequest,
   requestedBy: ActorValue | null = null,
 ) => {
   const source: Source = {
-    entity: 'service',
+    entity: 'app',
     id: svc.id,
     name: svc.name,
-    station_id: svc.station_id,
+    server_id: svc.server_id,
   }
   const r = await askProbe(deps, source, probe)
 
@@ -228,21 +228,21 @@ export const sendProbe = async (
   return shapeProbe(svc.name, r)
 }
 
-export const sendSandboxProbe = async (
+export const sendMachineProbe = async (
   deps: Pick<Deps, 'db' | 'stations'>,
   call: Call,
-  box: SandboxRow,
+  box: MachineRow,
   probe: ProbeRequest,
 ) => {
   const source: Source = {
-    entity: 'sandbox',
+    entity: 'machine',
     id: box.id,
     name: box.name,
-    station_id: box.station_id,
+    server_id: box.server_id,
   }
   const r = await askProbe(deps, source, probe)
 
   auditProbe(deps, call, source, probe, r, null)
 
-  return shapeSandboxProbe(box.name, r)
+  return shapeMachineProbe(box.name, r)
 }

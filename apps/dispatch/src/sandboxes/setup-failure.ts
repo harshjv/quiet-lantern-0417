@@ -8,7 +8,7 @@ import {
 
 import type { Redactor } from '../api/redaction.ts'
 import type { Db } from '../db/client.ts'
-import { run, type sandbox } from '../db/schema.ts'
+import { run, type machine } from '../db/schema.ts'
 
 type RunRow = typeof run.$inferSelect
 
@@ -35,7 +35,7 @@ export const setupFailureOf = (setup: Pick<RunRow, 'failure'>, redact: Redactor)
   }
 }
 
-export const workspaceSetupOf = (db: Db, row: typeof sandbox.$inferSelect) => {
+export const workspaceSetupOf = (db: Db, row: typeof machine.$inferSelect) => {
   if (!row.workspace) {
     return null
   }

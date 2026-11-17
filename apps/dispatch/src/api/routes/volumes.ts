@@ -8,6 +8,7 @@ import {
   volumeStatusValues,
 } from '@stationly/protocol'
 
+import { anyTarget } from '../../auth/scopes.ts'
 import { volume, volume_snapshot } from '../../db/schema.ts'
 import {
   BackupError,
@@ -23,17 +24,17 @@ import { configDeployTrigger, requireStationReady } from '../deployments.ts'
 import { fail } from '../errors.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
-import { serviceById, volumeById } from '../lookup.ts'
+import { appById, isProduction, projectTarget, volumeById } from '../lookup.ts'
 import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
 import type { TargetInput } from '../route-meta.ts'
 import { input, VolumeInput } from '../schemas.ts'
 import {
+  ApprovalDetail,
   BackupTargetShape,
   component,
   extend,
   Page,
   replies,
-  Staged,
   Volume,
   VolumeSnapshot,
   Warnings,
@@ -54,7 +55,7 @@ const RestoreStarted = Type.Object(
     volume_id: Type.String(),
     docker_name: Type.String(),
     snapshot_id: Type.String(),
-    station_id: Type.String(),
+    server_id: Type.String(),
     status: Type.Literal('running'),
     adopt: Type.String(),
   },
@@ -93,29 +94,15 @@ export const volumeRoutes = (kit: Kit) => {
       async ({ request, query }) => {
         const principal = await kit.principal(request)
         const visible = (row: typeof volume.$inferSelect) => {
-          if (row.service_id) {
-            return can(principal, serviceById(db, row.service_id).target, 'read')
+          if (row.app_id) {
+            return can(principal, appById(db, row.app_id).target, 'read')
           }
 
           if (row.project_id) {
-            return can(
-              principal,
-              {
-                project_id: row.project_id,
-                environment_id: '*',
-              },
-              'read',
-            )
+            return can(principal, projectTarget(row.project_id), 'read')
           }
 
-          return can(
-            principal,
-            {
-              project_id: '*',
-              environment_id: '*',
-            },
-            'read',
-          )
+          return can(principal, anyTarget, 'read')
         }
         const page = collect(
           (cursor, size) =>
@@ -125,8 +112,8 @@ export const volumeRoutes = (kit: Kit) => {
               .where(
                 and(
                   query.status ? eq(volume.status, query.status as 'active') : undefined,
-                  query.station ? eq(volume.station_id, query.station) : undefined,
-                  query.service ? eq(volume.service_id, query.service) : undefined,
+                  query.server ? eq(volume.server_id, query.server) : undefined,
+                  query.app ? eq(volume.app_id, query.app) : undefined,
                   query.owner ? eq(volume.owner, query.owner as 'service') : undefined,
                   before(volume.id, cursor),
                 ),
@@ -152,14 +139,14 @@ export const volumeRoutes = (kit: Kit) => {
         query: t.Object({
           ...listQuery,
           status: filterOne(volumeStatusValues),
-          station: t.Optional(
+          server: t.Optional(
             t.String({
-              description: 'Only volumes on this station id',
+              description: 'Only volumes on this server id',
             }),
           ),
-          service: t.Optional(
+          app: t.Optional(
             t.String({
-              description: 'Only volumes of this service',
+              description: 'Only volumes of this app',
             }),
           ),
           owner: filterOne(volumeOwnerValues),
@@ -170,7 +157,7 @@ export const volumeRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/services/:service/volumes',
+      '/apps/:app/volumes',
       ({ ctx, query }) => {
         return {
           items: projectAll(
@@ -178,7 +165,7 @@ export const volumeRoutes = (kit: Kit) => {
             db
               .select()
               .from(volume)
-              .where(eq(volume.service_id, ctx.service.id))
+              .where(eq(volume.app_id, ctx.app.id))
               .orderBy(desc(volume.id))
               .all(),
             kit.fields(query.fields),
@@ -187,9 +174,9 @@ export const volumeRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
-          id: 'list_service_volumes',
-          summary: 'List the volumes of a service',
+        app: {
+          id: 'list_app_volumes',
+          summary: 'List the volumes of an app',
           level: 'read',
         },
         query: t.Object(getQuery),
@@ -215,14 +202,14 @@ export const volumeRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/volumes',
+      '/apps/:app/volumes',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
 
-        if (ctx.service.strategy === 'overlap' && !ctx.service.multi_writer_safe) {
+        if (ctx.app.strategy === 'overlap' && !ctx.app.multi_writer_safe) {
           fail(
             'STRATEGY_VOLUME_CONFLICT',
-            `${ctx.service.name} uses strategy overlap, which is unsafe with a volume.`,
+            `${ctx.app.name} uses strategy overlap, which is unsafe with a volume.`,
             'Set strategy = replace, or multi_writer_safe = true, before adding a volume.',
           )
         }
@@ -231,24 +218,22 @@ export const volumeRoutes = (kit: Kit) => {
           db
             .select()
             .from(volume)
-            .where(
-              and(eq(volume.service_id, ctx.service.id), eq(volume.mount_path, body.mount_path)),
-            )
+            .where(and(eq(volume.app_id, ctx.app.id), eq(volume.mount_path, body.mount_path)))
             .get()
         ) {
-          fail('NAME_TAKEN', `${ctx.service.name} already mounts a volume at ${body.mount_path}.`)
+          fail('NAME_TAKEN', `${ctx.app.name} already mounts a volume at ${body.mount_path}.`)
         }
 
-        requireStationReady(db, ctx.service.station_id)
+        requireStationReady(db, ctx.app.server_id)
         const changes = new ChangeSet()
 
-        changes.add('volume', ctx.service.id, {
+        changes.add('volume', ctx.app.id, {
           mount_path: body.mount_path,
         })
-        const trigger = configDeployTrigger(ctx.service, ctx.service.source)
+        const trigger = configDeployTrigger(ctx.app, ctx.app.source)
 
         if (trigger) {
-          changes.deploy(ctx.service.id, trigger, {
+          changes.deploy(ctx.app.id, trigger, {
             reason: `volume at ${body.mount_path} added`,
           })
         }
@@ -257,8 +242,8 @@ export const volumeRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
@@ -272,7 +257,7 @@ export const volumeRoutes = (kit: Kit) => {
         )
       },
       {
-        service: {
+        app: {
           id: 'add_volume',
           summary: 'Add a volume; deploys',
           level: 'deploy',
@@ -287,7 +272,7 @@ export const volumeRoutes = (kit: Kit) => {
         ),
         response: replies({
           201: VolumeWritten,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -299,7 +284,7 @@ export const volumeRoutes = (kit: Kit) => {
         if (!ctx.owner) {
           fail(
             'VALIDATION_FAILED',
-            'Only a volume mounted by a service can be released here.',
+            'Only a volume mounted by an app can be released here.',
             undefined,
             {
               issues: [
@@ -323,19 +308,19 @@ export const volumeRoutes = (kit: Kit) => {
 
         changes.update('volume', ctx.volume.id, '/status', ctx.volume.status, 'retained')
         changes.update('volume', ctx.volume.id, '/retain_until', null, until)
-        changes.update('volume', ctx.volume.id, '/service_id', ctx.volume.service_id, null)
+        changes.update('volume', ctx.volume.id, '/app_id', ctx.volume.app_id, null)
         const result = commit(
           kit.deps,
           call,
           {
-            environment: ctx.owner!.environment,
-            protect: ctx.owner!.environment.protected,
+            target: ctx.owner!.target_row,
+            protect: isProduction(ctx.owner!.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         return view(ctx.volume.id)
@@ -355,7 +340,7 @@ export const volumeRoutes = (kit: Kit) => {
         }),
         response: replies({
           200: Volume,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -364,12 +349,12 @@ export const volumeRoutes = (kit: Kit) => {
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const ctx = volumeById(db, params.id)
-        const target = serviceById(db, body.service_id)
+        const target = appById(db, body.app_id)
         const reason =
           ctx.volume.status !== 'retained'
             ? `it is ${ctx.volume.status}, not retained`
-            : ctx.volume.station_id !== target.service.station_id
-              ? 'it lives on another station'
+            : ctx.volume.server_id !== target.app.server_id
+              ? 'it lives on another server'
               : ctx.volume.project_id !== target.project.id
                 ? 'it belongs to another project'
                 : null
@@ -378,14 +363,14 @@ export const volumeRoutes = (kit: Kit) => {
           fail(
             'VOLUME_NOT_ADOPTABLE',
             `Volume ${ctx.volume.id} cannot be adopted: ${reason}.`,
-            'Adopt a retained volume of the same project on the service station.',
+            'Adopt a retained volume of the same project on the app server.',
           )
         }
 
-        requireStationReady(db, target.service.station_id)
+        requireStationReady(db, target.app.server_id)
         const changes = new ChangeSet()
 
-        changes.update('volume', ctx.volume.id, '/service_id', null, target.service.id)
+        changes.update('volume', ctx.volume.id, '/app_id', null, target.app.id)
         changes.update(
           'volume',
           ctx.volume.id,
@@ -401,10 +386,10 @@ export const volumeRoutes = (kit: Kit) => {
           ctx.volume.retain_until?.toISOString() ?? null,
           null,
         )
-        const trigger = configDeployTrigger(target.service, target.service.source)
+        const trigger = configDeployTrigger(target.app, target.app.source)
 
         if (trigger) {
-          changes.deploy(target.service.id, trigger, {
+          changes.deploy(target.app.id, trigger, {
             reason: `volume ${ctx.volume.id} adopted`,
           })
         }
@@ -413,8 +398,8 @@ export const volumeRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: target.environment,
-            protect: target.environment.protected,
+            target: target.target_row,
+            protect: isProduction(target.target_row),
           },
           changes,
         )
@@ -424,8 +409,8 @@ export const volumeRoutes = (kit: Kit) => {
       {
         body: t.Object(
           {
-            service_id: t.String({
-              description: 'The service that mounts the volume',
+            app_id: t.String({
+              description: 'The app that mounts the volume',
             }),
             mount_path: VolumeInput.properties.mount_path,
           },
@@ -435,14 +420,14 @@ export const volumeRoutes = (kit: Kit) => {
         ),
         operation: {
           id: 'adopt_volume',
-          summary: 'Adopt a retained volume into a service',
+          summary: 'Adopt a retained volume into an app',
           level: 'admin',
           target: ({ body }: TargetInput) =>
-            serviceById(db, (body as { service_id: string }).service_id).target,
+            appById(db, (body as { app_id: string }).app_id).target,
         },
         response: replies({
           200: VolumeWritten,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -451,9 +436,9 @@ export const volumeRoutes = (kit: Kit) => {
       async ({ request, params, body, set }) => {
         const { call, ctx } = await callAndVolume(request, params.id)
         const quiesce = body.quiesce ?? true
-        const environment = ctx.owner?.environment
+        const place = ctx.owner?.target_row
 
-        if (environment?.protected && !call.principal.human) {
+        if (place && isProduction(place) && !call.principal.human) {
           const plan = guarded(() => backupPlan(db, params.id, body.target))
           const changes = new ChangeSet()
 
@@ -462,18 +447,18 @@ export const volumeRoutes = (kit: Kit) => {
             quiesce,
             trigger: 'manual',
           })
-          const staged = commit(
+          const waiting = commit(
             kit.deps,
             call,
             {
-              environment,
+              target: place,
               protect: true,
             },
             changes,
           )
 
-          if (!staged.applied) {
-            return kit.stagedBody(staged, set)
+          if (!waiting.applied) {
+            return kit.approvalBody(waiting, set)
           }
         }
 
@@ -518,7 +503,7 @@ export const volumeRoutes = (kit: Kit) => {
         },
         response: replies({
           201: BackupStarted,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -560,32 +545,32 @@ export const volumeRoutes = (kit: Kit) => {
       '/volumes/:id/restore',
       async ({ request, params, body, set }) => {
         const { call, ctx } = await callAndVolume(request, params.id)
-        const environment = ctx.owner?.environment
+        const place = ctx.owner?.target_row
 
-        if (environment?.protected && !call.principal.human) {
-          const plan = guarded(() => restorePlan(db, params.id, body.backup, body.station))
+        if (place && isProduction(place) && !call.principal.human) {
+          const plan = guarded(() => restorePlan(db, params.id, body.backup, body.server))
           const changes = new ChangeSet()
 
           changes.add('volume_restore', plan.source.id, {
             snapshot_id: plan.snap.id,
-            ...(body.station
+            ...(body.server
               ? {
-                  station_id: body.station,
+                  server_id: body.server,
                 }
               : {}),
           })
-          const staged = commit(
+          const waiting = commit(
             kit.deps,
             call,
             {
-              environment,
+              target: place,
               protect: true,
             },
             changes,
           )
 
-          if (!staged.applied) {
-            return kit.stagedBody(staged, set)
+          if (!waiting.applied) {
+            return kit.approvalBody(waiting, set)
           }
         }
 
@@ -598,7 +583,7 @@ export const volumeRoutes = (kit: Kit) => {
           params.id,
           body.backup,
           call.principal.actor,
-          body.station,
+          body.server,
         ).catch(backupError)
 
         set.status = 201
@@ -611,9 +596,9 @@ export const volumeRoutes = (kit: Kit) => {
             backup: t.String({
               description: 'The id of a complete backup of this volume',
             }),
-            station: t.Optional(
+            server: t.Optional(
               t.String({
-                description: 'The station to restore an S3 backup on',
+                description: 'The server to restore an S3 backup on',
               }),
             ),
           },
@@ -624,7 +609,7 @@ export const volumeRoutes = (kit: Kit) => {
         volume: {
           id: 'restore_volume',
           summary:
-            'Restore a complete backup into a new retained volume of the same project; completion arrives as volume.restore_done; staged for a non-human actor in a protected environment',
+            'Restore a complete backup into a new retained volume of the same project; completion arrives as volume.restore_done; needs approval for a non-human actor in production',
           level: 'admin',
           mcp: {
             destructive: true,
@@ -632,7 +617,7 @@ export const volumeRoutes = (kit: Kit) => {
         },
         response: replies({
           201: RestoreStarted,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )

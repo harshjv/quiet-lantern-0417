@@ -1,12 +1,25 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 
 import { workspaceUser } from '@stationly/protocol'
 
-import { emit } from '../api/context.ts'
+import { approvalItem } from '../api/approval-view.ts'
+import { recordDecision, rejectApproval, requireWaiting } from '../api/changes.ts'
+import { emit, type Call } from '../api/context.ts'
 import { fail } from '../api/errors.ts'
+import { productionOf, type ApprovalRow } from '../api/lookup.ts'
+import { requesterOf, requireRequesterRule } from '../api/requester.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { environment, project, run, sandbox, service, ship_request, task } from '../db/schema.ts'
+import {
+  app,
+  approval,
+  machine,
+  project,
+  run,
+  target,
+  task,
+  type ApprovalShip,
+} from '../db/schema.ts'
 import { GitHubError, repoOf } from '../github/client.ts'
 import type { GitHub } from '../github/service.ts'
 import type { Log } from '../log.ts'
@@ -18,8 +31,6 @@ import { gitIdentityOf } from '../team/members.ts'
 import { execRun, machineUserOf, type RunDelivery } from './machine.ts'
 import { taskChanged, taskSubject, type TaskRow } from './status.ts'
 
-export type ShipRow = typeof ship_request.$inferSelect
-
 type RepoSource = { repo?: string; branch?: string }
 
 const shipTimeoutS = 600
@@ -30,41 +41,29 @@ const finished: string[] = ['succeeded', 'failed', 'cancelled']
 
 const deciding = new Set<string>()
 
+const shipOf = (row: ApprovalRow) => row.ship!
+
+const approvalRow = (db: Db, id: string) =>
+  db.select().from(approval).where(eq(approval.id, id)).get()!
+
 export const repoOfTask = (row: Pick<TaskRow, 'repository'>) =>
   repoOf(repositoryLabel(row.repository))
 
 export const latestShip = (db: Db, taskId: string) =>
   db
     .select()
-    .from(ship_request)
-    .where(eq(ship_request.task_id, taskId))
-    .orderBy(desc(ship_request.created_at))
+    .from(approval)
+    .where(eq(approval.task_id, taskId))
+    .orderBy(desc(approval.created_at))
     .get()
 
-export const shipView = (db: Db, request: ShipRow) => {
-  const owner = db.select().from(task).where(eq(task.id, request.task_id)).get()
+export const shipView = approvalItem
 
-  return {
-    id: request.id,
-    task_id: request.task_id,
-    project_id: request.project_id,
-    title: owner?.title ?? '',
-    status: request.status,
-    pull_request: owner?.pull_request ?? null,
-    preview_environment_id: owner?.preview_environment_id ?? null,
-    head_sha: request.head_sha,
-    reason: request.reason,
-    requested_by: request.requested_by,
-    decided_by: request.decided_by,
-    decided_at: request.decided_at?.toISOString() ?? null,
-    created_at: request.created_at.toISOString(),
-  }
-}
-
-const shipChanged = (db: Db, row: TaskRow, request: ShipRow, type: string) => {
+const shipChanged = (db: Db, row: TaskRow, request: ApprovalRow, type: string) => {
   emit(db, type, taskSubject(row), {
-    ship_request: request.id,
+    approval: request.id,
     status: request.status,
+    phase: request.ship?.phase ?? null,
   })
   taskChanged(db, row)
 }
@@ -72,7 +71,7 @@ const shipChanged = (db: Db, row: TaskRow, request: ShipRow, type: string) => {
 export const startShip = async (
   deps: { db: Db; github: GitHub; deliver: RunDelivery; reconcile: (station: string) => void },
   row: TaskRow,
-  requestedBy: string,
+  call: Call,
 ) => {
   const { db } = deps
 
@@ -84,15 +83,15 @@ export const startShip = async (
     )
   }
 
-  const box = db.select().from(sandbox).where(eq(sandbox.id, row.sandbox_id)).get()
+  const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
   if (!box || box.status !== 'running' || !row.worktree) {
     fail(
-      'SANDBOX_NOT_RUNNING',
+      'MACHINE_NOT_RUNNING',
       `The machine of task ${row.title} is not running, so its work cannot be pushed.`,
       'Reply to the task to start its machine, then ship again.',
       {
-        sandbox_id: row.sandbox_id,
+        machine_id: row.machine_id,
       },
     )
   }
@@ -105,9 +104,10 @@ export const startShip = async (
     )
   }
 
-  const held = latestShip(db, row.id)
+  const latest = latestShip(db, row.id)
+  const held = latest?.status === 'waiting' ? latest : undefined
 
-  if (held?.status === 'pushing') {
+  if (held?.ship?.phase === 'pushing') {
     fail(
       'VALIDATION_FAILED',
       `Task ${row.title} is already being pushed.`,
@@ -129,7 +129,7 @@ export const startShip = async (
   const member = machineUserOf(db, row)
   const id = newId('run')
 
-  await deps.deliver(box!.station_id, id, [['GITHUB_PUSH_TOKEN', token]])
+  await deps.deliver(box!.server_id, id, [['GITHUB_PUSH_TOKEN', token]])
 
   const command = shipCommand({
     user: member?.name ?? workspaceUser.name,
@@ -158,39 +158,78 @@ export const startShip = async (
       })
       .run()
 
-    if (held?.status === 'pending' || held?.status === 'failed') {
-      tdb
-        .update(ship_request)
-        .set({
-          status: 'pushing',
-          run_id: id,
-          reason: null,
-          requested_by: requestedBy,
-        })
-        .where(eq(ship_request.id, held.id))
-        .run()
-
-      return tdb.select().from(ship_request).where(eq(ship_request.id, held.id)).get()!
+    const asked = {
+      requested_by: call.principal.actor,
+      requester: requesterOf(call.principal),
     }
 
-    const shipId = newId('ship_request')
+    if (held) {
+      tdb
+        .update(approval)
+        .set({
+          ...asked,
+          ship: {
+            ...shipOf(held),
+            phase: 'pushing',
+            run_id: id,
+            reason: null,
+          },
+        })
+        .where(eq(approval.id, held.id))
+        .run()
+
+      return approvalRow(tdb, held.id)
+    }
+
+    const proj = tdb.select().from(project).where(eq(project.id, row.project_id)).get()!
+    const approvalId = newId('approval')
 
     tdb
-      .insert(ship_request)
+      .insert(approval)
       .values({
-        id: shipId,
-        task_id: row.id,
+        id: approvalId,
+        ...asked,
         project_id: row.project_id,
-        status: 'pushing',
-        requested_by: requestedBy,
-        run_id: id,
+        task_id: row.id,
+        title: `Ship ${row.title}`,
+        changes: [],
+        refs: {},
+        source: 'task',
+        status: 'waiting',
+        deployments: [],
+        ship: {
+          phase: 'pushing',
+          run_id: id,
+          pull_request: row.pull_request
+            ? {
+                repo: row.pull_request.repo,
+                number: row.pull_request.number,
+                url: row.pull_request.url,
+              }
+            : null,
+          head_sha: null,
+          merge_sha: null,
+          reason: null,
+        },
       })
       .run()
+    emit(
+      tdb,
+      'approval.created',
+      {
+        entity: 'approval',
+        id: approvalId,
+        project_id: proj.id,
+      },
+      {
+        task_id: row.id,
+      },
+    )
 
-    return tdb.select().from(ship_request).where(eq(ship_request.id, shipId)).get()!
+    return approvalRow(tdb, approvalId)
   })
 
-  deps.reconcile(box!.station_id)
+  deps.reconcile(box!.server_id)
   shipChanged(db, row, request, 'ship.pushing')
 
   return request
@@ -202,74 +241,95 @@ const pullRequestBody = (row: TaskRow, dashboardOrigin: string) =>
     .trim()
 
 const linkPreview = (db: Db, row: TaskRow, repo: string, number: number) => {
-  if (!row.preview_environment_id) {
+  if (!row.preview_id) {
     return
   }
 
-  db.update(environment)
+  db.update(target)
     .set({
-      pull_request: {
+      origin: {
+        type: 'pull_request',
         repo,
         number,
         head_sha: '',
         fork: false,
       },
     })
-    .where(eq(environment.id, row.preview_environment_id))
+    .where(eq(target.id, row.preview_id))
     .run()
 
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()!
   const originals = db
     .select()
-    .from(service)
-    .where(eq(service.environment_id, proj.default_environment_id))
+    .from(app)
+    .where(eq(app.target_id, productionOf(db, proj.id).id))
     .all()
     .filter((entry) => (entry.source as RepoSource).repo === repo)
 
-  for (const entry of db
-    .select()
-    .from(service)
-    .where(eq(service.environment_id, row.preview_environment_id))
-    .all()) {
+  for (const entry of db.select().from(app).where(eq(app.target_id, row.preview_id)).all()) {
     const original = originals.find((candidate) => candidate.name === entry.name)
 
     if (original) {
-      db.update(service)
+      db.update(app)
         .set({
           source: {
             ...(original.source as object),
             branch: row.branch,
           },
         })
-        .where(eq(service.id, entry.id))
+        .where(eq(app.id, entry.id))
         .run()
     }
   }
 }
 
-const settle = (db: Db, row: TaskRow, request: ShipRow, next: Partial<ShipRow>, type: string) => {
-  db.update(ship_request).set(next).where(eq(ship_request.id, request.id)).run()
-  shipChanged(
-    db,
-    row,
-    db.select().from(ship_request).where(eq(ship_request.id, request.id)).get()!,
-    type,
-  )
+const settle = (
+  db: Db,
+  row: TaskRow,
+  request: ApprovalRow,
+  next: Partial<ApprovalShip>,
+  type: string,
+) => {
+  db.update(approval)
+    .set({
+      ship: {
+        ...shipOf(request),
+        ...next,
+      },
+    })
+    .where(eq(approval.id, request.id))
+    .run()
+  shipChanged(db, row, approvalRow(db, request.id), type)
 }
 
 export const advanceShips = async (deps: { db: Db; github: GitHub; dashboardOrigin: string }) => {
   const { db } = deps
   const pushing = db
     .select({
-      request: ship_request,
+      request: approval,
       row: task,
-      status: run.status,
     })
-    .from(ship_request)
-    .innerJoin(task, eq(task.id, ship_request.task_id))
-    .leftJoin(run, eq(run.id, ship_request.run_id))
-    .where(eq(ship_request.status, 'pushing'))
+    .from(approval)
+    .innerJoin(task, eq(task.id, approval.task_id))
+    .where(
+      and(
+        eq(approval.status, 'waiting'),
+        sql`json_extract(${approval.ship}, '$.phase') = 'pushing'`,
+      ),
+    )
     .all()
+    .map(({ request, row }) => ({
+      request,
+      row,
+      status:
+        db
+          .select({
+            status: run.status,
+          })
+          .from(run)
+          .where(eq(run.id, shipOf(request).run_id))
+          .get()?.status ?? null,
+    }))
     .filter(
       ({ request, status }) =>
         status === null ||
@@ -284,8 +344,8 @@ export const advanceShips = async (deps: { db: Db; github: GitHub; dashboardOrig
         row,
         request,
         {
-          status: 'failed',
-          reason: `The push did not finish; its log is on run ${request.run_id}.`,
+          phase: 'failed',
+          reason: `The push did not finish; its log is on run ${shipOf(request).run_id}.`,
         },
         'ship.failed',
       )
@@ -317,8 +377,14 @@ export const advanceShips = async (deps: { db: Db; github: GitHub; dashboardOrig
         row,
         request,
         {
-          status: 'pending',
+          phase: 'open',
+          pull_request: {
+            repo,
+            number: pull.number,
+            url: pull.url,
+          },
           head_sha: pull.head_sha,
+          merge_sha: null,
           reason: null,
         },
         'ship.requested',
@@ -329,7 +395,7 @@ export const advanceShips = async (deps: { db: Db; github: GitHub; dashboardOrig
         row,
         request,
         {
-          status: 'failed',
+          phase: 'failed',
           reason: `GitHub refused the pull request: ${error instanceof Error ? error.message : String(error)}`,
         },
         'ship.failed',
@@ -340,67 +406,72 @@ export const advanceShips = async (deps: { db: Db; github: GitHub; dashboardOrig
 
 export const decideShip = async (
   deps: { db: Db; github: GitHub },
-  request: ShipRow,
+  call: Call,
+  request: ApprovalRow,
   decision: { approve: boolean; reason: string | null },
-  decidedBy: string,
 ) => {
   const { db } = deps
-  const row = db.select().from(task).where(eq(task.id, request.task_id)).get()!
+  const row = db.select().from(task).where(eq(task.id, request.task_id!)).get()
 
-  if (
-    request.status !== 'pending' ||
-    !row.pull_request ||
-    !request.head_sha ||
-    deciding.has(request.id)
-  ) {
+  requireWaiting(request)
+
+  const ship = shipOf(request)
+
+  if (!row || !ship.pull_request || !ship.head_sha || deciding.has(request.id)) {
     fail(
       'APPROVAL_CLOSED',
-      `This ship request is ${request.status}, not waiting for a decision.`,
+      `Approval ${request.id} is not waiting for a decision.`,
       'Ship the task again to ask anew.',
     )
   }
 
   if (!decision.approve) {
-    settle(
-      db,
-      row,
-      request,
-      {
-        status: 'rejected',
-        reason: decision.reason,
-        decided_by: decidedBy,
-        decided_at: new Date(),
-      },
-      'ship.decided',
-    )
+    const rejected = rejectApproval(deps, call, request, decision.reason)
 
-    return
+    shipChanged(db, row!, rejected, 'ship.decided')
+
+    return rejected
   }
+
+  const selfApproved = requireRequesterRule(db, request, call.principal)
 
   deciding.add(request.id)
 
   try {
-    await deps.github.mergePullRequest(
-      row.pull_request!.repo,
-      row.pull_request!.number,
-      request.head_sha!,
+    const mergeSha = await deps.github.mergePullRequest(
+      ship.pull_request!.repo,
+      ship.pull_request!.number,
+      ship.head_sha!,
     )
-    settle(
-      db,
-      row,
-      request,
-      {
-        status: 'merged',
-        reason: null,
-        decided_by: decidedBy,
-        decided_at: new Date(),
-      },
-      'ship.decided',
-    )
+
+    db.transaction((tx) => {
+      const tdb = tx as unknown as Db
+
+      tdb
+        .update(approval)
+        .set({
+          status: 'approved',
+          decided_by: call.principal.actor,
+          decided_at: new Date(),
+          self_approved: selfApproved,
+          ship: {
+            ...ship,
+            phase: 'merged',
+            merge_sha: mergeSha,
+            reason: null,
+          },
+        })
+        .where(eq(approval.id, request.id))
+        .run()
+      recordDecision(tdb, call, request, true, {
+        self_approved: selfApproved,
+      })
+    })
+    shipChanged(db, row!, approvalRow(db, request.id), 'ship.decided')
   } catch (error) {
     settle(
       db,
-      row,
+      row!,
       request,
       {
         reason:
@@ -413,6 +484,8 @@ export const decideShip = async (
   } finally {
     deciding.delete(request.id)
   }
+
+  return approvalRow(db, request.id)
 }
 
 export const startShipAdvance = (

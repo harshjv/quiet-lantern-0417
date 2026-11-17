@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import { ArrowRight } from 'lucide-react'
 
 import { Code, CommandBlock, Snippet } from '@/components/code'
+import { PlaceLink } from '@/components/place-link'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -16,22 +16,23 @@ import type { Hint } from '@/lib/agent-hints'
 import { commands, type Scope } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
 import { client } from '@/lib/labels'
+import { places } from '@/lib/nav'
 import { agentTokensQuery } from '@/lib/queries'
 
 function Connected({ project }: { project: string }) {
   const tokens = useQuery(agentTokensQuery)
   const names = [...new Set((tokens.data ?? []).map((token) => client(token.name)))]
   const link = (
-    <Link
-      to="/connect"
-      search={{
+    <PlaceLink
+      to={{
+        ...places.page('connect'),
         project,
       }}
       className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline"
     >
       {names.length ? 'Manage agents' : 'Connect an agent'}
       <ArrowRight className="size-3.5" aria-hidden />
-    </Link>
+    </PlaceLink>
   )
 
   if (tokens.isPending) {
@@ -56,7 +57,7 @@ function Connected({ project }: { project: string }) {
         commands={commands.mcpInstall({
           client: 'claude-code',
           project,
-          environment: null,
+          target: '*',
           level: 'deploy',
           ttl: '30d',
         })}

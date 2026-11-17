@@ -1,7 +1,7 @@
 import { action, collect, group, integer, seconds, type Program } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
 import { targetId } from '../generated.ts'
-import { connect, send, withSandbox, type Globals } from '../kit.ts'
+import { connect, send, withMachine, type Globals } from '../kit.ts'
 import { print, progress } from '../output.ts'
 import { reportRun, waitRun } from '../runs.ts'
 import { attachRun, forwardPort, shellExit } from '../sockets.ts'
@@ -19,28 +19,28 @@ const pair = (assignment: string) => {
 }
 
 const named = (options: Globals, words: string[]) =>
-  options.sandbox === undefined
+  options.machine === undefined
     ? {
-        sandbox: words[0],
+        machine: words[0],
         rest: words.slice(1),
       }
     : {
-        sandbox: undefined,
+        machine: undefined,
         rest: words,
       }
 
-const sandboxArgument = 'the sandbox, then what follows; with --sandbox, only what follows'
+const machineArgument = 'the machine, then what follows; with --machine, only what follows'
 
-export const sandboxCommands = (program: Program) => {
-  const sandboxes = group(program, 'sandboxes')
+export const machineCommands = (program: Program) => {
+  const machines = group(program, 'machines')
 
-  sandboxes
+  machines
     .command('exec')
     .description(
-      'Run a command in a running sandbox and stream its output: sly sandboxes exec <sandbox> -- <command>',
+      'Run a command in a running machine and stream its output: sly machines exec <machine> -- <command>',
     )
-    .usage('[options] <sandbox> [--] <command...>')
-    .argument('<words...>', sandboxArgument)
+    .usage('[options] <machine> [--] <command...>')
+    .argument('<words...>', machineArgument)
     .option('--user <user>')
     .option('--cwd <dir>')
     .option('--env <pair>', 'KEY=VALUE for this command only; repeatable', collect)
@@ -48,22 +48,22 @@ export const sandboxCommands = (program: Program) => {
     .option('--detach', 'create the exec and print the run without streaming')
     .action(
       action(async (options, words) => {
-        const { sandbox, rest: command } = named(options, words)
+        const { machine, rest: command } = named(options, words)
 
         if (!command.length) {
           throw usage(
             'There is no command to run.',
-            'Name the sandbox, then the command: sly sandboxes exec my-sandbox -- ls',
+            'Name the machine, then the command: sly machines exec my-machine -- ls',
           )
         }
 
-        const run = withSandbox(await connect(options), sandbox)
-        const id = await targetId(run, 'sandbox')
+        const run = withMachine(await connect(options), machine)
+        const id = await targetId(run, 'machine')
         const detach = Boolean(options.detach)
         const created = await send(
           run.api.v1
-            .sandboxes({
-              sandbox: id,
+            .machines({
+              machine: id,
             })
             .exec.post({
               command,
@@ -97,33 +97,33 @@ export const sandboxCommands = (program: Program) => {
       }),
     )
 
-  sandboxes
+  machines
     .command('shell')
     .description(
-      'Interactive shell in a running sandbox: sly sandboxes shell <sandbox>; needs a terminal and a human actor in protected environments',
+      'Interactive shell in a running machine: sly machines shell <machine>; needs a terminal and a human actor in production',
     )
-    .usage('[options] [sandbox] [command...]')
-    .argument('[words...]', sandboxArgument)
+    .usage('[options] [machine] [command...]')
+    .argument('[words...]', machineArgument)
     .option('--user <user>')
     .option('--cwd <dir>')
     .action(
       action(async (options, words) => {
-        const { sandbox, rest: command } = named(options, words)
+        const { machine, rest: command } = named(options, words)
 
         if (!process.stdin.isTTY) {
           throw usage(
-            'sly sandboxes shell needs a terminal.',
-            'Run it from an interactive terminal; agents use sly sandboxes exec.',
+            'sly machines shell needs a terminal.',
+            'Run it from an interactive terminal; agents use sly machines exec.',
           )
         }
 
-        const run = withSandbox(await connect(options), sandbox)
-        const id = await targetId(run, 'sandbox')
+        const run = withMachine(await connect(options), machine)
+        const id = await targetId(run, 'machine')
         const created = (
           await send(
             run.api.v1
-              .sandboxes({
-                sandbox: id,
+              .machines({
+                machine: id,
               })
               .shells.post({
                 command: command.length ? command : undefined,
@@ -144,23 +144,23 @@ export const sandboxCommands = (program: Program) => {
       }),
     )
 
-  sandboxes
+  machines
     .command('forward')
-    .description('Listen on 127.0.0.1 and forward to a port of a running sandbox')
-    .argument('<port>', 'port inside the sandbox', integer)
-    .argument('[sandbox]', 'the sandbox, id or name')
-    .option('--local-port <port>', 'local port (default: the sandbox port when free)', integer)
+    .description('Listen on 127.0.0.1 and forward to a port of a running machine')
+    .argument('<port>', 'port inside the machine', integer)
+    .argument('[machine]', 'the machine, id or name')
+    .option('--local-port <port>', 'local port (default: the machine port when free)', integer)
     .action(
-      action(async (options, remote, sandbox) => {
-        if (sandbox !== undefined && options.sandbox !== undefined) {
+      action(async (options, remote, machine) => {
+        if (machine !== undefined && options.machine !== undefined) {
           throw usage(
-            'The sandbox is given twice, as an argument and as --sandbox.',
-            'Give it once: sly sandboxes forward <port> <sandbox>, or --sandbox.',
+            'The machine is given twice, as an argument and as --machine.',
+            'Give it once: sly machines forward <port> <machine>, or --machine.',
           )
         }
 
-        const run = withSandbox(await connect(options), sandbox)
-        const id = await targetId(run, 'sandbox')
+        const run = withMachine(await connect(options), machine)
+        const id = await targetId(run, 'machine')
         const { address, close } = await forwardPort(run, id, remote, options.localPort, {
           control: progress,
         })

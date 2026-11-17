@@ -5,11 +5,18 @@ import { eq } from 'drizzle-orm'
 
 import { workspaceEgress } from '@stationly/protocol'
 
-import { sandbox } from '../src/db/schema.ts'
+import { machine } from '../src/db/schema.ts'
 import { egressWithin } from '../src/sandboxes/confinement.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
-import { createProject, createSandbox, pinPlatform, waitForSandbox } from './helpers/seed.ts'
+import {
+  createMachine,
+  createPreview,
+  createProject,
+  pinPlatform,
+  placed,
+  waitForMachine,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let envId: string
@@ -35,13 +42,13 @@ const asHuman = (method: string, path: string, body?: unknown) =>
 
 const refused = (reply: { status: number; text: string; body: any }) => {
   assert.equal(reply.status, 403, reply.text)
-  assert.equal(reply.body.error.code, 'PROTECTED_ENVIRONMENT')
+  assert.equal(reply.body.error.code, 'HUMAN_REQUIRED')
   assert.equal(reply.body.error.details.reason, 'human_required')
 }
 
 const egressOf = async (id: string) =>
   (
-    await h.call('GET', `/v1/sandboxes/${id}?fields=*`, {
+    await h.call('GET', `/v1/machines/${id}?fields=*`, {
       token: h.admin.token,
     })
   ).body.egress
@@ -53,16 +60,16 @@ const nextName = () => `box-${(named += 1)}`
 before(async () => {
   h = await startDispatch()
   pinPlatform(h, {
-    sandboxes: true,
+    machines: true,
   })
   await startFakeStation(h, 'station-1', {
-    sandboxes: {},
+    machines: {},
   })
   const project = await createProject(h, 'alpha')
 
-  envId = project.default_environment_id
+  envId = (await createPreview(h, 'alpha', 'dev')).id
 
-  const workspace = await createSandbox(h, envId, {
+  const workspace = await createMachine(h, envId, {
     name: 'dev',
     workspace: {
       agent: 'claude',
@@ -71,7 +78,7 @@ before(async () => {
   })
 
   workspaceId = workspace.id
-  await waitForSandbox(h, workspaceId, 'running')
+  await waitForMachine(h, workspaceId, 'running')
 
   const minted = await h.call('POST', '/v1/tokens', {
     token: h.admin.token,
@@ -81,7 +88,7 @@ before(async () => {
       scopes: [
         {
           project_id: project.id,
-          environment_id: envId,
+          target: 'previews',
           level: 'deploy',
         },
       ],
@@ -90,21 +97,21 @@ before(async () => {
 
   workspaceKey = minted.body.key
 
-  const row = h.db.select().from(sandbox).where(eq(sandbox.id, workspaceId)).get()!
+  const row = h.db.select().from(machine).where(eq(machine.id, workspaceId)).get()!
 
   h.db
-    .update(sandbox)
+    .update(machine)
     .set({
       workspace: {
         ...row.workspace!,
         token_id: minted.body.id,
       },
     })
-    .where(eq(sandbox.id, workspaceId))
+    .where(eq(machine.id, workspaceId))
     .run()
 
   narrowId = (
-    await createSandbox(h, envId, {
+    await createMachine(h, envId, {
       name: 'narrow',
       egress: {
         mode: 'allowlist',
@@ -117,7 +124,7 @@ before(async () => {
     })
   ).id
   openId = (
-    await createSandbox(h, envId, {
+    await createMachine(h, envId, {
       name: 'open',
     })
   ).id
@@ -126,26 +133,26 @@ before(async () => {
 after(async () => h.close())
 
 describe('a workspace token and its own confinement', () => {
-  test('widening egress of any sandbox needs a human actor', async () => {
+  test('widening egress of any machine needs a human actor', async () => {
     const open = {
       egress: {
         mode: 'open',
       },
     }
 
-    refused(await asWorkspace('PATCH', `/v1/sandboxes/${workspaceId}`, open))
-    refused(await asWorkspace('PATCH', `/v1/sandboxes/${narrowId}`, open))
+    refused(await asWorkspace('PATCH', `/v1/machines/${workspaceId}`, open))
+    refused(await asWorkspace('PATCH', `/v1/machines/${narrowId}`, open))
     assert.equal((await egressOf(workspaceId)).mode, 'allowlist')
 
-    const reply = await asHuman('PATCH', `/v1/sandboxes/${narrowId}`, open)
+    const reply = await asHuman('PATCH', `/v1/machines/${narrowId}`, open)
 
     assert.equal(reply.status, 200, reply.text)
     assert.equal((await egressOf(narrowId)).mode, 'open')
   })
 
-  test('adding a domain the sandbox does not allow needs a human actor', async () => {
+  test('adding a domain the machine does not allow needs a human actor', async () => {
     refused(
-      await asWorkspace('PATCH', `/v1/sandboxes/${workspaceId}`, {
+      await asWorkspace('PATCH', `/v1/machines/${workspaceId}`, {
         egress: {
           mode: 'allowlist',
           domains: [
@@ -159,26 +166,26 @@ describe('a workspace token and its own confinement', () => {
     )
   })
 
-  test('network environment and docker on an update need a human actor', async () => {
+  test('joining the network and docker on an update need a human actor', async () => {
     refused(
-      await asWorkspace('PATCH', `/v1/sandboxes/${workspaceId}`, {
+      await asWorkspace('PATCH', `/v1/machines/${workspaceId}`, {
         network: 'environment',
       }),
     )
     refused(
-      await asWorkspace('PATCH', `/v1/sandboxes/${workspaceId}`, {
+      await asWorkspace('PATCH', `/v1/machines/${workspaceId}`, {
         docker: true,
       }),
     )
   })
 
   test('a narrowing change passes', async () => {
-    const victim = await createSandbox(h, envId, {
+    const victim = await createMachine(h, envId, {
       name: nextName(),
       egress: own,
       docker: true,
     })
-    const reply = await asWorkspace('PATCH', `/v1/sandboxes/${victim.id}`, {
+    const reply = await asWorkspace('PATCH', `/v1/machines/${victim.id}`, {
       egress: {
         mode: 'allowlist',
         domains: [own.domains[0]],
@@ -191,9 +198,9 @@ describe('a workspace token and its own confinement', () => {
     assert.equal((await egressOf(victim.id)).domains.length, 1)
   })
 
-  test('creating a sandbox with open egress needs a human actor', async () => {
+  test('creating a machine with open egress needs a human actor', async () => {
     refused(
-      await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+      await asWorkspace('POST', placed(h, envId, `machines`), {
         name: nextName(),
         egress: {
           mode: 'open',
@@ -201,7 +208,7 @@ describe('a workspace token and its own confinement', () => {
       }),
     )
 
-    const reply = await asHuman('POST', `/v1/environments/${envId}/sandboxes`, {
+    const reply = await asHuman('POST', placed(h, envId, `machines`), {
       name: nextName(),
       egress: {
         mode: 'open',
@@ -211,21 +218,21 @@ describe('a workspace token and its own confinement', () => {
     assert.equal(reply.status, 201, reply.text)
   })
 
-  test('creating on the environment network or with docker needs a human actor', async () => {
+  test('creating on the preview network or with docker needs a human actor', async () => {
     refused(
-      await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+      await asWorkspace('POST', placed(h, envId, `machines`), {
         name: nextName(),
         network: 'environment',
       }),
     )
     refused(
-      await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+      await asWorkspace('POST', placed(h, envId, `machines`), {
         name: nextName(),
         docker: true,
       }),
     )
 
-    const reply = await asHuman('POST', `/v1/environments/${envId}/sandboxes`, {
+    const reply = await asHuman('POST', placed(h, envId, `machines`), {
       name: nextName(),
       network: 'environment',
     })
@@ -234,7 +241,7 @@ describe('a workspace token and its own confinement', () => {
   })
 
   test('a create without egress gets the workspace policy, not open', async () => {
-    const reply = await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+    const reply = await asWorkspace('POST', placed(h, envId, `machines`), {
       name: nextName(),
     })
 
@@ -247,7 +254,7 @@ describe('a workspace token and its own confinement', () => {
   })
 
   test('a create with a narrower allowlist passes', async () => {
-    const reply = await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+    const reply = await asWorkspace('POST', placed(h, envId, `machines`), {
       name: nextName(),
       egress: {
         mode: 'allowlist',
@@ -260,18 +267,18 @@ describe('a workspace token and its own confinement', () => {
 
   test('a fork inherits the source policy and needs a human actor when it is wider', async () => {
     refused(
-      await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+      await asWorkspace('POST', placed(h, envId, `machines`), {
         name: nextName(),
         from: {
-          sandbox: openId,
+          machine: openId,
         },
       }),
     )
 
-    const own = await asWorkspace('POST', `/v1/environments/${envId}/sandboxes`, {
+    const own = await asWorkspace('POST', placed(h, envId, `machines`), {
       name: nextName(),
       from: {
-        sandbox: workspaceId,
+        machine: workspaceId,
       },
     })
 
@@ -279,13 +286,13 @@ describe('a workspace token and its own confinement', () => {
   })
 })
 
-describe('a workspace token running things in sandboxes', () => {
+describe('a workspace token running things in machines', () => {
   const exec = {
     command: ['true'],
   }
 
-  test('its own workspace and a narrower isolated sandbox stay allowed', async () => {
-    const narrower = await createSandbox(h, envId, {
+  test('its own workspace and a narrower isolated machine stay allowed', async () => {
+    const narrower = await createMachine(h, envId, {
       name: nextName(),
       egress: {
         mode: 'allowlist',
@@ -293,39 +300,39 @@ describe('a workspace token running things in sandboxes', () => {
       },
     })
 
-    await waitForSandbox(h, narrower.id, 'running')
+    await waitForMachine(h, narrower.id, 'running')
 
     for (const id of [workspaceId, narrower.id]) {
-      const reply = await asWorkspace('POST', `/v1/sandboxes/${id}/exec`, exec)
+      const reply = await asWorkspace('POST', `/v1/machines/${id}/exec`, exec)
 
       assert.equal(reply.status, 201, reply.text)
     }
 
-    const shell = await asWorkspace('POST', `/v1/sandboxes/${workspaceId}/shells`, {})
+    const shell = await asWorkspace('POST', `/v1/machines/${workspaceId}/shells`, {})
 
     assert.equal(shell.status, 201, shell.text)
   })
 
-  test('a sandbox with open egress, the environment network or docker needs a human actor', async () => {
-    const joined = await createSandbox(h, envId, {
+  test('a machine with open egress, the preview network or docker needs a human actor', async () => {
+    const joined = await createMachine(h, envId, {
       name: nextName(),
       egress: own,
       network: 'environment',
     })
-    const docker = await createSandbox(h, envId, {
+    const docker = await createMachine(h, envId, {
       name: nextName(),
       egress: own,
       docker: true,
     })
 
     for (const id of [openId, joined.id, docker.id]) {
-      refused(await asWorkspace('POST', `/v1/sandboxes/${id}/exec`, exec))
-      refused(await asWorkspace('POST', `/v1/sandboxes/${id}/shells`, {}))
+      refused(await asWorkspace('POST', `/v1/machines/${id}/exec`, exec))
+      refused(await asWorkspace('POST', `/v1/machines/${id}/shells`, {}))
     }
 
-    await waitForSandbox(h, openId, 'running')
+    await waitForMachine(h, openId, 'running')
 
-    const reply = await asHuman('POST', `/v1/sandboxes/${openId}/exec`, exec)
+    const reply = await asHuman('POST', `/v1/machines/${openId}/exec`, exec)
 
     assert.equal(reply.status, 201, reply.text)
   })

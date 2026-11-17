@@ -5,8 +5,9 @@ import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispat
 import type { FakeStation } from './helpers/fake-station.ts'
 import { FakeRegistry } from './helpers/registry.ts'
 import {
+  createApp,
+  createPreview,
   createProject,
-  createService,
   rows,
   seedLockfile,
   waitForDeployment,
@@ -30,15 +31,16 @@ before(async () => {
     hold: ['web1', 'web2'],
   })
   const project = await createProject(h, 'rotation')
+  const stage = await createPreview(h, 'rotation', 'stage')
 
   projectId = project.id
-  const seeded = await h.call('PATCH', `/v1/projects/${projectId}/variables`, {
+  const seeded = await h.call('PATCH', `/v1/projects/${projectId}/keys`, {
     token: token(),
     body: {
-      environment: 'default',
+      target: 'preview',
       set: [
         {
-          key: 'SHARED',
+          name: 'SHARED',
           kind: 'literal',
           value: 'one',
         },
@@ -50,12 +52,12 @@ before(async () => {
   assert.equal(seeded.status, 200, seeded.text)
   const reference = [
     {
-      key: 'SHARED_REF',
+      name: 'SHARED_REF',
       kind: 'reference',
       reference: '${{project.SHARED}}',
     },
   ]
-  const first = await createService(h, project.default_environment_id, {
+  const first = await createApp(h, stage.id, {
     name: 'web1',
     ref: 'nginx:1.27',
     ports: [
@@ -63,12 +65,12 @@ before(async () => {
         port: 80,
       },
     ],
-    variables: reference,
+    keys: reference,
     deploy: true,
   })
 
   await waitForDeployment(h, first.deployments[0].id, 'active')
-  const second = await createService(h, project.default_environment_id, {
+  const second = await createApp(h, stage.id, {
     name: 'web2',
     ref: 'nginx:1.27',
     ports: [
@@ -76,7 +78,7 @@ before(async () => {
         port: 80,
       },
     ],
-    variables: reference,
+    keys: reference,
     deploy: true,
   })
 
@@ -90,22 +92,22 @@ after(async () => {
   registry.restore()
 })
 
-const deploymentRows = (serviceId: string) =>
+const deploymentRows = (appId: string) =>
   rows<{ id: string; status: string }>(
     h,
-    "select id, status from deployment where service_id = ? and trigger like '%variable_change%'",
-    serviceId,
+    "select id, status from deployment where app_id = ? and trigger like '%key_change%'",
+    appId,
   )
 
 describe('secret rotation', () => {
   test('apply creates every dependent deployment but starts the second only after the first is active', async () => {
-    const changed = await h.call('PATCH', `/v1/projects/${projectId}/variables`, {
+    const changed = await h.call('PATCH', `/v1/projects/${projectId}/keys`, {
       token: token(),
       body: {
-        environment: 'default',
+        target: 'preview',
         set: [
           {
-            key: 'SHARED',
+            name: 'SHARED',
             kind: 'literal',
             value: 'two',
           },
@@ -115,8 +117,8 @@ describe('secret rotation', () => {
     })
 
     assert.equal(changed.status, 200, changed.text)
-    const variable = changed.body.variables[0].id as string
-    const applied = await h.call('POST', `/v1/variables/${variable}/apply`, {
+    const key = changed.body.keys[0].id as string
+    const applied = await h.call('POST', `/v1/keys/${key}/apply`, {
       token: token(),
       body: {},
     })
@@ -125,23 +127,23 @@ describe('secret rotation', () => {
     assert.equal(applied.body.deployments.length, 2)
 
     const [firstId, secondId] = applied.body.deployments as [string, string]
-    const firstService = rows<{ service_id: string }>(
+    const firstApp = rows<{ app_id: string }>(
       h,
-      'select service_id from deployment where id = ?',
+      'select app_id from deployment where id = ?',
       firstId,
-    )[0]!.service_id
-    const secondService = rows<{ service_id: string }>(
+    )[0]!.app_id
+    const secondApp = rows<{ app_id: string }>(
       h,
-      'select service_id from deployment where id = ?',
+      'select app_id from deployment where id = ?',
       secondId,
-    )[0]!.service_id
+    )[0]!.app_id
 
-    assert.notEqual(firstService, secondService)
+    assert.notEqual(firstApp, secondApp)
 
     await station.waitFor(
       () =>
         station.heldDeployments().includes(firstId) &&
-        deploymentRows(firstService).find((d) => d.id === firstId && d.status === 'draining'),
+        deploymentRows(firstApp).find((d) => d.id === firstId && d.status === 'draining'),
       5000,
       'the first dependent draining',
     )
@@ -151,7 +153,7 @@ describe('secret rotation', () => {
       false,
       'the second dependent was sent to the station while the first was still draining',
     )
-    assert.equal(deploymentRows(secondService).find((d) => d.id === secondId)!.status, 'queued')
+    assert.equal(deploymentRows(secondApp).find((d) => d.id === secondId)!.status, 'queued')
 
     station.release(firstId)
     await waitForDeployment(h, firstId, 'active')
@@ -167,6 +169,6 @@ describe('secret rotation', () => {
     )
     station.release(secondId)
     await waitForDeployment(h, secondId, 'active')
-    assert.ok([web1, web2].includes(firstService) && [web1, web2].includes(secondService))
+    assert.ok([web1, web2].includes(firstApp) && [web1, web2].includes(secondApp))
   })
 })

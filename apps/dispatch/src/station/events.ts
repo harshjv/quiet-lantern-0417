@@ -4,13 +4,14 @@ import { eq } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { environment, event, service } from '../db/schema.ts'
+import { app, event, target } from '../db/schema.ts'
 
 type Subject = {
   entity: string
   id: string
   project_id?: string
-  environment_id?: string
+  preview_id?: string | null
+  target_id?: string
 } & Record<string, unknown>
 
 export const payloadLimitBytes = 8 * 1024
@@ -18,50 +19,55 @@ export const payloadLimitBytes = 8 * 1024
 export const eventBus = new EventEmitter()
 eventBus.setMaxListeners(0)
 
-export const serviceSubject = (db: Db, serviceId: string): Subject => {
+export const appSubject = (db: Db, appId: string): Subject => {
   const row = db
     .select({
-      environment_id: service.environment_id,
-      project_id: environment.project_id,
+      kind: target.kind,
+      target_id: app.target_id,
+      project_id: target.project_id,
     })
-    .from(service)
-    .innerJoin(environment, eq(environment.id, service.environment_id))
-    .where(eq(service.id, serviceId))
+    .from(app)
+    .innerJoin(target, eq(target.id, app.target_id))
+    .where(eq(app.id, appId))
     .get()
 
   return row
     ? {
-        entity: 'service',
-        id: serviceId,
-        service_id: serviceId,
+        entity: 'app',
+        id: appId,
+        app_id: appId,
         project_id: row.project_id,
-        environment_id: row.environment_id,
+        preview_id: row.kind === 'preview' ? row.target_id : null,
       }
     : {
-        entity: 'service',
-        id: serviceId,
+        entity: 'app',
+        id: appId,
       }
 }
 
-const environmentSubject = (db: Db, subject: Subject): Subject => {
-  if (subject.project_id || !subject.environment_id) {
-    return subject
+const placedSubject = (db: Db, subject: Subject): Subject => {
+  const { target_id: targetId, ...rest } = subject
+
+  if (!targetId) {
+    return rest
   }
 
-  const env = db
+  const row = db
     .select({
-      project_id: environment.project_id,
+      kind: target.kind,
+      project_id: target.project_id,
     })
-    .from(environment)
-    .where(eq(environment.id, subject.environment_id))
+    .from(target)
+    .where(eq(target.id, targetId))
     .get()
 
-  return env
+  return row
     ? {
-        ...subject,
-        project_id: env.project_id,
+        ...rest,
+        project_id: row.project_id,
+        preview_id: row.kind === 'preview' ? targetId : null,
       }
-    : subject
+    : rest
 }
 
 const bounded = (id: string, type: string, payload: Record<string, unknown>) => {
@@ -100,7 +106,7 @@ export const emitEvent = (
     .values({
       id,
       type,
-      subject: environmentSubject(db, subject),
+      subject: placedSubject(db, subject),
       payload: bounded(id, type, payload),
       delivered: {},
     })

@@ -133,14 +133,14 @@ export const progress = (message: string) => process.stderr.write(`${message}\n`
 
 export const json = (value: unknown) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 
-export const staged = (sent: Sent, outcome: string) => {
+export const waiting = (sent: Sent, outcome: string) => {
   const id = (sent.data as { id?: string }).id
 
   progress(
-    `staged: nothing was ${outcome}; ${id ?? 'the staged change'} waits for acceptance (sly staged accept ${id ?? '<id>'})`,
+    `waiting: nothing was ${outcome}; ${id ?? 'the approval'} waits for a person to approve it (sly approvals decide ${id ?? '<id>'} --decision approve)`,
   )
 
-  return exitCodes.staged
+  return exitCodes.waiting
 }
 
 export const print = <T>(globals: Globals, sent: Sent<T>, render: (data: T) => string = human) => {
@@ -150,7 +150,7 @@ export const print = <T>(globals: Globals, sent: Sent<T>, render: (data: T) => s
     process.stdout.write(`${render(sent.data)}\n`)
   }
 
-  return sent.status === 202 ? staged(sent, 'applied') : exitCodes.ok
+  return sent.status === 202 ? waiting(sent, 'applied') : exitCodes.ok
 }
 
 const printEnvelope = (globals: Globals, envelope: Envelope) => {

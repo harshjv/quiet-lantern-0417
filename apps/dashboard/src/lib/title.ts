@@ -3,7 +3,8 @@ const brand = 'Stationly'
 export const pageTitle = (...parts: string[]) =>
   [...parts.filter((part) => part.trim()), brand].join(' · ')
 
-export const placeOf = (project: string, environment: string) => `${project}/${environment}`
+export const placeTitle = (project: string, preview: string | null) =>
+  preview ? `${project}/${preview}` : `${project}/production`
 
 export const titled = (...parts: string[]) => ({
   meta: [
@@ -12,6 +13,3 @@ export const titled = (...parts: string[]) => ({
     },
   ],
 })
-
-export const loaderTitle = ({ loaderData }: { loaderData?: { title: string[] } }) =>
-  titled(...(loaderData?.title ?? []))

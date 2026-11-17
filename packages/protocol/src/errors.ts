@@ -5,7 +5,7 @@ export type ErrorArea =
   | 'scope'
   | 'protected'
   | 'deploy'
-  | 'station'
+  | 'server'
   | 'build'
   | 'events'
   | 'network'
@@ -16,7 +16,7 @@ export type ErrorArea =
   | 'attachment'
   | 'firewall'
   | 'lifecycle'
-  | 'sandbox'
+  | 'machine'
   | 'internal'
   | 'sly'
   | 'root socket'
@@ -103,13 +103,13 @@ export const errorCatalog = [
     close: null,
   },
   {
-    code: 'PROTECTED_ENVIRONMENT',
+    code: 'HUMAN_REQUIRED',
     http: 403,
     area: 'protected',
     close: null,
   },
   {
-    code: 'STAGED_CHANGE_SUPERSEDED',
+    code: 'APPROVAL_SUPERSEDED',
     http: 409,
     area: 'protected',
     close: null,
@@ -139,7 +139,7 @@ export const errorCatalog = [
     close: null,
   },
   {
-    code: 'SHARED_SERVICE_INTERMITTENT',
+    code: 'SHARED_APP_INTERMITTENT',
     http: 422,
     area: 'deploy',
     close: null,
@@ -189,7 +189,7 @@ export const errorCatalog = [
   {
     code: 'STATION_INVARIANT_VIOLATION',
     http: 422,
-    area: 'station',
+    area: 'server',
     close: null,
   },
   {
@@ -265,37 +265,31 @@ export const errorCatalog = [
     close: null,
   },
   {
-    code: 'VARIABLE_REFERENCE_INVALID',
+    code: 'KEY_REFERENCE_INVALID',
     http: 422,
     area: 'secret',
     close: null,
   },
   {
-    code: 'VARIABLE_UNRESOLVED',
+    code: 'KEY_UNRESOLVED',
     http: 422,
     area: 'secret',
     close: null,
   },
   {
-    code: 'VARIABLE_TARGET_MISSING',
+    code: 'KEY_TARGET_MISSING',
     http: 422,
     area: 'secret',
     close: null,
   },
   {
-    code: 'VARIABLE_NOT_GRANTED',
+    code: 'KEY_NOT_GRANTED',
     http: 403,
     area: 'secret',
     close: null,
   },
   {
-    code: 'VARIABLE_CYCLE',
-    http: 422,
-    area: 'secret',
-    close: null,
-  },
-  {
-    code: 'VARIABLE_PROTECTED_SOURCE',
+    code: 'KEY_CYCLE',
     http: 422,
     area: 'secret',
     close: null,
@@ -397,93 +391,87 @@ export const errorCatalog = [
     close: null,
   },
   {
-    code: 'STATION_OFFLINE',
+    code: 'SERVER_OFFLINE',
     http: 503,
-    area: 'station',
+    area: 'server',
     close: null,
   },
   {
-    code: 'STATION_VERSION_SKEW',
+    code: 'SERVER_VERSION_SKEW',
     http: 503,
-    area: 'station',
+    area: 'server',
     close: null,
   },
   {
-    code: 'STATION_CAPABILITY_MISSING',
+    code: 'SERVER_CAPABILITY_MISSING',
     http: 422,
-    area: 'station',
+    area: 'server',
     close: null,
   },
   {
     code: 'REPO_ACCESS_REQUIRED',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
     code: 'REPO_ACCESS_DENIED',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
     code: 'APPROVAL_CLOSED',
     http: 409,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_NOT_RUNNING',
+    code: 'MACHINE_NOT_RUNNING',
     http: 409,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_STATE_CONFLICT',
+    code: 'MACHINE_STATE_CONFLICT',
     http: 409,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_QUOTA_EXCEEDED',
+    code: 'MACHINE_QUOTA_EXCEEDED',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_DISK_FULL',
+    code: 'MACHINE_DISK_FULL',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_START_FAILED',
+    code: 'MACHINE_START_FAILED',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_STORAGE_GROW_FAILED',
+    code: 'MACHINE_STORAGE_GROW_FAILED',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_IMAGE_UNPACK_FAILED',
+    code: 'MACHINE_IMAGE_UNPACK_FAILED',
     http: 422,
-    area: 'sandbox',
+    area: 'machine',
     close: null,
   },
   {
-    code: 'SANDBOX_RUNTIME_UNAVAILABLE',
+    code: 'MACHINE_RUNTIME_UNAVAILABLE',
     http: 422,
-    area: 'sandbox',
-    close: null,
-  },
-  {
-    code: 'ENVIRONMENT_IS_DEFAULT',
-    http: 409,
-    area: 'lifecycle',
+    area: 'machine',
     close: null,
   },
   {
@@ -655,14 +643,14 @@ export type ErrorCode = (typeof errorCatalog)[number]['code']
 export const handshakeInvalidMessageClose = 4001
 
 export const warningCatalog = [
-  'SHARES_STATEFUL_SERVICE',
+  'SHARES_STATEFUL_APP',
   'STALE_SECRET_VERSIONS',
   'DOWNTIME_EXPECTED',
-  'BACKUP_STOPS_SERVICE',
+  'BACKUP_STOPS_APP',
   'SEALED_VALUE_MISSING',
   'SOURCE_POLLING',
-  'SANDBOX_RESTART_REQUIRED',
-  'SANDBOX_SNAPSHOT_CRASH_CONSISTENT',
+  'MACHINE_RESTART_REQUIRED',
+  'MACHINE_SNAPSHOT_CRASH_CONSISTENT',
 ] as const
 
 export type WarningCode = (typeof warningCatalog)[number]

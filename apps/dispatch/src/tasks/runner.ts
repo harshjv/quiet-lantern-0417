@@ -12,7 +12,7 @@ import {
 
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { conversation, run, sandbox, task, task_inbox } from '../db/schema.ts'
+import { conversation, machine, run, task, task_inbox } from '../db/schema.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
 import { runGitHubToken, runKeyEnv } from '../team/keys.ts'
@@ -236,9 +236,9 @@ export const ackInputs = (db: Db, taskId: string, ids: string[], now = new Date(
     .where(and(eq(task_inbox.task_id, taskId), inArray(task_inbox.id, ids)))
     .run().changes
 
-export const ackSandboxInputs = (
+export const ackMachineInputs = (
   db: Db,
-  sandboxId: string,
+  machineId: string,
   ids: string[],
   owner: string | null = null,
   now = new Date(),
@@ -249,7 +249,7 @@ export const ackSandboxInputs = (
       owner: task.owner,
     })
     .from(task)
-    .where(eq(task.sandbox_id, sandboxId))
+    .where(eq(task.machine_id, machineId))
     .all()
     .filter((row) => owner === null || row.owner.id === owner)
     .map((row) => row.id)
@@ -391,12 +391,12 @@ export const wantStrandedRunners = (db: Db, now = new Date()) => {
     })
     .from(conversation)
     .innerJoin(task, eq(task.id, conversation.task_id))
-    .innerJoin(sandbox, eq(sandbox.id, task.sandbox_id))
+    .innerJoin(machine, eq(machine.id, task.machine_id))
     .where(
       and(
         eq(conversation.runner_wanted, false),
         eq(conversation.origin, 'dashboard'),
-        eq(sandbox.status, 'running'),
+        eq(machine.status, 'running'),
       ),
     )
     .all()
@@ -430,15 +430,15 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
     .select({
       session: conversation,
       row: task,
-      sandbox,
+      machine,
     })
     .from(conversation)
     .innerJoin(task, eq(task.id, conversation.task_id))
-    .innerJoin(sandbox, eq(sandbox.id, task.sandbox_id))
+    .innerJoin(machine, eq(machine.id, task.machine_id))
     .where(eq(conversation.runner_wanted, true))
     .all()
 
-  for (const { session, row: owner, sandbox: row } of wanted) {
+  for (const { session, row: owner, machine: row } of wanted) {
     const workspace = row.workspace
 
     if (
@@ -482,7 +482,7 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
     const shared = member
       ? {
           project: row.project_id,
-          environment: row.environment_id,
+          target: row.target_id,
         }
       : null
     const token = await runGitHubToken(deps.auth, db, deps.keyring, owner.owner.id, shared)
@@ -505,8 +505,8 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
         .insert(run)
         .values({
           id,
-          service_id: null,
-          sandbox_id: row.id,
+          app_id: null,
+          machine_id: row.id,
           deployment_id: null,
           kind: 'exec',
           command: runnerCommand(
@@ -538,9 +538,9 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
         .where(eq(conversation.id, session.id))
         .run()
     })
-    deps.reconcile(row.station_id)
+    deps.reconcile(row.server_id)
   }
 }
 
 export const startAgentRunners = (db: Db, deps: MachineDeps, log: Log) =>
-  every(2, 'sandbox.agent_runner_failed', log, () => startPendingRunners(db, deps))
+  every(2, 'machine.agent_runner_failed', log, () => startPendingRunners(db, deps))

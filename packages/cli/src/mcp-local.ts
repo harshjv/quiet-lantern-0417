@@ -44,14 +44,14 @@ export const localTools = (instance: string, token: string, userAgent: string): 
     name: 'push_local_source',
     title: 'Push local source',
     description:
-      'Upload a directory on the machine running sly mcp (honoring .dockerignore) as the source of a service with a local source, then deploy it. Returns the deployment; follow with wait_for_deployment.',
+      'Upload a directory on the machine running sly mcp (honoring .dockerignore) as the source of an app with a local source, then deploy it. Returns the deployment; follow with wait_for_deployment.',
     inputSchema: {
       type: 'object',
       properties: {
-        service: {
+        app: {
           type: 'string',
           minLength: 1,
-          description: 'An id, or the names project/environment/service',
+          description: 'An id, or the names project/app, or project/preview/app in a preview',
         },
         path: {
           type: 'string',
@@ -64,7 +64,7 @@ export const localTools = (instance: string, token: string, userAgent: string): 
           maxLength: 128,
         },
       },
-      required: ['service', 'path'],
+      required: ['app', 'path'],
       additionalProperties: false,
     },
     annotations: {
@@ -75,24 +75,24 @@ export const localTools = (instance: string, token: string, userAgent: string): 
       openWorldHint: false,
     },
     run: async (args, context) => {
-      const service = await idOf(context, 'describe_service', {
-        service: args.service,
+      const app = await idOf(context, 'describe_app', {
+        app: args.app,
       })
 
-      if (service.refused) {
-        return service.refused
+      if (app.refused) {
+        return app.refused
       }
 
       try {
         const uploaded = await uploadSource(
           run,
-          service.id,
+          app.id,
           args.path as string,
           (message) => void context.progress(message),
         )
 
         return await context.call('deploy', {
-          service: service.id,
+          app: app.id,
           blob_id: uploaded.data.blob_id,
           ...(args.idempotency_key
             ? {
@@ -110,56 +110,57 @@ export const localTools = (instance: string, token: string, userAgent: string): 
     },
   }
 
-  const forwardSandboxPort: LocalTool = {
-    name: 'forward_sandbox_port',
-    title: 'Forward a sandbox port',
+  const forwardMachinePort: LocalTool = {
+    name: 'forward_machine_port',
+    title: 'Forward a machine port',
     description:
-      'Listen on 127.0.0.1 of the machine running sly mcp and forward to a port of a running sandbox, for previews. The listener lasts until the stdio server exits or the sandbox stops, and a second call for the same sandbox and port returns the same listener.',
+      'Listen on 127.0.0.1 of the machine running sly mcp and forward to a port of a running machine, for previews. The listener lasts until the stdio server exits or the machine stops, and a second call for the same machine and port returns the same listener.',
     inputSchema: {
       type: 'object',
       properties: {
-        sandbox: {
+        machine: {
           type: 'string',
           minLength: 1,
-          description: 'An id, or the names project/environment/sandbox',
+          description:
+            'An id, or the names project/machine, or project/preview/machine in a preview',
         },
         port: {
           type: 'integer',
           ...portRange,
-          description: 'Port inside the sandbox',
+          description: 'Port inside the machine',
         },
         local_port: {
           type: 'integer',
           minimum: 0,
           maximum: 65535,
-          description: 'Local port; default the sandbox port when free, 0 for any',
+          description: 'Local port; default the machine port when free, 0 for any',
         },
       },
-      required: ['sandbox', 'port'],
+      required: ['machine', 'port'],
       additionalProperties: false,
     },
     annotations: {
-      title: 'Forward a sandbox port',
+      title: 'Forward a machine port',
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
     run: async (args, context) => {
-      const sandbox = await idOf(context, 'get_sandbox', {
-        sandbox: args.sandbox,
+      const machine = await idOf(context, 'get_machine', {
+        machine: args.machine,
       })
 
-      if (sandbox.refused) {
-        return sandbox.refused
+      if (machine.refused) {
+        return machine.refused
       }
 
       const port = args.port as number
-      const key = `${sandbox.id}:${port}`
+      const key = `${machine.id}:${port}`
       const stopIfGone = async () => {
         const current = await run.api.v1
-          .sandboxes({
-            sandbox: sandbox.id,
+          .machines({
+            machine: machine.id,
           })
           .get({
             query: {},
@@ -174,7 +175,7 @@ export const localTools = (instance: string, token: string, userAgent: string): 
       }
       const listener =
         forwards.get(key) ??
-        forwardPort(run, sandbox.id, port, args.local_port as number | undefined, {
+        forwardPort(run, machine.id, port, args.local_port as number | undefined, {
           unopened: () => void stopIfGone(),
         }).then((forward) => {
           forward.server.unref()
@@ -194,5 +195,5 @@ export const localTools = (instance: string, token: string, userAgent: string): 
     },
   }
 
-  return [pushLocalSource, forwardSandboxPort]
+  return [pushLocalSource, forwardMachinePort]
 }

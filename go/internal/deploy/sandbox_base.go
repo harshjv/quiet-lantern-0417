@@ -80,7 +80,7 @@ func unpackFailure(err error) *protocol.ErrorBody {
 			details["entry"] = ue.entry
 		}
 	}
-	return &protocol.ErrorBody{Code: string(protocol.ErrorCodeSandboxImageUnpackFailed), Explanation: "unpack the image into a sandbox base: " + err.Error(), Fix: "Check the image and the sandbox filesystem's free space, then start the sandbox again.", Details: details}
+	return &protocol.ErrorBody{Code: string(protocol.ErrorCodeMachineImageUnpackFailed), Explanation: "unpack the image into a sandbox base: " + err.Error(), Fix: "Check the image and the sandbox filesystem's free space, then start the sandbox again.", Details: details}
 }
 
 func watchOOM(ctx context.Context, path string, oom *atomic.Int64, killed func()) {

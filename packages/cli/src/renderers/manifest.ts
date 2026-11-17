@@ -13,7 +13,6 @@ const short = (value: unknown) => {
 const label = (change: Change) => {
   const after = (change.after ?? change.before ?? {}) as {
     name?: string
-    key?: string
     hostname?: string
     mount_path?: string
     port?: number
@@ -21,7 +20,6 @@ const label = (change: Change) => {
   }
   const name =
     after.name ??
-    after.key ??
     after.hostname ??
     after.mount_path ??
     (after.port !== undefined ? `port ${after.port}` : undefined) ??
@@ -55,7 +53,7 @@ export const renderPlan = (plan: Plan) => {
       lines.push(`- ${label(change)} ${change.id}`)
     } else {
       lines.push(
-        `~ ${names.get(change.id ?? '') ?? `${change.entity} ${change.id}`} ${change.path || ''}: ${change.entity === 'variable' ? 'value or settings change' : `${short(change.before)} -> ${short(change.after)}`}`,
+        `~ ${names.get(change.id ?? '') ?? `${change.entity} ${change.id}`} ${change.path || ''}: ${change.entity === 'key' ? 'value or settings change' : `${short(change.before)} -> ${short(change.after)}`}`,
       )
     }
   }
@@ -78,7 +76,7 @@ export const renderPlan = (plan: Plan) => {
       `unmanaged (left in place; --prune removes them):`,
       ...plan.unmanaged.map(
         (u) =>
-          `  ${u.entity} ${u.name ?? u.key ?? u.hostname ?? u.mount_path ?? u.port ?? ''}${u.service ? ` of ${u.service}` : ''} ${u.id}`,
+          `  ${u.entity} ${u.name ?? u.hostname ?? u.mount_path ?? u.port ?? ''}${u.app ? ` of ${u.app}` : ''} ${u.id}`,
       ),
     )
   }

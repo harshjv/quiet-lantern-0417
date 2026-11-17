@@ -8,7 +8,7 @@ import {
   domain,
   drift,
   notification_channel,
-  station,
+  server,
   token,
   volume_snapshot,
 } from '../db/schema.ts'
@@ -24,7 +24,7 @@ type Status = 'ok' | 'warn' | 'fail'
 
 export type DoctorRow = {
   name: string
-  station: string | null
+  server: string | null
   status: Status
   code: string | null
   finding: string
@@ -79,7 +79,7 @@ class Row {
   done(): DoctorRow {
     return {
       name: this.name,
-      station: null,
+      server: null,
       status: this.status,
       code: this.code,
       finding: this.findings.join('; ') || 'ok',
@@ -102,7 +102,7 @@ const lockfileDrift = (db: Db, names: Map<string, string>) => {
 
   for (const c of db.select().from(component).all()) {
     if (
-      (!c.station_id && c.name !== 'dispatch') ||
+      (!c.server_id && c.name !== 'dispatch') ||
       c.name === 'docker_engine' ||
       c.lockfile_version === 'unpinned'
     ) {
@@ -115,14 +115,14 @@ const lockfileDrift = (db: Db, names: Map<string, string>) => {
       (c.lockfile_digest !== null && c.digest !== c.lockfile_digest)
 
     if (drifted) {
-      const st = c.station_id ? (names.get(c.station_id) ?? c.station_id) : 'instance'
+      const st = c.server_id ? (names.get(c.server_id) ?? c.server_id) : 'instance'
 
       row.raise(
         'warn',
         'lockfile_drift',
-        `station ${st}: ${c.name} ${c.version}, ${release ? `release ${release.release}` : 'the lockfile'} pins ${c.lockfile_version}`,
+        `server ${st}: ${c.name} ${c.version}, ${release ? `release ${release.release}` : 'the lockfile'} pins ${c.lockfile_version}`,
         release
-          ? `sly platform upgrade --version ${release.release} --station ${st}`
+          ? `sly platform upgrade --version ${release.release} --server ${st}`
           : `sly platform upgrade ${c.name} --reset`,
       )
     }
@@ -153,7 +153,7 @@ const signatures = (db: Db, names: Map<string, string>) => {
   let verified = 0
 
   for (const c of db.select().from(component).all()) {
-    if (!c.station_id || c.signature === 'not_applicable') {
+    if (!c.server_id || c.signature === 'not_applicable') {
       continue
     }
 
@@ -165,7 +165,7 @@ const signatures = (db: Db, names: Map<string, string>) => {
     row.raise(
       'warn',
       'unsigned_artifact',
-      `station ${names.get(c.station_id) ?? c.station_id}: ${c.name} ${c.version} (${c.digest ?? 'no digest'}) is ${c.signature}`,
+      `server ${names.get(c.server_id) ?? c.server_id}: ${c.name} ${c.version} (${c.digest ?? 'no digest'}) is ${c.signature}`,
       `sly platform upgrade ${c.name} --reset, or pin a signed digest`,
     )
   }
@@ -177,9 +177,9 @@ const signatures = (db: Db, names: Map<string, string>) => {
 }
 
 const stationRows = (db: Db) => {
-  const stations = db.select().from(station).where(isNull(station.revoked_at)).all()
+  const stations = db.select().from(server).where(isNull(server.revoked_at)).all()
   const skew = new Row('version_skew')
-  const live = new Row('station_liveness')
+  const live = new Row('server_liveness')
   const drifted = new Row('dispatch_drift')
 
   for (const st of stations) {
@@ -187,7 +187,7 @@ const stationRows = (db: Db) => {
       skew.raise(
         st.version_skew === 'unsupported' ? 'fail' : 'warn',
         'version_skew',
-        `station ${st.name}: version_skew ${st.version_skew}`,
+        `server ${st.name}: version_skew ${st.version_skew}`,
         `Upgrade stationd on ${st.name} into the supported window.`,
       )
     }
@@ -195,8 +195,8 @@ const stationRows = (db: Db) => {
     if (!st.intermittent && st.status === 'offline') {
       live.raise(
         'fail',
-        'station_offline',
-        `station ${st.name} is offline since ${st.last_seen_at?.toISOString() ?? 'enrollment'}`,
+        'server_offline',
+        `server ${st.name} is offline since ${st.last_seen_at?.toISOString() ?? 'enrollment'}`,
         `Check stationd on ${st.name} (systemctl status, stationd connection).`,
       )
     }
@@ -207,15 +207,15 @@ const stationRows = (db: Db) => {
   for (const d of open) {
     drifted.raise(
       'fail',
-      'station_drift',
-      `station ${stations.find((s) => s.id === d.station_id)?.name ?? d.station_id} reports state Dispatch did not issue (${d.object})`,
-      "Resolve the drift: adopt the station state or force Dispatch's.",
+      'server_drift',
+      `server ${stations.find((s) => s.id === d.server_id)?.name ?? d.server_id} reports state Dispatch did not issue (${d.object})`,
+      "Resolve the drift: adopt the server state or force Dispatch's.",
     )
   }
 
-  skew.note(`${stations.length} station(s) inside the version window`)
+  skew.note(`${stations.length} server(s) inside the version window`)
   live.note(
-    `${stations.filter((s) => s.status === 'online').length} of ${stations.length} station(s) online`,
+    `${stations.filter((s) => s.status === 'online').length} of ${stations.length} server(s) online`,
   )
   drifted.note('no open drift')
 
@@ -245,7 +245,7 @@ const certificates = (db: Db) => {
         'fail',
         'certificate_expired',
         `${d.hostname} expired at ${cert.expires_at}`,
-        'Check the Gateway ACME log; the domain must resolve to the station.',
+        'Check the Gateway ACME log; the domain must resolve to the server.',
       )
     } else if (Number.isFinite(lifetime) && left < lifetime / 6) {
       row.raise(
@@ -301,14 +301,14 @@ const baseImages = (db: Db) => {
         row.raise(
           'warn',
           'base_image_moved',
-          `${c.service}: ${b.ref} moved to ${c.latest_digest?.slice(0, 19) ?? '?'}`,
-          `sly services rebuild --service ${c.service}`,
+          `${c.app}: ${b.ref} moved to ${c.latest_digest?.slice(0, 19) ?? '?'}`,
+          `sly apps rebuild --app ${c.app}`,
         )
       } else if (c.check !== 'current') {
         row.raise(
           'warn',
           `base_image_${c.check}`,
-          `${c.service}: ${b.ref} last check ${c.check}`,
+          `${c.app}: ${b.ref} last check ${c.check}`,
           c.check === 'auth_required' || c.check === 'not_found'
             ? 'Check the base image reference; phase 1a checks anonymously.'
             : 'Retry later; the check repeats every base_images.check_interval_s.',
@@ -410,7 +410,7 @@ const logGaps = () => {
 const recordTransitions = (
   db: Db,
   checks: DoctorRow[],
-  stations: (typeof station.$inferSelect)[],
+  stations: (typeof server.$inferSelect)[],
 ) => {
   const now = new Date()
 
@@ -418,12 +418,12 @@ const recordTransitions = (
     const tdb = tx as unknown as Db
 
     for (const c of checks) {
-      const st = stations.find((s) => s.name === c.station)
+      const st = stations.find((s) => s.name === c.server)
       const key = st?.id ?? ''
       const previous = tdb
         .select()
         .from(doctor_check)
-        .where(and(eq(doctor_check.name, c.name), eq(doctor_check.station, key)))
+        .where(and(eq(doctor_check.name, c.name), eq(doctor_check.server, key)))
         .get()
       const before: Status = previous?.status ?? 'ok'
 
@@ -435,13 +435,13 @@ const recordTransitions = (
         .insert(doctor_check)
         .values({
           name: c.name,
-          station: key,
+          server: key,
           status: c.status,
           code: c.code,
           changed_at: now,
         })
         .onConflictDoUpdate({
-          target: [doctor_check.name, doctor_check.station],
+          target: [doctor_check.name, doctor_check.server],
           set: {
             status: c.status,
             code: c.code,
@@ -463,7 +463,7 @@ const recordTransitions = (
         'doctor.finding',
         st
           ? {
-              entity: 'station',
+              entity: 'server',
               id: st.id,
             }
           : {
@@ -472,7 +472,7 @@ const recordTransitions = (
             },
         {
           check: c.name,
-          station: c.station,
+          server: c.server,
           severity: c.status,
           previous: before,
           code: c.code,
@@ -486,15 +486,15 @@ const recordTransitions = (
 
 export const runDoctor = async (
   deps: { db: Db; stations: StationServer },
-  options: { station?: string } = {},
+  options: { server?: string } = {},
 ) => {
   const { db, stations } = deps
-  const all = db.select().from(station).where(isNull(station.revoked_at)).all()
+  const all = db.select().from(server).where(isNull(server.revoked_at)).all()
   const names = new Map(all.map((s) => [s.id, s.name]))
   const rows: DoctorRow[] = [
     lockfileDrift(db, names),
     {
-      station: null,
+      server: null,
       ...upgradeDoctorRow(db),
     },
     signatures(db, names),
@@ -508,18 +508,18 @@ export const runDoctor = async (
     releaseCheck(db),
   ]
   const targets = all.filter(
-    (s) => !options.station || s.id === options.station || s.name === options.station,
+    (s) => !options.server || s.id === options.server || s.name === options.server,
   )
   const reports = await Promise.all(
     targets.map(async (st): Promise<DoctorRow[]> => {
       if (!stations.isConnected(st.id)) {
         return [
           {
-            name: 'station_checks',
-            station: st.name,
+            name: 'server_checks',
+            server: st.name,
             status: 'fail',
-            code: 'station_offline',
-            finding: `station ${st.name} is not connected; its host checks did not run`,
+            code: 'server_offline',
+            finding: `server ${st.name} is not connected; its host checks did not run`,
             fix: `Check stationd on ${st.name}.`,
           },
         ]
@@ -538,7 +538,7 @@ export const runDoctor = async (
 
         return report.checks.map((c): DoctorRow => ({
           name: c.name,
-          station: st.name,
+          server: st.name,
           status: c.status,
           code: c.code ?? null,
           finding: c.finding,
@@ -552,11 +552,11 @@ export const runDoctor = async (
       } catch (error) {
         return [
           {
-            name: 'station_checks',
-            station: st.name,
+            name: 'server_checks',
+            server: st.name,
             status: 'fail',
             code: 'doctor_unavailable',
-            finding: `station ${st.name} did not run its checks: ${(error as Error).message}`,
+            finding: `server ${st.name} did not run its checks: ${(error as Error).message}`,
             fix: 'Upgrade stationd to a version with doctor.v1.',
           },
         ]

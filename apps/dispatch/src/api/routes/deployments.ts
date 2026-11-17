@@ -7,22 +7,33 @@ import {
   deploymentTriggerValues,
 } from '@stationly/protocol'
 
-import { deployment, service } from '../../db/schema.ts'
+import { app, deployment } from '../../db/schema.ts'
 import {
   pinImageSource,
   pinnedWarning,
   resolveImage,
   stationArch,
 } from '../../platform/image-source.ts'
+import { refreshDeploymentApp } from '../app-status.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { audit, emit } from '../context.ts'
 import { requireStationReady, usableBlob } from '../deployments.ts'
 import { fail } from '../errors.ts'
 import { project as select } from '../fields.ts'
 import { csv, parseTime, warning, type Kit } from '../kit.ts'
-import { before, collect, filterMany, getQuery, listQuery, since, until } from '../pagination.ts'
+import { isProduction, previewIdOf } from '../lookup.ts'
+import {
+  before,
+  collect,
+  filterMany,
+  getQuery,
+  listQuery,
+  previewQuery,
+  since,
+  until,
+} from '../pagination.ts'
 import { supersede } from '../schemas.ts'
-import { Deployment, DeploymentCreated, Page, replies, Staged } from '../shapes.ts'
+import { ApprovalDetail, Deployment, DeploymentCreated, Page, replies } from '../shapes.ts'
 
 const filters = {
   status: filterMany(deploymentStatusValues),
@@ -64,7 +75,7 @@ export const deploymentRoutes = (kit: Kit) => {
   return kit
     .router('deployments', '/v1')
     .get(
-      '/services/:service/deployments',
+      '/apps/:app/deployments',
       ({ ctx, query }) => {
         const where = conditions(query)
         const page = collect(
@@ -73,11 +84,7 @@ export const deploymentRoutes = (kit: Kit) => {
               .select()
               .from(deployment)
               .where(
-                and(
-                  eq(deployment.service_id, ctx.service.id),
-                  ...where,
-                  before(deployment.id, cursor),
-                ),
+                and(eq(deployment.app_id, ctx.app.id), ...where, before(deployment.id, cursor)),
               )
               .orderBy(desc(deployment.id))
               .limit(size)
@@ -93,9 +100,9 @@ export const deploymentRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'list_deployments',
-          summary: 'List the deployments of a service',
+          summary: 'List the deployments of an app',
           level: 'read',
         },
         query: t.Object({
@@ -108,17 +115,17 @@ export const deploymentRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/environments/:environment/deployments',
+      '/projects/:project/deployments',
       ({ ctx, query }) => {
-        const services = db
+        const apps = db
           .select({
-            id: service.id,
+            id: app.id,
           })
-          .from(service)
-          .where(eq(service.environment_id, ctx.environment.id))
+          .from(app)
+          .where(eq(app.target_id, ctx.target_row.id))
           .all()
           .map((s) => s.id)
-        const scoped = query.service ? services.filter((id) => id === query.service) : services
+        const scoped = query.app ? apps.filter((id) => id === query.app) : apps
         const where = conditions(query)
         const page = scoped.length
           ? collect(
@@ -128,7 +135,7 @@ export const deploymentRoutes = (kit: Kit) => {
                   .from(deployment)
                   .where(
                     and(
-                      inArray(deployment.service_id, scoped),
+                      inArray(deployment.app_id, scoped),
                       ...where,
                       before(deployment.id, cursor),
                     ),
@@ -151,15 +158,16 @@ export const deploymentRoutes = (kit: Kit) => {
         }
       },
       {
-        environment: {
-          id: 'list_environment_deployments',
-          summary: 'List the deployments of an environment',
+        place: {
+          id: 'list_project_deployments',
+          summary: 'List the deployments of production, or of a preview',
           level: 'read',
         },
         query: t.Object({
           ...listQuery,
+          ...previewQuery,
           ...filters,
-          service: t.Optional(t.String()),
+          app: t.Optional(t.String()),
         }),
         response: replies({
           200: Page(Deployment),
@@ -184,10 +192,10 @@ export const deploymentRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/services/:service/deployments',
+      '/apps/:app/deployments',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const source = ctx.service.source as { type: string }
+        const source = ctx.app.source as { type: string }
 
         if (body.image !== undefined && source.type !== 'image') {
           fail('VALIDATION_FAILED', 'image is accepted only for image sources.', undefined, {
@@ -201,34 +209,33 @@ export const deploymentRoutes = (kit: Kit) => {
         }
 
         if (body.blob_id !== undefined) {
-          usableBlob(db, body.blob_id, ctx.service.id)
+          usableBlob(db, body.blob_id, ctx.app.id)
         }
 
-        requireStationReady(db, ctx.service.station_id)
+        requireStationReady(db, ctx.app.server_id)
         const changes = new ChangeSet()
         const imageWarnings: { code: string; explanation: string }[] = []
         let image: string | null = null
         const sameRef =
-          source.type === 'image' &&
-          body.image?.trim() === (ctx.service.source as { ref?: string }).ref
+          source.type === 'image' && body.image?.trim() === (ctx.app.source as { ref?: string }).ref
 
         if (body.image && !sameRef) {
           const resolution = await resolveImage(
             body.image,
-            stationArch(db, ctx.service.station_id),
+            stationArch(db, ctx.app.server_id),
             '/image',
           )
 
           image = resolution.pinned
           imageWarnings.push(pinnedWarning(resolution))
         } else if (source.type === 'image') {
-          const current = ctx.service.source as { type: 'image'; ref: string; digest?: string }
-          const pinned = await pinImageSource(db, current, ctx.service.station_id, null)
+          const current = ctx.app.source as { type: 'image'; ref: string; digest?: string }
+          const pinned = await pinImageSource(db, current, ctx.app.server_id, null)
 
           if (pinned.source.digest !== current.digest) {
             changes.update(
-              'service',
-              ctx.service.id,
+              'app',
+              ctx.app.id,
               '/source/digest',
               current.digest ?? null,
               pinned.source.digest,
@@ -240,7 +247,7 @@ export const deploymentRoutes = (kit: Kit) => {
           }
         }
 
-        changes.deploy(ctx.service.id, 'manual', {
+        changes.deploy(ctx.app.id, 'manual', {
           supersede: body.supersede ?? false,
           ...(body.source_ref
             ? {
@@ -262,14 +269,14 @@ export const deploymentRoutes = (kit: Kit) => {
           kit.deps,
           call,
           {
-            environment: ctx.environment,
-            protect: ctx.environment.protected,
+            target: ctx.target_row,
+            protect: isProduction(ctx.target_row),
           },
           changes,
         )
 
         if (!result.applied) {
-          return kit.stagedBody(result, set)
+          return kit.approvalBody(result, set)
         }
 
         set.status = 201
@@ -291,9 +298,9 @@ export const deploymentRoutes = (kit: Kit) => {
         }
       },
       {
-        service: {
+        app: {
           id: 'deploy',
-          summary: 'Create a deployment record (queued); execution belongs to the station',
+          summary: 'Create a deployment record (queued); execution belongs to the server',
           level: 'deploy',
           mcp: {
             always_load: true,
@@ -313,8 +320,7 @@ export const deploymentRoutes = (kit: Kit) => {
             image: t.Optional(
               t.String({
                 minLength: 1,
-                description:
-                  "An image reference for an image source, in place of the service's ref",
+                description: "An image reference for an image source, in place of the app's ref",
               }),
             ),
             blob_id: t.Optional(
@@ -330,7 +336,7 @@ export const deploymentRoutes = (kit: Kit) => {
         ),
         response: replies({
           201: DeploymentCreated,
-          202: Staged,
+          202: ApprovalDetail,
         }),
       },
     )
@@ -358,6 +364,7 @@ export const deploymentRoutes = (kit: Kit) => {
           })
           .where(eq(deployment.id, ctx.deployment.id))
           .run()
+        refreshDeploymentApp(db, ctx.deployment.id)
         audit(
           db,
           call,
@@ -382,8 +389,8 @@ export const deploymentRoutes = (kit: Kit) => {
             entity: 'deployment',
             id: ctx.deployment.id,
             project_id: ctx.project.id,
-            environment_id: ctx.environment.id,
-            service_id: ctx.service.id,
+            preview_id: previewIdOf(ctx.target_row),
+            app_id: ctx.app.id,
           },
           {
             deployment: ctx.deployment.id,
@@ -397,7 +404,7 @@ export const deploymentRoutes = (kit: Kit) => {
       {
         deployment: {
           id: 'cancel_deployment',
-          summary: 'Cancel a deployment before cutover; never staged',
+          summary: 'Cancel a deployment before cutover; never needs approval',
           level: 'deploy',
         },
         response: replies({

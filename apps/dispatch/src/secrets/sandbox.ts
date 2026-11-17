@@ -16,15 +16,15 @@ type SecretsDeliver = MessageBody<'secrets.deliver'>
 
 type Entry = { key: string; node: SourceNode }
 
-export const sandboxEntries = (db: Db, sandboxId: string): Entry[] => {
-  const resolver = Resolver.forSandbox(db, sandboxId)
+export const machineEntries = (db: Db, machineId: string): Entry[] => {
+  const resolver = Resolver.forMachine(db, machineId)
   const entries: Entry[] = []
 
-  for (const v of resolver.sandboxVariables()) {
+  for (const v of resolver.machineKeys()) {
     try {
       entries.push({
-        key: v.key,
-        node: resolver.resolveSandbox(v),
+        key: v.name,
+        node: resolver.resolveMachine(v),
       })
     } catch (error) {
       if (!(error instanceof SecretsError)) {
@@ -36,8 +36,8 @@ export const sandboxEntries = (db: Db, sandboxId: string): Entry[] => {
   return entries
 }
 
-export const sandboxEnv = (db: Db, sandboxId: string) => {
-  const entries = sandboxEntries(db, sandboxId)
+export const machineEnv = (db: Db, machineId: string) => {
+  const entries = machineEntries(db, machineId)
   const env: EnvEntryValue[] = entries.map((entry) => ({
     key: entry.key,
     injection: 'env',
@@ -52,13 +52,13 @@ export const sandboxEnv = (db: Db, sandboxId: string) => {
   }
 }
 
-export const sandboxDeliver = (
+export const machineDeliver = (
   db: Db,
   keyring: Keyring,
-  sandboxId: string,
+  machineId: string,
   actor: ActorValue,
 ): SecretsDeliver => {
-  const { entries, env_digest } = sandboxEnv(db, sandboxId)
+  const { entries, env_digest } = machineEnv(db, machineId)
 
   return renderedDelivery(
     db,
@@ -69,11 +69,11 @@ export const sandboxDeliver = (
     })),
     {
       target: {
-        sandbox_id: sandboxId,
+        sandbox_id: machineId,
       },
       subject: {
-        entity: 'sandbox',
-        id: sandboxId,
+        entity: 'machine',
+        id: machineId,
       },
       env_digest,
       purpose: 'sandbox',
@@ -82,20 +82,20 @@ export const sandboxDeliver = (
   )
 }
 
-export const sandboxKnown = (
+export const machineKnown = (
   db: Db,
   keyring: Keyring,
-  sandboxId: string,
+  machineId: string,
   actor: ActorValue,
   requestId: string,
 ) =>
   knownRedaction(
     db,
     keyring,
-    sandboxEntries(db, sandboxId),
+    machineEntries(db, machineId),
     {
-      entity: 'sandbox',
-      id: sandboxId,
+      entity: 'machine',
+      id: machineId,
     },
     actor,
     requestId,
