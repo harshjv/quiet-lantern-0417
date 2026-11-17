@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
@@ -22,7 +23,6 @@ import { api, idempotency, send } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { appKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { placeName, previewQuery, scopeOf, type PlaceView } from '@/lib/place'
 import { onlineStationsQuery, seedApp } from '@/lib/queries'
 import { useRows } from '@/lib/use-rows'
@@ -71,6 +71,7 @@ export function NewApp({
   const [deploy, setDeploy] = useState(true)
   const choices = stations.data?.items ?? []
 
+  const navigate = useNavigate()
   const mutation = useApiMutation({
     mutationFn: () =>
       send(
@@ -115,7 +116,14 @@ export function NewApp({
     onSuccess: (result) => {
       onOpenChange(false)
 
-      go(result.waiting ? places.approval(result.body.id) : places.app(result.body.id))
+      if (!result.waiting) {
+        void navigate({
+          to: '/apps/$app/{-$tab}',
+          params: {
+            app: result.body.id,
+          },
+        })
+      }
     },
   })
 

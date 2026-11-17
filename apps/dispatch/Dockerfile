@@ -13,7 +13,7 @@ RUN find . -name node_modules -type d -prune -exec rm -rf {} + \
 
 FROM docker.io/library/node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68
 ARG VERSION=0.0.0
-ENV NODE_ENV=production STATIONLY_DISPATCH_VERSION=${VERSION}
+ENV NODE_ENV=production STATIONLY_BUILD_VERSION=${VERSION}
 COPY --from=build /app /app
 RUN mkdir /data && chown node:node /data
 USER node

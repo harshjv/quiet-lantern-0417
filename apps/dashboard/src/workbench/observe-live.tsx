@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Activity as ActivityIcon, Box, CircleAlert } from 'lucide-react'
 import { useState } from 'react'
 
@@ -14,24 +15,36 @@ import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, unwrap } from '@/lib/api'
 import { bytes, shortAgo } from '@/lib/format'
 import { appStatus } from '@/lib/labels'
-import type { Go, Place } from '@/lib/nav'
 import { logsQuery } from '@/lib/queries'
 
+import { fixOf } from './fix-live'
 import { failingApps, useLiveApps, type LiveApp } from './ops-live'
 import { ItemList, ItemRow, Page, PageTabPanel, PageTabs, Section, StatusPill } from './parts'
 
-type Tab = 'attention' | 'logs' | 'metrics' | 'activity'
+const tabs = ['attention', 'logs', 'metrics', 'activity'] as const
 
-const fixOf = (live: LiveApp) =>
-  live.newest?.status === 'failed' ? `deployment:${live.newest.id}` : `app:${live.app.id}`
-
-export function LiveObserve({ place, go }: { place: Place; go: Go }) {
-  const [tab, setTab] = useState<Tab>('attention')
-  const apps = useLiveApps(place.project)
+export function LiveObserve({
+  project,
+  tab: shown,
+}: {
+  project: string | null
+  tab: string | null
+}) {
+  const navigate = useNavigate()
+  const tab = tabs.find((t) => t === shown) ?? 'attention'
+  const apps = useLiveApps(project)
+  const select = (next: string) =>
+    void navigate({
+      to: '/observe/{-$tab}',
+      params: {
+        tab: next === 'attention' ? undefined : next,
+      },
+      search: (prev) => prev,
+    })
 
   return (
     <Page title="Observe">
-      <PageTabs value={tab} onValueChange={(next) => setTab(next as Tab)}>
+      <PageTabs value={tab} onValueChange={select}>
         <TabsList>
           <TabsTrigger value="attention">Attention</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
@@ -39,7 +52,7 @@ export function LiveObserve({ place, go }: { place: Place; go: Go }) {
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
         <PageTabPanel value="attention">
-          <Attention apps={apps} go={go} />
+          <Attention apps={apps} />
         </PageTabPanel>
         <PageTabPanel value="logs">
           <Logs apps={apps} />
@@ -55,7 +68,7 @@ export function LiveObserve({ place, go }: { place: Place; go: Go }) {
   )
 }
 
-function Attention({ apps, go }: { apps: LiveApp[]; go: Go }) {
+function Attention({ apps }: { apps: LiveApp[] }) {
   const troubled = failingApps(apps)
 
   return (
@@ -95,29 +108,25 @@ function Attention({ apps, go }: { apps: LiveApp[]; go: Go }) {
               ]}
               action={
                 <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      go({
-                        mode: 'ship',
-                        view: `app:${live.app.id}`,
-                      })
-                    }
-                  >
-                    Open
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      to="/apps/$app/{-$tab}"
+                      params={{
+                        app: live.app.id,
+                      }}
+                    >
+                      Open
+                    </Link>
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      go({
-                        mode: 'build',
-                        view: 'fix',
+                  <Button asChild size="sm">
+                    <Link
+                      to="/build/new"
+                      search={{
                         fix: fixOf(live),
-                      })
-                    }
-                  >
-                    Fix with an agent
+                      }}
+                    >
+                      Fix with an agent
+                    </Link>
                   </Button>
                 </>
               }

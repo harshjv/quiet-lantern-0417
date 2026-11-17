@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   CircleCheck,
   CircleX,
@@ -11,18 +12,18 @@ import {
 import { useState, type ReactNode } from 'react'
 
 import { Rows } from '@/components/page'
-import { PlaceLink } from '@/components/place-link'
 import { Button } from '@/components/ui/button'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { failureText, type Approval, type Me } from '@/lib/api'
+import { approvalHeadline, type Names } from '@/lib/changes'
 import { changeSummary, shortAgo } from '@/lib/format'
 import { actorText, approvalSource, approvalStatus } from '@/lib/labels'
-import { places, usePlace } from '@/lib/nav'
 import { approvalsQuery, meQuery, projectsQuery } from '@/lib/queries'
 import type { Tone } from '@/lib/tone'
 
 import { deciderOf } from './approval-actions'
 import { useTaskRows, type Task } from './data'
+import { useNames } from './names'
 import {
   ItemList,
   ItemRow,
@@ -35,6 +36,7 @@ import {
   type Fact,
 } from './parts'
 import { ShipDecision, shipProblem, shipState, shipStatusText } from './ship-approval'
+import { useProject } from './where'
 
 type Group = 'decide' | 'others' | 'broken' | 'done'
 
@@ -62,7 +64,7 @@ const groups: { id: Group; title: string; tab: string }[] = [
   {
     id: 'others',
     title: 'Waiting on someone else',
-    tab: 'Waiting',
+    tab: 'On others',
   },
   {
     id: 'broken',
@@ -123,7 +125,14 @@ const taskItems = (rows: Task[]) =>
             ],
             action: (
               <Button asChild size="sm">
-                <PlaceLink to={places.task(t.id)}>Open</PlaceLink>
+                <Link
+                  to="/build/$task"
+                  params={{
+                    task: t.id,
+                  }}
+                >
+                  Open
+                </Link>
               </Button>
             ),
           },
@@ -131,12 +140,12 @@ const taskItems = (rows: Task[]) =>
       : []
   })
 
-const projectText = (approval: Approval, names: Map<string, string>) =>
+const projectText = (approval: Approval, names: Names) =>
   approval.project_id
     ? `${names.get(approval.project_id) ?? approval.project_id} / production`
     : 'Platform'
 
-const approvalFacts = (approval: Approval, names: Map<string, string>, status?: string): Fact[] => [
+const approvalFacts = (approval: Approval, names: Names, status?: string): Fact[] => [
   ...(status
     ? [
         {
@@ -172,20 +181,32 @@ const approvalFacts = (approval: Approval, names: Map<string, string>, status?: 
 ]
 
 function ApprovalTitle({ approval }: { approval: Approval }) {
+  const names = useNames([approval.project_id])
+
   return (
-    <PlaceLink
-      to={places.approval(approval.id)}
+    <Link
+      to="/approvals/$approval"
+      params={{
+        approval: approval.id,
+      }}
       className="truncate underline-offset-4 hover:underline"
     >
-      {approval.title}
-    </PlaceLink>
+      {approvalHeadline(approval, names)}
+    </Link>
   )
 }
 
 function Review({ approval }: { approval: Approval }) {
   return (
     <Button asChild size="sm" variant="outline">
-      <PlaceLink to={places.approval(approval.id)}>Review</PlaceLink>
+      <Link
+        to="/approvals/$approval"
+        params={{
+          approval: approval.id,
+        }}
+      >
+        Review
+      </Link>
     </Button>
   )
 }
@@ -196,7 +217,7 @@ const waitingNote = (blocked: boolean) => (
   </span>
 )
 
-const approvalItem = (approval: Approval, me: Me | undefined, names: Map<string, string>) => {
+const approvalItem = (approval: Approval, me: Me | undefined, names: Names) => {
   const decider = deciderOf(me, approval)
   const yours = decider.can && !decider.blocked
 
@@ -216,7 +237,14 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Map<string,
         <>
           {approval.task_id && (
             <Button asChild size="sm" variant="ghost">
-              <PlaceLink to={places.task(approval.task_id)}>Open task</PlaceLink>
+              <Link
+                to="/build/$task"
+                params={{
+                  task: approval.task_id,
+                }}
+              >
+                Open task
+              </Link>
             </Button>
           )}
           <ShipDecision approval={approval} />
@@ -242,17 +270,17 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Map<string,
   } satisfies Item
 }
 
-function useProjectNames() {
+function useProjectNames(): Names {
   const projects = useQuery(projectsQuery)
 
   return new Map((projects.data?.items ?? []).map((p) => [p.id, p.name]))
 }
 
-const inProject = (approval: Approval, project: string | null, names: Map<string, string>) =>
+const inProject = (approval: Approval, project: string | null, names: Names) =>
   !project || (approval.project_id !== null && names.get(approval.project_id) === project)
 
 export function useInbox() {
-  const { project } = usePlace()
+  const project = useProject()
   const rows = useTaskRows()
   const me = useQuery(meQuery)
   const approvals = useQuery(approvalsQuery('waiting'))
@@ -354,7 +382,7 @@ const decidedIcon: Record<Decided, LucideIcon> = {
 }
 
 function History() {
-  const { project } = usePlace()
+  const project = useProject()
   const [status, setStatus] = useState<Decided>('approved')
   const approvals = useQuery(approvalsQuery(status))
   const names = useProjectNames()

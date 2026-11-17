@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useSuspenseQueries } from '@tanstack/react-query'
+import { useQuery, useSuspenseQueries } from '@tanstack/react-query'
 import { Cable, CircleAlert, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
@@ -11,7 +11,6 @@ import { CheckboxField, Field } from '@/components/field'
 import { DialogForm, dialogScroll, FormDialog, FormError } from '@/components/form-dialog'
 import { EmptyState, ErrorState, Subsection } from '@/components/page'
 import { Panel } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import { Term } from '@/components/term'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -42,14 +41,11 @@ import {
   type Domain,
   type PortAllocation,
 } from '@/lib/api'
-import { waitingText, waitingTitle } from '@/lib/approval'
 import { editItems } from '@/lib/cache'
 import { commands, type AppScope } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
-import { useInvalidate } from '@/lib/invalidate'
 import { appKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import { places } from '@/lib/nav'
 import { allocationsQuery, domainsQuery, portsQuery, seedApp, stationQuery } from '@/lib/queries'
 import { toneText, warningAlert } from '@/lib/tone'
 import { useTrail } from '@/lib/use-trail'
@@ -562,10 +558,9 @@ function Expose({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const invalidate = useInvalidate()
   const [port, setPort] = useState(candidates[0]?.id ?? '')
   const chosen = candidates.find((p) => p.id === port) ?? candidates[0]
-  const mutation = useMutation({
+  const mutation = useApiMutation({
     mutationFn: (id: string) =>
       send(
         api.v1
@@ -574,9 +569,15 @@ function Expose({
           })
           ['port-allocations'].post(undefined, idempotency()),
       ),
-    onSuccess: () => invalidate('networking', 'approvals'),
+    invalidate: ['networking'],
+    waiting: () => `Expose port ${chosen?.port} of ${scope.app}`,
+    onSuccess: (outcome) => {
+      if (outcome.waiting) {
+        onOpenChange(false)
+      }
+    },
   })
-  const result = mutation.data
+  const result = mutation.data?.waiting === false ? mutation.data.body : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -584,34 +585,26 @@ function Expose({
         {result ? (
           <div className="space-y-4" aria-live="polite">
             <DialogHeader>
-              <DialogTitle>
-                {result.waiting ? waitingTitle : `Port ${chosen?.port} is public`}
-              </DialogTitle>
+              <DialogTitle>Port {chosen?.port} is public</DialogTitle>
               <DialogDescription>
-                {result.waiting
-                  ? waitingText(`Expose port ${chosen?.port} of ${scope.app}`)
-                  : 'Clients on the internet connect to this address. The server forwards it to the container.'}
+                Clients on the internet connect to this address. The server forwards it to the
+                container.
               </DialogDescription>
             </DialogHeader>
-            {result.waiting ? null : result.body.address ? (
+            {result.address ? (
               <div
                 className="rounded-md border bg-muted/40 px-3 py-2"
                 data-testid="exposed-address"
               >
-                <AddressLine address={result.body.address} />
+                <AddressLine address={result.address} />
               </div>
             ) : (
               <p className="text-sm" data-testid="exposed-address">
-                Stationly reserved port <Code>{result.body.host_port}</Code>. The station has no
-                public address, so nothing reaches it yet.
+                Stationly reserved port <Code>{result.host_port}</Code>. The station has no public
+                address, so nothing reaches it yet.
               </p>
             )}
             <DialogFooter>
-              {result.waiting && (
-                <Button asChild variant="outline">
-                  <PlaceLink to={places.approval(result.body.id)}>Review</PlaceLink>
-                </Button>
-              )}
               <Button type="button" onClick={() => onOpenChange(false)}>
                 Done
               </Button>

@@ -15,7 +15,7 @@ import {
   authClient,
   authMessage,
   passkeysAvailable,
-  safeNext,
+  safeRedirect,
   serverPage,
   sessionQuery,
 } from '@/lib/auth'
@@ -25,14 +25,14 @@ import { z } from '@/lib/zod'
 
 export const Route = createFileRoute('/login')({
   validateSearch: z.object({
-    next: z.string().optional().catch(undefined),
+    redirect: z.string().optional().catch(undefined),
   }),
   beforeLoad: async ({ context, search }) => {
     const session = await context.queryClient.query(sessionQuery)
-    const next = safeNext(search.next)
+    const target = safeRedirect(search.redirect)
 
-    if (session && !(next && serverPage(next))) {
-      window.location.assign(next ?? '/')
+    if (session && !(target && serverPage(target))) {
+      window.location.assign(target ?? '/')
     }
   },
   head: () => titled('Sign in'),
@@ -40,7 +40,7 @@ export const Route = createFileRoute('/login')({
 })
 
 function Login() {
-  const { next } = Route.useSearch()
+  const { redirect } = Route.useSearch()
   const client = useQueryClient()
   const [step, setStep] = useState<'credentials' | 'totp'>('credentials')
   const [email, setEmail] = useState('')
@@ -56,7 +56,7 @@ function Login() {
     await client.invalidateQueries({
       queryKey: ['auth'],
     })
-    const target = safeNext(next)
+    const target = safeRedirect(redirect)
 
     if (target && serverPage(target)) {
       window.location.assign(target)
@@ -70,7 +70,7 @@ function Login() {
       : []
 
     if (session && !session.user.twoFactorEnabled && keys.length === 0) {
-      window.location.assign('/#outside/account')
+      window.location.assign('/account')
 
       return
     }
@@ -100,8 +100,8 @@ function Login() {
     setError(null)
     const result = await authClient.signIn.social({
       provider: 'github',
-      callbackURL: '/',
-      errorCallbackURL: '/login?github=failed',
+      callbackURL: `${window.location.origin}${safeRedirect(redirect) ?? '/'}`,
+      errorCallbackURL: `${window.location.origin}/login?github=failed`,
     })
 
     if (result.error) {
@@ -179,7 +179,7 @@ function Login() {
           </CardTitle>
           <CardDescription>
             {step === 'credentials' ? (
-              next && serverPage(next) ? (
+              redirect && serverPage(redirect) ? (
                 <>
                   Sign in to approve <Code>{commands.login()}</Code>.
                 </>

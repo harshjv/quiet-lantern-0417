@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, ExternalLink, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import { Trigger } from '@/components/actor'
@@ -13,7 +14,6 @@ import {
 import { LogViewer } from '@/components/log-viewer'
 import { EmptyState, KeyValue, Mono } from '@/components/page'
 import { Panel } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import { PublicNetworking } from '@/components/public-networking'
 import { AppHealth } from '@/components/service-health'
 import { AppNetwork } from '@/components/service-network'
@@ -34,7 +34,7 @@ import { blank, duration, shortDigest, shortSha, sourceText } from '@/lib/format
 import { healthChangeText } from '@/lib/health-text'
 import { entityIcon } from '@/lib/icons'
 import { appKind, deploymentStrategy } from '@/lib/labels'
-import { go, places, usePlace, viewTab } from '@/lib/nav'
+import { placeTo } from '@/lib/links'
 import { appQuery, deploymentsQuery, diagnosisQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { toneText } from '@/lib/tone'
@@ -56,18 +56,18 @@ const tabLabel: Record<AppTab, string> = {
   network: 'Network',
 }
 
-export function AppPage({ appId }: { appId: string }) {
+export function AppPage({ appId, tab }: { appId: string; tab: string | null }) {
   return (
     <PageBoundary title="Couldn’t load this app" resetKey={appId}>
-      <AppView key={appId} id={appId} />
+      <AppView key={appId} id={appId} tab={tab} />
     </PageBoundary>
   )
 }
 
-function AppView({ id }: { id: string }) {
+function AppView({ id, tab: shown }: { id: string; tab: string | null }) {
   const { data: app } = useSuspenseQuery(appQuery(id))
-  const place = usePlace()
-  const tab = appTabs.find((t) => t === viewTab(place.view)) ?? 'deployments'
+  const navigate = useNavigate()
+  const tab = appTabs.find((t) => t === shown) ?? 'deployments'
   const trail = useTrail(app)
   const scope: AppScope = {
     ...trail.scope,
@@ -78,7 +78,13 @@ function AppView({ id }: { id: string }) {
     const found = appTabs.find((t) => t === next)
 
     if (found) {
-      go(places.app(id, found))
+      void navigate({
+        to: '/apps/$app/{-$tab}',
+        params: {
+          app: id,
+          tab: found === 'deployments' ? undefined : found,
+        },
+      })
     }
   }
 
@@ -109,17 +115,13 @@ function AppView({ id }: { id: string }) {
       }
     >
       <div className="-mt-4 flex flex-col gap-2">
-        <PlaceLink
-          to={
-            trail.place.previewName
-              ? places.preview(trail.project.name, trail.place.previewName)
-              : places.project(trail.project.name)
-          }
+        <Link
+          {...placeTo(trail.project.name, trail.place.previewName)}
           className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           <ArrowLeft className="size-3.5" aria-hidden />
           {trail.project.name} / {trail.place.previewName ?? 'production'}
-        </PlaceLink>
+        </Link>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <Badge variant="outline" className="font-normal">
             {appKind[app.kind]}
@@ -204,13 +206,16 @@ function CurrentDeployment({ app, scope }: { app: App; scope: AppScope }) {
           ? [
               [
                 'Current deployment',
-                <PlaceLink
+                <Link
                   key="deployment"
-                  to={places.deployment(current.id)}
+                  to="/deployments/$deployment"
+                  params={{
+                    deployment: current.id,
+                  }}
                   className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
                 >
                   #{current.number} <DeploymentStatusBadge status={current.status} />
-                </PlaceLink>,
+                </Link>,
               ],
               ['Trigger', <Trigger key="trigger" trigger={current.trigger} />],
               ['Started', <Time key="started" value={current.started_at} />],
@@ -244,19 +249,24 @@ function FailedNotice({ app }: { app: App }) {
       action={
         <>
           <Button asChild size="sm" variant="outline">
-            <PlaceLink to={places.deployment(failed.id)}>Open deployment</PlaceLink>
+            <Link
+              to="/deployments/$deployment"
+              params={{
+                deployment: failed.id,
+              }}
+            >
+              Open deployment
+            </Link>
           </Button>
-          <Button
-            size="sm"
-            onClick={() =>
-              go({
-                mode: 'build',
-                view: 'fix',
+          <Button asChild size="sm">
+            <Link
+              to="/build/new"
+              search={{
                 fix: `deployment:${failed.id}`,
-              })
-            }
-          >
-            <TriangleAlert /> Fix with an agent
+              }}
+            >
+              <TriangleAlert /> Fix with an agent
+            </Link>
           </Button>
         </>
       }
@@ -314,13 +324,16 @@ function Deployments({ app, scope }: { app: App; scope: AppScope }) {
           >
             <TableCell className="tabular-nums">
               {!isOptimistic(deployment) && (
-                <PlaceLink
-                  to={places.deployment(deployment.id)}
+                <Link
+                  to="/deployments/$deployment"
+                  params={{
+                    deployment: deployment.id,
+                  }}
                   className="font-medium after:absolute after:inset-0"
                   aria-label={`Deployment ${deployment.number}`}
                 >
                   {deployment.number}
-                </PlaceLink>
+                </Link>
               )}
             </TableCell>
             <TableCell>

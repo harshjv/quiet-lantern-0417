@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { Eye, EyeOff, Lock, Pencil, Plus } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
@@ -22,24 +23,28 @@ import {
 } from '@/components/ui/select'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { KeyKindSelect, KeyNameInput, KeyNotes, KeyValueInput } from '@/components/variable-fields'
-import { api, idempotency, send, unwrap, type Key } from '@/lib/api'
+import { api, idempotency, send, unwrap, type Change, type Key } from '@/lib/api'
 import { editItems, isOptimistic } from '@/lib/cache'
+import { record } from '@/lib/changes'
 import { plural } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { injection as injectionLabel, keyKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
+  approvalsQuery,
   keysQuery,
   machineKeysQuery,
   machineResolvedQuery,
   projectKeysQuery,
   resolvedQuery,
 } from '@/lib/queries'
+import { toneOutline } from '@/lib/tone'
 import { highlight, useFresh } from '@/lib/use-fresh'
 import { cn } from '@/lib/utils'
 import {
   hasNoValue,
   noValueLabel,
+  projectReference,
   toKeyInput,
   toMachineKeyInput,
   withDraft,
@@ -47,11 +52,6 @@ import {
   type KeyEntry,
   type KeyKind,
 } from '@/lib/variables'
-
-const targetLabel = {
-  production: 'production',
-  preview: 'every preview',
-} as const
 
 export type KeyTarget =
   | { kind: 'app'; app: string }
@@ -234,11 +234,16 @@ function KeyDialog({
       title={existing ? `Change ${existing.name}` : 'Add a key'}
       description={
         <>
-          {target.kind === 'project'
-            ? `Shared by every app in ${targetLabel[target.target]}.`
-            : target.kind === 'machine'
-              ? 'Reference a project or global key to keep a credential out of an agent’s reach.'
-              : 'Reaches this app as an environment variable or a file.'}{' '}
+          {target.kind === 'project' ? (
+            <>
+              No app inherits it: an app reads it through a reference key such as{' '}
+              <Code>{projectReference}</Code>.
+            </>
+          ) : target.kind === 'machine' ? (
+            'Reference a project or global key to keep a credential out of an agent’s reach.'
+          ) : (
+            'Reaches this app as an environment variable or a file.'
+          )}{' '}
           {target.kind === 'machine'
             ? 'Each save creates a new version.'
             : 'Each save creates a new version. Running deployments keep the one they started with.'}
@@ -407,6 +412,71 @@ function ValueCell({
 
 const headVersion = (item: Key) => String(item.head_version)
 
+type Pending = { approval: string; op: Change['op']; name: string; kind: KeyKind | null }
+
+function usePendingKeys(target: KeyTarget, items: Key[]) {
+  const waiting = useQuery({
+    ...approvalsQuery('waiting'),
+    enabled: target.kind !== 'machine',
+  })
+  const parent =
+    target.kind === 'app' ? target.app : target.kind === 'project' ? target.project : null
+  const ids = new Set(items.map((item) => item.id))
+  const pending = (waiting.data?.items ?? []).flatMap((approval) =>
+    (approval.changes ?? []).flatMap((change): Pending[] => {
+      const data = record(change.op === 'remove' ? change.before : change.after) ?? {}
+      const name = typeof data.name === 'string' ? data.name : null
+      const ours =
+        change.entity === 'key' &&
+        name !== null &&
+        (change.op === 'add'
+          ? change.parent === parent && (target.kind !== 'project' || data.target === target.target)
+          : ids.has(change.id ?? ''))
+
+      return ours
+        ? [
+            {
+              approval: approval.id,
+              op: change.op,
+              name,
+              kind: (data.kind as KeyKind | undefined) ?? null,
+            },
+          ]
+        : []
+    }),
+  )
+
+  return {
+    adds: pending.filter((p) => p.op === 'add' && !items.some((item) => item.name === p.name)),
+    of: (item: Key) => pending.find((p) => p.op !== 'add' && p.name === item.name),
+  }
+}
+
+const pendingText: Record<Change['op'], string> = {
+  add: 'Waits for approval',
+  update: 'Change waits for approval',
+  remove: 'Removal waits for approval',
+}
+
+function PendingBadge({ pending }: { pending: Pending | undefined }) {
+  if (!pending) {
+    return null
+  }
+
+  return (
+    <Badge asChild variant="outline" className={cn('ml-2 font-normal', toneOutline.warning)}>
+      <Link
+        to="/approvals/$approval"
+        params={{
+          approval: pending.approval,
+        }}
+      >
+        {pendingText[pending.op]}
+      </Link>
+    </Badge>
+  )
+}
+
 function KeyRows({
   target,
   values,
@@ -424,18 +494,24 @@ function KeyRows({
   const items = [...data.items].sort((a, b) => a.name.localeCompare(b.name))
   const visible = items
   const fresh = useFresh(visible, headVersion)
+  const pending = usePendingKeys(target, items)
 
-  if (visible.length === 0) {
+  if (visible.length === 0 && pending.adds.length === 0) {
     return (
       <EmptyState
         icon={entityIcon.key}
         title="No keys yet"
         description={
-          target.kind === 'machine'
-            ? 'Keys reach this machine as environment variables. Seal the ones that hold secrets.'
-            : target.kind === 'project'
-              ? `Shared keys reach every app in ${targetLabel[target.target]}. Seal the ones that hold secrets.`
-              : 'Keys reach this app as environment variables. Seal the ones that hold secrets.'
+          target.kind === 'machine' ? (
+            'Keys reach this machine as environment variables. Seal the ones that hold secrets.'
+          ) : target.kind === 'project' ? (
+            <>
+              A project key reaches no app by itself. Add a key to an app that references it, such
+              as <Code>{projectReference}</Code>. Seal the ones that hold secrets.
+            </>
+          ) : (
+            'Keys reach this app as environment variables. Seal the ones that hold secrets.'
+          )
         }
         action={
           <Button size="sm" onClick={onAdd}>
@@ -465,6 +541,7 @@ function KeyRows({
           <TableRow key={item.id} className={cn(fresh.has(item.id) && highlight)}>
             <TableCell>
               <span className="font-mono text-[0.8125rem] font-medium">{item.name}</span>
+              <PendingBadge pending={pending.of(item)} />
               {target.kind === 'project' &&
                 target.target === 'preview' &&
                 !(item.targets ?? []).includes('preview') && (
@@ -501,6 +578,27 @@ function KeyRows({
             </TableCell>
           </TableRow>
         ))}
+        {pending.adds.map((entry) => (
+          <TableRow
+            key={`pending:${entry.approval}:${entry.name}`}
+            className="text-muted-foreground"
+          >
+            <TableCell>
+              <span className="font-mono text-[0.8125rem] font-medium text-foreground">
+                {entry.name}
+              </span>
+              <PendingBadge pending={entry} />
+            </TableCell>
+            <TableCell>
+              {entry.kind && <Badge variant="outline">{keyKind[entry.kind]}</Badge>}
+            </TableCell>
+            <TableCell className="whitespace-normal">
+              Stationly adds it once an admin approves.
+            </TableCell>
+            {target.kind !== 'machine' && <TableCell className="hidden md:table-cell" />}
+            <TableCell />
+          </TableRow>
+        ))}
       </TableBody>
     </TableFrame>
   )
@@ -529,13 +627,23 @@ export function KeysPanel({ target, also }: { target: KeyTarget; also?: ReactNod
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          {target.kind === 'app'
-            ? 'Keys of this app. Stationly resolves references when it deploys.'
-            : target.kind === 'machine'
-              ? 'Keys of this machine. Stationly resolves references when the machine starts and when a value changes.'
-              : target.target === 'production'
-                ? 'Shared keys for every app in production.'
-                : 'Shared keys for every preview. A literal key without a preview value reads its production value; production’s sealed values never reach a preview.'}
+          {target.kind === 'app' ? (
+            'Keys of this app. Stationly resolves references when it deploys.'
+          ) : target.kind === 'machine' ? (
+            'Keys of this machine. Stationly resolves references when the machine starts and when a value changes.'
+          ) : target.target === 'production' ? (
+            <>
+              Keys of this project’s production. Nothing is inherited: an app reads one through a
+              reference key such as <Code>{projectReference}</Code>.
+            </>
+          ) : (
+            <>
+              Preview values of this project’s keys, read through references such as{' '}
+              <Code>{projectReference}</Code> from apps in every preview. A literal key without a
+              preview value reads its production value; production’s sealed values never reach a
+              preview.
+            </>
+          )}
         </p>
         <div className="flex items-center gap-2">
           {target.kind !== 'project' && (

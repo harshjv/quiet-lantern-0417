@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
@@ -7,7 +8,6 @@ import { releaseConfig } from '@stationly/protocol/release-config'
 import { Code } from '@/components/code'
 import { NewProject } from '@/components/new-project'
 import { NewApp, type AppPreset } from '@/components/new-service'
-import { PlaceLink } from '@/components/place-link'
 import { NewMachine } from '@/components/sandboxes-panel'
 import { AppStatusDot } from '@/components/status'
 import { Button } from '@/components/ui/button'
@@ -16,7 +16,7 @@ import { passkeysAvailable, passkeysQuery, sessionQuery } from '@/lib/auth'
 import { guideProgress, guideVisible, setGuideHidden, useGuideHidden } from '@/lib/first-run'
 import { byName, plural } from '@/lib/format'
 import { client } from '@/lib/labels'
-import { places } from '@/lib/nav'
+import { placeTo } from '@/lib/links'
 import { agentTokensQuery } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
@@ -76,7 +76,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
           : 'Set up TOTP, so a password alone can’t sign in.',
       action: (next) => (
         <Button asChild size="sm" variant={variant(next)}>
-          <PlaceLink to={places.page('account')}>Secure account</PlaceLink>
+          <Link to="/account">Secure account</Link>
         </Button>
       ),
     },
@@ -125,11 +125,11 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         ? (next) =>
             apps > 0 ? (
               <Button asChild size="sm" variant="outline">
-                <PlaceLink to={places.project(first.name)}>Open {first.name}</PlaceLink>
+                <Link {...placeTo(first.name, null)}>Open {first.name}</Link>
               </Button>
             ) : first.waiting_approvals > 0 ? (
               <Button asChild size="sm" variant={variant(next)}>
-                <PlaceLink to={places.project(first.name, 'approvals')}>Review approval</PlaceLink>
+                <Link {...placeTo(first.name, null, 'approvals')}>Review approval</Link>
               </Button>
             ) : (
               <Button size="sm" variant={variant(next)} onClick={() => open('app')}>
@@ -169,15 +169,14 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
       action: first
         ? (next) => (
             <Button asChild size="sm" variant={variant(next)}>
-              <PlaceLink
-                to={{
-                  mode: 'build',
+              <Link
+                to="/build/new"
+                search={{
                   project: first.name,
-                  view: 'new',
                 }}
               >
                 New task
-              </PlaceLink>
+              </Link>
             </Button>
           )
         : undefined,
@@ -193,7 +192,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
           : 'Claude Code, Cursor, Codex or any MCP client.',
       action: (next) => (
         <Button asChild size="sm" variant={variant(next)}>
-          <PlaceLink to={places.page('connect')}>Connect agent</PlaceLink>
+          <Link to="/connect">Connect agent</Link>
         </Button>
       ),
     },

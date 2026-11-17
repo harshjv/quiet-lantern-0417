@@ -692,7 +692,7 @@ export const platformRoutes = (kit: Kit) => {
     kit.deps.upgrades?.kick()
 
     return {
-      id: result.approval.id,
+      id: result.approval?.id ?? null,
       status: 'approved',
       upgrade: result.upgrade,
       release: releaseView,
@@ -1072,7 +1072,7 @@ export const platformRoutes = (kit: Kit) => {
         kit.deps.upgrades?.kick()
 
         return {
-          id: result.approval.id,
+          id: result.approval?.id ?? null,
           status: 'approved',
           upgrade: result.upgrade,
           release: lockfile.release,

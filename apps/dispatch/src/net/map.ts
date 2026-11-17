@@ -289,7 +289,7 @@ export const networkMap = (
       )
     }
 
-    if (sw.state === 'no_target' && longRunning.has(svc.kind)) {
+    if (sw.state === 'no_target' && longRunning.has(svc.kind) && svc.status !== 'not_deployed') {
       warnings.push(
         finding(
           'SWITCH_NO_TARGET',

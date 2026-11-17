@@ -31,7 +31,15 @@ export type MapNode =
   | Node<AppData, 'app'>
   | Node<PeerData, 'peer'>
 
-const columnWidth = 360
+const gap = 80
+const width = {
+  internet: 160,
+  entry: 288,
+  app: 288,
+  peer: 240,
+} as const
+const appStep = width.app + gap
+const entryX = width.internet + gap
 const rowHeight = {
   internet: 80,
   entry: 64,
@@ -76,8 +84,12 @@ const appLayers = (map: NetworkMap) => {
     }
   }
 
+  const isolated = names.filter(
+    (n) => !exposed.has(n) && !map.edges.some((e) => e.from === n || e.to === n),
+  )
+
   walk(
-    names.filter((n) => exposed.has(n)),
+    names.filter((n) => exposed.has(n) || isolated.includes(n)),
     0,
   )
   const rest = names.filter((n) => !layer.has(n))
@@ -101,6 +113,12 @@ const column = <T>(items: T[], height: number, tallest: number) => {
     item,
     y: offset + i * height,
   }))
+}
+
+export const mapHeight = (nodes: MapNode[]) => {
+  const ys = nodes.map((node) => node.position.y)
+
+  return ys.length ? Math.max(...ys) - Math.min(...ys) + rowHeight.app : rowHeight.app
 }
 
 export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[] } => {
@@ -147,7 +165,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
     }
   }
   const hasInbound = entries.length > 0
-  const firstAppColumn = hasInbound ? 2 : 0
+  const firstAppX = hasInbound ? entryX + width.entry + gap : 0
   const nodes: MapNode[] = []
 
   if (hasInbound) {
@@ -168,7 +186,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
         id: entryKey(item),
         type: 'entry',
         position: {
-          x: columnWidth,
+          x: entryX,
           y,
         },
         data: {
@@ -186,7 +204,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
         id: `svc:${item.name}`,
         type: 'app',
         position: {
-          x: (firstAppColumn + i) * columnWidth,
+          x: firstAppX + i * appStep,
           y,
         },
         data: {
@@ -299,8 +317,8 @@ export const overlayLive = (
   const appNode = (name: string) => nodes.find((n) => n.id === `svc:${name}`)
   const xs = nodes.map((n) => n.position.x)
   const ys = nodes.filter((n) => n.type === 'app').map((n) => n.position.y)
-  const left = Math.min(0, ...xs) - columnWidth
-  const right = Math.max(0, ...xs) + columnWidth
+  const left = Math.min(0, ...xs) - width.peer - gap
+  const right = Math.max(0, ...xs) + appStep
   const top = Math.min(0, ...ys)
   const leftNodes: {
     kind: (typeof inboundKinds)[number]

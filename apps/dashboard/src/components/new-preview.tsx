@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
@@ -9,14 +10,15 @@ import { Button } from '@/components/ui/button'
 import { api, idempotency, send } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { plural } from '@/lib/format'
+import { placeTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { seedPreview } from '@/lib/queries'
 
 export function NewPreview({ project, projectName }: { project: string; projectName: string }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [deploy, setDeploy] = useState(true)
+  const navigate = useNavigate()
   const mutation = useApiMutation({
     mutationFn: () =>
       send(
@@ -46,7 +48,7 @@ export function NewPreview({ project, projectName }: { project: string; projectN
       setOpen(false)
 
       if (!result.waiting) {
-        go(places.preview(projectName, result.body.name))
+        void navigate(placeTo(projectName, result.body.name))
       }
     },
   })
@@ -68,7 +70,7 @@ export function NewPreview({ project, projectName }: { project: string; projectN
       }
       size="md"
       title="Create a preview"
-      description="Copies production’s apps to their own URLs and network. Volumes start empty, and production’s sealed values never reach a preview."
+      description="Copies production’s apps onto their own network, with no domains until you add them. Volumes start empty, and production’s sealed values never reach a preview."
       also={<AlsoWith cli={commands.createPreview(projectName)} tool="create_preview" />}
       error={mutation.errorText}
       submitLabel="Create preview"

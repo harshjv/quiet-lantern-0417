@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   CircleAlert,
   CircleCheck,
@@ -19,7 +20,6 @@ import { Field, Hint } from '@/components/field'
 import { FixList } from '@/components/fix'
 import { ErrorState, Section } from '@/components/page'
 import { Panel } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { Time } from '@/components/time'
 import { Badge } from '@/components/ui/badge'
@@ -46,7 +46,6 @@ import {
   probeVerdict,
   rcode,
 } from '@/lib/labels'
-import { places } from '@/lib/nav'
 import { blockedText, endpointText, hopDetail, stepText } from '@/lib/network-text'
 import { placeOf, previewQuery } from '@/lib/place'
 import { appsQuery, connectionsQuery, dnsLogQuery } from '@/lib/queries'
@@ -130,12 +129,15 @@ function ProbeResult({ app, input }: { app: App; input: ProbeInput }) {
         {result?.waiting && (
           <p className="text-sm">
             {waitingTitle}.{' '}
-            <PlaceLink
-              to={places.approval(result.body.id)}
+            <Link
+              to="/approvals/$approval"
+              params={{
+                approval: result.body.id,
+              }}
               className="font-medium underline underline-offset-4"
             >
               Review the test connection
-            </PlaceLink>
+            </Link>
           </p>
         )}
         {result && !result.waiting && (

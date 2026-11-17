@@ -123,11 +123,13 @@ export const changeSummary = (summary: {
   deployments: number
 }) =>
   [
-    `${summary.add} added`,
-    `${summary.update} changed`,
-    `${summary.remove} removed`,
-    ...(summary.deployments ? [`starts ${plural(summary.deployments, 'deployment')}`] : []),
-  ].join(' · ')
+    summary.add && `${summary.add} added`,
+    summary.update && `${summary.update} changed`,
+    summary.remove && `${summary.remove} removed`,
+    summary.deployments && `starts ${plural(summary.deployments, 'deployment')}`,
+  ]
+    .filter(Boolean)
+    .join(' · ') || 'No changes'
 
 export const repositoryName = (url: string) => {
   const parts = url

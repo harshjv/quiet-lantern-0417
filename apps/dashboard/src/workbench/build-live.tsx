@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, Clock, ExternalLink, Eye, Folder, GitBranch, Rocket } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { Bot, Clock, ExternalLink, Eye, Folder, GitBranch, Loader2, Rocket } from 'lucide-react'
 import { useReducer, useState } from 'react'
 
 import {
@@ -28,8 +29,8 @@ import {
 } from '@/components/ai-elements/prompt-input'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { Tool, ToolContent, ToolHeader, ToolOutput } from '@/components/ai-elements/tool'
+import { Field } from '@/components/field'
 import { NewProject } from '@/components/new-project'
-import { PlaceLink } from '@/components/place-link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,7 +54,6 @@ import { agentStreamTypes, taskStreamUrl } from '@/lib/agent-stream'
 import { api, ApiFailure, failureText, idempotency, send, unwrap, type Task } from '@/lib/api'
 import { useEventStream } from '@/lib/event-stream'
 import { plural, repositoryName, shortAgo } from '@/lib/format'
-import { type Go, type Place } from '@/lib/nav'
 import {
   credentialKey,
   githubTokenHelp,
@@ -122,28 +122,26 @@ const runnerAgents = (Object.keys(workspaceAgents) as WorkspaceAgent[]).filter(
   (agent) => workspaceAgents[agent].runner,
 )
 
-export function LiveBuild({ place, go }: { place: Place; go: Go }) {
+export function LiveBuild({ task: id, project }: { task?: string; project: string | null }) {
   const { data, isPending } = useQuery(tasksQuery)
 
   if (isPending) {
     return null
   }
 
-  const shown = (data?.items ?? []).filter(
-    (t) => !place.project || t.project.name === place.project,
-  )
+  const items = data?.items ?? []
   const task =
-    place.view === 'new' ? undefined : (shown.find((t) => t.id === place.view) ?? shown[0])
-
-  if (place.view === 'fix') {
-    return <FixComposer target={fixTarget(place.fix ?? null)} go={go} />
-  }
+    items.find((t) => t.id === id) ?? items.find((t) => !project || t.project.name === project)
 
   if (!task) {
-    return <LiveComposer project={place.project} go={go} />
+    return <LiveComposer project={project} />
   }
 
-  return <LiveThread key={task.id} task={task} go={go} />
+  return <LiveThread key={task.id} task={task} />
+}
+
+export function NewTask({ project, fix }: { project: string | null; fix: string | null }) {
+  return fix ? <FixComposer target={fixTarget(fix)} /> : <LiveComposer project={project} />
 }
 
 const setupSteps: { state: string; label: string }[] = [
@@ -487,8 +485,9 @@ function TurnView({ turn, actions }: { turn: Turn; actions: ThreadActions }) {
   )
 }
 
-function LiveThread({ task, go }: { task: Task; go: Go }) {
+function LiveThread({ task }: { task: Task }) {
   const queries = useQueryClient()
+  const navigate = useNavigate()
   const [state, dispatch] = useReducer(reduce, emptyAgentState)
   const [problem, setProblem] = useState<string | null>(null)
   const row = asRow(task)
@@ -596,8 +595,8 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
     mutationFn: () => unwrap(target.delete(undefined, idempotency())),
     onSuccess: () => {
       refresh()
-      go({
-        view: 'new',
+      void navigate({
+        to: '/build/new',
       })
     },
     onError: (error) => setProblem(failureText(error)),
@@ -629,8 +628,11 @@ function LiveThread({ task, go }: { task: Task; go: Go }) {
     },
     onSuccess: (next) => {
       refresh()
-      go({
-        view: next.id,
+      void navigate({
+        to: '/build/$task',
+        params: {
+          task: next.id,
+        },
       })
     },
     onError: (error) => setProblem(failureText(error)),
@@ -847,11 +849,11 @@ const storeProjectKey = (project: string, name: string, value: string) =>
       ),
   )
 
-function FixComposer({ target, go }: { target: FixTarget | null; go: Go }) {
+function FixComposer({ target }: { target: FixTarget | null }) {
   const prefill = useFixPrefill(target)
 
   if (!target) {
-    return <LiveComposer project={null} go={go} />
+    return <LiveComposer project={null} />
   }
 
   if (!prefill) {
@@ -865,7 +867,6 @@ function FixComposer({ target, go }: { target: FixTarget | null; go: Go }) {
   return (
     <LiveComposer
       project={prefill.project}
-      go={go}
       prefill={{
         prompt: prefill.prompt,
         repository: prefill.repository ?? '',
@@ -876,7 +877,6 @@ function FixComposer({ target, go }: { target: FixTarget | null; go: Go }) {
 
 function LiveComposer(props: {
   project: string | null
-  go: Go
   prefill?: { prompt: string; repository: string }
 }) {
   const projects = useQuery(projectsQuery)
@@ -903,14 +903,9 @@ function FirstProject() {
           <Folder /> Create a project
         </Button>
         <Button asChild variant="outline">
-          <PlaceLink
-            to={{
-              mode: 'ship',
-              project: null,
-            }}
-          >
+          <Link to="/projects">
             <Rocket /> Open Ship
-          </PlaceLink>
+          </Link>
         </Button>
       </div>
       {creating && <NewProject open={creating} onOpenChange={setCreating} />}
@@ -920,14 +915,13 @@ function FirstProject() {
 
 function Composer({
   project: preferred,
-  go,
   prefill,
 }: {
   project: string | null
-  go: Go
   prefill?: { prompt: string; repository: string }
 }) {
   const queries = useQueryClient()
+  const navigate = useNavigate()
   const projects = useProjectList()
   const [project, setProject] = useState(preferred ?? projects[0]?.id ?? '')
   const [agent, setAgent] = useState<WorkspaceAgent>(runnerAgents[0] ?? 'claude')
@@ -971,37 +965,55 @@ function Composer({
     )
   const asking =
     blocked?.kind === 'token' ? 'token' : blocked?.kind === 'key' || keyMissing ? 'key' : null
+  const [waitingKey, setWaitingKey] = useState<string | null>(null)
+  const storeSecret = async () => {
+    const value = secret.trim()
+
+    if (!value || !asking || (asking === 'token' && !admin)) {
+      return
+    }
+
+    if (asking === 'key' && !admin) {
+      await unwrap(
+        api.v1.me
+          .keys({
+            name: credentialKey(preset.keys, value),
+          })
+          .put(
+            {
+              value,
+            },
+            idempotency(),
+          ),
+      )
+      void queries.invalidateQueries({
+        queryKey: ['me', 'keys'],
+      })
+
+      return
+    }
+
+    const stored = await storeProjectKey(
+      chosen,
+      asking === 'key' ? credentialKey(preset.keys, value) : githubTokenKey,
+      value,
+    )
+
+    setWaitingKey(stored.waiting ? stored.body.id : null)
+    void queries.invalidateQueries({
+      queryKey: ['keys', 'project', chosen],
+    })
+    void queries.invalidateQueries({
+      queryKey: ['approvals'],
+    })
+  }
+  const save = useMutation({
+    mutationFn: storeSecret,
+    onSuccess: () => setSecret(''),
+  })
   const start = useMutation({
     mutationFn: async (prompt: string) => {
-      if (asking === 'key' && secret.trim()) {
-        if (admin) {
-          await storeProjectKey(chosen, credentialKey(preset.keys, secret), secret)
-        } else {
-          await unwrap(
-            api.v1.me
-              .keys({
-                name: credentialKey(preset.keys, secret),
-              })
-              .put(
-                {
-                  value: secret,
-                },
-                idempotency(),
-              ),
-          )
-          void queries.invalidateQueries({
-            queryKey: ['me', 'keys'],
-          })
-        }
-
-        void queries.invalidateQueries({
-          queryKey: ['keys', 'project', chosen],
-        })
-      }
-
-      if (asking === 'token' && admin && secret.trim()) {
-        await storeProjectKey(chosen, githubTokenKey, secret)
-      }
+      await storeSecret()
 
       return unwrap(
         api.v1.tasks.post(
@@ -1022,9 +1034,11 @@ function Composer({
       void queries.invalidateQueries({
         queryKey: ['tasks'],
       })
-      go({
-        project: null,
-        view: task.id,
+      void navigate({
+        to: '/build/$task',
+        params: {
+          task: task.id,
+        },
       })
     },
     onError: (error) => {
@@ -1091,12 +1105,48 @@ function Composer({
                 ? githubTokenHelp(chosen, repositoryName(url ?? repository))
                 : 'Stationly cannot read this repository. Connect GitHub in Your account with an account that can, or ask an admin for a project token.'}
             {(asking === 'key' || admin) && (
-              <Input
-                type="password"
-                aria-label={asking === 'key' ? preset.keyLabel : githubTokenLabel}
-                value={secret}
-                onChange={(event) => setSecret(event.target.value)}
-              />
+              <form
+                className="flex items-end gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  save.mutate()
+                }}
+              >
+                <Field
+                  id="task-secret"
+                  label={asking === 'key' ? preset.keyLabel : githubTokenLabel}
+                  className="flex-1"
+                  labelClassName="text-foreground"
+                >
+                  <Input
+                    id="task-secret"
+                    type="password"
+                    autoComplete="off"
+                    value={secret}
+                    onChange={(event) => setSecret(event.target.value)}
+                    className="bg-background"
+                  />
+                </Field>
+                <Button type="submit" variant="outline" disabled={!secret.trim() || save.isPending}>
+                  {save.isPending && <Loader2 className="animate-spin" aria-hidden />}
+                  Save
+                </Button>
+              </form>
+            )}
+            {save.isError && <span>{failureText(save.error)}</span>}
+            {waitingKey && (
+              <span>
+                Saved. It reaches the project once an admin approves the change to production.{' '}
+                <Link
+                  to="/approvals/$approval"
+                  params={{
+                    approval: waitingKey,
+                  }}
+                  className="font-medium underline underline-offset-4"
+                >
+                  Review
+                </Link>
+              </span>
             )}
           </span>
         </Notice>

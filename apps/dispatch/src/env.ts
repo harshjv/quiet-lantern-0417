@@ -20,7 +20,7 @@ export const env = () =>
     server: {
       STATIONLY_PORT: z.string().default(String(networkLayout.dispatchPort)).transform(Number),
       STATIONLY_DATABASE: optional,
-      STATIONLY_DISPATCH_VERSION: blankAs(packageJson.version),
+      STATIONLY_BUILD_VERSION: blankAs(packageJson.version),
       STATIONLY_DISPATCH_DIGEST: optional,
       STATIONLY_MASTER_KEY: optional,
       STATIONLY_LITESTREAM: optional.transform((v) => v === '1'),

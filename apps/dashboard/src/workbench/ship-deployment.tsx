@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Check, CircleDashed, Loader2, Square, TriangleAlert, X } from 'lucide-react'
 import { useRef } from 'react'
 
@@ -9,7 +10,6 @@ import { FirstLive } from '@/components/first-live'
 import { LogViewer } from '@/components/log-viewer'
 import { KeyValue, Mono } from '@/components/page'
 import { Panel } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import { DeploymentStatusBadge } from '@/components/status'
 import { Time, useNow } from '@/components/time'
 import { Button } from '@/components/ui/button'
@@ -27,7 +27,6 @@ import {
 } from '@/lib/labels'
 import { isFirstLive } from '@/lib/moments'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import {
   appQuery,
   deploymentQuery,
@@ -113,30 +112,31 @@ function DeploymentView({ id }: { id: string }) {
               </Button>
             )}
             {d.status === 'failed' && (
-              <Button
-                size="sm"
-                onClick={() =>
-                  go({
-                    mode: 'build',
-                    view: 'fix',
+              <Button asChild size="sm">
+                <Link
+                  to="/build/new"
+                  search={{
                     fix: `deployment:${d.id}`,
-                  })
-                }
-              >
-                <TriangleAlert /> Fix with an agent
+                  }}
+                >
+                  <TriangleAlert /> Fix with an agent
+                </Link>
               </Button>
             )}
           </span>
         }
       >
         <div className="-mt-4 flex flex-col gap-2">
-          <PlaceLink
-            to={places.app(app.id)}
+          <Link
+            to="/apps/$app/{-$tab}"
+            params={{
+              app: app.id,
+            }}
             className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <ArrowLeft className="size-3.5" aria-hidden />
             {app.name} in {trail.project.name} / {trail.place.previewName ?? 'production'}
-          </PlaceLink>
+          </Link>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <DeploymentStatusBadge status={d.status} />
             <Mono>{d.id}</Mono>

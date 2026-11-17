@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link, useMatchRoute } from '@tanstack/react-router'
 import { Bell, KeyRound, Plug, Server, Users, type LucideIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import { Rows } from '@/components/page'
-import { PlaceLink } from '@/components/place-link'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -13,12 +13,11 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { isInstanceAdmin } from '@/lib/agent-session'
-import { places, viewId, type Go, type Place } from '@/lib/nav'
 import { meQuery } from '@/lib/queries'
+import { titled } from '@/lib/title'
 import { toneText } from '@/lib/tone'
 
 import { Account } from './account'
-import { ApprovalPage } from './approval-live'
 import { LiveConnect } from './connect-live'
 import { Inbox, useInboxCount } from './inbox'
 import { Notice, Page as PageFrame } from './parts'
@@ -29,14 +28,16 @@ export type Page = 'inbox' | 'account' | 'team' | 'servers' | 'connect'
 
 export const pages: {
   id: Page
+  to: `/${Page}`
   title: string
   icon: LucideIcon
   group: 'you' | 'team'
   admin?: boolean
-  body: ComponentType<{ go: Go }>
+  body: ComponentType
 }[] = [
   {
     id: 'inbox',
+    to: '/inbox',
     title: 'Inbox',
     icon: Bell,
     group: 'you',
@@ -44,6 +45,7 @@ export const pages: {
   },
   {
     id: 'account',
+    to: '/account',
     title: 'Your account',
     icon: KeyRound,
     group: 'you',
@@ -51,6 +53,7 @@ export const pages: {
   },
   {
     id: 'team',
+    to: '/team',
     title: 'Team',
     icon: Users,
     group: 'team',
@@ -58,6 +61,7 @@ export const pages: {
   },
   {
     id: 'servers',
+    to: '/servers',
     title: 'Servers',
     icon: Server,
     group: 'team',
@@ -66,6 +70,7 @@ export const pages: {
   },
   {
     id: 'connect',
+    to: '/connect',
     title: 'Connect',
     icon: Plug,
     group: 'team',
@@ -73,7 +78,9 @@ export const pages: {
   },
 ]
 
-export const pageOf = (view: string | null) => pages.find((p) => p.id === view) ?? pages[0]!
+export const pageOf = (id: Page) => pages.find((p) => p.id === id)!
+
+export const pageHead = (id: Page) => titled(pageOf(id).title)
 
 export function useVisiblePages() {
   const me = useQuery(meQuery)
@@ -85,15 +92,9 @@ export function useVisiblePages() {
   }
 }
 
-export function OutsideScreen({ place, go }: { place: Place; go: Go }) {
+export function OutsideScreen({ page: id }: { page: Page }) {
   const visible = useVisiblePages()
-  const approval = viewId(place.view, 'approval')
-
-  if (approval) {
-    return <ApprovalPage approvalId={approval} />
-  }
-
-  const page = pageOf(place.view)
+  const page = pageOf(id)
 
   if (page.admin && !visible.loaded) {
     return (
@@ -115,13 +116,23 @@ export function OutsideScreen({ place, go }: { place: Place; go: Go }) {
 
   const Body = page.body
 
-  return <Body go={go} />
+  return <Body />
 }
 
-export function OutsideNav({ place }: { place: Place; go: Go }) {
+export function OutsideNav() {
   const count = useInboxCount()
   const { pages: shown } = useVisiblePages()
-  const current = viewId(place.view, 'approval') ? 'inbox' : pageOf(place.view).id
+  const matchRoute = useMatchRoute()
+  const active = (page: (typeof pages)[number]) =>
+    Boolean(
+      matchRoute({
+        to: page.to,
+      }) ||
+      (page.id === 'inbox' &&
+        matchRoute({
+          to: '/approvals/$approval',
+        })),
+    )
 
   return (['you', 'team'] as const).map((group) => (
     <SidebarGroup key={group}>
@@ -131,10 +142,10 @@ export function OutsideNav({ place }: { place: Place; go: Go }) {
           .filter((p) => p.group === group)
           .map((p) => (
             <SidebarMenuItem key={p.id}>
-              <SidebarMenuButton asChild isActive={current === p.id}>
-                <PlaceLink to={places.page(p.id)}>
+              <SidebarMenuButton asChild isActive={active(p)}>
+                <Link to={p.to}>
                   <p.icon /> {p.title}
-                </PlaceLink>
+                </Link>
               </SidebarMenuButton>
               {p.id === 'inbox' && count > 0 && (
                 <SidebarMenuBadge className={`font-mono ${toneText.warning}`}>

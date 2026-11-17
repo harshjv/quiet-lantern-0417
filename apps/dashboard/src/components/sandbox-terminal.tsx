@@ -32,6 +32,7 @@ const themes = {
     cursor: '#18181b',
     cursorAccent: '#fafafa',
     selectionBackground: '#bfdbfe',
+    brightBlack: '#71717a',
   },
   dark: {
     background: '#09090b',
@@ -39,10 +40,11 @@ const themes = {
     cursor: '#e4e4e7',
     cursorAccent: '#09090b',
     selectionBackground: '#1e3a8a',
+    brightBlack: '#a1a1aa',
   },
 }
 
-const dim = (text: string) => `\r\n\x1b[2m${text}\x1b[0m\r\n`
+const muted = (text: string) => `\r\n\x1b[90m${text}\x1b[0m\r\n`
 
 function ShellSession({
   machine,
@@ -168,7 +170,7 @@ function ShellSession({
       finished = true
       setPhase(next)
       setDetail(text)
-      term.write(dim(text))
+      term.write(muted(text))
     }
     const open = async () => {
       setPhase('connecting')
@@ -254,7 +256,7 @@ function ShellSession({
   }, [machine.id, epoch])
 
   const reconnect = () => {
-    termRef.current?.write(dim('Starting a new shell'))
+    termRef.current?.write(muted('Starting a new shell'))
     setEpoch((e) => e + 1)
   }
 

@@ -822,7 +822,7 @@ export const createAuthPages = (deps: Deps) => {
         const session = await sessionOf(request)
 
         if (!session) {
-          return redirect(`/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`)
+          return redirect(`/login?redirect=${encodeURIComponent(`${url.pathname}${url.search}`)}`)
         }
 
         if (!enrolled(session.user.id)) {

@@ -253,6 +253,24 @@ export const keysQuery = (app: string) =>
       ),
   })
 
+export const namesQuery = (project: string) =>
+  queryOptions({
+    queryKey: ['apps', 'names', project],
+    queryFn: () =>
+      unwrap(
+        api.v1
+          .projects({
+            project,
+          })
+          .apps.get({
+            query: {
+              limit: 200,
+              fields: 'id,name,ports,volumes,domains,port_allocations,keys',
+            },
+          }),
+      ),
+  })
+
 export const projectKeysQuery = (project: string, target: 'production' | 'preview') =>
   queryOptions({
     queryKey: ['keys', 'project', project, target],
@@ -462,6 +480,9 @@ export const stationQuery = (station: string) =>
     retry: false,
   })
 
+const approvalFields =
+  'id,project_id,task_id,title,status,source,requested_by,requester,requester_decides,decided_by,decided_at,self_approved,reason,ship,created_at,summary,changes,refs'
+
 export const approvalsQuery = (status: string) =>
   queryOptions({
     queryKey: ['approvals', 'list', status],
@@ -471,6 +492,7 @@ export const approvalsQuery = (status: string) =>
           query: {
             status,
             limit: 100,
+            fields: approvalFields,
           },
         }),
       ),
@@ -486,6 +508,7 @@ export const projectApprovalsQuery = (project: string) =>
             project,
             status: 'all',
             limit: 100,
+            fields: approvalFields,
           },
         }),
       ),
@@ -502,8 +525,7 @@ export const approvalQuery = (id: string) =>
           })
           .get({
             query: {
-              fields:
-                'id,project_id,task_id,title,status,source,requested_by,requester,requester_decides,decided_by,decided_at,self_approved,reason,ship,created_at,summary,changes,refs,deployments',
+              fields: `${approvalFields},deployments`,
             },
           }),
       ),
@@ -723,8 +745,26 @@ export const agentTokensQuery = queryOptions({
   },
 })
 
-export const withoutToken = (id: string): Edit =>
-  on(agentTokensQuery, (tokens) => tokens?.filter((t) => t.id !== id))
+export const personalTokensQuery = queryOptions({
+  queryKey: ['tokens', 'personal'],
+  queryFn: async () => {
+    const page = await unwrap(
+      api.v1.tokens.get({
+        query: {
+          kind: 'personal',
+          limit: 200,
+        },
+      }),
+    )
+
+    return page.items
+  },
+})
+
+export const withoutToken = (id: string): Edit[] =>
+  [agentTokensQuery, personalTokensQuery].map((query) =>
+    on(query, (tokens) => tokens?.filter((t) => t.id !== id)),
+  )
 
 export const taskStationQuery = queryOptions({
   queryKey: ['stations', 'online', 'task'],

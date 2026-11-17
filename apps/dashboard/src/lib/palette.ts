@@ -1,8 +1,10 @@
+import type { LinkOptions } from '@tanstack/react-router'
+
 import { agentHints } from './agent-hints.ts'
 import type { App, Deployment, Machine, Preview, Project } from './api.ts'
 import { commands, type AppScope, type Scope } from './commands.ts'
 import { byName } from './format.ts'
-import { places, type Place } from './nav.ts'
+import { placeTo } from './links.ts'
 
 export type Space = {
   project: string
@@ -16,7 +18,7 @@ export type Destination = {
   value: string
   label: string
   hint?: string
-  to: Partial<Place>
+  to: LinkOptions
 }
 
 export const spaceName = (space: Pick<Space, 'project' | 'preview'>) =>
@@ -31,14 +33,12 @@ export const destinations = (
   projects: sorted(projects).map((project): Destination => ({
     value: project.id,
     label: project.name,
-    to: places.project(project.name),
+    to: placeTo(project.name, null),
   })),
   places: spaces.map((space): Destination => ({
     value: space.preview?.id ?? `${space.project}/production`,
     label: spaceName(space),
-    to: space.preview
-      ? places.preview(space.project, space.preview.name)
-      : places.project(space.project),
+    to: placeTo(space.project, space.preview?.name ?? null),
   })),
   apps: spaces.flatMap((space) =>
     sorted(space.apps).map((app): Destination => ({
@@ -46,8 +46,10 @@ export const destinations = (
       label: app.name,
       hint: spaceName(space),
       to: {
-        ...places.app(app.id),
-        project: space.project,
+        to: '/apps/$app/{-$tab}',
+        params: {
+          app: app.id,
+        },
       },
     })),
   ),
@@ -57,8 +59,10 @@ export const destinations = (
       label: machine.name,
       hint: spaceName(space),
       to: {
-        ...places.machine(machine.id),
-        project: space.project,
+        to: '/machines/$machine/{-$tab}',
+        params: {
+          machine: machine.id,
+        },
       },
     })),
   ),
@@ -75,8 +79,10 @@ export const destinations = (
               label: `${app} #${deployment.number}`,
               hint: spaceName(space),
               to: {
-                ...places.deployment(deployment.id),
-                project: space.project,
+                to: '/deployments/$deployment',
+                params: {
+                  deployment: deployment.id,
+                },
               },
             },
           ]

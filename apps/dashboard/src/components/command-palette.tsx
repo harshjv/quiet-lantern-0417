@@ -1,4 +1,5 @@
 import { useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useNavigate, useParams, type LinkOptions } from '@tanstack/react-router'
 import {
   Blocks,
   Copy,
@@ -35,7 +36,6 @@ import { isInstanceAdmin } from '@/lib/agent-session'
 import { signOut } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
-import { go, places, usePlace, viewId, type Place } from '@/lib/nav'
 import {
   destinations,
   pageProject,
@@ -59,6 +59,7 @@ import {
 } from '@/lib/queries'
 import type { ShortcutId } from '@/lib/shortcuts'
 import { pages } from '@/workbench/outside'
+import { modeHome, useMode, useProject, type Mode } from '@/workbench/where'
 
 type Here = { page: Page | null; place: PlaceView | null }
 
@@ -141,9 +142,8 @@ const machineHere = (client: QueryClient, machineId: string): Here => {
     : nowhere
 }
 
-const projectHere = (client: QueryClient, name: string, view: string | null): Here => {
+const projectHere = (client: QueryClient, name: string, previewName: string | null): Here => {
   const project = projectWhere(client, (p) => p.name === name)
-  const previewName = view?.startsWith('preview:') ? view.slice(8).split('/')[0]! : null
   const place =
     project && placeView(client, project, previewName ? (p) => p.name === previewName : null)
 
@@ -158,14 +158,20 @@ const projectHere = (client: QueryClient, name: string, view: string | null): He
     : nowhere
 }
 
-const locate = (client: QueryClient, place: Place): Here => {
-  if (place.mode !== 'ship') {
+type Params = {
+  app?: string
+  deployment?: string
+  machine?: string
+  project?: string
+  preview?: string
+}
+
+const locate = (client: QueryClient, mode: Mode, params: Params): Here => {
+  if (mode !== 'ship') {
     return nowhere
   }
 
-  const app = viewId(place.view, 'app')
-  const deployment = viewId(place.view, 'deployment')
-  const machine = viewId(place.view, 'machine')
+  const { app, deployment, machine, project } = params
 
   if (app) {
     return appHere(client, app)
@@ -181,8 +187,8 @@ const locate = (client: QueryClient, place: Place): Here => {
     return machineHere(client, machine)
   }
 
-  if (place.project) {
-    return projectHere(client, place.project, place.view)
+  if (project) {
+    return projectHere(client, project, params.preview ?? null)
   }
 
   return {
@@ -245,7 +251,12 @@ function useDestinations(searching: boolean) {
       value: task.id,
       label: task.title,
       hint: task.project.name,
-      to: places.task(task.id),
+      to: {
+        to: '/build/$task',
+        params: {
+          task: task.id,
+        },
+      },
     })),
     found: destinations(
       projectItems,
@@ -299,7 +310,7 @@ function Item({
 type GoTo = {
   label: string
   icon: LucideIcon
-  to: Partial<Place>
+  to: (project: string | null) => LinkOptions
   shortcut?: ShortcutId
   admin?: boolean
 }
@@ -308,25 +319,19 @@ const modeGoTo: GoTo[] = [
   {
     label: 'Build',
     icon: Blocks,
-    to: {
-      mode: 'build',
-    },
+    to: (project) => modeHome('build', project),
     shortcut: 'build',
   },
   {
     label: 'Ship',
     icon: Rocket,
-    to: {
-      mode: 'ship',
-    },
+    to: (project) => modeHome('ship', project),
     shortcut: 'ship',
   },
   {
     label: 'Observe',
     icon: Eye,
-    to: {
-      mode: 'observe',
-    },
+    to: (project) => modeHome('observe', project),
     shortcut: 'observe',
   },
 ]
@@ -335,6 +340,7 @@ const pageShortcut: Partial<Record<(typeof pages)[number]['id'], ShortcutId>> = 
   inbox: 'inbox',
   account: 'account',
   team: 'team',
+  servers: 'servers',
   connect: 'connect',
 }
 
@@ -343,7 +349,9 @@ const goTo: GoTo[] = [
   ...pages.map((p): GoTo => ({
     label: p.title,
     icon: p.icon,
-    to: places.page(p.id),
+    to: () => ({
+      to: p.to,
+    }),
     shortcut: pageShortcut[p.id],
     admin: p.admin,
   })),
@@ -410,7 +418,15 @@ function PaletteContent({
   const me = useQuery(meQuery)
   const admin = isInstanceAdmin(me.data?.scopes ?? [])
   const { theme, setTheme } = useTheme()
-  const here = locate(client, usePlace())
+  const navigate = useNavigate()
+  const current = useProject()
+  const here = locate(
+    client,
+    useMode(),
+    useParams({
+      strict: false,
+    }),
+  )
   const searching = search.trim().length > 0
   const { found, tasks, pending } = useDestinations(searching)
   const text = here.page && pageText(here.page)
@@ -419,7 +435,7 @@ function PaletteContent({
     close()
     action()
   }
-  const goto = (to: Partial<Place>) => run(() => go(to))
+  const goto = (to: LinkOptions) => run(() => void navigate(to))
   const copy = (value: string, what: string) =>
     run(() => void navigator.clipboard.writeText(value).then(() => toast.success(`${what} copied`)))
   const place = here.place
@@ -456,7 +472,7 @@ function PaletteContent({
                 icon={entry.icon}
                 label={entry.label}
                 shortcut={entry.shortcut}
-                onSelect={goto(entry.to)}
+                onSelect={goto(entry.to(current))}
               />
             ))}
         </CommandGroup>
@@ -499,8 +515,10 @@ function PaletteContent({
             label="New task"
             shortcut="newTask"
             onSelect={goto({
-              mode: 'build',
-              view: 'new',
+              to: '/build/new',
+              search: {
+                project: current ?? undefined,
+              },
             })}
           />
           <Item

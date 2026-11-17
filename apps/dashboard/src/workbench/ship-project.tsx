@@ -1,4 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Clock, GitBranch, GitPullRequest, Inbox, Layers, Plus } from 'lucide-react'
 import { lazy, useState } from 'react'
 
@@ -9,7 +10,6 @@ import { NewPreview } from '@/components/new-preview'
 import { NewApp } from '@/components/new-service'
 import { EmptyState } from '@/components/page'
 import { Panel } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import { MachinesPanel } from '@/components/sandboxes-panel'
 import { ApprovalStatusBadge, AppStatus, DeploymentStatusBadge } from '@/components/status'
 import { TableFrame } from '@/components/table-frame'
@@ -32,17 +32,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { KeysPanel } from '@/components/variables-panel'
 import { agentHints } from '@/lib/agent-hints'
 import type { Approval, Preview } from '@/lib/api'
+import { approvalHeadline, type Names } from '@/lib/changes'
 import { commands } from '@/lib/commands'
 import { byName, changeSummary, plural, shortSha, sourceText } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { appKind } from '@/lib/labels'
-import { go, places } from '@/lib/nav'
+import { placeTo } from '@/lib/links'
 import { isProduction, scopeOf, type PlaceView } from '@/lib/place'
 import { appsQuery, previewsQuery, projectApprovalsQuery, projectQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { countPill, toneOutline, toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
+import { useNames } from './names'
 import {
   ItemList,
   ItemRow,
@@ -86,13 +88,8 @@ const originText = (preview: Preview) =>
       ? 'From a task'
       : 'Named'
 
-const placeOfTab = (place: PlaceView, tab: Tab) => {
-  const shown = tab === 'apps' ? null : tab
-
-  return place.previewName
-    ? places.preview(place.projectName, place.previewName, shown)
-    : places.project(place.projectName, shown)
-}
+const placeOfTab = (place: PlaceView, tab: Tab | null) =>
+  placeTo(place.projectName, place.previewName, tab === 'apps' ? undefined : (tab ?? undefined))
 
 export function ProjectShip({
   project,
@@ -161,11 +158,12 @@ function PlaceScreen({
   const production = isProduction(place)
   const visible = tabs.filter((t) => production || (t !== 'previews' && t !== 'approvals'))
   const current = visible.find((t) => t === tab) ?? 'apps'
+  const navigate = useNavigate()
   const select = (next: string) => {
     const found = visible.find((t) => t === next)
 
     if (found) {
-      go(placeOfTab(place, found))
+      void navigate(placeOfTab(place, found))
     }
   }
 
@@ -281,13 +279,18 @@ function PlaceSwitcher({
 }) {
   const named = previews.filter(lasting).sort(byName)
   const temporary = previews.filter((p) => !lasting(p)).sort(byName)
+  const navigate = useNavigate()
   const switchTo = (value: string) => {
-    const keep = tab === 'previews' || tab === 'approvals' || tab === 'apps' ? null : tab
+    const keep = tab === 'previews' || tab === 'approvals' ? null : tab
 
-    go(
-      value === productionValue
-        ? places.project(place.projectName, keep)
-        : places.preview(place.projectName, value, keep),
+    void navigate(
+      placeOfTab(
+        {
+          ...place,
+          previewName: value === productionValue ? null : value,
+        },
+        keep,
+      ),
     )
   }
 
@@ -349,12 +352,12 @@ function PlaceFacts({
         </span>
       )}
       {isProduction(place) && waiting > 0 && (
-        <PlaceLink
-          to={places.project(place.projectName, 'approvals')}
+        <Link
+          {...placeTo(place.projectName, null, 'approvals')}
           className={cn('underline-offset-4 hover:underline', toneText.warning)}
         >
           {plural(waiting, 'approval')} waiting
-        </PlaceLink>
+        </Link>
       )}
     </p>
   )
@@ -386,7 +389,7 @@ function WaitingNotice({ place, waiting }: { place: PlaceView; waiting: number }
       title={`${plural(waiting, 'change')} to production ${waiting === 1 ? 'waits' : 'wait'} for an approval`}
       action={
         <Button asChild size="sm" variant="outline">
-          <PlaceLink to={places.project(place.projectName, 'approvals')}>Review</PlaceLink>
+          <Link {...placeTo(place.projectName, null, 'approvals')}>Review</Link>
         </Button>
       }
     >
@@ -468,8 +471,11 @@ function AppsTable({ place, onCreate }: { place: PlaceView; onCreate: () => void
           return (
             <TableRow key={app.id} className="relative">
               <TableCell>
-                <PlaceLink
-                  to={places.app(app.id)}
+                <Link
+                  to="/apps/$app/{-$tab}"
+                  params={{
+                    app: app.id,
+                  }}
                   className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
                   data-testid="app-link"
                 >
@@ -495,7 +501,7 @@ function AppsTable({ place, onCreate }: { place: PlaceView; onCreate: () => void
                       </TooltipContent>
                     </Tooltip>
                   )}
-                </PlaceLink>
+                </Link>
               </TableCell>
               <TableCell>
                 <AppStatus status={app.status} reason={app.status_reason} />
@@ -511,7 +517,7 @@ function AppsTable({ place, onCreate }: { place: PlaceView; onCreate: () => void
                     />
                   </span>
                 ) : (
-                  <span className="text-muted-foreground">Not deployed</span>
+                  <span className="text-muted-foreground">none</span>
                 )}
               </TableCell>
               <TableCell className="hidden max-w-64 truncate lg:table-cell">
@@ -549,7 +555,7 @@ function PreviewsTab({ place }: { place: PlaceView }) {
       icon={entityIcon.preview}
       title="Previews"
       count={previews.length}
-      note="Copies of production at their own URLs, with preview keys. Named previews stay; task and pull request previews go when their work is done or they expire."
+      note="Copies of production’s apps on their own network, with preview keys. A task’s preview gets generated domains; add a domain to an app here to reach it from outside. Named previews stay; task and pull request previews go when their work is done or they expire."
     >
       {previews.length === 0 ? (
         <EmptyState
@@ -566,12 +572,12 @@ function PreviewsTab({ place }: { place: PlaceView }) {
               icon={preview.origin.type === 'pull_request' ? GitPullRequest : GitBranch}
               title={
                 <>
-                  <PlaceLink
-                    to={places.preview(place.projectName, preview.name)}
+                  <Link
+                    {...placeTo(place.projectName, preview.name)}
                     className="truncate underline-offset-4 hover:underline"
                   >
                     {preview.name}
-                  </PlaceLink>
+                  </Link>
                   {preview.expires_at && <Expiry at={preview.expires_at} />}
                 </>
               }
@@ -587,7 +593,7 @@ function PreviewsTab({ place }: { place: PlaceView }) {
               ]}
               action={
                 <Button asChild size="sm" variant="outline">
-                  <PlaceLink to={places.preview(place.projectName, preview.name)}>Open</PlaceLink>
+                  <Link {...placeTo(place.projectName, preview.name)}>Open</Link>
                 </Button>
               }
             />
@@ -602,6 +608,7 @@ function ApprovalsTab({ project }: { project: string }) {
   const { data } = useSuspenseQuery(projectApprovalsQuery(project))
   const waiting = data.items.filter((a) => a.status === 'waiting')
   const decided = data.items.filter((a) => a.status !== 'waiting').slice(0, 10)
+  const names = useNames([project])
 
   return (
     <div className="flex flex-col gap-8">
@@ -609,24 +616,24 @@ function ApprovalsTab({ project }: { project: string }) {
         icon={Inbox}
         title="Waiting"
         count={waiting.length}
-        note="Every change to production waits here until someone other than its requester approves or rejects it."
+        note="Every change to production waits here for an admin. Another admin approves it; the admin who asked approves their own only when no other admin can."
       >
         {waiting.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing waits for an approval.</p>
         ) : (
-          <ApprovalRows items={waiting} />
+          <ApprovalRows items={waiting} names={names} />
         )}
       </Section>
       {decided.length > 0 && (
         <Section title="Recently decided" count={decided.length}>
-          <ApprovalRows items={decided} />
+          <ApprovalRows items={decided} names={names} />
         </Section>
       )}
     </div>
   )
 }
 
-function ApprovalRows({ items }: { items: Approval[] }) {
+function ApprovalRows({ items, names }: { items: Approval[]; names: Names }) {
   return (
     <ul className="divide-y border">
       {items.map((approval) => (
@@ -634,12 +641,15 @@ function ApprovalRows({ items }: { items: Approval[] }) {
           key={approval.id}
           className="relative flex flex-wrap items-center gap-x-4 gap-y-1 bg-card px-4 py-3 focus-within:bg-muted/40 hover:bg-muted/40"
         >
-          <PlaceLink
-            to={places.approval(approval.id)}
+          <Link
+            to="/approvals/$approval"
+            params={{
+              approval: approval.id,
+            }}
             className="text-sm font-medium after:absolute after:inset-0 focus-visible:outline-none"
           >
-            {approval.title}
-          </PlaceLink>
+            {approvalHeadline(approval, names)}
+          </Link>
           <ApprovalStatusBadge status={approval.status} />
           <span className="text-sm text-muted-foreground">{changeSummary(approval.summary)}</span>
           <span className="ml-auto flex gap-3 text-xs text-muted-foreground">
@@ -670,11 +680,11 @@ function Missing({
         action={
           <div className="flex flex-wrap justify-center gap-2">
             <Button asChild size="sm" variant="outline">
-              <PlaceLink to={places.project(projectName)}>production</PlaceLink>
+              <Link {...placeTo(projectName, null)}>production</Link>
             </Button>
             {previews.map((p) => (
               <Button key={p.id} asChild size="sm" variant="outline">
-                <PlaceLink to={places.preview(projectName, p.name)}>{p.name}</PlaceLink>
+                <Link {...placeTo(projectName, p.name)}>{p.name}</Link>
               </Button>
             ))}
           </div>

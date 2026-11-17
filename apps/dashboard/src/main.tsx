@@ -8,6 +8,7 @@ import { Rows } from '@/components/page'
 import { Failure } from '@/components/panel'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiFailure } from '@/lib/api'
+import type { Mode } from '@/workbench/where'
 
 import { routeTree } from './routeTree.gen'
 
@@ -34,6 +35,7 @@ const router = createRouter({
   defaultPendingMinMs: 400,
   defaultPendingComponent: () => <Rows count={6} />,
   scrollRestoration: true,
+  scrollToTopSelectors: ['#main'],
   defaultErrorComponent: ({ error }) => (
     <div className="mx-auto max-w-2xl px-4 py-10">
       <Failure error={error} />
@@ -47,7 +49,7 @@ declare module '@tanstack/react-router' {
   }
 
   interface StaticDataRouteOption {
-    fullBleed?: boolean
+    mode?: Mode
   }
 }
 

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Loader2, RefreshCw, TriangleAlert, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -21,7 +22,6 @@ import { editItems } from '@/lib/cache'
 import { entityIcon } from '@/lib/icons'
 import { follow } from '@/lib/live'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { deploymentsQuery, seedDeployment } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { isInFlight, withQueued, type TriggerType } from '@/lib/status'
@@ -42,6 +42,8 @@ export function useDeploy<V = void>(
     onSuccess?: () => void
   } = {},
 ) {
+  const navigate = useNavigate()
+
   return useApiMutation({
     mutationFn,
     optimistic: () => [
@@ -62,7 +64,12 @@ export function useDeploy<V = void>(
       }
 
       follow(result.body.id)
-      go(places.deployment(result.body.id))
+      void navigate({
+        to: '/deployments/$deployment',
+        params: {
+          deployment: result.body.id,
+        },
+      })
     },
     failure: options.inline ? undefined : (vars) => act(vars).failed,
     intercept: options.intercept,
@@ -191,12 +198,16 @@ export function DeployButton({ app, shortcut }: { app: App; shortcut?: boolean }
 export function RedeployButton({ app }: { app: App }) {
   const mutation = useRedeploy(app, 'Redeploy')
 
+  if (!app.current_deployment_id) {
+    return null
+  }
+
   return (
     <Button
       size="sm"
       variant="outline"
       onClick={() => mutation.mutate()}
-      disabled={!app.current_deployment_id || mutation.isPending}
+      disabled={mutation.isPending}
     >
       {mutation.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
       Redeploy

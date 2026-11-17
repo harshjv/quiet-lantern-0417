@@ -70,6 +70,11 @@ export const shortcuts = {
     label: 'Go to the team',
     place: 'Anywhere',
   },
+  servers: {
+    keys: ['g>v'],
+    label: 'Go to servers',
+    place: 'Anywhere',
+  },
   sidebar: {
     keys: ['mod+b'],
     label: 'Show or hide the sidebar',

@@ -61,9 +61,9 @@ function HostFacts({ host, arch }: { host: HostProbe; arch: Station['arch'] }) {
         ['CPU virtualization', cpuText(host, arch)],
         ['Host', hostText(host)],
         ['CPU cores', String(host.cpu_cores)],
-        ['Memory', bytes(host.memory_bytes)],
+        ['Memory (RAM)', bytes(host.memory_bytes)],
         [
-          'Free for machines',
+          'Disk free for machines',
           host.sandbox_free_bytes === null
             ? 'No machine filesystem'
             : bytes(host.sandbox_free_bytes),

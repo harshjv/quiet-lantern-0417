@@ -36,7 +36,7 @@ import { pruneBackups, startBackupScheduler } from './volumes/backups.ts'
 
 const {
   STATIONLY_PORT: port,
-  STATIONLY_DISPATCH_VERSION: version,
+  STATIONLY_BUILD_VERSION: version,
   STATIONLY_DATABASE: databasePath,
   STATIONLY_RESOLVER: resolver,
   STATIONLY_LITESTREAM: replicated,

@@ -24,8 +24,6 @@ func EnrollInfo(ctx context.Context) (dispatch.EnrollInfo, error) {
 	_ = unix.Uname(&uts)
 	var si unix.Sysinfo_t
 	_ = unix.Sysinfo(&si)
-	var fs unix.Statfs_t
-	_ = unix.Statfs("/", &fs)
 	dockerVersion := ""
 	dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -45,13 +43,19 @@ func EnrollInfo(ctx context.Context) (dispatch.EnrollInfo, error) {
 			StationdVersion: stationdVersion(),
 			Host:            &host,
 		},
-		Routes: []any{},
-		Resources: protocol.Resources{
-			CpuMillis:     runtime.NumCPU() * 1000,
-			MemoryBytes:   int(si.Totalram) * int(si.Unit),
-			DiskBytes:     int(fs.Blocks) * int(fs.Bsize),
-			DiskFreeBytes: int(fs.Bavail) * int(fs.Bsize),
-		},
-		Version: stationdVersion(),
+		Routes:    []any{},
+		Resources: hostResources(runtime.NumCPU(), int(si.Totalram)*int(si.Unit)),
+		Version:   stationdVersion(),
 	}, nil
+}
+
+func hostResources(cpus, memoryBytes int) protocol.Resources {
+	var fs unix.Statfs_t
+	_ = unix.Statfs("/", &fs)
+	return protocol.Resources{
+		CpuMillis:     cpus * 1000,
+		MemoryBytes:   memoryBytes,
+		DiskBytes:     int(fs.Blocks) * int(fs.Bsize),
+		DiskFreeBytes: int(fs.Bavail) * int(fs.Bsize),
+	}
 }

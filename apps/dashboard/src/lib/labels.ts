@@ -293,8 +293,8 @@ export const machineNetwork: Record<Machine['network'], string> = {
 }
 
 export const snapshotSource: Record<MachineSnapshot['source_state'], string> = {
-  running: 'While running',
-  stopped: 'While stopped',
+  running: 'Running',
+  stopped: 'Stopped',
 }
 
 export const snapshotStatus: Record<MachineSnapshot['status'], Status> = {

@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router'
 import {
   CircleAlert,
   GitFork,
@@ -23,7 +24,6 @@ import { scopeLabel, type Scope } from '@/lib/commands'
 import { plural, span } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { placeOf, previewQuery } from '@/lib/place'
 import { patchMachine, seedMachine, seedSnapshot } from '@/lib/queries'
 import { ttlProblem } from '@/lib/sandbox'
@@ -377,6 +377,7 @@ export function ForkButton({
   const place = placeOf(source.kind === 'machine' ? source.machine : source.snapshot)
   const subject =
     source.kind === 'machine' ? source.machine.name : (source.snapshot.name ?? source.snapshot.id)
+  const navigate = useNavigate()
   const mutation = useApiMutation({
     mutationFn: (name: string) =>
       send(
@@ -407,7 +408,12 @@ export function ForkButton({
       setOpen(false)
 
       if (!result.waiting) {
-        go(places.machine(result.body.id))
+        void navigate({
+          to: '/machines/$machine/{-$tab}',
+          params: {
+            machine: result.body.id,
+          },
+        })
       }
     },
   })

@@ -63,11 +63,8 @@ func (s *Station) observed() protocol.Observed {
 		Runs:            protocol.ObservedRuns{},
 		Workshops:       protocol.ObservedWorkshops{},
 		Station: protocol.ObservedStation{
-			Resources: protocol.Resources{
-				CpuMillis:   s.info.NCPU * 1000,
-				MemoryBytes: int(s.info.MemTotal),
-			},
-			Routes: []any{},
+			Resources: hostResources(s.info.NCPU, int(s.info.MemTotal)),
+			Routes:    []any{},
 			Capabilities: protocol.StationCapabilities{
 				DockerVersion:   s.info.ServerVersion,
 				Kernel:          s.info.KernelVersion,

@@ -1,4 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   Background,
   Controls,
@@ -30,7 +31,6 @@ import { ConnectionsTable } from '@/components/connections-table'
 import { FixActions } from '@/components/fix'
 import { NewApp } from '@/components/new-service'
 import { EmptyState } from '@/components/page'
-import { PlaceLink } from '@/components/place-link'
 import { AppStatusDot } from '@/components/status'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { Term } from '@/components/term'
@@ -55,9 +55,9 @@ import {
   path as pathLabel,
   pathResult,
 } from '@/lib/labels'
-import { places } from '@/lib/nav'
 import {
   layoutNetwork,
+  mapHeight,
   overlayLive,
   type AppData,
   type EntryData,
@@ -98,13 +98,16 @@ function Serving({ app }: { app: MapApp }) {
   return (
     <span className="flex flex-wrap items-center gap-x-2">
       {deployment ? (
-        <PlaceLink
-          to={places.deployment(deployment.id)}
+        <Link
+          to="/deployments/$deployment"
+          params={{
+            deployment: deployment.id,
+          }}
           title={serving.hint ?? undefined}
           className="underline-offset-4 hover:underline"
         >
           {serving.label}
-        </PlaceLink>
+        </Link>
       ) : serving.hint ? (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -213,12 +216,15 @@ function AppNode({ data }: NodeProps<MapNode & { type: 'app'; data: AppData }>) 
       />
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <AppStatusDot status={s.status} />
-        <PlaceLink
-          to={places.app(s.id)}
+        <Link
+          to="/apps/$app/{-$tab}"
+          params={{
+            app: s.id,
+          }}
           className="min-w-0 flex-1 truncate text-sm font-semibold underline-offset-4 hover:underline"
         >
           {s.name}
-        </PlaceLink>
+        </Link>
         <span className="text-xs text-muted-foreground">{appKind[s.kind]}</span>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 py-2 text-xs">
@@ -367,7 +373,10 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
   return (
     <div className="space-y-2">
       <div
-        className="h-[28rem] overflow-hidden rounded-lg border sm:h-[32rem]"
+        className="overflow-hidden rounded-lg border"
+        style={{
+          height: `clamp(20rem, ${mapHeight(nodes) + 64}px, 44rem)`,
+        }}
         data-testid="network-canvas"
       >
         <ReactFlow
@@ -384,10 +393,13 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
           edgesFocusable={false}
           fitView
           fitViewOptions={{
-            padding: 0.15,
+            padding: 0.08,
+            maxZoom: 1,
           }}
           minZoom={0.2}
           maxZoom={1.5}
+          zoomOnScroll={false}
+          preventScrolling={false}
           aria-label={`Network map of ${map.preview?.name ?? 'production'}${live.state === 'off' ? '' : ' with live traffic'}`}
         >
           <Background gap={20} />
@@ -460,13 +472,16 @@ function TableView({ map }: { map: NetworkMap }) {
             {map.apps.map((s) => (
               <TableRow key={s.id}>
                 <TableCell>
-                  <PlaceLink
-                    to={places.app(s.id)}
+                  <Link
+                    to="/apps/$app/{-$tab}"
+                    params={{
+                      app: s.id,
+                    }}
                     className="inline-flex items-center gap-2 font-medium underline-offset-4 hover:underline"
                   >
                     <Box className="size-4 text-muted-foreground" aria-hidden />
                     {s.name}
-                  </PlaceLink>
+                  </Link>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   <Code copy={s.dns}>{s.dns}</Code>

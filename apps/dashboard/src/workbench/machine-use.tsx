@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 
 import { agentLabel } from '@stationly/protocol'
 
-import { PlaceLink } from '@/components/place-link'
 import type { Machine, Task } from '@/lib/api'
 import { plural } from '@/lib/format'
-import { places } from '@/lib/nav'
 import { tasksQuery } from '@/lib/queries'
 
 export type MachineUse = 'task' | 'project' | 'hand'
@@ -35,12 +34,15 @@ export const useMachineTasks = (machine: Pick<Machine, 'id' | 'workspace'>): Tas
 
 export function TaskLink({ task, className }: { task: Task; className?: string }) {
   return (
-    <PlaceLink
-      to={places.task(task.id)}
+    <Link
+      to="/build/$task"
+      params={{
+        task: task.id,
+      }}
       className={className ?? 'underline-offset-4 hover:underline'}
     >
       {task.title}
-    </PlaceLink>
+    </Link>
   )
 }
 

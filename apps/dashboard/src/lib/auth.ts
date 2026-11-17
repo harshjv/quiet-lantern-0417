@@ -60,8 +60,8 @@ export const passkeysAvailable = () =>
   !ipLiteral.test(window.location.hostname) &&
   typeof window.PublicKeyCredential === 'function'
 
-export const safeNext = (next: string | undefined) =>
-  next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : null
+export const safeRedirect = (path: string | undefined) =>
+  path && path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : null
 
 export const serverPage = (path: string) =>
   path === '/device' || path.startsWith('/device?') || path.startsWith('/github/')
@@ -74,5 +74,7 @@ export const authMessage = (
 export const signOut = async (client: QueryClient) => {
   await authClient.signOut()
   client.clear()
-  window.location.assign('/login')
+  window.location.assign(
+    `/login?redirect=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`,
+  )
 }

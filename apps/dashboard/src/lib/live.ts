@@ -1,11 +1,11 @@
 import { noop, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import type { Event as EventRow } from './api'
 import { completionOf, completionText, startedByAgent } from './completion'
 import { useEventStream } from './event-stream'
 import { approvalDecided, invalidateGroups, type Group } from './invalidate'
-import { currentPlace, go } from './nav'
 import { appQuery, deploymentQuery } from './queries'
 
 const watched = [
@@ -106,17 +106,26 @@ const followed = new Set<string>()
 
 export const follow = (deployment: string) => followed.add(deployment)
 
-const notify = async (client: QueryClient, event: EventRow) => {
+const notify = async (
+  client: QueryClient,
+  router: ReturnType<typeof useRouter>,
+  event: EventRow,
+) => {
   const completion = completionOf(event)
 
   if (!completion) {
     return
   }
 
-  const view = `deployment:${completion.deployment}`
+  const here = {
+    to: '/deployments/$deployment',
+    params: {
+      deployment: completion.deployment,
+    },
+  } as const
   const mine = followed.delete(completion.deployment)
 
-  if (currentPlace().view === view) {
+  if (router.matchRoute(here)) {
     return
   }
 
@@ -133,20 +142,17 @@ const notify = async (client: QueryClient, event: EventRow) => {
     description: text.description,
     action: {
       label: text.action,
-      onClick: () =>
-        go({
-          mode: 'ship',
-          view,
-        }),
+      onClick: () => void router.navigate(here),
     },
   })
 }
 
 export const useLiveEvents = () => {
   const client = useQueryClient()
+  const router = useRouter()
   const onEvent = (event: EventRow) => {
     apply(client, event)
-    notify(client, event).then(noop, noop)
+    notify(client, router, event).then(noop, noop)
   }
 
   return useEventStream(

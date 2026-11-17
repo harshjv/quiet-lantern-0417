@@ -1,21 +1,23 @@
 import { useQueries, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Rocket } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Actor } from '@/components/actor'
 import { ChangeDiff } from '@/components/diff'
 import { KeyValue } from '@/components/page'
-import { PlaceLink } from '@/components/place-link'
 import { DeploymentStatusBadge } from '@/components/status'
 import { Time } from '@/components/time'
 import { Button } from '@/components/ui/button'
 import type { Approval, Deployment } from '@/lib/api'
-import { plural, shortSha, stamp } from '@/lib/format'
+import { approvalHeadline } from '@/lib/changes'
+import { changeSummary, plural, shortSha, stamp } from '@/lib/format'
 import { approvalSource, approvalStatus } from '@/lib/labels'
-import { places } from '@/lib/nav'
+import { placeTo } from '@/lib/links'
 import { approvalQuery, deploymentQuery, projectsQuery } from '@/lib/queries'
 
 import { ApproveButton, RejectDialog, useDecider, useDecision } from './approval-actions'
+import { useNames } from './names'
 import { ItemList, ItemRow, Notice, Page, PageBoundary, Section, StatusPill } from './parts'
 import {
   PullRequestLink,
@@ -25,12 +27,14 @@ import {
   shipStatusText,
 } from './ship-approval'
 
+type Fact = [string, ReactNode]
+
 function BackToInbox() {
   return (
     <Button asChild size="sm" variant="ghost" className="self-start">
-      <PlaceLink to={places.page('inbox')}>
+      <Link to="/inbox">
         <ArrowLeft /> Inbox
-      </PlaceLink>
+      </Link>
     </Button>
   )
 }
@@ -44,9 +48,9 @@ function Scope({ projectId }: { projectId: string | null }) {
   }
 
   return name ? (
-    <PlaceLink to={places.project(name)} className="underline-offset-4 hover:underline">
+    <Link {...placeTo(name, null)} className="underline-offset-4 hover:underline">
       {name} / production
-    </PlaceLink>
+    </Link>
   ) : (
     <span>{projectId} / production</span>
   )
@@ -112,12 +116,15 @@ function Deployments({ ids }: { ids: string[] }) {
               key={id}
               icon={Rocket}
               title={
-                <PlaceLink
-                  to={places.deployment(id)}
+                <Link
+                  to="/deployments/$deployment"
+                  params={{
+                    deployment: id,
+                  }}
                   className="underline-offset-4 hover:underline"
                 >
                   {deployment ? `Deployment #${deployment.number}` : id}
-                </PlaceLink>
+                </Link>
               }
               action={deployment && <DeploymentStatusBadge status={deployment.status} />}
             />
@@ -140,7 +147,14 @@ function Ship({ approval }: { approval: Approval }) {
         action={
           approval.task_id && (
             <Button asChild size="sm" variant="ghost">
-              <PlaceLink to={places.task(approval.task_id)}>Open task</PlaceLink>
+              <Link
+                to="/build/$task"
+                params={{
+                  task: approval.task_id,
+                }}
+              >
+                Open task
+              </Link>
             </Button>
           )
         }
@@ -171,9 +185,13 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
   const [started, setStarted] = useState<Deployment[]>([])
   const task = a.source === 'task'
   const deployments = [...new Set([...(a.deployments ?? []), ...started.map((d) => d.id)])]
+  const names = useNames([a.project_id])
 
   return (
-    <Page title={a.title} actions={!task && <Decide approval={a} onApplied={setStarted} />}>
+    <Page
+      title={approvalHeadline(a, names)}
+      actions={!task && <Decide approval={a} onApplied={setStarted} />}
+    >
       <div className="-mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
         <StatusPill tone={approvalStatus[a.status].tone}>
           {approvalStatus[a.status].label}
@@ -218,13 +236,12 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
         <KeyValue
           framed
           items={[
-            ['Adds', a.summary.add],
-            ['Changes', a.summary.update],
-            ['Removes', a.summary.remove],
-            ['Starts', plural(a.summary.deployments, 'deployment')],
+            ['Changes', changeSummary(a.summary)],
             ['Created', stamp(a.created_at)],
-            ['Decided by', a.decided_by ? <Actor key="decided" actor={a.decided_by} /> : 'not yet'],
-            ['Decided', a.decided_at ? stamp(a.decided_at) : 'not yet'],
+            ...(a.decided_by
+              ? [['Decided by', <Actor key="decided" actor={a.decided_by} />] as Fact]
+              : []),
+            ...(a.decided_at ? [['Decided', stamp(a.decided_at)] as Fact] : []),
           ]}
         />
       )}
@@ -237,7 +254,7 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
           note="Stationly applies them in this order, all or nothing. Key values stay hidden: a new value shows only its length and version."
         >
           {a.changes && a.changes.length > 0 ? (
-            <ChangeDiff changes={a.changes} refs={a.refs} />
+            <ChangeDiff changes={a.changes} names={names} />
           ) : (
             <p className="text-sm text-muted-foreground">This approval has no changes.</p>
           )}

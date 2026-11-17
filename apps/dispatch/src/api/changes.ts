@@ -33,7 +33,7 @@ import { configFields, createDeploymentRecord, type TriggerType } from './deploy
 import { createApp, createAppPort, createVolume } from './entities.ts'
 import { fail } from './errors.ts'
 import { ensureNetwork } from './ipam.ts'
-import { placeName, type ApprovalRow, type TargetRow } from './lookup.ts'
+import { isProduction, placeName, type ApprovalRow, type TargetRow } from './lookup.ts'
 import { requesterOf, requireRequesterRule } from './requester.ts'
 import { refreshStale, settleKeyWrites } from './stale.ts'
 import { applyStationField, stationFields, type StationField } from './station-fields.ts'
@@ -1085,7 +1085,7 @@ export type CommitResult =
   | { applied: false; approval: ApprovalRow }
   | {
       applied: true
-      approval: ApprovalRow
+      approval: ApprovalRow | null
       refs: Record<string, string>
       deployments: string[]
       retained_until: Date | null
@@ -1267,6 +1267,35 @@ export const commit = (
       (valueId) =>
         set.values.get(valueId) ?? fail('VALIDATION_FAILED', `value ${valueId} is missing.`),
     )
+
+    if (options.target && !isProduction(options.target)) {
+      audit(
+        tdb,
+        call,
+        'preview.change',
+        {
+          entity: 'preview',
+          id: options.target.id,
+        },
+        {
+          after: {
+            title: base.title,
+            source,
+            changes: stripValues(changes),
+            refs: result.refs,
+            deployments: result.deployments,
+          },
+        },
+      )
+
+      return {
+        applied: true as const,
+        upgrade: null,
+        approval: null,
+        ...result,
+      }
+    }
+
     const id = newId('approval')
 
     tdb

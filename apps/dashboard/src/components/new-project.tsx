@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { AlsoWith } from '@/components/code'
@@ -7,8 +8,8 @@ import { SlugInput } from '@/components/slug-input'
 import { api, idempotency, send } from '@/lib/api'
 import { seed } from '@/lib/cache'
 import { commands } from '@/lib/commands'
+import { placeTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { projectQuery } from '@/lib/queries'
 
 export function NewProject({
@@ -19,6 +20,7 @@ export function NewProject({
   onOpenChange: (open: boolean) => void
 }) {
   const [name, setName] = useState('')
+  const navigate = useNavigate()
   const mutation = useApiMutation({
     mutationFn: () =>
       send(
@@ -39,7 +41,7 @@ export function NewProject({
       onOpenChange(false)
 
       if (!result.waiting) {
-        go(places.project(result.body.name))
+        void navigate(placeTo(result.body.name, null))
       }
     },
   })

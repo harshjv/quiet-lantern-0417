@@ -3,11 +3,9 @@ import { Check, CircleCheck, Loader2 } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 
 import { CommandBlock, Snippet } from '@/components/code'
-import { Confirm } from '@/components/confirm'
 import { Field } from '@/components/field'
 import { Rows } from '@/components/page'
 import { Time } from '@/components/time'
-import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -17,19 +15,19 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { checkPrompt, expiries, installSly, setup, type Expiry } from '@/lib/agents'
-import { api, failureText, unwrap, type Project, type Token } from '@/lib/api'
+import { failureText, type Project, type Token } from '@/lib/api'
 import { commands, type Level, type TokenTarget } from '@/lib/commands'
 import { ago, byName } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { client, level, mcpClient, mcpClients, type McpClient } from '@/lib/labels'
-import { done, useApiMutation } from '@/lib/mutation'
-import { usePlace } from '@/lib/nav'
-import { agentTokensQuery, apiOriginQuery, projectsQuery, withoutToken } from '@/lib/queries'
+import { agentTokensQuery, apiOriginQuery, projectsQuery } from '@/lib/queries'
 import { tonePanel, toneText } from '@/lib/tone'
 import { useBecame, useMoment } from '@/lib/use-moment'
 import { cn } from '@/lib/utils'
 
 import { ItemList, ItemRow, Notice, Page, Section } from './parts'
+import { RevokeToken } from './revoke-token'
+import { useProject } from './where'
 
 const all = '*'
 
@@ -154,33 +152,13 @@ function ConnectionStatus({ id }: { id: McpClient }) {
 
 function Revoke({ token }: { token: Token }) {
   const name = client(token.name)
-  const revoke = useApiMutation({
-    mutationFn: async () =>
-      done(
-        await unwrap(
-          api.v1
-            .tokens({
-              id: token.id,
-            })
-            .delete(),
-        ),
-      ),
-    seed: () => [withoutToken(token.id)],
-    success: () => `${name} disconnected`,
-  })
 
   return (
-    <Confirm
+    <RevokeToken
+      token={token}
       title={`Disconnect ${name}?`}
       description={`Stationly revokes its token, so ${name} loses access at once. Run sly mcp install again to reconnect it.`}
-      action="Revoke token"
-      cancel="Keep token"
-      onConfirm={() => revoke.mutateAsync()}
-      trigger={
-        <Button variant="ghost" size="sm">
-          Revoke
-        </Button>
-      }
+      revoked={`${name} disconnected`}
     />
   )
 }
@@ -248,10 +226,10 @@ function ConnectedAgents({ projects, shown }: { projects: Project[]; shown: McpC
 }
 
 function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
-  const place = usePlace()
+  const current = useProject()
   const [id, setId] = useState<McpClient>('claude-code')
   const [project, setProject] = useState(
-    projects.find((p) => p.name === place.project)?.name ?? projects[0]?.name ?? all,
+    projects.find((p) => p.name === current)?.name ?? projects[0]?.name ?? all,
   )
   const [target, setTarget] = useState<TokenTarget>('*')
   const [access, setAccess] = useState<Level>('deploy')

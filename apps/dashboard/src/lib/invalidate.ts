@@ -20,6 +20,7 @@ export const groups = {
   tasks: [['tasks'], ['approvals']],
   stations: [['stations']],
   approvals: [['approvals']],
+  tokens: [['tokens']],
   auth: [['auth']],
 } satisfies Record<string, QueryKey[]>
 

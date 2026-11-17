@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearch } from '@tanstack/react-router'
 import { GitBranch, KeyRound, LogOut } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Rows } from '@/components/page'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import { plural } from '@/lib/format'
 import { meQuery } from '@/lib/queries'
 
 import { EnrollPrompt, Passkeys, Totp, useNeedsEnrollment } from './account-sign-in'
+import { PersonalTokens } from './account-tokens'
 import { ItemList, ItemRow, Notice, Page, Section, StatusPill } from './parts'
 
 function KeyRow({ name, set }: { name: string; set: boolean }) {
@@ -141,13 +143,22 @@ function GitHubConnection() {
     queryKey: ['me', 'repositories'],
     queryFn: () => unwrap(api.v1.me.repositories.get()),
   })
-  const [problem, setProblem] = useState<string | null>(null)
+  const failed = useSearch({
+    from: '/_app/_outside/account',
+    select: (search) => search.github === 'failed',
+  })
+  const [problem, setProblem] = useState<string | null>(() =>
+    failed
+      ? 'GitHub did not finish connecting. Try again, or ask an admin to check the GitHub App.'
+      : null,
+  )
   const linked = accounts.data?.find((entry) => entry.providerId === 'github')
   const connect = async () => {
     setProblem(null)
     const result = await authClient.linkSocial({
       provider: 'github',
-      callbackURL: '/',
+      callbackURL: `${window.location.origin}/account`,
+      errorCallbackURL: `${window.location.origin}/account?github=failed`,
     })
 
     if (result.error) {
@@ -299,6 +310,12 @@ function GitHubApp() {
   )
 }
 
+function AdminOnly({ children }: { children: ReactNode }) {
+  const me = useQuery(meQuery)
+
+  return isInstanceAdmin(me.data?.scopes ?? []) ? children : null
+}
+
 function SignOut() {
   const client = useQueryClient()
 
@@ -349,6 +366,9 @@ export function Account() {
       <GitHubApp />
       <GitHubConnection />
       <LiveKeys />
+      <AdminOnly>
+        <PersonalTokens />
+      </AdminOnly>
     </Page>
   )
 }

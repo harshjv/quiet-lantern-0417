@@ -386,7 +386,7 @@ export const githubRoutes = (kit: Kit) => {
               },
             )
             set.status = 302
-            set.headers.location = `${dashboardOrigin(request)}/#outside/account`
+            set.headers.location = `${dashboardOrigin(request)}/account`
 
             return ''
           } catch (error) {

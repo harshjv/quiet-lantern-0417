@@ -9,13 +9,32 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppOutsideRouteRouteImport } from './routes/_app/_outside/route'
+import { Route as AppShipRouteRouteImport } from './routes/_app/_ship/route'
+import { Route as AppBuildRouteRouteImport } from './routes/_app/build/route'
 import { Route as JoinCodeRouteImport } from './routes/join.$code'
+import { Route as AppOutsideAccountRouteImport } from './routes/_app/_outside/account'
+import { Route as AppOutsideConnectRouteImport } from './routes/_app/_outside/connect'
+import { Route as AppOutsideInboxRouteImport } from './routes/_app/_outside/inbox'
+import { Route as AppOutsideServersRouteImport } from './routes/_app/_outside/servers'
+import { Route as AppOutsideTeamRouteImport } from './routes/_app/_outside/team'
+import { Route as AppBuildIndexRouteImport } from './routes/_app/build/index'
+import { Route as AppBuildTaskRouteImport } from './routes/_app/build/$task'
+import { Route as AppBuildNewRouteImport } from './routes/_app/build/new'
+import { Route as AppObserveChar123TabChar125RouteImport } from './routes/_app/observe.{-$tab}'
+import { Route as AppOutsideApprovalsApprovalRouteImport } from './routes/_app/_outside/approvals/$approval'
+import { Route as AppShipDeploymentsDeploymentRouteImport } from './routes/_app/_ship/deployments/$deployment'
+import { Route as AppShipProjectsIndexRouteImport } from './routes/_app/_ship/projects/index'
+import { Route as AppShipAppsAppChar123TabChar125RouteImport } from './routes/_app/_ship/apps/$app/{-$tab}'
+import { Route as AppShipMachinesMachineChar123TabChar125RouteImport } from './routes/_app/_ship/machines/$machine/{-$tab}'
+import { Route as AppShipProjectsProjectChar123TabChar125RouteImport } from './routes/_app/_ship/projects/$project/{-$tab}'
+import { Route as AppShipProjectsProjectPreviewsPreviewChar123TabChar125RouteImport } from './routes/_app/_ship/projects/$project/previews/$preview/{-$tab}'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -23,49 +42,270 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOutsideRouteRoute = AppOutsideRouteRouteImport.update({
+  id: '/_outside',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppShipRouteRoute = AppShipRouteRouteImport.update({
+  id: '/_ship',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBuildRouteRoute = AppBuildRouteRouteImport.update({
+  id: '/build',
+  path: '/build',
+  getParentRoute: () => AppRoute,
+} as any)
 const JoinCodeRoute = JoinCodeRouteImport.update({
   id: '/join/$code',
   path: '/join/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppOutsideAccountRoute = AppOutsideAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AppOutsideRouteRoute,
+} as any)
+const AppOutsideConnectRoute = AppOutsideConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
+  getParentRoute: () => AppOutsideRouteRoute,
+} as any)
+const AppOutsideInboxRoute = AppOutsideInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => AppOutsideRouteRoute,
+} as any)
+const AppOutsideServersRoute = AppOutsideServersRouteImport.update({
+  id: '/servers',
+  path: '/servers',
+  getParentRoute: () => AppOutsideRouteRoute,
+} as any)
+const AppOutsideTeamRoute = AppOutsideTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AppOutsideRouteRoute,
+} as any)
+const AppBuildIndexRoute = AppBuildIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppBuildRouteRoute,
+} as any)
+const AppBuildTaskRoute = AppBuildTaskRouteImport.update({
+  id: '/$task',
+  path: '/$task',
+  getParentRoute: () => AppBuildRouteRoute,
+} as any)
+const AppBuildNewRoute = AppBuildNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AppBuildRouteRoute,
+} as any)
+const AppObserveChar123TabChar125Route =
+  AppObserveChar123TabChar125RouteImport.update({
+    id: '/observe/{-$tab}',
+    path: '/observe/{-$tab}',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppOutsideApprovalsApprovalRoute =
+  AppOutsideApprovalsApprovalRouteImport.update({
+    id: '/approvals/$approval',
+    path: '/approvals/$approval',
+    getParentRoute: () => AppOutsideRouteRoute,
+  } as any)
+const AppShipDeploymentsDeploymentRoute =
+  AppShipDeploymentsDeploymentRouteImport.update({
+    id: '/deployments/$deployment',
+    path: '/deployments/$deployment',
+    getParentRoute: () => AppShipRouteRoute,
+  } as any)
+const AppShipProjectsIndexRoute = AppShipProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => AppShipRouteRoute,
+} as any)
+const AppShipAppsAppChar123TabChar125Route =
+  AppShipAppsAppChar123TabChar125RouteImport.update({
+    id: '/apps/$app/{-$tab}',
+    path: '/apps/$app/{-$tab}',
+    getParentRoute: () => AppShipRouteRoute,
+  } as any)
+const AppShipMachinesMachineChar123TabChar125Route =
+  AppShipMachinesMachineChar123TabChar125RouteImport.update({
+    id: '/machines/$machine/{-$tab}',
+    path: '/machines/$machine/{-$tab}',
+    getParentRoute: () => AppShipRouteRoute,
+  } as any)
+const AppShipProjectsProjectChar123TabChar125Route =
+  AppShipProjectsProjectChar123TabChar125RouteImport.update({
+    id: '/projects/$project/{-$tab}',
+    path: '/projects/$project/{-$tab}',
+    getParentRoute: () => AppShipRouteRoute,
+  } as any)
+const AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route =
+  AppShipProjectsProjectPreviewsPreviewChar123TabChar125RouteImport.update({
+    id: '/projects/$project/previews/$preview/{-$tab}',
+    path: '/projects/$project/previews/$preview/{-$tab}',
+    getParentRoute: () => AppShipRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/build': typeof AppBuildRouteRouteWithChildren
   '/join/$code': typeof JoinCodeRoute
+  '/account': typeof AppOutsideAccountRoute
+  '/connect': typeof AppOutsideConnectRoute
+  '/inbox': typeof AppOutsideInboxRoute
+  '/servers': typeof AppOutsideServersRoute
+  '/team': typeof AppOutsideTeamRoute
+  '/build/$task': typeof AppBuildTaskRoute
+  '/build/new': typeof AppBuildNewRoute
+  '/observe/{-$tab}': typeof AppObserveChar123TabChar125Route
+  '/build/': typeof AppBuildIndexRoute
+  '/approvals/$approval': typeof AppOutsideApprovalsApprovalRoute
+  '/deployments/$deployment': typeof AppShipDeploymentsDeploymentRoute
+  '/projects/': typeof AppShipProjectsIndexRoute
+  '/apps/$app/{-$tab}': typeof AppShipAppsAppChar123TabChar125Route
+  '/machines/$machine/{-$tab}': typeof AppShipMachinesMachineChar123TabChar125Route
+  '/projects/$project/{-$tab}': typeof AppShipProjectsProjectChar123TabChar125Route
+  '/projects/$project/previews/$preview/{-$tab}': typeof AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/': typeof AppIndexRoute
   '/join/$code': typeof JoinCodeRoute
+  '/account': typeof AppOutsideAccountRoute
+  '/connect': typeof AppOutsideConnectRoute
+  '/inbox': typeof AppOutsideInboxRoute
+  '/servers': typeof AppOutsideServersRoute
+  '/team': typeof AppOutsideTeamRoute
+  '/build/$task': typeof AppBuildTaskRoute
+  '/build/new': typeof AppBuildNewRoute
+  '/observe/{-$tab}': typeof AppObserveChar123TabChar125Route
+  '/build': typeof AppBuildIndexRoute
+  '/approvals/$approval': typeof AppOutsideApprovalsApprovalRoute
+  '/deployments/$deployment': typeof AppShipDeploymentsDeploymentRoute
+  '/projects': typeof AppShipProjectsIndexRoute
+  '/apps/$app/{-$tab}': typeof AppShipAppsAppChar123TabChar125Route
+  '/machines/$machine/{-$tab}': typeof AppShipMachinesMachineChar123TabChar125Route
+  '/projects/$project/{-$tab}': typeof AppShipProjectsProjectChar123TabChar125Route
+  '/projects/$project/previews/$preview/{-$tab}': typeof AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/_outside': typeof AppOutsideRouteRouteWithChildren
+  '/_app/_ship': typeof AppShipRouteRouteWithChildren
+  '/_app/build': typeof AppBuildRouteRouteWithChildren
   '/join/$code': typeof JoinCodeRoute
+  '/_app/': typeof AppIndexRoute
+  '/_app/_outside/account': typeof AppOutsideAccountRoute
+  '/_app/_outside/connect': typeof AppOutsideConnectRoute
+  '/_app/_outside/inbox': typeof AppOutsideInboxRoute
+  '/_app/_outside/servers': typeof AppOutsideServersRoute
+  '/_app/_outside/team': typeof AppOutsideTeamRoute
+  '/_app/build/$task': typeof AppBuildTaskRoute
+  '/_app/build/new': typeof AppBuildNewRoute
+  '/_app/observe/{-$tab}': typeof AppObserveChar123TabChar125Route
+  '/_app/build/': typeof AppBuildIndexRoute
+  '/_app/_outside/approvals/$approval': typeof AppOutsideApprovalsApprovalRoute
+  '/_app/_ship/deployments/$deployment': typeof AppShipDeploymentsDeploymentRoute
+  '/_app/_ship/projects/': typeof AppShipProjectsIndexRoute
+  '/_app/_ship/apps/$app/{-$tab}': typeof AppShipAppsAppChar123TabChar125Route
+  '/_app/_ship/machines/$machine/{-$tab}': typeof AppShipMachinesMachineChar123TabChar125Route
+  '/_app/_ship/projects/$project/{-$tab}': typeof AppShipProjectsProjectChar123TabChar125Route
+  '/_app/_ship/projects/$project/previews/$preview/{-$tab}': typeof AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/join/$code'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/build'
+    | '/join/$code'
+    | '/account'
+    | '/connect'
+    | '/inbox'
+    | '/servers'
+    | '/team'
+    | '/build/$task'
+    | '/build/new'
+    | '/observe/{-$tab}'
+    | '/build/'
+    | '/approvals/$approval'
+    | '/deployments/$deployment'
+    | '/projects/'
+    | '/apps/$app/{-$tab}'
+    | '/machines/$machine/{-$tab}'
+    | '/projects/$project/{-$tab}'
+    | '/projects/$project/previews/$preview/{-$tab}'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/join/$code'
-  id: '__root__' | '/' | '/login' | '/join/$code'
+  to:
+    | '/login'
+    | '/'
+    | '/join/$code'
+    | '/account'
+    | '/connect'
+    | '/inbox'
+    | '/servers'
+    | '/team'
+    | '/build/$task'
+    | '/build/new'
+    | '/observe/{-$tab}'
+    | '/build'
+    | '/approvals/$approval'
+    | '/deployments/$deployment'
+    | '/projects'
+    | '/apps/$app/{-$tab}'
+    | '/machines/$machine/{-$tab}'
+    | '/projects/$project/{-$tab}'
+    | '/projects/$project/previews/$preview/{-$tab}'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/login'
+    | '/_app/_outside'
+    | '/_app/_ship'
+    | '/_app/build'
+    | '/join/$code'
+    | '/_app/'
+    | '/_app/_outside/account'
+    | '/_app/_outside/connect'
+    | '/_app/_outside/inbox'
+    | '/_app/_outside/servers'
+    | '/_app/_outside/team'
+    | '/_app/build/$task'
+    | '/_app/build/new'
+    | '/_app/observe/{-$tab}'
+    | '/_app/build/'
+    | '/_app/_outside/approvals/$approval'
+    | '/_app/_ship/deployments/$deployment'
+    | '/_app/_ship/projects/'
+    | '/_app/_ship/apps/$app/{-$tab}'
+    | '/_app/_ship/machines/$machine/{-$tab}'
+    | '/_app/_ship/projects/$project/{-$tab}'
+    | '/_app/_ship/projects/$project/previews/$preview/{-$tab}'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   JoinCodeRoute: typeof JoinCodeRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -75,6 +315,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/': {
+      id: '/_app/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_outside': {
+      id: '/_app/_outside'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppOutsideRouteRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_ship': {
+      id: '/_app/_ship'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppShipRouteRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/build': {
+      id: '/_app/build'
+      path: '/build'
+      fullPath: '/build'
+      preLoaderRoute: typeof AppBuildRouteRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/join/$code': {
       id: '/join/$code'
       path: '/join/$code'
@@ -82,11 +350,204 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JoinCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/_outside/account': {
+      id: '/_app/_outside/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AppOutsideAccountRouteImport
+      parentRoute: typeof AppOutsideRouteRoute
+    }
+    '/_app/_outside/connect': {
+      id: '/_app/_outside/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof AppOutsideConnectRouteImport
+      parentRoute: typeof AppOutsideRouteRoute
+    }
+    '/_app/_outside/inbox': {
+      id: '/_app/_outside/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof AppOutsideInboxRouteImport
+      parentRoute: typeof AppOutsideRouteRoute
+    }
+    '/_app/_outside/servers': {
+      id: '/_app/_outside/servers'
+      path: '/servers'
+      fullPath: '/servers'
+      preLoaderRoute: typeof AppOutsideServersRouteImport
+      parentRoute: typeof AppOutsideRouteRoute
+    }
+    '/_app/_outside/team': {
+      id: '/_app/_outside/team'
+      path: '/team'
+      fullPath: '/team'
+      preLoaderRoute: typeof AppOutsideTeamRouteImport
+      parentRoute: typeof AppOutsideRouteRoute
+    }
+    '/_app/build/': {
+      id: '/_app/build/'
+      path: '/'
+      fullPath: '/build/'
+      preLoaderRoute: typeof AppBuildIndexRouteImport
+      parentRoute: typeof AppBuildRouteRoute
+    }
+    '/_app/build/$task': {
+      id: '/_app/build/$task'
+      path: '/$task'
+      fullPath: '/build/$task'
+      preLoaderRoute: typeof AppBuildTaskRouteImport
+      parentRoute: typeof AppBuildRouteRoute
+    }
+    '/_app/build/new': {
+      id: '/_app/build/new'
+      path: '/new'
+      fullPath: '/build/new'
+      preLoaderRoute: typeof AppBuildNewRouteImport
+      parentRoute: typeof AppBuildRouteRoute
+    }
+    '/_app/observe/{-$tab}': {
+      id: '/_app/observe/{-$tab}'
+      path: '/observe/{-$tab}'
+      fullPath: '/observe/{-$tab}'
+      preLoaderRoute: typeof AppObserveChar123TabChar125RouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_outside/approvals/$approval': {
+      id: '/_app/_outside/approvals/$approval'
+      path: '/approvals/$approval'
+      fullPath: '/approvals/$approval'
+      preLoaderRoute: typeof AppOutsideApprovalsApprovalRouteImport
+      parentRoute: typeof AppOutsideRouteRoute
+    }
+    '/_app/_ship/deployments/$deployment': {
+      id: '/_app/_ship/deployments/$deployment'
+      path: '/deployments/$deployment'
+      fullPath: '/deployments/$deployment'
+      preLoaderRoute: typeof AppShipDeploymentsDeploymentRouteImport
+      parentRoute: typeof AppShipRouteRoute
+    }
+    '/_app/_ship/projects/': {
+      id: '/_app/_ship/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AppShipProjectsIndexRouteImport
+      parentRoute: typeof AppShipRouteRoute
+    }
+    '/_app/_ship/apps/$app/{-$tab}': {
+      id: '/_app/_ship/apps/$app/{-$tab}'
+      path: '/apps/$app/{-$tab}'
+      fullPath: '/apps/$app/{-$tab}'
+      preLoaderRoute: typeof AppShipAppsAppChar123TabChar125RouteImport
+      parentRoute: typeof AppShipRouteRoute
+    }
+    '/_app/_ship/machines/$machine/{-$tab}': {
+      id: '/_app/_ship/machines/$machine/{-$tab}'
+      path: '/machines/$machine/{-$tab}'
+      fullPath: '/machines/$machine/{-$tab}'
+      preLoaderRoute: typeof AppShipMachinesMachineChar123TabChar125RouteImport
+      parentRoute: typeof AppShipRouteRoute
+    }
+    '/_app/_ship/projects/$project/{-$tab}': {
+      id: '/_app/_ship/projects/$project/{-$tab}'
+      path: '/projects/$project/{-$tab}'
+      fullPath: '/projects/$project/{-$tab}'
+      preLoaderRoute: typeof AppShipProjectsProjectChar123TabChar125RouteImport
+      parentRoute: typeof AppShipRouteRoute
+    }
+    '/_app/_ship/projects/$project/previews/$preview/{-$tab}': {
+      id: '/_app/_ship/projects/$project/previews/$preview/{-$tab}'
+      path: '/projects/$project/previews/$preview/{-$tab}'
+      fullPath: '/projects/$project/previews/$preview/{-$tab}'
+      preLoaderRoute: typeof AppShipProjectsProjectPreviewsPreviewChar123TabChar125RouteImport
+      parentRoute: typeof AppShipRouteRoute
+    }
   }
 }
 
+interface AppOutsideRouteRouteChildren {
+  AppOutsideAccountRoute: typeof AppOutsideAccountRoute
+  AppOutsideConnectRoute: typeof AppOutsideConnectRoute
+  AppOutsideInboxRoute: typeof AppOutsideInboxRoute
+  AppOutsideServersRoute: typeof AppOutsideServersRoute
+  AppOutsideTeamRoute: typeof AppOutsideTeamRoute
+  AppOutsideApprovalsApprovalRoute: typeof AppOutsideApprovalsApprovalRoute
+}
+
+const AppOutsideRouteRouteChildren: AppOutsideRouteRouteChildren = {
+  AppOutsideAccountRoute: AppOutsideAccountRoute,
+  AppOutsideConnectRoute: AppOutsideConnectRoute,
+  AppOutsideInboxRoute: AppOutsideInboxRoute,
+  AppOutsideServersRoute: AppOutsideServersRoute,
+  AppOutsideTeamRoute: AppOutsideTeamRoute,
+  AppOutsideApprovalsApprovalRoute: AppOutsideApprovalsApprovalRoute,
+}
+
+const AppOutsideRouteRouteWithChildren = AppOutsideRouteRoute._addFileChildren(
+  AppOutsideRouteRouteChildren,
+)
+
+interface AppShipRouteRouteChildren {
+  AppShipDeploymentsDeploymentRoute: typeof AppShipDeploymentsDeploymentRoute
+  AppShipProjectsIndexRoute: typeof AppShipProjectsIndexRoute
+  AppShipAppsAppChar123TabChar125Route: typeof AppShipAppsAppChar123TabChar125Route
+  AppShipMachinesMachineChar123TabChar125Route: typeof AppShipMachinesMachineChar123TabChar125Route
+  AppShipProjectsProjectChar123TabChar125Route: typeof AppShipProjectsProjectChar123TabChar125Route
+  AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route: typeof AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route
+}
+
+const AppShipRouteRouteChildren: AppShipRouteRouteChildren = {
+  AppShipDeploymentsDeploymentRoute: AppShipDeploymentsDeploymentRoute,
+  AppShipProjectsIndexRoute: AppShipProjectsIndexRoute,
+  AppShipAppsAppChar123TabChar125Route: AppShipAppsAppChar123TabChar125Route,
+  AppShipMachinesMachineChar123TabChar125Route:
+    AppShipMachinesMachineChar123TabChar125Route,
+  AppShipProjectsProjectChar123TabChar125Route:
+    AppShipProjectsProjectChar123TabChar125Route,
+  AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route:
+    AppShipProjectsProjectPreviewsPreviewChar123TabChar125Route,
+}
+
+const AppShipRouteRouteWithChildren = AppShipRouteRoute._addFileChildren(
+  AppShipRouteRouteChildren,
+)
+
+interface AppBuildRouteRouteChildren {
+  AppBuildTaskRoute: typeof AppBuildTaskRoute
+  AppBuildNewRoute: typeof AppBuildNewRoute
+  AppBuildIndexRoute: typeof AppBuildIndexRoute
+}
+
+const AppBuildRouteRouteChildren: AppBuildRouteRouteChildren = {
+  AppBuildTaskRoute: AppBuildTaskRoute,
+  AppBuildNewRoute: AppBuildNewRoute,
+  AppBuildIndexRoute: AppBuildIndexRoute,
+}
+
+const AppBuildRouteRouteWithChildren = AppBuildRouteRoute._addFileChildren(
+  AppBuildRouteRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppOutsideRouteRoute: typeof AppOutsideRouteRouteWithChildren
+  AppShipRouteRoute: typeof AppShipRouteRouteWithChildren
+  AppBuildRouteRoute: typeof AppBuildRouteRouteWithChildren
+  AppIndexRoute: typeof AppIndexRoute
+  AppObserveChar123TabChar125Route: typeof AppObserveChar123TabChar125Route
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppOutsideRouteRoute: AppOutsideRouteRouteWithChildren,
+  AppShipRouteRoute: AppShipRouteRouteWithChildren,
+  AppBuildRouteRoute: AppBuildRouteRouteWithChildren,
+  AppIndexRoute: AppIndexRoute,
+  AppObserveChar123TabChar125Route: AppObserveChar123TabChar125Route,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   JoinCodeRoute: JoinCodeRoute,
 }

@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { Keyboard, ListChecks, LogOut, Monitor, Moon, Package, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
-import { PlaceLink } from '@/components/place-link'
 import { ShortcutKeys } from '@/components/shortcut-keys'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -25,7 +25,6 @@ import { isInstanceAdmin } from '@/lib/agent-session'
 import { sessionQuery, signOut } from '@/lib/auth'
 import type { StreamState } from '@/lib/event-stream'
 import { setGuideHidden } from '@/lib/first-run'
-import { places } from '@/lib/nav'
 import { inventoryQuery, meQuery } from '@/lib/queries'
 import { toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -157,23 +156,17 @@ export function AccountMenu({ onHelp }: { onHelp: () => void }) {
           .filter((p) => p.id !== 'inbox')
           .map((p) => (
             <DropdownMenuItem key={p.id} asChild>
-              <PlaceLink to={places.page(p.id)}>
+              <Link to={p.to}>
                 <p.icon /> {p.title}
-              </PlaceLink>
+              </Link>
             </DropdownMenuItem>
           ))}
         <DropdownMenuSeparator />
         <ThemeChoice />
         <DropdownMenuItem asChild>
-          <PlaceLink
-            to={{
-              mode: 'ship',
-              project: null,
-            }}
-            onClick={() => setGuideHidden(false)}
-          >
+          <Link to="/projects" onClick={() => setGuideHidden(false)}>
             <ListChecks /> Get started
-          </PlaceLink>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onHelp}>
           <Keyboard /> Keyboard shortcuts
@@ -184,9 +177,9 @@ export function AccountMenu({ onHelp }: { onHelp: () => void }) {
         {account.version &&
           (account.admin ? (
             <DropdownMenuItem asChild>
-              <PlaceLink to={places.page('servers')}>
+              <Link to="/servers">
                 <Package /> Stationly {account.version}
-              </PlaceLink>
+              </Link>
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem disabled>

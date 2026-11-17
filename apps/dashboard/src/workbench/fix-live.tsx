@@ -10,7 +10,12 @@ import {
   projectsQuery,
 } from '@/lib/queries'
 
+import type { LiveApp } from './ops-live'
+
 export type FixTarget = { kind: 'deployment' | 'app'; id: string }
+
+export const fixOf = (live: LiveApp) =>
+  live.newest?.status === 'failed' ? `deployment:${live.newest.id}` : `app:${live.app.id}`
 
 export const fixTarget = (value: string | null): FixTarget | null => {
   const [kind, id] = (value ?? '').split(':')

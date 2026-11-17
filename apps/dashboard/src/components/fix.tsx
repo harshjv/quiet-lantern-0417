@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router'
 import { Loader2, Wrench } from 'lucide-react'
 
 import { Code, Command } from '@/components/code'
@@ -9,7 +10,6 @@ import { api, idempotency, send, type ApiFailure } from '@/lib/api'
 import { errorFix, planFix, type Fix, type FixContext, type FixPlan, type Run } from '@/lib/fixes'
 import { entityIcon } from '@/lib/icons'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 type Pressable = {
@@ -87,6 +87,7 @@ const appCopy = {
 } as const
 
 function AppRun({ run, ...props }: Pressable & { run: RunOf<'start_app' | 'update_app'> }) {
+  const navigate = useNavigate()
   const mutation = useApiMutation({
     mutationFn: () => {
       const target = api.v1.apps({
@@ -111,7 +112,12 @@ function AppRun({ run, ...props }: Pressable & { run: RunOf<'start_app' | 'updat
       const deployment = !result.waiting && result.body.deployments[0]
 
       if (deployment) {
-        go(places.deployment(deployment.id))
+        void navigate({
+          to: '/deployments/$deployment',
+          params: {
+            deployment: deployment.id,
+          },
+        })
       }
     },
     failure: () => lower(props.label),

@@ -355,7 +355,8 @@ export const keyRoutes = (kit: Kit) => {
       {
         project: {
           id: 'list_project_keys',
-          summary: 'List project keys',
+          summary:
+            'List project keys; an app reads one only through a reference such as ${{project.NAME}}',
           level: 'read',
           cli: {
             path: ['keys', 'list'],
@@ -522,7 +523,7 @@ export const keyRoutes = (kit: Kit) => {
         operation: {
           id: 'set_project_keys',
           summary:
-            "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads",
+            "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads. An app gets a project key only through a reference such as ${{project.NAME}}",
           level: 'admin',
           target: ({ params, body }: TargetInput) =>
             projectScope(params.project!, (body as { target?: ValueTarget }).target).target,

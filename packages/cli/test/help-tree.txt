@@ -119,7 +119,7 @@ sly keys get-resolved
 sly keys grant <id>
   Grant a global key to a project
 sly keys list
-  List project keys
+  List project keys; an app reads one only through a reference such as ${{project.NAME}}
 sly keys list-app
   List the keys of an app; values are never listed
 sly keys list-global
@@ -141,7 +141,7 @@ sly keys set-app
 sly keys set-global
   Set and unset global keys
 sly keys set-project
-  Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads
+  Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads. An app gets a project key only through a reference such as ${{project.NAME}}
 sly link
   Write .stationly/context.json in the working directory: the instance, project, preview and app later commands default to
 sly login

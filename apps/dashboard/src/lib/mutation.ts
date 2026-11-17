@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { failureText } from './api'
@@ -51,6 +52,7 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
   failure?: (vars: V) => string
   intercept?: (failure: unknown, vars: V) => boolean
 }) {
+  const navigate = useNavigate()
   const mutation = useMutation({
     mutationFn: options.mutationFn,
     onMutate: (vars, { client }) =>
@@ -61,7 +63,13 @@ export function useApiMutation<V = void, R extends Outcome = Outcome>(options: {
           rollback(client, snapshot)
         }
 
-        toastWaiting(result.body.id, options.waiting?.(vars))
+        toastWaiting(options.waiting?.(vars))
+        void navigate({
+          to: '/approvals/$approval',
+          params: {
+            approval: result.body.id,
+          },
+        })
       } else {
         write(client, options.seed?.(result.body as Body<R>, vars) ?? [])
         const message = options.success?.(result.body as Body<R>, vars)

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link, useNavigate, type LinkOptions } from '@tanstack/react-router'
 import { ArrowLeft, Bot } from 'lucide-react'
 
 import { agentLabel } from '@stationly/protocol'
@@ -6,7 +7,6 @@ import { agentLabel } from '@stationly/protocol'
 import { Code } from '@/components/code'
 import { KeyValue, Rows } from '@/components/page'
 import { Failure as LoadFailure } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import {
   DeleteMachine,
   ExtendMachine,
@@ -24,7 +24,7 @@ import { commands, type Scope } from '@/lib/commands'
 import { blank, bytes, repositoryName } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { machineNetwork, machineRuntime } from '@/lib/labels'
-import { go, places, type Place as Where } from '@/lib/nav'
+import { placeTo } from '@/lib/links'
 import { scopeOf, type PlaceView } from '@/lib/place'
 import { machineQuery, previewQueryOf, projectQuery } from '@/lib/queries'
 import { egressText, imageText, sizeText } from '@/lib/sandbox'
@@ -43,10 +43,7 @@ function placeOfMachine(machine: Machine, project: Project, previewName: string 
     projectName: project.name,
     previewName: machine.preview_id ? (previewName ?? machine.preview_id) : null,
   }
-  const back: Partial<Where> =
-    place.previewName === null
-      ? places.project(project.name, 'machines')
-      : places.preview(project.name, place.previewName, 'machines')
+  const back = placeTo(project.name, place.previewName, 'machines')
 
   return {
     place,
@@ -55,7 +52,7 @@ function placeOfMachine(machine: Machine, project: Project, previewName: string 
   }
 }
 
-export function MachinePage({ machineId }: { machineId: string }) {
+export function MachinePage({ machineId, tab }: { machineId: string; tab: string | null }) {
   const machine = useQuery(machineQuery(machineId))
   const project = useQuery({
     ...projectQuery(machine.data?.project_id ?? ''),
@@ -91,7 +88,12 @@ export function MachinePage({ machineId }: { machineId: string }) {
   }
 
   return (
-    <LoadedMachine machine={machine.data} project={project.data} previewName={preview.data?.name} />
+    <LoadedMachine
+      machine={machine.data}
+      project={project.data}
+      previewName={preview.data?.name}
+      tab={tab}
+    />
   )
 }
 
@@ -99,10 +101,12 @@ function LoadedMachine({
   machine,
   project,
   previewName,
+  tab,
 }: {
   machine: Machine
   project: Project
   previewName: string | undefined
+  tab: string | null
 }) {
   const { place, scope, back } = placeOfMachine(machine, project, previewName)
 
@@ -113,7 +117,7 @@ function LoadedMachine({
       <Failure machine={machine} />
       {machine.workspace && <AgentSection machine={machine} scope={scope} />}
       <Overview machine={machine} />
-      <MachineTabs machine={machine} scope={scope} />
+      <MachineTabs machine={machine} scope={scope} tab={tab} />
     </Page>
   )
 }
@@ -125,17 +129,17 @@ function Heading({
 }: {
   machine: Machine
   place: PlaceView
-  back: Partial<Where>
+  back: LinkOptions
 }) {
   return (
     <div className="-mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-      <PlaceLink
-        to={back}
+      <Link
+        {...back}
         className="inline-flex items-center gap-1.5 underline-offset-4 hover:text-foreground hover:underline"
       >
         <ArrowLeft className="size-3.5" aria-hidden />
         {place.projectName} / {place.previewName ?? 'production'} machines
-      </PlaceLink>
+      </Link>
       <MachineStatusBadge status={machine.status} reason={machine.status_reason} />
       <span>{machineUseText[machineUse(machine)]}</span>
       <span data-testid="machine-time">
@@ -153,15 +157,9 @@ function Heading({
   )
 }
 
-function Actions({
-  machine,
-  scope,
-  back,
-}: {
-  machine: Machine
-  scope: Scope
-  back: Partial<Where>
-}) {
+function Actions({ machine, scope, back }: { machine: Machine; scope: Scope; back: LinkOptions }) {
+  const navigate = useNavigate()
+
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {isIdle(machine.status) ? (
@@ -178,7 +176,7 @@ function Actions({
         }}
         scope={scope}
       />
-      <DeleteMachine machine={machine} after={() => go(back)} />
+      <DeleteMachine machine={machine} after={() => void navigate(back)} />
     </div>
   )
 }

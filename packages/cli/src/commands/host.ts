@@ -460,7 +460,10 @@ export const hostCommands = (program: Program) => {
     .option('--socket <path>', 'stationd root socket', rootSocketPath)
     .option('--email <email>', 'admin email')
     .option('--password-stdin', 'read the admin password from stdin')
-    .option('--acme-email <email>', 'ACME account email (acme.email)')
+    .option(
+      '--acme-email <email>',
+      'ACME account email (acme.email); without it the account has no email',
+    )
     .option('--api-host <host>', 'API hostname (hostnames.api)')
     .option('--dashboard-host <host>', 'dashboard hostname (hostnames.dashboard)')
     .option('--no-domain', 'skip the hostnames; Dispatch stays on the loopback publish')
@@ -565,12 +568,7 @@ export const hostCommands = (program: Program) => {
                   fallback: pair ? email : '',
                 },
               )
-            : pair
-              ? await need(undefined, {
-                  what: "ACME email for Let's Encrypt",
-                  flag: '--acme-email',
-                })
-              : undefined)
+            : undefined)
         const detect = () => rootSocketCall(options.socket, 'public_address.detect', {}, () => {})
         const publicAddress = await publicAddressFrom(options, tty, detect)
         const litestream = await litestreamFrom(options, tty)

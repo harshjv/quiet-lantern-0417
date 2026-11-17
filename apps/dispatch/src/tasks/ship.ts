@@ -236,7 +236,7 @@ export const startShip = async (
 }
 
 const pullRequestBody = (row: TaskRow, dashboardOrigin: string) =>
-  [`Work from the Stationly task "${row.title}".`, '', `Task: ${dashboardOrigin}/#build/${row.id}`]
+  [`Work from the Stationly task "${row.title}".`, '', `Task: ${dashboardOrigin}/build/${row.id}`]
     .join('\n')
     .trim()
 

@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Clock, Settings, TriangleAlert } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
@@ -17,8 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api, idempotency, send, type Me, type Preview } from '@/lib/api'
+import { placeTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import type { PlaceView } from '@/lib/place'
 import { meQuery, projectSettingsQuery } from '@/lib/queries'
 
@@ -222,6 +223,7 @@ function ProjectSettingsForm({ project }: { project: string }) {
 function DeleteProject({ id, name }: { id: string; name: string }) {
   const [open, setOpen] = useState(false)
   const [typed, setTyped] = useState('')
+  const navigate = useNavigate()
   const remove = useApiMutation({
     mutationFn: () =>
       send(
@@ -235,9 +237,8 @@ function DeleteProject({ id, name }: { id: string; name: string }) {
     success: () => `${name} deleted`,
     onSuccess: () => {
       setOpen(false)
-      go({
-        mode: 'ship',
-        project: null,
+      void navigate({
+        to: '/projects',
       })
     },
   })
@@ -328,6 +329,7 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
     success: () =>
       lifetime === 'never' ? `${preview.name} no longer expires` : `${preview.name} expiry set`,
   })
+  const navigate = useNavigate()
   const remove = useApiMutation({
     mutationFn: () =>
       send(
@@ -339,7 +341,7 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
       ),
     invalidate: ['previews'],
     success: () => `${preview.name} deleted`,
-    onSuccess: () => go(places.project(place.projectName, 'previews')),
+    onSuccess: () => void navigate(placeTo(place.projectName, null, 'previews')),
   })
 
   return (
@@ -361,7 +363,7 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
               'This preview never expires.'
             )}
           </p>
-          <Field id="preview-lifetime" label="Delete it">
+          <Field id="preview-lifetime" label="Expires">
             <Select value={lifetime} onValueChange={setLifetime}>
               <SelectTrigger id="preview-lifetime" className="w-56">
                 <SelectValue />

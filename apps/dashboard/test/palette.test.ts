@@ -72,16 +72,19 @@ test('entities carry where they live and link by id', () => {
     value: 'shop/production',
     label: 'shop / production',
     to: {
-      mode: 'ship',
-      project: 'shop',
-      view: null,
+      to: '/projects/$project/{-$tab}',
+      params: {
+        project: 'shop',
+        tab: undefined,
+      },
     },
   })
   assert.equal(found.apps[0].hint, 'shop / production')
   assert.deepEqual(found.machines[0].to, {
-    mode: 'ship',
-    view: 'machine:sbx_try',
-    project: 'shop',
+    to: '/machines/$machine/{-$tab}',
+    params: {
+      machine: 'sbx_try',
+    },
   })
 })
 

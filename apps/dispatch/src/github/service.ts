@@ -386,7 +386,7 @@ export const createGitHub = (deps: GitHubDeps) => {
       ctx.build,
       'pending',
       `Building ${svc.name} on stationly`,
-      dashboardLink(`/builds/${buildRow.id}`),
+      dashboardLink(`/deployments/${buildRow.deployment_id}`),
     )
     enqueueStatus(
       source.repo,
@@ -421,7 +421,6 @@ export const createGitHub = (deps: GitHubDeps) => {
     }
 
     const ctx = contexts(svc)
-    const buildLink = dashboardLink(`/builds/${b.id}`)
     const depLink = dashboardLink(`/deployments/${dep.id}`)
 
     if (row.type === 'deployment.started') {
@@ -431,7 +430,7 @@ export const createGitHub = (deps: GitHubDeps) => {
         ctx.build,
         'success',
         `Built in ${b.duration_s ?? 0} s`,
-        buildLink,
+        depLink,
       )
       enqueueStatus(
         source.repo,
@@ -456,7 +455,7 @@ export const createGitHub = (deps: GitHubDeps) => {
       const text = `${failure.code ?? 'FAILED'}: ${failure.summary ?? 'the deployment failed'}`
 
       if (failure.phase === 'build') {
-        enqueueStatus(source.repo, sha, ctx.build, state, text, buildLink)
+        enqueueStatus(source.repo, sha, ctx.build, state, text, depLink)
         enqueueStatus(
           source.repo,
           sha,

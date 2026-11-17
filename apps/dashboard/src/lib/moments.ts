@@ -12,7 +12,7 @@ export const nextWatch = (watch: Watch, key: string, value: boolean | undefined)
     return watching(key, value)
   }
 
-  if (value || watch.waited) {
+  if (value || watch.waited || value === undefined) {
     return watch
   }
 

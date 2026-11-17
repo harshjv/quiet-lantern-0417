@@ -25,6 +25,8 @@ export const buildNote =
 
 export const referencePlaceholder = '${{db.HOST}}'
 
+export const projectReference = '${{project.NAME}}'
+
 export type KeyEntry = {
   name: string
   kind: KeyKind

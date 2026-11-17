@@ -1,8 +1,8 @@
-import { PlaceLink } from '@/components/place-link'
+import { Link } from '@tanstack/react-router'
+
 import type { Approval, Deployment } from '@/lib/api'
 import { entityIcon } from '@/lib/icons'
 import { actorText, deploymentTrigger, isAgent } from '@/lib/labels'
-import { places } from '@/lib/nav'
 
 type Who = Pick<Approval['requested_by'], 'type' | 'client'>
 
@@ -12,24 +12,21 @@ export function Actor({ actor }: { actor: Who }) {
   }
 
   return (
-    <PlaceLink
-      to={places.page('connect')}
+    <Link
+      to="/connect"
       className="relative z-10 inline-flex items-center gap-1 text-foreground underline-offset-4 hover:underline"
     >
       <entityIcon.agent className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       {actorText(actor)}
-    </PlaceLink>
+    </Link>
   )
 }
 
 export function AgentsLink() {
   return (
-    <PlaceLink
-      to={places.page('connect')}
-      className="underline underline-offset-4 hover:text-foreground"
-    >
+    <Link to="/connect" className="underline underline-offset-4 hover:text-foreground">
       agents
-    </PlaceLink>
+    </Link>
   )
 }
 

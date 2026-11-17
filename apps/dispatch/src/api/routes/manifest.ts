@@ -19,7 +19,6 @@ import { planManifest, requireDiffLevel } from '../../manifest/plan.ts'
 import { seesProject } from '../access.ts'
 import { commit, stripValues } from '../changes.ts'
 import { ApiError } from '../errors.ts'
-import { parseFields, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import {
   isProduction,
@@ -67,28 +66,38 @@ const planned = {
   warnings: Type.Array(ManifestWarning),
 }
 
+const unrecorded = {
+  id: Type.Null(),
+  project_id: Type.String(),
+  preview_id: Nullable(Type.String()),
+  source: Type.Literal('manifest'),
+  requested_by: Actor,
+  changes: Type.Array(Change),
+  refs: Type.Record(Type.String(), Type.String()),
+  ...planned,
+}
+
 const ManifestPlan = Type.Object(
   {
-    id: Type.Null(),
-    project_id: Type.String(),
-    preview_id: Nullable(Type.String()),
+    ...unrecorded,
     status: Type.Union([Type.Literal('plan'), Type.Literal('approved')]),
-    source: Type.Literal('manifest'),
-    requested_by: Actor,
-    changes: Type.Array(Change),
-    refs: Type.Record(Type.String(), Type.String()),
     deployments: Type.Array(Type.String()),
-    ...planned,
   },
   {
     additionalProperties: false,
   },
 )
 
-const ManifestApplied = extend(ApprovalDetail, {
-  deployments: Type.Array(Deployment),
-  ...planned,
-})
+const ManifestApplied = Type.Object(
+  {
+    ...unrecorded,
+    status: Type.Literal('approved'),
+    deployments: Type.Array(Deployment),
+  },
+  {
+    additionalProperties: false,
+  },
+)
 
 const ManifestWaiting = extend(ApprovalDetail, planned)
 
@@ -340,7 +349,13 @@ export const manifestRoutes = (kit: Kit) => {
           set,
           result,
           () => ({
-            ...select(kit.views.approval, result.approval, parseFields('changes,refs,deployments')),
+            id: null,
+            ...placeIds(place),
+            status: 'approved' as const,
+            source: 'manifest' as const,
+            requested_by: call.principal.actor,
+            changes: stripValues(changes),
+            refs: result.refs,
             unmanaged: plan.unmanaged,
           }),
           warnings,

@@ -1,22 +1,17 @@
 import { toast } from 'sonner'
 
 import type { Approval } from './api'
-import { go, places } from './nav'
 
 export const waitingTitle = 'Waiting for approval'
 
-export const waitingText = (act?: string) =>
+const waitingText = (act?: string) =>
   act
     ? `${act}. Nothing changes until an admin approves it.`
     : 'Nothing changes until an admin approves it.'
 
-export const toastWaiting = (approval: string, act?: string) =>
+export const toastWaiting = (act?: string) =>
   toast.message(waitingTitle, {
     description: waitingText(act),
-    action: {
-      label: 'Review',
-      onClick: () => go(places.approval(approval)),
-    },
   })
 
 type Scope = { project_id: string; target: string; level: string }

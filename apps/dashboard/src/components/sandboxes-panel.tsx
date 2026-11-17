@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Camera, Container, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
@@ -10,7 +11,6 @@ import { CheckboxField, Field, FieldSet, Suffixed } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { EmptyState } from '@/components/page'
 import { Panel } from '@/components/panel'
-import { PlaceLink } from '@/components/place-link'
 import {
   DeleteMachine,
   ExtendMachine,
@@ -40,7 +40,6 @@ import { bytes } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { machineNetwork } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import { go, places } from '@/lib/nav'
 import { isProduction, previewQuery, scopeOf, type Place, type PlaceView } from '@/lib/place'
 import {
   machineSnapshotsQuery,
@@ -153,6 +152,7 @@ export function NewMachine({
   const [docker, setDocker] = useState(false)
   const [start, setStart] = useState(true)
   const [problem, setProblem] = useState<string | null>(null)
+  const navigate = useNavigate()
   const mutation = useApiMutation({
     mutationFn: (body: NewMachineBody) =>
       send(
@@ -176,7 +176,12 @@ export function NewMachine({
       onOpenChange(false)
 
       if (!result.waiting) {
-        go(places.machine(result.body.id))
+        void navigate({
+          to: '/machines/$machine/{-$tab}',
+          params: {
+            machine: result.body.id,
+          },
+        })
       }
     },
   })
@@ -409,8 +414,11 @@ function MachineTable({ place, onCreate }: { place: PlaceView; onCreate: () => v
         {data.items.map((machine) => (
           <TableRow key={machine.id} className={cn('relative', fresh.has(machine.id) && highlight)}>
             <TableCell>
-              <PlaceLink
-                to={places.machine(machine.id)}
+              <Link
+                to="/machines/$machine/{-$tab}"
+                params={{
+                  machine: machine.id,
+                }}
                 className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
                 data-testid="machine-link"
               >
@@ -421,7 +429,7 @@ function MachineTable({ place, onCreate }: { place: PlaceView; onCreate: () => v
                     Fork
                   </Badge>
                 )}
-              </PlaceLink>
+              </Link>
               <span className="mt-0.5 block pl-6 text-xs sm:hidden">
                 <TimeLeft machine={machine} />
               </span>

@@ -1,4 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Camera, ScrollText } from 'lucide-react'
 import { lazy } from 'react'
 
@@ -14,7 +15,6 @@ import { KeysPanel } from '@/components/variables-panel'
 import type { Machine } from '@/lib/api'
 import { commands, type Scope } from '@/lib/commands'
 import { snapshotSource } from '@/lib/labels'
-import { go, places, usePlace, viewTab } from '@/lib/nav'
 import { machineOwnSnapshotsQuery } from '@/lib/queries'
 
 import { Section } from './parts'
@@ -46,7 +46,7 @@ function Snapshots({ machine, scope }: { machine: Machine; scope: Scope }) {
       <SnapshotsTable
         snapshots={data.items}
         scope={scope}
-        originLabel="Taken"
+        originLabel="Taken while"
         origin={(snapshot) => (
           <span className="text-muted-foreground">{snapshotSource[snapshot.source_state]}</span>
         )}
@@ -69,9 +69,17 @@ function Snapshots({ machine, scope }: { machine: Machine; scope: Scope }) {
   )
 }
 
-export function MachineTabs({ machine, scope }: { machine: Machine; scope: Scope }) {
-  const place = usePlace()
-  const tab = tabs.find((t) => t === viewTab(place.view)) ?? 'terminal'
+export function MachineTabs({
+  machine,
+  scope,
+  tab: shown,
+}: {
+  machine: Machine
+  scope: Scope
+  tab: string | null
+}) {
+  const navigate = useNavigate()
+  const tab = tabs.find((t) => t === shown) ?? 'terminal'
 
   return (
     <Tabs
@@ -80,7 +88,13 @@ export function MachineTabs({ machine, scope }: { machine: Machine; scope: Scope
         const found = tabs.find((t) => t === next)
 
         if (found) {
-          go(places.machine(machine.id, found))
+          void navigate({
+            to: '/machines/$machine/{-$tab}',
+            params: {
+              machine: machine.id,
+              tab: found === 'terminal' ? undefined : found,
+            },
+          })
         }
       }}
     >

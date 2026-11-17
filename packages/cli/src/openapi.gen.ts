@@ -34341,7 +34341,7 @@ export const openApiDocument = {
           "keys"
         ],
         "operationId": "list_project_keys",
-        "summary": "List project keys",
+        "summary": "List project keys; an app reads one only through a reference such as ${{project.NAME}}",
         "x-stationly": {
           "level": "read",
           "cli": {
@@ -34529,7 +34529,7 @@ export const openApiDocument = {
           "keys"
         ],
         "operationId": "set_project_keys",
-        "summary": "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads",
+        "summary": "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads. An app gets a project key only through a reference such as ${{project.NAME}}",
         "x-stationly": {
           "level": "admin"
         },
@@ -44106,14 +44106,14 @@ export const openApiDocument = {
                         "id",
                         "project_id",
                         "preview_id",
-                        "status",
                         "source",
                         "requested_by",
                         "changes",
                         "refs",
-                        "deployments",
                         "unmanaged",
-                        "warnings"
+                        "warnings",
+                        "status",
+                        "deployments"
                       ],
                       "properties": {
                         "id": {
@@ -44126,13 +44126,6 @@ export const openApiDocument = {
                           "type": [
                             "string",
                             "null"
-                          ]
-                        },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "plan",
-                            "approved"
                           ]
                         },
                         "source": {
@@ -44156,12 +44149,6 @@ export const openApiDocument = {
                             }
                           }
                         },
-                        "deployments": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
                         "unmanaged": {
                           "type": "array",
                           "items": {
@@ -44217,6 +44204,19 @@ export const openApiDocument = {
                               }
                             }
                           }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "plan",
+                            "approved"
+                          ]
+                        },
+                        "deployments": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     },
@@ -44225,141 +44225,36 @@ export const openApiDocument = {
                       "type": "object",
                       "required": [
                         "id",
-                        "created_at",
                         "project_id",
-                        "task_id",
-                        "title",
-                        "status",
+                        "preview_id",
                         "source",
                         "requested_by",
-                        "requester",
-                        "requester_decides",
-                        "decided_by",
-                        "decided_at",
-                        "self_approved",
-                        "reason",
-                        "ship",
-                        "summary",
                         "changes",
                         "refs",
-                        "deployments",
                         "unmanaged",
-                        "warnings"
+                        "warnings",
+                        "status",
+                        "deployments"
                       ],
                       "properties": {
                         "id": {
-                          "type": "string"
-                        },
-                        "created_at": {
-                          "type": "string"
-                        },
-                        "updated_at": {
-                          "type": "string"
+                          "type": "null"
                         },
                         "project_id": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "task_id": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "title": {
                           "type": "string"
                         },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "waiting",
-                            "approved",
-                            "rejected",
-                            "superseded"
+                        "preview_id": {
+                          "type": [
+                            "string",
+                            "null"
                           ]
                         },
                         "source": {
-                          "type": "string",
-                          "enum": [
-                            "api",
-                            "manifest",
-                            "compose_import",
-                            "task",
-                            "ui"
-                          ]
+                          "const": "manifest",
+                          "type": "string"
                         },
                         "requested_by": {
                           "$ref": "#/components/schemas/Actor"
-                        },
-                        "requester": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "requester_decides": {
-                          "type": "boolean"
-                        },
-                        "decided_by": {
-                          "anyOf": [
-                            {
-                              "$ref": "#/components/schemas/Actor"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "decided_at": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "self_approved": {
-                          "type": "boolean"
-                        },
-                        "reason": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "ship": {
-                          "anyOf": [
-                            {
-                              "$ref": "#/components/schemas/ApprovalShip"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "summary": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "add",
-                            "update",
-                            "remove",
-                            "deployments"
-                          ],
-                          "properties": {
-                            "add": {
-                              "type": "integer"
-                            },
-                            "update": {
-                              "type": "integer"
-                            },
-                            "remove": {
-                              "type": "integer"
-                            },
-                            "deployments": {
-                              "type": "integer"
-                            }
-                          }
                         },
                         "changes": {
                           "type": "array",
@@ -44375,12 +44270,6 @@ export const openApiDocument = {
                             }
                           }
                         },
-                        "deployments": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/Deployment"
-                          }
-                        },
                         "unmanaged": {
                           "type": "array",
                           "items": {
@@ -44435,6 +44324,16 @@ export const openApiDocument = {
                                 "type": "string"
                               }
                             }
+                          }
+                        },
+                        "status": {
+                          "const": "approved",
+                          "type": "string"
+                        },
+                        "deployments": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Deployment"
                           }
                         }
                       }
