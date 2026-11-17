@@ -1,6 +1,106 @@
 [
   {
-    "at": "protocol.json#/$defs/SandboxNetworkDesired/properties/bridge_name",
-    "reason": "Station resources take the sly- prefix from one protocol constant; stationd and Dispatch move to it in the same release"
+    "at": "errors.json#/errors/PROTECTED_ENVIRONMENT",
+    "reason": "Layer 4 replaces environments with production and previews, production always protected; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/STAGED_CHANGE_SUPERSEDED",
+    "reason": "Layer 4 replaces staged changes with approvals (APPROVAL_SUPERSEDED); installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SHARED_SERVICE_INTERMITTENT",
+    "reason": "Layer 4 renames service to app in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/STATION_INVARIANT_VIOLATION/area",
+    "reason": "Layer 4 renames station to server in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/VARIABLE_REFERENCE_INVALID",
+    "reason": "Layer 4 renames variable to key in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/VARIABLE_UNRESOLVED",
+    "reason": "Layer 4 renames variable to key in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/VARIABLE_TARGET_MISSING",
+    "reason": "Layer 4 renames variable to key in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/VARIABLE_NOT_GRANTED",
+    "reason": "Layer 4 renames variable to key in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/VARIABLE_CYCLE",
+    "reason": "Layer 4 renames variable to key in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/VARIABLE_PROTECTED_SOURCE",
+    "reason": "Layer 4 renames variable to key in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/STATION_OFFLINE",
+    "reason": "Layer 4 renames station to server in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/STATION_VERSION_SKEW",
+    "reason": "Layer 4 renames station to server in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/STATION_CAPABILITY_MISSING",
+    "reason": "Layer 4 renames station to server in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_NOT_RUNNING",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_STATE_CONFLICT",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_QUOTA_EXCEEDED",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_DISK_FULL",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_START_FAILED",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_STORAGE_GROW_FAILED",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_IMAGE_UNPACK_FAILED",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SANDBOX_RUNTIME_UNAVAILABLE",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/ENVIRONMENT_IS_DEFAULT",
+    "reason": "Layer 4 replaces environments with production and previews, production always protected; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/warnings/SHARES_STATEFUL_SERVICE",
+    "reason": "Layer 4 renames service to app in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/warnings/BACKUP_STOPS_SERVICE",
+    "reason": "Layer 4 renames service to app in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/warnings/SANDBOX_RESTART_REQUIRED",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/warnings/SANDBOX_SNAPSHOT_CRASH_CONSISTENT",
+    "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
   }
 ]
