@@ -314,6 +314,7 @@ func TestTheProxySwapsABoundPlaceholderOnlyInTheCredentialHeaders(t *testing.T) 
 	c := h.client(false)
 	for _, tc := range cases {
 		resp, got := h.send(c, tc.host, tc.headers)
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("%s: status %d, want 200", tc.name, resp.StatusCode)
 			continue
@@ -352,6 +353,7 @@ func TestTheProxySwapsOverHTTP2(t *testing.T) {
 	bound := testKey("E")
 	h := newHarness(t, map[string]Credential{bound: {Value: "real-h2", Hosts: []string{credentialHost}}}, credentialDst)
 	resp, got := h.send(h.client(true), "", map[string]string{"X-Api-Key": bound})
+	_ = resp.Body.Close()
 	if resp.ProtoMajor != 2 {
 		t.Fatalf("client spoke %s to the proxy, want HTTP/2", resp.Proto)
 	}
@@ -373,6 +375,8 @@ func TestTheProxyRefusesAnUnknownPlaceholderWithoutForwardingIt(t *testing.T) {
 		{"X-Api-Key": bound, "Authorization": "Bearer " + unknown},
 	} {
 		resp, _ := h.send(c, "", headers)
+		raw, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("Retry-After") != "2" {
 			t.Errorf("%v: status %d, Retry-After %q; want 503 and 2", headers, resp.StatusCode, resp.Header.Get("Retry-After"))
 			continue
@@ -380,7 +384,6 @@ func TestTheProxyRefusesAnUnknownPlaceholderWithoutForwardingIt(t *testing.T) {
 		var body struct {
 			Error struct{ Code, Explanation, Fix string } `json:"error"`
 		}
-		raw, _ := io.ReadAll(resp.Body)
 		if err := json.Unmarshal(raw, &body); err != nil || body.Error.Code != "CREDENTIALS_UNAVAILABLE" || body.Error.Explanation == "" || body.Error.Fix == "" {
 			t.Errorf("%v: body %q, want CREDENTIALS_UNAVAILABLE in the API's error envelope", headers, raw)
 		}
@@ -510,6 +513,7 @@ func TestAWebSocketUpgradeCarriesTheSwappedHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status %d (%q), want 101", resp.StatusCode, body)
