@@ -3,12 +3,15 @@ import { after, before, describe, test } from 'node:test'
 
 import { eq } from 'drizzle-orm'
 
-import { workspaceEgress } from '@stationly/protocol'
+import { workspaceEgress, workspaceEnv } from '@stationly/protocol'
 
 import { machine } from '../src/db/schema.ts'
 import { egressWithin } from '../src/sandboxes/confinement.ts'
+import { machineUserFor } from '../src/tasks/machine.ts'
+import { memberToken } from '../src/team/keys.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
+import type { FakeStation } from './helpers/fake-station.ts'
 import {
   createMachine,
   createPreview,
@@ -19,6 +22,8 @@ import {
 } from './helpers/seed.ts'
 
 let h: Dispatch
+let station: FakeStation
+let projectId: string
 let envId: string
 let workspaceId: string
 let workspaceKey: string
@@ -62,10 +67,12 @@ before(async () => {
   pinPlatform(h, {
     machines: true,
   })
-  await startFakeStation(h, 'station-1', {
+  station = await startFakeStation(h, 'station-1', {
     machines: {},
   })
   const project = await createProject(h, 'alpha')
+
+  projectId = project.id
 
   envId = (await createPreview(h, 'alpha', 'dev')).id
 
@@ -335,6 +342,121 @@ describe('a workspace token running things in machines', () => {
     const reply = await asHuman('POST', `/v1/machines/${openId}/exec`, exec)
 
     assert.equal(reply.status, 201, reply.text)
+  })
+})
+
+describe('tokens a machine holds as placeholders', () => {
+  let adminWorkspaceId: string
+
+  const deliveredToken = (machineId: string) =>
+    station.secrets.filter((s) => s.target.sandbox_id === machineId).at(-1)!.values[
+      workspaceEnv.token
+    ]!
+
+  const memberMachineToken = async (machineId: string) => {
+    const box = h.db.select().from(machine).where(eq(machine.id, machineId)).get()!
+
+    return memberToken(h.deps.keyring, await machineUserFor(h.db, h.deps, box, h.admin.userId))!
+  }
+
+  const createToken = (credential: { token?: string; cookie?: string; origin?: string }) =>
+    h.call('POST', '/v1/tokens', {
+      ...credential,
+      body: {
+        name: nextName(),
+        kind: 'scoped',
+        scopes: [
+          {
+            project_id: projectId,
+            target: 'previews',
+            level: 'read',
+          },
+        ],
+      },
+    })
+
+  const refusedAsMachineHeld = (reply: { status: number; text: string; body: any }) => {
+    assert.equal(reply.status, 403, reply.text)
+    assert.equal(reply.body.error.code, 'FORBIDDEN_SCOPE')
+    assert.equal(reply.body.error.details.reason, 'machine_held')
+    assert.equal(reply.body.key, undefined)
+  }
+
+  before(async () => {
+    const box = await createMachine(h, envId, {
+      name: nextName(),
+      workspace: {
+        agent: 'claude',
+        repository: 'https://github.com/acme/app',
+        level: 'admin',
+      },
+    })
+
+    adminWorkspaceId = box.id
+    await waitForMachine(h, adminWorkspaceId, 'running')
+  })
+
+  test('an admin workspace token cannot create a token', async () => {
+    refusedAsMachineHeld(
+      await createToken({
+        token: deliveredToken(adminWorkspaceId),
+      }),
+    )
+  })
+
+  test('a member machine token cannot create a token', async () => {
+    refusedAsMachineHeld(
+      await createToken({
+        token: await memberMachineToken(adminWorkspaceId),
+      }),
+    )
+  })
+
+  test('a workspace token gets no key from the auth server either', async () => {
+    const reply = await h.call('POST', '/auth/api-key/create', {
+      token: deliveredToken(adminWorkspaceId),
+      origin: localOrigin,
+      body: {
+        name: 'escape',
+      },
+    })
+
+    assert.ok(reply.status >= 400 && reply.status < 500, reply.text)
+    assert.equal(reply.body?.key, undefined)
+  })
+
+  test('a person still creates tokens with a session and with a personal token', async () => {
+    const bySession = await createToken({
+      cookie: h.admin.cookie,
+      origin: localOrigin,
+    })
+
+    assert.equal(bySession.status, 201, bySession.text)
+    assert.match(bySession.body.key, /^sly_/)
+
+    const byPersonal = await createToken({
+      token: h.admin.token,
+    })
+
+    assert.equal(byPersonal.status, 201, byPersonal.text)
+    assert.match(byPersonal.body.key, /^sly_/)
+  })
+
+  test('a machine token for a machine in a preview covers that preview only', async () => {
+    const other = (await createPreview(h, 'alpha', 'other')).id
+    const token = await memberMachineToken(adminWorkspaceId)
+    const own = await h.call('GET', placed(h, envId, 'apps'), {
+      token,
+    })
+
+    assert.equal(own.status, 200, own.text)
+
+    const elsewhere = await h.call('GET', placed(h, other, 'apps'), {
+      token,
+    })
+
+    assert.equal(elsewhere.status, 403, elsewhere.text)
+    assert.equal(elsewhere.body.error.code, 'FORBIDDEN_SCOPE')
   })
 })
 

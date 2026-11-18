@@ -13,7 +13,7 @@ import type { AppStatus, Project } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { byName, plural } from '@/lib/format'
 import { appStatus } from '@/lib/labels'
-import { placeTo } from '@/lib/links'
+import { appTo, placeTo } from '@/lib/links'
 import { projectsQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 
@@ -156,14 +156,7 @@ function FailedDeploys() {
       action={
         <>
           <Button asChild size="sm" variant="outline">
-            <Link
-              to="/apps/$app/{-$tab}"
-              params={{
-                app: live.app.id,
-              }}
-            >
-              Open
-            </Link>
+            <Link {...appTo(live.app.id)}>Open</Link>
           </Button>
           <Button asChild size="sm">
             <Link
@@ -206,10 +199,7 @@ function Production() {
                 title={
                   <>
                     <Link
-                      to="/apps/$app/{-$tab}"
-                      params={{
-                        app: live.app.id,
-                      }}
+                      {...appTo(live.app.id)}
                       className="truncate underline-offset-4 hover:underline"
                     >
                       {live.app.name}
@@ -241,14 +231,7 @@ function Production() {
                 ]}
                 action={
                   <Button asChild size="sm" variant="outline">
-                    <Link
-                      to="/apps/$app/{-$tab}"
-                      params={{
-                        app: live.app.id,
-                      }}
-                    >
-                      Open
-                    </Link>
+                    <Link {...appTo(live.app.id)}>Open</Link>
                   </Button>
                 }
               />

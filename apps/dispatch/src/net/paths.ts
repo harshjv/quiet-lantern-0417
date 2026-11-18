@@ -19,6 +19,8 @@ export const pathIdValues = [
   'inbound_other',
   'sandbox_inbound',
   'domain_not_allowed',
+  'credentials_proxy',
+  'credential_quic',
 ] as const
 
 export type PathId = (typeof pathIdValues)[number]
@@ -180,15 +182,35 @@ pathTable.push(
     to: () => 'a public destination outside its allowlist, or UDP to a public destination',
     rule: () => 'the allowlist rejects in the machine Coupler forward chain',
   },
+  {
+    path: 'credentials_proxy',
+    phase: 'machine',
+    from: 'a machine',
+    verdict: 'allowed',
+    to: () =>
+      "TCP 443 to a credential host's address, redirected to stationd's credentials proxy, which swaps placeholders for that host and passes any other name through",
+    rule: () =>
+      'the credentials DNAT to 169.254.1.1:7443 in the machine Coupler prerouting, and the 7443 accept for redirected connections in inbound',
+  },
+  {
+    path: 'credential_quic',
+    phase: 'machine',
+    from: 'a machine',
+    verdict: 'rejected',
+    to: () => "UDP 443 to a credential host's address, so QUIC falls back to TCP and the proxy",
+    rule: () =>
+      'ip daddr @credential_hosts_443 udp dport 443 reject in the machine Coupler forward chain',
+  },
 )
 
-export type MachinePaths = { inbound: boolean; allowlist: boolean }
+export type MachinePaths = { inbound: boolean; allowlist: boolean; credentials: boolean }
 
 export const environmentPaths = (
   scope: PathScope,
   machines: MachinePaths = {
     inbound: false,
     allowlist: false,
+    credentials: false,
   },
 ) =>
   pathTable
@@ -196,7 +218,8 @@ export const environmentPaths = (
       (p) =>
         p.phase === '1a' ||
         (p.path === 'sandbox_inbound' && machines.inbound) ||
-        (p.path === 'domain_not_allowed' && machines.allowlist),
+        (p.path === 'domain_not_allowed' && machines.allowlist) ||
+        ((p.path === 'credentials_proxy' || p.path === 'credential_quic') && machines.credentials),
     )
     .map((p) => ({
       path: p.path,

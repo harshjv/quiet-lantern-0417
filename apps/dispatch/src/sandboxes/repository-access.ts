@@ -59,12 +59,7 @@ export const repositoryLabel = (repository: string) =>
     .join('/')
     .replace(/\.git$/, '')
 
-export const projectSecret = (
-  db: Db,
-  keyring: Keyring,
-  scope: { project: string; target: string },
-  name: string,
-) => {
+export const projectHead = (db: Db, scope: { project: string; target: string }, name: string) => {
   const found = keysOf(db, {
     scope: 'project',
     id: scope.project,
@@ -74,10 +69,20 @@ export const projectSecret = (
   const place = db.select().from(target).where(eq(target.id, scope.target)).get()
   const inPreview = place?.kind === 'preview'
   const preview = found && inPreview ? headValue(db, found.id, 'preview') : undefined
-  const head = found
+
+  return found
     ? (preview ??
-      (inPreview && found.kind === 'sealed' ? undefined : headValue(db, found.id, 'production')))
+        (inPreview && found.kind === 'sealed' ? undefined : headValue(db, found.id, 'production')))
     : undefined
+}
+
+export const projectSecret = (
+  db: Db,
+  keyring: Keyring,
+  scope: { project: string; target: string },
+  name: string,
+) => {
+  const head = projectHead(db, scope, name)
 
   return head ? decryptValue(keyring, head) : null
 }

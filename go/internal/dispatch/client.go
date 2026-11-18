@@ -93,8 +93,9 @@ type Client struct {
 	startedAt string
 	url       string
 
-	snapMu sync.Mutex
-	snap   Snapshot
+	snapMu      sync.Mutex
+	snap        Snapshot
+	credentials func() []protocol.CredentialUse
 
 	inbound chan Message
 	ctrl    chan []byte
@@ -143,6 +144,22 @@ func (c *Client) Publish(s Snapshot) {
 		s.Services = protocol.HeartbeatBodyServices{}
 	}
 	c.snap = s
+}
+
+func (c *Client) CountCredentials(drain func() []protocol.CredentialUse) {
+	c.snapMu.Lock()
+	defer c.snapMu.Unlock()
+	c.credentials = drain
+}
+
+func (c *Client) drainCredentials() []protocol.CredentialUse {
+	c.snapMu.Lock()
+	drain := c.credentials
+	c.snapMu.Unlock()
+	if drain == nil {
+		return nil
+	}
+	return drain()
 }
 
 func (c *Client) snapshot() Snapshot {
@@ -560,10 +577,11 @@ func (c *Client) sendObserved(ref string) {
 func (c *Client) heartbeat() []byte {
 	snap := c.snapshot()
 	b, _ := c.encode(protocol.MessageHeartbeat, nil, protocol.HeartbeatBody{
-		Applied:   snap.Applied,
-		Resources: snap.Resources,
-		Outbox:    protocol.HeartbeatOutbox{LastSeq: c.ob.LastSeq()},
-		Services:  snap.Services,
+		Applied:     snap.Applied,
+		Resources:   snap.Resources,
+		Outbox:      protocol.HeartbeatOutbox{LastSeq: c.ob.LastSeq()},
+		Services:    snap.Services,
+		Credentials: c.drainCredentials(),
 	})
 	return b
 }

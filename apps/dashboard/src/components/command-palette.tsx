@@ -40,9 +40,12 @@ import {
   destinations,
   pageProject,
   pageText,
+  rank,
   spaceName,
   type Destination,
   type Page,
+  type Ranked,
+  type Ranking,
 } from '@/lib/palette'
 import { scopeOf, type PlaceView } from '@/lib/place'
 import {
@@ -271,36 +274,24 @@ function useDestinations(searching: boolean) {
   }
 }
 
-function Item({
-  value,
-  icon: Icon,
-  label,
-  hint,
-  shortcut,
-  checked,
-  onSelect,
-}: {
-  value: string
+type Entry = Ranked & {
   icon: LucideIcon
-  label: string
-  hint?: string
   shortcut?: ShortcutId
   checked?: boolean
   onSelect: () => void
-}) {
+}
+
+function Item({ entry }: { entry: Entry }) {
+  const Icon = entry.icon
+
   return (
-    <CommandItem
-      value={value}
-      keywords={hint ? [label, hint] : [label]}
-      data-checked={checked}
-      onSelect={onSelect}
-    >
+    <CommandItem value={entry.value} data-checked={entry.checked} onSelect={entry.onSelect}>
       <Icon aria-hidden />
-      <span className="truncate">{label}</span>
-      {hint && <span className="truncate text-muted-foreground">{hint}</span>}
-      {shortcut && (
+      <span className="truncate">{entry.label}</span>
+      {entry.hint && <span className="truncate text-muted-foreground">{entry.hint}</span>}
+      {entry.shortcut && (
         <CommandShortcut>
-          <ShortcutKeys id={shortcut} />
+          <ShortcutKeys id={entry.shortcut} />
         </CommandShortcut>
       )}
     </CommandItem>
@@ -414,6 +405,7 @@ function PaletteContent({
   onHelp: () => void
 }) {
   const [search, setSearch] = useState('')
+  const [moved, setMoved] = useState<{ search: string; top: string; value: string } | null>(null)
   const client = useQueryClient()
   const me = useQuery(meQuery)
   const admin = isInstanceAdmin(me.data?.scopes ?? [])
@@ -451,9 +443,193 @@ function PaletteContent({
           }
         : null,
     })
+  const destination =
+    (icon: LucideIcon) =>
+    (entry: Destination): Entry => ({
+      value: entry.value,
+      label: entry.label,
+      hint: entry.hint,
+      icon,
+      onSelect: goto(entry.to),
+    })
+  const sections: Ranking<Entry>[] = [
+    {
+      heading: 'Go to',
+      items: goTo
+        .filter((entry) => admin || !entry.admin)
+        .map((entry) => ({
+          value: `go ${entry.label}`,
+          label: entry.label,
+          terms: 'go',
+          icon: entry.icon,
+          shortcut: entry.shortcut,
+          onSelect: goto(entry.to(current)),
+        })),
+    },
+    ...(searching
+      ? [
+          {
+            heading: 'Tasks',
+            items: tasks.map(destination(ListTodo)),
+          },
+          ...groups.map((group) => ({
+            heading: group.heading,
+            items: found[group.key].map(destination(group.icon)),
+          })),
+        ]
+      : []),
+    {
+      heading: 'Create',
+      items: [
+        {
+          value: 'create task',
+          label: 'New task',
+          terms: 'create task',
+          icon: Plus,
+          shortcut: 'newTask',
+          onSelect: goto({
+            to: '/build/new',
+            search: {
+              project: current ?? undefined,
+            },
+          }),
+        },
+        {
+          value: 'create project',
+          label: 'New project',
+          terms: 'create project',
+          icon: Plus,
+          onSelect: run(() =>
+            onCreate({
+              kind: 'project',
+            }),
+          ),
+        },
+        ...(place && placeHint
+          ? [
+              {
+                value: 'create app',
+                label: 'New app',
+                hint: placeHint,
+                terms: 'create app',
+                icon: Plus,
+                onSelect: run(() =>
+                  onCreate({
+                    kind: 'app',
+                    place,
+                  }),
+                ),
+              },
+              {
+                value: 'create machine',
+                label: 'New machine',
+                hint: placeHint,
+                terms: 'create machine',
+                icon: Plus,
+                onSelect: run(() =>
+                  onCreate({
+                    kind: 'machine',
+                    place,
+                  }),
+                ),
+              },
+            ]
+          : []),
+      ],
+    },
+    ...(text
+      ? [
+          {
+            heading: 'Copy for your agent',
+            items: [
+              {
+                value: 'copy command',
+                label: 'Copy the sly command for this page',
+                terms: 'copy command',
+                icon: Copy,
+                onSelect: copy(text.command, 'Command'),
+              },
+              ...(text.prompt
+                ? [
+                    {
+                      value: 'copy prompt',
+                      label: 'Copy a prompt for this page',
+                      terms: 'copy prompt',
+                      icon: Copy,
+                      onSelect: copy(text.prompt, 'Prompt'),
+                    },
+                  ]
+                : []),
+              ...(project
+                ? [
+                    {
+                      value: 'copy mcp install',
+                      label: 'Copy the command that connects Claude Code',
+                      hint: project,
+                      terms: 'copy mcp install',
+                      icon: Copy,
+                      onSelect: copy(
+                        commands.mcpInstall({
+                          client: 'claude-code',
+                          project,
+                          target: '*',
+                          level: 'deploy',
+                          ttl: '30d',
+                        }),
+                        'Command',
+                      ),
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ]
+      : []),
+    {
+      heading: 'Preferences',
+      items: [
+        ...themes.map((entry) => ({
+          value: `theme ${entry.value}`,
+          label: entry.label,
+          terms: `theme ${entry.value}`,
+          icon: entry.icon,
+          checked: (theme ?? 'system') === entry.value,
+          onSelect: run(() => setTheme(entry.value)),
+        })),
+        {
+          value: 'keyboard shortcuts',
+          label: 'Keyboard shortcuts',
+          terms: 'help',
+          icon: Keyboard,
+          shortcut: 'help',
+          onSelect: run(onHelp),
+        },
+        {
+          value: 'sign out',
+          label: 'Sign out',
+          icon: LogOut,
+          onSelect: run(() => void signOut(client)),
+        },
+      ],
+    },
+  ]
+  const shown = rank(sections, search)
+  const top = shown[0]?.items[0]?.value ?? ''
+  const selected = moved && moved.search === search && moved.top === top ? moved.value : top
 
   return (
-    <Command loop>
+    <Command
+      loop
+      shouldFilter={false}
+      value={selected}
+      onValueChange={(value) =>
+        setMoved({
+          search,
+          top,
+          value,
+        })
+      }
+    >
       <CommandInput
         value={search}
         onValueChange={setSearch}
@@ -462,165 +638,13 @@ function PaletteContent({
       />
       <CommandList className="max-h-[min(26rem,60dvh)]">
         <CommandEmpty>{pending ? 'Loading' : 'Nothing matches that search.'}</CommandEmpty>
-        <CommandGroup heading="Go to">
-          {goTo
-            .filter((entry) => admin || !entry.admin)
-            .map((entry) => (
-              <Item
-                key={entry.label}
-                value={`go ${entry.label}`}
-                icon={entry.icon}
-                label={entry.label}
-                shortcut={entry.shortcut}
-                onSelect={goto(entry.to(current))}
-              />
-            ))}
-        </CommandGroup>
-        {searching && tasks.length > 0 && (
-          <CommandGroup heading="Tasks">
-            {tasks.map((entry) => (
-              <Item
-                key={entry.value}
-                value={entry.value}
-                icon={ListTodo}
-                label={entry.label}
-                hint={entry.hint}
-                onSelect={goto(entry.to)}
-              />
+        {shown.map((section) => (
+          <CommandGroup key={section.heading} heading={section.heading}>
+            {section.items.map((entry) => (
+              <Item key={entry.value} entry={entry} />
             ))}
           </CommandGroup>
-        )}
-        {searching &&
-          groups.map(
-            (group) =>
-              found[group.key].length > 0 && (
-                <CommandGroup key={group.key} heading={group.heading}>
-                  {found[group.key].map((entry: Destination) => (
-                    <Item
-                      key={entry.value}
-                      value={entry.value}
-                      icon={group.icon}
-                      label={entry.label}
-                      hint={entry.hint}
-                      onSelect={goto(entry.to)}
-                    />
-                  ))}
-                </CommandGroup>
-              ),
-          )}
-        <CommandGroup heading="Create">
-          <Item
-            value="create task"
-            icon={Plus}
-            label="New task"
-            shortcut="newTask"
-            onSelect={goto({
-              to: '/build/new',
-              search: {
-                project: current ?? undefined,
-              },
-            })}
-          />
-          <Item
-            value="create project"
-            icon={Plus}
-            label="New project"
-            onSelect={run(() =>
-              onCreate({
-                kind: 'project',
-              }),
-            )}
-          />
-          {place && placeHint && (
-            <>
-              <Item
-                value="create app"
-                icon={Plus}
-                label="New app"
-                hint={placeHint}
-                onSelect={run(() =>
-                  onCreate({
-                    kind: 'app',
-                    place,
-                  }),
-                )}
-              />
-              <Item
-                value="create machine"
-                icon={Plus}
-                label="New machine"
-                hint={placeHint}
-                onSelect={run(() =>
-                  onCreate({
-                    kind: 'machine',
-                    place,
-                  }),
-                )}
-              />
-            </>
-          )}
-        </CommandGroup>
-        {text && (
-          <CommandGroup heading="Copy for your agent">
-            <Item
-              value="copy command"
-              icon={Copy}
-              label="Copy the sly command for this page"
-              onSelect={copy(text.command, 'Command')}
-            />
-            {text.prompt && (
-              <Item
-                value="copy prompt"
-                icon={Copy}
-                label="Copy a prompt for this page"
-                onSelect={copy(text.prompt, 'Prompt')}
-              />
-            )}
-            {project && (
-              <Item
-                value="copy mcp install"
-                icon={Copy}
-                label="Copy the command that connects Claude Code"
-                hint={project}
-                onSelect={copy(
-                  commands.mcpInstall({
-                    client: 'claude-code',
-                    project,
-                    target: '*',
-                    level: 'deploy',
-                    ttl: '30d',
-                  }),
-                  'Command',
-                )}
-              />
-            )}
-          </CommandGroup>
-        )}
-        <CommandGroup heading="Preferences">
-          {themes.map((entry) => (
-            <Item
-              key={entry.value}
-              value={`theme ${entry.value}`}
-              icon={entry.icon}
-              label={entry.label}
-              checked={(theme ?? 'system') === entry.value}
-              onSelect={run(() => setTheme(entry.value))}
-            />
-          ))}
-          <Item
-            value="keyboard shortcuts"
-            icon={Keyboard}
-            label="Keyboard shortcuts"
-            shortcut="help"
-            onSelect={run(onHelp)}
-          />
-          <Item
-            value="sign out"
-            icon={LogOut}
-            label="Sign out"
-            onSelect={run(() => void signOut(client))}
-          />
-        </CommandGroup>
+        ))}
       </CommandList>
     </Command>
   )

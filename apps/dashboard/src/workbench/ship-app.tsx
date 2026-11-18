@@ -34,7 +34,7 @@ import { blank, duration, shortDigest, shortSha, sourceText } from '@/lib/format
 import { healthChangeText } from '@/lib/health-text'
 import { entityIcon } from '@/lib/icons'
 import { appKind, deploymentStrategy } from '@/lib/labels'
-import { placeTo } from '@/lib/links'
+import { appTo, placeTo } from '@/lib/links'
 import { appQuery, deploymentsQuery, diagnosisQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { toneText } from '@/lib/tone'
@@ -78,13 +78,7 @@ function AppView({ id, tab: shown }: { id: string; tab: string | null }) {
     const found = appTabs.find((t) => t === next)
 
     if (found) {
-      void navigate({
-        to: '/apps/$app/{-$tab}',
-        params: {
-          app: id,
-          tab: found === 'deployments' ? undefined : found,
-        },
-      })
+      void navigate(appTo(id, found === 'deployments' ? undefined : found))
     }
   }
 

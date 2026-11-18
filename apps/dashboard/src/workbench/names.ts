@@ -1,12 +1,53 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 
-import type { Names } from '@/lib/changes'
-import { namesQuery, previewsQuery, projectKeysQuery, projectsQuery } from '@/lib/queries'
+import type { Names, Places } from '@/lib/changes'
+import {
+  appsQuery,
+  namesQuery,
+  previewsQuery,
+  projectKeysQuery,
+  projectsQuery,
+} from '@/lib/queries'
 
 import { serversQuery } from './server-data'
 
+const known = (projects: readonly (string | null)[]) => [
+  ...new Set(projects.filter((id): id is string => Boolean(id))),
+]
+
+export function usePlaces(projects: readonly (string | null)[]): Places {
+  const ids = known(projects)
+  const previews = useQueries({
+    queries: ids.map((id) => previewsQuery(id)),
+  }).flatMap((query, index) =>
+    (query.data?.items ?? []).map((preview) => ({
+      project: ids[index]!,
+      preview,
+    })),
+  )
+  const apps = useQueries({
+    queries: previews.map((entry) =>
+      appsQuery({
+        project: entry.project,
+        preview: entry.preview.id,
+      }),
+    ),
+  })
+  const places = new Map<string, string>()
+
+  previews.forEach((entry, index) => {
+    places.set(entry.preview.id, entry.preview.name)
+
+    for (const app of apps[index]?.data?.items ?? []) {
+      places.set(app.id, entry.preview.name)
+    }
+  })
+
+  return places
+}
+
 export function useNames(projects: readonly (string | null)[]): Names {
-  const ids = [...new Set(projects.filter((id): id is string => Boolean(id)))]
+  const ids = known(projects)
   const listed = useQuery(projectsQuery)
   const servers = useQuery({
     ...serversQuery,

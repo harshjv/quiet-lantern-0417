@@ -17,6 +17,7 @@ type Item<P> = P extends { items: (infer I)[] } ? I : never
 export type ErrorBody = Failure<V1['me']['get']>['value']['error']
 
 export type Me = Data<V1['me']['get']>
+export type MyRepositories = Data<V1['me']['repositories']['get']>
 export type Project = Data<ReturnType<V1['projects']>['get']>
 export type Preview = Data<ReturnType<V1['previews']>['get']>
 export type NetworkMap = Data<ReturnType<V1['projects']>['network']['get']>

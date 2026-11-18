@@ -62,6 +62,8 @@ import { secretsDeliver } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { machineDeliver, machineEnv } from '../secrets/sandbox.ts'
+import { noteCredentialUse } from '../tasks/credentials.ts'
+import { redeliveredCredentials } from '../tasks/machine.ts'
 
 import { mintGrant, serveBlob, storeBlob, sweepBlobs } from './blobs.ts'
 import { ingestRoutes } from './domains.ts'
@@ -751,6 +753,42 @@ export const createStationServer = (options: StationServerOptions) => {
       ref,
     )
 
+  const redeliverRun = (conn: Connection, runId: string, ref: string) => {
+    const credentials = redeliveredCredentials(db, keyring, conn.stationId!, runId)
+
+    log('secrets.requested', {
+      server_id: conn.stationId,
+      run_id: runId,
+      credentials: credentials.length,
+    })
+
+    if (!credentials.length) {
+      return sendError(
+        conn,
+        {
+          code: 'SECRETS_UNAVAILABLE',
+          explanation: `run ${runId} holds no credential Dispatch can deliver again`,
+          fix: 'Start the run again; a preview push token is not kept, and a removed member has no token.',
+        },
+        ref,
+      )
+    }
+
+    send(
+      conn,
+      'secrets.deliver',
+      ephemeralDelivery(
+        {
+          run_id: runId,
+        },
+        'run',
+        [],
+        credentials,
+      ),
+      ref,
+    )
+  }
+
   const generationBlobs = new Map<string, string>()
   const unbuildable = new Map<string, string>()
 
@@ -1415,6 +1453,10 @@ export const createStationServer = (options: StationServerOptions) => {
       }
     }
 
+    for (const use of body.credentials ?? []) {
+      noteCredentialUse(db, stationId, use)
+    }
+
     const ids = Object.keys(body.services)
 
     if (!ids.length) {
@@ -1607,6 +1649,10 @@ export const createStationServer = (options: StationServerOptions) => {
           })
 
           return void deliverMachineSecrets(conn, body.target.sandbox_id, envelope.id)
+        }
+
+        if ('run_id' in body.target) {
+          return redeliverRun(conn, body.target.run_id, envelope.id)
         }
 
         const depId = 'deployment_id' in body.target ? body.target.deployment_id : undefined

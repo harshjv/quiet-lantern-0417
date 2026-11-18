@@ -13,20 +13,21 @@ import (
 const CgroupRoot = "/sys/fs/cgroup"
 
 type Spec struct {
-	ID          string
-	Hostname    string
-	DiskPath    string
-	BundleDir   string
-	LogDir      string
-	Output      *os.File
-	NetNSPath   string
-	Resolver    netip.Addr
-	Args        []string
-	Env         []string
-	ImageEnv    []string
-	Cwd         string
-	MemoryBytes int64
-	CPUMillis   int64
+	ID            string
+	Hostname      string
+	DiskPath      string
+	BundleDir     string
+	LogDir        string
+	Output        *os.File
+	NetNSPath     string
+	Resolver      netip.Addr
+	Args          []string
+	Env           []string
+	ImageEnv      []string
+	Cwd           string
+	MemoryBytes   int64
+	CPUMillis     int64
+	CredentialsCA []byte
 }
 
 type ExecSpec struct {

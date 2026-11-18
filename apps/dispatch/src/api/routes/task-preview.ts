@@ -1,13 +1,19 @@
 import { eq, inArray } from 'drizzle-orm'
 
-import { workspaceUser } from '@stationly/protocol'
+import { workspaceEnv, workspaceUser } from '@stationly/protocol'
 
 import { mintToken } from '../../auth/tokens.ts'
 import { newId } from '../../db/ids.ts'
 import { app, app_port, domain, machine, project, run, task } from '../../db/schema.ts'
 import { asMember } from '../../sandboxes/workspace.ts'
-import { ephemeralDelivery } from '../../secrets/deliver.ts'
-import { homeOf, machineUserOf } from '../../tasks/machine.ts'
+import { credentialExpiry } from '../../secrets/relay.ts'
+import {
+  deliveredRun,
+  homeOf,
+  machineUserOf,
+  memberEnv,
+  stationRunDelivery,
+} from '../../tasks/machine.ts'
 import { previewOf } from '../../tasks/preview.ts'
 import type { TaskRow } from '../../tasks/status.ts'
 import { ChangeSet, commit } from '../changes.ts'
@@ -20,6 +26,8 @@ import { productionOf, type TargetRow } from '../lookup.ts'
 import { createPreview } from './previews.ts'
 
 const previewTokenSeconds = 3600
+
+const previewRunTimeoutS = 1800
 
 type RepoSource = { repo?: string; path?: string }
 
@@ -205,27 +213,26 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
       },
     ],
     seconds: previewTokenSeconds,
+    machineHeld: true,
   })
   const id = newId('run')
   const pushArgs = targets.flatMap((entry) => [
     entry.id,
     (originals.find((original) => original.name === entry.name)!.source as RepoSource).path || '.',
   ])
-  const entries: [string, string][] = [
-    ['STATIONLY_TOKEN', minted.key],
-    ...(member ? ([['STATIONLY_MEMBER', member.name]] as [string, string][]) : []),
-  ]
-
-  await kit.deps.stations.ask(
-    box!.server_id,
-    'secrets.deliver',
-    ephemeralDelivery(
+  const delivered = await deliveredRun(
+    stationRunDelivery(kit.deps.stations),
+    box!,
+    id,
+    member ? memberEnv(member) : [],
+    [
       {
-        run_id: id,
+        key: workspaceEnv.token,
+        value: minted.key,
+        token_id: minted.row.id,
+        expires_at: credentialExpiry(minted.row.expires_at, previewRunTimeoutS),
       },
-      'run',
-      entries,
-    ),
+    ],
   )
 
   const script = [
@@ -252,10 +259,11 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
       exec: {
         cwd: member ? '/root' : home,
         user: member ? 'root' : user,
-        timeout_s: 1800,
+        timeout_s: previewRunTimeoutS,
         stdin: null,
-        env_keys: entries.map(([key]) => key).sort(),
+        env_keys: delivered.envKeys,
         attach: false,
+        credentials: delivered.credentials,
       },
     })
     .run()

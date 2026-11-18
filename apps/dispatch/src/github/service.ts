@@ -105,6 +105,7 @@ export const systemCall = (client: string, requestId: string): Call => ({
     user_id: 'system:github',
     token_kind: 'scoped',
     token_id: null,
+    machine_held: false,
     credential: 'system:github',
     scopes: [
       {

@@ -18,10 +18,11 @@ const (
 )
 
 type SandboxPolicy struct {
-	Joined    bool
-	Allowlist bool
-	Domains   []AllowDomain
-	Blocked   []netip.Prefix
+	Joined      bool
+	Allowlist   bool
+	Domains     []AllowDomain
+	Blocked     []netip.Prefix
+	Credentials []string
 }
 
 type AllowAnswer struct {
@@ -43,6 +44,48 @@ func (r *Resolver) OnAllow(f func(AllowAnswer)) {
 	r.mu.Lock()
 	r.onAllow = f
 	r.mu.Unlock()
+}
+
+func (r *Resolver) OnCredential(f func(AllowAnswer)) {
+	r.mu.Lock()
+	r.onCred = f
+	r.mu.Unlock()
+}
+
+func (r *Resolver) credentialHook() func(AllowAnswer) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.onCred
+}
+
+func (r *Resolver) noteCredential(src netip.Addr, name string, qtype uint16, resp *mdns.Msg, p SandboxPolicy) {
+	host := strings.TrimSuffix(name, ".")
+	if qtype != mdns.TypeA || resp == nil || resp.Rcode != mdns.RcodeSuccess || !slices.Contains(p.Credentials, host) {
+		return
+	}
+	f := r.credentialHook()
+	if f == nil {
+		return
+	}
+	var addrs []netip.Addr
+	var ttl uint32
+	for _, rr := range resp.Answer {
+		v, ok := rr.(*mdns.A)
+		if !ok {
+			continue
+		}
+		a, ok := netip.AddrFromSlice(v.A.To4())
+		if !ok || rebind(a, p.Blocked) {
+			continue
+		}
+		if len(addrs) == 0 || v.Hdr.Ttl < ttl {
+			ttl = v.Hdr.Ttl
+		}
+		addrs = append(addrs, a)
+	}
+	if len(addrs) > 0 {
+		f(AllowAnswer{Source: src, Name: host, Addrs: addrs, TTL: ttl, Ports: []uint16{DefaultAllowPort}})
+	}
 }
 
 func (r *Resolver) sandboxPolicy(src netip.Addr) (SandboxPolicy, bool) {
@@ -84,6 +127,9 @@ func (r *Resolver) serveSandbox(w mdns.ResponseWriter, req *mdns.Msg, src netip.
 		}
 		upstream = true
 		resp, refused = r.allowlisted(req, w.LocalAddr().Network(), src, name, entry, p.Blocked)
+	}
+	if upstream && refused == "" {
+		r.noteCredential(src, name, q.Qtype, resp, p)
 	}
 	_ = w.WriteMsg(resp)
 	r.rings.record(src, start, name, q.Qtype, resp, upstream, probe, refused)

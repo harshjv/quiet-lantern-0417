@@ -40,22 +40,32 @@ func (n *Namespace) RefreshAllow(port uint16, els []AllowElement) error {
 		}
 		addrs = append(addrs, e.Addr)
 	}
-	return n.updateAllow(port, addrs, allowElements(els))
+	return n.updateSet(allowSet(port), addrs, allowElements(els))
+}
+
+func (n *Namespace) RefreshCredentialHosts(els []AllowElement) error {
+	if len(els) == 0 {
+		return nil
+	}
+	addrs := make([]netip.Addr, 0, len(els))
+	for _, e := range els {
+		addrs = append(addrs, e.Addr)
+	}
+	return n.updateSet(credentialSet(), addrs, allowElements(els))
 }
 
 func (n *Namespace) RemoveAllow(port uint16, addrs []netip.Addr) error {
 	if len(addrs) == 0 {
 		return nil
 	}
-	return n.updateAllow(port, addrs, nil)
+	return n.updateSet(allowSet(port), addrs, nil)
 }
 
-func (n *Namespace) updateAllow(port uint16, stale []netip.Addr, add []nftables.SetElement) error {
+func (n *Namespace) updateSet(s *nftables.Set, stale []netip.Addr, add []nftables.SetElement) error {
 	c, err := nftables.New(nftables.WithNetNSFd(n.fd()))
 	if err != nil {
 		return err
 	}
-	s := allowSet(port)
 	del, err := presentElements(c, s, stale)
 	if err != nil {
 		return err

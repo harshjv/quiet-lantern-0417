@@ -61,6 +61,9 @@ type runRecord struct {
 	Rows         int                    `json:"rows,omitempty"`
 	Cols         int                    `json:"cols,omitempty"`
 	Reported     protocol.RunStatus     `json:"reported,omitempty"`
+
+	CredentialsDigest string  `json:"credentials_digest,omitempty"`
+	CredentialsUntil  *string `json:"credentials_until,omitempty"`
 }
 
 func (rr *runRecord) terminal() bool {

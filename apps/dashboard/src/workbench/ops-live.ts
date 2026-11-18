@@ -98,6 +98,13 @@ export const useLiveApps = (scope: string | null) => {
   })
 }
 
+export const placeName = (place: LivePlace) => `${place.project.name} / ${place.name}`
+
+const metered: readonly App['status'][] = ['healthy', 'deploying', 'failing']
+
+export const reportsMetrics = (app: App) =>
+  Boolean(app.current_deployment_id) && metered.includes(app.status)
+
 export const failedApps = (apps: LiveApp[]) =>
   apps.filter((live) => live.newest?.status === 'failed')
 

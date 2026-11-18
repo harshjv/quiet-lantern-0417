@@ -25,6 +25,7 @@ import {
   deploymentStrategy,
   stepStatus,
 } from '@/lib/labels'
+import { appTo } from '@/lib/links'
 import { isFirstLive } from '@/lib/moments'
 import { useApiMutation } from '@/lib/mutation'
 import {
@@ -128,10 +129,7 @@ function DeploymentView({ id }: { id: string }) {
       >
         <div className="-mt-4 flex flex-col gap-2">
           <Link
-            to="/apps/$app/{-$tab}"
-            params={{
-              app: app.id,
-            }}
+            {...appTo(app.id)}
             className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <ArrowLeft className="size-3.5" aria-hidden />

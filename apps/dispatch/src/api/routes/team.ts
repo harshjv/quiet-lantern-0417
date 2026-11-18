@@ -100,6 +100,26 @@ const knownKey = (name: string) => {
   }
 }
 
+const codexAccessTokenPrefix = 'at-'
+
+const keepableKey = (name: string, value: string) => {
+  if (name === 'CODEX_ACCESS_TOKEN' && !value.startsWith(codexAccessTokenPrefix)) {
+    fail(
+      'VALIDATION_FAILED',
+      'CODEX_ACCESS_TOKEN must be a Codex personal access token, which starts with at-. Codex reads any other value as an Agent Identity JWT, whose private key signs every request inside the machine, so Stationly cannot keep it out of the machine.',
+      'Set a Codex personal access token, which starts with at-, as CODEX_ACCESS_TOKEN, or set an OpenAI API key as CODEX_API_KEY instead.',
+      {
+        issues: [
+          {
+            path: '/value',
+            message: `does not start with ${codexAccessTokenPrefix}`,
+          },
+        ],
+      },
+    )
+  }
+}
+
 export const teamRoutes = (kit: Kit) => {
   const { db } = kit.deps
 
@@ -322,6 +342,7 @@ export const teamRoutes = (kit: Kit) => {
 
         requireHuman(call.principal, 'Setting your key')
         knownKey(params.name)
+        keepableKey(params.name, body.value)
         setKey(db, kit.deps.keyring, call.principal.user_id, params.name, body.value)
         audit(
           db,

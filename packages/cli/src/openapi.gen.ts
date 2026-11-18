@@ -46878,6 +46878,7 @@ export const openApiDocument = {
           "KEY_TARGET_MISSING",
           "KEY_NOT_GRANTED",
           "KEY_CYCLE",
+          "CREDENTIALS_UNAVAILABLE",
           "SECRETS_NEED_REENTRY",
           "SEALED_VALUE_UNREADABLE",
           "SECRET_VERSION_IN_USE",
@@ -51914,7 +51915,9 @@ export const openApiDocument = {
                     "inbound_tcp",
                     "inbound_other",
                     "sandbox_inbound",
-                    "domain_not_allowed"
+                    "domain_not_allowed",
+                    "credentials_proxy",
+                    "credential_quic"
                   ]
                 },
                 "from": {
@@ -52175,7 +52178,8 @@ export const openApiDocument = {
                     "private_range",
                     "no_switch_target",
                     "sandbox_inbound",
-                    "domain_not_allowed"
+                    "domain_not_allowed",
+                    "credential_quic"
                   ]
                 },
                 "address": {
@@ -52574,7 +52578,9 @@ export const openApiDocument = {
                   "public_internet",
                   "no_switch_target",
                   "sandbox_inbound",
-                  "domain_not_allowed"
+                  "domain_not_allowed",
+                  "credentials_proxy",
+                  "credential_quic"
                 ]
               }
             }
@@ -52699,7 +52705,9 @@ export const openApiDocument = {
                   "public_internet",
                   "no_switch_target",
                   "sandbox_inbound",
-                  "domain_not_allowed"
+                  "domain_not_allowed",
+                  "credentials_proxy",
+                  "credential_quic"
                 ]
               }
             }
@@ -55959,7 +55967,8 @@ export const openApiDocument = {
                     "private_range",
                     "no_switch_target",
                     "sandbox_inbound",
-                    "domain_not_allowed"
+                    "domain_not_allowed",
+                    "credential_quic"
                   ]
                 },
                 "address": {

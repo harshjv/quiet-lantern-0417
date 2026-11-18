@@ -23,7 +23,6 @@ import { approval, machine, project, server, task } from '../../db/schema.ts'
 import { requestDeletion, startMachine } from '../../sandboxes/lifecycle.ts'
 import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
 import { isRepositoryName, repositoryName } from '../../sandboxes/workspace.ts'
-import { ephemeralDelivery } from '../../secrets/deliver.ts'
 import { keysOf } from '../../secrets/values.ts'
 import { emitEvent } from '../../station/events.ts'
 import { approvalOf, approvalState, decideApproval } from '../../tasks/approvals.ts'
@@ -46,6 +45,7 @@ import {
   removeWorktree,
   resumeTask,
   slotsFor,
+  stationRunDelivery,
   stopTask,
   worktreeOf,
 } from '../../tasks/machine.ts'
@@ -1058,19 +1058,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
           {
             db,
             github: kit.deps.github,
-            deliver: async (station, runId, entries) => {
-              await kit.deps.stations.ask(
-                station,
-                'secrets.deliver',
-                ephemeralDelivery(
-                  {
-                    run_id: runId,
-                  },
-                  'run',
-                  entries,
-                ),
-              )
-            },
+            deliver: stationRunDelivery(kit.deps.stations),
             reconcile: (station) => kit.deps.stations.reconcile(station),
           },
           row,

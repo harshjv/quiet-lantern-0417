@@ -105,6 +105,8 @@ export const sourceText = (app: Pick<App, 'source'>) => {
   return 'Template'
 }
 
+export const usedOf = (used: number, total: number) => `${bytes(used)} used of ${bytes(total)}`
+
 export const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
 
 export const plural = (count: number, word: string, many = `${word}s`) =>

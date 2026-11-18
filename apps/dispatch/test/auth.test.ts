@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { after, before, describe, test } from 'node:test'
+import { after, before, describe, mock, test } from 'node:test'
 
 import { eq } from 'drizzle-orm'
 
-import { member, user as userTable } from '../src/db/schema.ts'
+import { member, project_member, user as userTable } from '../src/db/schema.ts'
+import { capScopes } from '../src/team/members.ts'
 
 import {
+  addPerson,
   localOrigin,
   mintToken,
   signIn,
@@ -14,7 +16,15 @@ import {
   type Dispatch,
 } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
-import { createApp, createPreview, createProject, placed, productionId } from './helpers/seed.ts'
+import {
+  createApp,
+  createPreview,
+  createProject,
+  placed,
+  productionId,
+  seedShip,
+  seedTask,
+} from './helpers/seed.ts'
 
 let h: Dispatch
 let registry: FakeRegistry
@@ -581,44 +591,154 @@ describe('production is always protected', () => {
     assert.ok(!apps.body.items.some((s: any) => s.name === 'waiting-four'))
   })
 
-  test('another admin approves what an admin asked for; the requester may still reject it', async () => {
-    const waiting = await stage('waiting-five')
-    const decide = (decision: string) =>
-      h.call('POST', `/v1/approvals/${waiting.body.id}/decision`, {
-        cookie: h.admin.cookie,
-        origin: localOrigin,
-        body: {
-          decision,
-        },
-      })
+  let admins = 0
 
-    h.db
-      .insert(member)
-      .values({
-        user_id: 'usr_other_admin',
-        role: 'admin',
-        created_at: new Date(),
-      })
-      .run()
+  const withOtherAdmin = async (
+    run: (other: { userId: string; cookie: string }) => Promise<void>,
+  ) => {
+    admins += 1
+    const other = await addPerson(h, `admin-${admins}@example.com`, 'admin')
 
     try {
+      await run(other)
+    } finally {
+      h.db
+        .update(member)
+        .set({
+          removed_at: new Date(),
+        })
+        .where(eq(member.user_id, other.userId))
+        .run()
+    }
+  }
+
+  const decide = (id: string, decision: string, cookie = h.admin.cookie) =>
+    h.call('POST', `/v1/approvals/${id}/decision`, {
+      cookie,
+      origin: localOrigin,
+      body: {
+        decision,
+      },
+    })
+
+  const shipOwn = () =>
+    seedShip(
+      h,
+      seedTask(h, {
+        project_id: projectA.id,
+        owner: h.admin.userId,
+      }),
+      {
+        requester: h.admin.userId,
+      },
+    )
+
+  const merging = () =>
+    mock.method(h.deps.github, 'mergePullRequest', () => Promise.resolve('b'.repeat(40)))
+
+  test('with one admin, the requester approves their own Ship it and it is self-approved', async () => {
+    const merge = merging()
+
+    try {
+      const approved = await decide(shipOwn().id, 'approve')
+
+      assert.equal(approved.status, 200, approved.text)
+      assert.equal(approved.body.status, 'approved')
+      assert.equal(approved.body.self_approved, true)
+      assert.equal(merge.mock.callCount(), 1)
+    } finally {
+      merge.mock.restore()
+    }
+  })
+
+  test('with two admins, the requester cannot approve their own change, and the other admin can', async () => {
+    const waiting = await stage('waiting-five')
+
+    await withOtherAdmin(async (other) => {
       const listed = await h.call('GET', `/v1/approvals/${waiting.body.id}`, {
         token: h.admin.token,
       })
 
       assert.equal(listed.body.requester_decides, false)
-      const refused = await decide('approve')
+      const refused = await decide(waiting.body.id, 'approve')
 
       assert.equal(refused.status, 403, refused.text)
       assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
       assert.equal(refused.body.error.details.reason, 'requester')
-      const withdrawn = await decide('reject')
+      const approved = await decide(waiting.body.id, 'approve', other.cookie)
 
-      assert.equal(withdrawn.status, 200, withdrawn.text)
-      assert.equal(withdrawn.body.status, 'rejected')
-      assert.equal(withdrawn.body.self_approved, false)
+      assert.equal(approved.status, 200, approved.text)
+      assert.equal(approved.body.status, 'approved')
+      assert.equal(approved.body.self_approved, false)
+    })
+  })
+
+  test('with two admins, the requester cannot approve their own Ship it, and the other admin can', async () => {
+    const ship = shipOwn()
+    const merge = merging()
+
+    try {
+      await withOtherAdmin(async (other) => {
+        const refused = await decide(ship.id, 'approve')
+
+        assert.equal(refused.status, 403, refused.text)
+        assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
+        assert.equal(refused.body.error.details.reason, 'requester')
+        assert.equal(merge.mock.callCount(), 0)
+        const approved = await decide(ship.id, 'approve', other.cookie)
+
+        assert.equal(approved.status, 200, approved.text)
+        assert.equal(approved.body.status, 'approved')
+        assert.equal(approved.body.self_approved, false)
+        assert.equal(merge.mock.callCount(), 1)
+      })
     } finally {
-      h.db.delete(member).where(eq(member.user_id, 'usr_other_admin')).run()
+      merge.mock.restore()
+    }
+  })
+
+  test('with two admins, the requester still rejects their own change and their own Ship it', async () => {
+    const waiting = await stage('waiting-six')
+    const ship = shipOwn()
+    const merge = merging()
+
+    try {
+      await withOtherAdmin(async () => {
+        for (const id of [waiting.body.id, ship.id]) {
+          const withdrawn = await decide(id, 'reject')
+
+          assert.equal(withdrawn.status, 200, withdrawn.text)
+          assert.equal(withdrawn.body.status, 'rejected')
+          assert.equal(withdrawn.body.self_approved, false)
+        }
+
+        assert.equal(merge.mock.callCount(), 0)
+      })
+    } finally {
+      merge.mock.restore()
+    }
+  })
+
+  test('a token never decides a Ship it', async () => {
+    const ship = shipOwn()
+    const merge = merging()
+
+    try {
+      for (const decision of ['approve', 'reject']) {
+        const reply = await h.call('POST', `/v1/approvals/${ship.id}/decision`, {
+          token: h.admin.token,
+          body: {
+            decision,
+          },
+        })
+
+        assert.equal(reply.status, 403, decision)
+        assert.equal(reply.body.error.code, 'HUMAN_REQUIRED')
+      }
+
+      assert.equal(merge.mock.callCount(), 0)
+    } finally {
+      merge.mock.restore()
     }
   })
 
@@ -641,6 +761,104 @@ describe('production is always protected', () => {
     })
 
     assert.equal(reply.status, 201)
+  })
+})
+
+describe('per-preview scopes', () => {
+  test('a member deploys only the previews of their own tasks', async () => {
+    const mine = (await createPreview(h, 'alpha', 'mine')).id
+    const theirs = (await createPreview(h, 'alpha', 'theirs')).id
+    const appIn = async (targetId: string, name: string) =>
+      (
+        await createApp(h, targetId, {
+          name,
+          ref,
+          ports: [
+            {
+              port: 80,
+            },
+          ],
+        })
+      ).id
+    const own = await appIn(mine, 'mine-web')
+    const others = await appIn(theirs, 'theirs-web')
+    const live = await appIn(production.id, 'live-web')
+    const person = await addPerson(h, 'member-one@example.com', 'member')
+    const colleague = await addPerson(h, 'member-two@example.com', 'member')
+
+    for (const userId of [person.userId, colleague.userId]) {
+      h.db
+        .insert(project_member)
+        .values({
+          project_id: projectA.id,
+          user_id: userId,
+          added_by: {
+            type: 'system',
+            id: null,
+            client: 'test',
+          },
+          created_at: new Date(),
+        })
+        .run()
+    }
+
+    seedTask(h, {
+      project_id: projectA.id,
+      owner: person.userId,
+      preview_id: mine,
+    })
+    seedTask(h, {
+      project_id: projectA.id,
+      owner: colleague.userId,
+      preview_id: theirs,
+    })
+    const change = (appId: string) =>
+      h.call('PATCH', `/v1/apps/${appId}`, {
+        cookie: person.cookie,
+        origin: localOrigin,
+        body: {
+          drain_timeout_s: 9,
+          deploy: false,
+        },
+      })
+    const allowed = await change(own)
+
+    assert.equal(allowed.status, 200, allowed.text)
+
+    for (const appId of [others, live]) {
+      const refused = await change(appId)
+
+      assert.equal(refused.status, 403, refused.text)
+      assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
+    }
+  })
+
+  test('capping keeps the narrower preview_id from either side', () => {
+    const wide = {
+      project_id: projectA.id,
+      target: 'previews',
+      level: 'admin' as const,
+    }
+    const narrow = {
+      ...wide,
+      preview_id: envA.id,
+      level: 'deploy' as const,
+    }
+
+    assert.deepEqual(capScopes([narrow], [wide]), [narrow])
+    assert.deepEqual(capScopes([wide], [narrow]), [narrow])
+    assert.deepEqual(
+      capScopes(
+        [narrow],
+        [
+          {
+            ...wide,
+            preview_id: envB.id,
+          },
+        ],
+      ),
+      [],
+    )
   })
 })
 
@@ -715,6 +933,7 @@ describe('origin checks and hosts', () => {
 
 describe('sign-in', () => {
   test('sign-up is disabled', async () => {
+    const users = h.db.select().from(userTable).all().length
     const reply = await h.call('POST', '/auth/sign-up/email', {
       origin: localOrigin,
       body: {
@@ -725,7 +944,7 @@ describe('sign-in', () => {
     })
 
     assert.ok(reply.status >= 400 && reply.status < 500)
-    assert.equal(h.db.select().from(userTable).all().length, 1)
+    assert.equal(h.db.select().from(userTable).all().length, users)
   })
 
   test('a wrong password does not sign in', async () => {

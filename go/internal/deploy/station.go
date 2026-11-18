@@ -133,6 +133,7 @@ type Station struct {
 	attached          map[string]*attachment
 	attachByStream    map[int]string
 	pendingRunSecrets map[string]protocol.SecretsDeliverBody
+	relayCreds        relayCredentials
 	metrics           *metricsHub
 	net               *netHub
 	greenViews        map[string]view
@@ -298,6 +299,10 @@ func Run(ctx context.Context, opts Options) error {
 		s.runTerminal.Store(id, rr.terminal())
 	}
 	s.resolver.OnAllow(s.onAllow)
+	s.resolver.OnCredential(s.onCredential)
+	if s.link != nil {
+		s.link.CountCredentials(s.relayCreds.drainUses)
+	}
 	if s.gw.state, err = loadGatewayState(opts.StateDir); err != nil {
 		return fmt.Errorf("read gateway state: %w", err)
 	}

@@ -225,6 +225,7 @@ func (s *Station) onConnected() {
 		id := depID
 		s.send(protocol.MessageSecretsRequest, nil, protocol.SecretsRequestBody{Target: protocol.SecretTarget{DeploymentId: &id}, EnvDigest: req.EnvDigest, Purpose: req.Purpose})
 	}
+	s.requestRunCredentials()
 }
 
 type pendingAck struct {
@@ -461,6 +462,10 @@ func (s *Station) deliverSecrets(ctx context.Context, body protocol.SecretsDeliv
 	if body.Target.RunId != nil {
 		rr := s.runs[*body.Target.RunId]
 		if rr != nil && rr.SandboxID != "" {
+			if !rr.terminal() || rr.CredentialsUntil != nil {
+				s.holdRunCredentials(rr, body)
+				s.saveRun(rr)
+			}
 			return &protocol.SecretsAckBody{Target: body.Target, EnvDigest: body.EnvDigest}, nil
 		}
 		if rr == nil {

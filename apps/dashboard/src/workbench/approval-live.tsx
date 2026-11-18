@@ -1,4 +1,4 @@
-import { useQueries, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { useQueries, useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Rocket } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -10,14 +10,20 @@ import { DeploymentStatusBadge } from '@/components/status'
 import { Time } from '@/components/time'
 import { Button } from '@/components/ui/button'
 import type { Approval, Deployment } from '@/lib/api'
-import { approvalHeadline } from '@/lib/changes'
+import {
+  approvalHeadline,
+  approvalPlace,
+  approvalPreview,
+  type Names,
+  type Places,
+} from '@/lib/changes'
 import { changeSummary, plural, shortSha, stamp } from '@/lib/format'
 import { approvalSource, approvalStatus } from '@/lib/labels'
 import { placeTo } from '@/lib/links'
-import { approvalQuery, deploymentQuery, projectsQuery } from '@/lib/queries'
+import { approvalQuery, deploymentQuery } from '@/lib/queries'
 
 import { ApproveButton, RejectDialog, useDecider, useDecision } from './approval-actions'
-import { useNames } from './names'
+import { useNames, usePlaces } from './names'
 import { ItemList, ItemRow, Notice, Page, PageBoundary, Section, StatusPill } from './parts'
 import {
   PullRequestLink,
@@ -39,20 +45,19 @@ function BackToInbox() {
   )
 }
 
-function Scope({ projectId }: { projectId: string | null }) {
-  const projects = useQuery(projectsQuery)
-  const name = projects.data?.items.find((p) => p.id === projectId)?.name
+function Scope({ approval, names, places }: { approval: Approval; names: Names; places: Places }) {
+  const project = approval.project_id ? names.get(approval.project_id) : undefined
+  const text = approvalPlace(approval, names, places)
 
-  if (!projectId) {
-    return <span>Platform</span>
-  }
-
-  return name ? (
-    <Link {...placeTo(name, null)} className="underline-offset-4 hover:underline">
-      {name} / production
+  return project ? (
+    <Link
+      {...placeTo(project, approvalPreview(approval.changes, places))}
+      className="underline-offset-4 hover:underline"
+    >
+      {text}
     </Link>
   ) : (
-    <span>{projectId} / production</span>
+    <span>{text}</span>
   )
 }
 
@@ -186,17 +191,18 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
   const task = a.source === 'task'
   const deployments = [...new Set([...(a.deployments ?? []), ...started.map((d) => d.id)])]
   const names = useNames([a.project_id])
+  const places = usePlaces([a.project_id])
 
   return (
     <Page
-      title={approvalHeadline(a, names)}
+      title={approvalHeadline(a, names, places)}
       actions={!task && <Decide approval={a} onApplied={setStarted} />}
     >
       <div className="-mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
         <StatusPill tone={approvalStatus[a.status].tone}>
           {approvalStatus[a.status].label}
         </StatusPill>
-        <Scope projectId={a.project_id} />
+        <Scope approval={a} names={names} places={places} />
         <span>
           Requested by <Actor actor={a.requested_by} /> through {approvalSource[a.source]}
         </span>

@@ -11,14 +11,18 @@ const StationConnectPath = "/v1/stations/connect"
 const HandshakeInvalidMessageClose = 4001
 
 const (
-	ResourcePrefix         = "sly-"
-	NftTableName           = "sly"
-	NftTablePrefix         = "sly_"
-	InterfaceNameMaxLength = 15
-	SandboxNetworkName     = "sly-sandbox"
-	BootstrapTokenPrefix   = "sly-enroll-"
-	RecoveryKeyPrefix      = "sly-rk-"
+	ResourcePrefix               = "sly-"
+	NftTableName                 = "sly"
+	NftTablePrefix               = "sly_"
+	InterfaceNameMaxLength       = 15
+	SandboxNetworkName           = "sly-sandbox"
+	BootstrapTokenPrefix         = "sly-enroll-"
+	RecoveryKeyPrefix            = "sly-rk-"
+	CredentialPlaceholderPattern = "sly_[A-Z2-7]{26}"
+	CredentialsCAPath            = "/usr/local/share/ca-certificates/stationly-credentials.crt"
 )
+
+var CredentialHosts = []string{"api.anthropic.com"}
 
 const (
 	CloseNormal              = 1000

@@ -17,3 +17,19 @@ export const placeTo = (project: string, preview: string | null, tab?: string): 
           tab,
         },
       }
+
+export const appTo = (app: string, tab?: string): LinkOptions => ({
+  to: '/apps/$app/{-$tab}',
+  params: {
+    app,
+    tab,
+  },
+})
+
+export const machineTo = (machine: string, tab?: string): LinkOptions => ({
+  to: '/machines/$machine/{-$tab}',
+  params: {
+    machine,
+    tab,
+  },
+})

@@ -18,6 +18,7 @@ import {
 import { networkLayout } from '../src/network.ts'
 import {
   bootstrapTokenPrefix,
+  credentialPlaceholder,
   interfaceNameMaxLength,
   nftTableName,
   nftTablePrefix,
@@ -37,6 +38,7 @@ import {
   stationdUnit,
 } from '../src/root-socket.ts'
 import { settingDefault, stationSettingKeys } from '../src/settings.ts'
+import { credentialHosts, credentialsCaPath } from '../src/workspace.ts'
 
 type JsonSchema = { [key: string]: unknown }
 
@@ -299,7 +301,11 @@ const goCatalog = goFile([
   `SandboxNetworkName = ${JSON.stringify(sandboxNetworkName)}`,
   `BootstrapTokenPrefix = ${JSON.stringify(bootstrapTokenPrefix)}`,
   `RecoveryKeyPrefix = ${JSON.stringify(recoveryKeyPrefix)}`,
+  `CredentialPlaceholderPattern = ${JSON.stringify(credentialPlaceholder.pattern)}`,
+  `CredentialsCAPath = ${JSON.stringify(credentialsCaPath)}`,
   ')',
+  '',
+  `var CredentialHosts = []string{${credentialHosts.map((host) => JSON.stringify(host)).join(', ')}}`,
   '',
   'const (',
   ...Object.entries(closeCodes).map(

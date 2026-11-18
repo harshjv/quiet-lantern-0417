@@ -48,7 +48,12 @@ export const workspaceSetupOf = (db: Db, row: typeof machine.$inferSelect) => {
         ? 'succeeded'
         : 'failed'
 
-  const { cleanup: _cleanup, ...workspace } = row.workspace
+  const {
+    cleanup: _cleanup,
+    token_placeholder: _placeholder,
+    credential_placeholders: _credentials,
+    ...workspace
+  } = row.workspace
 
   return {
     ...workspace,

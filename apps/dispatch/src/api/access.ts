@@ -67,6 +67,21 @@ export const requireHuman = (
   )
 }
 
+export const requirePersonCredential = (principal: Principal, what: string) => {
+  if (!principal.machine_held) {
+    return
+  }
+
+  fail(
+    'FORBIDDEN_SCOPE',
+    `${what} returns a usable secret, so a token a machine holds as a placeholder cannot do it; the secret would leave the machine as a real bearer token.`,
+    "Do this from a person's session in the dashboard or sly, or with their personal token.",
+    {
+      reason: 'machine_held',
+    },
+  )
+}
+
 export const seesProject = (principal: Principal, projectId: string) =>
   principal.scopes.some((scope) => scope.project_id === '*' || scope.project_id === projectId)
 

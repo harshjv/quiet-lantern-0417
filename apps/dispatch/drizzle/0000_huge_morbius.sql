@@ -672,6 +672,8 @@ CREATE TABLE `machine_user` (
 	`name` text NOT NULL,
 	`token_id` text,
 	`token_key` blob,
+	`token_placeholder` text,
+	`key_placeholders` text,
 	`data_key_id` text,
 	`created_at` integer NOT NULL,
 	PRIMARY KEY(`machine_id`, `user_id`),
@@ -1200,6 +1202,7 @@ CREATE TABLE `token` (
 	`secret_sha256` text,
 	`server_id` text,
 	`used_at` integer,
+	`machine_held` integer DEFAULT false NOT NULL,
 	FOREIGN KEY (`server_id`) REFERENCES `server`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint

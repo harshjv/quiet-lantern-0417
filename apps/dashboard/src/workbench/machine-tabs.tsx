@@ -15,6 +15,7 @@ import { KeysPanel } from '@/components/variables-panel'
 import type { Machine } from '@/lib/api'
 import { commands, type Scope } from '@/lib/commands'
 import { snapshotSource } from '@/lib/labels'
+import { machineTo } from '@/lib/links'
 import { machineOwnSnapshotsQuery } from '@/lib/queries'
 
 import { Section } from './parts'
@@ -88,13 +89,7 @@ export function MachineTabs({
         const found = tabs.find((t) => t === next)
 
         if (found) {
-          void navigate({
-            to: '/machines/$machine/{-$tab}',
-            params: {
-              machine: machine.id,
-              tab: found === 'terminal' ? undefined : found,
-            },
-          })
+          void navigate(machineTo(machine.id, found === 'terminal' ? undefined : found))
         }
       }}
     >

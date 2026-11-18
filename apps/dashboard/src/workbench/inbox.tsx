@@ -15,7 +15,7 @@ import { Rows } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { failureText, type Approval, type Me } from '@/lib/api'
-import { approvalHeadline, type Names } from '@/lib/changes'
+import { approvalHeadline, approvalPlace, type Names, type Places } from '@/lib/changes'
 import { changeSummary, shortAgo } from '@/lib/format'
 import { actorText, approvalSource, approvalStatus } from '@/lib/labels'
 import { approvalsQuery, meQuery, projectsQuery } from '@/lib/queries'
@@ -23,7 +23,7 @@ import type { Tone } from '@/lib/tone'
 
 import { deciderOf } from './approval-actions'
 import { useTaskRows, type Task } from './data'
-import { useNames } from './names'
+import { useNames, usePlaces } from './names'
 import {
   ItemList,
   ItemRow,
@@ -140,12 +140,12 @@ const taskItems = (rows: Task[]) =>
       : []
   })
 
-const projectText = (approval: Approval, names: Names) =>
-  approval.project_id
-    ? `${names.get(approval.project_id) ?? approval.project_id} / production`
-    : 'Platform'
-
-const approvalFacts = (approval: Approval, names: Names, status?: string): Fact[] => [
+const approvalFacts = (
+  approval: Approval,
+  names: Names,
+  places: Places,
+  status?: string,
+): Fact[] => [
   ...(status
     ? [
         {
@@ -156,7 +156,7 @@ const approvalFacts = (approval: Approval, names: Names, status?: string): Fact[
     : []),
   {
     kind: 'project',
-    text: projectText(approval, names),
+    text: approvalPlace(approval, names, places),
   },
   {
     kind: 'user',
@@ -182,6 +182,7 @@ const approvalFacts = (approval: Approval, names: Names, status?: string): Fact[
 
 function ApprovalTitle({ approval }: { approval: Approval }) {
   const names = useNames([approval.project_id])
+  const places = usePlaces([approval.project_id])
 
   return (
     <Link
@@ -191,7 +192,7 @@ function ApprovalTitle({ approval }: { approval: Approval }) {
       }}
       className="truncate underline-offset-4 hover:underline"
     >
-      {approvalHeadline(approval, names)}
+      {approvalHeadline(approval, names, places)}
     </Link>
   )
 }
@@ -217,7 +218,7 @@ const waitingNote = (blocked: boolean) => (
   </span>
 )
 
-const approvalItem = (approval: Approval, me: Me | undefined, names: Names) => {
+const approvalItem = (approval: Approval, me: Me | undefined, names: Names, places: Places) => {
   const decider = deciderOf(me, approval)
   const yours = decider.can && !decider.blocked
 
@@ -232,7 +233,7 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Names) => {
       tone: failed ? 'danger' : 'warning',
       title: <ApprovalTitle approval={approval} />,
       label: approval.title,
-      meta: approvalFacts(approval, names, shipProblem(approval) ?? shipStatusText[state]),
+      meta: approvalFacts(approval, names, places, shipProblem(approval) ?? shipStatusText[state]),
       action: (
         <>
           {approval.task_id && (
@@ -260,7 +261,7 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Names) => {
     tone: 'warning',
     title: <ApprovalTitle approval={approval} />,
     label: approval.title,
-    meta: approvalFacts(approval, names),
+    meta: approvalFacts(approval, names, places),
     action: (
       <>
         {!yours && waitingNote(decider.can && decider.blocked)}
@@ -285,10 +286,11 @@ export function useInbox() {
   const me = useQuery(meQuery)
   const approvals = useQuery(approvalsQuery('waiting'))
   const names = useProjectNames()
+  const places = usePlaces((approvals.data?.items ?? []).map((a) => a.project_id))
   const items = [
     ...(approvals.data?.items ?? [])
       .filter((a) => inProject(a, project, names))
-      .map((a) => approvalItem(a, me.data, names)),
+      .map((a) => approvalItem(a, me.data, names, places)),
     ...taskItems(rows.filter((t) => !project || t.project === project)),
   ]
 
@@ -386,6 +388,7 @@ function History() {
   const [status, setStatus] = useState<Decided>('approved')
   const approvals = useQuery(approvalsQuery(status))
   const names = useProjectNames()
+  const places = usePlaces((approvals.data?.items ?? []).map((a) => a.project_id))
   const rows = (approvals.data?.items ?? []).filter((a) => inProject(a, project, names))
 
   return (
@@ -420,6 +423,7 @@ function History() {
                 meta={approvalFacts(
                   a,
                   names,
+                  places,
                   a.status === 'rejected' ? (a.reason ?? undefined) : undefined,
                 )}
                 action={

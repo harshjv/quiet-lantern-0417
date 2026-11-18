@@ -401,6 +401,8 @@ export const path: Record<PathId, string> = {
   inbound_other: 'Any other port, from the internet',
   sandbox_inbound: 'Machines, from anywhere',
   domain_not_allowed: 'Domains outside a machine’s allowlist',
+  credentials_proxy: 'Agent providers, through the credentials proxy',
+  credential_quic: 'QUIC to agent providers',
 }
 
 export const pathFrom: Record<NetworkMap['paths'][number]['from'], string> = {

@@ -55,7 +55,7 @@ func sbxAllow() map[string]map[netip.Addr]bool {
 }
 
 func sbxRules(b SandboxBaseline) []egressRule {
-	return sandboxTable(b, namedSets(), allowSets(b))
+	return sandboxTable(b, namedSets(), allowSets(b), b.credentialSet())
 }
 
 func sbxVerdict(b SandboxBaseline, addr string, proto uint8, port uint16, inbound bool) Verdict {

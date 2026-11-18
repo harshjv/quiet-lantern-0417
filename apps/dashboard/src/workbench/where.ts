@@ -1,5 +1,6 @@
 import { linkOptions, useMatches, useParams, useSearch } from '@tanstack/react-router'
 
+import { placeTo } from '@/lib/links'
 import { z } from '@/lib/zod'
 
 export type Mode = 'build' | 'ship' | 'observe' | 'outside'
@@ -42,13 +43,7 @@ export const modeHome = (mode: Mode, project: string | null) => {
       })
     case 'ship':
       return project
-        ? linkOptions({
-            to: '/projects/$project/{-$tab}',
-            params: {
-              project,
-              tab: undefined,
-            },
-          })
+        ? placeTo(project, null)
         : linkOptions({
             to: '/projects',
           })

@@ -563,6 +563,7 @@ export const networkMap = (
     {
       inbound: joined.length > 0,
       allowlist: joined.some((b) => b.egress.mode === 'allowlist'),
+      credentials: joined.some((b) => b.workspace !== null),
     },
   ).map(({ rule, ...p }) =>
     options.rules

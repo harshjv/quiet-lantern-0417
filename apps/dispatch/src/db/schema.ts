@@ -316,6 +316,8 @@ export type MachineWorkspace = {
   path: string
   level: Level
   token_id: string
+  token_placeholder: string
+  credential_placeholders?: Record<string, string>
   setup_run_id: string
   task_branch: string | null
   cleanup?: WorkspaceCleanup[]
@@ -584,6 +586,8 @@ export const machine_user = sqliteTable(
     name: text('name').notNull(),
     token_id: text('token_id'),
     token_key: bytes('token_key'),
+    token_placeholder: text('token_placeholder'),
+    key_placeholders: json<Record<string, string>>('key_placeholders'),
     data_key_id: text('data_key_id').references(() => data_key.id),
     created_at: timestamp('created_at').notNull(),
   },
@@ -854,6 +858,13 @@ export const build = sqliteTable('build', {
   failure: json<DiagnosisValue>('failure'),
 })
 
+export type RunCredential = {
+  key: string
+  placeholder: string
+  token_id: string
+  expires_at: string
+}
+
 export type RunExec = {
   cwd: string | null
   user: string | null
@@ -861,6 +872,7 @@ export type RunExec = {
   stdin: string | null
   env_keys: string[]
   attach: boolean
+  credentials?: RunCredential[]
 }
 
 export const run = sqliteTable('run', {
@@ -1305,6 +1317,7 @@ export const token = sqliteTable(
     secret_sha256: text('secret_sha256'),
     server_id: text('server_id').references(() => server.id),
     used_at: timestamp('used_at'),
+    machine_held: bool('machine_held').notNull().default(false),
   },
   (table) => [
     uniqueIndex('token_api_key_unique').on(table.api_key_id),

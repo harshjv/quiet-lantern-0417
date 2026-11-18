@@ -84,6 +84,7 @@ test('entities carry where they live and link by id', () => {
     to: '/machines/$machine/{-$tab}',
     params: {
       machine: 'sbx_try',
+      tab: undefined,
     },
   })
 })

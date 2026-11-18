@@ -32,19 +32,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { KeysPanel } from '@/components/variables-panel'
 import { agentHints } from '@/lib/agent-hints'
 import type { Approval, Preview } from '@/lib/api'
-import { approvalHeadline, type Names } from '@/lib/changes'
+import { approvalHeadline, type Names, type Places } from '@/lib/changes'
 import { commands } from '@/lib/commands'
 import { byName, changeSummary, plural, shortSha, sourceText } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { appKind } from '@/lib/labels'
-import { placeTo } from '@/lib/links'
+import { appTo, placeTo } from '@/lib/links'
 import { isProduction, scopeOf, type PlaceView } from '@/lib/place'
 import { appsQuery, previewsQuery, projectApprovalsQuery, projectQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 import { countPill, toneOutline, toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
-import { useNames } from './names'
+import { useNames, usePlaces } from './names'
 import {
   ItemList,
   ItemRow,
@@ -472,10 +472,7 @@ function AppsTable({ place, onCreate }: { place: PlaceView; onCreate: () => void
             <TableRow key={app.id} className="relative">
               <TableCell>
                 <Link
-                  to="/apps/$app/{-$tab}"
-                  params={{
-                    app: app.id,
-                  }}
+                  {...appTo(app.id)}
                   className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
                   data-testid="app-link"
                 >
@@ -609,6 +606,7 @@ function ApprovalsTab({ project }: { project: string }) {
   const waiting = data.items.filter((a) => a.status === 'waiting')
   const decided = data.items.filter((a) => a.status !== 'waiting').slice(0, 10)
   const names = useNames([project])
+  const places = usePlaces([project])
 
   return (
     <div className="flex flex-col gap-8">
@@ -621,19 +619,27 @@ function ApprovalsTab({ project }: { project: string }) {
         {waiting.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing waits for an approval.</p>
         ) : (
-          <ApprovalRows items={waiting} names={names} />
+          <ApprovalRows items={waiting} names={names} places={places} />
         )}
       </Section>
       {decided.length > 0 && (
         <Section title="Recently decided" count={decided.length}>
-          <ApprovalRows items={decided} names={names} />
+          <ApprovalRows items={decided} names={names} places={places} />
         </Section>
       )}
     </div>
   )
 }
 
-function ApprovalRows({ items, names }: { items: Approval[]; names: Names }) {
+function ApprovalRows({
+  items,
+  names,
+  places,
+}: {
+  items: Approval[]
+  names: Names
+  places: Places
+}) {
   return (
     <ul className="divide-y border">
       {items.map((approval) => (
@@ -648,7 +654,7 @@ function ApprovalRows({ items, names }: { items: Approval[]; names: Names }) {
             }}
             className="text-sm font-medium after:absolute after:inset-0 focus-visible:outline-none"
           >
-            {approvalHeadline(approval, names)}
+            {approvalHeadline(approval, names, places)}
           </Link>
           <ApprovalStatusBadge status={approval.status} />
           <span className="text-sm text-muted-foreground">{changeSummary(approval.summary)}</span>

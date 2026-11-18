@@ -78,6 +78,12 @@ export const tokenPrefix = `${resourceStem}_` as const
 
 export const enrollTokenPrefix = `${tokenPrefix}enroll_` as const
 
+export const credentialPlaceholder = {
+  alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567',
+  length: 26,
+  pattern: `${tokenPrefix}[A-Z2-7]{26}`,
+} as const
+
 export const bootstrapTokenPrefix = `${resourcePrefix}enroll-` as const
 
 export const recoveryKeyPrefix = `${resourcePrefix}rk-` as const

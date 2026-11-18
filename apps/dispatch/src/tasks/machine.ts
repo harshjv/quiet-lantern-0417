@@ -5,13 +5,14 @@ import {
   machineExecLimits,
   taskPortRange,
   taskSlotMemoryBytes,
+  workspaceEnv,
   workspaceUser,
   type Actor,
 } from '@stationly/protocol'
 
 import { scopeOf } from '../api/lookup.ts'
 import { scopedTokenMaxSeconds, type AuthService } from '../auth/auth.ts'
-import { dropToken, mintToken } from '../auth/tokens.ts'
+import { dropToken, mintToken, tokenRow } from '../auth/tokens.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
 import {
@@ -23,6 +24,7 @@ import {
   target,
   task,
   token,
+  type RunCredential,
   type WorkspaceCleanup,
 } from '../db/schema.ts'
 import {
@@ -33,8 +35,19 @@ import {
   setupCommand,
   taskSetupCommand,
 } from '../sandboxes/workspace.ts'
+import { ephemeralDelivery } from '../secrets/deliver.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { runGitHubToken } from '../team/keys.ts'
+import {
+  credentialExpiry,
+  newKeyPlaceholders,
+  newPlaceholder,
+  relayHosts,
+  type RelayCredential,
+  type RelayValue,
+} from '../secrets/relay.ts'
+import { machineDeliver } from '../secrets/sandbox.ts'
+import type { StationServer } from '../station/server.ts'
+import { credentialSources, memberToken, runGitHubToken, tokenAad } from '../team/keys.ts'
 import { gitIdentityOf } from '../team/members.ts'
 
 import { closePendingApprovals } from './approvals.ts'
@@ -228,8 +241,6 @@ const machineUserRow = (db: Db, machineId: string, userId: string) =>
     .where(and(eq(machine_user.machine_id, machineId), eq(machine_user.user_id, userId)))
     .get()
 
-const tokenAad = (machineId: string, userId: string) => `machine_user:${machineId}:${userId}`
-
 export const machineUserFor = async (
   db: Db,
   deps: Pick<MachineDeps, 'auth' | 'keyring'>,
@@ -276,6 +287,7 @@ export const machineUserFor = async (
       },
     ],
     seconds: scopedTokenMaxSeconds,
+    machineHeld: true,
   })
   const sealed = deps.keyring.encrypt(tokenAad(box.id, userId), minted.key)
 
@@ -283,6 +295,8 @@ export const machineUserFor = async (
     .set({
       token_id: minted.row.id,
       token_key: sealed.ciphertext,
+      token_placeholder: newPlaceholder(),
+      key_placeholders: newKeyPlaceholders(),
       data_key_id: sealed.data_key_id,
     })
     .where(and(eq(machine_user.machine_id, box.id), eq(machine_user.user_id, userId)))
@@ -291,23 +305,86 @@ export const machineUserFor = async (
   return machineUserRow(db, box.id, userId)!
 }
 
-export const memberEnv = (
-  keyring: Keyring,
-  member: typeof machine_user.$inferSelect,
+type MachineUserRow = typeof machine_user.$inferSelect
+
+export const memberEnv = (member: MachineUserRow): [string, string][] => [
+  ['STATIONLY_MEMBER', member.name],
+]
+
+export const memberRelayEnv = (member: MachineUserRow): [string, string][] => [
+  ...memberEnv(member),
+  ...(member.token_placeholder
+    ? ([[workspaceEnv.token, member.token_placeholder]] as [string, string][])
+    : []),
+]
+
+export const memberKeyPlaceholders = (
+  db: Db,
+  member: MachineUserRow,
+  shared: { project: string; target: string },
 ): [string, string][] =>
-  member.token_key && member.data_key_id
+  credentialSources(db, member.user_id, shared).flatMap((source) => {
+    const placeholder = member.key_placeholders?.[source.key]
+
+    return placeholder ? [[source.key, placeholder] as [string, string]] : []
+  })
+
+export const memberCredentials = (
+  db: Db,
+  keyring: Keyring,
+  member: MachineUserRow,
+  seconds: number,
+  now = new Date(),
+): RelayCredential[] => {
+  const value = memberToken(keyring, member)
+  const found = member.token_id ? tokenRow(db, member.token_id) : undefined
+
+  return value && found
     ? [
-        [
-          'STATIONLY_TOKEN',
-          keyring.decrypt(
-            tokenAad(member.machine_id, member.user_id),
-            member.data_key_id,
-            member.token_key,
-          ),
-        ],
-        ['STATIONLY_MEMBER', member.name],
+        {
+          key: workspaceEnv.token,
+          value,
+          token_id: found.id,
+          expires_at: credentialExpiry(found.expires_at, seconds, now),
+        },
       ]
-    : [['STATIONLY_MEMBER', member.name]]
+    : []
+}
+
+export const redeliveredCredentials = (
+  db: Db,
+  keyring: Keyring,
+  stationId: string,
+  runId: string,
+  now = new Date(),
+): RelayValue[] => {
+  const row = db.select().from(run).where(eq(run.id, runId)).get()
+  const box = row?.machine_id
+    ? db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
+    : undefined
+
+  if (!row || box?.server_id !== stationId) {
+    return []
+  }
+
+  return (row.exec?.credentials ?? []).flatMap((held) => {
+    const member =
+      new Date(held.expires_at) > now ? machineUserByToken(db, box.id, held.token_id) : undefined
+    const value = member ? memberToken(keyring, member) : null
+
+    return value
+      ? [
+          {
+            key: held.key,
+            value,
+            placeholder: held.placeholder,
+            hosts: relayHosts,
+            expires_at: held.expires_at,
+          },
+        ]
+      : []
+  })
+}
 
 export const machineUserByToken = (db: Db, machineId: string, tokenId: string | null) =>
   tokenId
@@ -335,7 +412,7 @@ export const worktreeOf = (branch: string, taskId: string, home: string) =>
 export const cloneOf = (repository: string, home: string) =>
   `${home}/repos/${repositoryName(repository)}`
 
-type RunAs = { user: string; cwd: string; envKeys?: string[] }
+type RunAs = { user: string; cwd: string; envKeys?: string[]; credentials?: RunCredential[] }
 
 export const execRun = (
   box: MachineRow,
@@ -363,6 +440,11 @@ export const execRun = (
     stdin: null,
     env_keys: as.envKeys ?? [],
     attach: false,
+    ...(as.credentials?.length
+      ? {
+          credentials: as.credentials,
+        }
+      : {}),
   },
 })
 
@@ -370,28 +452,75 @@ export type RunDelivery = (
   stationId: string,
   runId: string,
   entries: [string, string][],
+  credentials?: RelayValue[],
 ) => Promise<void>
+
+export const stationRunDelivery =
+  (stations: Pick<StationServer, 'ask'>): RunDelivery =>
+  async (station, runId, entries, credentials = []) => {
+    await stations.ask(
+      station,
+      'secrets.deliver',
+      ephemeralDelivery(
+        {
+          run_id: runId,
+        },
+        'run',
+        entries,
+        credentials,
+      ),
+    )
+  }
+
+export type MachineRefresh = (box: Pick<MachineRow, 'id' | 'server_id'>) => Promise<void>
+
+export const stationMachineDelivery =
+  (stations: Pick<StationServer, 'ask'>, db: Db, keyring: Keyring): MachineRefresh =>
+  async (box) => {
+    await stations.ask(
+      box.server_id,
+      'secrets.deliver',
+      machineDeliver(db, keyring, box.id, setupActor),
+    )
+  }
 
 export type MachineDeps = {
   reconcile: (station: string) => void
   deliver: RunDelivery
+  refreshMachine: MachineRefresh
   auth: AuthService
   keyring: Keyring
 }
 
 export const deliveredRun = async (
-  deps: MachineDeps,
-  box: MachineRow,
+  deliver: RunDelivery,
+  box: Pick<MachineRow, 'server_id'>,
   id: string,
   entries: [string, string][],
+  credentials: RelayCredential[] = [],
 ) => {
   const sorted = [...entries].sort(([a], [b]) => a.localeCompare(b))
+  const relayed = credentials.map((credential) => ({
+    key: credential.key,
+    value: credential.value,
+    placeholder: newPlaceholder(),
+    hosts: relayHosts,
+    expires_at: credential.expires_at.toISOString(),
+  }))
 
-  if (sorted.length) {
-    await deps.deliver(box.server_id, id, sorted)
+  if (sorted.length || relayed.length) {
+    await deliver(box.server_id, id, sorted, relayed)
   }
 
-  return sorted.map(([key]) => key)
+  return {
+    envKeys: [...sorted.map(([key]) => key), ...relayed.map((r) => r.key)].sort(),
+    credentials: relayed.map((r, i) => ({
+      key: r.key,
+      placeholder: r.placeholder,
+      token_id: credentials[i]!.token_id,
+      expires_at: r.expires_at,
+    })),
+  }
 }
 
 const runStatus = (db: Db, runId: string | null | undefined) =>
@@ -458,12 +587,15 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
       project: box.project_id,
       target: box.target_id,
     })
-    const envKeys = await deliveredRun(deps, box, id, [
-      ...memberEnv(deps.keyring, member),
-      ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : []),
-    ]).catch(() => null)
+    const delivered = await deliveredRun(
+      deps.deliver,
+      box,
+      id,
+      [...memberEnv(member), ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : [])],
+      memberCredentials(db, deps.keyring, member, machineExecLimits.timeoutS.default),
+    ).catch(() => null)
 
-    if (!envKeys) {
+    if (!delivered) {
       continue
     }
 
@@ -491,7 +623,7 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
             {
               user: 'root',
               cwd: '/root',
-              envKeys,
+              ...delivered,
             },
           ),
         )
@@ -692,6 +824,8 @@ export const removeMachineUsers = (
       .set({
         token_id: null,
         token_key: null,
+        token_placeholder: null,
+        key_placeholders: null,
         data_key_id: null,
       })
       .where(and(eq(machine_user.machine_id, member.machine_id), eq(machine_user.user_id, userId)))

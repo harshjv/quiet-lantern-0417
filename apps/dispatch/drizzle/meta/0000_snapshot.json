@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7167e3c5-352c-482c-a5c7-024fefee14b6",
+  "id": "9790e1bd-6d38-4b69-84ae-891b6d57bae1",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -4602,6 +4602,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "token_placeholder": {
+          "name": "token_placeholder",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "key_placeholders": {
+          "name": "key_placeholders",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "data_key_id": {
           "name": "data_key_id",
           "type": "text",
@@ -8217,6 +8231,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "machine_held": {
+          "name": "machine_held",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         }
       },
       "indexes": {

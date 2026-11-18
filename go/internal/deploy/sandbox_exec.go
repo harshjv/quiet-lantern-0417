@@ -114,8 +114,14 @@ func decodeDelivered(body protocol.SecretsDeliverBody) ([]string, []secrets.Know
 		if err != nil {
 			return nil, nil, fmt.Errorf("value of %s is not base64url: %w", v.Key, err)
 		}
-		env = append(env, v.Key+"="+string(value))
-		if body.Purpose == protocol.SecretPurposeRun {
+		inEnv := string(value)
+		if v.Placeholder != nil {
+			inEnv = *v.Placeholder
+		}
+		if v.Placeholder == nil || v.RelayOnly == nil || !*v.RelayOnly {
+			env = append(env, v.Key+"="+inEnv)
+		}
+		if body.Purpose == protocol.SecretPurposeRun || v.Placeholder != nil {
 			known = append(known, secrets.Known{Key: v.Key, Value: string(value)})
 		}
 	}
@@ -152,7 +158,12 @@ func (s *Station) deliverSandboxSecrets(body protocol.SecretsDeliverBody) (*prot
 	if err != nil {
 		return nil, &protocol.ErrorBody{Code: string(protocol.ErrorCodeSecretsMismatch), Explanation: err.Error(), Fix: "Resend secrets.deliver with base64url values."}
 	}
+	held, _, err := placeholdersOf(body.Values)
+	if err != nil {
+		return nil, &protocol.ErrorBody{Code: string(protocol.ErrorCodeSecretsMismatch), Explanation: err.Error(), Fix: "Resend secrets.deliver with base64url values."}
+	}
 	s.sbx.vars[id] = &sbxVars{digest: body.EnvDigest, env: env, known: known}
+	s.relayCreds.hold(id, "", held)
 	if st := s.sbx.states[id]; st != nil {
 		st.secretsAsked = ""
 	}
@@ -249,6 +260,7 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 		env, known, err := decodeDelivered(pending)
 		if err == nil {
 			runEnv, runKnown = env, known
+			s.holdRunCredentials(rr, pending)
 		}
 	}
 	base := append([]string{}, st.rec.ImageEnv...)
@@ -362,6 +374,7 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 
 func (s *Station) finishSandboxRun(rr *runRecord, se *sbxExec, code int, err error) {
 	delete(s.sbx.execs, rr.ID)
+	s.releaseRunCredentials(rr)
 	if se.timer != nil {
 		se.timer.Stop()
 	}
@@ -398,6 +411,7 @@ func (s *Station) finishSandboxRun(rr *runRecord, se *sbxExec, code int, err err
 }
 
 func (s *Station) failSandboxRun(rr *runRecord, code protocol.ErrorCode, summary string) {
+	s.releaseRunCredentials(rr)
 	rr.Status = protocol.RunStatusFailed
 	if rr.StartedAt == nil {
 		rr.StartedAt = stamp(time.Now())
@@ -414,6 +428,7 @@ func (s *Station) cancelSandboxRun(rr *runRecord, reason string) {
 		_ = se.exec.Kill()
 		return
 	}
+	s.releaseRunCredentials(rr)
 	if !rr.terminal() {
 		rr.Status = protocol.RunStatusCancelled
 		rr.FinishedAt = stamp(time.Now())

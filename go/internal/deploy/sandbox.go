@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/cidr"
+	"github.com/harshjv/stationly/go/internal/credproxy"
 	"github.com/harshjv/stationly/go/internal/dns"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/netns"
@@ -100,6 +101,8 @@ type sbxState struct {
 	shape        string
 	forwards     *forwardSet
 	relay        *http.Server
+	proxy        *credproxy.Proxy
+	proxyNS      *netns.Namespace
 	startedOp    time.Time
 	syncedAt     time.Time
 }
@@ -121,6 +124,7 @@ type sbxNetEntry struct {
 	pid    int
 	ports  map[uint16]bool
 	mirror *dns.AllowMirror
+	creds  *dns.AllowMirror
 }
 
 type sbxNetIndex struct {
@@ -709,6 +713,7 @@ func (s *Station) sandboxElements(d protocol.DesiredSandbox) (netns.SandboxBasel
 	b := netns.SandboxBaseline{Joined: d.Network == protocol.SandboxNetworkEnvironment, Allowlist: allowlist}
 	if d.ApiRelay != nil && *d.ApiRelay {
 		b.Relay = protocol.NetworkDispatchPort
+		b.Credentials = true
 	}
 	if allowlist {
 		b.Ports = allowPorts(domains)
@@ -845,11 +850,20 @@ func (s *Station) startSandbox(ctx context.Context, st *sbxState, d protocol.Des
 	rec.Coupler, rec.Address, rec.Runsc = cid, v.address.String(), version
 	s.indexSandbox(rec.ID, v.address, v.pid, baseline.Ports, domains)
 	s.applySandboxPolicies()
+	var caPEM []byte
+	if baseline.Credentials {
+		ca, err := s.credentialsCA(rec.ID)
+		if err != nil {
+			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhase("start"), protocol.ErrorCodeMachineStartFailed, "credentials", "make the credentials CA: %v", err))
+			return
+		}
+		caPEM = ca.CertPEM()
+	}
 	st.busy, st.startedOp = true, time.Now()
 	st.oom.Store(0)
 	job := startJob{
 		id: rec.ID, rt: s.sbx.rt, version: version, fs: s.sbx.fs, pid: v.pid, baseline: baseline, elements: elements,
-		resolver: baseline.Resolver, name: d.Name, env: env, docker: s.docker, desired: d, oom: st.oom,
+		resolver: baseline.Resolver, name: d.Name, env: env, docker: s.docker, desired: d, oom: st.oom, ca: caPEM,
 	}
 	s.saveSandboxes()
 	go func() {
@@ -872,11 +886,13 @@ type startJob struct {
 	docker   *docker.Client
 	desired  protocol.DesiredSandbox
 	oom      *atomic.Int64
+	ca       []byte
 }
 
 type startResult struct {
 	failure *protocol.SandboxStatusBodyFailure
 	env     []string
+	trust   error
 	cgroup  string
 	started time.Time
 	took    time.Duration
@@ -929,6 +945,11 @@ func (j startJob) run(ctx context.Context) startResult {
 	if j.desired.Docker {
 		extra = append(extra, "STATIONLY_SANDBOX_DOCKER=1")
 	}
+	machineEnv := append(slices.Clone(cfg.Env), "HOSTNAME="+j.name, "STATIONLY_SANDBOX_ID="+j.id)
+	if len(j.ca) > 0 {
+		extra = append(extra, credentialsEnv())
+		machineEnv = append(machineEnv, credentialsEnv())
+	}
 	if err := netns.Readdr(inner); err != nil {
 		return fail("namespace", "address the inner eth0: %v", err)
 	}
@@ -940,7 +961,7 @@ func (j startJob) run(ctx context.Context) startResult {
 	spec := sandbox.Spec{
 		ID: j.id, Hostname: j.name, DiskPath: j.fs.DiskPath(j.id), BundleDir: bundle, LogDir: j.fs.LogDir(j.id), Output: initLog,
 		NetNSPath: netns.InnerPath(j.id), Resolver: j.resolver, Args: args, ImageEnv: cfg.Env, Env: append(extra, j.env...), Cwd: cfg.WorkingDir,
-		MemoryBytes: int64(j.desired.Size.MemoryBytes), CPUMillis: int64(j.desired.Size.CpuMillis),
+		MemoryBytes: int64(j.desired.Size.MemoryBytes), CPUMillis: int64(j.desired.Size.CpuMillis), CredentialsCA: j.ca,
 	}
 	if err := j.rt.Create(ctx, j.version, spec); err != nil {
 		return fail("create", "%v", err)
@@ -949,7 +970,12 @@ func (j startJob) run(ctx context.Context) startResult {
 	if err != nil {
 		return fail("start", "%v", err)
 	}
-	return startResult{cgroup: cg, env: append(slices.Clone(cfg.Env), "HOSTNAME="+j.name, "STATIONLY_SANDBOX_ID="+j.id), started: time.Now(), took: time.Since(start)}
+	res := startResult{cgroup: cg, env: machineEnv, started: time.Now()}
+	if len(j.ca) > 0 {
+		res.trust = installTrust(ctx, j.rt, j.version, j.id, cfg.Env)
+	}
+	res.took = time.Since(start)
+	return res
 }
 
 func (s *Station) finishStart(ctx context.Context, st *sbxState, res startResult) {
@@ -964,6 +990,10 @@ func (s *Station) finishStart(ctx context.Context, st *sbxState, res startResult
 	rec.StartedAt, rec.StoppedAt, rec.Cgroup, rec.ImageEnv = stamp(res.started), nil, res.cgroup, res.env
 	s.watchSandbox(ctx, st)
 	s.openRelay(st)
+	s.openCredentialsProxy(st)
+	if res.trust != nil {
+		s.log.Warn("the machine's trust store does not hold the credentials CA; clients that read only the system store will refuse the credentials proxy", "sandbox", rec.ID, "error", res.trust)
+	}
 	s.reportSandbox(st, protocol.SandboxReportStatusRunning, rec.Reason)
 	s.log.Info("sandbox started", "sandbox", rec.ID, "runsc", rec.Runsc, "address", rec.Address, "cgroup", rec.Cgroup, "took_ms", res.took.Milliseconds())
 }
@@ -1059,6 +1089,7 @@ func (s *Station) stopSandbox(ctx context.Context, st *sbxState, reason *protoco
 	}
 	s.reportSandbox(st, protocol.SandboxReportStatusStopping, reason)
 	st.closeRelay()
+	st.closeCredentialsProxy()
 	go func() {
 		start := time.Now()
 		st.forwards.closeAll()
@@ -1104,6 +1135,8 @@ func (s *Station) teardownSandbox(ctx context.Context, st *sbxState) {
 	rec := st.rec
 	st.forwards.closeAll()
 	st.closeRelay()
+	st.closeCredentialsProxy()
+	s.releaseSandboxCredentials(rec.ID)
 	if err := netns.RemoveInner(rec.ID); err != nil {
 		s.log.Warn("remove the inner namespace", "sandbox", rec.ID, "error", err)
 	}
@@ -1137,6 +1170,8 @@ func (s *Station) destroySandbox(ctx context.Context, st *sbxState) {
 	}
 	os.RemoveAll(fs.LogDir(rec.ID))
 	delete(s.sbx.vars, rec.ID)
+	s.relayCreds.dropSandbox(rec.ID)
+	s.dropCredentialsCA(rec.ID)
 	rec.DiskReady = false
 	s.reportSandbox(st, protocol.SandboxReportStatusDeleted, nil)
 	s.log.Info("sandbox deleted", "sandbox", rec.ID)
@@ -1154,6 +1189,7 @@ func (s *Station) syncRunningSandbox(_ context.Context, st *sbxState, d protocol
 	entry := s.sbx.index.get(addr)
 	if shape != st.shape && entry != nil {
 		elements.Allow = toNetnsAllow(entry.mirror.Elements(time.Now()))
+		elements.Credentials = credentialElements(entry)
 	}
 	ns, err := netns.OpenChecked(st.pid, st.inode)
 	if err != nil {
@@ -1220,6 +1256,7 @@ func (s *Station) writeSandboxNS(t nsTarget) (netns.Result, vipswitch.Consumer, 
 	e := netns.SandboxElements{HostAddrs: s.hostPrefixes(), Switch: c.Switch, Pending: c.Pending, Reject: c.Reject}
 	if entry := s.sbx.index.get(t.self); entry != nil {
 		e.Allow = toNetnsAllow(entry.mirror.Elements(time.Now()))
+		e.Credentials = credentialElements(entry)
 	}
 	result, err := ns.SyncSandbox(st.baseline, e)
 	if err != nil {
@@ -1258,7 +1295,7 @@ func (s *Station) indexSandbox(id string, addr netip.Addr, pid int, ports []uint
 	}
 	e := x.byAddr[addr]
 	if e == nil || e.id != id {
-		e = &sbxNetEntry{id: id, mirror: dns.NewAllowMirror()}
+		e = &sbxNetEntry{id: id, mirror: dns.NewAllowMirror(), creds: dns.NewAllowMirror()}
 		x.byAddr[addr] = e
 	}
 	e.pid = pid
@@ -1292,7 +1329,11 @@ func (s *Station) applySandboxPolicies() {
 			continue
 		}
 		domains, _ := dns.ParseDomains(allowDomains(d.Egress))
-		policies[addr] = dns.SandboxPolicy{Joined: d.Network == protocol.SandboxNetworkEnvironment, Allowlist: d.Egress.Mode == protocol.SandboxEgressModeAllowlist, Domains: domains, Blocked: blocked}
+		p := dns.SandboxPolicy{Joined: d.Network == protocol.SandboxNetworkEnvironment, Allowlist: d.Egress.Mode == protocol.SandboxEgressModeAllowlist, Domains: domains, Blocked: blocked}
+		if st.baseline.Credentials {
+			p.Credentials = protocol.CredentialHosts
+		}
+		policies[addr] = p
 	}
 	s.resolver.SetSandboxes(policies)
 }
@@ -1384,6 +1425,7 @@ func (s *Station) adoptSandboxes(ctx context.Context) {
 			st.shape, st.baseline = s.sandboxShape(d), b
 			s.indexSandbox(id, addr, st.pid, b.Ports, domains)
 			s.openRelay(st)
+			s.openCredentialsProxy(st)
 		}
 		s.watchSandbox(ctx, st)
 		s.log.Info("adopted running sandbox", "sandbox", id, "runsc", v, "address", st.rec.Address)

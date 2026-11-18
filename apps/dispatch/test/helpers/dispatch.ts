@@ -11,6 +11,7 @@ import { AuthService } from '../../src/auth/auth.ts'
 import { ensureInstanceId, setupInstance } from '../../src/auth/bootstrap.ts'
 import { createMetadataFetch } from '../../src/auth/metadata-fetch.ts'
 import { openDb, type Db } from '../../src/db/client.ts'
+import { member } from '../../src/db/schema.ts'
 import { createGitHub } from '../../src/github/service.ts'
 import type { ReadRepository } from '../../src/sandboxes/repository-access.ts'
 import { Keyring } from '../../src/secrets/keyring.ts'
@@ -199,9 +200,11 @@ export const signIn = async (
   h: Pick<Dispatch, 'call'>,
   email = adminEmail,
   password = adminPassword,
+  headers: Record<string, string> = {},
 ) => {
   const reply = await h.call('POST', '/auth/sign-in/email', {
     origin: localOrigin,
+    headers,
     body: {
       email,
       password,
@@ -251,6 +254,42 @@ const seedAdmin = async (h: Booting) => {
     cookie,
     token: minted.body.key as string,
   })
+}
+
+let people = 0
+
+export const addPerson = async (
+  h: Pick<Dispatch, 'call' | 'db' | 'deps'>,
+  email: string,
+  role: 'admin' | 'member',
+) => {
+  const created = await h.deps.auth.current.api.createUser({
+    body: {
+      email,
+      password: adminPassword,
+      name: email.split('@')[0]!,
+      data: {
+        emailVerified: true,
+      },
+    },
+  })
+
+  h.db
+    .insert(member)
+    .values({
+      user_id: created.user.id,
+      role,
+      created_at: new Date(),
+    })
+    .run()
+  const { cookie } = await signIn(h, email, adminPassword, {
+    'x-forwarded-for': `203.0.113.${(people += 1)}`,
+  })
+
+  return {
+    userId: created.user.id,
+    cookie,
+  }
 }
 
 export const mintToken = async (

@@ -23,6 +23,7 @@ import { api, idempotency, send, type Machine, type MachineSnapshot } from '@/li
 import { scopeLabel, type Scope } from '@/lib/commands'
 import { plural, span } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
+import { machineTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
 import { placeOf, previewQuery } from '@/lib/place'
 import { patchMachine, seedMachine, seedSnapshot } from '@/lib/queries'
@@ -408,12 +409,7 @@ export function ForkButton({
       setOpen(false)
 
       if (!result.waiting) {
-        void navigate({
-          to: '/machines/$machine/{-$tab}',
-          params: {
-            machine: result.body.id,
-          },
-        })
+        void navigate(machineTo(result.body.id))
       }
     },
   })

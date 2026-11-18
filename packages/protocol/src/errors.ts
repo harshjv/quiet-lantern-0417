@@ -295,6 +295,12 @@ export const errorCatalog = [
     close: null,
   },
   {
+    code: 'CREDENTIALS_UNAVAILABLE',
+    http: 503,
+    area: 'secret',
+    close: null,
+  },
+  {
     code: 'SECRETS_NEED_REENTRY',
     http: 422,
     area: 'secret',

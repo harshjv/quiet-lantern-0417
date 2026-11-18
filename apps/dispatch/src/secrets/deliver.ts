@@ -9,6 +9,7 @@ import { sha256Digest } from '../generation/hash.ts'
 
 import { SecretsError } from './errors.ts'
 import type { Keyring } from './keyring.ts'
+import type { RelayValue } from './relay.ts'
 import {
   holdsRedacted,
   isRedacted,
@@ -24,7 +25,7 @@ type SecretsDeliver = MessageBody<'secrets.deliver'>
 type Subject = { entity: string; id: string }
 type Entry = { key: string; injection: 'env' | 'file'; node: SourceNode }
 
-const base64url = (value: string) => Buffer.from(value, 'utf8').toString('base64url')
+export const base64url = (value: string) => Buffer.from(value, 'utf8').toString('base64url')
 
 export const refsOf = (node: SourceNode) =>
   leaves(node).map((leaf) =>
@@ -171,15 +172,27 @@ export const ephemeralDelivery = (
   target: SecretsDeliver['target'],
   purpose: SecretsDeliver['purpose'],
   entries: [string, string][],
+  credentials: RelayValue[] = [],
 ): SecretsDeliver => ({
   target,
-  env_digest: sha256Digest(entries.map(([key]) => key)),
+  env_digest: sha256Digest([...entries.map(([key]) => key), ...credentials.map((c) => c.key)]),
   purpose,
-  values: entries.map(([key, value]) => ({
-    key,
-    injection: 'env' as const,
-    refs: [],
-    value: base64url(value),
-  })),
+  values: [
+    ...entries.map(([key, value]) => ({
+      key,
+      injection: 'env' as const,
+      refs: [],
+      value: base64url(value),
+    })),
+    ...credentials.map((credential) => ({
+      key: credential.key,
+      injection: 'env' as const,
+      refs: [],
+      value: base64url(credential.value),
+      placeholder: credential.placeholder,
+      hosts: credential.hosts,
+      expires_at: credential.expires_at,
+    })),
+  ],
   redaction: [],
 })

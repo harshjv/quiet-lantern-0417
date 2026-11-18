@@ -1,6 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Bot, Clock, ExternalLink, Eye, Folder, GitBranch, Loader2, Rocket } from 'lucide-react'
+import {
+  Bot,
+  Clock,
+  ExternalLink,
+  Eye,
+  Folder,
+  GitBranch,
+  Loader2,
+  Rocket,
+  SearchX,
+} from 'lucide-react'
 import { useReducer, useState } from 'react'
 
 import {
@@ -31,6 +41,8 @@ import { Shimmer } from '@/components/ai-elements/shimmer'
 import { Tool, ToolContent, ToolHeader, ToolOutput } from '@/components/ai-elements/tool'
 import { Field } from '@/components/field'
 import { NewProject } from '@/components/new-project'
+import { EmptyState } from '@/components/page'
+import { Failure } from '@/components/panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,7 +63,16 @@ import {
   type Turn,
 } from '@/lib/agent-session'
 import { agentStreamTypes, taskStreamUrl } from '@/lib/agent-stream'
-import { api, ApiFailure, failureText, idempotency, send, unwrap, type Task } from '@/lib/api'
+import {
+  api,
+  ApiFailure,
+  failureText,
+  idempotency,
+  send,
+  unwrap,
+  type MyRepositories,
+  type Task,
+} from '@/lib/api'
 import { useEventStream } from '@/lib/event-stream'
 import { plural, repositoryName, shortAgo } from '@/lib/format'
 import {
@@ -63,7 +84,7 @@ import {
   needsGithubToken,
   repositoryUrl,
 } from '@/lib/new-task'
-import { meQuery, projectsQuery, tasksQuery } from '@/lib/queries'
+import { meQuery, myRepositoriesQuery, projectsQuery, taskQuery, tasksQuery } from '@/lib/queries'
 import { setupFailure } from '@/lib/setup-failure'
 import { toneText } from '@/lib/tone'
 
@@ -123,18 +144,56 @@ const runnerAgents = (Object.keys(workspaceAgents) as WorkspaceAgent[]).filter(
 )
 
 export function LiveBuild({ task: id, project }: { task?: string; project: string | null }) {
+  return id ? <TaskById id={id} /> : <LatestTask project={project} />
+}
+
+function LatestTask({ project }: { project: string | null }) {
   const { data, isPending } = useQuery(tasksQuery)
 
   if (isPending) {
     return null
   }
 
-  const items = data?.items ?? []
-  const task =
-    items.find((t) => t.id === id) ?? items.find((t) => !project || t.project.name === project)
+  const task = (data?.items ?? []).find((t) => !project || t.project.name === project)
 
   if (!task) {
     return <LiveComposer project={project} />
+  }
+
+  return <LiveThread key={task.id} task={task} />
+}
+
+function TaskById({ id }: { id: string }) {
+  const { data: task, error, refetch } = useQuery(taskQuery(id))
+
+  if (error instanceof ApiFailure && error.status === 404) {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col px-6 py-8">
+        <h1 className="sr-only">Task not found</h1>
+        <EmptyState
+          icon={SearchX}
+          title="This task doesn’t exist"
+          description="It may have been deleted, or the link is wrong. Start a new task, or pick one from the list."
+          action={
+            <Button asChild size="sm" variant="outline">
+              <Link to="/build/new">New task</Link>
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col px-6 py-8">
+        <Failure error={error} title="Couldn’t load this task" onRetry={() => void refetch()} />
+      </div>
+    )
+  }
+
+  if (!task) {
+    return null
   }
 
   return <LiveThread key={task.id} task={task} />
@@ -913,6 +972,22 @@ function FirstProject() {
   )
 }
 
+function RepositoryHint({ github }: { github: MyRepositories['github'] | undefined }) {
+  if (github !== 'not_connected' && github !== 'reconnect') {
+    return null
+  }
+
+  return (
+    <p className="-mt-3 text-sm text-muted-foreground">
+      {github === 'reconnect' ? 'GitHub refused your sign-in. ' : ''}
+      <Link to="/account" className="font-medium text-foreground underline underline-offset-4">
+        {github === 'reconnect' ? 'Connect GitHub again' : 'Connect GitHub'}
+      </Link>{' '}
+      in Your account to pick from the repositories you can reach, or paste a URL.
+    </p>
+  )
+}
+
 function Composer({
   project: preferred,
   prefill,
@@ -927,11 +1002,7 @@ function Composer({
   const [agent, setAgent] = useState<WorkspaceAgent>(runnerAgents[0] ?? 'claude')
   const [model, setModel] = useState(workspaceAgents[agent].models[0]?.id ?? '')
   const [repository, setRepository] = useState(prefill?.repository ?? '')
-  const reachable = useQuery({
-    queryKey: ['me', 'repositories'],
-    queryFn: () => unwrap(api.v1.me.repositories.get()),
-    staleTime: 300_000,
-  })
+  const reachable = useQuery(myRepositoriesQuery)
   const [secret, setSecret] = useState('')
   const [blocked, setBlocked] = useState<Blocked | null>(null)
   const preset = workspaceAgents[agent]
@@ -963,6 +1034,8 @@ function Composer({
         projectKeys.data.items.some((item) => item.name === key) ||
         myKeys.data.items.some((item) => item.name === key && item.set),
     )
+  const keyChecked = projectKeys.data !== undefined && myKeys.data !== undefined
+  const ready = Boolean(url && chosen) && keyChecked && !keyMissing
   const asking =
     blocked?.kind === 'token' ? 'token' : blocked?.kind === 'key' || keyMissing ? 'key' : null
   const [waitingKey, setWaitingKey] = useState<string | null>(null)
@@ -1085,6 +1158,7 @@ function Composer({
           </datalist>
         </div>
       </div>
+      <RepositoryHint github={reachable.data?.github} />
       {asking && (
         <Notice
           tone="warning"
@@ -1157,7 +1231,7 @@ function Composer({
         </Notice>
       )}
       <PromptInputProvider initialInput={prefill?.prompt}>
-        <PromptInput onSubmit={submitting(start.mutateAsync, Boolean(url && chosen))}>
+        <PromptInput onSubmit={submitting(start.mutateAsync, ready)}>
           <PromptInputBody>
             <PromptInputTextarea placeholder="Describe the task. An agent works on it on a new branch and shows you what it changed." />
           </PromptInputBody>
@@ -1197,15 +1271,16 @@ function Composer({
               )}
             </PromptInputTools>
             <PromptInputSubmit
-              disabled={!url || !chosen || start.isPending}
+              disabled={!ready || start.isPending}
               status={start.isPending ? 'submitted' : undefined}
             />
           </PromptInputFooter>
         </PromptInput>
       </PromptInputProvider>
       <p className="text-sm text-muted-foreground">
-        Runs in project {chosen || 'none yet'} on a new branch, on the project's machine. Anything
-        that needs approval is stopped and shown to you.
+        {keyMissing
+          ? `Add ${admin ? `${chosen}’s` : 'your'} ${preset.keyLabel} above before you start a task.`
+          : `Runs in project ${chosen || 'none yet'} on a new branch, on the project's machine. Anything that needs approval is stopped and shown to you.`}
       </p>
     </div>
   )

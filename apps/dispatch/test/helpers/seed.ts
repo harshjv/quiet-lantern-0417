@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 
 import { releaseRepositories } from '@stationly/protocol/release-config'
 
-import { app, setting, target } from '../../src/db/schema.ts'
+import { app, approval, setting, target, task, type ApprovalShip } from '../../src/db/schema.ts'
 import { lockfileFor, parseManifest, sha256Of, storeRelease } from '../../src/platform/lockfile.ts'
 
 import type { Dispatch } from './dispatch.ts'
@@ -375,3 +375,69 @@ export const waitForMachine = async (
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }
+
+export const seedTask = (
+  h: Pick<Dispatch, 'db'>,
+  values: { project_id: string; owner: string; preview_id?: string | null },
+) =>
+  h.db
+    .insert(task)
+    .values({
+      project_id: values.project_id,
+      target_id: productionId(h, values.project_id),
+      owner: {
+        type: 'user',
+        id: values.owner,
+      },
+      title: 'a task',
+      repository: 'https://github.com/acme/web',
+      branch: 'task/a-task',
+      agent: 'claude',
+      machine_id: 'mch_seeded',
+      preview_id: values.preview_id ?? null,
+    })
+    .returning()
+    .get()
+
+export const seedShip = (
+  h: Pick<Dispatch, 'db'>,
+  seeded: { id: string; project_id: string },
+  values: {
+    requester: string
+    status?: 'waiting' | 'approved' | 'rejected'
+    ship?: Partial<ApprovalShip>
+  },
+) =>
+  h.db
+    .insert(approval)
+    .values({
+      project_id: seeded.project_id,
+      task_id: seeded.id,
+      title: 'Ship a task',
+      requested_by: {
+        type: 'user',
+        id: values.requester,
+        client: null,
+      },
+      requester: values.requester,
+      changes: [],
+      refs: {},
+      source: 'task',
+      status: values.status ?? 'waiting',
+      deployments: [],
+      ship: {
+        phase: 'open',
+        run_id: 'run_seeded',
+        pull_request: {
+          repo: 'github.com/acme/web',
+          number: 7,
+          url: 'https://github.com/acme/web/pull/7',
+        },
+        head_sha: 'a'.repeat(40),
+        merge_sha: null,
+        reason: null,
+        ...values.ship,
+      },
+    })
+    .returning()
+    .get()

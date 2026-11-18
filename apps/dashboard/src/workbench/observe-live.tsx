@@ -13,12 +13,13 @@ import {
 } from '@/components/ui/select'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, unwrap } from '@/lib/api'
-import { bytes, shortAgo } from '@/lib/format'
+import { bytes, shortAgo, usedOf } from '@/lib/format'
 import { appStatus } from '@/lib/labels'
+import { appTo } from '@/lib/links'
 import { logsQuery } from '@/lib/queries'
 
 import { fixOf } from './fix-live'
-import { failingApps, useLiveApps, type LiveApp } from './ops-live'
+import { failingApps, placeName, reportsMetrics, useLiveApps, type LiveApp } from './ops-live'
 import { ItemList, ItemRow, Page, PageTabPanel, PageTabs, Section, StatusPill } from './parts'
 
 const tabs = ['attention', 'logs', 'metrics', 'activity'] as const
@@ -95,7 +96,7 @@ function Attention({ apps }: { apps: LiveApp[] }) {
               meta={[
                 {
                   kind: 'project',
-                  text: `${live.place.project.name} / ${live.place.name}`,
+                  text: placeName(live.place),
                 },
                 ...(live.newest?.failure?.summary
                   ? [
@@ -109,14 +110,7 @@ function Attention({ apps }: { apps: LiveApp[] }) {
               action={
                 <>
                   <Button asChild size="sm" variant="outline">
-                    <Link
-                      to="/apps/$app/{-$tab}"
-                      params={{
-                        app: live.app.id,
-                      }}
-                    >
-                      Open
-                    </Link>
+                    <Link {...appTo(live.app.id)}>Open</Link>
                   </Button>
                   <Button asChild size="sm">
                     <Link
@@ -160,7 +154,7 @@ function Logs({ apps }: { apps: LiveApp[] }) {
           <SelectContent>
             {apps.map((live) => (
               <SelectItem key={live.app.id} value={live.app.id}>
-                {live.place.project.name} / {live.app.name}
+                {placeName(live.place)} / {live.app.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -197,6 +191,7 @@ function Metrics({ apps }: { apps: LiveApp[] }) {
             .metrics.get(),
         ),
       refetchInterval: 10_000,
+      enabled: reportsMetrics(live.app),
     })),
   })
 
@@ -205,32 +200,47 @@ function Metrics({ apps }: { apps: LiveApp[] }) {
       <ItemList>
         {apps.map((live, index) => {
           const sample = (samples[index]?.data ?? {}) as Sample
+          const place = {
+            kind: 'project' as const,
+            text: placeName(live.place),
+          }
 
           return (
             <ItemRow
               key={live.app.id}
               icon={Box}
               title={live.app.name}
-              meta={[
-                {
-                  kind: 'health',
-                  text:
-                    sample.cpu_pct == null
-                      ? 'CPU not measured'
-                      : `CPU ${Math.round(sample.cpu_pct)}%`,
-                },
-                {
-                  kind: 'files',
-                  text:
-                    sample.memory_bytes == null
-                      ? 'Memory not measured'
-                      : `Memory ${bytes(sample.memory_bytes)}${sample.memory_limit_bytes ? ` of ${bytes(sample.memory_limit_bytes)}` : ''}`,
-                },
-                {
-                  kind: 'status',
-                  text: `${sample.restarts ?? 0} restarts`,
-                },
-              ]}
+              meta={
+                reportsMetrics(live.app)
+                  ? [
+                      place,
+                      {
+                        kind: 'health',
+                        text:
+                          sample.cpu_pct == null
+                            ? 'CPU not measured'
+                            : `CPU ${Math.round(sample.cpu_pct)}%`,
+                      },
+                      {
+                        kind: 'files',
+                        text:
+                          sample.memory_bytes == null
+                            ? 'Memory not measured'
+                            : `Memory ${sample.memory_limit_bytes ? usedOf(sample.memory_bytes, sample.memory_limit_bytes) : bytes(sample.memory_bytes)}`,
+                      },
+                      {
+                        kind: 'status',
+                        text: `${sample.restarts ?? 0} restarts`,
+                      },
+                    ]
+                  : [
+                      place,
+                      {
+                        kind: 'status',
+                        text: `${appStatus[live.app.status].label}, nothing to measure`,
+                      },
+                    ]
+              }
             />
           )
         })}

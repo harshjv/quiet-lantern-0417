@@ -45,6 +45,7 @@ import {
   Base64UrlBytes64,
   Bytes,
   Count,
+  credentialPlaceholder,
   Digest,
   Id,
   Json,
@@ -267,6 +268,23 @@ const HeartbeatBody = Type.Object(
         {
           title: 'ServiceHeartbeat',
         },
+      ),
+    ),
+    credentials: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            sandbox_id: Id('machine'),
+            placeholder: Type.String({
+              pattern: `^[A-Za-z0-9_-]*${credentialPlaceholder.pattern}$`,
+            }),
+            used: Count,
+            misdirected: Count,
+          },
+          {
+            title: 'CredentialUse',
+          },
+        ),
       ),
     ),
   },
@@ -966,6 +984,7 @@ export const refusedPaths = [
   'no_switch_target',
   'sandbox_inbound',
   'domain_not_allowed',
+  'credential_quic',
 ] as const
 
 const NetworkRefused = Type.Object(
@@ -1080,6 +1099,8 @@ export const networkPathIds = [
   'no_switch_target',
   'sandbox_inbound',
   'domain_not_allowed',
+  'credentials_proxy',
+  'credential_quic',
 ] as const
 
 export const networkVerdicts = ['accept', 'drop', 'reject'] as const
@@ -1421,6 +1442,14 @@ const SecretsDeliverBody = Type.Object(
           injection: Injection,
           refs: Type.Array(EnvRef),
           value: Base64UrlOrEmpty,
+          placeholder: Type.Optional(
+            Type.String({
+              pattern: `^[A-Za-z0-9_-]*${credentialPlaceholder.pattern}$`,
+            }),
+          ),
+          hosts: Type.Optional(Type.Array(Type.String())),
+          expires_at: Type.Optional(Timestamp),
+          relay_only: Type.Optional(Type.Boolean()),
         },
         {
           title: 'SecretValue',

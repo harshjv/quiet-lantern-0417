@@ -22,6 +22,7 @@ import { KeyKindSelect, KeyNameInput, KeyNotes, KeyValueInput } from '@/componen
 import { api, idempotency, send } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { appKind } from '@/lib/labels'
+import { appTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
 import { placeName, previewQuery, scopeOf, type PlaceView } from '@/lib/place'
 import { onlineStationsQuery, seedApp } from '@/lib/queries'
@@ -117,12 +118,7 @@ export function NewApp({
       onOpenChange(false)
 
       if (!result.waiting) {
-        void navigate({
-          to: '/apps/$app/{-$tab}',
-          params: {
-            app: result.body.id,
-          },
-        })
+        void navigate(appTo(result.body.id))
       }
     },
   })

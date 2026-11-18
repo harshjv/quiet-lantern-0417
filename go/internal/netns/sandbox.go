@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
+	"os"
 	"slices"
 	"strconv"
 	"time"
@@ -15,12 +17,19 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
+
+	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
 	SandboxIf            = "sbx"
 	PathSandboxInbound   = "sandbox_inbound"
 	PathDomainNotAllowed = "domain_not_allowed"
+	PathCredentialsProxy = "credentials_proxy"
+	PathCredentialQuic   = "credential_quic"
+	CredentialSet        = "credential_hosts_443"
+	credentialPort       = 443
+	ipsDstNAT            = 1 << 5
 	sandboxLayout        = "sbx.1"
 	couplerIf            = "eth0"
 	allowSetPrefix       = "egress_allow_"
@@ -32,13 +41,14 @@ var (
 )
 
 type SandboxBaseline struct {
-	Resolver  netip.Addr
-	Self      netip.Addr
-	Subnet    netip.Prefix
-	Joined    bool
-	Allowlist bool
-	Ports     []uint16
-	Relay     uint16
+	Resolver    netip.Addr
+	Self        netip.Addr
+	Subnet      netip.Prefix
+	Joined      bool
+	Allowlist   bool
+	Ports       []uint16
+	Relay       uint16
+	Credentials bool
 }
 
 type AllowElement struct {
@@ -47,11 +57,12 @@ type AllowElement struct {
 }
 
 type SandboxElements struct {
-	HostAddrs []netip.Prefix
-	Switch    map[netip.Addr]netip.Addr
-	Pending   []netip.Addr
-	Reject    []netip.Addr
-	Allow     map[uint16][]AllowElement
+	HostAddrs   []netip.Prefix
+	Switch      map[netip.Addr]netip.Addr
+	Pending     []netip.Addr
+	Reject      []netip.Addr
+	Allow       map[uint16][]AllowElement
+	Credentials []AllowElement
 }
 
 func (b SandboxBaseline) ports() []uint16 {
@@ -84,6 +95,9 @@ func (b SandboxBaseline) fingerprint() string {
 	if b.Relay != 0 {
 		text += "|relay=" + strconv.Itoa(int(b.Relay))
 	}
+	if b.Credentials {
+		text += "|credentials=" + strconv.Itoa(protocol.NetworkCredentialsProxyPort) + "|uid=" + strconv.Itoa(os.Geteuid())
+	}
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:8])
 }
@@ -97,6 +111,17 @@ func (e SandboxElements) elements(b SandboxBaseline) Elements {
 
 func allowSet(p uint16) *nftables.Set {
 	return &nftables.Set{Table: table, Name: allowSetPrefix + strconv.Itoa(int(p)), KeyType: nftables.TypeIPAddr, HasTimeout: true}
+}
+
+func credentialSet() *nftables.Set {
+	return &nftables.Set{Table: table, Name: CredentialSet, KeyType: nftables.TypeIPAddr, HasTimeout: true}
+}
+
+func (b SandboxBaseline) credentialSet() *nftables.Set {
+	if !b.Credentials {
+		return nil
+	}
+	return credentialSet()
 }
 
 func allowSets(b SandboxBaseline) map[uint16]*nftables.Set {
@@ -119,7 +144,7 @@ func oifExprs(name string) []expr.Any {
 	return []expr.Any{&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: ifname(name)}}
 }
 
-func sandboxTable(b SandboxBaseline, s egressSets, allow map[uint16]*nftables.Set) []egressRule {
+func sandboxTable(b SandboxBaseline, s egressSets, allow map[uint16]*nftables.Set, creds *nftables.Set) []egressRule {
 	tcp, udp := byte(unix.IPPROTO_TCP), byte(unix.IPPROTO_UDP)
 	rules := []egressRule{
 		{terms: []term{{kind: termEstablished}}, verdict: verdictAccept, text: "ct state established,related accept"},
@@ -135,6 +160,9 @@ func sandboxTable(b SandboxBaseline, s egressSets, allow map[uint16]*nftables.Se
 		)
 	}
 	rules = append(rules, egressRule{terms: []term{ipv4Term(), setTerm(s.hosts, false)}, verdict: verdictDrop, counter: true, record: true, path: PathHostAddress, text: "ip daddr @host_addrs drop"})
+	if creds != nil {
+		rules = append(rules, egressRule{terms: []term{ipv4Term(), setTerm(creds, false), l4Term(udp), dportTerm(credentialPort)}, verdict: verdictRejectICMPX, counter: true, record: true, path: PathCredentialQuic, text: "ip daddr @" + CredentialSet + " udp dport 443 reject with icmpx port-unreachable"})
+	}
 	if b.Joined {
 		rules = append(rules, egressRule{terms: []term{ipv4Term(), {kind: termCtOriginalSet, set: s.targets}}, verdict: verdictAccept, counter: true, path: PathSameEnvironment, text: "ct original ip daddr @vip_targets accept"})
 		if b.Subnet.IsValid() {
@@ -183,6 +211,49 @@ func relayExprs(p uint16) []expr.Any {
 	return append(out, &expr.Counter{}, verdict(expr.VerdictAccept))
 }
 
+func credentialsDNAT(creds *nftables.Set) []expr.Any {
+	out := append(iifExprs(SandboxIf, false), ipv4()...)
+	out = append(out, saddr(), &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: SandboxLink.AsSlice()})
+	for _, t := range []term{setTerm(creds, false), l4Term(unix.IPPROTO_TCP), dportTerm(credentialPort)} {
+		out = append(out, t.exprs()...)
+	}
+	return append(out,
+		&expr.Counter{},
+		&expr.Immediate{Register: 1, Data: CouplerLink.AsSlice()},
+		&expr.Immediate{Register: 2, Data: port(protocol.NetworkCredentialsProxyPort)},
+		&expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2, Specified: true},
+	)
+}
+
+func ctDNAT() []expr.Any {
+	return []expr.Any{
+		&expr.Ct{Register: 1, Key: expr.CtKeySTATUS},
+		&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: binaryNative(ipsDstNAT), Xor: []byte{0, 0, 0, 0}},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: []byte{0, 0, 0, 0}},
+	}
+}
+
+func proxyInExprs() []expr.Any {
+	out := iifExprs(SandboxIf, false)
+	for _, t := range []term{ipv4Term(), daddrTerm(CouplerLink)} {
+		out = append(out, t.exprs()...)
+	}
+	out = append(out, ctDNAT()...)
+	for _, t := range []term{l4Term(unix.IPPROTO_TCP), dportTerm(protocol.NetworkCredentialsProxyPort)} {
+		out = append(out, t.exprs()...)
+	}
+	return append(out, &expr.Counter{}, verdict(expr.VerdictAccept))
+}
+
+func proxyOutExprs(s egressSets) []expr.Any {
+	out := append(oifExprs(couplerIf), &expr.Meta{Key: expr.MetaKeySKUID, Register: 1}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryNative(uint32(os.Geteuid()))})
+	for _, t := range []term{ipv4Term(), setTerm(s.private, true), setTerm(s.hosts, true), l4Term(unix.IPPROTO_TCP), dportTerm(credentialPort)} {
+		out = append(out, t.exprs()...)
+	}
+	out = append(out, ctNew()...)
+	return append(out, &expr.Counter{}, verdict(expr.VerdictAccept))
+}
+
 func masqExprs() []expr.Any {
 	return append(append(iifExprs(SandboxIf, false), oifExprs(couplerIf)...), &expr.Counter{}, &expr.Masq{})
 }
@@ -209,6 +280,10 @@ func writeSandbox(c *nftables.Conn, b SandboxBaseline, e SandboxElements, sw map
 	for _, p := range b.ports() {
 		tables = append(tables, setEls{allow[p], allowElements(e.Allow[p])})
 	}
+	creds := b.credentialSet()
+	if creds != nil {
+		tables = append(tables, setEls{creds, allowElements(e.Credentials)})
+	}
 	if err := resetTable(c, table, tables); err != nil {
 		return err
 	}
@@ -218,13 +293,17 @@ func writeSandbox(c *nftables.Conn, b SandboxBaseline, e SandboxElements, sw map
 	for _, proto := range []byte{unix.IPPROTO_UDP, unix.IPPROTO_TCP} {
 		c.AddRule(&nftables.Rule{Table: table, Chain: intercept, Exprs: interceptExprs(proto, b.Resolver)})
 	}
+	if creds != nil {
+		credentials := c.AddChain(&nftables.Chain{Name: "credentials", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityRef(-105)})
+		c.AddRule(&nftables.Rule{Table: table, Chain: credentials, Exprs: credentialsDNAT(creds)})
+	}
 	if b.Joined {
 		switchIn := c.AddChain(&nftables.Chain{Name: "switch_in", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityRef(-100)})
 		c.AddRule(&nftables.Rule{Table: table, Chain: switchIn, Exprs: switchInExprs(sets.targets, sets.smap)})
 	}
 
 	egress := c.AddChain(&nftables.Chain{Name: "egress", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookForward, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
-	addFingerprinted(c, egress, egressExprs(sandboxTable(b, sets.egress(), allow), sets.refused), commentPrefix+b.fingerprint())
+	addFingerprinted(c, egress, egressExprs(sandboxTable(b, sets.egress(), allow, creds), sets.refused), commentPrefix+b.fingerprint())
 
 	inbound := c.AddChain(&nftables.Chain{Name: "inbound", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookInput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
 	c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: append(established(), verdict(expr.VerdictAccept))})
@@ -232,11 +311,17 @@ func writeSandbox(c *nftables.Conn, b SandboxBaseline, e SandboxElements, sw map
 	if b.Relay != 0 {
 		c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: relayExprs(b.Relay)})
 	}
+	if creds != nil {
+		c.AddRule(&nftables.Rule{Table: table, Chain: inbound, Exprs: proxyInExprs()})
+	}
 
 	localOut := c.AddChain(&nftables.Chain{Name: "local_out", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRef(0), Policy: &drop})
 	c.AddRule(&nftables.Rule{Table: table, Chain: localOut, Exprs: append(established(), verdict(expr.VerdictAccept))})
 	c.AddRule(&nftables.Rule{Table: table, Chain: localOut, Exprs: append(oifExprs("lo"), verdict(expr.VerdictAccept))})
 	c.AddRule(&nftables.Rule{Table: table, Chain: localOut, Exprs: forwardOutExprs()})
+	if creds != nil {
+		c.AddRule(&nftables.Rule{Table: table, Chain: localOut, Exprs: proxyOutExprs(sets.egress())})
+	}
 
 	masq := c.AddChain(&nftables.Chain{Name: "masq", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPostrouting, Priority: nftables.ChainPriorityRef(100)})
 	c.AddRule(&nftables.Rule{Table: table, Chain: masq, Exprs: masqExprs()})
@@ -259,12 +344,16 @@ func (n *Namespace) SandboxVerdict(b SandboxBaseline, pool netip.Prefix, p Packe
 		return Verdict{}, err
 	}
 	allow := map[string]map[netip.Addr]bool{}
-	for _, s := range allowSets(b) {
+	read := slices.Collect(maps.Values(allowSets(b)))
+	if creds := b.credentialSet(); creds != nil {
+		read = append(read, creds)
+	}
+	for _, s := range read {
 		if allow[s.Name], err = readAddrs(c, s); err != nil {
 			return Verdict{}, err
 		}
 	}
-	return evaluateSandbox(sandboxTable(b, namedSets(), allowSets(b)), b, pool, live, allow, p, inbound), nil
+	return evaluateSandbox(sandboxTable(b, namedSets(), allowSets(b), b.credentialSet()), b, pool, live, allow, p, inbound), nil
 }
 
 func evaluateSandbox(rules []egressRule, b SandboxBaseline, pool netip.Prefix, live liveSets, allow map[string]map[netip.Addr]bool, p Packet, inbound bool) Verdict {
@@ -280,6 +369,9 @@ func evaluateSandbox(rules []egressRule, b SandboxBaseline, pool netip.Prefix, l
 		if realAddr, ok := live.sw[rt.original]; ok {
 			rt.daddr = realAddr
 		}
+	}
+	if !inbound && b.Credentials && p.Proto == unix.IPPROTO_TCP && p.Port == credentialPort && allow[CredentialSet][rt.original] {
+		return Verdict{Verdict: VerdictAccept, Path: PathCredentialsProxy, Rule: "ip daddr @" + CredentialSet + " tcp dport 443 dnat ip to 169.254.1.1:7443"}
 	}
 	if rt.daddr == CouplerLink || (b.Self.IsValid() && rt.daddr == b.Self) {
 		return Verdict{Verdict: VerdictDrop, Path: PathSandboxInbound, Rule: "inbound policy drop"}

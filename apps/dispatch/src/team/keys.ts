@@ -1,12 +1,19 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 
-import { workspaceAgents, workspaceAgentValues, type WorkspaceAgent } from '@stationly/protocol'
+import {
+  proxiedCredentials,
+  workspaceAgents,
+  workspaceAgentValues,
+  workspaceEnv,
+  type WorkspaceAgent,
+} from '@stationly/protocol'
 
 import type { AuthService } from '../auth/auth.ts'
 import type { Db } from '../db/client.ts'
 import { account, machine_user, member_key } from '../db/schema.ts'
-import { projectSecret } from '../sandboxes/repository-access.ts'
+import { projectHead, projectSecret } from '../sandboxes/repository-access.ts'
 import type { Keyring } from '../secrets/keyring.ts'
+import { isProxied } from '../secrets/relay.ts'
 
 export const memberKeyNames = workspaceAgentValues.flatMap((agent) => workspaceAgents[agent].keys)
 
@@ -78,13 +85,6 @@ export const keyEnvFor = (
     return []
   }
 
-  db.update(member_key)
-    .set({
-      last_used_at: new Date(),
-    })
-    .where(eq(member_key.user_id, userId))
-    .run()
-
   return names.map((name) => {
     const row = rows.find((entry) => entry.name === name)
 
@@ -119,19 +119,37 @@ export const githubTokenOf = async (auth: AuthService, db: Db, userId: string | 
     .catch(() => null)
 }
 
+type MachineUserRow = typeof machine_user.$inferSelect
+
+export const tokenAad = (machineId: string, userId: string) => `machine_user:${machineId}:${userId}`
+
+export const memberToken = (keyring: Keyring, member: MachineUserRow) =>
+  member.token_key && member.data_key_id
+    ? keyring.decrypt(
+        tokenAad(member.machine_id, member.user_id),
+        member.data_key_id,
+        member.token_key,
+      )
+    : null
+
+export const membersOf = (db: Db, machineId: string) =>
+  db
+    .select()
+    .from(machine_user)
+    .where(eq(machine_user.machine_id, machineId))
+    .orderBy(asc(machine_user.uid))
+    .all()
+
 export const memberSecrets = (db: Db, keyring: Keyring, machineId: string) => {
-  const members = db.select().from(machine_user).where(eq(machine_user.machine_id, machineId)).all()
   const found: { key: string; value: string }[] = []
 
-  for (const member of members) {
-    if (member.token_key && member.data_key_id) {
+  for (const member of membersOf(db, machineId)) {
+    const value = memberToken(keyring, member)
+
+    if (value) {
       found.push({
-        key: 'STATIONLY_TOKEN',
-        value: keyring.decrypt(
-          `machine_user:${member.machine_id}:${member.user_id}`,
-          member.data_key_id,
-          member.token_key,
-        ),
+        key: workspaceEnv.token,
+        value,
       })
     }
 
@@ -185,3 +203,75 @@ export const runGitHubToken = async (
 ) =>
   (await githubTokenOf(auth, db, userId)) ??
   (shared ? projectSecret(db, keyring, shared, 'GH_TOKEN') : null)
+
+export type CredentialSource = { key: string; user_id: string } | { key: string; scope: Scope }
+
+const proxiedAgents = workspaceAgentValues.filter((agent) =>
+  workspaceAgents[agent].keys.some(isProxied),
+)
+
+export const credentialSources = (
+  db: Db,
+  userId: string | null,
+  shared: Scope | null,
+): CredentialSource[] =>
+  proxiedAgents.flatMap<CredentialSource>((agent) => {
+    const names = workspaceAgents[agent].keys
+    const own = userId
+      ? db
+          .select({
+            name: member_key.name,
+          })
+          .from(member_key)
+          .where(eq(member_key.user_id, userId))
+          .all()
+          .map((row) => row.name)
+          .filter((name) => names.includes(name))
+      : []
+
+    if (own.length) {
+      return own.filter(isProxied).map((key) => ({
+        key,
+        user_id: userId!,
+      }))
+    }
+
+    return shared
+      ? names
+          .filter((name) => isProxied(name) && projectHead(db, shared, name))
+          .map((key) => ({
+            key,
+            scope: shared,
+          }))
+      : []
+  })
+
+export const sourceGroups = (key: string) =>
+  proxiedAgents.filter((agent) => workspaceAgents[agent].keys.includes(key))
+
+export const credentialValue = (db: Db, keyring: Keyring, source: CredentialSource) =>
+  'user_id' in source
+    ? memberKeyValue(db, keyring, source.user_id, source.key)
+    : projectSecret(db, keyring, source.scope, source.key)
+
+export const memberKeyValue = (db: Db, keyring: Keyring, userId: string, name: string) => {
+  const row = db
+    .select()
+    .from(member_key)
+    .where(and(eq(member_key.user_id, userId), eq(member_key.name, name)))
+    .get()
+
+  return row ? keyring.decrypt(aad(userId, name), row.data_key_id, row.ciphertext) : null
+}
+
+export const credentialHostsOf = (key: string) =>
+  isProxied(key) ? proxiedCredentials[key]!.hosts : []
+
+export const touchMemberKey = (db: Db, userId: string, name: string, now = new Date()) =>
+  db
+    .update(member_key)
+    .set({
+      last_used_at: now,
+    })
+    .where(and(eq(member_key.user_id, userId), eq(member_key.name, name)))
+    .run()

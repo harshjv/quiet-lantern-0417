@@ -16,6 +16,7 @@ type Mint = {
   kind: 'scoped' | 'personal'
   scopes: Scope[]
   seconds: number
+  machineHeld: boolean
 }
 
 export const tokenRow = (db: Db, id: string) =>
@@ -43,6 +44,7 @@ export const mintToken = async (auth: AuthService, db: Db, mint: Mint) => {
       scopes: mint.scopes,
       expires_at: new Date(created.expiresAt ?? Date.now() + mint.seconds * 1000),
       api_key_id: created.id,
+      machine_held: mint.machineHeld,
     })
     .run()
 

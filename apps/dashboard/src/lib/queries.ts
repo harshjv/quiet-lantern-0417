@@ -40,6 +40,12 @@ export const meQuery = queryOptions({
   staleTime: 60_000,
 })
 
+export const myRepositoriesQuery = queryOptions({
+  queryKey: ['me', 'repositories'],
+  queryFn: () => unwrap(api.v1.me.repositories.get()),
+  staleTime: 300_000,
+})
+
 export const projectsQuery = queryOptions({
   queryKey: ['projects'],
   queryFn: () =>

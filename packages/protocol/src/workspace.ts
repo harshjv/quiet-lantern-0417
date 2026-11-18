@@ -166,7 +166,26 @@ export const workspaceSetupSteps: Record<WorkspaceSetupStep, string> = {
 
 export const setupFailedMarker = 'setup-failed:'
 
-export const workspaceApiUrl = `http://169.254.1.1:${networkLayout.dispatchPort}`
+export const workspaceRelayHost = `169.254.1.1:${networkLayout.dispatchPort}`
+
+export const workspaceApiUrl = `http://${workspaceRelayHost}`
+
+export const proxiedCredentials: Record<string, { prefix: string; hosts: string[] }> = {
+  ANTHROPIC_API_KEY: {
+    prefix: 'sk-ant-api03-',
+    hosts: ['api.anthropic.com'],
+  },
+  CLAUDE_CODE_OAUTH_TOKEN: {
+    prefix: 'sk-ant-oat01-',
+    hosts: ['api.anthropic.com'],
+  },
+}
+
+export const credentialHosts = [
+  ...new Set(Object.values(proxiedCredentials).flatMap((credential) => credential.hosts)),
+].sort()
+
+export const credentialsCaPath = '/usr/local/share/ca-certificates/stationly-credentials.crt'
 
 export const workspaceRoot = '/workspaces'
 

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import ky, { isHTTPError, type KyInstance, type KyRequest, type NormalizedOptions } from 'ky'
 
 import type { Credentials } from './config.ts'
-import { DryRun, failureOf, isEnvelope, proxyStatuses } from './errors.ts'
+import { credentialsUnavailable, DryRun, failureOf, isEnvelope, proxyStatuses } from './errors.ts'
 import { progress } from './output.ts'
 import { proofFor } from './proof.ts'
 
@@ -125,7 +125,9 @@ export const createHttp = ({
       delay: (attempt) => firstDelayMs * 2 ** (attempt - 1),
       backoffLimit: maxDelayMs,
       shouldRetry: ({ error }) =>
-        isHTTPError(error) && isEnvelope(error.data) ? false : undefined,
+        isHTTPError(error) && isEnvelope(error.data) && !credentialsUnavailable(error.data)
+          ? false
+          : undefined,
     },
     hooks: {
       init: [

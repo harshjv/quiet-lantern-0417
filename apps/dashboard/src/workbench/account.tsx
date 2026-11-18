@@ -10,7 +10,7 @@ import { isInstanceAdmin } from '@/lib/agent-session'
 import { api, failureText, idempotency, unwrap } from '@/lib/api'
 import { authClient, authMessage, sessionQuery, signOut } from '@/lib/auth'
 import { plural } from '@/lib/format'
-import { meQuery } from '@/lib/queries'
+import { meQuery, myRepositoriesQuery } from '@/lib/queries'
 
 import { EnrollPrompt, Passkeys, Totp, useNeedsEnrollment } from './account-sign-in'
 import { PersonalTokens } from './account-tokens'
@@ -139,10 +139,7 @@ function GitHubConnection() {
     queryKey: ['auth', 'accounts'],
     queryFn: async () => (await authClient.listAccounts()).data ?? [],
   })
-  const repositories = useQuery({
-    queryKey: ['me', 'repositories'],
-    queryFn: () => unwrap(api.v1.me.repositories.get()),
-  })
+  const repositories = useQuery(myRepositoriesQuery)
   const failed = useSearch({
     from: '/_app/_outside/account',
     select: (search) => search.github === 'failed',

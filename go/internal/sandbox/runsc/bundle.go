@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/sandbox"
 )
 
@@ -17,6 +18,8 @@ const (
 	scopePrefix  = "sbx"
 	defaultCwd   = "/"
 	rlimitNofile = "RLIMIT_NOFILE"
+
+	credentialsCAFile = "credentials-ca.crt"
 )
 
 var capabilities = []string{
@@ -129,7 +132,7 @@ func Config(s sandbox.Spec) ([]byte, error) {
 		Process:    process(s.Args, env, s.Cwd, 0, 0, nil, false),
 		Root:       ociRoot{Path: s.DiskPath, Readonly: false},
 		Hostname:   s.Hostname,
-		Mounts:     mounts(s.BundleDir),
+		Mounts:     mounts(s.BundleDir, len(s.CredentialsCA) > 0),
 		Linux: ociLinux{
 			Namespaces: []ociNamespace{
 				{Type: "pid"},
@@ -189,8 +192,8 @@ func process(args, env []string, cwd string, uid, gid int, groups []int, termina
 	}
 }
 
-func mounts(bundleDir string) []ociMount {
-	return []ociMount{
+func mounts(bundleDir string, credentialsCA bool) []ociMount {
+	out := []ociMount{
 		{Destination: "/proc", Type: "proc", Source: "proc"},
 		{Destination: "/dev", Type: "tmpfs", Source: "tmpfs", Options: []string{"nosuid", "strictatime", "mode=755", "size=65536k"}},
 		{Destination: "/dev/pts", Type: "devpts", Source: "devpts", Options: []string{"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"}},
@@ -203,6 +206,10 @@ func mounts(bundleDir string) []ociMount {
 		{Destination: "/etc/hosts", Type: "bind", Source: bundleDir + "/hosts", Options: []string{"rbind", "ro"}},
 		{Destination: "/etc/hostname", Type: "bind", Source: bundleDir + "/hostname", Options: []string{"rbind", "ro"}},
 	}
+	if credentialsCA {
+		out = append(out, ociMount{Destination: protocol.CredentialsCAPath, Type: "bind", Source: bundleDir + "/" + credentialsCAFile, Options: []string{"rbind", "ro"}})
+	}
+	return out
 }
 
 func mergeEnv(lists ...[]string) []string {
@@ -223,11 +230,15 @@ func mergeEnv(lists ...[]string) []string {
 }
 
 func HostFiles(s sandbox.Spec) map[string][]byte {
-	return map[string][]byte{
+	out := map[string][]byte{
 		"resolv.conf": []byte("nameserver " + s.Resolver.String() + "\n"),
 		"hosts":       []byte("127.0.0.1 localhost\n169.254.1.2 " + s.Hostname + "\n"),
 		"hostname":    []byte(s.Hostname + "\n"),
 	}
+	if len(s.CredentialsCA) > 0 {
+		out[credentialsCAFile] = s.CredentialsCA
+	}
+	return out
 }
 
 func ScopeUnit(id string) string {

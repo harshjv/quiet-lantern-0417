@@ -15,6 +15,7 @@ import { newId } from '../db/ids.ts'
 import { conversation, machine, run, task, task_inbox } from '../db/schema.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
+import { isProxied } from '../secrets/relay.ts'
 import { runGitHubToken, runKeyEnv } from '../team/keys.ts'
 
 import { closePendingApprovals } from './approvals.ts'
@@ -23,7 +24,8 @@ import {
   deliveredRun,
   homeOf,
   machineUserOf,
-  memberEnv,
+  memberKeyPlaceholders,
+  memberRelayEnv,
   promoteQueued,
   startTaskSetups,
   taskSetupReady,
@@ -486,14 +488,23 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
         }
       : null
     const token = await runGitHubToken(deps.auth, db, deps.keyring, owner.owner.id, shared)
-    const envKeys = await deliveredRun(deps, row, id, [
-      ['HOME', as.home],
-      ...(member ? memberEnv(deps.keyring, member) : []),
-      ...runKeyEnv(db, deps.keyring, owner.owner.id, owner.agent, shared),
-      ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : []),
-    ]).catch(() => null)
+    const refreshed = await deps
+      .refreshMachine(row)
+      .then(() => true)
+      .catch(() => false)
+    const delivered = refreshed
+      ? await deliveredRun(deps.deliver, row, id, [
+          ['HOME', as.home],
+          ...(member ? memberRelayEnv(member) : []),
+          ...(member && shared ? memberKeyPlaceholders(db, member, shared) : []),
+          ...runKeyEnv(db, deps.keyring, owner.owner.id, owner.agent, shared).filter(
+            ([name]) => !isProxied(name),
+          ),
+          ...(token ? ([['GH_TOKEN', token]] as [string, string][]) : []),
+        ]).catch(() => null)
+      : null
 
-    if (!envKeys) {
+    if (!delivered) {
       wantRunner(db, session.id)
       continue
     }
@@ -524,7 +535,7 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
             user: as.user,
             timeout_s: 60,
             stdin: null,
-            env_keys: envKeys,
+            env_keys: delivered.envKeys,
             attach: false,
           },
         })

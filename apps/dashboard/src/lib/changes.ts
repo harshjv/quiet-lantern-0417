@@ -11,6 +11,8 @@ import {
 
 export type Names = ReadonlyMap<string, string>
 
+export type Places = ReadonlyMap<string, string>
+
 export type Field =
   | { key: string; label: string; value: string }
   | { key: string; label: string; before: string; after: string }
@@ -315,9 +317,25 @@ export const describeChange = (
 export const topLevel = (changes: readonly Change[]) =>
   changes.filter((change) => !isRef(change.parent))
 
+export const approvalPreview = (changes: readonly Change[] | undefined, places: Places) =>
+  (changes ?? [])
+    .flatMap((change) => [change.id, change.parent])
+    .map((id) => (id ? places.get(id) : undefined))
+    .find((name) => name !== undefined) ?? null
+
+export const approvalPlace = (
+  approval: Pick<Approval, 'project_id' | 'changes'>,
+  names: Names,
+  places: Places,
+) =>
+  approval.project_id
+    ? `${names.get(approval.project_id) ?? approval.project_id} / ${approvalPreview(approval.changes, places) ?? 'production'}`
+    : 'Platform'
+
 export const approvalHeadline = (
   approval: Pick<Approval, 'title' | 'source' | 'project_id' | 'changes'>,
   names: Names,
+  places: Places,
 ) => {
   const changes = approval.changes ?? []
   const subjects = topLevel(changes)
@@ -332,7 +350,15 @@ export const approvalHeadline = (
     return approval.title
   }
 
-  return [verb, noun, name, 'in', approval.project_id ? 'production' : 'the instance']
+  const preview = approvalPreview(changes, places)
+
+  return [
+    verb,
+    noun,
+    name,
+    'in',
+    approval.project_id ? (preview ? `preview ${preview}` : 'production') : 'the instance',
+  ]
     .filter(Boolean)
     .join(' ')
 }

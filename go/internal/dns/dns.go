@@ -61,6 +61,7 @@ type Resolver struct {
 	budgets   *budgets
 	sandboxes map[netip.Addr]SandboxPolicy
 	onAllow   func(AllowAnswer)
+	onCred    func(AllowAnswer)
 }
 
 type HostStats struct {

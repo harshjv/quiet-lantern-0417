@@ -68,6 +68,7 @@ import {
   workspacePath,
 } from '../../sandboxes/workspace.ts'
 import { ephemeralDelivery } from '../../secrets/deliver.ts'
+import { newKeyPlaceholders, newPlaceholder } from '../../secrets/relay.ts'
 import { keysOf } from '../../secrets/values.ts'
 import { gitIdentityOf } from '../../team/members.ts'
 import { can, requireHuman, requireLevel } from '../access.ts'
@@ -575,6 +576,7 @@ export const machineRoutes = (kit: Kit) => {
           kind: 'scoped',
           scopes,
           seconds: scopedTokenMaxSeconds,
+          machineHeld: true,
         })
       : null
     const workspace =
@@ -587,6 +589,8 @@ export const machineRoutes = (kit: Kit) => {
             path: kind === 'project' ? workspaceRoot : workspacePath(wanted.repository),
             level: scopes[0]!.level,
             token_id: minted.row.id,
+            token_placeholder: newPlaceholder(),
+            credential_placeholders: newKeyPlaceholders(),
             setup_run_id: newId('run'),
             task_branch: taskBranch,
           }

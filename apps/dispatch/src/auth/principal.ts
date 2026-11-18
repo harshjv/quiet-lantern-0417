@@ -24,6 +24,7 @@ export type Principal = {
   user_id: string
   token_kind: 'session' | 'personal' | 'scoped' | 'oauth'
   token_id: string | null
+  machine_held: boolean
   credential: string
   scopes: Scope[]
   expires_at: Date
@@ -219,6 +220,7 @@ const oauthPrincipal = async (
     user_id: row.user_id,
     token_kind: 'oauth',
     token_id: row.id,
+    machine_held: false,
     credential: row.id,
     scopes: payload.sly_scopes,
     expires_at: new Date(payload.exp! * 1000),
@@ -283,6 +285,7 @@ const sessionPrincipal = async (
     user_id: found.user.id,
     token_kind: 'session',
     token_id: null,
+    machine_held: false,
     credential: found.session.id,
     scopes: fullAdmin,
     expires_at: new Date(found.session.expiresAt),
@@ -413,6 +416,7 @@ const identify = async (
       user_id: row.user_id,
       token_kind: row.kind,
       token_id: row.id,
+      machine_held: row.machine_held,
       credential: row.id,
       scopes: row.kind === 'personal' ? fullAdmin : row.scopes,
       expires_at: row.expires_at,
@@ -457,6 +461,7 @@ const identify = async (
         user_id: session.user.id,
         token_kind: 'session',
         token_id: null,
+        machine_held: false,
         credential: session.session.id,
         scopes: fullAdmin,
         expires_at: new Date(session.session.expiresAt),

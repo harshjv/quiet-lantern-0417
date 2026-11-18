@@ -376,6 +376,7 @@ export const createAuthPages = (deps: Deps) => {
       user_id: userId,
       token_kind: 'session',
       token_id: null,
+      machine_held: false,
       credential: `page:${userId}`,
       scopes: userScopes(db, userId),
       expires_at: new Date(),

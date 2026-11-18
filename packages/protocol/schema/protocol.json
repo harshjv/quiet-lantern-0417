@@ -1015,6 +1015,34 @@
         "svm"
       ]
     },
+    "CredentialUse": {
+      "title": "CredentialUse",
+      "type": "object",
+      "required": [
+        "sandbox_id",
+        "placeholder",
+        "used",
+        "misdirected"
+      ],
+      "properties": {
+        "sandbox_id": {
+          "pattern": "^sbx_[0-9A-HJKMNP-TV-Z]{26}$",
+          "type": "string"
+        },
+        "placeholder": {
+          "pattern": "^[A-Za-z0-9_-]*sly_[A-Z2-7]{26}$",
+          "type": "string"
+        },
+        "used": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "misdirected": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      }
+    },
     "CurrentDeployment": {
       "title": "CurrentDeployment",
       "type": "object",
@@ -3571,6 +3599,12 @@
           "additionalProperties": {
             "$ref": "#/$defs/ServiceHeartbeat"
           }
+        },
+        "credentials": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialUse"
+          }
         }
       }
     },
@@ -4544,7 +4578,9 @@
         "public_internet",
         "no_switch_target",
         "sandbox_inbound",
-        "domain_not_allowed"
+        "domain_not_allowed",
+        "credentials_proxy",
+        "credential_quic"
       ]
     },
     "NetworkPeer": {
@@ -6342,7 +6378,8 @@
         "private_range",
         "no_switch_target",
         "sandbox_inbound",
-        "domain_not_allowed"
+        "domain_not_allowed",
+        "credential_quic"
       ]
     },
     "RefusedProtocol": {
@@ -8283,6 +8320,23 @@
         "value": {
           "pattern": "^[A-Za-z0-9_-]*$",
           "type": "string"
+        },
+        "placeholder": {
+          "pattern": "^[A-Za-z0-9_-]*sly_[A-Z2-7]{26}$",
+          "type": "string"
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expires_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
+          "type": "string"
+        },
+        "relay_only": {
+          "type": "boolean"
         }
       }
     },

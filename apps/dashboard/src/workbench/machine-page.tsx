@@ -21,7 +21,7 @@ import { MachineStatusBadge } from '@/components/status'
 import { Badge } from '@/components/ui/badge'
 import type { Machine } from '@/lib/api'
 import { commands, type Scope } from '@/lib/commands'
-import { blank, bytes, repositoryName } from '@/lib/format'
+import { blank, repositoryName, usedOf } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { machineNetwork, machineRuntime } from '@/lib/labels'
 import { placeTo } from '@/lib/links'
@@ -285,13 +285,11 @@ function Overview({ machine }: { machine: Machine }) {
         ['Network', machineNetwork[machine.network]],
         ['Docker inside', machine.docker ? 'Yes' : 'No'],
         ['Outbound traffic', egressText(machine.egress)],
-        ['Disk', `${bytes(machine.disk_used_bytes)} of ${bytes(machine.size.disk_bytes)}`],
+        ['Disk', usedOf(machine.disk_used_bytes, machine.size.disk_bytes)],
         ['CPU', metrics ? `${metrics.cpu_pct.toFixed(1)}%` : 'not running'],
         [
           'Memory',
-          metrics
-            ? `${bytes(metrics.memory_bytes)} of ${bytes(metrics.memory_limit_bytes)}`
-            : 'not running',
+          metrics ? usedOf(metrics.memory_bytes, metrics.memory_limit_bytes) : 'not running',
         ],
         [
           'Address',

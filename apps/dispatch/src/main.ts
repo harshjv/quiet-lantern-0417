@@ -24,11 +24,11 @@ import { startIdleStop } from './sandboxes/idle-stop.ts'
 import { startMachineRetention } from './sandboxes/lifecycle.ts'
 import { readRepository } from './sandboxes/repository-access.ts'
 import { startWorkspaceTokenRenewal } from './sandboxes/workspace.ts'
-import { ephemeralDelivery } from './secrets/deliver.ts'
 import { Keyring, masterKeyFromEnv } from './secrets/keyring.ts'
 import { createStationServer, HostAdminError, type HostAdmin } from './station/server.ts'
 import { startApprovalExpiry } from './tasks/approvals.ts'
 import { startAgentEventSweep } from './tasks/events.ts'
+import { stationMachineDelivery, stationRunDelivery } from './tasks/machine.ts'
 import { startAgentRunners } from './tasks/runner.ts'
 import { startShipAdvance } from './tasks/ship.ts'
 import { ensureFirstAdmins } from './team/members.ts'
@@ -218,19 +218,8 @@ const agentRunners = startAgentRunners(
   db,
   {
     reconcile: (station) => stations.reconcile(station),
-    deliver: async (station, runId, entries) => {
-      await stations.ask(
-        station,
-        'secrets.deliver',
-        ephemeralDelivery(
-          {
-            run_id: runId,
-          },
-          'run',
-          entries,
-        ),
-      )
-    },
+    deliver: stationRunDelivery(stations),
+    refreshMachine: stationMachineDelivery(stations, db, keyring),
     auth,
     keyring,
   },

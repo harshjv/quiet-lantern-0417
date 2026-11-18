@@ -13,6 +13,7 @@ export const networkLayout = {
   firstServiceVirtualHost: 2,
   dispatchHostAddress: '127.0.0.1',
   dispatchPort: 7900,
+  credentialsProxyPort: 7443,
 } as const
 
 export const networkAddress = (pool: string, slash24Index: number, host: number) => {

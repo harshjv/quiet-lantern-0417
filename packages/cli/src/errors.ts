@@ -103,6 +103,9 @@ export const isEnvelope = (value: unknown): value is Envelope =>
 
 export const proxyStatuses = [502, 503, 504]
 
+export const credentialsUnavailable = (value: unknown) =>
+  isEnvelope(value) && value.error.code === 'CREDENTIALS_UNAVAILABLE'
+
 export const isConnectionFailure = (error: unknown) =>
   error instanceof Exit && error.envelope?.error.code === 'CONNECTION_FAILED'
 

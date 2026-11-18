@@ -55,6 +55,7 @@ import {
   path as pathLabel,
   pathResult,
 } from '@/lib/labels'
+import { appTo } from '@/lib/links'
 import {
   layoutNetwork,
   mapHeight,
@@ -217,10 +218,7 @@ function AppNode({ data }: NodeProps<MapNode & { type: 'app'; data: AppData }>) 
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <AppStatusDot status={s.status} />
         <Link
-          to="/apps/$app/{-$tab}"
-          params={{
-            app: s.id,
-          }}
+          {...appTo(s.id)}
           className="min-w-0 flex-1 truncate text-sm font-semibold underline-offset-4 hover:underline"
         >
           {s.name}
@@ -473,10 +471,7 @@ function TableView({ map }: { map: NetworkMap }) {
               <TableRow key={s.id}>
                 <TableCell>
                   <Link
-                    to="/apps/$app/{-$tab}"
-                    params={{
-                      app: s.id,
-                    }}
+                    {...appTo(s.id)}
                     className="inline-flex items-center gap-2 font-medium underline-offset-4 hover:underline"
                   >
                     <Box className="size-4 text-muted-foreground" aria-hidden />

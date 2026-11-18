@@ -19,7 +19,7 @@ import type { Principal } from '../../auth/principal.ts'
 import { fullAdmin, isScopeTarget, scopeWithin, type Scope } from '../../auth/scopes.ts'
 import { dropToken, extendToken, mintToken, tokenRow, type TokenRow } from '../../auth/tokens.ts'
 import { project, token } from '../../db/schema.ts'
-import { requireHuman } from '../access.ts'
+import { requireHuman, requirePersonCredential } from '../access.ts'
 import { audit } from '../context.ts'
 import { fail, invalid, notFound } from '../errors.ts'
 import { project as select } from '../fields.ts'
@@ -169,6 +169,8 @@ export const tokenRoutes = (kit: Kit) => {
       '/tokens',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
+
+        requirePersonCredential(call.principal, 'Creating a token')
         const kind = body.kind ?? 'scoped'
         let scopes: Scope[]
         let seconds: number
@@ -240,6 +242,7 @@ export const tokenRoutes = (kit: Kit) => {
           kind,
           scopes,
           seconds,
+          machineHeld: false,
         })
 
         audit(

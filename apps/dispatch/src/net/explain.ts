@@ -929,7 +929,10 @@ export const explainNetwork = async (
   }
 
   if (target.kind === 'public' || target.kind === 'address') {
-    if (verdict?.verdict === 'accept' && verdict.path === 'public_internet') {
+    if (
+      verdict?.verdict === 'accept' &&
+      (verdict.path === 'public_internet' || verdict.path === 'credentials_proxy')
+    ) {
       hops.push(
         hop('probe_required', 'unknown', {
           reason: 'whether a remote host answers is a live fact',

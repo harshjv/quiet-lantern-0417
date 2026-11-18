@@ -49,6 +49,7 @@ const (
 	ErrorCodeKeyTargetMissing            ErrorCode = "KEY_TARGET_MISSING"
 	ErrorCodeKeyNotGranted               ErrorCode = "KEY_NOT_GRANTED"
 	ErrorCodeKeyCycle                    ErrorCode = "KEY_CYCLE"
+	ErrorCodeCredentialsUnavailable      ErrorCode = "CREDENTIALS_UNAVAILABLE"
 	ErrorCodeSecretsNeedReentry          ErrorCode = "SECRETS_NEED_REENTRY"
 	ErrorCodeSealedValueUnreadable       ErrorCode = "SEALED_VALUE_UNREADABLE"
 	ErrorCodeSecretVersionInUse          ErrorCode = "SECRET_VERSION_IN_USE"
@@ -159,6 +160,7 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeKeyTargetMissing:            {HTTPStatus: 422, Area: "secret", CloseCode: 0},
 	ErrorCodeKeyNotGranted:               {HTTPStatus: 403, Area: "secret", CloseCode: 0},
 	ErrorCodeKeyCycle:                    {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeCredentialsUnavailable:      {HTTPStatus: 503, Area: "secret", CloseCode: 0},
 	ErrorCodeSecretsNeedReentry:          {HTTPStatus: 422, Area: "secret", CloseCode: 0},
 	ErrorCodeSealedValueUnreadable:       {HTTPStatus: 403, Area: "secret", CloseCode: 0},
 	ErrorCodeSecretVersionInUse:          {HTTPStatus: 409, Area: "secret", CloseCode: 0},

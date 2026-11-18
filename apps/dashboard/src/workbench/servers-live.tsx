@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Server, Settings2 } from 'lucide-react'
-import { useState } from 'react'
 
 import { Rows } from '@/components/page'
 import { Failure } from '@/components/panel'
@@ -8,7 +8,7 @@ import { ReleaseSection } from '@/components/release-section'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { isInstanceAdmin } from '@/lib/agent-session'
-import { byName, bytes, shortAgo } from '@/lib/format'
+import { byName, bytes, shortAgo, usedOf } from '@/lib/format'
 import { meQuery } from '@/lib/queries'
 
 import { ItemList, ItemRow, Notice, Page, Section, StatusPill, type Fact } from './parts'
@@ -61,16 +61,14 @@ function Usage({ server }: { server: ServerView }) {
       <Meter
         label="Machine memory"
         value={
-          memory.limit === null
-            ? `${bytes(memory.used)} used`
-            : `${bytes(memory.used)} of ${bytes(memory.limit)}`
+          memory.limit === null ? `${bytes(memory.used)} used` : usedOf(memory.used, memory.limit)
         }
         used={memory.used}
         total={memory.limit ?? resources.memory_bytes}
       />
       <Meter
         label="Disk"
-        value={`${bytes(diskUsed)} of ${bytes(resources.disk_bytes)}`}
+        value={usedOf(diskUsed, resources.disk_bytes)}
         used={diskUsed}
         total={resources.disk_bytes}
       />
@@ -148,7 +146,20 @@ function ServerRow({ server, onOpen }: { server: ServerView; onOpen: () => void 
 
 function ServerList() {
   const { data, error, refetch } = useQuery(serversQuery)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const openId = useSearch({
+    from: '/_app/_outside/servers',
+    select: (search) => search.server,
+  })
+  const navigate = useNavigate()
+  const show = (server: string | undefined) =>
+    void navigate({
+      to: '/servers',
+      search: (prev) => ({
+        ...prev,
+        server,
+      }),
+      replace: server === undefined,
+    })
   const servers = [...(data?.items ?? [])].sort(byName)
   const open = servers.find((server) => server.id === openId)
 
@@ -169,6 +180,18 @@ function ServerList() {
           />
         ) : !data ? (
           <Rows count={2} />
+        ) : openId && !open ? (
+          <Notice
+            tone="warning"
+            title="That server isn’t here"
+            action={
+              <Button size="sm" variant="outline" onClick={() => show(undefined)}>
+                Show all servers
+              </Button>
+            }
+          >
+            No server has the id {openId}. It may have been removed.
+          </Notice>
         ) : servers.length === 0 ? (
           <Notice tone="info" title="No servers yet" action={<AddServer />}>
             Add a server to run apps and machines on it.
@@ -176,12 +199,12 @@ function ServerList() {
         ) : (
           <ItemList>
             {servers.map((server) => (
-              <ServerRow key={server.id} server={server} onOpen={() => setOpenId(server.id)} />
+              <ServerRow key={server.id} server={server} onOpen={() => show(server.id)} />
             ))}
           </ItemList>
         )}
       </Section>
-      {open && <ServerSheet server={open} onOpenChange={(next) => !next && setOpenId(null)} />}
+      {open && <ServerSheet server={open} onOpenChange={(next) => !next && show(undefined)} />}
     </>
   )
 }

@@ -39,6 +39,7 @@ import { commands } from '@/lib/commands'
 import { bytes } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { machineNetwork } from '@/lib/labels'
+import { machineTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
 import { isProduction, previewQuery, scopeOf, type Place, type PlaceView } from '@/lib/place'
 import {
@@ -176,12 +177,7 @@ export function NewMachine({
       onOpenChange(false)
 
       if (!result.waiting) {
-        void navigate({
-          to: '/machines/$machine/{-$tab}',
-          params: {
-            machine: result.body.id,
-          },
-        })
+        void navigate(machineTo(result.body.id))
       }
     },
   })
@@ -415,10 +411,7 @@ function MachineTable({ place, onCreate }: { place: PlaceView; onCreate: () => v
           <TableRow key={machine.id} className={cn('relative', fresh.has(machine.id) && highlight)}>
             <TableCell>
               <Link
-                to="/machines/$machine/{-$tab}"
-                params={{
-                  machine: machine.id,
-                }}
+                {...machineTo(machine.id)}
                 className="flex items-center gap-2 font-medium after:absolute after:inset-0 focus-visible:outline-none"
                 data-testid="machine-link"
               >
