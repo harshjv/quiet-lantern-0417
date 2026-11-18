@@ -194,6 +194,7 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
       accountLinking: {
         enabled: true,
         allowDifferentEmails: true,
+        trustedProviders: options.github ? ['github'] : [],
         disableImplicitLinking: true,
       },
     },

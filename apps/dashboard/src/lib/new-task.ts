@@ -31,3 +31,10 @@ export const needsGithubToken = (failure: unknown) =>
 
 export const githubTokenRefused = (failure: unknown) =>
   (failure as Failing | null)?.code === 'REPO_ACCESS_DENIED'
+
+export const appRepository = (text: string) => {
+  const url = repositoryUrl(text)
+  const found = url?.match(/^https:\/\/github\.com\/([A-Za-z0-9-]+\/[A-Za-z0-9._-]+)$/)
+
+  return found ? `github.com/${found[1]!.toLowerCase()}` : null
+}

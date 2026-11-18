@@ -19,8 +19,6 @@ import {
   Plus,
   Server,
   ShieldBan,
-  ShieldCheck,
-  Undo2,
   Waypoints,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
@@ -35,6 +33,7 @@ import { AppStatusDot } from '@/components/status'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { Term } from '@/components/term'
 import { Time } from '@/components/time'
+import { TrafficChart, verdictIcon } from '@/components/traffic-chart'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -47,14 +46,7 @@ import type { NetworkMap } from '@/lib/api'
 import { commands, type Scope } from '@/lib/commands'
 import { findingPlan } from '@/lib/fixes'
 import { ago, plural } from '@/lib/format'
-import {
-  appKind,
-  explanationVerdict,
-  finding,
-  pathFrom,
-  path as pathLabel,
-  pathResult,
-} from '@/lib/labels'
+import { appKind, explanationVerdict, finding, path as pathLabel, pathResult } from '@/lib/labels'
 import { appTo } from '@/lib/links'
 import {
   layoutNetwork,
@@ -409,12 +401,6 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
   )
 }
 
-const resultIcon = {
-  allowed: ShieldCheck,
-  blocked: ShieldBan,
-  rejected: Undo2,
-} as const
-
 function InboundSummary({ map }: { map: NetworkMap }) {
   const station = map.subnets[0]?.server.name
 
@@ -598,7 +584,7 @@ function TrafficRules({ map }: { map: NetworkMap }) {
         </p>
         <ul className="flex flex-wrap gap-x-5 gap-y-1 pt-1 text-xs text-muted-foreground">
           {(['allowed', 'blocked', 'rejected'] as const).map((verdict) => {
-            const Icon = resultIcon[verdict]
+            const Icon = verdictIcon[verdict]
 
             return (
               <li key={verdict} className="inline-flex items-center gap-1.5">
@@ -610,47 +596,10 @@ function TrafficRules({ map }: { map: NetworkMap }) {
           })}
         </ul>
       </div>
-      <TableFrame>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="hidden md:table-cell">From</TableHead>
-            <TableHead>To</TableHead>
-            <TableHead>Result</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {map.paths.map((p) => {
-            const result = pathResult[p.verdict]
-            const Icon = resultIcon[p.verdict]
-
-            return (
-              <TableRow key={p.path}>
-                <TableCell className="hidden text-muted-foreground md:table-cell">
-                  {pathFrom[p.from]}
-                </TableCell>
-                <TableCell className="whitespace-normal sm:min-w-56">
-                  <span className="block font-medium" title={p.path}>
-                    {pathLabel[p.path]}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">{p.to}</span>
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1.5 text-sm font-medium',
-                      toneText[result.tone],
-                    )}
-                    title={result.hint}
-                  >
-                    <Icon className="size-4" aria-hidden />
-                    {result.label}
-                  </span>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </TableFrame>
+      <TrafficChart
+        paths={map.paths}
+        label={`Traffic rules for ${map.preview?.name ?? 'production'}`}
+      />
     </section>
   )
 }

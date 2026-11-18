@@ -18,18 +18,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { KeyKindSelect, KeyNameInput, KeyNotes, KeyValueInput } from '@/components/variable-fields'
 import { api, idempotency, send } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { appKind } from '@/lib/labels'
 import { appTo } from '@/lib/links'
 import { useApiMutation } from '@/lib/mutation'
+import { appRepository } from '@/lib/new-task'
 import { placeName, previewQuery, scopeOf, type PlaceView } from '@/lib/place'
-import { onlineStationsQuery, seedApp } from '@/lib/queries'
+import { myRepositoriesQuery, onlineStationsQuery, seedApp } from '@/lib/queries'
 import { useRows } from '@/lib/use-rows'
 import { toKeyInput, type KeyEntry } from '@/lib/variables'
 
 type Kind = 'web' | 'worker'
+
+type SourceChoice = 'image' | 'repository'
+
+type Builder = 'dockerfile' | 'railpack'
 
 type PortEntry = { port: string; protocol: 'http' | 'tcp' }
 
@@ -49,7 +55,22 @@ export function NewApp({
   const stations = useQuery(onlineStationsQuery)
   const [name, setName] = useState(preset?.name ?? '')
   const [kind, setKind] = useState<Kind>('web')
+  const [choice, setChoice] = useState<SourceChoice>('image')
   const [image, setImage] = useState(preset?.image ?? '')
+  const [repository, setRepository] = useState('')
+  const [branch, setBranch] = useState('')
+  const [builder, setBuilder] = useState<Builder>('dockerfile')
+  const [folder, setFolder] = useState('')
+  const [dockerfile, setDockerfile] = useState('')
+  const reachable = useQuery({
+    ...myRepositoriesQuery,
+    enabled: open && choice === 'repository',
+  })
+  const repo = appRepository(repository)
+  const picked = (reachable.data?.items ?? []).find(
+    (r) => `github.com/${r.full_name.toLowerCase()}` === repo,
+  )
+  const tracked = branch.trim() || picked?.default_branch || ''
   const ports = useRows<PortEntry>(
     [
       preset?.port ?? {
@@ -84,10 +105,26 @@ export function NewApp({
             {
               name,
               kind,
-              source: {
-                type: 'image',
-                ref: image.trim(),
-              },
+              source:
+                choice === 'image'
+                  ? {
+                      type: 'image',
+                      ref: image.trim(),
+                    }
+                  : builder === 'dockerfile'
+                    ? {
+                        type: 'dockerfile',
+                        repo: repo!,
+                        branch: tracked,
+                        path: folder.trim() || undefined,
+                        dockerfile: dockerfile.trim() || undefined,
+                      }
+                    : {
+                        type: 'railpack',
+                        repo: repo!,
+                        branch: tracked,
+                        path: folder.trim() || undefined,
+                      },
               ports:
                 kind === 'web'
                   ? ports.rows.map((p) => ({
@@ -137,15 +174,17 @@ export function NewApp({
       title={`New app in ${placeName(place)}`}
       description={
         <>
-          Runs a container image. For a repository or a template, use sly or a{' '}
-          <Term name="manifest" />.
+          Runs a container image, or builds a GitHub repository and redeploys on every push. For a
+          template, use sly or a <Term name="manifest" />.
         </>
       }
       error={mutation.errorText}
-      also={<AlsoWith cli={commands.createApp(scopeOf(place))} tool="create_app" />}
+      also={<AlsoWith cli={commands.createApp(scopeOf(place), choice)} tool="create_app" />}
       submitLabel="Create app"
       pending={mutation.isPending}
-      submitDisabled={choices.length > 1 && !station}
+      submitDisabled={
+        (choices.length > 1 && !station) || (choice === 'repository' && (!repo || !tracked))
+      }
       onSubmit={() => mutation.mutate()}
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_9rem]">
@@ -170,22 +209,58 @@ export function NewApp({
           </Select>
         </Field>
       </div>
-      <Field
-        id="app-image"
-        label="Image"
-        hint="Use a tag like nginx:1.27 or a digest. Stationly pins the tag to a digest when you create the app. Deploy picks up a newer image for the tag; Redeploy keeps the pinned one."
-      >
-        <Input
+      <FieldSet legend="Source">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={0}
+          className="self-start"
+          value={choice}
+          onValueChange={(v) => v && setChoice(v as SourceChoice)}
+        >
+          <ToggleGroupItem value="image" className="min-w-28">
+            Image
+          </ToggleGroupItem>
+          <ToggleGroupItem value="repository" className="min-w-28">
+            GitHub repository
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </FieldSet>
+
+      {choice === 'image' ? (
+        <Field
           id="app-image"
-          required
-          value={image}
-          onChange={(e) => setImage(e.target.value)}
-          className="font-mono"
-          placeholder="traefik/whoami@sha256:…"
-          spellCheck={false}
-          aria-describedby={hintId('app-image')}
+          label="Image"
+          hint="Use a tag like nginx:1.27 or a digest. Stationly pins the tag to a digest when you create the app. Deploy picks up a newer image for the tag; Redeploy keeps the pinned one."
+        >
+          <Input
+            id="app-image"
+            required
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
+            className="font-mono"
+            placeholder="traefik/whoami@sha256:…"
+            spellCheck={false}
+            aria-describedby={hintId('app-image')}
+          />
+        </Field>
+      ) : (
+        <RepositoryFields
+          items={reachable.data?.items ?? []}
+          defaultBranch={picked?.default_branch}
+          repository={repository}
+          onRepository={setRepository}
+          invalid={repository.trim() !== '' && !repo}
+          branch={branch}
+          onBranch={setBranch}
+          builder={builder}
+          onBuilder={setBuilder}
+          folder={folder}
+          onFolder={setFolder}
+          dockerfile={dockerfile}
+          onDockerfile={setDockerfile}
         />
-      </Field>
+      )}
 
       {kind === 'web' && (
         <FieldSet
@@ -340,5 +415,129 @@ export function NewApp({
         label="Deploy when created"
       />
     </FormDialog>
+  )
+}
+
+function RepositoryFields({
+  items,
+  defaultBranch,
+  repository,
+  onRepository,
+  invalid,
+  branch,
+  onBranch,
+  builder,
+  onBuilder,
+  folder,
+  onFolder,
+  dockerfile,
+  onDockerfile,
+}: {
+  items: { full_name: string; default_branch: string }[]
+  defaultBranch: string | undefined
+  repository: string
+  onRepository: (value: string) => void
+  invalid: boolean
+  branch: string
+  onBranch: (value: string) => void
+  builder: Builder
+  onBuilder: (value: Builder) => void
+  folder: string
+  onFolder: (value: string) => void
+  dockerfile: string
+  onDockerfile: (value: string) => void
+}) {
+  return (
+    <>
+      <Field
+        id="app-repository"
+        label="Repository"
+        hint="owner/name or a github.com URL. Stationly builds it through the GitHub App when the App is installed on it, and reads a public repository without one."
+      >
+        <Input
+          id="app-repository"
+          required
+          list="app-repositories"
+          value={repository}
+          onChange={(e) => onRepository(e.target.value)}
+          className="font-mono"
+          placeholder="owner/name"
+          spellCheck={false}
+          aria-invalid={invalid}
+          aria-describedby={hintId('app-repository')}
+        />
+        <datalist id="app-repositories">
+          {items.map((r) => (
+            <option key={r.full_name} value={r.full_name}>
+              {r.default_branch}
+            </option>
+          ))}
+        </datalist>
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-[1fr_11rem]">
+        <Field
+          id="app-branch"
+          label="Branch"
+          hint={
+            defaultBranch
+              ? `Every push to it deploys. ${defaultBranch} when empty.`
+              : 'Every push to it deploys.'
+          }
+        >
+          <Input
+            id="app-branch"
+            required={!defaultBranch}
+            value={branch}
+            onChange={(e) => onBranch(e.target.value)}
+            className="font-mono"
+            placeholder={defaultBranch ?? 'main'}
+            spellCheck={false}
+            aria-describedby={hintId('app-branch')}
+          />
+        </Field>
+        <Field id="app-builder" label="Build with">
+          <Select value={builder} onValueChange={(v) => onBuilder(v as Builder)}>
+            <SelectTrigger id="app-builder" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="dockerfile">Its Dockerfile</SelectItem>
+              <SelectItem value="railpack">Railpack</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field
+          id="app-folder"
+          label="Folder (optional)"
+          hint="Where the build starts inside the repository."
+        >
+          <Input
+            id="app-folder"
+            value={folder}
+            onChange={(e) => onFolder(e.target.value)}
+            className="font-mono"
+            placeholder="/"
+            pattern="/.*"
+            spellCheck={false}
+            aria-describedby={hintId('app-folder')}
+          />
+        </Field>
+        {builder === 'dockerfile' && (
+          <Field id="app-dockerfile" label="Dockerfile (optional)" hint="Relative to the folder.">
+            <Input
+              id="app-dockerfile"
+              value={dockerfile}
+              onChange={(e) => onDockerfile(e.target.value)}
+              className="font-mono"
+              placeholder="Dockerfile"
+              spellCheck={false}
+              aria-describedby={hintId('app-dockerfile')}
+            />
+          </Field>
+        )}
+      </div>
+    </>
   )
 }

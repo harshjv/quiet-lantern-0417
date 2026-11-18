@@ -227,6 +227,27 @@
   stroke-dasharray: 6 4;
 }
 
+.react-flow.network-canvas .traffic-edge-allowed .react-flow__edge-path {
+  stroke: var(--color-emerald-500);
+  stroke-width: 1.5;
+}
+
+.react-flow.network-canvas .traffic-edge-rejected .react-flow__edge-path {
+  stroke: var(--color-amber-500);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 4;
+}
+
+.react-flow.network-canvas .traffic-edge-blocked .react-flow__edge-path {
+  stroke: var(--color-red-500);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.react-flow.network-canvas .traffic-edge-allowed {
+  color: var(--color-emerald-500);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .react-flow.network-canvas .react-flow__edge.animated path {
     animation: none;

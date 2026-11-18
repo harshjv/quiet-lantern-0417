@@ -61,7 +61,7 @@ export const commands = {
   listApps: (scope: Scope) => sly(...scoped(scope), 'apps', 'list'),
   createProject: () => sly('projects', 'create', '<name>'),
   createPreview: (project: string) => sly('--project', project, 'previews', 'create', '<name>'),
-  createApp: (scope: Scope) =>
+  createApp: (scope: Scope, source: 'image' | 'repository' = 'image') =>
     sly(
       ...scoped(scope),
       'apps',
@@ -70,7 +70,9 @@ export const commands = {
       '--kind',
       'web',
       '--source',
-      'type=image,ref=<image>',
+      source === 'image'
+        ? 'type=image,ref=<image>'
+        : 'type=dockerfile,repo=github.com/<owner>/<name>,branch=<branch>',
     ),
   deploy: (scope: AppScope) => sly(...appScoped(scope), 'deploy', '--wait'),
   startApp: (scope: AppScope) => sly(...appScoped(scope), 'apps', 'start'),
