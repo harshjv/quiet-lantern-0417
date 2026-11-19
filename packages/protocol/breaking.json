@@ -102,5 +102,117 @@
   {
     "at": "errors.json#/warnings/SANDBOX_SNAPSHOT_CRASH_CONSISTENT",
     "reason": "Layer 4 renames sandbox to machine in the API; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/CERTIFICATE_ISSUANCE_FAILED",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/CERTIFICATE_RATE_LIMITED",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/PORT_RANGE_EXHAUSTED",
+    "reason": "30-ingress.md removes TCP exposures; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/DesiredGateway/properties/acme",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/DesiredStation/properties/inbound",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/DesiredStation/properties/public_address",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/DiagnosisPhase",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Generation/properties/port_allocations",
+    "reason": "30-ingress.md removes TCP exposures; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/NetworkCheck/properties/host_port",
+    "reason": "30-ingress.md removes TCP exposures; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Observed/properties/port_allocations",
+    "reason": "30-ingress.md removes TCP exposures; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/ObservedRoute/properties/certificate",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/ObservedUpdateBody/properties/port_allocations",
+    "reason": "30-ingress.md removes TCP exposures; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketDetectedAddress",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupParams/properties/acme_email",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupParams/properties/hostnames",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupParams/properties/public_address",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupParams/properties/tunnel_token",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupResult/properties/hostnames/anyOf/1/properties/api",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupResult/properties/hostnames/anyOf/1/properties/dashboard",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupResult/properties/hostnames/anyOf/1/properties/status",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupResult/properties/hostnames/anyOf/1",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupResult/properties/public_address",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Route/properties/ingress",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Route/properties/redirect_http",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Route/properties/tls",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/StationSettings/properties/acme.email",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/StationSettings/properties/exposure.port_range",
+    "reason": "30-ingress.md removes TCP exposures; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/StationSettings/properties/gateway.rate_per_source",
+    "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
   }
 ]
