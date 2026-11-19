@@ -366,6 +366,9 @@ type SystemRoute = {
   resolver: 'letsencrypt' | 'letsencrypt-shortlived'
 }
 
+const ingressModeOf = (read: SettingsSnapshot) =>
+  read('ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
+
 const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): SystemRoute[] => {
   const dashboard = read('hostnames.dashboard')
   const api = read('hostnames.api')
@@ -385,7 +388,7 @@ const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): Sys
     ]
   }
 
-  return publicAddress
+  return publicAddress && ingressModeOf(read) === 'direct'
     ? [
         {
           id: systemRouteIds.address,
@@ -916,10 +919,25 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       }
     : null
   const systemHosts = new Map<string, string>()
+  const ingressMode = ingressModeOf(read)
 
   if (dispatchTarget) {
     for (const r of systemRoutes(read, st.public_address)) {
       const route = guarded('route', r.id, previous?.gateway.routes[r.id], () => {
+        if (ingressMode === 'tunnel') {
+          const built = hashed({
+            hostname: r.hostname,
+            ingress: 'tunnel' as const,
+            target: dispatchTarget,
+            tls: null,
+            redirect_http: false,
+          })
+
+          conform(Route, built, keyOf('route', r.id))
+
+          return built
+        }
+
         if (!st.public_address) {
           throw new GenerationError(
             `${keyOf('route', r.id)}: ${r.hostname} is a direct route, which needs the server's public_address; set it with sly servers update ${st.name} --public-address <ipv4>`,
@@ -1086,7 +1104,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     ca_server: read('acme.ca_server'),
   }
   const hasDirect = Object.values(routes).some((r) => r.ingress === 'direct')
-  const ingressMode = read('ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
 
   return {
     excluded,

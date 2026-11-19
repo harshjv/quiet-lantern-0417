@@ -44,6 +44,7 @@ export type SetupInput = {
   hostnames?: { dashboard: string; api: string }
   'ipam.pool'?: string
   public_address?: string
+  ingress?: 'direct' | 'tunnel'
   sandbox_runtime?: (typeof machineRuntimeValues)[number]
   release?: InstalledRelease | null
 }
@@ -91,12 +92,54 @@ export const setupInstance = async (
   }
 
   const settings: Partial<Record<SettingKey, unknown>> = {}
+  const tunnel = input.ingress === 'tunnel'
+
+  if (tunnel) {
+    if (!input.hostnames) {
+      throw new SetupError(
+        'VALIDATION_FAILED',
+        'Cloudflare Tunnel setup needs the dashboard and API hostnames.',
+      )
+    }
+
+    for (const key of ['public_address', 'acme_email'] as const) {
+      if (input[key] !== undefined) {
+        throw new SetupError(
+          'VALIDATION_FAILED',
+          `${key} does not apply to Cloudflare Tunnel setup; leave it out.`,
+        )
+      }
+    }
+  }
 
   if (input.hostnames) {
     const check = checkHostnamePair(input.hostnames.dashboard, input.hostnames.api)
 
     if (!check.ok) {
       throw new SetupError('HOSTNAME_DOMAIN_MISMATCH', check.reason)
+    }
+
+    if (tunnel) {
+      for (const host of [input.hostnames.dashboard, input.hostnames.api]) {
+        if (host === check.commonParent) {
+          throw new SetupError(
+            'VALIDATION_FAILED',
+            `${host} is the zone itself; use a name one label under it, such as dash.${host} and api.${host}.`,
+          )
+        }
+
+        const label = host.slice(0, -(check.commonParent.length + 1))
+
+        if (label.includes('.')) {
+          throw new SetupError(
+            'VALIDATION_FAILED',
+            `${host} is more than one label under ${check.commonParent}, and the free Cloudflare certificate covers only one; use a flat name such as ${label.replaceAll('.', '-')}.${check.commonParent}.`,
+          )
+        }
+      }
+
+      settings['ingress.mode'] = 'tunnel'
+      settings['domains.zone'] = check.commonParent
     }
 
     settings['hostnames.dashboard'] = input.hostnames.dashboard
@@ -269,6 +312,7 @@ export const setupInstance = async (
         email: input.email.toLowerCase(),
         settings: Object.keys(settings),
         public_address: input.public_address ?? null,
+        ingress: input.ingress ?? 'direct',
         sandbox_runtime: input.sandbox_runtime ?? null,
         release: manifest?.release ?? null,
         components: Object.keys(manifest?.components ?? {}),
@@ -312,11 +356,15 @@ export const setupInstance = async (
         }
       : null,
     reach: [
-      ...(input.hostnames
+      ...(input.hostnames && tunnel
         ? [
-            `https://${input.hostnames.dashboard} once its DNS resolves and its certificate is issued`,
+            `https://${input.hostnames.dashboard} through the Cloudflare Tunnel once its *.${String(settings['domains.zone'])} route points at http://stationly-gateway`,
           ]
-        : []),
+        : input.hostnames
+          ? [
+              `https://${input.hostnames.dashboard} once its DNS resolves and its certificate is issued`,
+            ]
+          : []),
       `ssh -L ${networkLayout.dispatchPort}:${dispatchAddress} <server>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`,
     ],
   }

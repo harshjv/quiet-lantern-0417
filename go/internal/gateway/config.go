@@ -19,6 +19,11 @@ const (
 	ProbeRouter   = "gateway-probe"
 	CAFileName    = "acme-ca.pem"
 
+	TunnelProbeRouter   = "stationly-probe"
+	TunnelProbePath     = "/.well-known/stationly-probe"
+	TunnelProbeHeader   = "X-Stationly-Gateway"
+	tunnelProbePriority = 1 << 30
+
 	ResolverClassic    = "letsencrypt"
 	ResolverShortlived = "letsencrypt-shortlived"
 	ShortlivedHours    = 160
@@ -246,10 +251,23 @@ func RouteConfig(r Route) ([]byte, error) {
 	return yaml.Marshal(doc)
 }
 
-func ProbeConfig(bridgeGateway netip.Addr) ([]byte, error) {
-	return yaml.Marshal(object{kv("http", object{kv("routers", object{kv(ProbeRouter, object{
-		kv("entryPoints", []string{"web"}),
-		kv("rule", hostRule(ProbeHost)+" && ClientIP(`"+netip.PrefixFrom(bridgeGateway, 32).String()+"`)"),
-		kv("service", "ping@internal"),
-	})})})})
+func ProbeConfig(bridgeGateway, cloudflared netip.Addr, probeID string) ([]byte, error) {
+	marker := TunnelProbeRouter + "-id"
+	return yaml.Marshal(object{kv("http", object{
+		kv("routers", object{
+			kv(ProbeRouter, object{
+				kv("entryPoints", []string{"web"}),
+				kv("rule", hostRule(ProbeHost)+" && ClientIP(`"+netip.PrefixFrom(bridgeGateway, 32).String()+"`)"),
+				kv("service", "ping@internal"),
+			}),
+			kv(TunnelProbeRouter, object{
+				kv("entryPoints", []string{"web"}),
+				kv("rule", "PathPrefix(`"+TunnelProbePath+"`) && ClientIP(`"+netip.PrefixFrom(cloudflared, 32).String()+"`)"),
+				kv("priority", tunnelProbePriority),
+				kv("middlewares", []string{marker}),
+				kv("service", "noop@internal"),
+			}),
+		}),
+		kv("middlewares", object{kv(marker, object{kv("headers", object{kv("customResponseHeaders", object{kv(TunnelProbeHeader, probeID)})})})}),
+	})})
 }

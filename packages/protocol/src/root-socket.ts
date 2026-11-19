@@ -80,6 +80,7 @@ const SetupParams = Type.Object(
       }),
     ),
     public_address: Type.Optional(Type.String()),
+    tunnel_token: Type.Optional(Type.String()),
     sandbox_runtime: Type.Optional(MachineRuntime),
     litestream: Type.Optional(
       Type.Object({
@@ -208,6 +209,24 @@ const LogsParams = Type.Object(
   },
 )
 
+const TunnelTokenParams = Type.Object(
+  {
+    token: Type.String(),
+  },
+  {
+    title: 'RootSocketTunnelTokenParams',
+  },
+)
+
+const TunnelTokenResult = Type.Object(
+  {
+    restarted: Type.Boolean(),
+  },
+  {
+    title: 'RootSocketTunnelTokenResult',
+  },
+)
+
 const op = <Params extends TSchema, Result extends TSchema>(params: Params, result: Result) => ({
   params,
   result,
@@ -225,6 +244,7 @@ export const rootSocketOps = {
   'public_address.detect': op(NoParams, DetectedAddress),
   'host.probe': op(NoParams, HostProbeResult),
   'admin.recovery_key': op(NoParams, RecoveryKey),
+  'tunnel.set_token': op(TunnelTokenParams, TunnelTokenResult),
   doctor: op(NoParams, messages['doctor.report'].body),
 }
 

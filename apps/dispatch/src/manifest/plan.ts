@@ -16,7 +16,12 @@ import { can } from '../api/access.ts'
 import { ChangeSet, isTransient, leafDiff, placeName, type Change } from '../api/changes.ts'
 import { configDeployTrigger } from '../api/deployments.ts'
 import { ApiError, fail } from '../api/errors.ts'
-import { generatedHostname, hostPortPicker, requireGatewayPin } from '../api/exposure.ts'
+import {
+  generatedHostname,
+  hostPortPicker,
+  ingressMode,
+  requireGatewayPin,
+} from '../api/exposure.ts'
 import type { AppRow, KeyRow, ProjectRow, TargetRow } from '../api/lookup.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Level, Target } from '../auth/scopes.ts'
@@ -463,6 +468,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
   const warnings: Warning[] = []
   const unmanaged: Unmanaged[] = []
   const set = new ChangeSet()
+  const mode = ingressMode(db)
 
   if (doc.version !== 1) {
     issues.push({
@@ -824,11 +830,20 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             })
           }
 
-          if (d.ingress === 'tunnel') {
+          if (mode === 'direct' && d.ingress === 'tunnel') {
             issues.push({
               path: `${path}/ingress`,
               code: 'PHASE_UNAVAILABLE',
               message: `tunnel ingress ${phase1b}.`,
+            })
+          }
+
+          if (mode === 'tunnel' && d.ingress === 'direct') {
+            issues.push({
+              path: `${path}/ingress`,
+              code: 'INGRESS_MODE',
+              message:
+                'direct ingress needs a public address; this install is reached through Cloudflare Tunnel.',
             })
           }
 
@@ -837,7 +852,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             hostname: d.hostname ?? null,
             generated: d.generated === true,
             port,
-            ingress: d.ingress ?? ('direct' as const),
+            ingress: d.ingress ?? mode,
             path,
           }
         })

@@ -15,6 +15,7 @@ import (
 
 	"github.com/moby/moby/api/types/mount"
 
+	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
 	"github.com/harshjv/stationly/go/internal/verify"
@@ -305,6 +306,9 @@ func checkGeneration(g *protocol.Generation, applied *protocol.Generation) *Reje
 			return invalid("virtual_ip %s is held by %s and by system target %s; a virtual IP is unique across the instance", st.VirtualIp, other, name)
 		}
 		vipHolders[st.VirtualIp] = "system target " + name
+	}
+	if gatewayVIP := cidr.Offset(virtualPrefix, protocol.NetworkGatewayVirtualHost).String(); vipHolders[gatewayVIP] != "" {
+		return invalid("virtual_ip %s is held by %s but is the Gateway virtual IP, which cloudflared reaches the Gateway on", gatewayVIP, vipHolders[gatewayVIP])
 	}
 	for svcID, svc := range g.Services {
 		if _, ok := g.Environments[svc.EnvironmentId]; !ok {

@@ -51,7 +51,11 @@ const reasonOf = (task: LiveTask) => {
     case 'waiting':
       return task.attention ? attentionText[task.attention.kind] : 'Waiting on you'
     case 'finished':
-      return 'Finished, waiting for your reply'
+      return task.ship?.status === 'approved'
+        ? 'Shipped'
+        : task.ship?.status === 'waiting'
+          ? 'Shipping, waiting for approval'
+          : 'Finished, waiting for your reply'
     case 'failed':
       return task.failure ? 'Setup failed' : 'Turn failed'
     case 'stopped':

@@ -14,7 +14,8 @@ const (
 	NetworkRegistryPort            = 5000
 	NetworkDispatchHost            = 2
 	NetworkDispatchVirtualHost     = 1
-	NetworkFirstServiceVirtualHost = 2
+	NetworkGatewayVirtualHost      = 2
+	NetworkFirstServiceVirtualHost = 3
 	NetworkDispatchHostAddress     = "127.0.0.1"
 	NetworkDispatchPort            = 7900
 	NetworkCredentialsProxyPort    = 7443

@@ -26,6 +26,11 @@
       "source": "docker.io/library/traefik",
       "digest": "sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a"
     },
+    "cloudflared": {
+      "version": "2026.11.1",
+      "source": "docker.io/cloudflare/cloudflared",
+      "digest": "sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d"
+    },
     "buildkit": {
       "version": "0.34.1",
       "source": "docker.io/moby/buildkit",

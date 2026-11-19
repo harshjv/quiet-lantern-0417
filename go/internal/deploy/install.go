@@ -31,6 +31,7 @@ import (
 var ComponentSources = map[string]string{
 	"dispatch":          protocol.DispatchRepository,
 	"gateway":           protocol.GatewaySource,
+	"cloudflared":       protocol.CloudflaredSource,
 	"buildkit":          protocol.BuildkitSource,
 	"depot":             protocol.DepotSource,
 	"coupler_image":     protocol.CouplerImageSource,

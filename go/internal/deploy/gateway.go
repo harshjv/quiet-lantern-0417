@@ -93,6 +93,7 @@ type gatewayRuntime struct {
 	certBusy    bool
 	containerID string
 	hostFailure *protocol.ErrorBody
+	tunnel      tunnelRuntime
 }
 
 func (s *Station) gatewayDir() string {
@@ -158,6 +159,9 @@ func (s *Station) reconcileGateway(ctx context.Context) {
 			s.syncGatewayNamespaces(ctx)
 			s.maybeStartTransition(ctx)
 		}
+	}
+	if !gp.Run || s.gw.failure == nil {
+		s.reconcileCloudflared(ctx)
 	}
 	_, _ = s.syncHost("reconcile")
 }
@@ -234,7 +238,7 @@ func (s *Station) writeRoutes() {
 		s.gw.failure = gatewayFailure("create %s: %v", dir, err)
 		return
 	}
-	probe, err := gateway.ProbeConfig(gp.Bridge)
+	probe, err := gateway.ProbeConfig(gp.Bridge, gp.Cloudflared, s.probeID())
 	if err == nil {
 		_, err = fsx.WriteIfChanged(filepath.Join(dir, gateway.ProbeFile), probe, 0o644)
 	}
@@ -573,7 +577,7 @@ func (s *Station) gatewayCutover(ctx context.Context, t *gatewayTransition) {
 	result, err := s.syncHost("gateway cutover")
 	if err != nil {
 		s.gw.state.Current = prev
-		s.gatewayFail(ctx, t, "replace the port_switch elements 80 and 443: %v", err)
+		s.gatewayFail(ctx, t, "replace the port_switch elements 80 and 443 and the Gateway virtual IP's switch entry: %v", err)
 		return
 	}
 	t.CutoverAt = stamp(time.Now())
@@ -702,6 +706,7 @@ func (s *Station) hostState() (netns.HostLayout, netns.HostElements, map[string]
 		addr := gp.Slots[cur.Slot]
 		el.Ports[80] = netip.AddrPortFrom(addr, 80)
 		el.Ports[443] = netip.AddrPortFrom(addr, 443)
+		el.Switch[gp.GatewayVIP] = addr
 	}
 	for _, rp := range gp.Routes {
 		if rp.ServiceID == "" || s.serviceBlocked(rp.ServiceID) {
@@ -872,6 +877,9 @@ func (s *Station) observeGateway(o *protocol.Observed, applied bool) {
 		if st.result != protocol.ObjectResultOk {
 			allOK = false
 		}
+		if r.Ingress == protocol.IngressTunnel {
+			or.Probe = s.observedTunnelProbe(id)
+		}
 		if r.Tls != nil {
 			or.Certificate = s.observedCertificate(id, r.Hostname)
 			if c, ok := s.gw.certs[id]; ok {
@@ -883,6 +891,7 @@ func (s *Station) observeGateway(o *protocol.Observed, applied bool) {
 		}
 		o.Gateway.Routes[id] = or
 	}
+	o.Gateway.Tunnel = s.observedTunnel()
 	if allOK && applied && gp.Run && s.gw.failure == nil {
 		o.Gateway.AppliedHash = ptr(g.Gateway.Hash)
 	}

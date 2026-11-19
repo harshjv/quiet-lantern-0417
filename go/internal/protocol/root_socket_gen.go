@@ -20,5 +20,6 @@ const (
 	RootSocketOpPublicAddressDetect = "public_address.detect"
 	RootSocketOpHostProbe           = "host.probe"
 	RootSocketOpAdminRecoveryKey    = "admin.recovery_key"
+	RootSocketOpTunnelSetToken      = "tunnel.set_token"
 	RootSocketOpDoctor              = "doctor"
 )

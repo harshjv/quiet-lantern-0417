@@ -25,13 +25,7 @@ import { approvalQuery, deploymentQuery } from '@/lib/queries'
 import { ApproveButton, RejectDialog, useDecider, useDecision } from './approval-actions'
 import { useNames, usePlaces } from './names'
 import { ItemList, ItemRow, Notice, Page, PageBoundary, Section, StatusPill } from './parts'
-import {
-  PullRequestLink,
-  ShipDecision,
-  shipProblem,
-  shipState,
-  shipStatusText,
-} from './ship-approval'
+import { PullRequestLink, ShipDecision, shipProblem, useShipStatus } from './ship-approval'
 
 type Fact = [string, ReactNode]
 
@@ -141,14 +135,14 @@ function Deployments({ ids }: { ids: string[] }) {
 }
 
 function Ship({ approval }: { approval: Approval }) {
-  const state = shipState(approval)
+  const status = useShipStatus(approval)
   const problem = shipProblem(approval)
 
   return (
     <Section title="Pull request">
       <Notice
-        tone={state === 'merged' ? 'success' : problem ? 'danger' : 'warning'}
-        title={shipStatusText[state]}
+        tone={problem && status.state !== 'merged' ? 'danger' : status.tone}
+        title={status.title}
         action={
           approval.task_id && (
             <Button asChild size="sm" variant="ghost">
@@ -167,7 +161,7 @@ function Ship({ approval }: { approval: Approval }) {
         <span className="flex flex-col gap-2">
           {problem && <span>{problem}</span>}
           <span className="flex flex-wrap items-center gap-2">
-            {state === 'open' ? (
+            {status.state === 'open' ? (
               <ShipDecision approval={approval} />
             ) : (
               <PullRequestLink approval={approval} />

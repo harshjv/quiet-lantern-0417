@@ -38,3 +38,27 @@ export const appRepository = (text: string) => {
 
   return found ? `github.com/${found[1]!.toLowerCase()}` : null
 }
+
+type RepoSource = { type: string; repo?: string }
+
+export const projectRepositories = (
+  project: string,
+  tasks: readonly { project: { id: string }; repository: string; created_at: string }[],
+  apps: readonly { source: RepoSource }[],
+) => {
+  const fromTasks = tasks
+    .filter((t) => t.project.id === project)
+    .toSorted((a, b) => b.created_at.localeCompare(a.created_at))
+    .map((t) => repositoryUrl(t.repository))
+  const fromApps = apps.map((a) =>
+    a.source.repo ? `https://${a.source.repo.replace(/^https:\/\//, '')}` : null,
+  )
+
+  return [
+    ...new Map(
+      [...fromTasks, ...fromApps]
+        .filter((url): url is string => Boolean(url))
+        .map((url) => [url.toLowerCase(), url]),
+    ).values(),
+  ]
+}

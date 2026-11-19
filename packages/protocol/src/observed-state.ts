@@ -207,6 +207,11 @@ export const ObservedRoute = Type.Object(
         {
           ok: Type.Boolean(),
           status_code: Nullable(Type.Integer()),
+          failure: Type.Optional(
+            StringEnum(['wrong_gateway', 'unreachable'], {
+              title: 'RouteProbeFailure',
+            }),
+          ),
         },
         {
           title: 'ObservedRouteProbe',
@@ -223,6 +228,18 @@ export const ObservedGateway = Type.Object(
   {
     applied_hash: appliedHash,
     routes: IdMap(ObservedRoute),
+    tunnel: Type.Optional(
+      Type.Object(
+        {
+          configured: Type.Boolean(),
+          ready: Type.Boolean(),
+          connections: Type.Integer(),
+        },
+        {
+          title: 'ObservedTunnel',
+        },
+      ),
+    ),
   },
   {
     title: 'ObservedGateway',

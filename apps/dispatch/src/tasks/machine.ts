@@ -51,8 +51,15 @@ import { credentialSources, memberToken, runGitHubToken, tokenAad } from '../tea
 import { gitIdentityOf } from '../team/members.ts'
 
 import { closePendingApprovals } from './approvals.ts'
-import { latestConversation, runnerLive, startTimeoutMs, wantRunner } from './runner.ts'
-import { saveActivity, taskChanged, wakeTask, type TaskRow } from './status.ts'
+import {
+  addInput,
+  inboxItems,
+  latestConversation,
+  runnerLive,
+  startTimeoutMs,
+  wantRunner,
+} from './runner.ts'
+import { activityOf, saveActivity, taskChanged, wakeTask, type TaskRow } from './status.ts'
 
 type MachineRow = typeof machine.$inferSelect
 type ProjectRow = typeof project.$inferSelect
@@ -86,12 +93,16 @@ const slotsOf = (db: Db, box: MachineRow) =>
   db.select().from(project).where(eq(project.id, box.project_id)).get()?.machine?.slots ??
   slotsFor(box.size.memory_bytes)
 
+const lingerMs = 30_000
+
+const inTurn = (row: TaskRow) => (slotStatuses as readonly string[]).includes(row.status)
+
 export const holdsSlot = (db: Db, row: TaskRow) => {
   if (row.machine !== 'project') {
     return false
   }
 
-  if ((slotStatuses as readonly string[]).includes(row.status)) {
+  if (inTurn(row)) {
     return true
   }
 
@@ -194,12 +205,7 @@ export const promoteQueued = (db: Db) => {
     .filter((box) => box.workspace?.kind === 'project')
 
   for (const box of machines) {
-    let free = freeSlots(db, box)
-
-    if (free <= 0) {
-      continue
-    }
-
+    const free = freeSlots(db, box)
     const queued = db
       .select()
       .from(task)
@@ -207,14 +213,47 @@ export const promoteQueued = (db: Db) => {
       .orderBy(asc(task.queued_at))
       .all()
 
-    for (const row of queued) {
-      if (free <= 0) {
-        break
-      }
-
+    for (const row of queued.slice(0, Math.max(0, free))) {
       resumeTask(db, row)
-      free -= 1
     }
+
+    reclaimSlots(db, box, queued.length - free)
+  }
+}
+
+const reclaimSlots = (db: Db, box: MachineRow, wanted: number, now = new Date()) => {
+  if (wanted <= 0) {
+    return
+  }
+
+  const settledBefore = now.getTime() - lingerMs
+  const lingering = tasksOn(db, box.id)
+    .filter(
+      (row) =>
+        row.machine === 'project' &&
+        !inTurn(row) &&
+        new Date(activityOf(row).since).getTime() < settledBefore,
+    )
+    .flatMap((row) => {
+      const session = latestConversation(db, row.id)
+
+      return session && runnerLive(session) ? [session] : []
+    })
+
+  for (const session of lingering.slice(0, wanted)) {
+    if (inboxItems(db, session, 0).some((item) => item.kind === 'interrupt')) {
+      continue
+    }
+
+    addInput(
+      db,
+      session,
+      {
+        kind: 'interrupt',
+        text: null,
+      },
+      setupActor,
+    )
   }
 }
 
@@ -727,7 +766,7 @@ export const stopMachineTasks = (db: Db, machineId: string, now: Date) => {
       .where(eq(conversation.task_id, row.id))
       .run()
 
-    if ((slotStatuses as readonly string[]).includes(row.status)) {
+    if (inTurn(row)) {
       stopTask(db, row, now)
     }
   }

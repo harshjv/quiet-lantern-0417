@@ -14,7 +14,7 @@ import { app_port, domain, port_allocation } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail } from '../errors.ts'
-import { generatedHostname, hostPortPicker, requireGatewayPin } from '../exposure.ts'
+import { generatedHostname, hostPortPicker, ingressMode, requireGatewayPin } from '../exposure.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import { isProduction } from '../lookup.ts'
@@ -106,7 +106,24 @@ export const domainRoutes = (kit: Kit) => {
       '/ports/:id/domains',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const ingress = body.ingress ?? 'direct'
+        const mode = ingressMode(db)
+        const ingress = body.ingress ?? mode
+
+        if (mode === 'tunnel' && ingress === 'direct') {
+          fail(
+            'VALIDATION_FAILED',
+            'This install is reached through Cloudflare Tunnel and has no public address, so a direct domain cannot be served.',
+            'Leave out ingress, or send ingress = tunnel.',
+            {
+              issues: [
+                {
+                  path: '/ingress',
+                  message: 'direct ingress in a tunnel install',
+                },
+              ],
+            },
+          )
+        }
 
         if (ctx.port.protocol !== 'http' || ctx.port.grpc) {
           if (ingress === 'tunnel') {

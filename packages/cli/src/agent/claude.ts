@@ -8,7 +8,10 @@ import { createInterface } from 'node:readline'
 
 import { runnerAskRules, toolApprovalWaitS, type AgentEventInputValue } from '@stationly/protocol'
 
+import { env, projectEnv, tokenEnv } from '../env.ts'
+
 import type { AgentAdapter, AgentExit } from './adapter.ts'
+import { stationlyBriefing, stationlyMcpConfig, stationlyServer } from './briefing.ts'
 import { claudeProgress } from './claude-progress.ts'
 
 export const runnerDir = () => join(homedir(), '.local', 'state', 'stationly', 'runner')
@@ -19,6 +22,7 @@ export const claudeSettings = {
   permissions: {
     defaultMode: 'auto',
     denyInsteadOfPrompting: true,
+    allow: [`mcp__${stationlyServer}`],
     ask: [...runnerAskRules],
   },
   hooks: {
@@ -47,9 +51,12 @@ export const claudeSettings = {
   },
 } as const
 
+type StationlyContext = { mcpPath: string; briefing: string }
+
 export const claudeArgs = (
   options: { sessionId: string; resume: boolean; model: string | null },
   settingsPath: string,
+  stationly: StationlyContext | null = null,
 ) => [
   '-p',
   '--input-format',
@@ -66,7 +73,25 @@ export const claudeArgs = (
   'auto',
   '--settings',
   settingsPath,
+  ...(stationly
+    ? ['--mcp-config', stationly.mcpPath, '--append-system-prompt', stationly.briefing]
+    : []),
 ]
+
+const stationlyContext = (dir: string): StationlyContext | null => {
+  if (!env[tokenEnv]) {
+    return null
+  }
+
+  const mcpPath = join(dir, 'mcp.json')
+
+  writeFileSync(mcpPath, JSON.stringify(stationlyMcpConfig('/usr/local/bin/sly')))
+
+  return {
+    mcpPath,
+    briefing: stationlyBriefing(env[projectEnv]),
+  }
+}
 
 export const userLine = (text: string) =>
   `${JSON.stringify({
@@ -115,7 +140,7 @@ export const claudeAdapter = (command = 'claude', dir = runnerDir()): AgentAdapt
 
     writeFileSync(settingsPath, JSON.stringify(claudeSettings))
 
-    const child = spawn(command, claudeArgs(options, settingsPath), {
+    const child = spawn(command, claudeArgs(options, settingsPath, stationlyContext(dir)), {
       cwd: options.cwd,
       env: {
         ...process.env,

@@ -5355,6 +5355,9 @@
           "additionalProperties": {
             "$ref": "#/$defs/ObservedRoute"
           }
+        },
+        "tunnel": {
+          "$ref": "#/$defs/ObservedTunnel"
         }
       }
     },
@@ -5458,6 +5461,9 @@
             "integer",
             "null"
           ]
+        },
+        "failure": {
+          "$ref": "#/$defs/RouteProbeFailure"
         }
       }
     },
@@ -5811,6 +5817,26 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "ObservedTunnel": {
+      "title": "ObservedTunnel",
+      "type": "object",
+      "required": [
+        "configured",
+        "ready",
+        "connections"
+      ],
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "connections": {
+          "type": "integer"
         }
       }
     },
@@ -7061,6 +7087,9 @@
         "public_address": {
           "type": "string"
         },
+        "tunnel_token": {
+          "type": "string"
+        },
         "sandbox_runtime": {
           "$ref": "#/$defs/SandboxRuntime"
         },
@@ -7192,6 +7221,30 @@
         }
       }
     },
+    "RootSocketTunnelTokenParams": {
+      "title": "RootSocketTunnelTokenParams",
+      "type": "object",
+      "required": [
+        "token"
+      ],
+      "properties": {
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "RootSocketTunnelTokenResult": {
+      "title": "RootSocketTunnelTokenResult",
+      "type": "object",
+      "required": [
+        "restarted"
+      ],
+      "properties": {
+        "restarted": {
+          "type": "boolean"
+        }
+      }
+    },
     "Route": {
       "title": "Route",
       "type": "object",
@@ -7231,6 +7284,14 @@
           "type": "boolean"
         }
       }
+    },
+    "RouteProbeFailure": {
+      "title": "RouteProbeFailure",
+      "type": "string",
+      "enum": [
+        "wrong_gateway",
+        "unreachable"
+      ]
     },
     "RouteTarget": {
       "title": "RouteTarget",

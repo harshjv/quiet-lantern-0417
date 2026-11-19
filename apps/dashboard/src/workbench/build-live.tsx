@@ -82,9 +82,18 @@ import {
   githubTokenLabel,
   githubTokenRefused,
   needsGithubToken,
+  projectRepositories,
   repositoryUrl,
 } from '@/lib/new-task'
-import { meQuery, myRepositoriesQuery, projectsQuery, taskQuery, tasksQuery } from '@/lib/queries'
+import { productionOf } from '@/lib/place'
+import {
+  appsQuery,
+  meQuery,
+  myRepositoriesQuery,
+  projectsQuery,
+  taskQuery,
+  tasksQuery,
+} from '@/lib/queries'
 import { setupFailure } from '@/lib/setup-failure'
 import { toneText } from '@/lib/tone'
 
@@ -94,11 +103,10 @@ import { AgentSays, Checklist, Meta, Notice, StatusPill, type Step } from './par
 import {
   PullRequestLink,
   ShipDecision,
+  ShipDeployments,
   shipProblem,
-  shipState,
-  shipStatusText,
+  useShipStatus,
   type ShipApproval,
-  type ShipState,
 } from './ship-approval'
 import { TaskMenu } from './task-menu'
 
@@ -1008,6 +1016,20 @@ function Composer({
   const preset = workspaceAgents[agent]
   const url = repositoryUrl(repository)
   const chosen = project || projects[0]?.id || ''
+  const tasks = useQuery(tasksQuery)
+  const apps = useQuery({
+    ...appsQuery(productionOf(chosen)),
+    enabled: Boolean(chosen),
+  })
+  const used = projectRepositories(chosen, tasks.data?.items ?? [], apps.data?.items ?? [])
+  const suggestions = [
+    ...new Map(
+      [
+        ...used,
+        ...(reachable.data?.items ?? []).map((repo) => repo.clone_url.replace(/\.git$/, '')),
+      ].map((value) => [value.toLowerCase(), value]),
+    ).values(),
+  ]
   const projectKeys = useQuery({
     queryKey: ['keys', 'project', chosen],
     queryFn: () =>
@@ -1150,14 +1172,32 @@ function Composer({
             aria-invalid={repository !== '' && !url}
           />
           <datalist id="live-repositories">
-            {(reachable.data?.items ?? []).map((repo) => (
-              <option key={repo.full_name} value={repo.clone_url.replace(/\.git$/, '')}>
-                {repo.full_name}
+            {suggestions.map((value) => (
+              <option key={value} value={value}>
+                {repositoryName(value)}
               </option>
             ))}
           </datalist>
         </div>
       </div>
+      {used.length > 0 && (
+        <div className="-mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Used in this project</span>
+          {used.map((value) => (
+            <Button
+              key={value}
+              type="button"
+              size="xs"
+              variant={url?.toLowerCase() === value.toLowerCase() ? 'secondary' : 'outline'}
+              className="font-mono"
+              aria-pressed={url?.toLowerCase() === value.toLowerCase()}
+              onClick={() => setRepository(value)}
+            >
+              {repositoryName(value)}
+            </Button>
+          ))}
+        </div>
+      )}
       <RepositoryHint github={reachable.data?.github} />
       {asking && (
         <Notice
@@ -1286,24 +1326,16 @@ function Composer({
   )
 }
 
-const shipTone: Record<ShipState, 'info' | 'warning' | 'danger' | 'success'> = {
-  pushing: 'info',
-  open: 'warning',
-  rejected: 'danger',
-  merged: 'success',
-  failed: 'danger',
-  superseded: 'info',
-}
-
 function ShipNotice({ approval, fix }: { approval: ShipApproval; fix: (reason: string) => void }) {
   const me = useQuery(meQuery)
   const admin = isInstanceAdmin(me.data?.scopes ?? [])
-  const state = shipState(approval)
+  const status = useShipStatus(approval)
+  const state = status.state
   const reason = shipProblem(approval)
   const broken = reason && state !== 'merged' && state !== 'pushing'
 
   return (
-    <Notice tone={broken ? 'danger' : shipTone[state]} title={shipStatusText[state]}>
+    <Notice tone={broken ? 'danger' : status.tone} title={status.title}>
       <span className="flex flex-col gap-2">
         {reason && <span>{reason}</span>}
         <span className="flex flex-wrap items-center gap-2">
@@ -1312,6 +1344,7 @@ function ShipNotice({ approval, fix }: { approval: ShipApproval; fix: (reason: s
           ) : (
             <PullRequestLink approval={approval} />
           )}
+          <ShipDeployments deployments={status.deployments} />
           {broken && (
             <Button size="sm" variant="outline" onClick={() => fix(reason)}>
               Fix with an agent

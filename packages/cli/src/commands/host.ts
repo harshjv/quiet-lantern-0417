@@ -20,7 +20,7 @@ import {
   type RootSocketResult,
 } from '@stationly/protocol'
 
-import { action, type Program } from '../command.ts'
+import { action, group, type Program } from '../command.ts'
 import { env } from '../env.ts'
 import { Exit, exitCodes, usage, type EnvelopeCode } from '../errors.ts'
 import {
@@ -145,7 +145,7 @@ type Litestream = NonNullable<RootSocketParams<'setup'>['litestream']>
 
 const minPassword = 12
 
-const render = (r: RootSocketResult<'setup'>) =>
+const render = (r: RootSocketResult<'setup'>, tunnel: boolean) =>
   [
     `admin ${r.email} created (${r.admin_user_id}) in instance ${r.instance_id}`,
     r.lockfile
@@ -157,11 +157,13 @@ const render = (r: RootSocketResult<'setup'>) =>
     `one-time login link, valid until ${r.login_link_expires_at}:`,
     `  ${r.login_link ?? 'none'}`,
     '',
-    r.public_address
-      ? `server public address ${r.public_address}`
-      : 'no public address set: sly servers update <server> --public-address <ipv4> before the Gateway routes go out',
+    tunnel
+      ? 'reached through Cloudflare Tunnel; this server opens no web port'
+      : r.public_address
+        ? `server public address ${r.public_address}`
+        : 'no public address set: sly servers update <server> --public-address <ipv4> before the Gateway routes go out',
     r.hostnames
-      ? `hostnames ${r.hostnames.api} and ${r.hostnames.dashboard} are ${r.hostnames.status}; the Gateway issues certificates once DNS points at this host`
+      ? `hostnames ${r.hostnames.api} and ${r.hostnames.dashboard} are ${r.hostnames.status}; ${tunnel ? 'they answer once the tunnel connects' : 'the Gateway issues certificates once DNS points at this host'}`
       : 'no domain: Dispatch stays on the loopback publish',
     r.litestream
       ? `Litestream bucket ${r.litestream.bucket}: ${r.litestream.note}`
@@ -171,6 +173,41 @@ const render = (r: RootSocketResult<'setup'>) =>
     '',
     'next: sly login --instance <api url> from a laptop, after enrolling TOTP on first sign-in',
   ].join('\n')
+
+const tunnelTokenPrompt =
+  "Cloudflare Tunnel token (from the tunnel's page in the Cloudflare dashboard)"
+
+const stdinSecrets = async (passwordStdin: boolean, tokenStdin: boolean) => {
+  if (!passwordStdin && !tokenStdin) {
+    return {}
+  }
+
+  const text = await readStdin()
+
+  if (!passwordStdin || !tokenStdin) {
+    return passwordStdin
+      ? {
+          password: text,
+        }
+      : {
+          token: text,
+        }
+  }
+
+  const [password = '', token = '', ...rest] = text.split(/\r?\n/)
+
+  if (!password || !token.trim() || rest.some((line) => line.trim())) {
+    throw usage(
+      'With --password-stdin and --tunnel-token-stdin, stdin must hold two lines.',
+      'Send the admin password on the first line and the tunnel token on the second.',
+    )
+  }
+
+  return {
+    password,
+    token: token.trim(),
+  }
+}
 
 const cancelled = () => usage('Setup was cancelled; nothing was created.', 'Run sly setup again.')
 
@@ -467,6 +504,10 @@ export const hostCommands = (program: Program) => {
     .option('--api-host <host>', 'API hostname (hostnames.api)')
     .option('--dashboard-host <host>', 'dashboard hostname (hostnames.dashboard)')
     .option('--no-domain', 'skip the hostnames; Dispatch stays on the loopback publish')
+    .option(
+      '--tunnel-token-stdin',
+      'read the Cloudflare Tunnel token from stdin (after the password line with --password-stdin); the server is reached through the tunnel and opens no web port',
+    )
     .option('--public-address <ipv4>', "the server's public IPv4 address (server.public_address)")
     .addOption(
       new Option(
@@ -495,13 +536,29 @@ export const hostCommands = (program: Program) => {
     .action(
       action(async (options) => {
         const tty = interactive()
+        const directChosen = Boolean(
+          options.publicAddress ||
+          options.detectPublicAddress ||
+          options.acmeEmail ||
+          !options.domain,
+        )
+
+        if (options.tunnelTokenStdin && directChosen) {
+          throw usage(
+            'A tunnel setup has no public address, ACME email or domainless mode.',
+            'Leave out --public-address, --detect-public-address, --acme-email and --no-domain, or leave out --tunnel-token-stdin.',
+          )
+        }
+
         const prompted =
           tty &&
           !(
             options.email &&
             options.passwordStdin &&
-            (!options.domain || (options.apiHost && options.dashboardHost)) &&
-            (options.publicAddress || options.detectPublicAddress)
+            (options.tunnelTokenStdin
+              ? options.apiHost && options.dashboardHost
+              : (!options.domain || (options.apiHost && options.dashboardHost)) &&
+                (options.publicAddress || options.detectPublicAddress))
           )
 
         if (prompted) {
@@ -526,10 +583,14 @@ export const hostCommands = (program: Program) => {
           throw usage(`${email} is not an email address.`, 'Pass --email with the admin address.')
         }
 
+        const piped = await stdinSecrets(
+          Boolean(options.passwordStdin),
+          Boolean(options.tunnelTokenStdin),
+        )
         let password: string
 
-        if (options.passwordStdin) {
-          password = await readStdin()
+        if (piped.password !== undefined) {
+          password = piped.password
         } else if (tty) {
           password = await askPassword()
         } else {
@@ -547,30 +608,66 @@ export const hostCommands = (program: Program) => {
           )
         }
 
-        const domain = !options.domain
-          ? false
-          : options.apiHost || options.dashboardHost || !tty
-            ? true
-            : await confirm(
-                'Serve the dashboard and API on hostnames of your own domain? (No: domainless, reached through an SSH forward)',
-              )
-        const pair = domain ? await hostnamePair(options.apiHost, options.dashboardHost, tty) : null
-        const acme =
-          options.acmeEmail ??
-          (tty
-            ? await ask(
-                pair
-                  ? "ACME email for Let's Encrypt"
-                  : "ACME email for Let's Encrypt (optional, Enter to skip)",
-                {
-                  valid: (v) =>
-                    (!v && !pair) || !emailProblem(v) ? null : 'that is not an email address',
-                  fallback: pair ? email : '',
-                },
-              )
+        const tunnelChosen =
+          piped.token === undefined && tty && !directChosen
+            ? (await choose(
+                'How the internet reaches this server',
+                [
+                  {
+                    value: 'tunnel',
+                    label: 'Cloudflare Tunnel',
+                    hint: 'recommended; no web port opens on this server',
+                  },
+                  {
+                    value: 'direct',
+                    label: "Public address with Let's Encrypt certificates",
+                  },
+                ],
+                'tunnel',
+              )) === 'tunnel'
+            : false
+        const tunnelToken =
+          piped.token ??
+          (tunnelChosen
+            ? (
+                await askSecret(tunnelTokenPrompt, (v) =>
+                  v.trim() ? null : 'a tunnel token is required',
+                )
+              ).trim()
             : undefined)
+
+        if (tunnelToken !== undefined && !tunnelToken) {
+          throw usage('The tunnel token is empty.', 'Send the token from Cloudflare on stdin.')
+        }
+
+        const tunnel = tunnelToken !== undefined
+        const domain = tunnel
+          ? true
+          : !options.domain
+            ? false
+            : options.apiHost || options.dashboardHost || !tty
+              ? true
+              : await confirm(
+                  'Serve the dashboard and API on hostnames of your own domain? (No: domainless, reached through an SSH forward)',
+                )
+        const pair = domain ? await hostnamePair(options.apiHost, options.dashboardHost, tty) : null
+        const acme = tunnel
+          ? undefined
+          : (options.acmeEmail ??
+            (tty
+              ? await ask(
+                  pair
+                    ? "ACME email for Let's Encrypt"
+                    : "ACME email for Let's Encrypt (optional, Enter to skip)",
+                  {
+                    valid: (v) =>
+                      (!v && !pair) || !emailProblem(v) ? null : 'that is not an email address',
+                    fallback: pair ? email : '',
+                  },
+                )
+              : undefined))
         const detect = () => rootSocketCall(options.socket, 'public_address.detect', {}, () => {})
-        const publicAddress = await publicAddressFrom(options, tty, detect)
+        const publicAddress = tunnel ? undefined : await publicAddressFrom(options, tty, detect)
         const litestream = await litestreamFrom(options, tty)
         const probe = await rootSocketCall(options.socket, 'host.probe', {}, () => {})
         const machineRuntime = await machineRuntimeFrom(options.machineRuntime, tty, probe)
@@ -586,8 +683,11 @@ export const hostCommands = (program: Program) => {
                 ? `  API host       ${pair.api}`
                 : `  hostnames      none (domainless; SSH forward to ${dispatchAddress})`,
               pair ? `  dashboard host ${pair.dashboard} (passkey RP ID ${pair.parent})` : null,
-              `  ACME email     ${acme || 'none'}`,
-              `  public address ${publicAddress ?? 'none (set it later with sly servers update)'}`,
+              tunnel ? `  ingress        Cloudflare Tunnel (zone ${pair?.parent})` : null,
+              tunnel ? null : `  ACME email     ${acme || 'none'}`,
+              tunnel
+                ? null
+                : `  public address ${publicAddress ?? 'none (set it later with sly servers update)'}`,
               `  Litestream     ${litestream ? `${litestream.bucket}${litestream.endpoint ? ` at ${litestream.endpoint}` : ''}` : 'none'}`,
               `  machines       ${runtimeShown ? runtimeLabel(runtimeShown) : 'none on this host'}`,
               '',
@@ -622,6 +722,11 @@ export const hostCommands = (program: Program) => {
                 public_address: publicAddress,
               }
             : {}),
+          ...(tunnelToken
+            ? {
+                tunnel_token: tunnelToken,
+              }
+            : {}),
           ...(machineRuntime
             ? {
                 sandbox_runtime: machineRuntime,
@@ -640,7 +745,7 @@ export const hostCommands = (program: Program) => {
         })
 
         process.stdout.write(
-          options.json ? `${JSON.stringify(result, null, 2)}\n` : `${render(result)}\n`,
+          options.json ? `${JSON.stringify(result, null, 2)}\n` : `${render(result, tunnel)}\n`,
         )
 
         if (!options.json && interactive()) {
@@ -698,6 +803,50 @@ export const adminHostCommands = (program: Program) => {
             'this display was recorded in the audit log; store the key offline\n',
           )
         }
+
+        return exitCodes.ok
+      }),
+    )
+
+  group(program, 'platform')
+    .command('tunnel-token')
+    .description(
+      "Replace this server's Cloudflare Tunnel token and restart cloudflared, as root on the server host through stationd's root socket",
+    )
+    .option('--socket <path>', 'stationd root socket', rootSocketPath)
+    .option('--stdin', 'read the token from stdin')
+    .action(
+      action(async (options) => {
+        const token = (
+          options.stdin
+            ? await readStdin()
+            : await need(undefined, {
+                what: tunnelTokenPrompt,
+                flag: '--stdin',
+                secret: true,
+              })
+        ).trim()
+
+        if (!token) {
+          throw usage('The tunnel token is empty.', 'Send the token from Cloudflare on stdin.')
+        }
+
+        const result = await rootSocketCall(
+          options.socket,
+          'tunnel.set_token',
+          {
+            token,
+          },
+          () => {},
+        )
+
+        process.stdout.write(
+          options.json
+            ? `${JSON.stringify(result, null, 2)}\n`
+            : result.restarted
+              ? 'tunnel token replaced; cloudflared restarted with it\n'
+              : 'tunnel token stored; cloudflared starts with it once the Gateway runs\n',
+        )
 
         return exitCodes.ok
       }),

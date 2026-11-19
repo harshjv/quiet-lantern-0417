@@ -25,6 +25,7 @@ const (
 
 const (
 	GatewaySource          = "docker.io/library/traefik"
+	CloudflaredSource      = "docker.io/cloudflare/cloudflared"
 	BuildkitSource         = "docker.io/moby/buildkit"
 	DepotSource            = "docker.io/library/registry"
 	CouplerImageSource     = "registry.k8s.io/pause"

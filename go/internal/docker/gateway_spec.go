@@ -107,3 +107,61 @@ const (
 func SystemNetwork(stationID string, subnet, ipRange netip.Prefix, gateway netip.Addr) NetworkSpec {
 	return bridgeNetwork(SystemNetworkName, SystemBridgeName, false, network.IPAMConfig{Subnet: subnet, IPRange: ipRange, Gateway: gateway}, platformLabels(stationID, RoleSystemNetwork, ""), nil)
 }
+
+const (
+	RoleCloudflaredCoupler = "cloudflared-coupler"
+	RoleCloudflared        = "cloudflared"
+
+	CloudflaredCouplerName = protocol.ResourcePrefix + "cloudflared-coupler"
+	CloudflaredName        = protocol.ResourcePrefix + "cloudflared"
+	GatewayHostAlias       = protocol.ResourcePrefix + "gateway"
+	CloudflaredMetricsPort = 20241
+
+	cloudflaredMemoryBytes = 256 << 20
+	cloudflaredNanoCPUs    = 1_000_000_000
+)
+
+func cloudflaredLabels(stationID, role string) map[string]string {
+	l := platformLabels(stationID, role, "")
+	l[LabelComponent] = "cloudflared"
+	return l
+}
+
+func CloudflaredCoupler(stationID, image string, addr, gatewayVIP netip.Addr) ContainerSpec {
+	hc := couplerHost(container.NetworkMode(IngressNetworkName), nil)
+	hc.ExtraHosts = []string{GatewayHostAlias + ":" + gatewayVIP.String()}
+	spec := ContainerSpec{
+		Name: CloudflaredCouplerName,
+		Role: RoleCloudflaredCoupler,
+		Create: client.ContainerCreateOptions{
+			Name:       CloudflaredCouplerName,
+			Config:     &container.Config{Image: image, Labels: cloudflaredLabels(stationID, RoleCloudflaredCoupler)},
+			HostConfig: hc,
+			NetworkingConfig: &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{
+				IngressNetworkName: {IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: addr}},
+			}},
+		},
+	}
+	return sealed(spec)
+}
+
+func Cloudflared(stationID, image string, metrics netip.AddrPort) ContainerSpec {
+	hc := baseHost(container.NetworkMode("container:"+CloudflaredCouplerName), cloudflaredMemoryBytes, cloudflaredNanoCPUs)
+	hc.ReadonlyRootfs = true
+	spec := ContainerSpec{
+		Name:    CloudflaredName,
+		Role:    RoleCloudflared,
+		Coupler: CloudflaredCouplerName,
+		Create: client.ContainerCreateOptions{
+			Name: CloudflaredName,
+			Config: &container.Config{
+				Image:      image,
+				Entrypoint: []string{"cloudflared"},
+				Cmd:        []string{"tunnel", "--no-autoupdate", "--metrics", metrics.String(), "run"},
+				Labels:     cloudflaredLabels(stationID, RoleCloudflared),
+			},
+			HostConfig: hc,
+		},
+	}
+	return sealed(spec)
+}

@@ -1,9 +1,13 @@
-import { ExternalLink, X } from 'lucide-react'
+import { useQueries, useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { ExternalLink, Rocket, X } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { Approval } from '@/lib/api'
+import type { Approval, Deployment } from '@/lib/api'
+import { approvalQuery, deploymentQuery } from '@/lib/queries'
+import { isInFlight } from '@/lib/status'
 
 import { ApproveButton, rejection, useDecider, useDecision } from './approval-actions'
 
@@ -26,9 +30,93 @@ export const shipStatusText: Record<ShipState, string> = {
   pushing: 'Pushing the branch and opening the pull request',
   open: 'Waiting for an admin to approve',
   rejected: 'Not shipped',
-  merged: 'Merged; production is deploying',
+  merged: 'Merged',
   failed: 'Ship it did not finish',
   superseded: 'Replaced; ship again to ask anew',
+}
+
+export type ShipTone = 'info' | 'warning' | 'danger' | 'success'
+
+const shipTone: Record<ShipState, ShipTone> = {
+  pushing: 'info',
+  open: 'warning',
+  rejected: 'danger',
+  merged: 'success',
+  failed: 'danger',
+  superseded: 'info',
+}
+
+const mergedOutcome = (
+  loaded: boolean,
+  deployments: Deployment[],
+): { title: string; tone: ShipTone } => {
+  if (!loaded || deployments.length === 0) {
+    return {
+      title: 'Merged; production starts deploying when GitHub sends the push',
+      tone: 'info',
+    }
+  }
+
+  if (deployments.some((d) => d.status === 'failed' || d.status === 'cancelled')) {
+    return {
+      title: 'Merged, but the production deploy did not finish',
+      tone: 'danger',
+    }
+  }
+
+  if (deployments.some((d) => isInFlight(d.status))) {
+    return {
+      title: 'Merged; production is deploying',
+      tone: 'info',
+    }
+  }
+
+  return {
+    title: 'Merged and live in production',
+    tone: 'success',
+  }
+}
+
+export const useShipStatus = (approval: ShipApproval) => {
+  const state = shipState(approval)
+  const merged = state === 'merged'
+  const detail = useQuery({
+    ...approvalQuery(approval.id),
+    enabled: merged,
+    refetchInterval: (query) => (query.state.data?.deployments?.length ? false : 3000),
+  })
+  const ids = detail.data?.deployments ?? []
+  const results = useQueries({
+    queries: ids.map((id) => deploymentQuery(id)),
+  })
+  const deployments = results.flatMap((r) => (r.data ? [r.data] : []))
+  const loaded = detail.isSuccess && deployments.length === ids.length
+
+  return {
+    state,
+    deployments,
+    ...(merged
+      ? mergedOutcome(loaded, deployments)
+      : {
+          title: shipStatusText[state],
+          tone: shipTone[state],
+        }),
+  }
+}
+
+export function ShipDeployments({ deployments }: { deployments: Deployment[] }) {
+  return deployments.map((d) => (
+    <Button key={d.id} asChild size="sm" variant="outline">
+      <Link
+        to="/deployments/$deployment"
+        params={{
+          deployment: d.id,
+        }}
+      >
+        <Rocket /> Deployment #{d.number}
+      </Link>
+    </Button>
+  ))
 }
 
 export function PullRequestLink({ approval }: { approval: ShipApproval }) {

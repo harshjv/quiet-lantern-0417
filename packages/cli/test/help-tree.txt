@@ -209,7 +209,7 @@ sly manifest export
 sly manifest validate
   Check a Manifest: the bundled schema, then the instance for the semantic pass
 sly mcp
-  Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client
+  Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client, or with STATIONLY_TOKEN when no --client is given
 sly mcp install <client>
   
 sly me
@@ -274,6 +274,8 @@ sly platform doctor
   Health report: each check ok, warn or fail with a finding, a code and a fix; a row that changes status emits doctor.finding
 sly platform inventory
   Components with versions, digests, signatures and lockfile drift; the pinned release; base images with their last check
+sly platform tunnel-token
+  Replace this server's Cloudflare Tunnel token and restart cloudflared, as root on the server host through stationd's root socket
 sly platform upgrade [component]
   Upgrade to a signed release with --version, or override one component by digest or reset its override; --plan prints the diff without staging, --wait follows the upgrade in the inventory
 sly ports

@@ -9,7 +9,7 @@ import { scopeTargetValues, tokenLevelValues } from '@stationly/protocol'
 
 import { action, seconds, type Program } from '../command.ts'
 import { readCredentials, updateCredentials } from '../config.ts'
-import { version } from '../env.ts'
+import { env, tokenEnv, version } from '../env.ts'
 import { Exit, exitCodes, inputRequired, notLoggedIn } from '../errors.ts'
 import { connect, projectId, resolveInstance, send } from '../kit.ts'
 import { localTools } from '../mcp-local.ts'
@@ -67,11 +67,45 @@ const writeClaudeCode = async (server: { type: 'stdio'; command: string; args: s
 
 const expired = (expiresAt: string) => new Date(expiresAt).getTime() <= Date.now()
 
+const storedSession = async (instance: string, chosen: string | undefined) => {
+  const credentials = await readCredentials(instance)
+
+  if (!credentials) {
+    throw notLoggedIn(instance)
+  }
+
+  const names = Object.keys(credentials.mcp)
+  const client = chosen ?? (names.length === 1 ? names[0] : undefined)
+
+  if (!client) {
+    throw inputRequired('The MCP client', `--client <${names.join('|') || 'client'}>`)
+  }
+
+  const stored = credentials.mcp[client]
+
+  if (!stored || expired(stored.expires_at)) {
+    throw new Exit(exitCodes.connection, {
+      error: {
+        code: 'UNAUTHENTICATED',
+        explanation: stored
+          ? `The scoped token for ${client} expired at ${stored.expires_at}.`
+          : `No scoped token is stored for ${client}.`,
+        fix: `Run sly mcp install ${client} again.`,
+      },
+    })
+  }
+
+  return {
+    client,
+    token: stored.token,
+  }
+}
+
 export const mcpCommands = (program: Program) => {
   const mcp = program
     .command('mcp')
     .description(
-      'Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client',
+      `Serve MCP on stdio, bridged to the instance /mcp with the scoped token of --client, or with ${tokenEnv} when no --client is given`,
     )
     .addOption(
       new Option('--client <client>', 'the client whose token sly mcp install minted').choices(
@@ -86,33 +120,13 @@ export const mcpCommands = (program: Program) => {
           throw notLoggedIn(null)
         }
 
-        const credentials = await readCredentials(instance)
-
-        if (!credentials) {
-          throw notLoggedIn(instance)
-        }
-
-        const names = Object.keys(credentials.mcp)
-        const client = options.client ?? (names.length === 1 ? names[0] : undefined)
-
-        if (!client) {
-          throw inputRequired('The MCP client', `--client <${names.join('|') || 'client'}>`)
-        }
-
-        const stored = credentials.mcp[client]
-
-        if (!stored || expired(stored.expires_at)) {
-          throw new Exit(exitCodes.connection, {
-            error: {
-              code: 'UNAUTHENTICATED',
-              explanation: stored
-                ? `The scoped token for ${client} expired at ${stored.expires_at}.`
-                : `No scoped token is stored for ${client}.`,
-              fix: `Run sly mcp install ${client} again.`,
-            },
-          })
-        }
-
+        const envToken = options.client ? undefined : env[tokenEnv]
+        const session = envToken
+          ? {
+              client: 'agent',
+              token: envToken,
+            }
+          : await storedSession(instance, options.client)
         const log = (event: string, data: Record<string, unknown> = {}) =>
           process.stderr.write(
             `${JSON.stringify({
@@ -123,11 +137,11 @@ export const mcpCommands = (program: Program) => {
 
         serveBridge({
           url: new URL('/mcp', instance),
-          token: stored.token,
-          client,
+          token: session.token,
+          client: session.client,
           version,
           log,
-          local: localTools(instance, stored.token, `mcp/${client} sly/${version}`),
+          local: localTools(instance, session.token, `mcp/${session.client} sly/${version}`),
         })
 
         return new Promise<number>(() => {})

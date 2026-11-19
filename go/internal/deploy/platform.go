@@ -135,6 +135,7 @@ func (s *Station) handlers() map[string]rootsocket.Handler {
 		protocol.RootSocketOpPublicAddressDetect: s.opDetectPublicAddress,
 		protocol.RootSocketOpHostProbe:           s.opHostProbe,
 		protocol.RootSocketOpAdminRecoveryKey:    s.opRecoveryKey,
+		protocol.RootSocketOpTunnelSetToken:      s.opTunnelSetToken,
 		protocol.RootSocketOpDoctor:              s.opDoctor,
 	}
 }

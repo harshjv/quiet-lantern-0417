@@ -93,6 +93,10 @@ func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress 
 		return nil, perr
 	}
 	delete(p, "litestream")
+	token, tunnel, perr := takeTunnelToken(p)
+	if perr != nil {
+		return nil, perr
+	}
 	dir := ReleaseDir(s.opts.StateDir)
 	manifest, err1 := os.ReadFile(filepath.Join(dir, manifestFile))
 	bundle, err2 := os.ReadFile(filepath.Join(dir, manifestFile+bundleSuffix))
@@ -105,6 +109,14 @@ func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress 
 	}
 	if !s.link.Connected() {
 		return nil, protocolError(protocol.ErrorCodeServerOffline, "Start Dispatch and wait for stationd to connect (stationd connection).", "stationd is not connected to Dispatch")
+	}
+	if tunnel {
+		if err := s.storeTunnelToken(token); err != nil {
+			return nil, protocolError(protocol.ErrorCodeInternalError, "Check that stationd's state directory is writable and run sly setup again.", "store the tunnel token: %v", err)
+		}
+		p["ingress"] = string(protocol.IngressTunnel)
+		progress("tunnel", "token stored in "+s.tunnelTokenPath()+" (0600); cloudflared starts once the Gateway runs")
+		s.post(ctx, func() { s.resync = true })
 	}
 	progress("dispatch", "creating the admin")
 	rctx, cancel := context.WithTimeout(ctx, setupTimeout)

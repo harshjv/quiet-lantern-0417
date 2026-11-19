@@ -52,7 +52,7 @@ func CheckInvariants(spec ContainerSpec, stateDir string) error {
 		return fail("no privileged containers", "Privileged is true")
 	}
 	switch spec.Role {
-	case RoleCoupler, RoleWorkshopCoupler, RoleGatewayCoupler, RoleDepot, RoleDispatch, RoleLitestream, RoleLitestreamTask:
+	case RoleCoupler, RoleWorkshopCoupler, RoleGatewayCoupler, RoleCloudflaredCoupler, RoleDepot, RoleDispatch, RoleLitestream, RoleLitestreamTask:
 		if !hc.NetworkMode.IsUserDefined() {
 			return fail("no host network", "%s network mode %q is not a user-defined network", spec.Role, hc.NetworkMode)
 		}

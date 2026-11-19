@@ -189,6 +189,7 @@ test('the Claude Code process is one headless stream-json session in auto mode t
   assert.deepEqual(claudeSettings.permissions, {
     defaultMode: 'auto',
     denyInsteadOfPrompting: true,
+    allow: ['mcp__stationly'],
     ask: [...runnerAskRules],
   })
   assert.deepEqual(JSON.parse(userLine('hi')), {

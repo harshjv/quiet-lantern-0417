@@ -10,6 +10,9 @@ import { fail } from './errors.ts'
 const sslipHost = (address: string) =>
   address.includes(':') ? address.replaceAll(':', '-') : address.replaceAll('.', '-')
 
+export const ingressMode = (db: Db) =>
+  readSetting(db, 'ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
+
 export const generatedHostname = (
   db: Db,
   appName: string,

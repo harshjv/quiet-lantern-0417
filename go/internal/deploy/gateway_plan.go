@@ -44,6 +44,8 @@ type GatewayPlan struct {
 	IPRange       netip.Prefix
 	Bridge        netip.Addr
 	Cloudflared   netip.Addr
+	GatewayVIP    netip.Addr
+	Tunnel        CloudflaredPlan
 	Slots         map[string]netip.Addr
 	Public        netip.Addr
 	VirtualPrefix netip.Prefix
@@ -56,6 +58,12 @@ type GatewayPlan struct {
 	Inputs        string
 	Routes        []RoutePlan
 	Ports         []PortPlan
+}
+
+type CloudflaredPlan struct {
+	Image   string
+	Version string
+	Digest  string
 }
 
 type RoutePlan struct {
@@ -123,8 +131,10 @@ func checkGateway(g *protocol.Generation) *Rejection {
 			return invalid("ingress network gateway %s collides with the fixed cloudflared or Gateway Coupler addresses", bridge)
 		}
 	}
-	if pin, ok := g.Components["gateway"]; ok && pin.Digest == nil {
-		return invalid("components.gateway needs a digest")
+	for _, name := range []string{"gateway", "cloudflared"} {
+		if pin, ok := g.Components[name]; ok && pin.Digest == nil {
+			return invalid("components.%s needs a digest", name)
+		}
 	}
 	if strings.ContainsAny(g.Gateway.Acme.Email, "\n\r") || strings.Count(g.Gateway.Acme.Email, "@") > 1 {
 		return invalid("gateway.acme.email %q is not an address", g.Gateway.Acme.Email)
@@ -137,8 +147,8 @@ func checkGateway(g *protocol.Generation) *Rejection {
 	ipRoutes := 0
 	for _, id := range sortedKeys(g.Gateway.Routes) {
 		r := g.Gateway.Routes[id]
-		if !routeIDPattern.MatchString(id) || id == gateway.ProbeRouter {
-			return invalid("route id %q must be 1 to 64 letters, digits, - or _ and not %s", id, gateway.ProbeRouter)
+		if !routeIDPattern.MatchString(id) || id == gateway.ProbeRouter || strings.HasPrefix(id, gateway.TunnelProbeRouter) {
+			return invalid("route id %q must be 1 to 64 letters, digits, - or _, not %s and not start with %s", id, gateway.ProbeRouter, gateway.TunnelProbeRouter)
 		}
 		ip, ipErr := netip.ParseAddr(r.Hostname)
 		switch {
@@ -256,6 +266,7 @@ func planGateway(g *protocol.Generation, _ string, now time.Time, trust verify.T
 		IPRange:       cidr.UpperHalf(ingress),
 		Bridge:        netip.MustParseAddr(g.Station.Networks.Ingress.Gateway),
 		Cloudflared:   cidr.Offset(ingress, cloudflaredOffset),
+		GatewayVIP:    cidr.Offset(vp.Masked(), protocol.NetworkGatewayVirtualHost),
 		Slots:         map[string]netip.Addr{gatewaySlotA: cidr.Offset(ingress, slotOffsetA), gatewaySlotB: cidr.Offset(ingress, slotOffsetB)},
 		VirtualPrefix: vp.Masked(),
 		WebOpen:       g.Station.Inbound.WebPorts == protocol.WebPortsOpen,
@@ -280,6 +291,9 @@ func planGateway(g *protocol.Generation, _ string, now time.Time, trust verify.T
 		gp.Version = pin.Version
 		gp.Digest = *pin.Digest
 		gp.Image = protocol.GatewaySource + "@" + gp.Digest
+	}
+	if pin, ok := g.Components["cloudflared"]; ok {
+		gp.Tunnel = CloudflaredPlan{Image: protocol.CloudflaredSource + "@" + *pin.Digest, Version: pin.Version, Digest: *pin.Digest}
 	}
 	body, err := gateway.StaticConfig(gp.Static, gp.ClassicHours)
 	if err != nil {

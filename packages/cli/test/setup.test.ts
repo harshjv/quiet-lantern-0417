@@ -185,6 +185,10 @@ const domainless: Step[] = [
     send: 'correct-horse-battery\r',
   },
   {
+    expect: '◆  How the internet reaches this server',
+    send: '\u001b[B\r',
+  },
+  {
     expect: '◆  Serve the dashboard and API on hostnames of your own domain\\?',
     send: 'n',
   },
