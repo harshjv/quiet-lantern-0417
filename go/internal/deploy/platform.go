@@ -124,19 +124,18 @@ func invalidParams(err error) *protocol.ErrorBody {
 
 func (s *Station) handlers() map[string]rootsocket.Handler {
 	return map[string]rootsocket.Handler{
-		protocol.RootSocketOpStatus:              s.opStatus,
-		protocol.RootSocketOpRegistryToken:       s.opToken,
-		protocol.RootSocketOpRegistryDelete:      s.opDelete,
-		protocol.RootSocketOpRegistryRetain:      s.opRetain,
-		protocol.RootSocketOpRegistryGc:          s.opGC,
-		protocol.RootSocketOpSecretsStatus:       s.opSecretsStatus,
-		protocol.RootSocketOpLogs:                s.opLogs,
-		protocol.RootSocketOpSetup:               s.opSetup,
-		protocol.RootSocketOpPublicAddressDetect: s.opDetectPublicAddress,
-		protocol.RootSocketOpHostProbe:           s.opHostProbe,
-		protocol.RootSocketOpAdminRecoveryKey:    s.opRecoveryKey,
-		protocol.RootSocketOpTunnelSetToken:      s.opTunnelSetToken,
-		protocol.RootSocketOpDoctor:              s.opDoctor,
+		protocol.RootSocketOpStatus:           s.opStatus,
+		protocol.RootSocketOpRegistryToken:    s.opToken,
+		protocol.RootSocketOpRegistryDelete:   s.opDelete,
+		protocol.RootSocketOpRegistryRetain:   s.opRetain,
+		protocol.RootSocketOpRegistryGc:       s.opGC,
+		protocol.RootSocketOpSecretsStatus:    s.opSecretsStatus,
+		protocol.RootSocketOpLogs:             s.opLogs,
+		protocol.RootSocketOpSetup:            s.opSetup,
+		protocol.RootSocketOpHostProbe:        s.opHostProbe,
+		protocol.RootSocketOpAdminRecoveryKey: s.opRecoveryKey,
+		protocol.RootSocketOpTunnelSetToken:   s.opTunnelSetToken,
+		protocol.RootSocketOpDoctor:           s.opDoctor,
 	}
 }
 

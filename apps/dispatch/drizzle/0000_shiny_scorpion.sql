@@ -369,9 +369,6 @@ CREATE TABLE `domain` (
 	`app_port_id` text NOT NULL,
 	`hostname` text NOT NULL,
 	`kind` text NOT NULL,
-	`ingress` text NOT NULL,
-	`cloudflare` text,
-	`certificate` text,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`last_checked_at` integer,
 	`error` text,
@@ -927,19 +924,6 @@ CREATE TABLE `platform_upgrade` (
 );
 --> statement-breakpoint
 CREATE INDEX `platform_upgrade_status` ON `platform_upgrade` (`status`);--> statement-breakpoint
-CREATE TABLE `port_allocation` (
-	`id` text PRIMARY KEY NOT NULL,
-	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL,
-	`app_port_id` text NOT NULL,
-	`server_id` text NOT NULL,
-	`host_port` integer NOT NULL,
-	`status` text DEFAULT 'active' NOT NULL,
-	FOREIGN KEY (`app_port_id`) REFERENCES `app_port`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`server_id`) REFERENCES `server`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `port_allocation_server_host_port_active_unique` ON `port_allocation` (`server_id`,`host_port`) WHERE status = 'active';--> statement-breakpoint
 CREATE TABLE `project` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
@@ -1035,7 +1019,6 @@ CREATE TABLE `server` (
 	`machine_limits` text DEFAULT '{"max_machines":100,"max_running":20,"memory_bytes":null,"min_free_bytes":null}' NOT NULL,
 	`default_machine_runtime` text,
 	`cloudflare_tunnel_id` text,
-	`public_address` text,
 	`identity_key` text,
 	`sleep_schedule` text,
 	`revoked_at` integer

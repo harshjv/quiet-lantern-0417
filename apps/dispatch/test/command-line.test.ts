@@ -50,6 +50,10 @@ test('dispatch bootstrap refuses a pool with host bits set and names the masked 
     JSON.stringify({
       email: 'admin@example.com',
       password: 'correct-horse-battery',
+      hostnames: {
+        dashboard: 'dash.example.com',
+        api: 'api.example.com',
+      },
       'ipam.pool': '10.200.5.0/16',
     }),
   )

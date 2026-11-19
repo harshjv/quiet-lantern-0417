@@ -1068,7 +1068,6 @@ const NetworkCheck = Type.Object(
     port: Type.Optional(PortNumber),
     protocol: Type.Optional(NetworkProtocolEnum),
     virtual_ip: Type.Optional(Type.String()),
-    host_port: Type.Optional(PortNumber),
   },
   {
     title: 'NetworkCheck',

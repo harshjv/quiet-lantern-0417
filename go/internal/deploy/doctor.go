@@ -396,9 +396,9 @@ func raiseMarkAccept(c *checkBuilder, state netns.MarkAcceptState, err error) {
 	case err != nil:
 		c.raise(protocol.DoctorStatusFail, "mark_accept_unchecked", "read "+netns.DockerUserChain+": "+err.Error(), "Check that iptables works as root: iptables -S "+netns.DockerUserChain+".")
 	case state == netns.MarkAcceptChainMissing:
-		c.raise(protocol.DoctorStatusFail, "docker_user_chain_missing", "the iptables chain "+netns.DockerUserChain+" does not exist, so nothing accepts the flows stationd translates (public 80 and 443, Gateway to service)", "Start Docker, which creates the chain; stationd then adds its accept at its next reconcile (30 s).")
+		c.raise(protocol.DoctorStatusFail, "docker_user_chain_missing", "the iptables chain "+netns.DockerUserChain+" does not exist, so nothing accepts the flows stationd translates (cloudflared to the Gateway, the Gateway to services)", "Start Docker, which creates the chain; stationd then adds its accept at its next reconcile (30 s).")
 	case state == netns.MarkAcceptAbsent:
-		c.raise(protocol.DoctorStatusFail, "mark_accept_missing", "stationd's accept of translated flows is not in "+netns.DockerUserChain+", so Docker drops public 80 and 443, port allocations and Gateway flows to services", "stationd re-adds it at the end of its next reconcile (30 s); if it stays missing, restart stationd, or run: iptables -I "+netns.DockerUserChain+" 1 "+rule+".")
+		c.raise(protocol.DoctorStatusFail, "mark_accept_missing", "stationd's accept of translated flows is not in "+netns.DockerUserChain+", so Docker drops cloudflared's flows to the Gateway and the Gateway's flows to services", "stationd re-adds it at the end of its next reconcile (30 s); if it stays missing, restart stationd, or run: iptables -I "+netns.DockerUserChain+" 1 "+rule+".")
 	default:
 		c.note(netns.DockerUserChain + " accepts translated flows")
 	}
@@ -633,7 +633,7 @@ func (s *Station) checkLockfileMirror() protocol.DoctorCheck {
 func bridgeAcceptFwmark(path string) (string, bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return err.Error() + "; DNAT'd 80, 443, port allocations and Gateway flows are dropped by Docker without it", false
+		return err.Error() + "; Docker drops the translated cloudflared and Gateway flows without it", false
 	}
 	var cfg struct {
 		Mark string `json:"bridge-accept-fwmark"`

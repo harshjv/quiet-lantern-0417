@@ -2,25 +2,19 @@ import { and, desc, eq, inArray } from 'drizzle-orm'
 import { t } from 'elysia'
 import { parse } from 'tldts'
 
-import {
-  domainFieldText,
-  domainStatusValues,
-  ingressValues,
-  portAllocationStatusValues,
-  StringEnum,
-} from '@stationly/protocol'
+import { domainFieldText, domainStatusValues } from '@stationly/protocol'
 
-import { app_port, domain, port_allocation } from '../../db/schema.ts'
+import { oneLabelProblem } from '../../auth/hostnames.ts'
+import { app_port, domain } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { fail } from '../errors.ts'
-import { generatedHostname, hostPortPicker, ingressMode, requireGatewayPin } from '../exposure.ts'
+import { generatedHostname, requireGatewayPin } from '../exposure.ts'
 import { projectAll, project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import { isProduction } from '../lookup.ts'
 import { filterOne, getQuery } from '../pagination.ts'
-import { input } from '../schemas.ts'
-import { ApprovalDetail, Deleted, Domain, Page, PortAllocation, replies } from '../shapes.ts'
+import { ApprovalDetail, Deleted, Domain, Page, replies } from '../shapes.ts'
 
 export const domainRoutes = (kit: Kit) => {
   const { db } = kit.deps
@@ -29,12 +23,6 @@ export const domainRoutes = (kit: Kit) => {
       kit.views.domain,
       db.select().from(domain).where(eq(domain.id, id)).get()!,
       kit.fields(fields),
-    )
-  const allocationView = (id: string) =>
-    select(
-      kit.views.allocation,
-      db.select().from(port_allocation).where(eq(port_allocation.id, id)).get()!,
-      undefined,
     )
   const portsOf = (appId: string) =>
     db
@@ -106,49 +94,15 @@ export const domainRoutes = (kit: Kit) => {
       '/ports/:id/domains',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
-        const mode = ingressMode(db)
-        const ingress = body.ingress ?? mode
-
-        if (mode === 'tunnel' && ingress === 'direct') {
-          fail(
-            'VALIDATION_FAILED',
-            'This install is reached through Cloudflare Tunnel and has no public address, so a direct domain cannot be served.',
-            'Leave out ingress, or send ingress = tunnel.',
-            {
-              issues: [
-                {
-                  path: '/ingress',
-                  message: 'direct ingress in a tunnel install',
-                },
-              ],
-            },
-          )
-        }
 
         if (ctx.port.protocol !== 'http' || ctx.port.grpc) {
-          if (ingress === 'tunnel') {
-            fail(
-              'TUNNEL_UNSUPPORTED_PROTOCOL',
-              `Port ${ctx.port.port} is ${ctx.port.grpc ? 'gRPC' : ctx.port.protocol}, which the Tunnel cannot carry.`,
-              'Use ingress = direct, or expose a tcp port with POST /v1/ports/{id}/port-allocations.',
-            )
-          }
-
-          if (ctx.port.protocol !== 'http') {
-            fail(
-              'VALIDATION_FAILED',
-              `Port ${ctx.port.port} is tcp; a domain needs an http port.`,
-              'Expose it with POST /v1/ports/{id}/port-allocations instead.',
-              {
-                issues: [
-                  {
-                    path: '/id',
-                    message: 'port is tcp',
-                  },
-                ],
-              },
-            )
-          }
+          fail(
+            'TUNNEL_UNSUPPORTED_PROTOCOL',
+            `Port ${ctx.port.port} is ${ctx.port.grpc ? 'gRPC' : ctx.port.protocol}, which the Cloudflare Tunnel cannot carry to the public.`,
+            ctx.port.grpc
+              ? 'A gRPC port cannot be exposed in this release; reach it from another app over its .internal name.'
+              : 'Reach a tcp port from another app over its .internal name.',
+          )
         }
 
         requireGatewayPin(db, ctx.app.server_id)
@@ -184,13 +138,20 @@ export const domainRoutes = (kit: Kit) => {
               'Send a full hostname such as app.example.com.',
             )
           }
+
+          const zone = readSetting(db, 'domains.zone')
+          const deep = zone ? oneLabelProblem(hostname, zone) : null
+
+          if (deep) {
+            fail('DOMAIN_INVALID', `${deep}.`, 'Send a hostname one label under the zone.')
+          }
         } else {
           hostname =
-            generatedHostname(db, ctx.app.name, ctx.target_row.name, ctx.app.server_id) ??
+            generatedHostname(db, ctx.app.name, ctx.target_row.name) ??
             fail(
               'DOMAIN_INVALID',
-              'No domains.zone is set and the server has not reported a public address, so no hostname can be generated.',
-              'Set the domains.zone setting, or send a hostname.',
+              'No domains.zone is set, so no hostname can be generated.',
+              'Run sly setup first, or send a hostname.',
             )
         }
 
@@ -229,7 +190,6 @@ export const domainRoutes = (kit: Kit) => {
         changes.add('domain', ctx.port.id, {
           hostname,
           kind: body.generated ? 'generated' : 'custom',
-          ingress,
         })
         const result = commit(
           kit.deps,
@@ -247,7 +207,7 @@ export const domainRoutes = (kit: Kit) => {
 
         set.status = 201
 
-        return domainView(result.refs['new:domain:1']!, 'dns_instructions')
+        return domainView(result.refs['new:domain:1']!, 'tunnel_route')
       },
       {
         app_port: {
@@ -267,13 +227,6 @@ export const domainRoutes = (kit: Kit) => {
                 minLength: 1,
                 description: domainFieldText.hostname,
               }),
-            ),
-            ingress: t.Optional(
-              input(
-                StringEnum(ingressValues, {
-                  description: domainFieldText.ingress,
-                }),
-              ),
             ),
           },
           {
@@ -319,155 +272,6 @@ export const domainRoutes = (kit: Kit) => {
         },
         response: replies({
           200: Deleted,
-          202: ApprovalDetail,
-        }),
-      },
-    )
-    .get(
-      '/apps/:app/port-allocations',
-      ({ ctx, query }) => {
-        const ports = portsOf(ctx.app.id)
-        const rows = ports.length
-          ? db
-              .select()
-              .from(port_allocation)
-              .where(
-                and(
-                  inArray(port_allocation.app_port_id, ports),
-                  query.status ? eq(port_allocation.status, query.status as 'active') : undefined,
-                ),
-              )
-              .orderBy(desc(port_allocation.id))
-              .all()
-          : []
-
-        return {
-          items: projectAll(kit.views.allocation, rows, kit.fields(query.fields)),
-          next_cursor: null,
-        }
-      },
-      {
-        app: {
-          id: 'list_tcp_exposures',
-          summary: 'List the TCP exposures of an app',
-          level: 'read',
-        },
-        query: t.Object({
-          ...getQuery,
-          status: filterOne(portAllocationStatusValues),
-        }),
-        response: replies({
-          200: Page(PortAllocation),
-        }),
-      },
-    )
-    .post(
-      '/ports/:id/port-allocations',
-      async ({ ctx, request, set }) => {
-        const call = await kit.call(request)
-
-        if (ctx.port.protocol !== 'tcp') {
-          fail(
-            'VALIDATION_FAILED',
-            `Port ${ctx.port.port} is ${ctx.port.protocol}; only tcp ports are exposed this way.`,
-            'Add a domain for an http port instead.',
-            {
-              issues: [
-                {
-                  path: '/id',
-                  message: 'port is not tcp',
-                },
-              ],
-            },
-          )
-        }
-
-        const picker = hostPortPicker(db, ctx.app.server_id)
-        const hostPort =
-          picker.next() ??
-          fail(
-            'PORT_RANGE_EXHAUSTED',
-            `Every port in ${picker.range} is allocated on this server.`,
-            'Remove an unused TCP exposure, or widen exposure.port_range.',
-          )
-        const changes = new ChangeSet()
-
-        changes.add('port_allocation', ctx.port.id, {
-          server_id: ctx.app.server_id,
-          host_port: hostPort,
-        })
-        const result = commit(
-          kit.deps,
-          call,
-          {
-            target: ctx.target_row,
-            protect: isProduction(ctx.target_row),
-          },
-          changes,
-        )
-
-        if (!result.applied) {
-          return kit.approvalBody(result, set)
-        }
-
-        set.status = 201
-
-        return allocationView(result.refs['new:port_allocation:1']!)
-      },
-      {
-        app_port: {
-          id: 'expose_tcp',
-          summary: 'Expose a tcp port on a host port',
-          level: 'admin',
-        },
-        response: replies({
-          201: PortAllocation,
-          202: ApprovalDetail,
-        }),
-      },
-    )
-    .delete(
-      '/port-allocations/:id',
-      async ({ ctx, request, set }) => {
-        const call = await kit.call(request)
-
-        if (ctx.allocation.status === 'removed') {
-          return allocationView(ctx.allocation.id)
-        }
-
-        const changes = new ChangeSet()
-
-        changes.update(
-          'port_allocation',
-          ctx.allocation.id,
-          '/status',
-          ctx.allocation.status,
-          'removed',
-        )
-        const result = commit(
-          kit.deps,
-          call,
-          {
-            target: ctx.target_row,
-            protect: isProduction(ctx.target_row),
-          },
-          changes,
-        )
-
-        if (!result.applied) {
-          return kit.approvalBody(result, set)
-        }
-
-        return allocationView(ctx.allocation.id)
-      },
-      {
-        port_allocation: {
-          id: 'remove_tcp_exposure',
-          summary: 'Remove a TCP exposure',
-          level: 'admin',
-        },
-        response: replies({
-          200: PortAllocation,
           202: ApprovalDetail,
         }),
       },

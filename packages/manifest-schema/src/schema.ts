@@ -6,7 +6,6 @@ import {
   desiredStateValues,
   domainFieldText,
   firewallModeValues,
-  ingressValues,
   injectionValues,
   keyNamePattern,
   portFieldText,
@@ -359,11 +358,6 @@ export const Domain = Type.Object(
         description: "A declared http port; the app's first http port by default",
       }),
     ),
-    ingress: Optional(
-      StringEnum(ingressValues, {
-        description: domainFieldText.ingress,
-      }),
-    ),
   },
   {
     description: 'A domain routed to an http port',
@@ -568,11 +562,6 @@ export const App = Type.Object(
         description: 'Absent: not managed by the Manifest',
       }),
     ),
-    expose_tcp: Optional(
-      Type.Array(Type.Integer(portRange), {
-        description: 'Declared tcp ports exposed on a host port',
-      }),
-    ),
     keys: Optional(KeyMap(AppKey, 'App keys; absent: not managed by the Manifest')),
     desired_state: Optional(
       StringEnum(desiredStateValues, {
@@ -627,7 +616,6 @@ export const AppOverride = Type.Object(
     ),
     limits: Optional(Type.Union([Limits, Type.Null()])),
     domains: Optional(Type.Union([Type.Array(Domain), Type.Null()])),
-    expose_tcp: Optional(Type.Union([Type.Array(Type.Integer(portRange)), Type.Null()])),
     desired_state: Optional(Type.Union([StringEnum(desiredStateValues), Type.Null()])),
     schedule: Optional(Type.Union([Schedule, Type.Null()])),
     keys: Optional(Type.Union([KeyMap(AppKey, 'Keys merged one by one'), Type.Null()])),
@@ -705,7 +693,6 @@ export const overridableKeys = [
   'server',
   'limits',
   'domains',
-  'expose_tcp',
   'desired_state',
   'schedule',
   'keys',

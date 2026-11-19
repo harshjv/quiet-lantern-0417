@@ -3,7 +3,7 @@ import { MarkerType, type Edge, type Node } from '@xyflow/react'
 import type { Connections, NetworkMap } from './api'
 import { plural } from './format'
 import { inboundPeer, path as pathLabel, peerKind, type Status } from './labels'
-import { domainState, endpointText, exposureState, rateText, stationName } from './network-text'
+import { domainState, endpointText, rateText } from './network-text'
 
 export type MapApp = NetworkMap['apps'][number]
 export type MapEntry = NetworkMap['inbound']['entries'][number]
@@ -12,8 +12,6 @@ export type InternetData = { label: string }
 export type EntryData = {
   entry: MapEntry
   status: Status | null
-  hostPort: number | null
-  station: string | null
 }
 export type AppData = { app: MapApp }
 
@@ -46,10 +44,7 @@ const rowHeight = {
   app: 184,
 } as const
 
-export const entryKey = (entry: MapEntry) =>
-  entry.kind === 'domain'
-    ? `domain:${entry.hostname}`
-    : `tcp:${entry.public ?? entry.app}:${entry.port}`
+export const entryKey = (entry: MapEntry) => `domain:${entry.hostname}`
 
 const appLayers = (map: NetworkMap) => {
   const names = map.apps.map((s) => s.name)
@@ -62,7 +57,7 @@ const appLayers = (map: NetworkMap) => {
   }
 
   const layer = new Map<string, number>()
-  const exposed = new Set(map.inbound.entries.map((e) => e.app))
+  const reachable = new Set(map.inbound.entries.map((e) => e.app))
   const walk = (starts: string[], base: number) => {
     const queue = starts.filter((n) => !layer.has(n)).map((n) => [n, base] as const)
 
@@ -85,21 +80,21 @@ const appLayers = (map: NetworkMap) => {
   }
 
   const isolated = names.filter(
-    (n) => !exposed.has(n) && !map.edges.some((e) => e.from === n || e.to === n),
+    (n) => !reachable.has(n) && !map.edges.some((e) => e.from === n || e.to === n),
   )
 
   walk(
-    names.filter((n) => exposed.has(n) || isolated.includes(n)),
+    names.filter((n) => reachable.has(n) || isolated.includes(n)),
     0,
   )
   const rest = names.filter((n) => !layer.has(n))
   const roots = rest.filter((n) => !map.edges.some((e) => e.to === n && rest.includes(e.from)))
 
-  walk(roots.length ? roots : rest.slice(0, 1), exposed.size ? 1 : 0)
+  walk(roots.length ? roots : rest.slice(0, 1), reachable.size ? 1 : 0)
 
   for (const n of names) {
     if (!layer.has(n)) {
-      walk([n], exposed.size ? 1 : 0)
+      walk([n], reachable.size ? 1 : 0)
     }
   }
 
@@ -139,30 +134,12 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
     entries.length * rowHeight.entry,
     ...byLayer.map((l) => l.length * rowHeight.app),
   )
-  const exposureOf = (entry: MapEntry & { kind: 'tcp' }) =>
-    map.apps
-      .find((s) => s.name === entry.app)
-      ?.exposures.find((x) => x.public === entry.public && x.port === entry.port)
   const statusOf = (entry: MapEntry) => {
-    if (entry.kind === 'domain') {
-      const domain = map.apps
-        .find((s) => s.name === entry.app)
-        ?.domains.find((d) => d.hostname === entry.hostname)
+    const domain = map.apps
+      .find((s) => s.name === entry.app)
+      ?.domains.find((d) => d.hostname === entry.hostname)
 
-      return domain ? domainState(domain) : null
-    }
-
-    const exposure = exposureOf(entry)
-
-    return exposure?.result ? exposureState(exposure) : null
-  }
-  const tcpPlacement = (entry: MapEntry) => {
-    const exposure = entry.kind === 'tcp' ? exposureOf(entry) : undefined
-
-    return {
-      hostPort: exposure?.host_port ?? null,
-      station: exposure ? stationName(map, exposure.server_id) : null,
-    }
+    return domain ? domainState(domain) : null
   }
   const hasInbound = entries.length > 0
   const firstAppX = hasInbound ? entryX + width.entry + gap : 0
@@ -192,7 +169,6 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
         data: {
           entry: item,
           status: statusOf(item),
-          ...tcpPlacement(item),
         },
       })
     }

@@ -462,25 +462,6 @@ func HostSwitch(vip netip.Addr) (netip.Addr, error) {
 	return netip.Addr{}, nil
 }
 
-func HostPort(hostPort uint16) (netip.AddrPort, error) {
-	c, err := nftables.New()
-	if err != nil {
-		return netip.AddrPort{}, err
-	}
-	els, err := c.GetSetElements(portSwitchMap())
-	if err != nil {
-		return netip.AddrPort{}, err
-	}
-	for _, el := range els {
-		if len(el.Key) < 2 || len(el.Val) < 6 || uint16(el.Key[0])<<8|uint16(el.Key[1]) != hostPort {
-			continue
-		}
-		a, _ := netip.AddrFromSlice(el.Val[:4])
-		return netip.AddrPortFrom(a, uint16(el.Val[4])<<8|uint16(el.Val[5])), nil
-	}
-	return netip.AddrPort{}, nil
-}
-
 func OpenChecked(pid int, inode uint64) (*Namespace, error) {
 	ns, err := Open(pid)
 	if err != nil {

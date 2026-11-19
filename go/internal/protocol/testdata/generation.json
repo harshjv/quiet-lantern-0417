@@ -11,14 +11,11 @@
     "settings": {
       "ipam.pool": "10.200.0.0/16",
       "ipam.virtual_prefix": "100.64.0.0/16",
-      "gateway.rate_per_source": 20,
-      "exposure.port_range": "30000-32767",
       "disk.warning_pct": 80,
       "disk.critical_pct": 90,
       "workshop.idle_timeout_s": 3600,
       "workshop.max_builds_per_project": 1,
       "registry.gc_schedule": "0 3 * * *",
-      "acme.email": "ops@example.com",
       "platform.allow_unsigned": false
     },
     "registry": {
@@ -38,14 +35,8 @@
         "gateway": "10.200.1.1"
       }
     },
-    "inbound": {
-      "mode": "direct",
-      "web_ports": "closed",
-      "setup_port_until": null
-    },
     "concurrency_cap": 2,
-    "hosts_dispatch": false,
-    "public_address": null
+    "hosts_dispatch": false
   },
   "components": {
     "coupler_image": {
@@ -353,13 +344,8 @@
   "volumes": {},
   "gateway": {
     "hash": "sha256:9671fd778753e980652258d7b86f7dfff3bab82888a1e297033708444bb54cb9",
-    "acme": {
-      "email": "ops@example.com",
-      "ca_server": null
-    },
     "routes": {}
   },
-  "port_allocations": {},
   "workshops": {},
   "system_targets": {}
 }

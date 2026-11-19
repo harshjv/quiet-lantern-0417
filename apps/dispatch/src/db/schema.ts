@@ -37,7 +37,6 @@ import {
   flowVerdictValues,
   githubRepositorySelectionValues,
   grantSourceValues,
-  ingressValues,
   injectionValues,
   keyKindValues,
   keyScopeValues,
@@ -50,7 +49,6 @@ import {
   notificationChannelKindValues,
   notificationChannelStatusValues,
   platformUpgradeStatusValues,
-  portAllocationStatusValues,
   portProtocolValues,
   releaseChannelValues,
   repoAuthValues,
@@ -190,7 +188,6 @@ export const server = sqliteTable(
       enum: machineRuntimeValues,
     }),
     cloudflare_tunnel_id: text('cloudflare_tunnel_id'),
-    public_address: text('public_address'),
     identity_key: text('identity_key'),
     sleep_schedule: json<unknown>('sleep_schedule'),
     revoked_at: timestamp('revoked_at'),
@@ -724,16 +721,6 @@ export const domain = sqliteTable(
     kind: text('kind', {
       enum: domainKindValues,
     }).notNull(),
-    ingress: text('ingress', {
-      enum: ingressValues,
-    }).notNull(),
-    cloudflare: json<{ zone_id: string; record_id: string }>('cloudflare'),
-    certificate: json<{
-      resolver: string
-      status: string
-      not_before: string | null
-      expires_at: string | null
-    }>('certificate'),
     status: text('status', {
       enum: domainStatusValues,
     })
@@ -743,30 +730,6 @@ export const domain = sqliteTable(
     error: json<DiagnosisValue>('error'),
   },
   (table) => [uniqueIndex('domain_hostname_unique').on(table.hostname)],
-)
-
-export const port_allocation = sqliteTable(
-  'port_allocation',
-  {
-    ...entity('port_allocation'),
-    app_port_id: text('app_port_id')
-      .notNull()
-      .references(() => app_port.id),
-    server_id: text('server_id')
-      .notNull()
-      .references(() => server.id),
-    host_port: integer('host_port').notNull(),
-    status: text('status', {
-      enum: portAllocationStatusValues,
-    })
-      .notNull()
-      .default('active'),
-  },
-  (table) => [
-    uniqueIndex('port_allocation_server_host_port_active_unique')
-      .on(table.server_id, table.host_port)
-      .where(sql`status = 'active'`),
-  ],
 )
 
 export const deployment = sqliteTable(

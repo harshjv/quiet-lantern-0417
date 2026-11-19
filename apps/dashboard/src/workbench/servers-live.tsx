@@ -97,14 +97,6 @@ const factsOf = (server: ServerView): Fact[] => [
         },
       ]
     : []),
-  ...(server.public_address
-    ? [
-        {
-          kind: 'link' as const,
-          text: server.public_address,
-        },
-      ]
-    : []),
 ]
 
 function ServerRow({ server, onOpen }: { server: ServerView; onOpen: () => void }) {

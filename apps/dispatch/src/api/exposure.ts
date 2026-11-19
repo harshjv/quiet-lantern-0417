@@ -1,72 +1,29 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
+
+import { gatewayHostAlias } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
-import { port_allocation, server } from '../db/schema.ts'
+import { server } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import { effectivePins, readLockfile } from '../platform/lockfile.ts'
 
 import { fail } from './errors.ts'
 
-const sslipHost = (address: string) =>
-  address.includes(':') ? address.replaceAll(':', '-') : address.replaceAll('.', '-')
-
-export const ingressMode = (db: Db) =>
-  readSetting(db, 'ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
-
-export const generatedHostname = (
-  db: Db,
-  appName: string,
-  targetName: string,
-  stationId: string,
-) => {
+export const generatedHostname = (db: Db, appName: string, targetName: string) => {
   const zone = readSetting(db, 'domains.zone')
-  const label = `${appName}-${targetName}`
 
-  if (zone) {
-    return `${label}.${zone}`
-  }
-
-  const address = db
-    .select({
-      public_address: server.public_address,
-    })
-    .from(server)
-    .where(eq(server.id, stationId))
-    .get()?.public_address
-
-  return address ? `${label}.${sslipHost(address)}.sslip.io` : null
+  return zone ? `${appName}-${targetName}.${zone}` : null
 }
 
-export const hostPortPicker = (db: Db, stationId: string) => {
-  const [low, high] = readSetting(db, 'exposure.port_range').split('-').map(Number) as [
-    number,
-    number,
-  ]
-  const used = new Set(
-    db
-      .select({
-        host_port: port_allocation.host_port,
-      })
-      .from(port_allocation)
-      .where(and(eq(port_allocation.server_id, stationId), eq(port_allocation.status, 'active')))
-      .all()
-      .map((a) => a.host_port),
-  )
+export const tunnelRouteOf = (db: Db, hostname: string) => {
+  const zone = readSetting(db, 'domains.zone')
 
-  return {
-    range: `${low}-${high}`,
-    next: () => {
-      for (let candidate = low; candidate <= high; candidate++) {
-        if (!used.has(candidate)) {
-          used.add(candidate)
-
-          return candidate
-        }
+  return zone && hostname.endsWith(`.${zone}`)
+    ? null
+    : {
+        hostname,
+        service: `http://${gatewayHostAlias}`,
       }
-
-      return null
-    },
-  }
 }
 
 export const requireGatewayPin = (db: Db, stationId: string) => {

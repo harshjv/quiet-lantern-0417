@@ -16,14 +16,12 @@ const label = (change: Change) => {
     hostname?: string
     mount_path?: string
     port?: number
-    host_port?: number
   }
   const name =
     after.name ??
     after.hostname ??
     after.mount_path ??
-    (after.port !== undefined ? `port ${after.port}` : undefined) ??
-    (after.host_port !== undefined ? `host port ${after.host_port}` : undefined)
+    (after.port !== undefined ? `port ${after.port}` : undefined)
 
   return `${change.entity}${name !== undefined ? ` ${name}` : ''}`
 }

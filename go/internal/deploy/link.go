@@ -22,9 +22,9 @@ import (
 
 const observedUpdateEvery = 5 * time.Second
 
-var observedMaps = []string{"components", "environments", "services", "deployments", "volumes", "runs", "port_allocations", "workshops", "system_targets", "sandboxes", "sandbox_snapshots", "sandbox_bases"}
+var observedMaps = []string{"components", "environments", "services", "deployments", "volumes", "runs", "workshops", "system_targets", "sandboxes", "sandbox_snapshots", "sandbox_bases"}
 
-var hashedMaps = []string{"environments", "services", "deployments", "volumes", "port_allocations", "workshops", "system_targets", "sandboxes", "sandbox_snapshots"}
+var hashedMaps = []string{"environments", "services", "deployments", "volumes", "workshops", "system_targets", "sandboxes", "sandbox_snapshots"}
 
 func canonicalHash(obj map[string]any) (string, error) {
 	stripped := make(map[string]any, len(obj))
@@ -266,7 +266,7 @@ func (s *Station) applyGeneration(ctx context.Context, m dispatch.Message) {
 		refuse(g.Number, g.Hash, failure)
 		return
 	}
-	plan, err := BuildPlan(&g, s.appliedForCheck(&g), s.opts.StateDir, s.trust())
+	plan, err := BuildPlan(&g, s.appliedForCheck(&g), s.opts.StateDir)
 	if err != nil {
 		var rej *Rejection
 		if !errors.As(err, &rej) {
@@ -357,14 +357,6 @@ func (s *Station) ackResults() []protocol.GenerationResult {
 			failed("gateway/routes/"+id, st.failure)
 		case protocol.ObjectResultBlocked:
 			blocked("gateway/routes/"+id, st.blockedBy)
-		}
-	}
-	for id, st := range s.gw.ports {
-		switch st.result {
-		case protocol.ObjectResultFailed:
-			failed("port_allocations/"+id, st.failure)
-		case protocol.ObjectResultBlocked:
-			blocked("port_allocations/"+id, st.blockedBy)
 		}
 	}
 	if s.gw.failure != nil {

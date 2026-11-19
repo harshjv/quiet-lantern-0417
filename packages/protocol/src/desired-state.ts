@@ -6,7 +6,6 @@ import {
   DesiredState,
   FirewallMode,
   HealthCheck,
-  Ingress,
   Injection,
   Limits,
   MachineEgress,
@@ -37,7 +36,6 @@ export const StationSettings = Type.Object(
   {
     'ipam.pool': Type.String(),
     'ipam.virtual_prefix': Type.String(),
-    'exposure.port_range': Type.String(),
     'disk.warning_pct': Count,
     'disk.critical_pct': Count,
     'logs.retention.runtime_days': Type.Optional(Count),
@@ -48,11 +46,9 @@ export const StationSettings = Type.Object(
     'workshop.idle_timeout_s': Seconds,
     'workshop.max_builds_per_project': Count,
     'registry.gc_schedule': Type.String(),
-    'acme.email': Type.String(),
     'platform.lockfile': Type.Optional(Json),
     'platform.allow_unsigned': Type.Boolean(),
     'gaming.quiet_period_s': Type.Optional(Seconds),
-    'gateway.rate_per_source': Count,
   },
   {
     title: 'StationSettings',
@@ -93,19 +89,6 @@ export const DesiredStation = Type.Object(
         title: 'StationNetworks',
       },
     ),
-    inbound: Type.Object(
-      {
-        mode: Ingress,
-        web_ports: StringEnum(['open', 'closed'], {
-          title: 'WebPorts',
-        }),
-        setup_port_until: Nullable(Timestamp),
-      },
-      {
-        title: 'StationInbound',
-      },
-    ),
-    public_address: Nullable(Type.String()),
     concurrency_cap: Count,
     intermittent: Type.Optional(Type.Boolean()),
     sleep_schedule: Type.Optional(Nullable(Json)),
@@ -432,21 +415,7 @@ export const Route = Type.Object(
   {
     hash: Digest,
     hostname: Type.String(),
-    ingress: Ingress,
     target: RouteTarget,
-    tls: Nullable(
-      Type.Object(
-        {
-          resolver: StringEnum(['letsencrypt', 'letsencrypt-shortlived'], {
-            title: 'CertResolver',
-          }),
-        },
-        {
-          title: 'RouteTls',
-        },
-      ),
-    ),
-    redirect_http: Type.Boolean(),
   },
   {
     title: 'Route',
@@ -456,34 +425,10 @@ export const Route = Type.Object(
 export const DesiredGateway = Type.Object(
   {
     hash: Digest,
-    acme: Type.Object(
-      {
-        email: Type.String(),
-        ca_server: Nullable(Type.String()),
-      },
-      {
-        title: 'GatewayAcme',
-      },
-    ),
     routes: IdMap(Route),
   },
   {
     title: 'DesiredGateway',
-  },
-)
-
-export const DesiredPortAllocation = Type.Object(
-  {
-    hash: Digest,
-    service_port_id: Id('app_port'),
-    service_id: Id('app'),
-    host_port: Port,
-    protocol: Type.Literal('tcp'),
-    virtual_ip: Type.String(),
-    container_port: Port,
-  },
-  {
-    title: 'DesiredPortAllocation',
   },
 )
 
@@ -641,7 +586,6 @@ export const Generation = Type.Object(
     deployments: IdMap(DesiredDeployment),
     volumes: IdMap(DesiredVolume),
     gateway: DesiredGateway,
-    port_allocations: IdMap(DesiredPortAllocation),
     workshops: IdMap(DesiredWorkshop),
     system_targets: IdMap(SystemTarget),
     sandboxes: Type.Optional(IdMap(DesiredSandbox)),

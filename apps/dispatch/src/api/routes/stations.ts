@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { isIPv4 } from 'node:net'
 
 import { Type } from '@sinclair/typebox'
 import { and, desc, eq, isNull } from 'drizzle-orm'
@@ -148,7 +147,7 @@ export const stationRoutes = (kit: Kit) => {
           issues.push({
             path: '/',
             message:
-              'send at least one of public_address, concurrency_cap, draining, intermittent, machine_limits, default_machine_runtime',
+              'send at least one of concurrency_cap, draining, intermittent, machine_limits, default_machine_runtime',
           })
         }
 
@@ -156,13 +155,6 @@ export const stationRoutes = (kit: Kit) => {
           issues.push({
             path: '/sleep_schedule',
             message: 'sleep schedules arrive in phase 2',
-          })
-        }
-
-        if (body.public_address !== undefined && !isIPv4(body.public_address)) {
-          issues.push({
-            path: '/public_address',
-            message: 'must be an IPv4 address in dotted-quad form',
           })
         }
 
@@ -192,7 +184,6 @@ export const stationRoutes = (kit: Kit) => {
         }
 
         const current = {
-          public_address: row.public_address,
           concurrency_cap: row.concurrency_cap,
           draining: row.draining,
           intermittent: row.intermittent,
@@ -223,7 +214,7 @@ export const stationRoutes = (kit: Kit) => {
         }
 
         const shown = kit.fields(
-          'public_address,intermittent,machine_limits,default_machine_runtime,machine_runtime_advice',
+          'intermittent,machine_limits,default_machine_runtime,machine_runtime_advice',
         )
 
         if (changes.empty) {
@@ -259,10 +250,6 @@ export const stationRoutes = (kit: Kit) => {
           },
         )
 
-        if ('public_address' in after && row.hosts_dispatch) {
-          kit.deps.auth.rebuild()
-        }
-
         return select(
           kit.views.station,
           db.select().from(server).where(eq(server.id, row.id)).get()!,
@@ -273,16 +260,11 @@ export const stationRoutes = (kit: Kit) => {
         operation: {
           id: 'update_server',
           summary:
-            'Change a server: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2',
+            'Change a server: concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2',
           level: 'instance admin',
         },
         body: t.Object(
           {
-            public_address: t.Optional(
-              t.String({
-                description: 'The IPv4 address domains and TCP exposures reach the server on',
-              }),
-            ),
             concurrency_cap: t.Optional(
               t.Integer({
                 minimum: 1,

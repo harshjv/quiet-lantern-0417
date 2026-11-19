@@ -106,7 +106,7 @@ export const networkRoutes = (kit: Kit) => {
         place: {
           id: 'describe_network',
           summary:
-            'Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path',
+            'Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains and every path',
           level: 'read',
           cli: {
             render: 'network-map',
@@ -345,7 +345,7 @@ export const networkRoutes = (kit: Kit) => {
         place: {
           id: 'explain_network',
           summary:
-            'Explain why an app can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes',
+            'Explain why an app can or cannot reach a target, or why the internet can or cannot reach a domain, hop by hop with fixes',
           level: 'read',
           cli: false,
         },
@@ -359,7 +359,7 @@ export const networkRoutes = (kit: Kit) => {
             minLength: 1,
             maxLength: 260,
             description:
-              'An app, app:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port',
+              'An app, app:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname',
           }),
           port: t.Optional(t.Numeric(portRange)),
           protocol: t.Optional(input(StringEnum(networkProtocolValues))),

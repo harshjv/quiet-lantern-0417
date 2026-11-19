@@ -26,7 +26,6 @@ const nouns: Record<string, string> = {
   volume_snapshot: 'volume snapshot',
   volume_restore: 'volume restore',
   domain: 'domain',
-  port_allocation: 'public port',
   key: 'key',
   deployment: 'deployment',
   preview: 'preview',
@@ -76,8 +75,6 @@ const labels: Record<string, string> = {
   injection: 'Injected as',
   build: 'At build time',
   target: 'Value for',
-  host_port: 'Public port',
-  ingress: 'Ingress',
   status: 'Status',
   value: 'Value',
 }
@@ -258,7 +255,7 @@ const ownName = (change: Change) => {
     return null
   }
 
-  const name = data.name ?? data.hostname ?? data.mount_path ?? data.port ?? data.host_port
+  const name = data.name ?? data.hostname ?? data.mount_path ?? data.port
 
   return typeof name === 'string' || typeof name === 'number' ? String(name) : null
 }

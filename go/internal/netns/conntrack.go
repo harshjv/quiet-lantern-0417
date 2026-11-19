@@ -22,7 +22,6 @@ const (
 
 type FlowMatch struct {
 	Destination netip.Addr
-	Port        uint16
 	ReplySource netip.Addr
 	Closing     bool
 }
@@ -44,9 +43,6 @@ func (m FlowMatch) matches(f conntrack.Flow) bool {
 		return false
 	}
 	if m.Destination.IsValid() && f.TupleOrig.IP.DestinationAddress != m.Destination {
-		return false
-	}
-	if m.Port != 0 && f.TupleOrig.Proto.DestinationPort != m.Port {
 		return false
 	}
 	if m.Closing {

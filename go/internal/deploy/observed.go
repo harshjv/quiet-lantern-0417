@@ -51,17 +51,16 @@ func stationdVersion() string {
 
 func (s *Station) observed() protocol.Observed {
 	o := protocol.Observed{
-		Components:      protocol.ObservedComponents{},
-		Deployments:     protocol.ObservedDeployments{},
-		Environments:    protocol.ObservedEnvironments{},
-		Gateway:         protocol.ObservedGateway{Routes: protocol.ObservedGatewayRoutes{}},
-		PortAllocations: protocol.ObservedPortAllocations{},
-		Services:        protocol.ObservedServices{},
-		SystemTargets:   protocol.ObservedSystemTargets{},
-		Unknown:         s.unknown,
-		Volumes:         protocol.ObservedVolumes{},
-		Runs:            protocol.ObservedRuns{},
-		Workshops:       protocol.ObservedWorkshops{},
+		Components:    protocol.ObservedComponents{},
+		Deployments:   protocol.ObservedDeployments{},
+		Environments:  protocol.ObservedEnvironments{},
+		Gateway:       protocol.ObservedGateway{Routes: protocol.ObservedGatewayRoutes{}},
+		Services:      protocol.ObservedServices{},
+		SystemTargets: protocol.ObservedSystemTargets{},
+		Unknown:       s.unknown,
+		Volumes:       protocol.ObservedVolumes{},
+		Runs:          protocol.ObservedRuns{},
+		Workshops:     protocol.ObservedWorkshops{},
 		Station: protocol.ObservedStation{
 			Resources: hostResources(s.info.NCPU, int(s.info.MemTotal)),
 			Routes:    []any{},

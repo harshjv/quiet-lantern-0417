@@ -38,7 +38,6 @@ export type DeploymentStep = NonNullable<Deployment['steps']>[number]
 export type Diagnosis = Data<ReturnType<V1['deployments']>['diagnosis']['get']>
 export type Domain = Data<ReturnType<V1['domains']>['get']>
 export type AppPort = Item<Data<ReturnType<V1['apps']>['ports']['get']>>
-export type PortAllocation = Item<Data<ReturnType<V1['apps']>['port-allocations']['get']>>
 export type Key = Data<ReturnType<V1['keys']>['get']>
 export type Machine = Data<ReturnType<V1['machines']>['get']>
 export type Tasks = Data<V1['tasks']['get']>

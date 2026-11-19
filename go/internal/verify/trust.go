@@ -2,10 +2,8 @@ package verify
 
 import (
 	"bytes"
-	"crypto/x509"
 	_ "embed"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,11 +24,9 @@ var embeddedTrustedRoot []byte
 var embeddedTUFRoot []byte
 
 const (
-	LetsEncryptProduction = "https://acme-v02.api.letsencrypt.org/directory"
-	LetsEncryptStaging    = "https://acme-staging-v02.api.letsencrypt.org/directory"
-	SignPredicateType     = "https://sigstore.dev/cosign/sign/v1"
-	maxBundleBytes        = 1 << 20
-	maxBundlesPerDigest   = 16
+	SignPredicateType   = "https://sigstore.dev/cosign/sign/v1"
+	maxBundleBytes      = 1 << 20
+	maxBundlesPerDigest = 16
 )
 
 type Identity struct {
@@ -47,8 +43,6 @@ type Trust struct {
 	TUFMirror            string            `json:"tuf_mirror"`
 	ReleasesRepository   string            `json:"releases_repository"`
 	Sources              map[string]string `json:"sources,omitempty"`
-	ACMECAServer         string            `json:"acme_ca_server,omitempty"`
-	ACMECACertificates   string            `json:"acme_ca_certificates,omitempty"`
 	Production           bool              `json:"-"`
 	TUFRoot              []byte            `json:"-"`
 	TrustedRoot          []byte            `json:"-"`
@@ -140,17 +134,6 @@ func ParseTestTrust(b []byte, dir string) (Trust, error) {
 	if t.ReleasesRepository == protocol.ReleaseRepository || t.TUFMirror == protocol.TUFMirror || t.SignaturesRepository == protocol.SignaturesRepository {
 		return Trust{}, fmt.Errorf("trust file %q points at the production release locations; a test trust names its own release host", t.Name)
 	}
-	if t.ACMECAServer == "" {
-		t.ACMECAServer = LetsEncryptStaging
-	}
-	if t.ACMECAServer == LetsEncryptProduction || !strings.HasPrefix(t.ACMECAServer, "https://") {
-		return Trust{}, fmt.Errorf("trust file acme_ca_server %q must be an https ACME directory other than Let's Encrypt production", t.ACMECAServer)
-	}
-	if t.ACMECACertificates != "" {
-		if _, err := parseRoots([]byte(t.ACMECACertificates)); err != nil {
-			return Trust{}, fmt.Errorf("trust file acme_ca_certificates: %w", err)
-		}
-	}
 	if _, err := regexp.Compile(t.Identity.SANRegex); err != nil {
 		return Trust{}, fmt.Errorf("identity.san_regex: %w", err)
 	}
@@ -166,42 +149,6 @@ func (t Trust) MarshalTestTrust() ([]byte, error) {
 		f.TrustedRootInline = t.TrustedRoot
 	}
 	return json.MarshalIndent(f, "", "  ")
-}
-
-func (t Trust) DefaultACME() string {
-	if t.Production {
-		return ""
-	}
-	return t.ACMECAServer
-}
-
-func (t Trust) ACMERoots() []byte {
-	if t.Production || t.ACMECACertificates == "" {
-		return nil
-	}
-	return []byte(t.ACMECACertificates)
-}
-
-func parseRoots(b []byte) (int, error) {
-	n := 0
-	for {
-		var block *pem.Block
-		block, b = pem.Decode(b)
-		if block == nil {
-			break
-		}
-		if block.Type != "CERTIFICATE" {
-			return n, fmt.Errorf("PEM block %d is %s, not CERTIFICATE", n+1, block.Type)
-		}
-		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
-			return n, fmt.Errorf("certificate %d: %w", n+1, err)
-		}
-		n++
-	}
-	if n == 0 {
-		return 0, fmt.Errorf("no PEM certificate found")
-	}
-	return n, nil
 }
 
 func resolvePath(dir, p string) string {

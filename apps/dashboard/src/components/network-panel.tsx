@@ -15,7 +15,6 @@ import {
   Globe,
   Info,
   Network,
-  Plug,
   Plus,
   Server,
   ShieldBan,
@@ -24,7 +23,7 @@ import {
 import { useTheme } from 'next-themes'
 import { useMemo, useState, type ReactNode } from 'react'
 
-import { Code, Command } from '@/components/code'
+import { Code } from '@/components/code'
 import { ConnectionsTable } from '@/components/connections-table'
 import { FixActions } from '@/components/fix'
 import { NewApp } from '@/components/new-service'
@@ -43,10 +42,17 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { NetworkMap } from '@/lib/api'
-import { commands, type Scope } from '@/lib/commands'
+import type { Scope } from '@/lib/commands'
 import { findingPlan } from '@/lib/fixes'
 import { ago, plural } from '@/lib/format'
-import { appKind, explanationVerdict, finding, path as pathLabel, pathResult } from '@/lib/labels'
+import {
+  appKind,
+  explanationVerdict,
+  finding,
+  path as pathLabel,
+  pathResult,
+  routeResult,
+} from '@/lib/labels'
 import { appTo } from '@/lib/links'
 import {
   layoutNetwork,
@@ -64,14 +70,12 @@ import {
   domainState,
   drainingText,
   endpointText,
-  exposureState,
-  exposureText,
   portSpecText,
   servingText,
 } from '@/lib/network-text'
 import { scopeOf, type PlaceView } from '@/lib/place'
 import { networkQuery } from '@/lib/queries'
-import { toneDot, toneText } from '@/lib/tone'
+import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
 const hidden = '!size-1 !min-h-0 !min-w-0 !border-0 !bg-transparent'
@@ -132,45 +136,18 @@ function InternetNode({ data }: NodeProps<MapNode & { type: 'internet'; data: In
   )
 }
 
-const noPublicAddress = (station: string | null) =>
-  `${station ? `Server ${station}` : 'The server'} has no public address yet.`
-
 function EntryNode({ data }: NodeProps<MapNode & { type: 'entry'; data: EntryData }>) {
-  const { entry, status, hostPort, station } = data
-  const label =
-    entry.kind === 'domain'
-      ? entry.hostname
-      : (entry.public ?? `Public TCP port ${hostPort ?? ''}`.trim())
+  const { entry, status } = data
   const problem = status && status.tone !== 'success' ? status : null
 
   return (
     <div className="flex w-72 items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs shadow-xs">
       <Handle type="target" position={Position.Left} isConnectable={false} className={hidden} />
-      {entry.kind === 'domain' ? (
-        <Globe className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      ) : (
-        <Plug className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      )}
-      <span
-        className={cn(
-          'min-w-0 flex-1 truncate',
-          (entry.kind === 'domain' || entry.public !== null) && 'font-mono',
-        )}
-        title={label}
-      >
-        {label}
+      <Globe className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 flex-1 truncate font-mono" title={entry.hostname}>
+        {entry.hostname}
       </span>
-      <span className="shrink-0 text-muted-foreground">
-        {entry.kind === 'domain' ? 'HTTPS' : `TCP ${entry.port}`}
-      </span>
-      {entry.kind === 'tcp' && entry.public === null && (
-        <span
-          className={cn('size-1.5 shrink-0 rounded-full', toneDot.warning)}
-          role="img"
-          title={noPublicAddress(station)}
-          aria-label={noPublicAddress(station)}
-        />
-      )}
+      <span className="shrink-0 text-muted-foreground">HTTPS</span>
       {problem && (
         <span className={cn('shrink-0', toneText[problem.tone])} title={problem.label}>
           {problem.label}
@@ -401,32 +378,6 @@ function Canvas({ map, live }: { map: NetworkMap; live: LiveNetwork }) {
   )
 }
 
-function InboundSummary({ map }: { map: NetworkMap }) {
-  const station = map.subnets[0]?.server.name
-
-  return (
-    <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-      <div className="flex items-center gap-2">
-        <dt className="text-muted-foreground">Web traffic</dt>
-        <dd>{map.inbound.web_ports === 'open' ? 'Open' : 'Closed until a domain exists'}</dd>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <dt className="text-muted-foreground">Public address</dt>
-        <dd className="flex flex-wrap items-center gap-2">
-          {map.inbound.public_address ? (
-            <Code copy={map.inbound.public_address}>{map.inbound.public_address}</Code>
-          ) : (
-            <>
-              <span>None. Set one so domains and public TCP ports work.</span>
-              {station && <Command command={commands.setPublicAddress(station)} />}
-            </>
-          )}
-        </dd>
-      </div>
-    </dl>
-  )
-}
-
 function TableView({ map }: { map: NetworkMap }) {
   return (
     <div className="space-y-6">
@@ -447,9 +398,6 @@ function TableView({ map }: { map: NetworkMap }) {
               <TableHead className="hidden lg:table-cell">Ports</TableHead>
               <TableHead>Serving</TableHead>
               <TableHead className="hidden lg:table-cell">Domains</TableHead>
-              <TableHead className="hidden lg:table-cell">
-                <Term name="publicTcpPort">Public TCP</Term>
-              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -487,17 +435,6 @@ function TableView({ map }: { map: NetworkMap }) {
                     <None />
                   )}
                 </TableCell>
-                <TableCell className="hidden whitespace-normal lg:table-cell">
-                  {s.exposures.length ? (
-                    s.exposures.map((x) => (
-                      <span key={x.id} className="block">
-                        {exposureText(map, x)}
-                      </span>
-                    ))
-                  ) : (
-                    <None />
-                  )}
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -508,16 +445,12 @@ function TableView({ map }: { map: NetworkMap }) {
           <h2 id="network-inbound" className="text-sm font-semibold">
             From the internet
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Domains and public TCP ports that reach apps here.
-          </p>
+          <p className="text-sm text-muted-foreground">Domains that reach apps here.</p>
         </div>
-        <InboundSummary map={map} />
         <TableFrame>
           <TableHeader>
             <TableRow>
-              <TableHead className="hidden sm:table-cell">Kind</TableHead>
-              <TableHead>Address</TableHead>
+              <TableHead>Domain</TableHead>
               <TableHead>App</TableHead>
               <TableHead className="hidden sm:table-cell">App port</TableHead>
               <TableHead className="hidden md:table-cell">State</TableHead>
@@ -525,35 +458,17 @@ function TableView({ map }: { map: NetworkMap }) {
           </TableHeader>
           <TableBody>
             {map.inbound.entries.length === 0 && (
-              <EmptyRow columns={5}>Nothing here is reachable from the internet.</EmptyRow>
+              <EmptyRow columns={4}>Nothing here is reachable from the internet.</EmptyRow>
             )}
             {map.inbound.entries.map((e) => {
               const svc = map.apps.find((s) => s.name === e.app)
-              const domain =
-                e.kind === 'domain'
-                  ? svc?.domains.find((d) => d.hostname === e.hostname)
-                  : undefined
-              const exposure =
-                e.kind === 'tcp'
-                  ? svc?.exposures.find((x) => x.public === e.public && x.port === e.port)
-                  : undefined
-              const state = domain ? domainState(domain) : exposureState(exposure)
+              const domain = svc?.domains.find((d) => d.hostname === e.hostname)
+              const state = domain ? domainState(domain) : routeResult.pending
 
               return (
-                <TableRow key={e.kind === 'domain' ? e.hostname : `${e.public}-${e.port}`}>
-                  <TableCell className="hidden sm:table-cell">
-                    {e.kind === 'domain' ? 'Domain' : 'Public TCP port'}
-                  </TableCell>
+                <TableRow key={e.hostname}>
                   <TableCell className="max-w-48 truncate sm:max-w-none">
-                    {e.kind === 'domain' ? (
-                      <Code>{e.hostname}</Code>
-                    ) : e.public ? (
-                      <Code>{e.public}</Code>
-                    ) : exposure ? (
-                      exposureText(map, exposure)
-                    ) : (
-                      <None>No public address</None>
-                    )}
+                    <Code>{e.hostname}</Code>
                   </TableCell>
                   <TableCell>{e.app}</TableCell>
                   <TableCell className="hidden tabular-nums sm:table-cell">{e.port}</TableCell>

@@ -37,7 +37,7 @@ export const surfaceOf = (request: Request, auth: AuthService): Surface | null =
   const host = request.headers.get('host') ?? new URL(request.url).host
   const hostname = host.replace(/:\d+$/, '')
 
-  if (loopbackHosts.has(hostname) || `https://${host}` === auth.surface.addressOrigin) {
+  if (loopbackHosts.has(hostname)) {
     return 'local'
   }
 

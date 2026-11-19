@@ -29,7 +29,7 @@ export const openApiDocument = {
     },
     {
       "name": "domains",
-      "description": "Domains and TCP exposures of an app"
+      "description": "Domains of an app"
     },
     {
       "name": "network",
@@ -7925,12 +7925,6 @@ export const openApiDocument = {
                         "$ref": "#/components/schemas/Domain"
                       }
                     },
-                    "port_allocations": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PortAllocation"
-                      }
-                    },
                     "current_deployment": {
                       "anyOf": [
                         {
@@ -8449,12 +8443,6 @@ export const openApiDocument = {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/Domain"
-                      }
-                    },
-                    "port_allocations": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PortAllocation"
                       }
                     },
                     "deployments": {
@@ -11614,15 +11602,8 @@ export const openApiDocument = {
                   },
                   "hostname": {
                     "minLength": 1,
-                    "description": "A hostname under a configured zone, or any name for direct ingress",
+                    "description": "One label under domains.zone, or a name outside it that needs its own tunnel route",
                     "type": "string"
-                  },
-                  "ingress": {
-                    "type": "string",
-                    "enum": [
-                      "direct",
-                      "tunnel"
-                    ]
                   }
                 }
               }
@@ -11638,15 +11619,8 @@ export const openApiDocument = {
                   },
                   "hostname": {
                     "minLength": 1,
-                    "description": "A hostname under a configured zone, or any name for direct ingress",
+                    "description": "One label under domains.zone, or a name outside it that needs its own tunnel route",
                     "type": "string"
-                  },
-                  "ingress": {
-                    "type": "string",
-                    "enum": [
-                      "direct",
-                      "tunnel"
-                    ]
                   }
                 }
               }
@@ -11662,15 +11636,8 @@ export const openApiDocument = {
                   },
                   "hostname": {
                     "minLength": 1,
-                    "description": "A hostname under a configured zone, or any name for direct ingress",
+                    "description": "One label under domains.zone, or a name outside it that needs its own tunnel route",
                     "type": "string"
-                  },
-                  "ingress": {
-                    "type": "string",
-                    "enum": [
-                      "direct",
-                      "tunnel"
-                    ]
                   }
                 }
               }
@@ -11811,502 +11778,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/apps/{app}/port-allocations": {
-      "get": {
-        "tags": [
-          "domains"
-        ],
-        "operationId": "list_tcp_exposures",
-        "summary": "List the TCP exposures of an app",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "app",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One of active, removed",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PortAllocation"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/ports/{id}/port-allocations": {
-      "post": {
-        "tags": [
-          "domains"
-        ],
-        "operationId": "expose_tcp",
-        "summary": "Expose a tcp port on a host port",
-        "x-stationly": {
-          "level": "admin"
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": "Response for status 201",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortAllocation"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApprovalDetail"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/port-allocations/{id}": {
-      "delete": {
-        "tags": [
-          "domains"
-        ],
-        "operationId": "remove_tcp_exposure",
-        "summary": "Remove a TCP exposure",
-        "x-stationly": {
-          "level": "admin"
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortAllocation"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApprovalDetail"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/projects/{project}/network": {
       "get": {
         "tags": [
           "network"
         ],
         "operationId": "describe_network",
-        "summary": "Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path",
+        "summary": "Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains and every path",
         "x-stationly": {
           "level": "read",
           "cli": {
@@ -12696,7 +12174,7 @@ export const openApiDocument = {
           "network"
         ],
         "operationId": "explain_network",
-        "summary": "Explain why an app can or cannot reach a target, or why the internet can or cannot reach a domain or TCP exposure, hop by hop with fixes",
+        "summary": "Explain why an app can or cannot reach a target, or why the internet can or cannot reach a domain, hop by hop with fixes",
         "x-stationly": {
           "level": "read",
           "cli": false
@@ -12736,7 +12214,7 @@ export const openApiDocument = {
             "schema": {
               "minLength": 1,
               "maxLength": 260,
-              "description": "An app, app:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname or public address:host port",
+              "description": "An app, app:port, a .internal name, ipv4:port, hostname:port, or with from=internet a domain hostname",
               "type": "string"
             }
           },
@@ -40892,7 +40370,7 @@ export const openApiDocument = {
           "servers"
         ],
         "operationId": "update_server",
-        "summary": "Change a server: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2",
+        "summary": "Change a server: concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2",
         "x-stationly": {
           "level": "instance admin"
         },
@@ -40914,10 +40392,6 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
-                  "public_address": {
-                    "description": "The IPv4 address domains and TCP exposures reach the server on",
-                    "type": "string"
-                  },
                   "concurrency_cap": {
                     "minimum": 1,
                     "description": "Deployments the server runs at once",
@@ -41035,10 +40509,6 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
-                  "public_address": {
-                    "description": "The IPv4 address domains and TCP exposures reach the server on",
-                    "type": "string"
-                  },
                   "concurrency_cap": {
                     "minimum": 1,
                     "description": "Deployments the server runs at once",
@@ -41156,10 +40626,6 @@ export const openApiDocument = {
                 "additionalProperties": false,
                 "type": "object",
                 "properties": {
-                  "public_address": {
-                    "description": "The IPv4 address domains and TCP exposures reach the server on",
-                    "type": "string"
-                  },
                   "concurrency_cap": {
                     "minimum": 1,
                     "description": "Deployments the server runs at once",
@@ -45949,7 +45415,6 @@ export const openApiDocument = {
               "recovery",
               "run",
               "route",
-              "certificate",
               "unpack",
               "disk",
               "network"
@@ -46866,13 +46331,10 @@ export const openApiDocument = {
           "SOURCE_SHA_MISMATCH",
           "EVENT_CURSOR_EXPIRED",
           "SUBNET_EXHAUSTED",
-          "PORT_RANGE_EXHAUSTED",
           "DOMAIN_INVALID",
           "TUNNEL_UNSUPPORTED_PROTOCOL",
           "GATEWAY_NOT_PINNED",
           "NETWORK_TARGET_INVALID",
-          "CERTIFICATE_RATE_LIMITED",
-          "CERTIFICATE_ISSUANCE_FAILED",
           "KEY_REFERENCE_INVALID",
           "KEY_UNRESOLVED",
           "KEY_TARGET_MISSING",
@@ -47297,7 +46759,6 @@ export const openApiDocument = {
               "recovery",
               "run",
               "route",
-              "certificate",
               "unpack",
               "disk",
               "network"
@@ -47830,63 +47291,24 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/Deployment"
       },
-      "Certificate": {
-        "title": "Certificate",
-        "type": "object",
-        "required": [
-          "status",
-          "expires_at"
-        ],
-        "properties": {
-          "status": {
-            "type": "string"
-          },
-          "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "resolver": {
-            "type": "string"
-          },
-          "not_before": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "$id": "#/components/schemas/Certificate"
-      },
-      "DnsInstruction": {
-        "title": "DnsInstruction",
+      "TunnelRoute": {
+        "title": "TunnelRoute",
+        "description": "The published route the admin adds to the Cloudflare Tunnel; null when the zone wildcard already covers the hostname",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "type",
-          "name",
-          "value",
-          "note"
+          "hostname",
+          "service"
         ],
         "properties": {
-          "type": {
+          "hostname": {
             "type": "string"
           },
-          "name": {
-            "type": "string"
-          },
-          "value": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "note": {
+          "service": {
             "type": "string"
           }
         },
-        "$id": "#/components/schemas/DnsInstruction"
+        "$id": "#/components/schemas/TunnelRoute"
       },
       "Domain": {
         "title": "Domain",
@@ -47897,9 +47319,7 @@ export const openApiDocument = {
           "app_port_id",
           "hostname",
           "kind",
-          "ingress",
-          "status",
-          "certificate"
+          "status"
         ],
         "properties": {
           "id": {
@@ -47924,13 +47344,6 @@ export const openApiDocument = {
               "custom"
             ]
           },
-          "ingress": {
-            "type": "string",
-            "enum": [
-              "direct",
-              "tunnel"
-            ]
-          },
           "status": {
             "type": "string",
             "enum": [
@@ -47939,20 +47352,21 @@ export const openApiDocument = {
               "error"
             ]
           },
-          "certificate": {
-            "$ref": "#/components/schemas/Certificate"
-          },
           "last_checked_at": {
             "type": [
               "string",
               "null"
             ]
           },
-          "dns_instructions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DnsInstruction"
-            }
+          "tunnel_route": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TunnelRoute"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "error": {
             "anyOf": [
@@ -47966,53 +47380,6 @@ export const openApiDocument = {
           }
         },
         "$id": "#/components/schemas/Domain"
-      },
-      "PortAllocation": {
-        "title": "PortAllocation",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "app_port_id",
-          "server_id",
-          "host_port",
-          "status",
-          "address"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "app_port_id": {
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "host_port": {
-            "type": "integer"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "removed"
-            ]
-          },
-          "address": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "$id": "#/components/schemas/PortAllocation"
       },
       "AppPort": {
         "title": "AppPort",
@@ -48055,12 +47422,6 @@ export const openApiDocument = {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Domain"
-            }
-          },
-          "port_allocations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PortAllocation"
             }
           }
         },
@@ -48929,12 +48290,6 @@ export const openApiDocument = {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Domain"
-            }
-          },
-          "port_allocations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PortAllocation"
             }
           },
           "current_deployment": {
@@ -50088,12 +49443,6 @@ export const openApiDocument = {
           "intermittent": {
             "type": "boolean"
           },
-          "public_address": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "machine_subnet": {
             "type": [
               "string",
@@ -50334,7 +49683,6 @@ export const openApiDocument = {
               "recovery",
               "run",
               "route",
-              "certificate",
               "unpack",
               "disk",
               "network"
@@ -51210,10 +50558,8 @@ export const openApiDocument = {
               "LISTENING_LOOPBACK_ONLY",
               "PORT_NOT_DECLARED",
               "DOMAIN_NOT_ACTIVE",
-              "CERTIFICATE_NOT_VALID",
-              "WEB_PORTS_CLOSED",
               "ROUTE_NOT_APPLIED",
-              "NO_PUBLIC_ADDRESS",
+              "TUNNEL_NOT_READY",
               "SERVER_STALE"
             ]
           },
@@ -51343,8 +50689,7 @@ export const openApiDocument = {
                 "virtual_ip",
                 "ports",
                 "switch",
-                "domains",
-                "exposures"
+                "domains"
               ],
               "properties": {
                 "id": {
@@ -51493,9 +50838,7 @@ export const openApiDocument = {
                       "app_port_id",
                       "hostname",
                       "kind",
-                      "ingress",
                       "status",
-                      "certificate",
                       "port",
                       "route"
                     ],
@@ -51516,13 +50859,6 @@ export const openApiDocument = {
                           "custom"
                         ]
                       },
-                      "ingress": {
-                        "type": "string",
-                        "enum": [
-                          "direct",
-                          "tunnel"
-                        ]
-                      },
                       "status": {
                         "type": "string",
                         "enum": [
@@ -51531,25 +50867,6 @@ export const openApiDocument = {
                           "error"
                         ]
                       },
-                      "certificate": {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "status",
-                          "expires_at"
-                        ],
-                        "properties": {
-                          "status": {
-                            "type": "string"
-                          },
-                          "expires_at": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          }
-                        }
-                      },
                       "port": {
                         "type": "integer"
                       },
@@ -51557,18 +50874,10 @@ export const openApiDocument = {
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
-                          "entrypoint",
                           "target",
                           "result"
                         ],
                         "properties": {
-                          "entrypoint": {
-                            "type": "string",
-                            "enum": [
-                              "websecure",
-                              "web"
-                            ]
-                          },
                           "target": {
                             "type": [
                               "string",
@@ -51599,83 +50908,6 @@ export const openApiDocument = {
                             ]
                           }
                         }
-                      }
-                    }
-                  }
-                },
-                "exposures": {
-                  "type": "array",
-                  "items": {
-                    "additionalProperties": false,
-                    "type": "object",
-                    "required": [
-                      "id",
-                      "app_port_id",
-                      "server_id",
-                      "host_port",
-                      "status",
-                      "address",
-                      "public",
-                      "port",
-                      "result"
-                    ],
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "app_port_id": {
-                        "type": "string"
-                      },
-                      "server_id": {
-                        "type": "string"
-                      },
-                      "host_port": {
-                        "type": "integer"
-                      },
-                      "status": {
-                        "type": "string",
-                        "enum": [
-                          "active",
-                          "removed"
-                        ]
-                      },
-                      "address": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
-                      },
-                      "public": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
-                      },
-                      "port": {
-                        "type": "integer"
-                      },
-                      "result": {
-                        "anyOf": [
-                          {
-                            "const": "ok",
-                            "type": "string"
-                          },
-                          {
-                            "const": "pending",
-                            "type": "string"
-                          },
-                          {
-                            "const": "failed",
-                            "type": "string"
-                          },
-                          {
-                            "const": "blocked",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
                       }
                     }
                   }
@@ -51805,82 +51037,35 @@ export const openApiDocument = {
             "additionalProperties": false,
             "type": "object",
             "required": [
-              "web_ports",
-              "public_address",
               "entries"
             ],
             "properties": {
-              "web_ports": {
-                "type": "string",
-                "enum": [
-                  "open",
-                  "closed"
-                ]
-              },
-              "public_address": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "entries": {
                 "type": "array",
                 "items": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "hostname",
-                        "app",
-                        "port"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "const": "domain",
-                          "type": "string"
-                        },
-                        "hostname": {
-                          "type": "string"
-                        },
-                        "app": {
-                          "type": "string"
-                        },
-                        "port": {
-                          "type": "integer"
-                        }
-                      }
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "hostname",
+                    "app",
+                    "port"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "domain",
+                      "type": "string"
                     },
-                    {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "public",
-                        "app",
-                        "port"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "const": "tcp",
-                          "type": "string"
-                        },
-                        "public": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "app": {
-                          "type": "string"
-                        },
-                        "port": {
-                          "type": "integer"
-                        }
-                      }
+                    "hostname": {
+                      "type": "string"
+                    },
+                    "app": {
+                      "type": "string"
+                    },
+                    "port": {
+                      "type": "integer"
                     }
-                  ]
+                  }
                 }
               }
             }
@@ -51912,7 +51097,6 @@ export const openApiDocument = {
                     "shared_app",
                     "guard",
                     "inbound_domain",
-                    "inbound_tcp",
                     "inbound_other",
                     "sandbox_inbound",
                     "domain_not_allowed",
@@ -52297,10 +51481,7 @@ export const openApiDocument = {
               "port",
               "probe_required",
               "domain",
-              "exposure",
-              "public_address",
-              "web_ports",
-              "certificate",
+              "tunnel",
               "route"
             ]
           },
@@ -52322,10 +51503,8 @@ export const openApiDocument = {
               "LISTENING_LOOPBACK_ONLY",
               "PORT_NOT_DECLARED",
               "DOMAIN_NOT_ACTIVE",
-              "CERTIFICATE_NOT_VALID",
-              "WEB_PORTS_CLOSED",
               "ROUTE_NOT_APPLIED",
-              "NO_PUBLIC_ADDRESS",
+              "TUNNEL_NOT_READY",
               "SERVER_STALE"
             ]
           },
@@ -52363,10 +51542,7 @@ export const openApiDocument = {
                     "port",
                     "probe_required",
                     "domain",
-                    "exposure",
-                    "public_address",
-                    "web_ports",
-                    "certificate",
+                    "tunnel",
                     "route"
                   ]
                 },
@@ -52395,10 +51571,8 @@ export const openApiDocument = {
                     "LISTENING_LOOPBACK_ONLY",
                     "PORT_NOT_DECLARED",
                     "DOMAIN_NOT_ACTIVE",
-                    "CERTIFICATE_NOT_VALID",
-                    "WEB_PORTS_CLOSED",
                     "ROUTE_NOT_APPLIED",
-                    "NO_PUBLIC_ADDRESS",
+                    "TUNNEL_NOT_READY",
                     "SERVER_STALE"
                   ]
                 },
@@ -56946,12 +56120,6 @@ export const openApiDocument = {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Domain"
-            }
-          },
-          "port_allocations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PortAllocation"
             }
           },
           "current_deployment": {

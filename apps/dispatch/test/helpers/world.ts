@@ -176,13 +176,6 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       },
     }),
   )
-  await approveWaiting(
-    h,
-    await h.call('POST', `/v1/ports/${db.ports[0].id}/port-allocations`, {
-      token,
-      body: {},
-    }),
-  )
   await h.call('PATCH', `/v1/apps/${stagingWeb.id}/keys`, {
     token,
     body: {

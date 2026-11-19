@@ -75,8 +75,6 @@ const built: Record<keyof typeof commands, string[]> = {
   setAppKey: [commands.setAppKey(app)],
   setProjectKey: [commands.setProjectKey(scope)],
   addDomain: [commands.addDomain('spt_01'), commands.addDomain(null)],
-  exposeTcp: [commands.exposeTcp('spt_01'), commands.exposeTcp(null)],
-  setPublicAddress: [commands.setPublicAddress('home')],
   setMachineRuntime: [commands.setMachineRuntime('home')],
   startMachine: [commands.startMachine(scope, 'web-sbx')],
   createMachine: [commands.createMachine(scope)],
@@ -86,7 +84,6 @@ const built: Record<keyof typeof commands, string[]> = {
 }
 
 const samples: Record<string, string> = {
-  ipv4: '203.0.113.5',
   port: '5432',
 }
 
@@ -206,7 +203,6 @@ test('the install command leaves out the defaults and fills the rest', () => {
 })
 
 test('placeholders are the angle-bracket segments', () => {
-  assert.deepEqual(placeholders(commands.setPublicAddress('home')), ['ipv4'])
   assert.deepEqual(placeholders(commands.setMachineRuntime('home')), ['runtime'])
   assert.deepEqual(placeholders(commands.deploy(app)), [])
 })

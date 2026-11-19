@@ -8,7 +8,6 @@ import { refreshServerApps } from './app-status.ts'
 import { fail } from './errors.ts'
 
 export const stationFields = [
-  'public_address',
   'concurrency_cap',
   'draining',
   'intermittent',
@@ -82,15 +81,6 @@ export const applyStationField = (db: Db, id: string, field: StationField, after
       db.update(server)
         .set({
           concurrency_cap: after as number,
-        })
-        .where(eq(server.id, id))
-        .run()
-
-      return
-    case 'public_address':
-      db.update(server)
-        .set({
-          public_address: after as string,
         })
         .where(eq(server.id, id))
         .run()

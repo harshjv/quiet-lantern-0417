@@ -327,7 +327,7 @@ func Install(ctx context.Context, v *verify.Verifier, opts InstallOptions) (Inst
 			if !hasFlag(runArgs, "--trust") {
 				runArgs = append(append([]string{}, runArgs...), "--trust", path)
 			}
-			step("test_trust", "", "", "written", fmt.Sprintf("%s (%s); TEST INSTALL: stationd trusts this identity instead of the Stationly release identity, and the Gateway uses %s", path, v.Trust().Name, v.Trust().DefaultACME()), t)
+			step("test_trust", "", "", "written", fmt.Sprintf("%s (%s); TEST INSTALL: stationd trusts this identity instead of the Stationly release identity", path, v.Trust().Name), t)
 		}
 		t = time.Now()
 		detail, err := installUnit(opts, check.Path, runArgs)

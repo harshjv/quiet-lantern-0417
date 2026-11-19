@@ -6,13 +6,14 @@ import { eq } from 'drizzle-orm'
 import type { Generation } from '@stationly/protocol'
 
 import { setupInstance } from '../src/auth/bootstrap.ts'
-import { server, setting } from '../src/db/schema.ts'
+import { server } from '../src/db/schema.ts'
 
 import {
   adminEmail,
   adminPassword,
   startDispatch,
   startFakeStation,
+  testHostnames,
   type Dispatch,
 } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
@@ -24,33 +25,12 @@ import {
   seedLockfile,
 } from './helpers/seed.ts'
 
-const publicAddress = '198.51.100.10'
-const dashboard = 'dash.sly.test'
-const api = 'api.sly.test'
+const { dashboard, api } = testHostnames
 const actor = {
   type: 'system' as const,
   id: null,
   client: 'test',
 }
-
-const putSetting = (h: Dispatch, key: string, value: unknown) =>
-  h.db
-    .insert(setting)
-    .values({
-      key,
-      value,
-      updated_by: actor,
-    })
-    .onConflictDoUpdate({
-      target: setting.key,
-      set: {
-        value,
-      },
-    })
-    .run()
-
-const dropSetting = (h: Dispatch, key: string) =>
-  h.db.delete(setting).where(eq(setting.key, key)).run()
 
 describe('the generation carries Dispatch routes', () => {
   let h: Dispatch
@@ -91,39 +71,7 @@ describe('the generation carries Dispatch routes', () => {
     assert.match(target.hash, /^sha256:[0-9a-f]{64}$/)
   })
 
-  test('without a public address and without hostnames there is no Dispatch route and the web ports stay closed', async () => {
-    const doc = await next((d) => 'dispatch' in d.system_targets)
-
-    assert.deepEqual(Object.keys(doc.gateway.routes), [])
-    assert.equal(doc.station.inbound.web_ports, 'closed')
-  })
-
-  test('hostnames without a public address leave the routes out with an explanation', async () => {
-    putSetting(h, 'hostnames.dashboard', dashboard)
-    putSetting(h, 'hostnames.api', api)
-    h.deps.stations.reconcile(fake.stationId)
-    const built = (await import('../src/station/generations.ts')).buildDesired(h.db, fake.stationId)
-
-    assert.deepEqual(Object.keys(built.content.gateway.routes), [])
-    const reasons = built.excluded
-      .filter((e) => e.object === 'route')
-      .map((e) => `${e.id}: ${e.explanation}`)
-
-    assert.equal(reasons.length, 2)
-
-    for (const r of reasons) {
-      assert.match(r, /public_address/)
-    }
-  })
-
-  test('with a public address both hostnames route directly to Dispatch with the classic resolver and redirect HTTP', async () => {
-    h.db
-      .update(server)
-      .set({
-        public_address: publicAddress,
-      })
-      .where(eq(server.id, fake.stationId))
-      .run()
+  test('both hostnames route through the tunnel to Dispatch', async () => {
     const doc = await next((d) => 'system-api' in d.gateway.routes)
 
     assert.deepEqual(Object.keys(doc.gateway.routes).sort(), ['system-api', 'system-dashboard'])
@@ -135,35 +83,12 @@ describe('the generation carries Dispatch routes', () => {
       const r = doc.gateway.routes[id]!
 
       assert.equal(r.hostname, host)
-      assert.equal(r.ingress, 'direct')
       assert.deepEqual(r.target, {
         system: 'dispatch',
         virtual_ip: '100.64.0.1',
         port: 7900,
       })
-      assert.deepEqual(r.tls, {
-        resolver: 'letsencrypt',
-      })
-      assert.equal(r.redirect_http, true)
     }
-
-    assert.equal(doc.station.inbound.web_ports, 'open')
-    assert.equal(doc.station.public_address, publicAddress)
-  })
-
-  test('a domainless station routes its public address with the shortlived resolver', async () => {
-    dropSetting(h, 'hostnames.dashboard')
-    dropSetting(h, 'hostnames.api')
-    const doc = await next((d) => 'system-address' in d.gateway.routes)
-
-    assert.deepEqual(Object.keys(doc.gateway.routes), ['system-address'])
-    const r = doc.gateway.routes['system-address']!
-
-    assert.equal(r.hostname, publicAddress)
-    assert.deepEqual(r.tls, {
-      resolver: 'letsencrypt-shortlived',
-    })
-    assert.equal(r.redirect_http, true)
   })
 
   test('a station that does not host Dispatch gets neither the target nor the routes', async () => {
@@ -188,8 +113,6 @@ describe('the generation carries Dispatch routes', () => {
   })
 
   test('an app domain cannot take Dispatch hostname, and Dispatch cannot take a routed one', async () => {
-    putSetting(h, 'hostnames.dashboard', dashboard)
-    putSetting(h, 'hostnames.api', api)
     pinPlatform(h, {
       gateway: true,
     })
@@ -217,7 +140,7 @@ describe('the generation carries Dispatch routes', () => {
     const routed = await h.call('POST', `/v1/ports/${web.ports[0].id}/domains`, {
       token: h.admin.token,
       body: {
-        hostname: 'shop.sly.test',
+        hostname: 'shop.stationly.test',
       },
     })
 
@@ -226,7 +149,7 @@ describe('the generation carries Dispatch routes', () => {
       cookie: h.admin.cookie,
       origin: 'http://127.0.0.1:7900',
       body: {
-        'hostnames.api': 'shop.sly.test',
+        'hostnames.api': 'shop.stationly.test',
       },
     })
 
@@ -234,46 +157,20 @@ describe('the generation carries Dispatch routes', () => {
   })
 })
 
-describe('clearing the hostnames makes the station domainless', () => {
+describe('the hostnames stay set', () => {
   let h: Dispatch
-  let cookie: string
 
   before(async () => {
     h = await startDispatch()
-    const set = await h.call('PATCH', '/v1/settings', {
-      cookie: h.admin.cookie,
-      origin: 'http://127.0.0.1:7900',
-      body: {
-        'hostnames.dashboard': dashboard,
-        'hostnames.api': api,
-      },
-    })
-
-    assert.equal(set.status, 200, set.text)
-    const again = await h.call('POST', '/auth/sign-in/email', {
-      origin: 'http://127.0.0.1:7900',
-      headers: {
-        'x-forwarded-for': '198.51.100.99',
-      },
-      body: {
-        email: adminEmail,
-        password: adminPassword,
-      },
-    })
-
-    cookie = again.headers
-      .getSetCookie()
-      .map((c) => c.split(';')[0]!)
-      .join('; ')
   })
 
   after(async () => {
     await h.close()
   })
 
-  test('one hostname alone is refused', async () => {
+  test('one hostname alone cannot be cleared', async () => {
     const half = await h.call('PATCH', '/v1/settings', {
-      cookie,
+      cookie: h.admin.cookie,
       origin: 'http://127.0.0.1:7900',
       body: {
         'hostnames.api': null,
@@ -281,38 +178,6 @@ describe('clearing the hostnames makes the station domainless', () => {
     })
 
     assert.equal(half.body.error.code, 'VALIDATION_FAILED', half.text)
-  })
-
-  test('clearing both needs a passkey reset from a human, then drops the RP ID', async () => {
-    const body = {
-      'hostnames.dashboard': null,
-      'hostnames.api': null,
-    }
-    const plain = await h.call('PATCH', '/v1/settings', {
-      cookie,
-      origin: 'http://127.0.0.1:7900',
-      body,
-    })
-
-    assert.equal(plain.body.error.code, 'PASSKEY_RESET_REQUIRED', plain.text)
-    const byToken = await h.call('PATCH', '/v1/settings?reset_passkeys=true', {
-      token: h.admin.token,
-      body,
-    })
-
-    assert.equal(byToken.status, 403, byToken.text)
-    const human = await h.call('PATCH', '/v1/settings?reset_passkeys=true', {
-      cookie,
-      origin: 'http://127.0.0.1:7900',
-      body,
-    })
-
-    assert.equal(human.status, 200, human.text)
-    assert.equal(
-      h.db.select().from(setting).where(eq(setting.key, 'auth.passkey_rp_id')).get()?.value ?? null,
-      null,
-    )
-    assert.equal(h.deps.auth.surface.dashboardOrigin, 'http://127.0.0.1:7900')
   })
 })
 
@@ -412,76 +277,5 @@ describe('the setup login link', () => {
         .some((c) => c.startsWith('__Secure-better-auth.session_token=') && !/Max-Age=0/i.test(c)),
       false,
     )
-  })
-})
-
-describe('a domainless station answers on its public address', () => {
-  let h: Dispatch
-
-  before(async () => {
-    h = await startDispatch()
-    seedLockfile(h)
-    const fake = await startFakeStation(h)
-
-    h.db
-      .update(server)
-      .set({
-        hosts_dispatch: true,
-      })
-      .where(eq(server.id, fake.stationId))
-      .run()
-    const updated = await h.call('PATCH', `/v1/servers/${fake.stationId}`, {
-      token: h.admin.token,
-      body: {
-        public_address: publicAddress,
-      },
-    })
-
-    assert.equal(updated.status, 200, updated.text)
-  })
-
-  after(async () => {
-    await h.close()
-  })
-
-  test('the address serves both surfaces like the loopback publish and is a trusted origin for password sign-in', async () => {
-    const origin = `https://${publicAddress}`
-
-    assert.equal(h.deps.auth.surface.addressOrigin, origin)
-    const signIn = await h.fetch(
-      new Request(`${origin}/auth/sign-in/email`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          origin,
-          'x-forwarded-for': '198.51.100.7',
-        },
-        body: JSON.stringify({
-          email: adminEmail,
-          password: adminPassword,
-        }),
-      }),
-    )
-
-    assert.equal(signIn.status, 200, await signIn.clone().text())
-    const health = await h.fetch(
-      new Request(`${origin}/v1/healthz`, {
-        headers: {
-          'x-forwarded-for': '198.51.100.7',
-        },
-      }),
-    )
-
-    assert.equal(health.status, 200)
-    const other = await h.fetch(
-      new Request('https://203.0.113.9/v1/me', {
-        headers: {
-          'x-forwarded-for': '198.51.100.7',
-          authorization: `Bearer ${h.admin.token}`,
-        },
-      }),
-    )
-
-    assert.equal(other.status, 404)
   })
 })

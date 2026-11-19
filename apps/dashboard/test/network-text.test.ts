@@ -8,8 +8,6 @@ import {
   domainState,
   drainingText,
   endpointText,
-  exposureState,
-  exposureText,
   hopDetail,
   portSpecText,
   portText,
@@ -36,17 +34,6 @@ const app = (sw: Partial<Switch>): Pick<MapApp, 'name' | 'switch'> => ({
     ...sw,
   },
 })
-
-const map = {
-  subnets: [
-    {
-      server: {
-        id: 'sta_home',
-        name: 'home',
-      },
-    },
-  ],
-} as unknown as Pick<NetworkMap, 'subnets'>
 
 test('serving names the deployment and keeps its address as the hint', () => {
   assert.deepEqual(
@@ -123,15 +110,12 @@ test('draining shows the old deployment finishing its connections', () => {
 test('domain state names the first thing that is not live', () => {
   const live = {
     status: 'active',
-    certificate: {
-      status: 'valid',
-    },
     route: {
       result: 'ok',
     },
   } as Parameters<typeof domainState>[0]
 
-  assert.equal(domainState(live).label, 'Live, certificate valid')
+  assert.equal(domainState(live).label, 'Live')
   assert.equal(
     domainState({
       ...live,
@@ -142,12 +126,9 @@ test('domain state names the first thing that is not live', () => {
   assert.equal(
     domainState({
       ...live,
-      certificate: {
-        ...live.certificate,
-        status: 'pending',
-      },
+      status: 'pending',
     }).label,
-    'Waiting for certificate',
+    'Not reachable yet',
   )
   assert.equal(
     domainState({
@@ -168,42 +149,6 @@ test('domain state names the first thing that is not live', () => {
       },
     }).label,
     'The server couldn’t apply it',
-  )
-})
-
-test('a public TCP port without a reported result waits for the server', () => {
-  assert.equal(exposureState(undefined).label, 'Waiting for the server')
-  assert.equal(
-    exposureState({
-      result: 'ok',
-    }).label,
-    'Live',
-  )
-})
-
-test('a public TCP port reads as words, with or without a public address', () => {
-  const exposure = {
-    public: '203.0.113.5:30001',
-    port: 5432,
-    host_port: 30001,
-    server_id: 'sta_home',
-  } as MapApp['exposures'][number]
-
-  assert.equal(exposureText(map, exposure), '203.0.113.5:30001 to port 5432')
-  assert.equal(
-    exposureText(map, {
-      ...exposure,
-      public: null,
-    }),
-    'Port 30001 on home (no public address)',
-  )
-  assert.equal(
-    exposureText(map, {
-      ...exposure,
-      public: null,
-      server_id: 'sta_gone',
-    }),
-    'Port 30001 on the server (no public address)',
   )
 })
 

@@ -141,7 +141,7 @@ func (l *lineSink) Flush() {
 	}
 }
 
-func (s *Station) copyDockerLogs(ctx context.Context, name, deploymentID, role string, w *logstore.Writer, follow bool, tap func(string)) error {
+func (s *Station) copyDockerLogs(ctx context.Context, name, deploymentID, role string, w *logstore.Writer, follow bool) error {
 	since := w.Last()
 	rc, err := s.docker.FollowLogs(ctx, name, since, follow)
 	if err != nil {
@@ -155,9 +155,6 @@ func (s *Station) copyDockerLogs(ctx context.Context, name, deploymentID, role s
 			}
 			if err := w.Write(at, role, stream, s.redactorFor(deploymentID).Redact(text)); err != nil {
 				s.log.Warn("log store write", "container", name, "error", err)
-			}
-			if tap != nil {
-				tap(text)
 			}
 		}}
 	}
@@ -216,7 +213,7 @@ func (s *Station) syncCaptures(_ context.Context) {
 		}
 		go func() {
 			defer s.captures.finish(name, done)
-			if err := s.copyDockerLogs(ctx, name, dep, role, w, true, nil); err != nil && ctx.Err() == nil {
+			if err := s.copyDockerLogs(ctx, name, dep, role, w, true); err != nil && ctx.Err() == nil {
 				s.log.Debug("log capture ended", "container", name, "error", err)
 			}
 		}()
@@ -256,13 +253,9 @@ func (s *Station) captureSystem(ctx context.Context, c container.Summary, compon
 	if !ok {
 		return
 	}
-	var tap func(string)
-	if component == systemComponents[docker.RoleGateway] {
-		tap = func(text string) { s.tapGatewayLog(ctx, text) }
-	}
 	go func() {
 		defer s.captures.finish(name, done)
-		if err := s.copyDockerLogs(ctx, name, "", name, w, true, tap); err != nil && ctx.Err() == nil {
+		if err := s.copyDockerLogs(ctx, name, "", name, w, true); err != nil && ctx.Err() == nil {
 			s.log.Debug("system log capture ended", "container", name, "error", err)
 		}
 	}()

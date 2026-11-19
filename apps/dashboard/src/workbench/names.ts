@@ -95,10 +95,6 @@ export function useNames(projects: readonly (string | null)[]): Names {
       names.set(domain.id, domain.hostname)
     }
 
-    for (const allocation of app.port_allocations ?? []) {
-      names.set(allocation.id, allocation.address ?? `public port ${allocation.host_port}`)
-    }
-
     for (const key of app.keys ?? []) {
       names.set(key.id, key.name)
     }

@@ -203,7 +203,7 @@ func TestEgressTablePathIDsAreTheDocumentedEgressOnes(t *testing.T) {
 			t.Errorf("rule %q carries undocumented path %q", r.text, r.path)
 		}
 	}
-	for _, id := range []string{"inbound_domain", "inbound_tcp", "inbound_other"} {
+	for _, id := range []string{"inbound_domain", "inbound_other"} {
 		for _, r := range egressTable(b, namedSets()) {
 			if r.path == id {
 				t.Errorf("inbound path %s must not appear in an egress rule", id)
@@ -649,18 +649,14 @@ func TestResolveKeepsPendingSwitchEntriesAndDropsRejected(t *testing.T) {
 
 func TestHostFingerprintChangesWithEveryField(t *testing.T) {
 	base := HostLayout{
-		Public:        netip.MustParseAddr("203.0.113.7"),
 		IngressBridge: "br-ingress",
 		VirtualPrefix: netip.MustParsePrefix("10.255.0.0/16"),
 		Translated:    []netip.Prefix{netip.MustParsePrefix("10.200.0.0/16")},
 		EnvBridges:    []string{"br-a"},
 	}
 	variants := map[string]func(HostLayout) HostLayout{
-		"public":  func(l HostLayout) HostLayout { l.Public = netip.MustParseAddr("203.0.113.8"); return l },
 		"ingress": func(l HostLayout) HostLayout { l.IngressBridge = "br-other"; return l },
 		"virtual": func(l HostLayout) HostLayout { l.VirtualPrefix = netip.MustParsePrefix("10.254.0.0/16"); return l },
-		"web":     func(l HostLayout) HostLayout { l.WebOpen = true; return l },
-		"rate":    func(l HostLayout) HostLayout { l.SourceRate = 5; return l },
 		"bridges": func(l HostLayout) HostLayout { l.EnvBridges = []string{"br-a", "br-b"}; return l },
 		"nets":    func(l HostLayout) HostLayout { l.Translated = nil; return l },
 	}
@@ -671,22 +667,6 @@ func TestHostFingerprintChangesWithEveryField(t *testing.T) {
 			t.Errorf("%s collides with %s", name, prev)
 		}
 		seen[fp] = name
-	}
-}
-
-func TestPortElementsAreSortedAndEncodeAddressAndPort(t *testing.T) {
-	els := portElements(map[uint16]netip.AddrPort{
-		8080: netip.MustParseAddrPort("10.200.1.5:3000"),
-		80:   netip.MustParseAddrPort("10.200.1.6:8080"),
-	})
-	if len(els) != 2 {
-		t.Fatalf("got %d", len(els))
-	}
-	if !slices.Equal(els[0].Key, []byte{0, 80}) || !slices.Equal(els[1].Key, []byte{0x1f, 0x90}) {
-		t.Fatalf("keys %v %v", els[0].Key, els[1].Key)
-	}
-	if !slices.Equal(els[0].Val, []byte{10, 200, 1, 6, 0x1f, 0x90, 0, 0}) {
-		t.Fatalf("value %v", els[0].Val)
 	}
 }
 

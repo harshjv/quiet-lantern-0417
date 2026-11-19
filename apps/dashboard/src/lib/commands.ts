@@ -108,9 +108,6 @@ export const commands = {
   setProjectKey: (scope: Scope) => sly(...scoped(scope), 'keys', 'set', 'KEY=value'),
   addDomain: (port: string | null) =>
     sly('domains', 'add', port ?? '<port-id>', '--hostname', '<hostname>'),
-  exposeTcp: (port: string | null) => sly('domains', 'expose-tcp', port ?? '<port-id>'),
-  setPublicAddress: (station: string) =>
-    sly('servers', 'update', station, '--public-address', '<ipv4>'),
   setMachineRuntime: (station: string) =>
     sly('servers', 'update', station, '--default-machine-runtime', '<runtime>'),
   startMachine: (scope: Scope, machine: string) =>
@@ -145,7 +142,6 @@ export const tools = [
   'set_app_keys',
   'set_project_keys',
   'add_domain',
-  'expose_tcp',
   'update_server',
   'update_app',
   'create_machine',

@@ -9,7 +9,7 @@ import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
 import { APIError } from 'better-auth/api'
 import { admin, bearer, deviceAuthorization, jwt, magicLink, twoFactor } from 'better-auth/plugins'
-import { count, eq } from 'drizzle-orm'
+import { count } from 'drizzle-orm'
 
 import { tokenPrefix } from '@stationly/protocol'
 
@@ -66,7 +66,6 @@ export type AuthSurface = {
   dashboardOrigin: string
   apiOrigin: string
   rpID: string
-  addressOrigin: string | null
   passkeyOrigins: string[]
   trustedOrigins: string[]
   mcpResource: string
@@ -94,23 +93,13 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
   const loopbackOrigins = [localOrigin, `http://localhost:${local.port}`]
 
   if (!dashboard || !api) {
-    const address = db
-      .select({
-        public_address: schema.server.public_address,
-      })
-      .from(schema.server)
-      .where(eq(schema.server.hosts_dispatch, true))
-      .get()?.public_address
-    const addressOrigin = address ? `https://${address}` : null
-
     return {
       baseURL: `${localOrigin}/auth`,
       dashboardOrigin: localOrigin,
       apiOrigin: localOrigin,
-      addressOrigin,
       rpID: 'localhost',
       passkeyOrigins: [`http://localhost:${local.port}`],
-      trustedOrigins: addressOrigin ? [...loopbackOrigins, addressOrigin] : loopbackOrigins,
+      trustedOrigins: loopbackOrigins,
       mcpResource: `${localOrigin}/mcp`,
     }
   }
@@ -122,7 +111,6 @@ export const authSurface = (db: Db, localOrigin: string): AuthSurface => {
     baseURL: `${apiOrigin}/auth`,
     dashboardOrigin,
     apiOrigin,
-    addressOrigin: null,
     rpID: value('auth.passkey_rp_id') ?? dashboard,
     passkeyOrigins: [dashboardOrigin, apiOrigin],
     trustedOrigins: [dashboardOrigin, ...loopbackOrigins],

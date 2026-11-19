@@ -416,7 +416,7 @@ describe('tool calls', () => {
         })
       ).body,
     )
-    const fields = 'ports,volumes,domains,port_allocations,current_deployment,keys'
+    const fields = 'ports,volumes,domains,current_deployment,keys'
     const full = await callTool(readToken, 'describe_app', {
       app: app.id,
       fields,
@@ -629,13 +629,7 @@ describe('update_server', () => {
   test('takes every field PATCH /v1/servers accepts and returns the station', async () => {
     const tool = (await toolsOf(adminToken)).find((t) => t.name === 'update_server')!
 
-    for (const field of [
-      'server',
-      'public_address',
-      'concurrency_cap',
-      'draining',
-      'intermittent',
-    ]) {
+    for (const field of ['server', 'concurrency_cap', 'draining', 'intermittent']) {
       assert.ok(field in tool.inputSchema.properties, field)
     }
 
@@ -643,21 +637,16 @@ describe('update_server', () => {
       server: 'station-1',
       concurrency_cap: 4,
       intermittent: true,
-      public_address: '203.0.113.7',
     })
 
     assert.equal(result.isError, undefined, JSON.stringify(result))
     assert.equal(result.structuredContent.concurrency_cap, 4)
     assert.equal(result.structuredContent.intermittent, true)
-    assert.equal(result.structuredContent.public_address, '203.0.113.7')
     const rest = await h.call('GET', '/v1/servers/station-1?fields=*', {
       token: adminToken,
     })
 
-    assert.deepEqual(
-      [rest.body.concurrency_cap, rest.body.intermittent, rest.body.public_address],
-      [4, true, '203.0.113.7'],
-    )
+    assert.deepEqual([rest.body.concurrency_cap, rest.body.intermittent], [4, true])
   })
 
   test('draining flows through and an empty call is a validation error', async () => {

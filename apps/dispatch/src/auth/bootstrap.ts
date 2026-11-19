@@ -1,5 +1,3 @@
-import { isIPv4 } from 'node:net'
-
 import { and, eq, isNull } from 'drizzle-orm'
 
 import {
@@ -35,17 +33,14 @@ import {
   userExists,
   type AuthService,
 } from './auth.ts'
-import { checkHostnamePair } from './hostnames.ts'
+import { checkHostnamePair, zoneHostProblem } from './hostnames.ts'
 
 export type SetupInput = {
   email: string
   password: string
   name?: string
-  acme_email?: string
-  hostnames?: { dashboard: string; api: string }
+  hostnames: { dashboard: string; api: string }
   'ipam.pool'?: string
-  public_address?: string
-  ingress?: 'direct' | 'tunnel'
   sandbox_runtime?: (typeof machineRuntimeValues)[number]
   release?: InstalledRelease | null
 }
@@ -93,71 +88,34 @@ export const setupInstance = async (
   }
 
   const settings: Partial<Record<SettingKey, unknown>> = {}
-  const tunnel = input.ingress === 'tunnel'
 
-  if (tunnel) {
-    if (!input.hostnames) {
-      throw new SetupError(
-        'VALIDATION_FAILED',
-        'Cloudflare Tunnel setup needs the dashboard and API hostnames.',
-      )
-    }
-
-    for (const key of ['public_address', 'acme_email'] as const) {
-      if (input[key] !== undefined) {
-        throw new SetupError(
-          'VALIDATION_FAILED',
-          `${key} does not apply to Cloudflare Tunnel setup; leave it out.`,
-        )
-      }
-    }
-  }
-
-  if (input.hostnames) {
-    const check = checkHostnamePair(input.hostnames.dashboard, input.hostnames.api)
-
-    if (!check.ok) {
-      throw new SetupError('HOSTNAME_DOMAIN_MISMATCH', check.reason)
-    }
-
-    if (tunnel) {
-      for (const host of [input.hostnames.dashboard, input.hostnames.api]) {
-        if (host === check.commonParent) {
-          throw new SetupError(
-            'VALIDATION_FAILED',
-            `${host} is the zone itself; use a name one label under it, such as dash.${host} and api.${host}.`,
-          )
-        }
-
-        const label = host.slice(0, -(check.commonParent.length + 1))
-
-        if (label.includes('.')) {
-          throw new SetupError(
-            'VALIDATION_FAILED',
-            `${host} is more than one label under ${check.commonParent}, and the free Cloudflare certificate covers only one; use a flat name such as ${label.replaceAll('.', '-')}.${check.commonParent}.`,
-          )
-        }
-      }
-
-      settings['ingress.mode'] = 'tunnel'
-      settings['domains.zone'] = check.commonParent
-    }
-
-    settings['hostnames.dashboard'] = input.hostnames.dashboard
-    settings['hostnames.api'] = input.hostnames.api
-    settings['auth.passkey_rp_id'] = check.commonParent
-  }
-
-  if (input.acme_email) {
-    settings['acme.email'] = input.acme_email
-  }
-
-  if (input.public_address !== undefined && !isIPv4(input.public_address)) {
+  if (!input.hostnames) {
     throw new SetupError(
       'VALIDATION_FAILED',
-      `public_address ${input.public_address} is not an IPv4 address in dotted-quad form.`,
+      'Setup needs the dashboard and API hostnames, both one label under the Cloudflare Tunnel zone.',
     )
   }
+
+  const check = checkHostnamePair(input.hostnames.dashboard, input.hostnames.api)
+
+  if (!check.ok) {
+    throw new SetupError('HOSTNAME_DOMAIN_MISMATCH', check.reason)
+  }
+
+  const zone = check.commonParent
+
+  for (const host of [input.hostnames.dashboard, input.hostnames.api]) {
+    const problem = zoneHostProblem(host, zone)
+
+    if (problem) {
+      throw new SetupError('VALIDATION_FAILED', `${problem}.`)
+    }
+  }
+
+  settings['domains.zone'] = zone
+  settings['hostnames.dashboard'] = input.hostnames.dashboard
+  settings['hostnames.api'] = input.hostnames.api
+  settings['auth.passkey_rp_id'] = zone
 
   const host =
     actor.type === 'station' && actor.id
@@ -168,13 +126,11 @@ export const setupInstance = async (
           .get()
       : undefined
 
-  for (const key of ['public_address', 'sandbox_runtime'] as const) {
-    if (input[key] !== undefined && !host) {
-      throw new SetupError(
-        'VALIDATION_FAILED',
-        `${key} needs the server that hosts Dispatch to have enrolled.`,
-      )
-    }
+  if (input.sandbox_runtime !== undefined && !host) {
+    throw new SetupError(
+      'VALIDATION_FAILED',
+      'sandbox_runtime needs the server that hosts Dispatch to have enrolled.',
+    )
   }
 
   const runtimeProblem =
@@ -239,11 +195,10 @@ export const setupInstance = async (
   db.transaction((tx) => {
     keyring.wrapForPassword(userId, input.password)
 
-    if (host && (input.public_address !== undefined || input.sandbox_runtime !== undefined)) {
+    if (host && input.sandbox_runtime !== undefined) {
       tx.update(server)
         .set({
-          public_address: input.public_address ?? host.public_address,
-          default_machine_runtime: input.sandbox_runtime ?? host.default_machine_runtime,
+          default_machine_runtime: input.sandbox_runtime,
         })
         .where(eq(server.id, host.id))
         .run()
@@ -312,8 +267,6 @@ export const setupInstance = async (
       after: {
         email: input.email.toLowerCase(),
         settings: Object.keys(settings),
-        public_address: input.public_address ?? null,
-        ingress: input.ingress ?? 'direct',
         sandbox_runtime: input.sandbox_runtime ?? null,
         release: manifest?.release ?? null,
         components: Object.keys(manifest?.components ?? {}),
@@ -349,23 +302,12 @@ export const setupInstance = async (
       : null,
     login_link: loginLink,
     login_link_expires_at: new Date(Date.now() + loginLinkSeconds * 1000).toISOString(),
-    public_address: input.public_address ?? null,
-    hostnames: input.hostnames
-      ? {
-          ...input.hostnames,
-          status: 'pending',
-        }
-      : null,
+    hostnames: {
+      ...input.hostnames,
+      status: 'pending',
+    },
     reach: [
-      ...(input.hostnames && tunnel
-        ? [
-            `https://${input.hostnames.dashboard} through the Cloudflare Tunnel once its *.${String(settings['domains.zone'])} route points at http://${gatewayHostAlias}`,
-          ]
-        : input.hostnames
-          ? [
-              `https://${input.hostnames.dashboard} once its DNS resolves and its certificate is issued`,
-            ]
-          : []),
+      `https://${input.hostnames.dashboard} through the Cloudflare Tunnel once its *.${zone} route points at http://${gatewayHostAlias}`,
       `ssh -L ${networkLayout.dispatchPort}:${dispatchAddress} <server>, then ${auth.localOrigin}; sign in with password, then enroll TOTP`,
     ],
   }

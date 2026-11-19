@@ -69,7 +69,7 @@ func CheckInvariants(spec ContainerSpec, stateDir string) error {
 		}
 	}
 	if hc.PublishAllPorts || (len(hc.PortBindings) > 0 && (spec.Role != RoleDispatch || !dispatchLoopbackOnly(hc.PortBindings))) {
-		return fail("published ports", "only Dispatch publishes a port, %s:%d on the host loopback; 80, 443 and port allocations are DNAT in the host table", protocol.NetworkDispatchHostAddress, protocol.NetworkDispatchPort)
+		return fail("published ports", "only Dispatch publishes a port, %s:%d on the host loopback; nothing listens on 80 or 443", protocol.NetworkDispatchHostAddress, protocol.NetworkDispatchPort)
 	}
 	if !slices.Contains(hc.CapDrop, "ALL") {
 		return fail("capability allowlist", "CapDrop does not contain ALL")

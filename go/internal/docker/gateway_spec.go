@@ -21,7 +21,6 @@ const (
 
 	IngressNetworkName = protocol.ResourcePrefix + "ingress"
 	IngressBridgeName  = IngressNetworkName
-	GatewayVolume      = protocol.ResourcePrefix + "gateway-data"
 
 	gatewayMemoryBytes = 512 << 20
 	gatewayGoMemLimit  = gatewayMemoryBytes / 4 * 3
@@ -65,7 +64,7 @@ func GatewayCoupler(stationID, slot, image string, addr netip.Addr) ContainerSpe
 }
 
 type GatewayFiles struct {
-	Static, StaticTarget, Dynamic, DynamicTarget, DataTarget string
+	Static, StaticTarget, Dynamic, DynamicTarget string
 }
 
 func Gateway(stationID, slot, image string, f GatewayFiles) ContainerSpec {
@@ -76,7 +75,6 @@ func Gateway(stationID, slot, image string, f GatewayFiles) ContainerSpec {
 	hc.Mounts = []mount.Mount{
 		bindRO(f.Static, f.StaticTarget),
 		bindRO(f.Dynamic, f.DynamicTarget),
-		namedVolume(GatewayVolume, f.DataTarget, false),
 	}
 	hc.Tmpfs = map[string]string{"/tmp": "size=16m,mode=1777"}
 	name := GatewayName(slot)

@@ -48,9 +48,29 @@ export const checkPair = (api: string, dashboard: string): PairCheck => {
     }
   }
 
+  const parent = commonParent(api, dashboard)
+
+  for (const host of [api, dashboard]) {
+    const label = host === parent ? '' : host.slice(0, -(parent.length + 1))
+
+    if (!label) {
+      return {
+        ok: false,
+        reason: `${host} is the zone itself; use a name one label under it, such as api.${parent}`,
+      }
+    }
+
+    if (label.includes('.')) {
+      return {
+        ok: false,
+        reason: `${host} is more than one label under ${parent}, and the free Cloudflare certificate covers only one; use a flat name such as ${label.replaceAll('.', '-')}.${parent}`,
+      }
+    }
+  }
+
   return {
     ok: true,
-    parent: commonParent(api, dashboard),
+    parent,
   }
 }
 
@@ -75,6 +95,3 @@ export const endpointProblem = (value: string) => {
     ? null
     : 'the endpoint is an https URL, or an http URL on a private or loopback address'
 }
-
-export const ipv4Problem = (value: string) =>
-  isIPv4(value) ? null : 'that is not an IPv4 address in dotted-quad form'

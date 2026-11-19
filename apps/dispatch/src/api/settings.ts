@@ -11,7 +11,7 @@ import {
 } from '@stationly/protocol'
 
 import { surfaceKeys } from '../auth/auth.ts'
-import { checkHostnamePair, validRpId } from '../auth/hostnames.ts'
+import { checkHostnamePair, validRpId, zoneHostProblem } from '../auth/hostnames.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
 import { domain, passkey, setting, target } from '../db/schema.ts'
@@ -27,16 +27,6 @@ import { iso } from './views.ts'
 const humanKeys = new Set(['platform.protected', 'platform.allow_unsigned'])
 const surfaceKeySet = new Set<string>(surfaceKeys)
 const authKeys = new Set<string>([...surfaceKeys, 'oauth.dynamic_registration'])
-
-const httpsUrl = (value: string) => {
-  try {
-    const url = new URL(value)
-
-    return url.protocol === 'https:' && url.hostname !== '' && !url.username && !url.password
-  } catch {
-    return false
-  }
-}
 
 export const frozenReason = (db: Db, key: SettingKey): string | null => {
   const stored = storedSetting(db, key) !== undefined
@@ -129,11 +119,6 @@ export const planSettings = (
         path: `/${key}`,
         message: cidrProblem(value)!,
       })
-    } else if (key === 'acme.ca_server' && typeof value === 'string' && !httpsUrl(value)) {
-      issues.push({
-        path: `/${key}`,
-        message: 'must be an https URL with a host',
-      })
     } else if (
       key === 'volume_backup.target' &&
       value !== null &&
@@ -179,129 +164,122 @@ export const planSettings = (
     }
   }
 
-  const next = (key: 'hostnames.dashboard' | 'hostnames.api') =>
+  const next = (key: 'hostnames.dashboard' | 'hostnames.api' | 'domains.zone') =>
     (key in body ? body[key] : readSetting(db, key)) as string | null
   const updates: Record<string, unknown> = {
     ...body,
   }
   let passkeyReset = false
 
-  if (Object.keys(body).some((key) => surfaceKeySet.has(key))) {
+  if (Object.keys(body).some((key) => surfaceKeySet.has(key) || key === 'domains.zone')) {
     const dashboard = next('hostnames.dashboard')
     const api = next('hostnames.api')
+    const zone = next('domains.zone')
     const currentRp = readSetting(db, 'auth.passkey_rp_id')
 
-    if (dashboard && api) {
-      const check = checkHostnamePair(dashboard, api)
-
-      if (!check.ok) {
-        return fail(
-          'HOSTNAME_DOMAIN_MISMATCH',
-          check.reason,
-          'Choose two DNS names under one registrable domain, such as dash.example.com and api.example.com.',
-          {
-            dashboard,
-            api,
-          },
-        )
-      }
-
-      const held = db
-        .select({
-          id: domain.id,
-          hostname: domain.hostname,
-        })
-        .from(domain)
-        .where(inArray(domain.hostname, [dashboard, api]))
-        .get()
-
-      if (held) {
-        fail(
-          'NAME_TAKEN',
-          `${held.hostname} is already routed to an app by domain ${held.id}.`,
-          'Remove that domain first, or choose another hostname for Dispatch.',
-          {
-            hostname: held.hostname,
-            domain_id: held.id,
-          },
-        )
-      }
-
-      const askedRp =
-        'auth.passkey_rp_id' in body ? (body['auth.passkey_rp_id'] as string | null) : null
-
-      if (askedRp !== null && askedRp !== undefined && !validRpId(askedRp, dashboard, api)) {
-        invalid([
-          {
-            path: '/auth.passkey_rp_id',
-            message: `must be a common suffix of ${dashboard} and ${api}, no shorter than ${check.registrable}`,
-          },
-        ])
-      }
-
-      const wanted =
-        askedRp ??
-        (currentRp && validRpId(currentRp, dashboard, api) ? currentRp : check.commonParent)
-
-      if (currentRp !== null && wanted !== currentRp) {
-        if (!resetPasskeys) {
-          fail(
-            'PASSKEY_RESET_REQUIRED',
-            `The change moves the passkey RP ID from ${currentRp} to ${wanted}, which invalidates every passkey.`,
-            'Send reset_passkeys = true from a human session, then re-enroll a passkey after signing in with password and TOTP.',
-            {
-              current_rp_id: currentRp,
-              new_rp_id: wanted,
-            },
-          )
-        }
-
-        requireHuman(principal, 'A passkey reset', {
-          reset_passkeys: true,
-        })
-        passkeyReset = true
-      }
-
-      updates['auth.passkey_rp_id'] = wanted
-    } else {
-      if (dashboard || api) {
-        invalid([
-          {
-            path: dashboard ? '/hostnames.api' : '/hostnames.dashboard',
-            message: 'set both hostnames, or clear both for a domainless server',
-          },
-        ])
-      }
-
-      if ('auth.passkey_rp_id' in body && body['auth.passkey_rp_id'] !== null) {
-        invalid([
-          {
-            path: '/auth.passkey_rp_id',
-            message: 'set hostnames.dashboard and hostnames.api first',
-          },
-        ])
-      }
-
-      if (currentRp !== null) {
-        if (!resetPasskeys) {
-          fail(
-            'PASSKEY_RESET_REQUIRED',
-            `Clearing both hostnames removes the passkey RP ID ${currentRp}, which invalidates every passkey.`,
-            'Send reset_passkeys = true from a human session, then sign in with password and TOTP.',
-            {
-              current_rp_id: currentRp,
-              new_rp_id: null,
-            },
-          )
-        }
-
-        requireHuman(principal, 'A passkey reset', {
-          reset_passkeys: true,
-        })
-        passkeyReset = true
-        updates['auth.passkey_rp_id'] = null
-      }
+    if (!dashboard || !api || !zone) {
+      return invalid([
+        {
+          path: !zone ? '/domains.zone' : dashboard ? '/hostnames.api' : '/hostnames.dashboard',
+          message:
+            'hostnames.dashboard, hostnames.api and domains.zone stay set; change them instead',
+        },
+      ])
     }
+
+    const zoneIssues = (
+      [
+        ['hostnames.dashboard', dashboard],
+        ['hostnames.api', api],
+      ] as const
+    ).flatMap(([key, host]) => {
+      const problem = zoneHostProblem(host, zone)
+
+      return problem
+        ? [
+            {
+              path: `/${key}`,
+              message: problem,
+            },
+          ]
+        : []
+    })
+
+    if (zoneIssues.length) {
+      invalid(zoneIssues)
+    }
+
+    const check = checkHostnamePair(dashboard, api)
+
+    if (!check.ok) {
+      return fail(
+        'HOSTNAME_DOMAIN_MISMATCH',
+        check.reason,
+        'Choose two DNS names under one registrable domain, such as dash.example.com and api.example.com.',
+        {
+          dashboard,
+          api,
+        },
+      )
+    }
+
+    const held = db
+      .select({
+        id: domain.id,
+        hostname: domain.hostname,
+      })
+      .from(domain)
+      .where(inArray(domain.hostname, [dashboard, api]))
+      .get()
+
+    if (held) {
+      fail(
+        'NAME_TAKEN',
+        `${held.hostname} is already routed to an app by domain ${held.id}.`,
+        'Remove that domain first, or choose another hostname for Dispatch.',
+        {
+          hostname: held.hostname,
+          domain_id: held.id,
+        },
+      )
+    }
+
+    const askedRp =
+      'auth.passkey_rp_id' in body ? (body['auth.passkey_rp_id'] as string | null) : null
+
+    if (askedRp !== null && askedRp !== undefined && !validRpId(askedRp, dashboard, api)) {
+      invalid([
+        {
+          path: '/auth.passkey_rp_id',
+          message: `must be a common suffix of ${dashboard} and ${api}, no shorter than ${check.registrable}`,
+        },
+      ])
+    }
+
+    const wanted =
+      askedRp ??
+      (currentRp && validRpId(currentRp, dashboard, api) ? currentRp : check.commonParent)
+
+    if (currentRp !== null && wanted !== currentRp) {
+      if (!resetPasskeys) {
+        fail(
+          'PASSKEY_RESET_REQUIRED',
+          `The change moves the passkey RP ID from ${currentRp} to ${wanted}, which invalidates every passkey.`,
+          'Send reset_passkeys = true from a human session, then re-enroll a passkey after signing in with password and TOTP.',
+          {
+            current_rp_id: currentRp,
+            new_rp_id: wanted,
+          },
+        )
+      }
+
+      requireHuman(principal, 'A passkey reset', {
+        reset_passkeys: true,
+      })
+      passkeyReset = true
+    }
+
+    updates['auth.passkey_rp_id'] = wanted
   }
 
   const set = new ChangeSet()

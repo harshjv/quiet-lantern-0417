@@ -26,7 +26,6 @@ export type FixContext = Scope & {
     id: string
     build: string | null
   }
-  server?: string
 }
 
 export type Run = {
@@ -248,26 +247,16 @@ export const remedies: Record<RemedyCode, Remedy> = {
   ATTACH_SHARED: {
     ask: ({ context }) => `attach the shared app ${context.subject.name} needs`,
   },
-  EXPOSE_TCP: {
-    ask: ({ target, input }) =>
-      `expose ${target.name}’s TCP port${count(input.port) === null ? '' : ` ${count(input.port)}`} on the server`,
-    command: ({ input }) => commands.exposeTcp(text(input.port_id)),
-  },
   ADD_DOMAIN: {
-    ask: ({ target }) => `add a direct domain to ${target.name}`,
+    ask: ({ target }) => `add a domain to ${target.name}`,
     command: ({ input }) => commands.addDomain(text(input.port_id)),
   },
   WAIT_FOR_APPLY: {
     ask: ({ target }) =>
       `find out why the server hasn’t applied ${target.name}’s latest settings and fix what blocks it`,
   },
-  CHECK_DNS_RECORD: {
-    ask: ({ target }) =>
-      `check the DNS records of ${target.name}’s domains and point them at the server’s public address`,
-  },
-  SET_PUBLIC_ADDRESS: {
-    ask: () => 'set the server’s public address',
-    command: ({ context }) => (context.server ? commands.setPublicAddress(context.server) : null),
+  ADD_TUNNEL_ROUTE: {
+    ask: ({ target }) => `add the tunnel route for ${target.name}’s domain in Cloudflare`,
   },
   RUN_PROBE: {
     ask: ({ context, input }) =>
@@ -370,11 +359,9 @@ export const findingRemedy: Record<FindingCode, RemedyCode | null> = {
   NOT_LISTENING: 'USE_DECLARED_PORT',
   LISTENING_LOOPBACK_ONLY: 'BIND_ALL_INTERFACES',
   PORT_NOT_DECLARED: 'DECLARE_PORT',
-  DOMAIN_NOT_ACTIVE: 'CHECK_DNS_RECORD',
-  CERTIFICATE_NOT_VALID: 'CHECK_DNS_RECORD',
-  WEB_PORTS_CLOSED: 'ADD_DOMAIN',
+  DOMAIN_NOT_ACTIVE: 'ADD_TUNNEL_ROUTE',
   ROUTE_NOT_APPLIED: 'WAIT_FOR_APPLY',
-  NO_PUBLIC_ADDRESS: 'SET_PUBLIC_ADDRESS',
+  TUNNEL_NOT_READY: null,
   SERVER_STALE: null,
 }
 
@@ -407,7 +394,6 @@ export const findingPlan = (finding: Finding, apps: MapApp[], scope: Scope): Fix
         id: app.id,
         name: app.name,
       },
-      server: text(details.server) ?? app.server_id,
     },
   )
 }

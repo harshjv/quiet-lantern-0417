@@ -311,49 +311,36 @@ func orDash(p *string) string {
 
 func printGateway(w io.Writer, o protocol.Observed, applied *protocol.Generation) error {
 	gw, ok := o.Components["gateway"]
-	if !ok && len(o.PortAllocations) == 0 {
+	if !ok {
 		return nil
 	}
 	fmt.Fprintln(w)
-	if ok {
-		fmt.Fprintf(w, "gateway traefik %s  %s  container %s  %s\n", gw.Version, gw.Status, shortID(orDash(gw.ContainerId)), orDash(gw.Digest))
-	}
+	fmt.Fprintf(w, "gateway traefik %s  %s  container %s  %s\n", gw.Version, gw.Status, shortID(orDash(gw.ContainerId)), orDash(gw.Digest))
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ROUTE\tHOSTNAME\tINGRESS\tTARGET\tRESULT\tCERTIFICATE\tEXPIRES")
+	fmt.Fprintln(tw, "ROUTE\tHOSTNAME\tTARGET\tRESULT\tPROBE")
 	for _, id := range sortedKeys(o.Gateway.Routes) {
 		r := o.Gateway.Routes[id]
-		host, ingress, target := "-", "-", "-"
+		host, target := "-", "-"
 		if applied != nil {
 			if ar, ok := applied.Gateway.Routes[id]; ok {
-				host, ingress, target = ar.Hostname, string(ar.Ingress), fmt.Sprintf("%s:%d", ar.Target.VirtualIp, ar.Target.Port)
+				host, target = ar.Hostname, fmt.Sprintf("%s:%d", ar.Target.VirtualIp, ar.Target.Port)
 			}
 		}
 		result := string(r.Result)
 		if r.BlockedBy != nil {
 			result += " (" + *r.BlockedBy + ")"
 		}
-		cert, expires := "-", "-"
-		if r.Certificate != nil {
-			cert, expires = string(r.Certificate.Status), orDash(r.Certificate.ExpiresAt)
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, host, ingress, target, result, cert, expires)
-	}
-	if len(o.PortAllocations) > 0 {
-		fmt.Fprintln(tw, "PORT ALLOCATION\tHOST PORT\tSERVICE\tTARGET\tRESULT\t\t")
-		for _, id := range sortedKeys(o.PortAllocations) {
-			p := o.PortAllocations[id]
-			port, svc, target := "-", "-", "-"
-			if applied != nil {
-				if ap, ok := applied.PortAllocations[id]; ok {
-					port, svc, target = fmt.Sprint(ap.HostPort), ap.ServiceId, fmt.Sprintf("%s:%d", ap.VirtualIp, ap.ContainerPort)
-				}
+		probe := "-"
+		if r.Probe != nil {
+			probe = "failing"
+			if r.Probe.Ok {
+				probe = "ok"
 			}
-			result := string(p.Result)
-			if p.BlockedBy != nil {
-				result += " (" + *p.BlockedBy + ")"
+			if r.Probe.StatusCode != nil {
+				probe += fmt.Sprintf(" (%d)", *r.Probe.StatusCode)
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t\t\n", id, port, svc, target, result)
 		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", id, host, target, result, probe)
 	}
 	return tw.Flush()
 }

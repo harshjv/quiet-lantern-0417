@@ -281,7 +281,6 @@ function ExplanationView({ app, explanation }: { app: App; explanation: Explanat
             name: app.name,
           },
           names: Object.fromEntries((apps.data?.items ?? []).map((s) => [s.id, s.name])),
-          server: app.server_id ?? undefined,
         }}
       />
       {probeInput?.to && (

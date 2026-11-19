@@ -10,7 +10,6 @@ var gatewayFiles = GatewayFiles{
 	StaticTarget:  "/etc/traefik/traefik.yml",
 	Dynamic:       "/var/lib/stationly/stationd/gateway/dynamic",
 	DynamicTarget: "/etc/traefik/dynamic",
-	DataTarget:    "/data",
 }
 
 func TestGatewayKeepsItsGoHeapUnderTheContainerMemoryLimit(t *testing.T) {

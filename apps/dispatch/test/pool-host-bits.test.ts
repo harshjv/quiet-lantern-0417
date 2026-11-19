@@ -5,7 +5,13 @@ import { setupInstance } from '../src/auth/bootstrap.ts'
 import { storedSetting } from '../src/db/settings.ts'
 import { installProposalProblem } from '../src/station/server.ts'
 
-import { adminEmail, adminPassword, startDispatch, type Dispatch } from './helpers/dispatch.ts'
+import {
+  adminEmail,
+  adminPassword,
+  startDispatch,
+  testHostnames,
+  type Dispatch,
+} from './helpers/dispatch.ts'
 
 const unmasked = '10.200.5.0/16'
 const suggestion = 'use 10.200.0.0/16'
@@ -31,6 +37,7 @@ test('setup refuses a pool with host bits set and stores nothing', async () => {
       {
         email: adminEmail,
         password: adminPassword,
+        hostnames: testHostnames,
         'ipam.pool': unmasked,
       },
       {

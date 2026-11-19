@@ -16,17 +16,14 @@ import { can } from '../api/access.ts'
 import { ChangeSet, isTransient, leafDiff, placeName, type Change } from '../api/changes.ts'
 import { configDeployTrigger } from '../api/deployments.ts'
 import { ApiError, fail } from '../api/errors.ts'
-import {
-  generatedHostname,
-  hostPortPicker,
-  ingressMode,
-  requireGatewayPin,
-} from '../api/exposure.ts'
+import { generatedHostname, requireGatewayPin } from '../api/exposure.ts'
 import type { AppRow, KeyRow, ProjectRow, TargetRow } from '../api/lookup.ts'
+import { oneLabelProblem } from '../auth/hostnames.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Level, Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
-import { app, app_port, domain, port_allocation, server, volume } from '../db/schema.ts'
+import { app, app_port, domain, server, volume } from '../db/schema.ts'
+import { readSetting } from '../db/settings.ts'
 import { normalizeHealth, undeclaredHealthPort } from '../generation/health.ts'
 import { pinImageSource, pinnedWarning } from '../platform/image-source.ts'
 import type { Keyring } from '../secrets/keyring.ts'
@@ -468,7 +465,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
   const warnings: Warning[] = []
   const unmanaged: Unmanaged[] = []
   const set = new ChangeSet()
-  const mode = ingressMode(db)
+  const zone = readSetting(db, 'domains.zone')
 
   if (doc.version !== 1) {
     issues.push({
@@ -534,11 +531,9 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           hostname: string | null
           generated: boolean
           port: number
-          ingress: 'direct' | 'tunnel'
           path: string
         }[]
       | null
-    exposures: number[] | null
     keys: Map<string, DesiredKey | null> | null
   }
   const prepared: Prepared[] = []
@@ -830,20 +825,21 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             })
           }
 
-          if (mode === 'direct' && d.ingress === 'tunnel') {
+          if (declaredPort?.grpc) {
             issues.push({
-              path: `${path}/ingress`,
-              code: 'PHASE_UNAVAILABLE',
-              message: `tunnel ingress ${phase1b}.`,
+              path: d.port !== undefined ? `${path}/port` : path,
+              code: 'PORT_PROTOCOL',
+              message: `port ${port} is gRPC, which the Cloudflare Tunnel cannot carry to the public; reach it from another app over its .internal name.`,
             })
           }
 
-          if (mode === 'tunnel' && d.ingress === 'direct') {
+          const deep = d.hostname && zone ? oneLabelProblem(d.hostname, zone) : null
+
+          if (deep) {
             issues.push({
-              path: `${path}/ingress`,
-              code: 'INGRESS_MODE',
-              message:
-                'direct ingress needs a public address; this install is reached through Cloudflare Tunnel.',
+              path: `${path}/hostname`,
+              code: 'DOMAIN_INVALID',
+              message: `${deep}.`,
             })
           }
 
@@ -852,7 +848,6 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             hostname: d.hostname ?? null,
             generated: d.generated === true,
             port,
-            ingress: d.ingress ?? mode,
             path,
           }
         })
@@ -864,34 +859,6 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           path: d.path,
           code: 'DUPLICATE',
           message: `${d.hostname ?? `a generated domain on port ${d.port}`} appears twice.`,
-        })
-      }
-    })
-
-    const exposures = svc.expose_tcp ?? null
-
-    exposures?.forEach((port, i) => {
-      const p = portSet.get(port)
-
-      if (!p) {
-        issues.push({
-          path: at('expose_tcp', i),
-          code: 'PORT_UNDECLARED',
-          message: `port ${port} is not in ports.`,
-        })
-      } else if (p.protocol !== 'tcp') {
-        issues.push({
-          path: at('expose_tcp', i),
-          code: 'PORT_PROTOCOL',
-          message: `port ${port} is http; only tcp ports are exposed.`,
-        })
-      }
-
-      if (exposures.indexOf(port) !== i) {
-        issues.push({
-          path: at('expose_tcp', i),
-          code: 'DUPLICATE',
-          message: `port ${port} appears twice.`,
         })
       }
     })
@@ -991,7 +958,6 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       desired,
       volumes,
       domains,
-      exposures,
       keys,
     })
   }
@@ -1360,14 +1326,13 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       }
 
       for (const d of p.domains ?? []) {
-        const hostname = d.hostname ?? generatedHostname(db, p.name, place.name, p.stationId!)
+        const hostname = d.hostname ?? generatedHostname(db, p.name, place.name)
 
         if (!hostname) {
           issues.push({
             path: d.path,
             code: 'PORT_UNDECLARED',
-            message:
-              'No domains.zone is set and the server reported no public address, so no hostname can be generated.',
+            message: 'No domains.zone is set, so no hostname can be generated.',
           })
           continue
         }
@@ -1376,28 +1341,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         set.add('domain', portRefs.get(d.port)!, {
           hostname,
           kind: d.generated ? 'generated' : 'custom',
-          ingress: d.ingress,
         })
-      }
-
-      if (p.exposures?.length) {
-        const picker = hostPortPicker(db, p.stationId!)
-
-        for (const port of p.exposures) {
-          const hostPort = picker.next()
-
-          if (hostPort === null) {
-            fail(
-              'PORT_RANGE_EXHAUSTED',
-              `Every port in ${picker.range} is allocated on this server.`,
-            )
-          }
-
-          set.add('port_allocation', portRefs.get(port)!, {
-            server_id: p.stationId,
-            host_port: hostPort,
-          })
-        }
       }
 
       if (p.keys) {
@@ -1579,7 +1523,6 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
     const ids = currentPorts.map((cp) => cp.id)
     const removedDomains = new Set<string>()
-    const removedAllocations = new Set<string>()
 
     if (p.domains) {
       const current = ids.length
@@ -1592,11 +1535,11 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       for (const d of current) {
         const want = p.domains.find((w) => w.identity === identity(d))
 
-        if (want && want.ingress === d.ingress) {
+        if (want) {
           continue
         }
 
-        if (input.prune || want) {
+        if (input.prune) {
           set.remove('domain', d.id, {
             hostname: d.hostname,
           })
@@ -1612,22 +1555,19 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       }
 
       for (const want of p.domains) {
-        const have = current.find(
-          (d) => identity(d) === want.identity && d.ingress === want.ingress,
-        )
+        const have = current.find((d) => identity(d) === want.identity)
 
         if (have) {
           continue
         }
 
-        const hostname = want.hostname ?? generatedHostname(db, p.name, place.name, p.stationId!)
+        const hostname = want.hostname ?? generatedHostname(db, p.name, place.name)
 
         if (!hostname) {
           issues.push({
             path: want.path,
             code: 'PORT_UNDECLARED',
-            message:
-              'No domains.zone is set and the server reported no public address, so no hostname can be generated.',
+            message: 'No domains.zone is set, so no hostname can be generated.',
           })
           continue
         }
@@ -1636,57 +1576,6 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         set.add('domain', portIds.get(want.port)!, {
           hostname,
           kind: want.generated ? 'generated' : 'custom',
-          ingress: want.ingress,
-        })
-      }
-    }
-
-    if (p.exposures) {
-      const current = ids.length
-        ? db
-            .select()
-            .from(port_allocation)
-            .where(
-              and(inArray(port_allocation.app_port_id, ids), eq(port_allocation.status, 'active')),
-            )
-            .all()
-        : []
-      const portOf = new Map(currentPorts.map((cp) => [cp.id, cp.port]))
-
-      for (const a of current) {
-        if (p.exposures.includes(portOf.get(a.app_port_id)!)) {
-          continue
-        }
-
-        if (input.prune) {
-          set.update('port_allocation', a.id, '/status', a.status, 'removed')
-          removedAllocations.add(a.id)
-        } else {
-          unmanaged.push({
-            entity: 'port_allocation',
-            id: a.id,
-            app: p.name,
-            port: portOf.get(a.app_port_id),
-          })
-        }
-      }
-
-      const picker = hostPortPicker(db, p.stationId!)
-
-      for (const port of p.exposures) {
-        if (current.some((a) => portOf.get(a.app_port_id) === port)) {
-          continue
-        }
-
-        const hostPort = picker.next()
-
-        if (hostPort === null) {
-          fail('PORT_RANGE_EXHAUSTED', `Every port in ${picker.range} is allocated on this server.`)
-        }
-
-        set.add('port_allocation', portIds.get(port)!, {
-          server_id: p.stationId,
-          host_port: hostPort,
         })
       }
     }
@@ -1697,41 +1586,19 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           ? db
               .select({
                 id: domain.id,
-                name: domain.hostname,
+                hostname: domain.hostname,
               })
               .from(domain)
               .where(eq(domain.app_port_id, change.id))
               .all()
               .filter((d) => !removedDomains.has(d.id))
-          : db
-              .select({
-                id: port_allocation.id,
-                name: port_allocation.host_port,
-              })
-              .from(port_allocation)
-              .where(
-                and(
-                  eq(port_allocation.app_port_id, change.id),
-                  eq(port_allocation.status, 'active'),
-                ),
-              )
-              .all()
-              .filter((a) => !removedAllocations.has(a.id))
+          : []
 
       if (remaining.length) {
-        const what =
-          change.after === 'tcp'
-            ? `domain ${remaining.map((r) => r.name).join(', ')} routes to it`
-            : `host port ${remaining.map((r) => r.name).join(', ')} exposes it`
-        const fix =
-          change.after === 'tcp'
-            ? 'drop the domain from domains and apply with prune'
-            : 'drop the port from expose_tcp and apply with prune'
-
         issues.push({
           path: change.path,
           code: 'PORT_PROTOCOL',
-          message: `port ${change.port} cannot become ${change.after} while ${what}; ${fix}.`,
+          message: `port ${change.port} cannot become tcp while domain ${remaining.map((r) => r.hostname).join(', ')} routes to it; drop the domain from domains and apply with prune.`,
         })
         continue
       }
@@ -1963,7 +1830,7 @@ export const changeLevel = (change: Change): Level => {
     return 'admin'
   }
 
-  if (change.entity === 'domain' || change.entity === 'port_allocation') {
+  if (change.entity === 'domain') {
     return 'admin'
   }
 

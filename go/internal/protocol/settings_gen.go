@@ -3,7 +3,6 @@
 package protocol
 
 const (
-	SettingDefaultExposurePortRange           = "30000-32767"
 	SettingDefaultDiskWarningPct              = 80
 	SettingDefaultDiskCriticalPct             = 90
 	SettingDefaultIpamPool                    = "10.200.0.0/16"
@@ -12,5 +11,4 @@ const (
 	SettingDefaultWorkshopMaxBuildsPerProject = 1
 	SettingDefaultRegistryGcSchedule          = "0 3 * * *"
 	SettingDefaultPlatformAllowUnsigned       = false
-	SettingDefaultGatewayRatePerSource        = 20
 )

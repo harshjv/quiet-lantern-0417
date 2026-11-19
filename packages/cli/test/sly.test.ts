@@ -245,8 +245,6 @@ describe('request mapping', () => {
       'servers',
       'update',
       'station-1',
-      '--public-address',
-      '203.0.113.9',
       '--concurrency-cap',
       '3',
       '--draining',
@@ -260,7 +258,6 @@ describe('request mapping', () => {
     )!
 
     assert.deepEqual(JSON.parse(sent.body), {
-      public_address: '203.0.113.9',
       concurrency_cap: 3,
       draining: true,
       intermittent: true,

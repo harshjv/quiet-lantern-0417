@@ -2076,17 +2076,6 @@ export const createStationServer = (options: StationServerOptions) => {
           .where(eq(token.id, enrolledWith.id))
           .run()
       } else {
-        const previous =
-          enrolledWith?.kind === 'bootstrap'
-            ? db
-                .select({
-                  public_address: server.public_address,
-                })
-                .from(server)
-                .where(and(eq(server.hosts_dispatch, true), isNull(server.revoked_at)))
-                .get()
-            : undefined
-
         if (enrolledWith?.kind === 'bootstrap') {
           db.update(server)
             .set({
@@ -2104,7 +2093,6 @@ export const createStationServer = (options: StationServerOptions) => {
             name: `server-${stationId.slice(-6).toLowerCase()}`,
             status: 'enrolling',
             hosts_dispatch: true,
-            public_address: previous?.public_address ?? null,
             ...enrolled,
           })
           .run()

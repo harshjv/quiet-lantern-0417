@@ -5,7 +5,6 @@ import {
   agent_hook,
   component,
   doctor_check,
-  domain,
   drift,
   notification_channel,
   server,
@@ -222,46 +221,6 @@ const stationRows = (db: Db) => {
   return [skew.done(), live.done(), drifted.done()]
 }
 
-const certificates = (db: Db) => {
-  const row = new Row('certificates')
-  const now = Date.now()
-  let checked = 0
-
-  for (const d of db.select().from(domain).where(eq(domain.ingress, 'direct')).all()) {
-    const cert = d.certificate
-
-    if (!cert?.expires_at) {
-      continue
-    }
-
-    checked++
-    const expires = Date.parse(cert.expires_at)
-    const issued = cert.not_before ? Date.parse(cert.not_before) : NaN
-    const lifetime = Number.isFinite(issued) ? expires - issued : NaN
-    const left = expires - now
-
-    if (left <= 0) {
-      row.raise(
-        'fail',
-        'certificate_expired',
-        `${d.hostname} expired at ${cert.expires_at}`,
-        'Check the Gateway ACME log; the domain must resolve to the server.',
-      )
-    } else if (Number.isFinite(lifetime) && left < lifetime / 6) {
-      row.raise(
-        'warn',
-        'certificate_renewal_due',
-        `${d.hostname} has ${Math.round(left / 3600000)} h of its ${Math.round(lifetime / 3600000)} h lifetime left`,
-        'Check the Gateway ACME log; renewal should already have happened.',
-      )
-    }
-  }
-
-  row.note(`${checked} direct certificate(s) with more than a sixth of their lifetime left`)
-
-  return row.done()
-}
-
 const tokenExpiry = (db: Db) => {
   const row = new Row('token_expiry')
   const hooks = db
@@ -285,7 +244,7 @@ const tokenExpiry = (db: Db) => {
     }
   }
 
-  row.note(`${hooks.length} agent hook token(s) checked; no Cloudflare token in phase 1a`)
+  row.note(`${hooks.length} agent hook token(s) checked`)
 
   return row.done()
 }
@@ -499,7 +458,6 @@ export const runDoctor = async (
     },
     signatures(db, names),
     ...stationRows(db),
-    certificates(db),
     tokenExpiry(db),
     baseImages(db),
     ...channelsAndHooks(db),

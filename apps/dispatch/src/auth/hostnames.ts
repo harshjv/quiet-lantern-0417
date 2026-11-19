@@ -68,3 +68,27 @@ export const validRpId = (rpId: string, dashboard: string, api: string) => {
 
   return isSuffixOf(rpId, dashboard) && isSuffixOf(rpId, api) && isSuffixOf(check.registrable, rpId)
 }
+
+export const oneLabelProblem = (host: string, zone: string) => {
+  if (!host.endsWith(`.${zone}`)) {
+    return null
+  }
+
+  const label = host.slice(0, -(zone.length + 1))
+
+  return label.includes('.')
+    ? `${host} is more than one label under ${zone}, and the free Cloudflare certificate covers only one; use a flat name such as ${label.replaceAll('.', '-')}.${zone}`
+    : null
+}
+
+export const zoneHostProblem = (host: string, zone: string) => {
+  if (host === zone) {
+    return `${host} is the zone itself; use a name one label under it, such as dash.${zone}`
+  }
+
+  if (!host.endsWith(`.${zone}`)) {
+    return `${host} is not under the zone ${zone}`
+  }
+
+  return oneLabelProblem(host, zone)
+}

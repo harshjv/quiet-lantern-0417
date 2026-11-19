@@ -665,22 +665,9 @@ func (s *Station) switchNamespaces(ctx context.Context, r *rollout, row *stepRow
 }
 
 func (s *Station) hostDetail(svcID string, result netns.Result, took time.Duration) map[string]any {
-	_, el, _ := s.hostState()
+	_, el := s.hostState()
 	gp := s.plan.Gateway
 	d := map[string]any{"table": "inet " + netns.HostTableName, "result": string(result), "ms": millis.Of(took)}
-	var ports []string
-	for _, pp := range gp.Ports {
-		if pp.ServiceID == svcID {
-			if a, ok := el.Ports[pp.HostPort]; ok {
-				ports = append(ports, fmt.Sprintf("%d->%s", pp.HostPort, a))
-			} else {
-				ports = append(ports, fmt.Sprintf("%d->absent", pp.HostPort))
-			}
-		}
-	}
-	if ports != nil {
-		d["port_switch"] = ports
-	}
 	for _, rp := range gp.Routes {
 		if rp.ServiceID == svcID {
 			if a, ok := el.Switch[rp.Upstream.Addr()]; ok {
@@ -768,11 +755,6 @@ func (s *Station) blueFlows(ctx context.Context, r *rollout, evict bool) (netns.
 		if rp.ServiceID == r.ServiceID {
 			host = append(host, netns.FlowMatch{Destination: vip, ReplySource: blue})
 			break
-		}
-	}
-	for _, pp := range gp.Ports {
-		if pp.ServiceID == r.ServiceID && gp.Public.IsValid() {
-			host = append(host, netns.FlowMatch{Destination: gp.Public, Port: pp.HostPort, ReplySource: blue})
 		}
 	}
 	if len(host) > 0 {

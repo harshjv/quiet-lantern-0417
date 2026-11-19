@@ -197,47 +197,36 @@ func listeningOf(socks []netns.Socket) []protocol.ListeningSocket {
 
 func (s *Station) hostSwitchCheck(ctx context.Context, st *netState, c protocol.NetworkCheck) protocol.NetworkCheckResult {
 	r := protocol.NetworkCheckResult{Kind: c.Kind, Address: protocol.NetworkCheckResultAddress(nil), Port: protocol.NetworkCheckResultPort(nil), GatewayTarget: ptr(false)}
-	switch {
-	case c.VirtualIp != nil:
-		vip, err := netip.ParseAddr(*c.VirtualIp)
-		if err != nil {
-			return checkError(c.Kind, checkInvalid)
-		}
-		realAddr, err := netns.HostSwitch(vip)
-		if err != nil {
-			return checkError(c.Kind, checkFailed)
-		}
-		if realAddr.IsValid() {
-			r.Address = protocol.NetworkCheckResultAddress(ptr(realAddr.String()))
-		}
-		if c.Port != nil {
-			r.Port = protocol.NetworkCheckResultPort(ptr(*c.Port))
-			if st.gateway != "" {
-				v := s.inspectID(ctx, st.gateway, docker.IngressNetworkName)
-				if v.state == string(container.StateRunning) && v.pid > 0 {
-					if ns, err := netns.OpenChecked(v.pid, v.netns); err == nil {
-						in, err := ns.GatewayTarget(netip.AddrPortFrom(vip, uint16(*c.Port)))
-						ns.Close()
-						if err == nil {
-							r.GatewayTarget = ptr(in)
-						}
+	if c.VirtualIp == nil {
+		return checkError(c.Kind, checkInvalid)
+	}
+	vip, err := netip.ParseAddr(*c.VirtualIp)
+	if err != nil {
+		return checkError(c.Kind, checkInvalid)
+	}
+	realAddr, err := netns.HostSwitch(vip)
+	if err != nil {
+		return checkError(c.Kind, checkFailed)
+	}
+	if realAddr.IsValid() {
+		r.Address = protocol.NetworkCheckResultAddress(ptr(realAddr.String()))
+	}
+	if c.Port != nil {
+		r.Port = protocol.NetworkCheckResultPort(ptr(*c.Port))
+		if st.gateway != "" {
+			v := s.inspectID(ctx, st.gateway, docker.IngressNetworkName)
+			if v.state == string(container.StateRunning) && v.pid > 0 {
+				if ns, err := netns.OpenChecked(v.pid, v.netns); err == nil {
+					in, err := ns.GatewayTarget(netip.AddrPortFrom(vip, uint16(*c.Port)))
+					ns.Close()
+					if err == nil {
+						r.GatewayTarget = ptr(in)
 					}
 				}
 			}
 		}
-		return r
-	case c.HostPort != nil:
-		ap, err := netns.HostPort(uint16(*c.HostPort))
-		if err != nil {
-			return checkError(c.Kind, checkFailed)
-		}
-		if ap.IsValid() {
-			r.Address = protocol.NetworkCheckResultAddress(ptr(ap.Addr().String()))
-			r.Port = protocol.NetworkCheckResultPort(ptr(int(ap.Port())))
-		}
-		return r
 	}
-	return checkError(c.Kind, checkInvalid)
+	return r
 }
 
 func (h *netHub) claimProbe(id string) bool {

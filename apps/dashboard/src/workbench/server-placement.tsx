@@ -84,14 +84,8 @@ function Toggle({
 
 export function Placement({ server }: { server: ServerView }) {
   const update = useServerUpdate(server)
-  const [address, setAddress] = useState(server.public_address ?? '')
   const [cap, setCap] = useState(String(server.concurrency_cap))
   const change: ServerChange = {
-    ...(address.trim() && address.trim() !== server.public_address
-      ? {
-          public_address: address.trim(),
-        }
-      : {}),
     ...(Number(cap) !== server.concurrency_cap
       ? {
           concurrency_cap: Number(cap),
@@ -129,20 +123,6 @@ export function Placement({ server }: { server: ServerView }) {
         }
       />
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
-        <Field
-          id={`address-${server.id}`}
-          label="Public address"
-          hint="The IPv4 address your domains point at."
-        >
-          <Input
-            id={`address-${server.id}`}
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="203.0.113.10"
-            inputMode="decimal"
-            className="font-mono"
-          />
-        </Field>
         <Field id={`cap-${server.id}`} label="Deployments at once" hint="The rest wait in a queue.">
           <Input
             id={`cap-${server.id}`}

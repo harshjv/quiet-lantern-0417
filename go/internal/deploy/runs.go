@@ -438,7 +438,7 @@ func (s *Station) collectLogs(ctx context.Context, rr *runRecord) []string {
 		name := docker.RunName(rr.ID)
 		s.captures.wait(name, captureWait)
 		w := s.logs.Single(rr.LogRef, runLogCap)
-		if err := s.copyDockerLogs(ctx, name, rr.DeploymentID, docker.RoleRun, w, false, nil); err != nil {
+		if err := s.copyDockerLogs(ctx, name, rr.DeploymentID, docker.RoleRun, w, false); err != nil {
 			s.log.Warn("copy run log", "run", rr.ID, "error", err)
 		}
 		if w.Dropped > 0 {

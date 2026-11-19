@@ -25,7 +25,7 @@ export const operationTags = [
   },
   {
     name: 'domains',
-    description: 'Domains and TCP exposures of an app',
+    description: 'Domains of an app',
   },
   {
     name: 'network',

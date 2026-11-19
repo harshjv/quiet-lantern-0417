@@ -183,12 +183,6 @@ export const FlowVerdict = StringEnum(flowVerdictValues, {
   title: 'FlowVerdict',
 })
 
-export const ingressValues = ['direct', 'tunnel'] as const
-
-export const Ingress = StringEnum(ingressValues, {
-  title: 'Ingress',
-})
-
 export const scheduleConcurrencyValues = ['skip', 'allow'] as const
 
 export const networkProtocolValues = ['tcp', 'udp'] as const
@@ -276,7 +270,6 @@ export const diagnosisPhaseValues = [
   'recovery',
   'run',
   'route',
-  'certificate',
   'unpack',
   'disk',
   'network',

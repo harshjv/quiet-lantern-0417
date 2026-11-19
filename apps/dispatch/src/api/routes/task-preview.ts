@@ -71,7 +71,7 @@ const addressPreview = (kit: Kit, call: Call, source: string, preview: TargetRow
     for (const routedDomain of routed) {
       const port = ports.find((entry) => entry.id === routedDomain.app_port_id)
       const target_port = copyPorts.find((entry) => entry.port === port?.port)
-      const hostname = generatedHostname(db, copy.name, preview.name, copy.server_id)
+      const hostname = generatedHostname(db, copy.name, preview.name)
       const taken = target_port
         ? db.select().from(domain).where(eq(domain.app_port_id, target_port.id)).get()
         : undefined
@@ -80,7 +80,6 @@ const addressPreview = (kit: Kit, call: Call, source: string, preview: TargetRow
         changes.add('domain', target_port.id, {
           hostname,
           kind: 'generated',
-          ingress: routedDomain.ingress,
         })
       }
     }

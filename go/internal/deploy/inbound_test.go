@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/harshjv/stationly/go/internal/netns"
-	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
 const (
@@ -18,31 +17,11 @@ const (
 	alphaVIP      = "100.64.10.2"
 )
 
-func serviceRoute(ingress string) doc {
-	r := doc{
-		"hash":          testDigest,
-		"hostname":      "web.sly.test",
-		"ingress":       ingress,
-		"target":        doc{"service_id": alphaWhoami, "virtual_ip": alphaVIP, "port": 8080},
-		"tls":           nil,
-		"redirect_http": false,
-	}
-	if ingress == "direct" {
-		r["tls"] = doc{"resolver": "letsencrypt"}
-		r["redirect_http"] = true
-	}
-	return r
-}
-
-func withPublicAddress(d doc) {
-	at(d, "station")["public_address"] = publicAddress
-}
-
-func withServiceRoute(ingress, webPorts string) func(d doc) {
-	return func(d doc) {
-		withPublicAddress(d)
-		at(d, "gateway", "routes")[domainRouteID] = serviceRoute(ingress)
-		at(d, "station", "inbound")["web_ports"] = webPorts
+func withServiceRoute(d doc) {
+	at(d, "gateway", "routes")[domainRouteID] = doc{
+		"hash":     testDigest,
+		"hostname": "web.sly.test",
+		"target":   doc{"service_id": alphaWhoami, "virtual_ip": alphaVIP, "port": 8080},
 	}
 }
 
@@ -50,47 +29,6 @@ func hostLayoutOf(p *Plan) netns.HostLayout {
 	s := &Station{log: slog.New(slog.NewTextHandler(io.Discard, nil)), plan: p}
 	s.gw.ingressID = "ingress"
 	return s.hostLayout()
-}
-
-func TestAStationWithoutADirectRouteKeepsTheWebPortsClosed(t *testing.T) {
-	p := mustBuild(t, withPublicAddress)
-	if p.Gateway.WebOpen || hostLayoutOf(p).WebOpen {
-		t.Fatal("with no direct route the host layout must close 80 and 443")
-	}
-}
-
-func TestATunnelRouteAloneKeepsTheWebPortsClosed(t *testing.T) {
-	p := mustBuild(t, withServiceRoute("tunnel", "closed"))
-	if hostLayoutOf(p).WebOpen {
-		t.Fatal("a tunnel route arrives through cloudflared, never on the public 80 and 443")
-	}
-}
-
-func TestADirectDomainOpensTheWebPortsAndRemovingItClosesThem(t *testing.T) {
-	none := hostLayoutOf(mustBuild(t, withPublicAddress))
-	with := hostLayoutOf(mustBuild(t, withServiceRoute("direct", "open")))
-	removed := hostLayoutOf(mustBuild(t, withPublicAddress))
-	if none.WebOpen || !with.WebOpen || removed.WebOpen {
-		t.Fatalf("web ports none=%v with=%v removed=%v", none.WebOpen, with.WebOpen, removed.WebOpen)
-	}
-	if !reflect.DeepEqual(none, removed) {
-		t.Fatalf("removing the last direct route must return the host layout to the closed one\nbefore %+v\nafter  %+v", none, removed)
-	}
-}
-
-func TestTheDomainlessAddressRouteIsADirectRouteThatOpensTheWebPorts(t *testing.T) {
-	p := mustBuild(t, withDispatch(map[string]doc{"system-address": dispatchRoute(publicAddress, "letsencrypt-shortlived")}))
-	if !hostLayoutOf(p).WebOpen {
-		t.Fatal("system-address serves Dispatch on https://<public address>, so 80 and 443 must be open")
-	}
-}
-
-func TestWebPortsThatDisagreeWithTheRoutesRejectTheGeneration(t *testing.T) {
-	expectRejected(t, protocol.ErrorCodeGenerationInvalid, "web_ports is closed but must be open", withServiceRoute("direct", "closed"))
-	expectRejected(t, protocol.ErrorCodeGenerationInvalid, "web_ports is open but must be closed", func(d doc) {
-		withPublicAddress(d)
-		at(d, "station", "inbound")["web_ports"] = "open"
-	})
 }
 
 func variableChange(d doc) {
@@ -103,9 +41,8 @@ func variableChange(d doc) {
 }
 
 func TestAVariableChangeRolloutKeepsEveryNamespaceLayout(t *testing.T) {
-	routes := withServiceRoute("direct", "open")
-	before := mustBuild(t, routes)
-	after := mustBuild(t, edits(routes, variableChange))
+	before := mustBuild(t, withServiceRoute)
+	after := mustBuild(t, edits(withServiceRoute, variableChange))
 	if len(after.Generation.Deployments) != 1 {
 		t.Fatalf("the variable change must arrive as one deployment, got %d", len(after.Generation.Deployments))
 	}

@@ -11,14 +11,12 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/harshjv/stationly/go/internal/cidr"
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/harshjv/stationly/go/internal/verify"
 )
 
 var dockerNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
@@ -74,7 +72,7 @@ func (p *Plan) ServiceIDs() []string {
 	return ids
 }
 
-func BuildPlan(g *protocol.Generation, applied *protocol.Generation, stateDir string, trust verify.Trust) (*Plan, error) {
+func BuildPlan(g *protocol.Generation, applied *protocol.Generation, stateDir string) (*Plan, error) {
 	if err := checkGeneration(g, applied); err != nil {
 		return nil, err
 	}
@@ -82,7 +80,7 @@ func BuildPlan(g *protocol.Generation, applied *protocol.Generation, stateDir st
 	couplerImage := protocol.CouplerImageSource + "@" + *coupler.Digest
 
 	plan := &Plan{Generation: g, Networks: map[string]docker.NetworkSpec{}, Services: map[string]*ServicePlan{}, couplerImage: couplerImage}
-	gp, err := planGateway(g, couplerImage, time.Now(), trust)
+	gp, err := planGateway(g)
 	if err != nil {
 		return nil, reject(protocol.ErrorCodeGenerationInvalid, "Send a generation with a valid gateway section.", "%v", err)
 	}

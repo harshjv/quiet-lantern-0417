@@ -27,13 +27,11 @@ export const networkText = (doc: NetworkDoc) => {
       ports: s.ports.map((p) => `${p.port}/${p.grpc ? 'grpc' : p.protocol}`).join(',') || '-',
       switch: switchCell(s.switch),
       domains: s.domains.map((d) => d.hostname).join(',') || '-',
-      tcp: s.exposures.map((x) => `${x.public ?? `:${x.host_port}`}->${x.port}`).join(',') || '-',
     })),
   )
   const inbound = table(
     doc.inbound.entries.map((e) => ({
-      kind: e.kind,
-      entry: e.kind === 'domain' ? e.hostname : e.public,
+      hostname: e.hostname,
       app: e.app,
       port: e.port,
     })),
@@ -47,14 +45,7 @@ export const networkText = (doc: NetworkDoc) => {
     100,
   )
 
-  return [
-    apps,
-    '',
-    `inbound (web ports ${doc.inbound.web_ports}, public address ${doc.inbound.public_address ?? '-'}):`,
-    inbound,
-    '',
-    paths,
-  ].join('\n')
+  return [apps, '', 'inbound through the Cloudflare Tunnel:', inbound, '', paths].join('\n')
 }
 
 export type ConnectionsDoc = Data<ReturnType<Api['apps']>['connections']['get']>

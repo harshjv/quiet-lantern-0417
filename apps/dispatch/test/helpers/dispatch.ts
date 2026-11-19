@@ -218,6 +218,11 @@ export const signIn = async (
   }
 }
 
+export const testHostnames = {
+  dashboard: 'dash.stationly.test',
+  api: 'api.stationly.test',
+}
+
 const seedAdmin = async (h: Booting) => {
   const created = await setupInstance(
     {
@@ -228,6 +233,7 @@ const seedAdmin = async (h: Booting) => {
     {
       email: adminEmail,
       password: adminPassword,
+      hostnames: testHostnames,
     },
     {
       type: 'system',

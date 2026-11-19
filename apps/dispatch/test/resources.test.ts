@@ -163,23 +163,12 @@ describe('ports', () => {
     )
   })
 
-  test('a port with a TCP exposure cannot become http and one with a domain cannot become tcp', async () => {
+  test('a port with a domain cannot become tcp', async () => {
     pinPlatform(h, {
       gateway: true,
     })
     const project = await createProject(h, 'ports-dependents')
     const env = (await createPreview(h, project.id, 'staging')).id
-    const tcp = await createApp(h, env, {
-      name: 'db',
-      ref: 'postgres:16',
-      ports: [
-        {
-          port: 5432,
-          protocol: 'tcp',
-        },
-      ],
-      deploy: true,
-    })
     const web = await createApp(h, env, {
       name: 'web',
       ref: 'traefik/whoami:v1',
@@ -190,21 +179,6 @@ describe('ports', () => {
       ],
       deploy: true,
     })
-    const allocation = await api('POST', `/v1/ports/${tcp.ports[0].id}/port-allocations`, {})
-
-    assert.equal(allocation.status, 201)
-    const toHttp = await api('PATCH', `/v1/apps/${tcp.id}`, {
-      ports: [
-        {
-          port: 5432,
-          protocol: 'http',
-        },
-      ],
-    })
-
-    assert.equal(toHttp.status, 409)
-    assert.equal(toHttp.body.error.code, 'DELETE_HAS_DEPENDENTS')
-    assert.equal(toHttp.body.error.details.dependents[0].id, allocation.body.id)
     const domain = await api('POST', `/v1/ports/${web.ports[0].id}/domains`, {
       hostname: 'web.shop.example.com',
     })
@@ -412,7 +386,7 @@ describe('domains and the Gateway pin', () => {
     assert.equal(accepted.body.hostname, 'gate.shop.example.com')
   })
 
-  test('a domain on a tcp port is refused as invalid, not as an unpinned gateway', async () => {
+  test('a domain on a tcp port is refused as a protocol the tunnel cannot carry, not as an unpinned gateway', async () => {
     const project = await createProject(h, 'gateway-tcp')
     const db = await createApp(h, (await createPreview(h, project.id, 'staging')).id, {
       name: 'db',
@@ -428,7 +402,7 @@ describe('domains and the Gateway pin', () => {
       hostname: 'db.shop.example.com',
     })
 
-    assert.equal(refused.status, 400)
-    assert.equal(refused.body.error.code, 'VALIDATION_FAILED')
+    assert.equal(refused.status, 422)
+    assert.equal(refused.body.error.code, 'TUNNEL_UNSUPPORTED_PROTOCOL')
   })
 })

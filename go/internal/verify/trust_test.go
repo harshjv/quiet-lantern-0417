@@ -2,20 +2,12 @@ package verify
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
-	"encoding/pem"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
@@ -59,9 +51,6 @@ func TestReleaseTrustNamesTheProductionIdentity(t *testing.T) {
 	}
 	if len(tr.TUFRoot) == 0 || len(tr.TrustedRoot) == 0 {
 		t.Error("embedded roots missing")
-	}
-	if tr.DefaultACME() != "" {
-		t.Error("production trust must not override the ACME directory")
 	}
 }
 
@@ -155,16 +144,6 @@ func TestTestTrustKeepsItsOwnReleaseLocations(t *testing.T) {
 	}
 }
 
-func TestTestTrustDefaultsToTheACMEStagingDirectory(t *testing.T) {
-	tr, err := ParseTestTrust(testTrustJSON(t, nil), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tr.ACMECAServer != LetsEncryptStaging || tr.DefaultACME() != LetsEncryptStaging {
-		t.Errorf("acme %q", tr.ACMECAServer)
-	}
-}
-
 func TestTestTrustRejectsEveryProductionLocation(t *testing.T) {
 	cases := map[string]string{
 		"releases_repository":   protocol.ReleaseRepository,
@@ -178,30 +157,6 @@ func TestTestTrustRejectsEveryProductionLocation(t *testing.T) {
 				t.Fatalf("got %v", err)
 			}
 		})
-	}
-}
-
-func TestTestTrustRejectsProductionACME(t *testing.T) {
-	_, err := ParseTestTrust(testTrustJSON(t, func(d map[string]any) { d["acme_ca_server"] = LetsEncryptProduction }), t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "acme_ca_server") {
-		t.Fatalf("got %v", err)
-	}
-}
-
-func TestTestTrustRejectsNonHTTPSACME(t *testing.T) {
-	_, err := ParseTestTrust(testTrustJSON(t, func(d map[string]any) { d["acme_ca_server"] = "http://acme.example.test/dir" }), t.TempDir())
-	if err == nil {
-		t.Fatal("expected an error")
-	}
-}
-
-func TestTestTrustAcceptsACustomHTTPSACME(t *testing.T) {
-	tr, err := ParseTestTrust(testTrustJSON(t, func(d map[string]any) { d["acme_ca_server"] = "https://pebble.example.test/dir" }), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tr.ACMECAServer != "https://pebble.example.test/dir" {
-		t.Errorf("acme %q", tr.ACMECAServer)
 	}
 }
 
@@ -289,7 +244,7 @@ func TestTestTrustRoundTripsThroughItsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Name != want.Name || got.Identity.SANRegex != want.Identity.SANRegex || got.ReleasesRepository != want.ReleasesRepository ||
-		got.ACMECAServer != want.ACMECAServer || compact(t, got.TUFRoot) != compact(t, want.TUFRoot) || got.Sources["coupler_image"] != "registry.example.test/pause" ||
+		compact(t, got.TUFRoot) != compact(t, want.TUFRoot) || got.Sources["coupler_image"] != "registry.example.test/pause" ||
 		len(got.InsecureRegistries) != 1 {
 		t.Fatalf("round trip lost data in trust %q", got.Name)
 	}
@@ -355,32 +310,4 @@ func compact(t *testing.T, raw []byte) string {
 		t.Fatal(err)
 	}
 	return out.String()
-}
-
-func TestATestTrustCarriesACMERootsForALocalCA(t *testing.T) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: "pebble root"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
-	tr, err := ParseTestTrust(testTrustJSON(t, func(d map[string]any) { d["acme_ca_certificates"] = root }), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(tr.ACMERoots()) != root {
-		t.Fatalf("roots %q", tr.ACMERoots())
-	}
-	if ReleaseTrust().ACMERoots() != nil {
-		t.Fatal("the production trust must never add ACME roots")
-	}
-	for name, bad := range map[string]string{"not PEM": "hello", "a key": string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte{1}})), "garbage DER": string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte{1, 2}}))} {
-		if _, err := ParseTestTrust(testTrustJSON(t, func(d map[string]any) { d["acme_ca_certificates"] = bad }), t.TempDir()); err == nil || !strings.Contains(err.Error(), "acme_ca_certificates") {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
 }

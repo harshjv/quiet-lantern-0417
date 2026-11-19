@@ -1,8 +1,6 @@
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
 
-import { ingressValues } from './model.ts'
 import { networkLayout } from './network.ts'
-import { StringEnum } from './primitives.ts'
 import { Lockfile } from './release.ts'
 
 const Str = Type.String({
@@ -37,15 +35,6 @@ export const settings = {
   'hostnames.api': define(Str),
   'access.team_domain': define(Str),
   'access.aud': define(Str),
-  'exposure.port_range': define(
-    Type.String({
-      pattern: '^\\d{1,5}-\\d{1,5}$',
-    }),
-    {
-      default: '30000-32767',
-      station: true,
-    },
-  ),
   'disk.warning_pct': define(Pct, {
     default: 80,
     station: true,
@@ -65,9 +54,6 @@ export const settings = {
     default: networkLayout.defaultVirtualPrefix,
     station: true,
   }),
-  'ingress.mode': define(StringEnum(ingressValues)),
-  'cloudflare.zone_id': define(Str),
-  'cloudflare.account_id': define(Str),
   'logs.retention.runtime_days': define(Int, {
     station: true,
   }),
@@ -124,16 +110,6 @@ export const settings = {
   'guard.learn_window_s': define(Int, {
     default: 259200,
   }),
-  'gateway.rate_per_source': define(
-    Type.Integer({
-      minimum: 0,
-      maximum: 1000000,
-    }),
-    {
-      default: 20,
-      station: true,
-    },
-  ),
   'machine.stopped_retention_s': define(
     Type.Union([
       Type.Literal(0),
@@ -205,41 +181,8 @@ export const settings = {
       default: 7,
     },
   ),
-  'cloudflare.token_key': define(Str),
-  'acme.email': define(
-    Type.String({
-      pattern: '^[^@\\s]+@[^@\\s]+$',
-    }),
-    {
-      station: true,
-    },
-  ),
-  'acme.ca_server': define(Str),
   'auth.passkey_rp_id': define(Str),
   'domains.zone': define(Str),
-  'acme.dns_provider': define(
-    Type.Object(
-      {
-        provider: Str,
-        token_key: Str,
-      },
-      {
-        additionalProperties: false,
-      },
-    ),
-  ),
-  'acme.fallback_ca': define(
-    Type.Object(
-      {
-        ca_server: Str,
-        eab_kid: Str,
-        eab_hmac_key: Str,
-      },
-      {
-        additionalProperties: false,
-      },
-    ),
-  ),
 }
 
 export type SettingKey = keyof typeof settings

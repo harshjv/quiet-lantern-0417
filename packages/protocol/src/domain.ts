@@ -33,8 +33,6 @@ export const domainKindValues = ['generated', 'custom'] as const
 
 export const domainStatusValues = ['pending', 'active', 'error'] as const
 
-export const portAllocationStatusValues = ['active', 'removed'] as const
-
 export const keyScopeValues = ['global', 'project', 'app', 'machine'] as const
 
 export const keyKindValues = ['literal', 'reference', 'sealed'] as const

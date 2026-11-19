@@ -1,7 +1,6 @@
 import type { Connections, Explanation, NetworkMap } from './api.ts'
 import { blank, plural, span, stamp } from './format.ts'
 import {
-  domainLive,
   domainStatus,
   hiddenHopFacts,
   hopFact,
@@ -16,7 +15,6 @@ import type { Tone } from './tone.ts'
 
 type MapApp = NetworkMap['apps'][number]
 type MapDomain = MapApp['domains'][number]
-type MapExposure = MapApp['exposures'][number]
 type Peer = Connections['connections'][number]['peer']
 type Hop = Explanation['hops'][number]
 
@@ -112,14 +110,12 @@ export const servingText = (app: Pick<MapApp, 'name' | 'switch'>): Serving => {
 export const drainingText = (sw: MapApp['switch']) =>
   sw.draining ? `#${sw.draining.number} finishing open connections` : null
 
-export const domainState = (
-  domain: Pick<MapDomain, 'status' | 'certificate' | 'route'>,
-): Status => {
+export const domainState = (domain: Pick<MapDomain, 'status' | 'route'>): Status => {
   if (domain.status === 'error') {
     return domainStatus.error
   }
 
-  if (domain.certificate.status !== 'valid') {
+  if (domain.status === 'pending') {
     return domainStatus.pending
   }
 
@@ -127,19 +123,8 @@ export const domainState = (
     return routeResult[domain.route.result ?? 'pending']
   }
 
-  return domainLive
+  return domainStatus.active
 }
-
-export const exposureState = (exposure: Pick<MapExposure, 'result'> | undefined) =>
-  routeResult[exposure?.result ?? 'pending']
-
-export const stationName = (map: Pick<NetworkMap, 'subnets'>, id: string) =>
-  map.subnets.find((s) => s.server.id === id)?.server.name ?? 'the server'
-
-export const exposureText = (map: Pick<NetworkMap, 'subnets'>, exposure: MapExposure) =>
-  exposure.public
-    ? `${exposure.public} to port ${exposure.port}`
-    : `Port ${exposure.host_port} on ${stationName(map, exposure.server_id)} (no public address)`
 
 export const blockedText = (count: number) =>
   `Blocked ${count === 1 ? 'once' : plural(count, 'time')}`

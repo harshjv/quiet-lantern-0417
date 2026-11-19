@@ -154,7 +154,6 @@ describe('network map', () => {
         ['public_internet', 'allowed'],
         ['no_switch_target', 'rejected'],
         ['inbound_domain', 'allowed'],
-        ['inbound_tcp', 'allowed'],
         ['inbound_other', 'blocked'],
       ],
     )
@@ -385,12 +384,10 @@ describe('network explain', () => {
 
     assert.equal(reply.status, 200)
     assert.equal(reply.body.verdict, 'broken')
-    assert.equal(reply.body.code, 'NO_PUBLIC_ADDRESS')
+    assert.equal(reply.body.code, 'TUNNEL_NOT_READY')
     assert.deepEqual(reply.body.hops.map((hop: any) => hop.code ?? null).filter(Boolean), [
       'DOMAIN_NOT_ACTIVE',
-      'NO_PUBLIC_ADDRESS',
-      'WEB_PORTS_CLOSED',
-      'CERTIFICATE_NOT_VALID',
+      'TUNNEL_NOT_READY',
       'ROUTE_NOT_APPLIED',
     ])
   })

@@ -7,7 +7,7 @@ root=$(cd "$here/../.." && pwd)
 usage() {
 	cat >&2 <<EOF
 usage: $0 --out DIR --addr HOST [--release VERSION] [--http-port 8080] [--registry-port 5050]
-          [--expires-days 30] [--acme-ca-server URL] [--acme-ca-certificate FILE] [--reuse-dispatch]
+          [--expires-days 30] [--reuse-dispatch]
           [--reuse-toolchain] [--reuse-runsc] [--sly TARGETS]
 
 Builds a signed TEST release of Stationly from the current tree for linux/amd64 and linux/arm64 with
@@ -20,10 +20,6 @@ Never a production release: the identity, the CA and the TUF repository are gene
   --addr HOST          address stations use to reach this machine (an IP or DNS name, never 127.0.0.1)
   --release VERSION    release version (default 0.1.0-test.<UTC timestamp>)
   --expires-days N     expiry of the TUF targets, snapshot and timestamp (default 30)
-  --acme-ca-server URL ACME directory the test install's Gateway uses (default Let's Encrypt staging)
-  --acme-ca-certificate FILE
-                       PEM root that signs the ACME directory's TLS certificate (a local Pebble);
-                       written into the trust as acme_ca_certificates
   --reuse-dispatch     reuse DIR/build/dispatch-VERSION.oci.tar instead of rebuilding the image
   --reuse-toolchain    reuse DIR/build/sandbox-toolchain-VERSION.oci.tar instead of rebuilding the image
   --reuse-runsc        reuse the runsc archives in DIR/cache instead of checking gVisor's repository again
@@ -39,8 +35,6 @@ release=0.1.0-test.$(date -u +%Y%m%d%H%M%S)
 http_port=8080
 registry_port=5050
 expires_days=30
-acme_ca_server=https://acme-staging-v02.api.letsencrypt.org/directory
-acme_ca_certificate=
 reuse_dispatch=false
 reuse_toolchain=false
 reuse_runsc=false
@@ -53,8 +47,6 @@ while [ $# -gt 0 ]; do
 	--http-port) http_port=$2; shift 2 ;;
 	--registry-port) registry_port=$2; shift 2 ;;
 	--expires-days) expires_days=$2; shift 2 ;;
-	--acme-ca-server) acme_ca_server=$2; shift 2 ;;
-	--acme-ca-certificate) acme_ca_certificate=$2; shift 2 ;;
 	--reuse-dispatch) reuse_dispatch=true; shift ;;
 	--reuse-toolchain) reuse_toolchain=true; shift ;;
 	--reuse-runsc) reuse_runsc=true; shift ;;
@@ -63,7 +55,6 @@ while [ $# -gt 0 ]; do
 	esac
 done
 [ -n "$out" ] && [ -n "$addr" ] || usage
-[ -z "$acme_ca_certificate" ] || [ -r "$acme_ca_certificate" ] || { echo "--acme-ca-certificate $acme_ca_certificate is not readable" >&2; exit 2; }
 case "$addr" in 127.* | localhost | ::1) echo "--addr must be an address the station reaches, not $addr" >&2; exit 2 ;; esac
 [[ "$release" =~ ^[0-9]+\.[0-9]+\.[0-9]+-test(\.[0-9A-Za-z]+)*$ ]] || { echo "--release $release must look like 0.1.0-test.N: test releases are never plain versions" >&2; exit 2; }
 for tool in go docker jq curl oras; do command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 2; }; done
@@ -109,8 +100,6 @@ trust=$www/trust.json
 jq -n --arg name "Stationly TEST release identity at $addr (throwaway; never production)" \
 	--arg sigrepo "$registry/stationly/signatures" --arg reg "$registry" --arg tuf "$base/tuf" \
 	--arg releases "$releases" --arg dsrc "$registry/stationly/dispatch" --arg tsrc "$registry/stationly/sandbox-toolchain" \
-	--arg acme "$acme_ca_server" \
-	--rawfile acmeca "${acme_ca_certificate:-/dev/null}" \
 	--slurpfile root "$www/tuf/1.root.json" \
 	'{name: $name,
 	  identity: {
@@ -119,8 +108,7 @@ jq -n --arg name "Stationly TEST release identity at $addr (throwaway; never pro
 	    extensions: {sourceRepositoryURI: "https://github.com/stationly-test/stationly", sourceRepositoryIdentifier: "100001", sourceRepositoryOwnerIdentifier: "200002", runnerEnvironment: "github-hosted"}
 	  },
 	  signatures_repository: $sigrepo, insecure_registries: [$reg], tuf_mirror: $tuf, releases_repository: $releases,
-	  sources: {dispatch: $dsrc, sandbox_toolchain: $tsrc}, acme_ca_server: $acme, tuf_root: $root[0]}
-	 + (if $acmeca == "" then {} else {acme_ca_certificates: $acmeca} end)' >"$trust"
+	  sources: {dispatch: $dsrc, sandbox_toolchain: $tsrc}, tuf_root: $root[0]}' >"$trust"
 
 "$rs" render --out "$rel" --releases "http://$releases" --test-trust-url "$base/trust.json" --test-trust-sha256 "$(sha256 "$trust")"
 

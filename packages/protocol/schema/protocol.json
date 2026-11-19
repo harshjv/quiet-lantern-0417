@@ -632,24 +632,6 @@
         "station_offline"
       ]
     },
-    "CertificateStatus": {
-      "title": "CertificateStatus",
-      "type": "string",
-      "enum": [
-        "pending",
-        "valid",
-        "expired",
-        "failed"
-      ]
-    },
-    "CertResolver": {
-      "title": "CertResolver",
-      "type": "string",
-      "enum": [
-        "letsencrypt",
-        "letsencrypt-shortlived"
-      ]
-    },
     "ChallengeBody": {
       "title": "ChallengeBody",
       "type": "object",
@@ -1393,16 +1375,12 @@
       "type": "object",
       "required": [
         "hash",
-        "acme",
         "routes"
       ],
       "properties": {
         "hash": {
           "pattern": "^sha256:[0-9a-f]{64}$",
           "type": "string"
-        },
-        "acme": {
-          "$ref": "#/$defs/GatewayAcme"
         },
         "routes": {
           "type": "object",
@@ -1430,50 +1408,6 @@
             "string",
             "null"
           ]
-        }
-      }
-    },
-    "DesiredPortAllocation": {
-      "title": "DesiredPortAllocation",
-      "type": "object",
-      "required": [
-        "hash",
-        "service_port_id",
-        "service_id",
-        "host_port",
-        "protocol",
-        "virtual_ip",
-        "container_port"
-      ],
-      "properties": {
-        "hash": {
-          "pattern": "^sha256:[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "service_port_id": {
-          "pattern": "^prt_[0-9A-HJKMNP-TV-Z]{26}$",
-          "type": "string"
-        },
-        "service_id": {
-          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$",
-          "type": "string"
-        },
-        "host_port": {
-          "minimum": 1,
-          "maximum": 65535,
-          "type": "integer"
-        },
-        "protocol": {
-          "const": "tcp",
-          "type": "string"
-        },
-        "virtual_ip": {
-          "type": "string"
-        },
-        "container_port": {
-          "minimum": 1,
-          "maximum": 65535,
-          "type": "integer"
         }
       }
     },
@@ -1717,8 +1651,6 @@
         "settings",
         "registry",
         "networks",
-        "inbound",
-        "public_address",
         "concurrency_cap",
         "hosts_dispatch"
       ],
@@ -1731,15 +1663,6 @@
         },
         "networks": {
           "$ref": "#/$defs/StationNetworks"
-        },
-        "inbound": {
-          "$ref": "#/$defs/StationInbound"
-        },
-        "public_address": {
-          "type": [
-            "string",
-            "null"
-          ]
         },
         "concurrency_cap": {
           "minimum": 0,
@@ -2211,7 +2134,6 @@
         "recovery",
         "run",
         "route",
-        "certificate",
         "unpack",
         "disk",
         "network"
@@ -3099,25 +3021,6 @@
         }
       }
     },
-    "GatewayAcme": {
-      "title": "GatewayAcme",
-      "type": "object",
-      "required": [
-        "email",
-        "ca_server"
-      ],
-      "properties": {
-        "email": {
-          "type": "string"
-        },
-        "ca_server": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
-    },
     "GatewayMode": {
       "title": "GatewayMode",
       "type": "string",
@@ -3145,7 +3048,6 @@
         "deployments",
         "volumes",
         "gateway",
-        "port_allocations",
         "workshops",
         "system_targets"
       ],
@@ -3226,12 +3128,6 @@
         },
         "gateway": {
           "$ref": "#/$defs/DesiredGateway"
-        },
-        "port_allocations": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/DesiredPortAllocation"
-          }
         },
         "workshops": {
           "type": "object",
@@ -3763,14 +3659,6 @@
           ]
         }
       }
-    },
-    "Ingress": {
-      "title": "Ingress",
-      "type": "string",
-      "enum": [
-        "direct",
-        "tunnel"
-      ]
     },
     "Injection": {
       "title": "Injection",
@@ -4321,11 +4209,6 @@
         },
         "virtual_ip": {
           "type": "string"
-        },
-        "host_port": {
-          "minimum": 0,
-          "maximum": 65535,
-          "type": "integer"
         }
       }
     },
@@ -4933,7 +4816,6 @@
         "volumes",
         "runs",
         "gateway",
-        "port_allocations",
         "workshops",
         "system_targets",
         "unknown"
@@ -4992,12 +4874,6 @@
         "gateway": {
           "$ref": "#/$defs/ObservedGateway"
         },
-        "port_allocations": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/ObservedPortAllocation"
-          }
-        },
         "workshops": {
           "type": "object",
           "additionalProperties": {
@@ -5033,45 +4909,6 @@
           "items": {
             "$ref": "#/$defs/UnknownObject"
           }
-        }
-      }
-    },
-    "ObservedCertificate": {
-      "title": "ObservedCertificate",
-      "type": "object",
-      "required": [
-        "status",
-        "not_before",
-        "expires_at",
-        "failure"
-      ],
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/CertificateStatus"
-        },
-        "not_before": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "expires_at": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "failure": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ErrorBody"
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       }
     },
@@ -5361,31 +5198,6 @@
         }
       }
     },
-    "ObservedPortAllocation": {
-      "title": "ObservedPortAllocation",
-      "type": "object",
-      "required": [
-        "applied_hash",
-        "result"
-      ],
-      "properties": {
-        "applied_hash": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "result": {
-          "$ref": "#/$defs/ObjectResult"
-        },
-        "failure": {
-          "$ref": "#/$defs/ErrorBody"
-        },
-        "blocked_by": {
-          "type": "string"
-        }
-      }
-    },
     "ObservedRegistry": {
       "title": "ObservedRegistry",
       "type": "object",
@@ -5404,7 +5216,6 @@
       "required": [
         "applied_hash",
         "result",
-        "certificate",
         "probe"
       ],
       "properties": {
@@ -5422,16 +5233,6 @@
         },
         "blocked_by": {
           "type": "string"
-        },
-        "certificate": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ObservedCertificate"
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "probe": {
           "anyOf": [
@@ -5892,12 +5693,6 @@
         },
         "gateway": {
           "$ref": "#/$defs/ObservedGateway"
-        },
-        "port_allocations": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/ObservedPortAllocation"
-          }
         },
         "workshops": {
           "type": "object",
@@ -6809,35 +6604,6 @@
         }
       }
     },
-    "RootSocketDetectedAddress": {
-      "title": "RootSocketDetectedAddress",
-      "type": "object",
-      "required": [
-        "address",
-        "interface",
-        "public"
-      ],
-      "properties": {
-        "address": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "interface": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "public": {
-          "type": "boolean"
-        },
-        "reason": {
-          "type": "string"
-        }
-      }
-    },
     "RootSocketHostProbe": {
       "title": "RootSocketHostProbe",
       "type": "object",
@@ -7057,16 +6823,15 @@
       "type": "object",
       "required": [
         "email",
-        "password"
+        "password",
+        "hostnames",
+        "tunnel_token"
       ],
       "properties": {
         "email": {
           "type": "string"
         },
         "password": {
-          "type": "string"
-        },
-        "acme_email": {
           "type": "string"
         },
         "hostnames": {
@@ -7083,9 +6848,6 @@
               "type": "string"
             }
           }
-        },
-        "public_address": {
-          "type": "string"
         },
         "tunnel_token": {
           "type": "string"
@@ -7130,7 +6892,6 @@
         "login_link_expires_at",
         "lockfile",
         "hostnames",
-        "public_address",
         "litestream",
         "reach"
       ],
@@ -7173,20 +6934,7 @@
           ]
         },
         "hostnames": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RootSocketSetupHostnames"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "public_address": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "$ref": "#/$defs/RootSocketSetupHostnames"
         },
         "litestream": {
           "anyOf": [
@@ -7251,10 +6999,7 @@
       "required": [
         "hash",
         "hostname",
-        "ingress",
-        "target",
-        "tls",
-        "redirect_http"
+        "target"
       ],
       "properties": {
         "hash": {
@@ -7264,24 +7009,8 @@
         "hostname": {
           "type": "string"
         },
-        "ingress": {
-          "$ref": "#/$defs/Ingress"
-        },
         "target": {
           "$ref": "#/$defs/RouteTarget"
-        },
-        "tls": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RouteTls"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "redirect_http": {
-          "type": "boolean"
         }
       }
     },
@@ -7341,18 +7070,6 @@
           }
         }
       ]
-    },
-    "RouteTls": {
-      "title": "RouteTls",
-      "type": "object",
-      "required": [
-        "resolver"
-      ],
-      "properties": {
-        "resolver": {
-          "$ref": "#/$defs/CertResolver"
-        }
-      }
     },
     "RunAcceptedBody": {
       "title": "RunAcceptedBody",
@@ -8590,30 +8307,6 @@
         }
       }
     },
-    "StationInbound": {
-      "title": "StationInbound",
-      "type": "object",
-      "required": [
-        "mode",
-        "web_ports",
-        "setup_port_until"
-      ],
-      "properties": {
-        "mode": {
-          "$ref": "#/$defs/Ingress"
-        },
-        "web_ports": {
-          "$ref": "#/$defs/WebPorts"
-        },
-        "setup_port_until": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
-    },
     "StationNetworks": {
       "title": "StationNetworks",
       "type": "object",
@@ -8677,24 +8370,18 @@
       "required": [
         "ipam.pool",
         "ipam.virtual_prefix",
-        "exposure.port_range",
         "disk.warning_pct",
         "disk.critical_pct",
         "workshop.idle_timeout_s",
         "workshop.max_builds_per_project",
         "registry.gc_schedule",
-        "acme.email",
-        "platform.allow_unsigned",
-        "gateway.rate_per_source"
+        "platform.allow_unsigned"
       ],
       "properties": {
         "ipam.pool": {
           "type": "string"
         },
         "ipam.virtual_prefix": {
-          "type": "string"
-        },
-        "exposure.port_range": {
           "type": "string"
         },
         "disk.warning_pct": {
@@ -8736,18 +8423,11 @@
         "registry.gc_schedule": {
           "type": "string"
         },
-        "acme.email": {
-          "type": "string"
-        },
         "platform.lockfile": {},
         "platform.allow_unsigned": {
           "type": "boolean"
         },
         "gaming.quiet_period_s": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "gateway.rate_per_source": {
           "minimum": 0,
           "type": "integer"
         }
@@ -9373,14 +9053,6 @@
       "enum": [
         "complete",
         "failed"
-      ]
-    },
-    "WebPorts": {
-      "title": "WebPorts",
-      "type": "string",
-      "enum": [
-        "open",
-        "closed"
       ]
     },
     "WelcomeBody": {

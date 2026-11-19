@@ -15,7 +15,6 @@ import {
   domain,
   ipam_allocation,
   machine,
-  port_allocation,
   server,
   virtual_ip,
 } from '../db/schema.ts'
@@ -111,16 +110,6 @@ export const networkMap = (
         .from(domain)
         .where(inArray(domain.app_port_id, portIds))
         .orderBy(asc(domain.hostname))
-        .all()
-    : []
-  const exposures = portIds.length
-    ? db
-        .select()
-        .from(port_allocation)
-        .where(
-          and(inArray(port_allocation.app_port_id, portIds), eq(port_allocation.status, 'active')),
-        )
-        .orderBy(asc(port_allocation.host_port))
         .all()
     : []
   const deployments = ids.length
@@ -261,7 +250,6 @@ export const networkMap = (
     const report = observed.get(svc.server_id)
     const sw = switchOf(svc)
     const vip = vips.get(svc.id) ?? null
-    const st = stations.get(svc.server_id)
 
     if (sw.state === 'mismatch') {
       warnings.push(
@@ -307,10 +295,6 @@ export const networkMap = (
       .map((d) => {
         const port = portById.get(d.app_port_id)!
         const result = report?.gateway.routes[d.id]?.result ?? null
-        const certificate = {
-          status: d.certificate?.status ?? 'pending',
-          expires_at: d.certificate?.expires_at ?? null,
-        }
 
         if (d.status !== 'active') {
           warnings.push(
@@ -321,21 +305,6 @@ export const networkMap = (
               status: d.status,
               error: d.error ?? null,
             }),
-          )
-        }
-
-        if (d.ingress === 'direct' && certificate.status !== 'valid') {
-          warnings.push(
-            finding(
-              'CERTIFICATE_NOT_VALID',
-              `${d.hostname} has no valid certificate (status ${certificate.status}).`,
-              {
-                app: svc.name,
-                domain: d.id,
-                hostname: d.hostname,
-                certificate: certificate.status,
-              },
-            ),
           )
         }
 
@@ -359,68 +328,14 @@ export const networkMap = (
           app_port_id: d.app_port_id,
           hostname: d.hostname,
           kind: d.kind,
-          ingress: d.ingress,
           status: d.status,
-          certificate,
           port: port.port,
           route: {
-            entrypoint: d.ingress === 'direct' ? ('websecure' as const) : ('web' as const),
             target: vip ? `${vip}:${port.port}` : null,
             result,
           },
         }
       })
-    const appExposures = exposures
-      .filter((a) => portById.get(a.app_port_id)?.app_id === svc.id)
-      .map((a) => {
-        const port = portById.get(a.app_port_id)!
-        const publicAddress = stations.get(a.server_id)?.public_address ?? null
-        const address = publicAddress ? `${publicAddress}:${a.host_port}` : null
-        const result = observed.get(a.server_id)?.port_allocations[a.id]?.result ?? null
-
-        if (result === 'failed' || result === 'blocked') {
-          warnings.push(
-            finding(
-              'ROUTE_NOT_APPLIED',
-              `The TCP exposure on host port ${a.host_port} is ${result} on the server.`,
-              {
-                app: svc.name,
-                port_allocation: a.id,
-                host_port: a.host_port,
-                result,
-              },
-            ),
-          )
-        }
-
-        return {
-          id: a.id,
-          app_port_id: a.app_port_id,
-          server_id: a.server_id,
-          host_port: a.host_port,
-          status: a.status,
-          address,
-          public: address,
-          port: port.port,
-          result,
-        }
-      })
-
-    if (
-      !st?.public_address &&
-      (appExposures.length || appDomains.some((d) => d.ingress === 'direct'))
-    ) {
-      warnings.push(
-        finding(
-          'NO_PUBLIC_ADDRESS',
-          `Server ${st?.name ?? svc.server_id} has no public address, so ${svc.name}'s direct domains and TCP exposures cannot be reached.`,
-          {
-            app: svc.name,
-            server: svc.server_id,
-          },
-        ),
-      )
-    }
 
     return {
       id: svc.id,
@@ -437,7 +352,6 @@ export const networkMap = (
       })),
       switch: sw,
       domains: appDomains,
-      exposures: appExposures,
     }
   })
 
@@ -496,43 +410,15 @@ export const networkMap = (
     )
   }
 
-  const inboundStations = subnets.map((s) => s.server.id)
-  const webPorts = inboundStations.some(
-    (id) => applied.get(id)?.station.inbound.web_ports === 'open',
-  )
-    ? ('open' as const)
-    : ('closed' as const)
-
-  if (webPorts === 'closed' && entries.some((s) => s.domains.some((d) => d.ingress === 'direct'))) {
-    warnings.push(
-      finding(
-        'WEB_PORTS_CLOSED',
-        'The server has not applied a generation with a direct route, so inbound 80 and 443 are dropped.',
-        {
-          servers: inboundStations,
-        },
-      ),
-    )
-  }
-
   const inbound = {
-    web_ports: webPorts,
-    public_address:
-      inboundStations.map((id) => stations.get(id)?.public_address ?? null).find((a) => a) ?? null,
-    entries: entries.flatMap((s) => [
-      ...s.domains.map((d) => ({
+    entries: entries.flatMap((s) =>
+      s.domains.map((d) => ({
         kind: 'domain' as const,
         hostname: d.hostname,
         app: s.name,
         port: d.port,
       })),
-      ...s.exposures.map((x) => ({
-        kind: 'tcp' as const,
-        public: x.public,
-        app: s.name,
-        port: x.port,
-      })),
-    ]),
+    ),
   }
 
   const joined = db

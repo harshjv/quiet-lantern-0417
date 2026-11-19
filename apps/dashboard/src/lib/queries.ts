@@ -271,7 +271,7 @@ export const namesQuery = (project: string) =>
           .apps.get({
             query: {
               limit: 200,
-              fields: 'id,name,ports,volumes,domains,port_allocations,keys',
+              fields: 'id,name,ports,volumes,domains,keys',
             },
           }),
       ),
@@ -322,8 +322,7 @@ export const domainsQuery = (app: string) =>
           })
           .domains.get({
             query: {
-              fields:
-                'id,app_port_id,hostname,kind,ingress,status,certificate,dns_instructions,error',
+              fields: 'id,app_port_id,hostname,kind,status,tunnel_route,error',
             },
           }),
       ),
@@ -339,23 +338,6 @@ export const portsQuery = (app: string) =>
             app,
           })
           .ports.get(),
-      ),
-  })
-
-export const allocationsQuery = (app: string) =>
-  queryOptions({
-    queryKey: ['port-allocations', 'of', app],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .apps({
-            app,
-          })
-          ['port-allocations'].get({
-            query: {
-              status: 'active',
-            },
-          }),
       ),
   })
 
@@ -467,24 +449,6 @@ export const releasesQuery = queryOptions({
   queryFn: () => unwrap(api.v1.platform.releases.get()),
   staleTime: 300_000,
 })
-
-export const stationQuery = (station: string) =>
-  queryOptions({
-    queryKey: ['stations', station],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .servers({
-            server: station,
-          })
-          .get({
-            query: {
-              fields: 'id,name,public_address',
-            },
-          }),
-      ),
-    retry: false,
-  })
 
 const approvalFields =
   'id,project_id,task_id,title,status,source,requested_by,requester,requester_decides,decided_by,decided_at,self_approved,reason,ship,created_at,summary,changes,refs'

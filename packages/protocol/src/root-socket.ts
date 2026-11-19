@@ -72,15 +72,11 @@ const SetupParams = Type.Object(
   {
     email: Type.String(),
     password: Type.String(),
-    acme_email: Type.Optional(Type.String()),
-    hostnames: Type.Optional(
-      Type.Object({
-        api: Type.String(),
-        dashboard: Type.String(),
-      }),
-    ),
-    public_address: Type.Optional(Type.String()),
-    tunnel_token: Type.Optional(Type.String()),
+    hostnames: Type.Object({
+      api: Type.String(),
+      dashboard: Type.String(),
+    }),
+    tunnel_token: Type.String(),
     sandbox_runtime: Type.Optional(MachineRuntime),
     litestream: Type.Optional(
       Type.Object({
@@ -116,19 +112,16 @@ const SetupResult = Type.Object(
         },
       ),
     ),
-    hostnames: Nullable(
-      Type.Object(
-        {
-          api: Type.String(),
-          dashboard: Type.String(),
-          status: Type.String(),
-        },
-        {
-          title: 'RootSocketSetupHostnames',
-        },
-      ),
+    hostnames: Type.Object(
+      {
+        api: Type.String(),
+        dashboard: Type.String(),
+        status: Type.String(),
+      },
+      {
+        title: 'RootSocketSetupHostnames',
+      },
     ),
-    public_address: Nullable(Type.String()),
     litestream: Nullable(
       Type.Object(
         {
@@ -146,18 +139,6 @@ const SetupResult = Type.Object(
   },
   {
     title: 'RootSocketSetupResult',
-  },
-)
-
-const DetectedAddress = Type.Object(
-  {
-    address: Nullable(Type.String()),
-    interface: Nullable(Type.String()),
-    public: Type.Boolean(),
-    reason: Type.Optional(Type.String()),
-  },
-  {
-    title: 'RootSocketDetectedAddress',
   },
 )
 
@@ -241,7 +222,6 @@ export const rootSocketOps = {
   'secrets.status': op(NoParams, JsonObject),
   logs: op(LogsParams, JsonObject),
   setup: op(SetupParams, SetupResult),
-  'public_address.detect': op(NoParams, DetectedAddress),
   'host.probe': op(NoParams, HostProbeResult),
   'admin.recovery_key': op(NoParams, RecoveryKey),
   'tunnel.set_token': op(TunnelTokenParams, TunnelTokenResult),

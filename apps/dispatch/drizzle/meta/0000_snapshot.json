@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9790e1bd-6d38-4b69-84ae-891b6d57bae1",
+  "id": "e5c20731-e5e8-4e58-a7db-f5c9bd8ba76b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -2532,27 +2532,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "ingress": {
-          "name": "ingress",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "cloudflare": {
-          "name": "cloudflare",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "certificate": {
-          "name": "certificate",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "status": {
@@ -6353,103 +6332,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "port_allocation": {
-      "name": "port_allocation",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "app_port_id": {
-          "name": "app_port_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "server_id": {
-          "name": "server_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "host_port": {
-          "name": "host_port",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'active'"
-        }
-      },
-      "indexes": {
-        "port_allocation_server_host_port_active_unique": {
-          "name": "port_allocation_server_host_port_active_unique",
-          "columns": [
-            "server_id",
-            "host_port"
-          ],
-          "isUnique": true,
-          "where": "status = 'active'"
-        }
-      },
-      "foreignKeys": {
-        "port_allocation_app_port_id_app_port_id_fk": {
-          "name": "port_allocation_app_port_id_app_port_id_fk",
-          "tableFrom": "port_allocation",
-          "tableTo": "app_port",
-          "columnsFrom": [
-            "app_port_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "port_allocation_server_id_server_id_fk": {
-          "name": "port_allocation_server_id_server_id_fk",
-          "tableFrom": "port_allocation",
-          "tableTo": "server",
-          "columnsFrom": [
-            "server_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "project": {
       "name": "project",
       "columns": {
@@ -7113,13 +6995,6 @@
         },
         "cloudflare_tunnel_id": {
           "name": "cloudflare_tunnel_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "public_address": {
-          "name": "public_address",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

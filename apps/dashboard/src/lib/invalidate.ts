@@ -11,7 +11,6 @@ export const groups = {
   networking: [
     ['ports'],
     ['domains'],
-    ['port-allocations'],
     ['apps'],
     ['deployments'],
     ['network'],

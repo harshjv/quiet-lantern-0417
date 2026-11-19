@@ -204,26 +204,6 @@ test('a stopped app gets Start and a never-deployed one gets Deploy', () => {
   assert.equal(findingPlan(finding, [mapApp('web', 'failing')], scope)?.button?.run.tool, 'deploy')
 })
 
-test('a missing public address offers the station command', () => {
-  const plan = findingPlan(
-    {
-      code: 'NO_PUBLIC_ADDRESS',
-      explanation: 'Station home has no public address.',
-      details: {
-        app: 'web',
-        station: 'sta_home',
-      },
-    },
-    [mapApp('web', 'healthy')],
-    {
-      project: 'shop',
-      preview: null,
-    },
-  )
-
-  assert.equal(plan?.command, 'sly servers update sta_home --public-address <ipv4>')
-})
-
 test('findings without a remedy or a known app offer no fix', () => {
   assert.equal(findingRemedy.SERVER_STALE, null)
   assert.equal(

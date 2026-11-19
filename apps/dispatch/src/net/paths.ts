@@ -15,7 +15,6 @@ export const pathIdValues = [
   'shared_app',
   'guard',
   'inbound_domain',
-  'inbound_tcp',
   'inbound_other',
   'sandbox_inbound',
   'domain_not_allowed',
@@ -142,16 +141,10 @@ const pathTable: PathEntry[] = [
     phase: '1a',
     from: 'internet',
     verdict: 'allowed',
-    to: () => 'the declared http port of each app with a domain, through the Gateway',
-    rule: () => "port_switch elements 80 and 443, the Gateway namespace's gateway_targets",
-  },
-  {
-    path: 'inbound_tcp',
-    phase: '1a',
-    from: 'internet',
-    verdict: 'allowed',
-    to: () => 'each active TCP exposure',
-    rule: () => "the allocation's port_switch element",
+    to: () =>
+      'the declared http port of each app with a domain, through Cloudflare Tunnel and the Gateway',
+    rule: () =>
+      "cloudflared's route to the Gateway virtual IP, its switch element, the Gateway namespace's gateway_targets",
   },
   {
     path: 'inbound_other',
@@ -159,8 +152,7 @@ const pathTable: PathEntry[] = [
     from: 'internet',
     verdict: 'blocked',
     to: () => 'everything else on the server but SSH',
-    rule: () =>
-      'a port absent from port_switch reaches no container; 80 and 443 are dropped while web_ports is closed',
+    rule: () => 'the server opens no web port: inbound 80 and 443 are dropped and only SSH listens',
   },
 ]
 

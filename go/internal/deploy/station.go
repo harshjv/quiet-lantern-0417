@@ -453,7 +453,6 @@ func Run(ctx context.Context, opts Options) error {
 			s.advanceGateway(ctx)
 			s.advanceComponents(ctx)
 			s.reportComponents(s.plan.Generation)
-			s.checkCertificates(ctx, now)
 			s.checkTunnel(ctx, now)
 			s.advanceRuns(ctx, now)
 			s.reconcileSandboxes(ctx, now)
@@ -478,7 +477,7 @@ func (s *Station) loadApplied() {
 		s.applied = nil
 		return
 	}
-	plan, err := BuildPlan(s.applied, nil, s.opts.StateDir, s.trust())
+	plan, err := BuildPlan(s.applied, nil, s.opts.StateDir)
 	if err != nil {
 		s.log.Error("applied generation no longer valid; waiting for Dispatch", "number", s.applied.Number, "error", err)
 		s.status = protocol.AppliedStatusRejected

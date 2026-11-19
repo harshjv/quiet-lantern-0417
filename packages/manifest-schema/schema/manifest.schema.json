@@ -313,7 +313,7 @@
                   },
                   "protocol": {
                     "default": "http",
-                    "description": "http is routed by the Gateway, tcp only by exposure",
+                    "description": "http is routed by the Gateway; tcp is reached over .internal",
                     "anyOf": [
                       {
                         "const": "http",
@@ -584,7 +584,7 @@
                   },
                   "hostname": {
                     "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,62}$",
-                    "description": "A hostname under a configured zone, or any name for direct ingress",
+                    "description": "One label under domains.zone, or a name outside it that needs its own tunnel route",
                     "type": "string"
                   },
                   "port": {
@@ -592,30 +592,8 @@
                     "maximum": 65535,
                     "description": "A declared http port; the app's first http port by default",
                     "type": "integer"
-                  },
-                  "ingress": {
-                    "description": "direct in 1a; tunnel from 1b",
-                    "anyOf": [
-                      {
-                        "const": "direct",
-                        "type": "string"
-                      },
-                      {
-                        "const": "tunnel",
-                        "type": "string"
-                      }
-                    ]
                   }
                 }
-              }
-            },
-            "expose_tcp": {
-              "description": "Declared tcp ports exposed on a host port",
-              "type": "array",
-              "items": {
-                "minimum": 1,
-                "maximum": 65535,
-                "type": "integer"
               }
             },
             "keys": {
@@ -882,7 +860,7 @@
                               },
                               "hostname": {
                                 "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z][a-z0-9-]{0,62}$",
-                                "description": "A hostname under a configured zone, or any name for direct ingress",
+                                "description": "One label under domains.zone, or a name outside it that needs its own tunnel route",
                                 "type": "string"
                               },
                               "port": {
@@ -890,36 +868,8 @@
                                 "maximum": 65535,
                                 "description": "A declared http port; the app's first http port by default",
                                 "type": "integer"
-                              },
-                              "ingress": {
-                                "description": "direct in 1a; tunnel from 1b",
-                                "anyOf": [
-                                  {
-                                    "const": "direct",
-                                    "type": "string"
-                                  },
-                                  {
-                                    "const": "tunnel",
-                                    "type": "string"
-                                  }
-                                ]
                               }
                             }
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "expose_tcp": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "minimum": 1,
-                            "maximum": 65535,
-                            "type": "integer"
                           }
                         },
                         {

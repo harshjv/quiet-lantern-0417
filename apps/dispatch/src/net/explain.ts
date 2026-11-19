@@ -3,12 +3,14 @@ import { isIPv4 } from 'node:net'
 import type { Static } from '@sinclair/typebox'
 import { eq, inArray } from 'drizzle-orm'
 
-import { remedy as fix, slugPattern, type MessageBody } from '@stationly/protocol'
+import { remedy as fix, gatewayHostAlias, slugPattern, type MessageBody } from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
+import { tunnelRouteOf } from '../api/exposure.ts'
 import { placeName, type AppRow, type MachineRow, type TargetRow } from '../api/lookup.ts'
 import type { NetworkExplanation } from '../api/shapes.ts'
 import { app, app_port, deployment, domain, machine, server } from '../db/schema.ts'
+import { readSetting } from '../db/settings.ts'
 import { generationNumbered } from '../station/generations.ts'
 
 import type { HopName, HopStatus } from './explain-values.ts'
@@ -1215,7 +1217,7 @@ export const explainNetwork = async (
     fixes.push(
       fix(
         'DECLARE_PORT',
-        `Declare port ${port} on ${svc.name} so domains and TCP exposures can use it; internal traffic reaches it already.`,
+        `Declare port ${port} on ${svc.name} so domains can use it; internal traffic reaches it already.`,
       ),
     )
   }
@@ -1302,9 +1304,7 @@ const finish = (
     ? 'reachable'
     : failed.status === 'unknown'
       ? 'unknown'
-      : failed.hop === 'firewall' ||
-          failed.hop === 'allowlist' ||
-          failed.code === 'WEB_PORTS_CLOSED'
+      : failed.hop === 'firewall' || failed.hop === 'allowlist'
         ? 'blocked'
         : 'broken'
   const doc: Explanation = {
@@ -1355,62 +1355,41 @@ const inbound = async (
       d,
     })),
   )
-  const exposures = map.apps.flatMap((s) =>
-    s.exposures.map((x) => ({
-      entry: s,
-      x,
-    })),
-  )
   const hops: Hop[] = []
   const fixes: Fix[] = []
   const stationRow = (id: string) => db.select().from(server).where(eq(server.id, id)).get()
   const found = domains.find(({ d }) => d.hostname.toLowerCase() === to)
-  const [host, hostPort] = splitPort(to)
-  const exposure =
-    !found && isIPv4(host) && hostPort
-      ? exposures.find(
-          ({ x }) => x.host_port === hostPort && (x.public === `${host}:${hostPort}` || !x.public),
-        )
-      : undefined
 
-  if (!found && !exposure) {
-    targetInvalid(
-      `${input.to} is not a domain or TCP exposure of ${placeName(env)}.`,
-      [
-        ...domains.map(({ d }) => d.hostname),
-        ...exposures.map(({ x }) => x.public ?? `<public address>:${x.host_port}`),
-      ],
+  if (!found) {
+    return targetInvalid(
+      `${input.to} is not a domain of ${placeName(env)}.`,
+      domains.map(({ d }) => d.hostname),
       {
         from: 'internet',
       },
     )
   }
 
-  const entry = found?.entry ?? exposure!.entry
+  const { entry, d } = found
   const svc = apps.find((s) => s.id === entry.id)!
   const st = stationRow(svc.server_id)
-  const port = found ? found.d.port : exposure!.x.port
+  const port = d.port
   const protocol = 'tcp' as const
   const entity = {
     type: 'path' as const,
     from: 'internet',
-    to: `${found ? found.d.hostname : `${host}:${hostPort}`}/${protocol}`,
+    to: `${d.hostname}/${protocol}`,
   }
   const observedAt = src.observedOf(svc.server_id)?.observed_at ?? null
-  const notChecked = found
-    ? [
-        `the public DNS record for ${found.d.hostname}; check that it points at ${st?.public_address ?? 'the server'}`,
-        'whether the server answers a request through the Gateway',
-      ]
-    : [
-        'whether a client on the internet has a route to the server',
-        'whether the server answers on the connection',
-      ]
+  const notChecked = [
+    `the tunnel's published route for ${d.hostname} in Cloudflare`,
+    'whether Cloudflare answers a request for it through the tunnel',
+  ]
 
   if (!fresh(svc.server_id)) {
     hops.push(
       hop(
-        found ? 'domain' : 'exposure',
+        'domain',
         'unknown',
         {
           server: st?.name ?? svc.server_id,
@@ -1433,16 +1412,11 @@ const inbound = async (
 
   const vip = entry.virtual_ip
   const checks: Check[] = [
-    found
-      ? {
-          kind: 'host_switch',
-          virtual_ip: vip ?? '',
-          port,
-        }
-      : {
-          kind: 'host_switch',
-          host_port: hostPort,
-        },
+    {
+      kind: 'host_switch',
+      virtual_ip: vip ?? '',
+      port,
+    },
     {
       kind: 'container',
       service_id: svc.id,
@@ -1460,284 +1434,151 @@ const inbound = async (
 
   let summary: string | null = null
 
-  if (found) {
-    const d = found.d
-    const record = `an A record for ${d.hostname} pointing at ${st?.public_address ?? "the server's public address"}`
+  const route = tunnelRouteOf(db, d.hostname)
 
-    if (d.status === 'active') {
-      hops.push(
-        hop('domain', 'pass', {
+  if (d.status === 'active') {
+    hops.push(
+      hop('domain', 'pass', {
+        hostname: d.hostname,
+        status: d.status,
+      }),
+    )
+  } else {
+    const error =
+      db
+        .select({
+          error: domain.error,
+        })
+        .from(domain)
+        .where(eq(domain.id, d.id))
+        .get()?.error ?? null
+
+    hops.push(
+      hop(
+        'domain',
+        d.status === 'pending' ? 'warn' : 'fail',
+        {
           hostname: d.hostname,
           status: d.status,
-          ingress: d.ingress,
-        }),
-      )
-    } else {
-      const error =
-        db
-          .select({
-            error: domain.error,
-          })
-          .from(domain)
-          .where(eq(domain.id, d.id))
-          .get()?.error ?? null
+          error,
+        },
+        'DOMAIN_NOT_ACTIVE',
+      ),
+    )
+    fixes.push(
+      fix(
+        'ADD_TUNNEL_ROUTE',
+        route
+          ? `Add the published route ${route.hostname} -> ${route.service} to the tunnel in Cloudflare, then wait for the domain probe.`
+          : `Check that the tunnel has the published route *.${readSetting(db, 'domains.zone') ?? '<zone>'} -> http://${gatewayHostAlias}, then wait for the domain probe.`,
+      ),
+    )
 
-      hops.push(
-        hop(
-          'domain',
-          d.status === 'pending' ? 'warn' : 'fail',
-          {
-            hostname: d.hostname,
-            status: d.status,
-            ingress: d.ingress,
-            error,
-          },
-          'DOMAIN_NOT_ACTIVE',
-        ),
-      )
-      fixes.push(fix('CHECK_DNS_RECORD', `Create ${record}, then wait for the domain probe.`))
-
-      if (d.status !== 'pending') {
-        summary ??= `${d.hostname} is ${d.status}.`
-      }
+    if (d.status !== 'pending') {
+      summary ??= `${d.hostname} is ${d.status}.`
     }
+  }
 
-    if (st?.public_address) {
-      hops.push(
-        hop('public_address', 'pass', {
-          address: st.public_address,
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'public_address',
-          'fail',
-          {
-            server: st?.name ?? svc.server_id,
-          },
-          'NO_PUBLIC_ADDRESS',
-        ),
-      )
-      fixes.push(
-        fix(
-          'SET_PUBLIC_ADDRESS',
-          `Set the server's public address: sly servers update ${st?.name ?? svc.server_id} --public-address <ipv4>.`,
-        ),
-      )
-      summary ??= `Server ${st?.name ?? svc.server_id} has no public address.`
-    }
+  const tunnel = src.observedOf(svc.server_id)?.gateway.tunnel
 
-    if (map.inbound.web_ports === 'open') {
-      hops.push(
-        hop('web_ports', 'pass', {
-          web_ports: 'open',
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'web_ports',
-          'fail',
-          {
-            web_ports: 'closed',
-            path: 'inbound_other',
-          },
-          'WEB_PORTS_CLOSED',
-        ),
-      )
-      fixes.push(
-        fix(
-          'ADD_DOMAIN',
-          'Inbound 80 and 443 open once the server has a direct route: add a direct domain on this server (ingress = direct). Tunnel ingress arrives in phase 1b.',
-        ),
-      )
-      summary ??= `The server has no direct route, so inbound 80 and 443 are dropped and ${d.hostname} is unreachable from the internet.`
-    }
+  if (tunnel?.ready && tunnel.connections > 0) {
+    hops.push(
+      hop('tunnel', 'pass', {
+        ready: true,
+        connections: tunnel.connections,
+      }),
+    )
+  } else {
+    hops.push(
+      hop(
+        'tunnel',
+        'fail',
+        {
+          configured: tunnel?.configured ?? false,
+          ready: tunnel?.ready ?? false,
+          connections: tunnel?.connections ?? 0,
+        },
+        'TUNNEL_NOT_READY',
+      ),
+    )
+    fixes.push(
+      fix(
+        'FIX_CONFIGURATION',
+        tunnel?.configured
+          ? "cloudflared on this server has no connection to Cloudflare; check the tunnel token (sly platform tunnel-token --stdin) and the server's outbound access."
+          : 'This server has no tunnel token; give it one with sly platform tunnel-token --stdin.',
+      ),
+    )
+    summary ??= `Server ${st?.name ?? svc.server_id} has no Cloudflare Tunnel connection, so ${d.hostname} is unreachable from the internet.`
+  }
 
-    if (d.ingress !== 'direct') {
-      hops.push(
-        hop('certificate', 'skipped', {
-          reason: 'tunnel ingress',
-        }),
-      )
-    } else if (d.certificate.status === 'valid') {
-      hops.push(
-        hop('certificate', 'pass', {
-          status: 'valid',
-          expires_at: d.certificate.expires_at,
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'certificate',
-          'fail',
-          {
-            status: d.certificate.status,
-          },
-          'CERTIFICATE_NOT_VALID',
-        ),
-      )
-      summary ??= `${d.hostname} has no valid certificate (status ${d.certificate.status}).`
-    }
-
-    if (d.route.result === 'ok' && hs && !hs.error && hs.gateway_target) {
-      hops.push(
-        hop('route', 'pass', {
-          entrypoint: d.route.entrypoint,
+  if (d.route.result === 'ok' && hs && !hs.error && hs.gateway_target) {
+    hops.push(
+      hop('route', 'pass', {
+        target: d.route.target,
+        result: d.route.result,
+        gateway_target: true,
+      }),
+    )
+  } else {
+    hops.push(
+      hop(
+        'route',
+        'fail',
+        {
           target: d.route.target,
           result: d.route.result,
-          gateway_target: true,
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'route',
-          'fail',
-          {
-            entrypoint: d.route.entrypoint,
-            target: d.route.target,
-            result: d.route.result,
-            gateway_target: hs?.gateway_target ?? null,
-            error: hs?.error ?? null,
-          },
-          'ROUTE_NOT_APPLIED',
-        ),
-      )
-      summary ??= `The Gateway route for ${d.hostname} is not applied on the server.`
-    }
+          gateway_target: hs?.gateway_target ?? null,
+          error: hs?.error ?? null,
+        },
+        'ROUTE_NOT_APPLIED',
+      ),
+    )
+    summary ??= `The Gateway route for ${d.hostname} is not applied on the server.`
+  }
 
-    if (!hs || hs.error) {
-      hops.push(
-        hop('switch', 'unknown', {
+  if (!hs || hs.error) {
+    hops.push(
+      hop('switch', 'unknown', {
+        virtual_ip: vip,
+        error: hs?.error ?? 'not read',
+      }),
+    )
+  } else if (!hs.address) {
+    hops.push(
+      hop(
+        'switch',
+        'fail',
+        {
           virtual_ip: vip,
-          error: hs?.error ?? 'not read',
-        }),
-      )
-    } else if (!hs.address) {
-      hops.push(
-        hop(
-          'switch',
-          'fail',
-          {
-            virtual_ip: vip,
-            address: null,
-          },
-          'SWITCH_NO_TARGET',
-        ),
-      )
-      fixes.push(startFixFor(svc))
-      summary ??= `${svc.name} has no running deployment, so the Gateway's Switch element for ${vip} is empty.`
-    } else if (address && hs.address !== address) {
-      hops.push(
-        hop(
-          'switch',
-          'fail',
-          {
-            virtual_ip: vip,
-            address: hs.address,
-            expected: address,
-          },
-          'SWITCH_MISMATCH',
-        ),
-      )
-      summary ??= `The Gateway's Switch element for ${svc.name} points at ${hs.address}, not ${address}.`
-    } else {
-      hops.push(
-        hop('switch', 'pass', {
+          address: null,
+        },
+        'SWITCH_NO_TARGET',
+      ),
+    )
+    fixes.push(startFixFor(svc))
+    summary ??= `${svc.name} has no running deployment, so the Gateway's Switch element for ${vip} is empty.`
+  } else if (address && hs.address !== address) {
+    hops.push(
+      hop(
+        'switch',
+        'fail',
+        {
           virtual_ip: vip,
           address: hs.address,
-        }),
-      )
-    }
+          expected: address,
+        },
+        'SWITCH_MISMATCH',
+      ),
+    )
+    summary ??= `The Gateway's Switch element for ${svc.name} points at ${hs.address}, not ${address}.`
   } else {
-    const x = exposure!.x
-
-    if (x.status === 'active' && (x.result === 'ok' || x.result === null)) {
-      hops.push(
-        hop('exposure', 'pass', {
-          host_port: x.host_port,
-          status: x.status,
-          result: x.result,
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'exposure',
-          'fail',
-          {
-            host_port: x.host_port,
-            status: x.status,
-            result: x.result,
-          },
-          'ROUTE_NOT_APPLIED',
-        ),
-      )
-      summary ??= `The TCP exposure on host port ${x.host_port} is ${x.status}${x.result ? ` (${x.result})` : ''}.`
-    }
-
-    if (st?.public_address) {
-      hops.push(
-        hop('public_address', 'pass', {
-          address: st.public_address,
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'public_address',
-          'fail',
-          {
-            server: st?.name ?? svc.server_id,
-          },
-          'NO_PUBLIC_ADDRESS',
-        ),
-      )
-      fixes.push(
-        fix(
-          'SET_PUBLIC_ADDRESS',
-          `Set the server's public address: sly servers update ${st?.name ?? svc.server_id} --public-address <ipv4>.`,
-        ),
-      )
-      summary ??= `Server ${st?.name ?? svc.server_id} has no public address.`
-    }
-
-    const want = address ? `${address}:${port}` : null
-    const have = hs && !hs.error && hs.address ? `${hs.address}:${hs.port}` : null
-
-    if (have && (!want || have === want)) {
-      hops.push(
-        hop('route', 'pass', {
-          host_port: x.host_port,
-          target: have,
-        }),
-      )
-    } else {
-      hops.push(
-        hop(
-          'route',
-          'fail',
-          {
-            host_port: x.host_port,
-            target: have,
-            expected: want,
-            error: hs?.error ?? null,
-          },
-          have ? 'ROUTE_NOT_APPLIED' : running ? 'ROUTE_NOT_APPLIED' : 'SWITCH_NO_TARGET',
-        ),
-      )
-
-      if (!running) {
-        fixes.push(startFixFor(svc))
-      }
-
-      summary ??= have
-        ? `Host port ${x.host_port} points at ${have}, not ${want}.`
-        : `Host port ${x.host_port} has no port_switch element on the server.`
-    }
+    hops.push(
+      hop('switch', 'pass', {
+        virtual_ip: vip,
+        address: hs.address,
+      }),
+    )
   }
 
   if (!running) {
@@ -1835,7 +1676,7 @@ const inbound = async (
     }
   }
 
-  summary ??= `The internet can reach ${svc.name} through ${found ? found.d.hostname : `${host}:${hostPort}`}: every hop passed.`
+  summary ??= `The internet can reach ${svc.name} through ${d.hostname}: every hop passed.`
 
   return finish(entity, hops, fixes, notChecked, observedAt, summary, {})
 }

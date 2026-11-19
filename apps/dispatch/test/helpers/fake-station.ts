@@ -46,13 +46,11 @@ type Doc = {
   >
   gateway: {
     hash: string
-    routes: Record<string, { hash: string; hostname: string; tls: unknown }>
+    routes: Record<string, { hash: string; hostname: string }>
   }
-  port_allocations: Record<string, { hash: string }>
   station: {
     concurrency_cap: number
     intermittent?: boolean
-    public_address: string | null
     settings: Record<string, unknown>
     sandbox_network?: { bridge_name: string; subnet: string; gateway: string } | null
   }
@@ -64,7 +62,6 @@ type RouteConfig = {
   result?: string
   failure?: unknown
   blocked_by?: string
-  certificate?: unknown
   probe?: unknown
 }
 
@@ -632,29 +629,12 @@ export class FakeStation {
                       blocked_by: rc.blocked_by,
                     }
                   : {}),
-                certificate: r.tls
-                  ? (rc.certificate ?? {
-                      status: 'pending',
-                      not_before: null,
-                      expires_at: null,
-                      failure: null,
-                    })
-                  : null,
                 probe: rc.probe ?? null,
               },
             ]
           }),
         ),
       },
-      port_allocations: Object.fromEntries(
-        Object.entries(doc.port_allocations).map(([id, p]) => [
-          id,
-          {
-            applied_hash: p.hash,
-            result: 'ok',
-          },
-        ]),
-      ),
       workshops: {},
       system_targets: {},
       ...(this.config.machines ? this.observedMachines(doc) : {}),

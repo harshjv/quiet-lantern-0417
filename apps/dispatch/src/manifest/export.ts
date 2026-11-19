@@ -10,7 +10,7 @@ import {
   type TargetRow,
 } from '../api/lookup.ts'
 import type { Db } from '../db/client.ts'
-import { app, app_port, domain, port_allocation, server, target, volume } from '../db/schema.ts'
+import { app, app_port, domain, server, target, volume } from '../db/schema.ts'
 import { normalizeHealth } from '../generation/health.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { decryptValue, headValue, keysOf, type ValueTarget } from '../secrets/values.ts'
@@ -171,15 +171,6 @@ const exportApp = (
         .orderBy(asc(domain.hostname))
         .all()
     : []
-  const allocations = portIds.length
-    ? db
-        .select()
-        .from(port_allocation)
-        .where(
-          and(inArray(port_allocation.app_port_id, portIds), eq(port_allocation.status, 'active')),
-        )
-        .all()
-    : []
   const keys = keysOf(db, {
     scope: 'app',
     id: svc.id,
@@ -306,18 +297,8 @@ const exportApp = (
         out.port = port
       }
 
-      if (d.ingress !== 'direct') {
-        out.ingress = d.ingress
-      }
-
       return out
     })
-  }
-
-  if (allocations.length) {
-    overridable.expose_tcp = allocations
-      .map((a) => portOf.get(a.app_port_id)!.port)
-      .sort((a, b) => a - b)
   }
 
   if (keys.length) {
@@ -377,7 +358,6 @@ const keyOrder = [
   'schedule',
   'volumes',
   'domains',
-  'expose_tcp',
   'keys',
   'desired_state',
 ]
@@ -430,7 +410,6 @@ const diffOverride = (base: Json, other: Json) => {
     'server',
     'limits',
     'domains',
-    'expose_tcp',
     'desired_state',
     'schedule',
     'keys',

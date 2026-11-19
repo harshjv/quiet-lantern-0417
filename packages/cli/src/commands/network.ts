@@ -79,12 +79,12 @@ export const networkCommands = (program: Program) => {
   group(program, 'network')
     .command('explain')
     .description(
-      'Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain or TCP exposure), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.',
+      'Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.',
     )
     .option('--from-internet', 'explain the inbound path from the internet')
     .requiredOption(
       '--to <target>',
-      'an app, app:port, a .internal name or host:port; with --from-internet a domain hostname or public address:port',
+      'an app, app:port, a .internal name or host:port; with --from-internet a domain hostname',
     )
     .option('--port <port>', "port; defaults to the target's only declared port", integer)
     .option('--udp', 'judge UDP instead of TCP')

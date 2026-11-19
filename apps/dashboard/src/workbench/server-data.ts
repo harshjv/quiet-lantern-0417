@@ -6,7 +6,6 @@ import type { Tone } from '@/lib/tone'
 
 const serverFields = [
   'intermittent',
-  'public_address',
   'machine_limits',
   'default_machine_runtime',
   'machine_runtime_advice',

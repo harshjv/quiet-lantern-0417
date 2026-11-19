@@ -195,7 +195,6 @@ export const diagnosisPhase: Record<Diagnosis['phase'], string> = {
   recovery: 'Recovery after a server restart',
   run: 'Run',
   route: 'Routing',
-  certificate: 'Certificate',
   unpack: 'Unpack',
   disk: 'Disk',
   network: 'Network',
@@ -211,7 +210,6 @@ export const diagnosisFailed: Record<Diagnosis['phase'], string> = {
   recovery: 'couldn’t recover after a server restart',
   run: 'failed while running',
   route: 'couldn’t get a route on the server',
-  certificate: 'couldn’t get a certificate',
   unpack: 'couldn’t unpack its image',
   disk: 'ran out of disk',
   network: 'couldn’t set up its network',
@@ -337,7 +335,7 @@ export const routing: Record<MapApp['switch']['state'], Status> = {
 
 export const domainStatus: Record<MapDomain['status'], Status> = {
   pending: {
-    label: 'Waiting for certificate',
+    label: 'Not reachable yet',
     tone: 'warning',
   },
   active: {
@@ -350,19 +348,9 @@ export const domainStatus: Record<MapDomain['status'], Status> = {
   },
 }
 
-export const domainLive: Status = {
-  label: 'Live, certificate valid',
-  tone: 'success',
-}
-
 export const domainKind: Record<MapDomain['kind'], string> = {
   generated: 'Generated',
   custom: 'Your own',
-}
-
-export const domainIngress: Record<MapDomain['ingress'], string> = {
-  direct: 'Direct',
-  tunnel: 'Tunnel',
 }
 
 export const routeResult: Record<NonNullable<MapDomain['route']['result']>, Status> = {
@@ -397,7 +385,6 @@ export const path: Record<PathId, string> = {
   shared_app: 'Shared apps',
   guard: 'Destinations its outbound rules don’t allow',
   inbound_domain: 'Your domains, from the internet',
-  inbound_tcp: 'Public TCP ports, from the internet',
   inbound_other: 'Any other port, from the internet',
   sandbox_inbound: 'Machines, from anywhere',
   domain_not_allowed: 'Domains outside a machine’s allowlist',
@@ -467,34 +454,21 @@ export const hop: Record<Hop['hop'], string> = {
   port: 'Port is declared',
   probe_required: 'Needs a test connection',
   domain: 'Domain',
-  exposure: 'Public TCP port',
-  public_address: 'Server public address',
-  web_ports: 'Web traffic',
-  certificate: 'Certificate',
+  tunnel: 'Cloudflare Tunnel is connected',
   route: 'Route on the server',
 }
 
 export const hopFact: Record<string, string> = {
   station: 'server',
   virtual_ip: 'stable address',
-  host_port: 'public port',
-  web_ports: 'web traffic',
   listening: 'listening on',
   declared: 'declared ports',
-  expires_at: 'expires',
   reason: '',
   error: '',
   hostname: '',
 }
 
-export const hiddenHopFacts = new Set([
-  'generation',
-  'rule',
-  'at',
-  'matched',
-  'entrypoint',
-  'gateway_target',
-])
+export const hiddenHopFacts = new Set(['generation', 'rule', 'at', 'matched', 'gateway_target'])
 
 export const hopStatus: Record<Hop['status'], Status> = {
   pass: {
@@ -532,10 +506,8 @@ export const finding: Record<FindingCode, string> = {
   LISTENING_LOOPBACK_ONLY: 'Listens on localhost only',
   PORT_NOT_DECLARED: 'Port isn’t declared',
   DOMAIN_NOT_ACTIVE: 'Domain isn’t live',
-  CERTIFICATE_NOT_VALID: 'Certificate isn’t valid',
-  WEB_PORTS_CLOSED: 'Web traffic is closed',
   ROUTE_NOT_APPLIED: 'Route isn’t on the server yet',
-  NO_PUBLIC_ADDRESS: 'Server has no public address',
+  TUNNEL_NOT_READY: 'Cloudflare Tunnel isn’t connected',
   SERVER_STALE: 'Server report is out of date',
 }
 
@@ -663,7 +635,7 @@ export const terms = {
   },
   gateway: {
     term: 'Gateway',
-    definition: 'Stationly’s web entry point. It serves your domains and their certificates.',
+    definition: 'Stationly’s web entry point. Cloudflare Tunnel sends it your domains’ traffic.',
   },
   switch: {
     term: 'Switch',
@@ -681,11 +653,6 @@ export const terms = {
   trafficRule: {
     term: 'Traffic rule',
     definition: 'Decides what an app can reach and what can reach it. Servers enforce them.',
-  },
-  publicTcpPort: {
-    term: 'Public TCP port',
-    definition:
-      'A port on the server that forwards to a TCP port of an app, for databases and other protocols.',
   },
   liveTraffic: {
     term: 'Live traffic',

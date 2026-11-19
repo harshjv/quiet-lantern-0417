@@ -37,13 +37,10 @@ const (
 	ErrorCodeSourceShaMismatch           ErrorCode = "SOURCE_SHA_MISMATCH"
 	ErrorCodeEventCursorExpired          ErrorCode = "EVENT_CURSOR_EXPIRED"
 	ErrorCodeSubnetExhausted             ErrorCode = "SUBNET_EXHAUSTED"
-	ErrorCodePortRangeExhausted          ErrorCode = "PORT_RANGE_EXHAUSTED"
 	ErrorCodeDomainInvalid               ErrorCode = "DOMAIN_INVALID"
 	ErrorCodeTunnelUnsupportedProtocol   ErrorCode = "TUNNEL_UNSUPPORTED_PROTOCOL"
 	ErrorCodeGatewayNotPinned            ErrorCode = "GATEWAY_NOT_PINNED"
 	ErrorCodeNetworkTargetInvalid        ErrorCode = "NETWORK_TARGET_INVALID"
-	ErrorCodeCertificateRateLimited      ErrorCode = "CERTIFICATE_RATE_LIMITED"
-	ErrorCodeCertificateIssuanceFailed   ErrorCode = "CERTIFICATE_ISSUANCE_FAILED"
 	ErrorCodeKeyReferenceInvalid         ErrorCode = "KEY_REFERENCE_INVALID"
 	ErrorCodeKeyUnresolved               ErrorCode = "KEY_UNRESOLVED"
 	ErrorCodeKeyTargetMissing            ErrorCode = "KEY_TARGET_MISSING"
@@ -148,13 +145,10 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 	ErrorCodeSourceShaMismatch:           {HTTPStatus: 409, Area: "build", CloseCode: 0},
 	ErrorCodeEventCursorExpired:          {HTTPStatus: 410, Area: "events", CloseCode: 0},
 	ErrorCodeSubnetExhausted:             {HTTPStatus: 507, Area: "network", CloseCode: 0},
-	ErrorCodePortRangeExhausted:          {HTTPStatus: 507, Area: "network", CloseCode: 0},
 	ErrorCodeDomainInvalid:               {HTTPStatus: 422, Area: "network", CloseCode: 0},
 	ErrorCodeTunnelUnsupportedProtocol:   {HTTPStatus: 422, Area: "network", CloseCode: 0},
 	ErrorCodeGatewayNotPinned:            {HTTPStatus: 409, Area: "network", CloseCode: 0},
 	ErrorCodeNetworkTargetInvalid:        {HTTPStatus: 422, Area: "network", CloseCode: 0},
-	ErrorCodeCertificateRateLimited:      {HTTPStatus: 422, Area: "network", CloseCode: 0},
-	ErrorCodeCertificateIssuanceFailed:   {HTTPStatus: 422, Area: "network", CloseCode: 0},
 	ErrorCodeKeyReferenceInvalid:         {HTTPStatus: 422, Area: "secret", CloseCode: 0},
 	ErrorCodeKeyUnresolved:               {HTTPStatus: 422, Area: "secret", CloseCode: 0},
 	ErrorCodeKeyTargetMissing:            {HTTPStatus: 422, Area: "secret", CloseCode: 0},

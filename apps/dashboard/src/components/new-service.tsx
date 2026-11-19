@@ -265,7 +265,7 @@ export function NewApp({
       {kind === 'web' && (
         <FieldSet
           legend="Ports"
-          hint="HTTP ports can have a domain. TCP ports can get a public port."
+          hint="HTTP ports can have a domain. TCP ports stay inside the network."
         >
           <ul className="space-y-2">
             {ports.rows.map((p, i) => (

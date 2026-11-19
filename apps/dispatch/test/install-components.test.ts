@@ -5,7 +5,13 @@ import { after, before, describe, test } from 'node:test'
 import { setupInstance } from '../src/auth/bootstrap.ts'
 import { component } from '../src/db/schema.ts'
 
-import { adminEmail, adminPassword, startDispatch, type Dispatch } from './helpers/dispatch.ts'
+import {
+  adminEmail,
+  adminPassword,
+  startDispatch,
+  testHostnames,
+  type Dispatch,
+} from './helpers/dispatch.ts'
 import { enrollFakeStation } from './helpers/fake-station.ts'
 
 const bootstrapToken = `sly-enroll-${randomBytes(12).toString('base64url')}`
@@ -71,6 +77,7 @@ describe('install records the platform components', () => {
       {
         email: adminEmail,
         password: adminPassword,
+        hostnames: testHostnames,
         release: {
           manifest,
           bundle: '{}',

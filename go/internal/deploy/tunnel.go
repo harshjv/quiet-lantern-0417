@@ -334,7 +334,7 @@ func (s *Station) checkTunnel(ctx context.Context, now time.Time) {
 	gp := s.plan.Gateway
 	var routes []RoutePlan
 	for _, rp := range gp.Routes {
-		if !rp.Direct && s.gw.routes[rp.ID].result != protocol.ObjectResultBlocked {
+		if s.gw.routes[rp.ID].result != protocol.ObjectResultBlocked {
 			routes = append(routes, rp)
 		}
 	}
@@ -436,19 +436,23 @@ func (s *Station) observedTunnel() *protocol.ObservedTunnel {
 	return &protocol.ObservedTunnel{Configured: s.tunnelConfigured(), Ready: s.gw.tunnel.ready, Connections: s.gw.tunnel.connections}
 }
 
-func takeTunnelToken(p map[string]any) (string, bool, *protocol.ErrorBody) {
+func takeTunnelToken(p map[string]any) (string, *protocol.ErrorBody) {
 	raw, present := p["tunnel_token"]
 	delete(p, "tunnel_token")
 	if !present || raw == nil {
-		return "", false, nil
+		zone := "<zone>"
+		if h, ok := p["hostnames"].(map[string]any); ok {
+			if d, ok := h["dashboard"].(string); ok {
+				if _, z, found := strings.Cut(d, "."); found && z != "" {
+					zone = z
+				}
+			}
+		}
+		return "", protocolError(protocol.ErrorCodeValidationFailed, "Create a tunnel in the Cloudflare dashboard, add the published route *."+zone+" to http://"+protocol.GatewayHostAlias+", and run sly setup again with --tunnel-token-stdin.", "setup needs the tunnel token; Cloudflare Tunnel is the only way in")
 	}
 	str, ok := raw.(string)
 	if !ok {
-		return "", false, protocolError(protocol.ErrorCodeValidationFailed, "Send tunnel_token as a string.", "tunnel_token is not a string")
+		return "", protocolError(protocol.ErrorCodeValidationFailed, "Send tunnel_token as a string.", "tunnel_token is not a string")
 	}
-	token, perr := checkTunnelToken(str)
-	if perr != nil {
-		return "", false, perr
-	}
-	return token, true, nil
+	return checkTunnelToken(str)
 }

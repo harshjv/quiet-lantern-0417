@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/harshjv/stationly/go/internal/hostconfig"
-	"github.com/harshjv/stationly/go/internal/netns"
 	"github.com/harshjv/stationly/go/internal/protocol"
 )
 
@@ -35,16 +34,6 @@ func setupLitestream(raw any) (*hostconfig.Litestream, *protocol.ErrorBody) {
 		return nil, invalid("%v", err)
 	}
 	return &l, nil
-}
-
-func (s *Station) opDetectPublicAddress(context.Context, json.RawMessage, func(string, string)) (any, *protocol.ErrorBody) {
-	route, err := netns.DefaultRouteAddress()
-	if err != nil {
-		reason := err.Error()
-		return protocol.RootSocketDetectedAddress{Reason: &reason}, nil
-	}
-	address := route.Address.String()
-	return protocol.RootSocketDetectedAddress{Address: &address, Interface: &route.Interface, Public: netns.PublicIPv4(route.Address)}, nil
 }
 
 func (s *Station) opHostProbe(ctx context.Context, _ json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
@@ -93,7 +82,7 @@ func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress 
 		return nil, perr
 	}
 	delete(p, "litestream")
-	token, tunnel, perr := takeTunnelToken(p)
+	token, perr := takeTunnelToken(p)
 	if perr != nil {
 		return nil, perr
 	}
@@ -110,14 +99,11 @@ func (s *Station) opSetup(ctx context.Context, params json.RawMessage, progress 
 	if !s.link.Connected() {
 		return nil, protocolError(protocol.ErrorCodeServerOffline, "Start Dispatch and wait for stationd to connect (stationd connection).", "stationd is not connected to Dispatch")
 	}
-	if tunnel {
-		if err := s.storeTunnelToken(token); err != nil {
-			return nil, protocolError(protocol.ErrorCodeInternalError, "Check that stationd's state directory is writable and run sly setup again.", "store the tunnel token: %v", err)
-		}
-		p["ingress"] = string(protocol.IngressTunnel)
-		progress("tunnel", "token stored in "+s.tunnelTokenPath()+" (0600); cloudflared starts once the Gateway runs")
-		s.post(ctx, func() { s.resync = true })
+	if err := s.storeTunnelToken(token); err != nil {
+		return nil, protocolError(protocol.ErrorCodeInternalError, "Check that stationd's state directory is writable and run sly setup again.", "store the tunnel token: %v", err)
 	}
+	progress("tunnel", "token stored in "+s.tunnelTokenPath()+" (0600); cloudflared starts once the Gateway runs")
+	s.post(ctx, func() { s.resync = true })
 	progress("dispatch", "creating the admin")
 	rctx, cancel := context.WithTimeout(ctx, setupTimeout)
 	defer cancel()

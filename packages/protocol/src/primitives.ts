@@ -17,7 +17,6 @@ export const idPrefixes = {
   app_port: 'prt',
   volume: 'vol',
   domain: 'dom',
-  port_allocation: 'pal',
   deployment: 'dep',
   deployment_step: 'stp',
   build: 'bld',

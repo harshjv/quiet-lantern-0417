@@ -19,10 +19,8 @@ import {
   machine,
   machine_snapshot,
   notification_channel,
-  port_allocation,
   run,
   secret_value,
-  server,
   station_generation,
   target,
   token,
@@ -43,6 +41,7 @@ import { storedBytes } from '../secrets/variables.ts'
 import { snapshotView } from '../volumes/backups.ts'
 
 import { approvalItem } from './approval-view.ts'
+import { tunnelRouteOf } from './exposure.ts'
 import {
   all,
   projectAll,
@@ -55,7 +54,6 @@ import {
   decidable,
   previewIdOf,
   productionOf,
-  type AllocationRow,
   type ApprovalRow,
   type AppRow,
   type DeploymentRow,
@@ -183,12 +181,6 @@ export const createViews = (db: Db) => {
           db.select().from(domain).where(eq(domain.app_port_id, row.id)).all(),
           sub,
         ),
-      port_allocations: (row, sub) =>
-        projectAll(
-          allocationView,
-          db.select().from(port_allocation).where(eq(port_allocation.app_port_id, row.id)).all(),
-          sub,
-        ),
     },
   }
 
@@ -227,46 +219,6 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const stationOf = (id: string) => db.select().from(server).where(eq(server.id, id)).get()
-
-  const dnsInstructions = (row: DomainRow) => {
-    if (row.kind === 'generated') {
-      return []
-    }
-
-    const ctx = db
-      .select({
-        server_id: app.server_id,
-      })
-      .from(app_port)
-      .innerJoin(app, eq(app.id, app_port.app_id))
-      .where(eq(app_port.id, row.app_port_id))
-      .get()
-    const address = ctx ? stationOf(ctx.server_id)?.public_address : null
-
-    if (row.ingress === 'tunnel') {
-      return [
-        {
-          type: 'CNAME',
-          name: row.hostname,
-          value: '<tunnel id>.cfargotunnel.com',
-          note: 'Tunnel ingress arrives in phase 1b.',
-        },
-      ]
-    }
-
-    return [
-      {
-        type: 'A',
-        name: row.hostname,
-        value: address ?? null,
-        note: address
-          ? 'Point the name at the server.'
-          : 'The server has not reported a public address yet.',
-      },
-    ]
-  }
-
   const domainView: View<DomainRow, typeof shapes.Domain> = {
     schema: shapes.Domain,
     full: (row) => ({
@@ -274,45 +226,14 @@ export const createViews = (db: Db) => {
       app_port_id: row.app_port_id,
       hostname: row.hostname,
       kind: row.kind,
-      ingress: row.ingress,
       status: row.status,
-      certificate: row.certificate ?? {
-        status: 'pending',
-        expires_at: null,
-      },
       last_checked_at: iso(row.last_checked_at),
     }),
-    summary: [
-      'id',
-      'app_port_id',
-      'hostname',
-      'kind',
-      'ingress',
-      'status',
-      'certificate.status',
-      'certificate.expires_at',
-    ],
+    summary: ['id', 'app_port_id', 'hostname', 'kind', 'status'],
     expand: {
-      dns_instructions: (row) => dnsInstructions(row),
+      tunnel_route: (row) => tunnelRouteOf(db, row.hostname),
       error: (row) => row.error,
     },
-  }
-
-  const allocationView: View<AllocationRow, typeof shapes.PortAllocation> = {
-    schema: shapes.PortAllocation,
-    full: (row) => {
-      const stn = stationOf(row.server_id)
-
-      return {
-        ...stamps(row),
-        app_port_id: row.app_port_id,
-        server_id: row.server_id,
-        host_port: row.host_port,
-        status: row.status,
-        address: stn?.public_address ? `${stn.public_address}:${row.host_port}` : null,
-      }
-    },
-    summary: ['id', 'app_port_id', 'server_id', 'host_port', 'status', 'address'],
   }
 
   const snapshotIds = (snapshot: EnvSnapshot) =>
@@ -684,28 +605,6 @@ export const createViews = (db: Db) => {
             )
           : []
       },
-      port_allocations: (row, sub) => {
-        const ports = db
-          .select({
-            id: app_port.id,
-          })
-          .from(app_port)
-          .where(eq(app_port.app_id, row.id))
-          .all()
-          .map((p) => p.id)
-
-        return ports.length
-          ? projectAll(
-              allocationView,
-              db
-                .select()
-                .from(port_allocation)
-                .where(inArray(port_allocation.app_port_id, ports))
-                .all(),
-              sub,
-            )
-          : []
-      },
       current_deployment: (row, sub) => deploymentSummary(row.current_deployment_id, sub),
       keys: (row, sub) =>
         projectAll(
@@ -941,7 +840,6 @@ export const createViews = (db: Db) => {
       concurrency_cap: row.concurrency_cap,
       resources: row.resources,
       intermittent: row.intermittent,
-      public_address: row.public_address,
       machine_subnet: row.machine_subnet,
       machine_limits: row.machine_limits,
       default_machine_runtime: row.default_machine_runtime,
@@ -1318,7 +1216,6 @@ export const createViews = (db: Db) => {
     port: portView,
     volume: volumeView,
     domain: domainView,
-    allocation: allocationView,
     deployment: deploymentView,
     key: keyView,
     secretValue: secretValueView,

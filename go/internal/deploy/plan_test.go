@@ -13,7 +13,6 @@ import (
 
 	"github.com/harshjv/stationly/go/internal/docker"
 	"github.com/harshjv/stationly/go/internal/protocol"
-	"github.com/harshjv/stationly/go/internal/verify"
 )
 
 const (
@@ -66,7 +65,7 @@ func generation(t *testing.T, edit func(d doc)) *protocol.Generation {
 
 func build(t *testing.T, g *protocol.Generation, applied *protocol.Generation) (*Plan, error) {
 	t.Helper()
-	return BuildPlan(g, applied, t.TempDir(), verify.ReleaseTrust())
+	return BuildPlan(g, applied, t.TempDir())
 }
 
 func mustBuild(t *testing.T, edit func(d doc)) *Plan {

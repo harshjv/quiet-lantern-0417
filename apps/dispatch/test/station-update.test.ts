@@ -75,15 +75,6 @@ describe('validation', () => {
     assert.deepEqual(issuePaths(reply), ['/'])
   })
 
-  test('a public_address that is not IPv4 is refused', async () => {
-    const reply = await patch({
-      public_address: 'not-an-ip',
-    })
-
-    assert.equal(reply.status, 400)
-    assert.deepEqual(issuePaths(reply), ['/public_address'])
-  })
-
   test('a concurrency_cap below 1 or not an integer is refused', async () => {
     for (const concurrency_cap of [0, -1, 1.5]) {
       const reply = await patch({

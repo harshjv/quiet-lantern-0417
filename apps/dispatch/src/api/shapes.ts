@@ -40,7 +40,6 @@ import {
   ErrorBody,
   errorCatalog,
   HealthCheck as HealthCheckSchema,
-  ingressValues,
   injectionValues,
   JsonObject,
   keyKindValues,
@@ -65,7 +64,6 @@ import {
   notificationChannelKindValues,
   notificationChannelStatusValues,
   Nullable,
-  portAllocationStatusValues,
   portProtocolValues,
   probeKinds,
   probeTcpResults,
@@ -502,32 +500,17 @@ export const Deployment = component(
   ),
 )
 
-export const Certificate = component(
-  'Certificate',
+export const TunnelRoute = component(
+  'TunnelRoute',
   Type.Object(
     {
-      status: Str,
-      expires_at: NStr,
-      resolver: Type.Optional(Str),
-      not_before: Type.Optional(NStr),
+      hostname: Str,
+      service: Str,
     },
     {
-      title: 'Certificate',
-    },
-  ),
-)
-
-export const DnsInstruction = component(
-  'DnsInstruction',
-  Type.Object(
-    {
-      type: Str,
-      name: Str,
-      value: NStr,
-      note: Str,
-    },
-    {
-      title: 'DnsInstruction',
+      title: 'TunnelRoute',
+      description:
+        'The published route the admin adds to the Cloudflare Tunnel; null when the zone wildcard already covers the hostname',
       additionalProperties: false,
     },
   ),
@@ -542,30 +525,12 @@ export const Domain = component(
       app_port_id: Str,
       hostname: Str,
       kind: StringEnum(domainKindValues),
-      ingress: StringEnum(ingressValues),
       status: StringEnum(domainStatusValues),
-      certificate: Certificate,
       last_checked_at: NTime,
-      dns_instructions: Type.Array(DnsInstruction),
+      tunnel_route: Nullable(TunnelRoute),
       error: Nullable(Diagnosis),
     },
-    ['id', 'app_port_id', 'hostname', 'kind', 'ingress', 'status', 'certificate'],
-  ),
-)
-
-export const PortAllocation = component(
-  'PortAllocation',
-  selectable(
-    'PortAllocation',
-    {
-      ...stamps,
-      app_port_id: Str,
-      server_id: Str,
-      host_port: Int,
-      status: StringEnum(portAllocationStatusValues),
-      address: NStr,
-    },
-    ['id', 'app_port_id', 'server_id', 'host_port', 'status', 'address'],
+    ['id', 'app_port_id', 'hostname', 'kind', 'status'],
   ),
 )
 
@@ -580,7 +545,6 @@ export const AppPort = component(
       protocol: StringEnum(portProtocolValues),
       grpc: Bool,
       domains: Type.Array(Domain),
-      port_allocations: Type.Array(PortAllocation),
     },
     ['id', 'app_id', 'port', 'protocol', 'grpc'],
   ),
@@ -843,7 +807,6 @@ export const App = component(
       ports: Type.Array(AppPort),
       volumes: Type.Array(Volume),
       domains: Type.Array(Domain),
-      port_allocations: Type.Array(PortAllocation),
       current_deployment: Nullable(Deployment),
       keys: Type.Array(Key),
       exports: Type.Array(Export),
@@ -1146,7 +1109,6 @@ export const Server = component(
       concurrency_cap: Int,
       resources: Nullable(Resources),
       intermittent: Bool,
-      public_address: NStr,
       machine_subnet: NStr,
       machine_limits: component('MachineLimits', MachineLimitsSchema),
       default_machine_runtime: Nullable(MachineRuntime),
@@ -1481,21 +1443,10 @@ export const NetworkMap = component(
                   app_port_id: Str,
                   hostname: Str,
                   kind: StringEnum(domainKindValues),
-                  ingress: StringEnum(ingressValues),
                   status: StringEnum(domainStatusValues),
-                  certificate: Type.Object(
-                    {
-                      status: Str,
-                      expires_at: NStr,
-                    },
-                    {
-                      additionalProperties: false,
-                    },
-                  ),
                   port: Int,
                   route: Type.Object(
                     {
-                      entrypoint: StringEnum(['websecure', 'web']),
                       target: NStr,
                       result: ObjectResult,
                     },
@@ -1503,24 +1454,6 @@ export const NetworkMap = component(
                       additionalProperties: false,
                     },
                   ),
-                },
-                {
-                  additionalProperties: false,
-                },
-              ),
-            ),
-            exposures: Type.Array(
-              Type.Object(
-                {
-                  id: Str,
-                  app_port_id: Str,
-                  server_id: Str,
-                  host_port: Int,
-                  status: StringEnum(portAllocationStatusValues),
-                  address: NStr,
-                  public: NStr,
-                  port: Int,
-                  result: ObjectResult,
                 },
                 {
                   additionalProperties: false,
@@ -1582,33 +1515,18 @@ export const NetworkMap = component(
       ),
       inbound: Type.Object(
         {
-          web_ports: StringEnum(['open', 'closed']),
-          public_address: NStr,
           entries: Type.Array(
-            Type.Union([
-              Type.Object(
-                {
-                  kind: Type.Literal('domain'),
-                  hostname: Str,
-                  app: Str,
-                  port: Int,
-                },
-                {
-                  additionalProperties: false,
-                },
-              ),
-              Type.Object(
-                {
-                  kind: Type.Literal('tcp'),
-                  public: NStr,
-                  app: Str,
-                  port: Int,
-                },
-                {
-                  additionalProperties: false,
-                },
-              ),
-            ]),
+            Type.Object(
+              {
+                kind: Type.Literal('domain'),
+                hostname: Str,
+                app: Str,
+                port: Int,
+              },
+              {
+                additionalProperties: false,
+              },
+            ),
           ),
         },
         {

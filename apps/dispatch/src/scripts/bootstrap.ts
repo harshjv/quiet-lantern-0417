@@ -78,7 +78,7 @@ export const bootstrapCommand = (program: Command) =>
   program
     .command('bootstrap')
     .description(
-      'Seed a local Dispatch without a server (on a server run sly setup instead); reads {"email","password","name"?,"acme_email"?,"hostnames"?: {"dashboard","api"}} on stdin',
+      'Seed a local Dispatch without a server (on a server run sly setup instead); reads {"email","password","name"?,"hostnames": {"dashboard","api"}} on stdin',
     )
     .requiredOption('--db <file>', 'SQLite file Dispatch owns')
     .option('--origin <url>', 'origin Dispatch serves', localOrigin)

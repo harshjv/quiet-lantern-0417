@@ -215,11 +215,7 @@ export const approvalRoutes = (kit: Kit) => {
   const approve = async (call: Call, row: ApprovalRow) => {
     const result = approveChanges(kit.deps, call, row)
 
-    if (
-      (row.changes as { entity: string; path?: string }[]).some(
-        (c) => c.entity === 'setting' || (c.entity === 'server' && c.path === '/public_address'),
-      )
-    ) {
+    if ((row.changes as { entity: string }[]).some((c) => c.entity === 'setting')) {
       kit.deps.auth.rebuild()
     }
 

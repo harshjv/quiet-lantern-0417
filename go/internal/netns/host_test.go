@@ -9,135 +9,129 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
 )
 
-var testPublic = netip.MustParseAddr("198.51.100.10")
-
-const testSourceRate = 20
-
-func testHostLayout(webOpen bool) HostLayout {
+func testHostLayout() HostLayout {
 	return HostLayout{
-		Public:        testPublic,
 		IngressBridge: "sly-ingress",
 		VirtualPrefix: netip.MustParsePrefix("100.64.0.0/16"),
 		Translated:    []netip.Prefix{netip.MustParsePrefix("10.200.0.0/24"), netip.MustParsePrefix("10.200.1.0/24")},
-		WebOpen:       webOpen,
-		SourceRate:    testSourceRate,
+		EnvBridges:    []string{"sly-env-a"},
 	}
 }
 
-type shedRule struct {
-	limit  *expr.Limit
-	dynset *expr.Dynset
-	keyed  bool
+type webDrop struct {
+	port      uint16
+	exceptLo  bool
+	ipv4Only  bool
+	original  bool
+	newOnly   bool
+	dnatOnly  bool
+	exempt    []string
+	exemptSet string
 }
 
-func hasLimit(r []expr.Any) bool {
-	for _, e := range r {
+func readWebDrop(r []expr.Any) (webDrop, bool) {
+	var d webDrop
+	tcp, drops := false, false
+	for i, e := range r {
 		switch x := e.(type) {
-		case *expr.Limit:
-			return true
-		case *expr.Dynset:
-			if len(x.Exprs) > 0 {
-				return true
+		case *expr.Meta:
+			if x.Key == expr.MetaKeyNFPROTO {
+				d.ipv4Only = true
 			}
-		}
-	}
-	return false
-}
-
-func shedRules(l HostLayout) map[uint16][]shedRule {
-	out := map[uint16][]shedRule{}
-	for _, r := range hostForwardRules(l, envBridgesSet(), webSourceSets(l)) {
-		if !hasLimit(r) {
-			continue
-		}
-		var dport uint16
-		var rule shedRule
-		var drops, newOnly bool
-		for i, e := range r {
-			switch x := e.(type) {
-			case *expr.Cmp:
-				if i == 0 {
-					continue
+		case *expr.Cmp:
+			if i == 0 {
+				continue
+			}
+			switch prev := r[i-1].(type) {
+			case *expr.Meta:
+				if prev.Key == expr.MetaKeyL4PROTO && bytes.Equal(x.Data, []byte{unix.IPPROTO_TCP}) {
+					tcp = true
 				}
-				if ct, ok := r[i-1].(*expr.Ct); ok && ct.Key == expr.CtKeyPROTODST {
-					dport = uint16(x.Data[0])<<8 | uint16(x.Data[1])
+				if prev.Key == expr.MetaKeyIIFNAME && x.Op == expr.CmpOpNeq {
+					name := string(bytes.TrimRight(x.Data, "\x00"))
+					if name == "lo" {
+						d.exceptLo = true
+					} else {
+						d.exempt = append(d.exempt, name)
+					}
+				}
+			case *expr.Payload:
+				if prev.Base == expr.PayloadBaseTransportHeader && prev.Offset == 2 && prev.Len == 2 {
+					d.port = uint16(x.Data[0])<<8 | uint16(x.Data[1])
 				}
 			case *expr.Ct:
-				if x.Key == expr.CtKeySTATE {
-					newOnly = true
+				if prev.Key == expr.CtKeyPROTODST {
+					d.port = uint16(x.Data[0])<<8 | uint16(x.Data[1])
+					d.original = prev.Direction == 0
 				}
-			case *expr.Limit:
-				rule.limit = x
-			case *expr.Dynset:
-				rule.dynset = x
-				rule.limit = x.Exprs[0].(*expr.Limit)
-				p, ok := r[i-1].(*expr.Payload)
-				rule.keyed = ok && p.Base == expr.PayloadBaseNetworkHeader && p.Offset == 12 && p.Len == 4 && x.SrcRegKey == p.DestRegister
-			case *expr.Verdict:
-				drops = x.Kind == expr.VerdictDrop
+			case *expr.Bitwise:
+				if ct, ok := r[i-2].(*expr.Ct); ok {
+					switch ct.Key {
+					case expr.CtKeySTATE:
+						d.newOnly = bytes.Equal(prev.Mask, binaryNative(expr.CtStateBitNEW))
+					case expr.CtKeySTATUS:
+						d.dnatOnly = bytes.Equal(prev.Mask, binaryNative(ipsDstNAT))
+					}
+				}
 			}
+		case *expr.Lookup:
+			if m, ok := r[i-1].(*expr.Meta); ok && m.Key == expr.MetaKeyIIFNAME && x.Invert {
+				d.exemptSet = x.SetName
+			}
+		case *expr.Verdict:
+			drops = x.Kind == expr.VerdictDrop
 		}
-		if drops && newOnly && rule.limit != nil {
-			out[dport] = append(out[dport], rule)
+	}
+	return d, tcp && drops && d.port != 0
+}
+
+func webDrops(rules [][]expr.Any) []webDrop {
+	var out []webDrop
+	for _, r := range rules {
+		if d, ok := readWebDrop(r); ok {
+			out = append(out, d)
 		}
 	}
 	return out
 }
 
-func droppedWebPorts(l HostLayout) []uint16 {
+func dropPorts(ds []webDrop) []uint16 {
 	var ports []uint16
-	for _, r := range hostForwardRules(l, envBridgesSet(), webSourceSets(l)) {
-		if hasLimit(r) {
-			continue
-		}
-		matchesPublic, drops := false, false
-		var dport []byte
-		for i, e := range r {
-			switch x := e.(type) {
-			case *expr.Cmp:
-				if bytes.Equal(x.Data, testPublic.AsSlice()) {
-					matchesPublic = true
-				}
-				if i > 0 {
-					if ct, ok := r[i-1].(*expr.Ct); ok && ct.Key == expr.CtKeyPROTODST {
-						dport = x.Data
-					}
-				}
-			case *expr.Verdict:
-				drops = x.Kind == expr.VerdictDrop
-			}
-		}
-		if matchesPublic && drops && len(dport) == 2 {
-			ports = append(ports, uint16(dport[0])<<8|uint16(dport[1]))
-		}
+	for _, d := range ds {
+		ports = append(ports, d.port)
 	}
 	slices.Sort(ports)
 	return ports
 }
 
-func TestTheHostChainDropsInbound80And443WhileNoDirectRouteExists(t *testing.T) {
-	if got := droppedWebPorts(testHostLayout(false)); !slices.Equal(got, []uint16{80, 443}) {
-		t.Fatalf("web ports closed must drop 80 and 443 on the public address, dropped %v", got)
+func TestTheHostDropsInbound80And443DeliveredToItselfExceptOnLoopback(t *testing.T) {
+	drops := webDrops(hostInputRules())
+	if got := dropPorts(drops); !slices.Equal(got, []uint16{80, 443}) {
+		t.Fatalf("the input chain must drop 80 and 443, dropped %v", got)
+	}
+	for _, d := range drops {
+		if !d.exceptLo || d.ipv4Only || len(d.exempt) != 0 || d.exemptSet != "" {
+			t.Errorf("port %d: the drop must spare loopback only and cover IPv4 and IPv6: %+v", d.port, d)
+		}
 	}
 }
 
-func TestTheHostChainLetsInbound80And443ThroughOnceADirectRouteExists(t *testing.T) {
-	if got := droppedWebPorts(testHostLayout(true)); len(got) != 0 {
-		t.Fatalf("web ports open must not drop any public port, dropped %v", got)
+func TestAPublishedPortCannotReopen80Or443(t *testing.T) {
+	l := testHostLayout()
+	drops := webDrops(hostForwardRules(l, envBridgesSet()))
+	if got := dropPorts(drops); !slices.Equal(got, []uint16{80, 443}) {
+		t.Fatalf("the forward chain must drop translated 80 and 443, dropped %v", got)
 	}
-}
-
-func TestTheWebPortDropMatchesTheDestinationBeforeTranslation(t *testing.T) {
-	for _, r := range hostForwardRules(testHostLayout(false), envBridgesSet(), nil) {
-		for _, e := range r {
-			if ct, ok := e.(*expr.Ct); ok && ct.Key == expr.CtKeyPROTODST && ct.Direction != 0 {
-				t.Fatal("the drop must match ct original proto-dst so a port allocation to container port 80 is not dropped")
-			}
+	for _, d := range drops {
+		if !d.original || !d.newOnly || !d.dnatOnly || d.ipv4Only {
+			t.Errorf("port %d: the drop must match new, translated flows by the port the client dialed, on both families: %+v", d.port, d)
+		}
+		if !slices.Equal(d.exempt, []string{l.IngressBridge}) || d.exemptSet != envBridgesSet().Name {
+			t.Errorf("port %d: cloudflared on the ingress bridge and apps on their bridges must pass: %+v", d.port, d)
 		}
 	}
 }
@@ -146,101 +140,5 @@ func TestTheMarkAcceptRuleUsesTheHostTranslationMark(t *testing.T) {
 	rule := strings.Join(MarkAcceptRule(), " ")
 	if !strings.Contains(rule, "--mark 0x10000/0x10000") || !strings.HasSuffix(rule, "-j ACCEPT") {
 		t.Fatalf("rule %q must accept exactly the mark mark_pre sets", rule)
-	}
-}
-
-func TestTheHostChainLimitsNewConnectionsPerSourceBeforeTheGlobalCapOn80And443WhileTheyAreOpen(t *testing.T) {
-	got := shedRules(testHostLayout(true))
-	if len(got) != 2 {
-		t.Fatalf("limited ports %v, want 80 and 443 only", got)
-	}
-	for _, p := range []uint16{80, 443} {
-		rules := got[p]
-		if len(rules) != 2 {
-			t.Fatalf("port %d has %d limit rules, want per-source then global", p, len(rules))
-		}
-		perSource, global := rules[0], rules[1]
-		if perSource.dynset == nil || !perSource.keyed || perSource.dynset.Operation != unix.NFT_DYNSET_OP_UPDATE {
-			t.Errorf("port %d first rule must update a set keyed by ip saddr: %+v", p, perSource)
-		}
-		l := perSource.limit
-		if !l.Over || l.Rate != testSourceRate || l.Burst != 2*testSourceRate || l.Unit != expr.LimitTimeSecond || l.Type != expr.LimitTypePkts {
-			t.Errorf("port %d per-source limit %+v", p, *l)
-		}
-		if global.dynset != nil {
-			t.Errorf("port %d second rule must be the global cap", p)
-		}
-		g := global.limit
-		if !g.Over || g.Rate != WebNewConnectionRate || g.Burst != WebNewConnectionBurst || g.Unit != expr.LimitTimeSecond || g.Type != expr.LimitTypePkts {
-			t.Errorf("port %d global limit %+v", p, *g)
-		}
-	}
-}
-
-func TestThePerSourceRateAndBurstFollowTheSetting(t *testing.T) {
-	for _, rate := range []int{1, 50, 1000} {
-		l := testHostLayout(true)
-		l.SourceRate = rate
-		for p, rules := range shedRules(l) {
-			got := rules[0].limit
-			if got.Rate != uint64(rate) || got.Burst != uint32(2*rate) || len(rules) != 2 {
-				t.Errorf("rate %d port %d: limit %+v with %d rules", rate, p, *got, len(rules))
-			}
-		}
-	}
-}
-
-func TestZeroDisablesThePerSourceRuleAndKeepsTheGlobalBackstop(t *testing.T) {
-	l := testHostLayout(true)
-	l.SourceRate = 0
-	if got := webSourceSets(l); len(got) != 0 {
-		t.Fatalf("no per-source rate needs no source sets, got %v", got)
-	}
-	got := shedRules(l)
-	if len(got) != 2 {
-		t.Fatalf("limited ports %v, want the global cap on 80 and 443", got)
-	}
-	for p, rules := range got {
-		if len(rules) != 1 || rules[0].dynset != nil || rules[0].limit.Rate != WebNewConnectionRate || rules[0].limit.Burst != WebNewConnectionBurst {
-			t.Errorf("port %d rules %+v, want only the global cap", p, rules)
-		}
-	}
-}
-
-func TestTheSourceSetsAreDynamicBoundedAndExpire(t *testing.T) {
-	sets := webSourceSets(testHostLayout(true))
-	if len(sets) != 2 {
-		t.Fatalf("source sets %v, want one per web port", sets)
-	}
-	for p, s := range sets {
-		if !s.Dynamic || !s.HasTimeout || s.Timeout != WebSourceIdleTimeout || s.Size != WebSourceTableSize || s.KeyType != nftables.TypeIPAddr {
-			t.Errorf("port %d set %+v is not a bounded expiring ip address set", p, *s)
-		}
-		for _, r := range shedRules(testHostLayout(true))[p] {
-			if r.dynset != nil && (r.dynset.SetName != s.Name || r.dynset.Timeout != WebSourceIdleTimeout) {
-				t.Errorf("port %d rule updates %q with timeout %v", p, r.dynset.SetName, r.dynset.Timeout)
-			}
-		}
-	}
-}
-
-func TestTheSourceSetsExistOnlyWhileTheWebPortsAreOpen(t *testing.T) {
-	if got := webSourceSets(testHostLayout(false)); len(got) != 0 {
-		t.Fatalf("closed web ports need no source sets, got %v", got)
-	}
-	if got := webSourceSets(HostLayout{WebOpen: true}); len(got) != 0 {
-		t.Fatalf("no public address needs no source sets, got %v", got)
-	}
-}
-
-func TestTheHostChainSetsNoNewConnectionLimitWhileTheWebPortsAreClosed(t *testing.T) {
-	if got := shedRules(testHostLayout(false)); len(got) != 0 {
-		t.Fatalf("closed web ports drop everything and need no limit, got %v", got)
-	}
-}
-
-func TestTheWebPortLimitFollowsTheWebOpenFingerprint(t *testing.T) {
-	if testHostLayout(true).fingerprint() == testHostLayout(false).fingerprint() {
-		t.Fatal("opening the web ports must change the table fingerprint")
 	}
 }

@@ -12,7 +12,6 @@ import {
   key,
   machine,
   machine_snapshot,
-  port_allocation,
   project,
   run,
   secret_value,
@@ -29,7 +28,6 @@ export type AppRow = typeof app.$inferSelect
 export type PortRow = typeof app_port.$inferSelect
 export type VolumeRow = typeof volume.$inferSelect
 export type DomainRow = typeof domain.$inferSelect
-export type AllocationRow = typeof port_allocation.$inferSelect
 export type DeploymentRow = typeof deployment.$inferSelect
 export type KeyRow = typeof key.$inferSelect
 export type ApprovalRow = typeof approval.$inferSelect
@@ -198,17 +196,6 @@ export const domainById = (db: Db, id: string) => {
 
   return {
     domain: row,
-    ...portById(db, row.app_port_id),
-  }
-}
-
-export const allocationById = (db: Db, id: string) => {
-  const row =
-    db.select().from(port_allocation).where(eq(port_allocation.id, id)).get() ??
-    notFound('port_allocation', id)
-
-  return {
-    allocation: row,
     ...portById(db, row.app_port_id),
   }
 }
@@ -404,7 +391,6 @@ export const targets = {
   app: appById,
   app_port: portById,
   domain: domainById,
-  port_allocation: allocationById,
   deployment: deploymentById,
   build: buildById,
   run: runById,

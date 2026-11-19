@@ -1,5 +1,3 @@
-import { isIP } from 'node:net'
-
 import type { Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm'
@@ -9,7 +7,6 @@ import {
   ContainerSpec,
   DesiredDeployment,
   DesiredEnvironment,
-  DesiredPortAllocation,
   DesiredSandbox,
   DesiredSandboxSnapshot,
   DesiredService,
@@ -32,7 +29,6 @@ import {
   ipam_allocation,
   machine,
   machine_snapshot,
-  port_allocation,
   project,
   server,
   station_generation,
@@ -115,7 +111,6 @@ const readSettings = (db: Db) => {
     }
   }
 
-  settings['acme.email'] ??= ''
   const lockfile = read('platform.lockfile')
 
   if (lockfile !== null) {
@@ -272,14 +267,7 @@ export const targetIssue = (
 }
 
 export type ExcludedObject =
-  | 'network'
-  | 'app'
-  | 'deployment'
-  | 'volume'
-  | 'route'
-  | 'port_allocation'
-  | 'machine'
-  | 'machine_snapshot'
+  'network' | 'app' | 'deployment' | 'volume' | 'route' | 'machine' | 'machine_snapshot'
 
 export type Exclusion = {
   object: ExcludedObject
@@ -300,14 +288,13 @@ const objectKeys: Record<ExcludedObject, (id: string) => string> = {
   deployment: (id) => `/deployments/${id}`,
   volume: (id) => `/volumes/${id}`,
   route: (id) => `/gateway/routes/${id}`,
-  port_allocation: (id) => `/port_allocations/${id}`,
   machine: (id) => `/sandboxes/${id}`,
   machine_snapshot: (id) => `/sandbox_snapshots/${id}`,
 }
 
 export const objectAt = (path: string): { object: ExcludedObject; id: string } | null => {
   const m =
-    /^\/(environments|services|deployments|volumes|port_allocations|gateway\/routes|sandboxes|sandbox_snapshots)\/([^/]+)/.exec(
+    /^\/(environments|services|deployments|volumes|gateway\/routes|sandboxes|sandbox_snapshots)\/([^/]+)/.exec(
       path,
     )
 
@@ -321,7 +308,6 @@ export const objectAt = (path: string): { object: ExcludedObject; id: string } |
       services: 'app',
       deployments: 'deployment',
       volumes: 'volume',
-      port_allocations: 'port_allocation',
       'gateway/routes': 'route',
       sandboxes: 'machine',
       sandbox_snapshots: 'machine_snapshot',
@@ -357,43 +343,21 @@ const unbuildable = (error: unknown): error is Error =>
 export const systemRouteIds = {
   dashboard: 'system-dashboard',
   api: 'system-api',
-  address: 'system-address',
 } as const
 
-type SystemRoute = {
-  id: string
-  hostname: string
-  resolver: 'letsencrypt' | 'letsencrypt-shortlived'
-}
-
-const ingressModeOf = (read: SettingsSnapshot) =>
-  read('ingress.mode') === 'tunnel' ? ('tunnel' as const) : ('direct' as const)
-
-const systemRoutes = (read: SettingsSnapshot, publicAddress: string | null): SystemRoute[] => {
+const systemRoutes = (read: SettingsSnapshot) => {
   const dashboard = read('hostnames.dashboard')
   const api = read('hostnames.api')
 
-  if (typeof dashboard === 'string' && dashboard && typeof api === 'string' && api) {
-    return [
-      {
-        id: systemRouteIds.api,
-        hostname: api,
-        resolver: 'letsencrypt',
-      },
-      {
-        id: systemRouteIds.dashboard,
-        hostname: dashboard,
-        resolver: 'letsencrypt',
-      },
-    ]
-  }
-
-  return publicAddress && ingressModeOf(read) === 'direct'
+  return typeof dashboard === 'string' && dashboard && typeof api === 'string' && api
     ? [
         {
-          id: systemRouteIds.address,
-          hostname: publicAddress,
-          resolver: 'letsencrypt-shortlived',
+          id: systemRouteIds.api,
+          hostname: api,
+        },
+        {
+          id: systemRouteIds.dashboard,
+          hostname: dashboard,
         },
       ]
     : []
@@ -919,39 +883,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       }
     : null
   const systemHosts = new Map<string, string>()
-  const ingressMode = ingressModeOf(read)
 
   if (dispatchTarget) {
-    for (const r of systemRoutes(read, st.public_address)) {
+    for (const r of systemRoutes(read)) {
       const route = guarded('route', r.id, previous?.gateway.routes[r.id], () => {
-        if (ingressMode === 'tunnel') {
-          const built = hashed({
-            hostname: r.hostname,
-            ingress: 'tunnel' as const,
-            target: dispatchTarget,
-            tls: null,
-            redirect_http: false,
-          })
-
-          conform(Route, built, keyOf('route', r.id))
-
-          return built
-        }
-
-        if (!st.public_address) {
-          throw new GenerationError(
-            `${keyOf('route', r.id)}: ${r.hostname} is a direct route, which needs the server's public_address; set it with sly servers update ${st.name} --public-address <ipv4>`,
-          )
-        }
-
         const built = hashed({
           hostname: r.hostname,
-          ingress: 'direct' as const,
           target: dispatchTarget,
-          tls: {
-            resolver: r.resolver,
-          },
-          redirect_http: true,
         })
 
         conform(Route, built, keyOf('route', r.id))
@@ -991,25 +929,13 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           )
         }
 
-        const direct = d.ingress === 'direct'
-        const resolver: SystemRoute['resolver'] =
-          d.certificate?.resolver === 'letsencrypt-shortlived' || isIP(d.hostname)
-            ? 'letsencrypt-shortlived'
-            : 'letsencrypt'
         const built = hashed({
           hostname: d.hostname,
-          ingress: d.ingress,
           target: {
             service_id: port.app_id,
             virtual_ip: vip.address,
             port: port.port,
           },
-          tls: direct
-            ? {
-                resolver,
-              }
-            : null,
-          redirect_http: direct,
         })
 
         conform(Route, built, keyOf('route', d.id))
@@ -1020,48 +946,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       if (route && 'service_id' in route.target && appDocs[route.target.service_id]) {
         routes[d.id] = route
       }
-    }
-  }
-
-  const allocationDocs: GenerationContent['port_allocations'] = {}
-
-  for (const pa of db
-    .select()
-    .from(port_allocation)
-    .where(and(eq(port_allocation.server_id, stationId), eq(port_allocation.status, 'active')))
-    .orderBy(asc(port_allocation.id))
-    .all()) {
-    const port = portById.get(pa.app_port_id)
-
-    if (!port) {
-      continue
-    }
-
-    const doc = guarded('port_allocation', pa.id, previous?.port_allocations[pa.id], () => {
-      const vip = vipOf.get(port.app_id)
-
-      if (!appDocs[port.app_id] || !vip) {
-        throw new GenerationError(
-          `${keyOf('port_allocation', pa.id)}: app ${port.app_id} is not in this generation`,
-        )
-      }
-
-      const built = hashed({
-        service_port_id: pa.app_port_id,
-        service_id: port.app_id,
-        host_port: pa.host_port,
-        protocol: 'tcp' as const,
-        virtual_ip: vip.address,
-        container_port: port.port,
-      })
-
-      conform(DesiredPortAllocation, built, keyOf('port_allocation', pa.id))
-
-      return built
-    })
-
-    if (doc && appDocs[doc.service_id]) {
-      allocationDocs[pa.id] = doc
     }
   }
 
@@ -1099,12 +983,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     }
   }
 
-  const gatewayAcme = {
-    email: settings['acme.email'],
-    ca_server: read('acme.ca_server'),
-  }
-  const hasDirect = Object.values(routes).some((r) => r.ingress === 'direct')
-
   return {
     excluded,
     content: {
@@ -1124,12 +1002,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
           system: subnetOfPool(settings['ipam.pool'], networkLayout.systemIndex),
           ingress: subnetOfPool(settings['ipam.pool'], networkLayout.ingressIndex),
         },
-        inbound: {
-          mode: ingressMode,
-          web_ports: hasDirect ? 'open' : 'closed',
-          setup_port_until: null,
-        },
-        public_address: st.public_address ?? null,
         concurrency_cap: st.concurrency_cap,
         intermittent: st.intermittent,
         hosts_dispatch: st.hosts_dispatch,
@@ -1151,10 +1023,8 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       deployments: deploymentDocs,
       volumes: volumeDocs,
       gateway: hashed({
-        acme: gatewayAcme,
         routes,
       }),
-      port_allocations: allocationDocs,
       workshops: workshopDocs,
       system_targets: dispatchTarget
         ? {

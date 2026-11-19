@@ -193,12 +193,6 @@
       "close": null
     },
     {
-      "code": "PORT_RANGE_EXHAUSTED",
-      "http": 507,
-      "area": "network",
-      "close": null
-    },
-    {
       "code": "DOMAIN_INVALID",
       "http": 422,
       "area": "network",
@@ -218,18 +212,6 @@
     },
     {
       "code": "NETWORK_TARGET_INVALID",
-      "http": 422,
-      "area": "network",
-      "close": null
-    },
-    {
-      "code": "CERTIFICATE_RATE_LIMITED",
-      "http": 422,
-      "area": "network",
-      "close": null
-    },
-    {
-      "code": "CERTIFICATE_ISSUANCE_FAILED",
       "http": 422,
       "area": "network",
       "close": null

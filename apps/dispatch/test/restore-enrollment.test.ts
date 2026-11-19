@@ -5,13 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 
-import { eq } from 'drizzle-orm'
-
-import { setupInstance } from '../src/auth/bootstrap.ts'
 import { openDb } from '../src/db/client.ts'
-import { audit_event, server } from '../src/db/schema.ts'
+import { server } from '../src/db/schema.ts'
 
-import { adminEmail, adminPassword, startDispatch, type Dispatch } from './helpers/dispatch.ts'
+import { startDispatch, type Dispatch } from './helpers/dispatch.ts'
 import { enrollFakeStation, FakeStation } from './helpers/fake-station.ts'
 
 const bootstrapToken = `sly-enroll-${randomBytes(12).toString('base64url')}`
@@ -63,19 +60,10 @@ describe('a restored Dispatch takes the new host as its station', () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
   })
 
-  test('after a restore nothing is connected, so the bootstrap token replaces the dead hosting server and keeps its address', async () => {
-    h.db
-      .update(server)
-      .set({
-        public_address: '198.51.100.4',
-      })
-      .where(eq(server.id, first.station_id))
-      .run()
+  test('after a restore nothing is connected, so the bootstrap token replaces the dead hosting server', async () => {
     const fresh = await enrollFakeStation(url, bootstrapToken)
     const rows = h.db.select().from(server).all()
     const old = rows.find((s) => s.id === first.station_id)!
-
-    assert.equal(rows.find((s) => s.id === fresh.station_id)!.public_address, '198.51.100.4')
 
     assert.equal(old.hosts_dispatch, false)
     assert.equal(old.status, 'offline')
@@ -88,73 +76,6 @@ describe('a restored Dispatch takes the new host as its station', () => {
 
   test('any other token is still refused', async () => {
     await assert.rejects(enrollFakeStation(url, 'sly-enroll-not-the-token'), /enrollment answered/)
-  })
-})
-
-describe('setup stores the station public address', () => {
-  let h: Dispatch
-  let hostId: string
-
-  before(async () => {
-    process.env.STATIONLY_BOOTSTRAP_ENROLL_SHA256 = createHash('sha256')
-      .update(bootstrapToken)
-      .digest('hex')
-    h = await startDispatch({
-      setup: false,
-    })
-    hostId = (await enrollFakeStation(await h.stationUrl(), bootstrapToken)).station_id
-  })
-
-  after(async () => {
-    delete process.env.STATIONLY_BOOTSTRAP_ENROLL_SHA256
-    await h.close()
-  })
-
-  const setup = (publicAddress: string, actorId: string) =>
-    setupInstance(
-      {
-        db: h.deps.db,
-        keyring: h.deps.keyring,
-        auth: h.deps.auth,
-      },
-      {
-        email: adminEmail,
-        password: adminPassword,
-        public_address: publicAddress,
-      },
-      {
-        type: 'station',
-        id: actorId,
-        client: 'test',
-      },
-    )
-
-  const created = () =>
-    h.db.select().from(audit_event).where(eq(audit_event.action, 'setup.admin_created')).all()
-      .length
-
-  test('an address that is not IPv4 creates nothing', async () => {
-    await assert.rejects(setup('10.0.0.999', hostId), /not an IPv4 address/)
-    assert.equal(created(), 0)
-  })
-
-  test('an actor that is not the hosting station creates nothing', async () => {
-    await assert.rejects(
-      setup('203.0.113.7', 'stn_missing'),
-      /needs the server that hosts Dispatch/,
-    )
-    assert.equal(created(), 0)
-  })
-
-  test('the hosting station gets the address in the same transaction as the admin', async () => {
-    const out = await setup('203.0.113.7', hostId)
-
-    assert.equal(out.public_address, '203.0.113.7')
-    assert.equal(
-      h.db.select().from(server).where(eq(server.id, hostId)).get()!.public_address,
-      '203.0.113.7',
-    )
-    assert.equal(created(), 1)
   })
 })
 

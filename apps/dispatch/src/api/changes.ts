@@ -14,7 +14,6 @@ import {
   key,
   machine,
   machine_snapshot,
-  port_allocation,
   run,
   secret_value,
   target,
@@ -48,7 +47,6 @@ export type Entity =
   | 'volume_snapshot'
   | 'volume_restore'
   | 'domain'
-  | 'port_allocation'
   | 'key'
   | 'deployment'
   | 'preview'
@@ -238,8 +236,8 @@ const retention = (row: TargetRow | undefined) =>
 
 const appColumns = new Set<string>([...configFields, 'desired_state'])
 
-const portDependents = (db: Db, portId: string) => ({
-  domains: db
+const portDomains = (db: Db, portId: string) =>
+  db
     .select({
       id: domain.id,
       hostname: domain.hostname,
@@ -251,21 +249,7 @@ const portDependents = (db: Db, portId: string) => ({
       entity: 'domain',
       id: d.id,
       hostname: d.hostname,
-    })),
-  allocations: db
-    .select({
-      id: port_allocation.id,
-      host_port: port_allocation.host_port,
-    })
-    .from(port_allocation)
-    .where(and(eq(port_allocation.app_port_id, portId), eq(port_allocation.status, 'active')))
-    .all()
-    .map((a) => ({
-      entity: 'port_allocation',
-      id: a.id,
-      host_port: a.host_port,
-    })),
-})
+    }))
 
 const portNumber = (db: Db, portId: string) =>
   db
@@ -277,58 +261,41 @@ const portNumber = (db: Db, portId: string) =>
     .get()?.port ?? portId
 
 export const requireNoPortDependents = (db: Db, portId: string) => {
-  const { domains, allocations } = portDependents(db, portId)
+  const domains = portDomains(db, portId)
 
-  if (!domains.length && !allocations.length) {
+  if (!domains.length) {
     return
   }
 
   fail(
     'DELETE_HAS_DEPENDENTS',
-    `Port ${portNumber(db, portId)} is used by a domain or a TCP exposure.`,
-    'Remove the domains and port allocations first.',
+    `Port ${portNumber(db, portId)} is used by a domain.`,
+    'Remove the domains first.',
     {
-      dependents: [...domains, ...allocations],
+      dependents: domains,
     },
   )
 }
 
 export const requireProtocolChangeAllowed = (db: Db, portId: string, protocol: 'http' | 'tcp') => {
-  const { domains, allocations } = portDependents(db, portId)
-  const blocking = protocol === 'tcp' ? domains : allocations
+  const domains = protocol === 'tcp' ? portDomains(db, portId) : []
 
-  if (!blocking.length) {
+  if (!domains.length) {
     return
-  }
-
-  const port = portNumber(db, portId)
-
-  if (protocol === 'tcp') {
-    fail(
-      'DELETE_HAS_DEPENDENTS',
-      `Port ${port} cannot become tcp while a domain routes to it.`,
-      'Remove its domains (DELETE /v1/domains/{id}) first, then change the protocol.',
-      {
-        dependents: blocking,
-      },
-    )
   }
 
   fail(
     'DELETE_HAS_DEPENDENTS',
-    `Port ${port} cannot become http while a TCP exposure publishes it.`,
-    'Remove its port allocations (DELETE /v1/port-allocations/{id}) first, then change the protocol.',
+    `Port ${portNumber(db, portId)} cannot become tcp while a domain routes to it.`,
+    'Remove its domains (DELETE /v1/domains/{id}) first, then change the protocol.',
     {
-      dependents: blocking,
+      dependents: domains,
     },
   )
 }
 
 const removePort = (db: Db, portId: string) => {
   requireNoPortDependents(db, portId)
-  db.delete(port_allocation)
-    .where(and(eq(port_allocation.app_port_id, portId), eq(port_allocation.status, 'removed')))
-    .run()
   db.delete(app_port).where(eq(app_port.id, portId)).run()
 }
 
@@ -351,7 +318,6 @@ const removeApp = (db: Db, appId: string) => {
 
   if (ports.length) {
     db.delete(domain).where(inArray(domain.app_port_id, ports)).run()
-    db.delete(port_allocation).where(inArray(port_allocation.app_port_id, ports)).run()
     db.delete(app_port).where(eq(app_port.app_id, svc.id)).run()
   }
 
@@ -577,28 +543,6 @@ const applyChanges = (
               app_port_id: parent!,
               hostname: after.hostname as string,
               kind: after.kind as 'generated' | 'custom',
-              ingress: after.ingress as 'direct' | 'tunnel',
-              certificate: {
-                resolver: 'letsencrypt',
-                status: 'pending',
-                not_before: null,
-                expires_at: null,
-              },
-            })
-            .run()
-          refs[change.ref] = id
-          break
-        }
-
-        case 'port_allocation': {
-          const id = newId('port_allocation')
-
-          db.insert(port_allocation)
-            .values({
-              id,
-              app_port_id: parent!,
-              server_id: after.server_id as string,
-              host_port: after.host_port as number,
             })
             .run()
           refs[change.ref] = id
@@ -854,15 +798,6 @@ const applyChanges = (
             .run()
           break
         }
-
-        case 'port_allocation':
-          db.update(port_allocation)
-            .set({
-              status: change.after as 'active' | 'removed',
-            })
-            .where(eq(port_allocation.id, id))
-            .run()
-          break
 
         case 'key': {
           const row =

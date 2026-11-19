@@ -187,21 +187,6 @@ export const ObservedRoute = Type.Object(
   {
     applied_hash: appliedHash,
     ...outcome,
-    certificate: Nullable(
-      Type.Object(
-        {
-          status: StringEnum(['pending', 'valid', 'expired', 'failed'], {
-            title: 'CertificateStatus',
-          }),
-          not_before: Nullable(Timestamp),
-          expires_at: Nullable(Timestamp),
-          failure: Nullable(ErrorBody),
-        },
-        {
-          title: 'ObservedCertificate',
-        },
-      ),
-    ),
     probe: Nullable(
       Type.Object(
         {
@@ -243,16 +228,6 @@ export const ObservedGateway = Type.Object(
   },
   {
     title: 'ObservedGateway',
-  },
-)
-
-export const ObservedPortAllocation = Type.Object(
-  {
-    applied_hash: appliedHash,
-    ...outcome,
-  },
-  {
-    title: 'ObservedPortAllocation',
   },
 )
 
@@ -352,7 +327,6 @@ const observedMaps = {
   volumes: IdMap(ObservedVolume),
   runs: IdMap(ObservedRun),
   gateway: ObservedGateway,
-  port_allocations: IdMap(ObservedPortAllocation),
   workshops: IdMap(ObservedWorkshop),
   system_targets: IdMap(ObservedSystemTarget),
   sandboxes: Type.Optional(IdMap(ObservedSandbox)),
@@ -385,7 +359,6 @@ export const ObservedUpdate = Type.Object(
     volumes: Type.Optional(observedMaps.volumes),
     runs: Type.Optional(observedMaps.runs),
     gateway: Type.Optional(observedMaps.gateway),
-    port_allocations: Type.Optional(observedMaps.port_allocations),
     workshops: Type.Optional(observedMaps.workshops),
     system_targets: Type.Optional(observedMaps.system_targets),
     sandboxes: observedMaps.sandboxes,

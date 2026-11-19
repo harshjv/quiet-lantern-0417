@@ -16,14 +16,13 @@ export const appFieldText = {
 
 export const portFieldText = {
   port: 'The container port, unique per app',
-  protocol: 'http is routed by the Gateway, tcp only by exposure',
+  protocol: 'http is routed by the Gateway; tcp is reached over .internal',
   grpc: 'The http port speaks gRPC',
 } as const
 
 export const domainFieldText = {
   generated: 'A generated hostname; exactly one of generated and hostname',
-  hostname: 'A hostname under a configured zone, or any name for direct ingress',
-  ingress: 'direct in 1a; tunnel from 1b',
+  hostname: 'One label under domains.zone, or a name outside it that needs its own tunnel route',
 } as const
 
 export const volumeFieldText = {

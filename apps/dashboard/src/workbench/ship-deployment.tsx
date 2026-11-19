@@ -156,7 +156,6 @@ function DeploymentView({ id }: { id: string }) {
                   id: app.id,
                   name: app.name,
                 },
-                server: app.server_id ?? undefined,
               }}
             />
           </Panel>

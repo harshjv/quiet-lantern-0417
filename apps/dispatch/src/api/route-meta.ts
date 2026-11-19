@@ -174,7 +174,6 @@ export const routeMeta = (
     app: onEntity(targets.app),
     app_port: onEntity(targets.app_port),
     domain: onEntity(targets.domain),
-    port_allocation: onEntity(targets.port_allocation),
     deployment: onEntity(targets.deployment),
     build: onEntity(targets.build),
     run: onEntity(targets.run),

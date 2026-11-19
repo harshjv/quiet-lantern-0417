@@ -4,15 +4,11 @@ package deploy
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
-	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -32,7 +28,6 @@ const (
 	gatewaySettle    = time.Second
 	gatewayKillAfter = gateway.GraceTimeout + 10*time.Second
 	gatewayBackoff   = 30 * time.Second
-	certInterval     = 15 * time.Second
 
 	phasePull  = "pull"
 	phaseStart = "start"
@@ -42,11 +37,9 @@ const (
 
 type gatewaySide struct {
 	Slot    string `json:"slot"`
-	Store   int    `json:"store"`
 	Version string `json:"version"`
 	Image   string `json:"image"`
 	Inputs  string `json:"inputs"`
-	CA      string `json:"ca"`
 }
 
 type gatewayTransition struct {
@@ -65,10 +58,9 @@ type gatewayTransition struct {
 }
 
 type gatewayState struct {
-	Current      *gatewaySide                   `json:"current"`
-	Next         *gatewayTransition             `json:"next"`
-	Last         *gatewayTransition             `json:"last"`
-	ACMEFailures map[string]gateway.ACMEFailure `json:"acme_failures,omitempty"`
+	Current *gatewaySide       `json:"current"`
+	Next    *gatewayTransition `json:"next"`
+	Last    *gatewayTransition `json:"last"`
 }
 
 type objectStatus struct {
@@ -81,16 +73,11 @@ type objectStatus struct {
 type gatewayRuntime struct {
 	state       gatewayState
 	ingressID   string
-	volumeDir   string
 	failure     *protocol.ErrorBody
 	failedAt    time.Time
 	pulling     bool
 	pulled      *error
 	routes      map[string]objectStatus
-	ports       map[string]objectStatus
-	certs       map[string]gateway.Certificate
-	certAt      time.Time
-	certBusy    bool
 	containerID string
 	hostFailure *protocol.ErrorBody
 	tunnel      tunnelRuntime
@@ -145,12 +132,6 @@ func (s *Station) reconcileGateway(ctx context.Context) {
 		if err := s.ensureIngress(ctx); err != nil {
 			s.gw.failure = gatewayFailure("ingress network: %v", err)
 			s.log.Error("ingress network", "error", err)
-		} else if err := s.ensureGatewayVolume(ctx); err != nil {
-			s.gw.failure = gatewayFailure("Gateway volume: %v", err)
-			s.log.Error("Gateway volume", "error", err)
-		} else if err := s.writeACMERoots(); err != nil {
-			s.gw.failure = gatewayFailure("ACME CA certificates: %v", err)
-			s.log.Error("ACME CA certificates", "error", err)
 		} else {
 			if !had {
 				s.ensureResolver()
@@ -180,34 +161,6 @@ func (s *Station) ensureIngress(ctx context.Context) error {
 	return nil
 }
 
-func (s *Station) ensureGatewayVolume(ctx context.Context) error {
-	v, created, err := s.docker.EnsureVolume(ctx, docker.GatewayVolume, map[string]string{docker.LabelStation: s.plan.Generation.StationId, docker.LabelRole: docker.RoleGateway, docker.LabelComponent: "gateway"})
-	if err != nil {
-		return err
-	}
-	if created {
-		s.log.Info("created Gateway volume", "name", docker.GatewayVolume, "mountpoint", v.Mountpoint)
-	}
-	s.gw.volumeDir = v.Mountpoint
-	return nil
-}
-
-func (s *Station) writeACMERoots() error {
-	path := filepath.Join(s.gw.volumeDir, gateway.CAFileName)
-	roots := s.plan.Gateway.ACMERoots
-	if len(roots) == 0 {
-		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	changed, err := fsx.WriteIfChanged(filepath.Join(s.gw.volumeDir, gateway.CAFileName), roots, 0o644)
-	if changed {
-		s.log.Info("wrote the test trust's ACME CA certificates for the Gateway", "file", path, "bytes", len(roots))
-	}
-	return err
-}
-
 func (s *Station) systemTargetAddr(name string) netip.Addr {
 	if name != systemDispatch || !s.hostsDispatch() || s.system.id == "" || s.system.failure != "" {
 		return netip.Addr{}
@@ -222,11 +175,6 @@ func (s *Station) systemTargetReady(name string) bool {
 func (s *Station) serviceBlocked(svcID string) bool {
 	st := s.services[svcID]
 	return st != nil && (st.exhausted || st.failure != nil)
-}
-
-func (s *Station) upgradePaused() bool {
-	t := s.gw.state.Next
-	return t != nil && t.From != nil && t.CutoverAt == nil
 }
 
 func (s *Station) writeRoutes() {
@@ -251,13 +199,9 @@ func (s *Station) writeRoutes() {
 		name := rp.ID + ".yml"
 		_, statErr := os.Stat(filepath.Join(dir, name))
 		exists := statErr == nil
-		switch {
-		case rp.System == "" && s.serviceBlocked(rp.ServiceID):
+		if rp.System == "" && s.serviceBlocked(rp.ServiceID) {
 			routes[rp.ID] = objectStatus{result: protocol.ObjectResultBlocked, blockedBy: "services/" + rp.ServiceID}
 			keep[name] = exists
-			continue
-		case rp.Direct && !exists && s.upgradePaused():
-			routes[rp.ID] = objectStatus{result: protocol.ObjectResultPending, blockedBy: "components/gateway"}
 			continue
 		}
 		keep[name] = true
@@ -267,9 +211,7 @@ func (s *Station) writeRoutes() {
 			continue
 		}
 		if changed {
-			s.log.Info("Gateway route written", "route", rp.ID, "hostname", rp.Hostname, "upstream", rp.Upstream, "resolver", rp.Resolver, "file", name)
-			delete(s.gw.certs, rp.ID)
-			s.gw.certAt = time.Time{}
+			s.log.Info("Gateway route written", "route", rp.ID, "hostname", rp.Hostname, "upstream", rp.Upstream, "file", name)
 		}
 		st := objectStatus{result: protocol.ObjectResultOk, applied: rp.Hash}
 		switch {
@@ -294,7 +236,6 @@ func (s *Station) writeRoutes() {
 			s.log.Warn("remove Gateway route file", "file", f, "error", err)
 			continue
 		}
-		delete(s.gw.certs, strings.TrimSuffix(f, ".yml"))
 		s.log.Info("Gateway route removed", "file", f)
 	}
 }
@@ -387,12 +328,8 @@ func (s *Station) maybeStartTransition(ctx context.Context) {
 	if reason == "" {
 		return
 	}
-	store := 1
-	if cur != nil {
-		store = cur.Store + 1
-	}
 	t := &gatewayTransition{
-		To:        gatewaySide{Slot: otherSlot(cur), Store: store, Version: gp.Version, Image: gp.Image, Inputs: gp.Inputs, CA: gp.Static.CAServer},
+		To:        gatewaySide{Slot: otherSlot(cur), Version: gp.Version, Image: gp.Image, Inputs: gp.Inputs},
 		From:      cur,
 		Phase:     phasePull,
 		Reason:    reason,
@@ -405,7 +342,7 @@ func (s *Station) maybeStartTransition(ctx context.Context) {
 	if cur != nil {
 		from = cur.Slot
 	}
-	s.log.Info("Gateway transition started", "reason", reason, "from_slot", from, "to_slot", t.To.Slot, "store", gateway.StoreName(store), "image", gp.Image)
+	s.log.Info("Gateway transition started", "reason", reason, "from_slot", from, "to_slot", t.To.Slot, "image", gp.Image)
 }
 
 func shortDigest(image string) string {
@@ -471,27 +408,7 @@ func (s *Station) gatewayStart(ctx context.Context, t *gatewayTransition) {
 	stationID := s.plan.Generation.StationId
 	s.removeNamed(ctx, docker.GatewayName(slot))
 	s.removeNamed(ctx, docker.GatewayCouplerName(slot))
-	switch {
-	case t.From != nil && t.From.CA != t.To.CA:
-		if err := gateway.RemoveStore(s.gw.volumeDir, t.To.Store); err != nil {
-			s.gatewayFail(ctx, t, "clear %s: %v", gateway.StoreName(t.To.Store), err)
-			return
-		}
-		t.Detail["store_copied"] = "no: the ACME CA changed, so the new Gateway starts from an empty " + gateway.StoreName(t.To.Store)
-	case t.From != nil:
-		if err := gateway.CopyStore(s.gw.volumeDir, t.From.Store, t.To.Store); err != nil {
-			s.gatewayFail(ctx, t, "copy %s to %s: %v", gateway.StoreName(t.From.Store), gateway.StoreName(t.To.Store), err)
-			return
-		}
-		t.Detail["store_copied"] = gateway.StoreName(t.From.Store) + " -> " + gateway.StoreName(t.To.Store)
-	}
-	static := gp.Static
-	static.Store = t.To.Store
-	body, err := gateway.StaticConfig(static, gp.ClassicHours)
-	if err == nil {
-		_, err = fsx.WriteIfChanged(filepath.Join(s.gatewayDir(), filepath.Base(s.staticPath(slot))), body, 0o644)
-	}
-	if err != nil {
+	if _, err := fsx.WriteIfChanged(s.staticPath(slot), gp.Static, 0o644); err != nil {
 		s.gatewayFail(ctx, t, "write %s: %v", s.staticPath(slot), err)
 		return
 	}
@@ -499,7 +416,6 @@ func (s *Station) gatewayStart(ctx context.Context, t *gatewayTransition) {
 	gw := docker.Gateway(stationID, slot, t.To.Image, docker.GatewayFiles{
 		Static: s.staticPath(slot), StaticTarget: gateway.StaticTarget,
 		Dynamic: s.dynamicDir(), DynamicTarget: gateway.DynamicTarget,
-		DataTarget: gateway.DataTarget,
 	})
 	for _, spec := range []docker.ContainerSpec{coupler, gw} {
 		if err := docker.CheckInvariants(spec, s.opts.StateDir); err != nil {
@@ -533,7 +449,7 @@ func (s *Station) gatewayStart(ctx context.Context, t *gatewayTransition) {
 	t.Phase = phaseProbe
 	t.Detail["probes"] = 0
 	s.saveGateway()
-	s.log.Info("Gateway started", "slot", slot, "coupler", shortID(cid), "gateway", shortID(gid), "address", gp.Slots[slot], "static", s.staticPath(slot), "store", gateway.StoreName(t.To.Store))
+	s.log.Info("Gateway started", "slot", slot, "coupler", shortID(cid), "gateway", shortID(gid), "address", gp.Slots[slot], "static", s.staticPath(slot))
 }
 
 func (s *Station) gatewayProbe(ctx context.Context, t *gatewayTransition) {
@@ -546,13 +462,6 @@ func (s *Station) gatewayProbe(ctx context.Context, t *gatewayTransition) {
 	}
 	t.Detail["probes"] = n + 1
 	if code == 200 {
-		if missing := s.certificatesNotServed(ctx, addr); missing != "" {
-			t.Detail["last_probe"] = missing
-			if time.Since(parseStamp(t.RunningAt)) > gatewayOverlap {
-				s.gatewayFail(ctx, t, "the new Gateway at %s answered the probe route but %s within %s", addr, missing, gatewayOverlap)
-			}
-			return
-		}
 		t.ReadyAt = stamp(time.Now())
 		t.Detail["ready_ms"] = millis.Of(time.Since(parseStamp(t.RunningAt)))
 		s.gatewayCutover(ctx, t)
@@ -577,15 +486,13 @@ func (s *Station) gatewayCutover(ctx context.Context, t *gatewayTransition) {
 	result, err := s.syncHost("gateway cutover")
 	if err != nil {
 		s.gw.state.Current = prev
-		s.gatewayFail(ctx, t, "replace the port_switch elements 80 and 443 and the Gateway virtual IP's switch entry: %v", err)
+		s.gatewayFail(ctx, t, "point the Gateway virtual IP's switch entry at the new Gateway: %v", err)
 		return
 	}
 	t.CutoverAt = stamp(time.Now())
-	s.gw.certs = nil
-	s.gw.certAt = time.Time{}
-	t.Detail["port_switch_ms"] = millis.Of(time.Since(start))
-	t.Detail["port_switch_result"] = string(result)
-	t.Detail["port_switch_to"] = gp.Slots[to.Slot].String()
+	t.Detail["switch_ms"] = millis.Of(time.Since(start))
+	t.Detail["switch_result"] = string(result)
+	t.Detail["switch_to"] = gp.Slots[to.Slot].String()
 	if prev != nil {
 		rep, err := netns.HostFlows([]netns.FlowMatch{{ReplySource: gp.Slots[prev.Slot], Closing: true}}, true)
 		if err != nil {
@@ -594,9 +501,9 @@ func (s *Station) gatewayCutover(ctx context.Context, t *gatewayTransition) {
 		t.Detail["first_pass"] = rep
 		t.Phase = phaseDrain
 		s.saveGateway()
-		s.log.Info("Gateway cutover: port_switch 80 and 443 now point at the new Gateway", "to", gp.Slots[to.Slot], "from", gp.Slots[prev.Slot], "ms", t.Detail["port_switch_ms"], "first_pass_deleted", rep.Deleted, "first_pass_matched", rep.Matched)
+		s.log.Info("Gateway cutover: the Gateway virtual IP now points at the new Gateway", "vip", gp.GatewayVIP, "to", gp.Slots[to.Slot], "from", gp.Slots[prev.Slot], "ms", t.Detail["switch_ms"], "first_pass_deleted", rep.Deleted, "first_pass_matched", rep.Matched)
 	} else {
-		s.log.Info("Gateway installed: port_switch 80 and 443 point at the Gateway", "address", gp.Slots[to.Slot])
+		s.log.Info("Gateway installed: the Gateway virtual IP points at the Gateway", "vip", gp.GatewayVIP, "address", gp.Slots[to.Slot])
 		s.gatewayFinish(t)
 	}
 	s.writeRoutes()
@@ -647,10 +554,7 @@ func (s *Station) gatewayDrain(ctx context.Context, t *gatewayTransition) {
 	t.Detail["second_pass"] = rep
 	s.removeNamed(ctx, old)
 	s.removeNamed(ctx, docker.GatewayCouplerName(t.From.Slot))
-	if err := gateway.RemoveStore(s.gw.volumeDir, t.From.Store); err != nil {
-		t.Detail["store_remove_error"] = err.Error()
-	}
-	s.log.Info("Gateway drain finished: old Gateway removed", "container", old, "exit_s", t.Detail["old_exit_s"], "second_pass_deleted", rep.Deleted, "store_removed", gateway.StoreName(t.From.Store))
+	s.log.Info("Gateway drain finished: old Gateway removed", "container", old, "exit_s", t.Detail["old_exit_s"], "second_pass_deleted", rep.Deleted)
 	s.gatewayFinish(t)
 }
 
@@ -667,9 +571,6 @@ func (s *Station) gatewayFail(ctx context.Context, t *gatewayTransition, format 
 	if cur := s.gw.state.Current; cur == nil || cur.Slot != t.To.Slot {
 		s.removeNamed(ctx, docker.GatewayName(t.To.Slot))
 		s.removeNamed(ctx, docker.GatewayCouplerName(t.To.Slot))
-		if err := gateway.RemoveStore(s.gw.volumeDir, t.To.Store); err != nil {
-			s.log.Warn("remove the new Gateway's store", "error", err)
-		}
 	}
 	s.gw.failedAt = time.Now()
 	s.gatewayFinish(t)
@@ -678,7 +579,7 @@ func (s *Station) gatewayFail(ctx context.Context, t *gatewayTransition, format 
 func (s *Station) hostLayout() netns.HostLayout {
 	g := s.plan.Generation
 	gp := s.plan.Gateway
-	layout := netns.HostLayout{Public: gp.Public, VirtualPrefix: gp.VirtualPrefix, WebOpen: gp.WebOpen, SourceRate: gp.SourceRate}
+	layout := netns.HostLayout{VirtualPrefix: gp.VirtualPrefix}
 	if s.gw.ingressID != "" {
 		layout.IngressBridge = docker.IngressBridgeName
 	}
@@ -698,15 +599,12 @@ func (s *Station) hostLayout() netns.HostLayout {
 	return layout
 }
 
-func (s *Station) hostState() (netns.HostLayout, netns.HostElements, map[string]objectStatus) {
+func (s *Station) hostState() (netns.HostLayout, netns.HostElements) {
 	gp := s.plan.Gateway
 	layout := s.hostLayout()
-	el := netns.HostElements{Ports: map[uint16]netip.AddrPort{}, Switch: map[netip.Addr]netip.Addr{}}
+	el := netns.HostElements{Switch: map[netip.Addr]netip.Addr{}}
 	if cur := s.gw.state.Current; cur != nil && gp.Run {
-		addr := gp.Slots[cur.Slot]
-		el.Ports[80] = netip.AddrPortFrom(addr, 80)
-		el.Ports[443] = netip.AddrPortFrom(addr, 443)
-		el.Switch[gp.GatewayVIP] = addr
+		el.Switch[gp.GatewayVIP] = gp.Slots[cur.Slot]
 	}
 	for _, rp := range gp.Routes {
 		if rp.ServiceID == "" || s.serviceBlocked(rp.ServiceID) {
@@ -721,39 +619,20 @@ func (s *Station) hostState() (netns.HostLayout, netns.HostElements, map[string]
 			el.Switch[st.VIP] = a
 		}
 	}
-	ports := map[string]objectStatus{}
-	for _, pp := range gp.Ports {
-		if s.serviceBlocked(pp.ServiceID) {
-			ports[pp.ID] = objectStatus{result: protocol.ObjectResultBlocked, blockedBy: "services/" + pp.ServiceID}
-			continue
-		}
-		a := s.switchTarget(pp.ServiceID).Addr
-		if !a.IsValid() {
-			ports[pp.ID] = objectStatus{result: protocol.ObjectResultPending, blockedBy: "services/" + pp.ServiceID}
-			continue
-		}
-		el.Ports[pp.HostPort] = netip.AddrPortFrom(a, pp.ContainerPort)
-		ports[pp.ID] = objectStatus{result: protocol.ObjectResultOk, applied: pp.Hash}
-	}
-	return layout, el, ports
+	return layout, el
 }
 
 func (s *Station) syncHost(why string) (netns.Result, error) {
-	layout, el, ports := s.hostState()
+	layout, el := s.hostState()
 	result, err := netns.SyncHost(layout, el)
 	if err != nil {
 		s.gw.hostFailure = namespaceFailure("write table inet %s: %v", netns.HostTableName, err)
-		for id := range ports {
-			ports[id] = objectStatus{result: protocol.ObjectResultFailed, failure: s.gw.hostFailure}
-		}
-		s.gw.ports = ports
 		s.log.Error("host table", "why", why, "error", err)
 		return result, err
 	}
 	s.gw.hostFailure = nil
-	s.gw.ports = ports
 	if result != netns.Unchanged {
-		s.log.Info("host table synced", "table", "inet "+netns.HostTableName, "why", why, "result", result, "public", layout.Public, "web_ports_open", layout.WebOpen, "port_switch", portSwitchText(el.Ports), "switch", switchText(el.Switch))
+		s.log.Info("host table synced", "table", "inet "+netns.HostTableName, "why", why, "result", result, "switch", switchText(el.Switch))
 	}
 	return result, nil
 }
@@ -767,73 +646,6 @@ func (s *Station) ensureMarkAccept() {
 	if added {
 		s.log.Info("translated flows accepted in "+netns.DockerUserChain, "mark", fmt.Sprintf("%#x", netns.AcceptMark))
 	}
-}
-
-func portSwitchText(m map[uint16]netip.AddrPort) string {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, int(k))
-	}
-	slices.Sort(keys)
-	out := ""
-	for _, k := range keys {
-		if out != "" {
-			out += ","
-		}
-		out += fmt.Sprintf("%d->%s", k, m[uint16(k)])
-	}
-	return out
-}
-
-func (s *Station) checkCertificates(ctx context.Context, now time.Time) {
-	cur := s.gw.state.Current
-	if cur == nil || s.gw.certBusy || now.Sub(s.gw.certAt) < certInterval {
-		return
-	}
-	addr := s.plan.Gateway.Slots[cur.Slot]
-	type probe struct{ id, hostname string }
-	var list []probe
-	for _, rp := range s.plan.Gateway.Routes {
-		if rp.Direct && rp.Resolver != "" && s.gw.routes[rp.ID].result != protocol.ObjectResultBlocked {
-			list = append(list, probe{rp.ID, rp.Hostname})
-		}
-	}
-	s.gw.certAt = now
-	if len(list) == 0 {
-		return
-	}
-	s.gw.certBusy = true
-	go func() {
-		out := map[string]gateway.Certificate{}
-		for _, p := range list {
-			out[p.id] = gateway.Inspect(ctx, addr, p.hostname)
-		}
-		select {
-		case s.inspections <- func() {
-			s.gw.certBusy = false
-			if s.gw.state.Current == nil || s.plan.Gateway.Slots[s.gw.state.Current.Slot] != addr {
-				return
-			}
-			hostnames := map[string]string{}
-			for _, p := range list {
-				hostnames[p.id] = strings.ToLower(p.hostname)
-			}
-			for id, c := range out {
-				before, seen := s.gw.certs[id]
-				if !seen || before.Issued != c.Issued || !before.NotAfter.Equal(c.NotAfter) {
-					s.log.Info("Gateway certificate observed", "route", id, "issued", c.Issued, "issuer", c.Issuer, "not_before", c.NotBefore.UTC().Format(time.RFC3339), "not_after", c.NotAfter.UTC().Format(time.RFC3339), "status", c.Status, "error", c.Err)
-					if _, failed := s.gw.state.ACMEFailures[hostnames[id]]; failed && c.Issued && time.Now().Before(c.NotAfter) {
-						delete(s.gw.state.ACMEFailures, hostnames[id])
-						s.saveGateway()
-					}
-				}
-			}
-			s.gw.certs = out
-			s.pruneACMEFailures()
-		}:
-		case <-ctx.Done():
-		}
-	}()
 }
 
 func (s *Station) observeGateway(o *protocol.Observed, applied bool) {
@@ -877,37 +689,12 @@ func (s *Station) observeGateway(o *protocol.Observed, applied bool) {
 		if st.result != protocol.ObjectResultOk {
 			allOK = false
 		}
-		if r.Ingress == protocol.IngressTunnel {
-			or.Probe = s.observedTunnelProbe(id)
-		}
-		if r.Tls != nil {
-			or.Certificate = s.observedCertificate(id, r.Hostname)
-			if c, ok := s.gw.certs[id]; ok {
-				or.Probe = &protocol.ObservedRouteProbe{Ok: probeServed(c.Status)}
-				if c.Status != 0 {
-					or.Probe.StatusCode = ptr(c.Status)
-				}
-			}
-		}
+		or.Probe = s.observedTunnelProbe(id)
 		o.Gateway.Routes[id] = or
 	}
 	o.Gateway.Tunnel = s.observedTunnel()
 	if allOK && applied && gp.Run && s.gw.failure == nil {
 		o.Gateway.AppliedHash = ptr(g.Gateway.Hash)
-	}
-	for id, pa := range g.PortAllocations {
-		st, ok := s.gw.ports[id]
-		if !ok {
-			st = objectStatus{result: protocol.ObjectResultPending}
-		}
-		op := protocol.ObservedPortAllocation{Result: st.result, Failure: st.failure}
-		if st.blockedBy != "" {
-			op.BlockedBy = ptr(st.blockedBy)
-		}
-		if st.result == protocol.ObjectResultOk && applied {
-			op.AppliedHash = ptr(pa.Hash)
-		}
-		o.PortAllocations[id] = op
 	}
 	for name, st := range g.SystemTargets {
 		ot := protocol.ObservedSystemTarget{Result: protocol.ObjectResultPending, BlockedBy: ptr("components/" + name)}
@@ -928,112 +715,4 @@ func shortImageDigest(image string) string {
 		}
 	}
 	return image
-}
-
-func (s *Station) certificatesNotServed(ctx context.Context, addr netip.Addr) string {
-	for _, rp := range s.plan.Gateway.Routes {
-		c, ok := s.gw.certs[rp.ID]
-		if !ok || !c.Issued || !rp.Direct {
-			continue
-		}
-		if got := gateway.Inspect(ctx, addr, rp.Hostname); !got.Issued {
-			return "does not serve the issued certificate for " + rp.Hostname + " yet"
-		}
-	}
-	return ""
-}
-
-func probeServed(status int) bool {
-	return status != 0 && status != http.StatusBadGateway && status != http.StatusServiceUnavailable && status != http.StatusGatewayTimeout
-}
-
-func (s *Station) observedCertificate(id, hostname string) *protocol.ObservedRouteCertificate {
-	cert := &protocol.ObservedRouteCertificate{Status: protocol.CertificateStatusPending}
-	failure, failed := s.gw.state.ACMEFailures[strings.ToLower(hostname)]
-	if c, ok := s.gw.certs[id]; ok && c.Issued {
-		cert.Status = protocol.CertificateStatusValid
-		cert.NotBefore = stamp(c.NotBefore)
-		cert.ExpiresAt = stamp(c.NotAfter)
-		if time.Now().After(c.NotAfter) {
-			cert.Status = protocol.CertificateStatusExpired
-			if failed {
-				cert.Failure = certificateFailure(hostname, failure)
-			}
-		}
-		return cert
-	}
-	if failed {
-		cert.Status = protocol.CertificateStatusFailed
-		cert.Failure = certificateFailure(hostname, failure)
-	}
-	return cert
-}
-
-func certificateFailure(hostname string, f gateway.ACMEFailure) *protocol.ObservedRouteCertificateFailure {
-	details := protocol.ErrorBodyDetails{"hostname": hostname, "error": f.Text}
-	if f.Type != "" {
-		details["acme_type"] = f.Type
-	}
-	if f.Detail != "" {
-		details["acme_detail"] = f.Detail
-	}
-	if f.Type == gateway.ACMERateLimited {
-		explanation := "The certificate authority refused the order for " + hostname + " with rateLimited: " + f.Detail
-		fix := "Wait for the limit to reset, or use a custom domain or the domains.zone setting, which draw on your own registered domain's limit."
-		if !f.RetryAfter.IsZero() {
-			details["retry_after"] = f.RetryAfter.Format(time.RFC3339)
-			fix = "Wait until " + f.RetryAfter.Format(time.RFC3339) + ", or use a custom domain or the domains.zone setting, which draw on your own registered domain's limit."
-		}
-		if strings.HasSuffix(hostname, ".sslip.io") {
-			details["limit"] = "sslip.io is not on the Public Suffix List, so every sslip.io certificate worldwide shares one Let's Encrypt limit of 250,000 per 168 hours"
-			explanation += " Every sslip.io user shares this limit."
-		}
-		return &protocol.ObservedRouteCertificateFailure{Code: string(protocol.ErrorCodeCertificateRateLimited), Explanation: explanation, Fix: fix, Details: details}
-	}
-	explanation := "The Gateway could not obtain a certificate for " + hostname + "."
-	if f.Detail != "" {
-		explanation = "The Gateway could not obtain a certificate for " + hostname + ": " + f.Detail
-	}
-	fix := "Point the hostname's A record at the station's public address and make sure inbound port 80 reaches the station; the HTTP-01 challenge is answered there."
-	if f.Type == gateway.ACMERejectedIdentifier || f.Type == gateway.ACMECAA {
-		fix = "The certificate authority refuses this name by policy or by the domain's CAA records; allow the CA in CAA or use another hostname."
-	}
-	return &protocol.ObservedRouteCertificateFailure{Code: string(protocol.ErrorCodeCertificateIssuanceFailed), Explanation: explanation, Fix: fix, Details: details}
-}
-
-func (s *Station) tapGatewayLog(ctx context.Context, text string) {
-	f, ok := gateway.ParseACMEFailure(text)
-	if !ok {
-		return
-	}
-	select {
-	case s.inspections <- func() {
-		if s.gw.state.ACMEFailures == nil {
-			s.gw.state.ACMEFailures = map[string]gateway.ACMEFailure{}
-		}
-		for _, h := range f.Hostnames {
-			s.gw.state.ACMEFailures[h] = f
-		}
-		s.saveGateway()
-		s.log.Warn("Gateway certificate order failed", "hostnames", strings.Join(f.Hostnames, ","), "acme_type", f.Type, "detail", f.Detail)
-	}:
-	case <-ctx.Done():
-	}
-}
-
-func (s *Station) pruneACMEFailures() {
-	keep := map[string]bool{}
-	for _, rp := range s.plan.Gateway.Routes {
-		keep[strings.ToLower(rp.Hostname)] = true
-	}
-	pruned := false
-	for h := range s.gw.state.ACMEFailures {
-		if !keep[h] {
-			delete(s.gw.state.ACMEFailures, h)
-			pruned = true
-		}
-	}
-	if pruned {
-		s.saveGateway()
-	}
 }

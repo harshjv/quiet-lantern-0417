@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Plus, ShieldCheck } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { ChoiceCards } from '@/components/choice-cards'
@@ -11,7 +11,6 @@ import { FixActions } from '@/components/fix'
 import { FormDialog } from '@/components/form-dialog'
 import { EmptyState, ErrorState, Subsection } from '@/components/page'
 import { Term } from '@/components/term'
-import { Time } from '@/components/time'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,16 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { api, idempotency, send, type Domain } from '@/lib/api'
+import { api, idempotency, send, type AppPort, type Domain } from '@/lib/api'
 import { seedItem } from '@/lib/cache'
 import { commands, type AppScope } from '@/lib/commands'
 import { planFix } from '@/lib/fixes'
 import { entityIcon } from '@/lib/icons'
-import { domainIngress, domainKind, domainStatus, sentence } from '@/lib/labels'
+import { domainKind, domainStatus } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import { domainsQuery, portsQuery } from '@/lib/queries'
 import { toneText } from '@/lib/tone'
 import { cn } from '@/lib/utils'
+
+const takesDomain = (port: AppPort) => port.protocol === 'http' && !port.grpc
 
 const hostnameModes = [
   {
@@ -42,7 +43,7 @@ const hostnameModes = [
   {
     value: 'custom',
     title: domainKind.custom,
-    hint: 'Point a DNS record you own at the server.',
+    hint: 'A hostname on a zone in your Cloudflare account.',
   },
 ] as const
 
@@ -58,7 +59,7 @@ function AddDomain({
   onOpenChange: (open: boolean) => void
 }) {
   const ports = useQuery(portsQuery(app))
-  const http = (ports.data?.items ?? []).filter((p) => p.protocol === 'http')
+  const http = (ports.data?.items ?? []).filter(takesDomain)
   const [port, setPort] = useState<string>('')
   const [mode, setMode] = useState<'generated' | 'custom'>('generated')
   const [hostname, setHostname] = useState('')
@@ -89,10 +90,9 @@ function AddDomain({
         : `Add a generated domain to ${scope.app}`,
     success: (body) => ({
       title: `${body.hostname} added`,
-      description:
-        body.kind === 'custom'
-          ? 'Create the DNS record shown on the domain row.'
-          : 'Stationly requests the certificate once the route is live.',
+      description: body.tunnel_route
+        ? 'Add the tunnel route shown on the domain row in Cloudflare.'
+        : 'It goes live once Stationly reaches it through Cloudflare.',
     }),
     onSuccess: () => onOpenChange(false),
   })
@@ -104,8 +104,7 @@ function AddDomain({
       title="Add a domain"
       description={
         <>
-          The <Term name="gateway" /> routes the hostname to an HTTP port of {scope.app} and
-          requests a certificate.
+          The <Term name="gateway" /> routes the hostname to an HTTP port of {scope.app}.
         </>
       }
       error={mutation.errorText}
@@ -118,7 +117,7 @@ function AddDomain({
       {ports.isError && <ErrorState error={ports.error} title="Couldn’t load ports" />}
       {ports.data && http.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {scope.app} has no HTTP port, so it can’t have a domain.
+          {scope.app} has no HTTP port that takes a domain. gRPC ports can’t have one.
         </p>
       ) : (
         <>
@@ -179,7 +178,7 @@ function RemoveDomain({ domain }: { domain: Domain }) {
   return (
     <Confirm
       title={`Remove ${domain.hostname}?`}
-      description="Visitors to it get an error right away. DNS records you created stay as they are."
+      description="Visitors to it get an error right away. Tunnel routes you added in Cloudflare stay as they are."
       action="Remove domain"
       cancel="Keep domain"
       onConfirm={() => mutation.mutateAsync()}
@@ -193,8 +192,8 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
   const { data: ports } = useSuspenseQuery(portsQuery(app))
   const [adding, setAdding] = useState(false)
   const portOf = new Map(ports.items.map((p) => [p.id, p.port]))
-  const noHttp = !ports.items.some((p) => p.protocol === 'http')
-  const firstHttp = ports.items.find((p) => p.protocol === 'http')?.id ?? null
+  const noHttp = !ports.items.some(takesDomain)
+  const firstHttp = ports.items.find(takesDomain)?.id ?? null
 
   return (
     <Subsection
@@ -218,7 +217,7 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
           title="No domains yet"
           description={
             noHttp
-              ? `Domains route to HTTP ports, and ${scope.app} has none. Switch a port to HTTP above to add one.`
+              ? `Domains route to HTTP ports without gRPC, and ${scope.app} has none. Add one above.`
               : `A domain serves ${scope.app} over HTTPS on a hostname you own, or on a generated one.`
           }
           action={
@@ -251,21 +250,12 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
                   {domainStatus[domain.status].label}
                 </span>
                 <Badge variant="outline">{domainKind[domain.kind]}</Badge>
-                <Badge variant="outline">{domainIngress[domain.ingress]}</Badge>
                 {portOf.get(domain.app_port_id) && (
                   <span className="text-xs text-muted-foreground">
                     Port {portOf.get(domain.app_port_id)}
                   </span>
                 )}
                 <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                  <ShieldCheck className="size-3.5" aria-hidden />
-                  Certificate {sentence(domain.certificate.status).toLowerCase()}
-                  {domain.certificate.expires_at && (
-                    <>
-                      ,
-                      <Time value={domain.certificate.expires_at} prefix="expires" />
-                    </>
-                  )}
                   <RemoveDomain domain={domain} />
                 </span>
               </div>
@@ -293,17 +283,16 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
                   )}
                 </div>
               )}
-              {domain.dns_instructions && domain.dns_instructions.length > 0 && (
-                <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
-                  {domain.dns_instructions.map((record, i) => (
-                    <p key={i} className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{record.type}</Badge>
-                      <Code>{record.name}</Code>
-                      <span className="text-muted-foreground">points to</span>
-                      <Code>{record.value ?? 'not set yet'}</Code>
-                      <span className="text-muted-foreground">{record.note}</span>
-                    </p>
-                  ))}
+              {domain.tunnel_route && (
+                <div className="space-y-1.5 rounded-md bg-muted/50 px-3 py-2 text-xs">
+                  <p className="text-muted-foreground">
+                    Add this public hostname to your tunnel in Cloudflare.
+                  </p>
+                  <p className="flex flex-wrap items-center gap-2">
+                    <Code copy={domain.tunnel_route.hostname}>{domain.tunnel_route.hostname}</Code>
+                    <span className="text-muted-foreground">to service</span>
+                    <Code copy={domain.tunnel_route.service}>{domain.tunnel_route.service}</Code>
+                  </p>
                 </div>
               )}
             </li>

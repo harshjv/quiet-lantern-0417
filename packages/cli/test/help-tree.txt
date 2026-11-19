@@ -71,21 +71,15 @@ sly deployments list-steps <id>
 sly deployments wait <id>
   Wait up to 10 s for a deployment to reach a terminal state or cutover
 sly domains
-  Domains and TCP exposures of an app
+  Domains of an app
 sly domains add <id>
   Add a generated or custom domain to an http port
-sly domains expose-tcp <id>
-  Expose a tcp port on a host port
 sly domains get <id>
   Get a domain
 sly domains list
   List the domains of an app
-sly domains list-tcp-exposures
-  List the TCP exposures of an app
 sly domains remove <id>
   Remove a domain
-sly domains remove-tcp-exposure <id>
-  Remove a TCP exposure
 sly events
   Events visible to the caller; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
 sly github
@@ -241,9 +235,9 @@ sly metrics stream
 sly network
   The network map, live connections, explanations, probes and DNS logs
 sly network describe
-  Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains, TCP exposures and every path
+  Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains and every path
 sly network explain
-  Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain or TCP exposure), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.
+  Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.
 sly network get-connections
   Live connections of an app grouped by peer, and refused attempts with the path that refused them; one sample
 sly network get-dns-log
@@ -341,7 +335,7 @@ sly servers list
 sly servers remove <server>
   Remove a server: its key is revoked and kept, so it is told STATION_REVOKED
 sly servers update <server>
-  Change a server: public_address, concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2
+  Change a server: concurrency_cap, draining (no new deployments are placed on it), intermittent, machine_limits and default_machine_runtime; sleep_schedule is phase 2
 sly settings
   Instance settings
 sly settings get

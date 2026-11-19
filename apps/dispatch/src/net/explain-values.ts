@@ -14,10 +14,7 @@ export const hopNames = [
   'port',
   'probe_required',
   'domain',
-  'exposure',
-  'public_address',
-  'web_ports',
-  'certificate',
+  'tunnel',
   'route',
 ] as const
 
