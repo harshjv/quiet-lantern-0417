@@ -82,20 +82,6 @@ func TestARouteWithoutTheCloudflaredAddressIsRefused(t *testing.T) {
 	}
 }
 
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case uint64:
-		return int(n)
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	}
-	return -1
-}
-
 func TestTheWebEntryPointBoundsTimeoutsKeepAlivesStreamsAndHeaders(t *testing.T) {
 	body, err := StaticConfig(testCloudflared)
 	if err != nil {
