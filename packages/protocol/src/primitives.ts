@@ -92,6 +92,8 @@ export const interfaceNameMaxLength = 15
 
 export const sandboxNetworkName = `${resourcePrefix}sandbox` as const
 
+export const gatewayHostAlias = 'stationly-gateway'
+
 export const bridgeName = (environmentId: string) =>
   `${resourcePrefix}${environmentId.slice(-(interfaceNameMaxLength - resourcePrefix.length)).toLowerCase()}`
 

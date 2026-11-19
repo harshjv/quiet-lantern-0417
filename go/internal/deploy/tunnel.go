@@ -211,7 +211,7 @@ func (s *Station) reconcileCloudflared(ctx context.Context) {
 		return
 	}
 	s.gw.tunnel.at = time.Time{}
-	s.log.Info("cloudflared started", "coupler", shortID(couplerID), "cloudflared", shortID(id), "address", gp.Cloudflared, "gateway_host", docker.GatewayHostAlias+"="+gp.GatewayVIP.String(), "metrics_table", result, "image", gp.Tunnel.Image)
+	s.log.Info("cloudflared started", "coupler", shortID(couplerID), "cloudflared", shortID(id), "address", gp.Cloudflared, "gateway_host", protocol.GatewayHostAlias+"="+gp.GatewayVIP.String(), "metrics_table", result, "image", gp.Tunnel.Image)
 }
 
 func (s *Station) tunnelFail(format string, args ...any) {

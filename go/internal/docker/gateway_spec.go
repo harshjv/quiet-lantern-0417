@@ -114,7 +114,6 @@ const (
 
 	CloudflaredCouplerName = protocol.ResourcePrefix + "cloudflared-coupler"
 	CloudflaredName        = protocol.ResourcePrefix + "cloudflared"
-	GatewayHostAlias       = protocol.ResourcePrefix + "gateway"
 	CloudflaredMetricsPort = 20241
 
 	cloudflaredMemoryBytes = 256 << 20
@@ -129,7 +128,7 @@ func cloudflaredLabels(stationID, role string) map[string]string {
 
 func CloudflaredCoupler(stationID, image string, addr, gatewayVIP netip.Addr) ContainerSpec {
 	hc := couplerHost(container.NetworkMode(IngressNetworkName), nil)
-	hc.ExtraHosts = []string{GatewayHostAlias + ":" + gatewayVIP.String()}
+	hc.ExtraHosts = []string{protocol.GatewayHostAlias + ":" + gatewayVIP.String()}
 	spec := ContainerSpec{
 		Name: CloudflaredCouplerName,
 		Role: RoleCloudflaredCoupler,

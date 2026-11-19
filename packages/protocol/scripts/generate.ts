@@ -19,6 +19,7 @@ import { networkLayout } from '../src/network.ts'
 import {
   bootstrapTokenPrefix,
   credentialPlaceholder,
+  gatewayHostAlias,
   interfaceNameMaxLength,
   nftTableName,
   nftTablePrefix,
@@ -299,6 +300,7 @@ const goCatalog = goFile([
   `NftTablePrefix = ${JSON.stringify(nftTablePrefix)}`,
   `InterfaceNameMaxLength = ${interfaceNameMaxLength}`,
   `SandboxNetworkName = ${JSON.stringify(sandboxNetworkName)}`,
+  `GatewayHostAlias = ${JSON.stringify(gatewayHostAlias)}`,
   `BootstrapTokenPrefix = ${JSON.stringify(bootstrapTokenPrefix)}`,
   `RecoveryKeyPrefix = ${JSON.stringify(recoveryKeyPrefix)}`,
   `CredentialPlaceholderPattern = ${JSON.stringify(credentialPlaceholder.pattern)}`,

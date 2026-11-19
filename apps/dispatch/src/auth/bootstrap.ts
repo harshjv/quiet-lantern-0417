@@ -4,6 +4,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 
 import {
   dispatchAddress,
+  gatewayHostAlias,
   networkLayout,
   type machineRuntimeValues,
   type SettingKey,
@@ -358,7 +359,7 @@ export const setupInstance = async (
     reach: [
       ...(input.hostnames && tunnel
         ? [
-            `https://${input.hostnames.dashboard} through the Cloudflare Tunnel once its *.${String(settings['domains.zone'])} route points at http://stationly-gateway`,
+            `https://${input.hostnames.dashboard} through the Cloudflare Tunnel once its *.${String(settings['domains.zone'])} route points at http://${gatewayHostAlias}`,
           ]
         : input.hostnames
           ? [

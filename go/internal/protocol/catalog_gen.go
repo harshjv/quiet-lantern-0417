@@ -16,6 +16,7 @@ const (
 	NftTablePrefix               = "sly_"
 	InterfaceNameMaxLength       = 15
 	SandboxNetworkName           = "sly-sandbox"
+	GatewayHostAlias             = "stationly-gateway"
 	BootstrapTokenPrefix         = "sly-enroll-"
 	RecoveryKeyPrefix            = "sly-rk-"
 	CredentialPlaceholderPattern = "sly_[A-Z2-7]{26}"
