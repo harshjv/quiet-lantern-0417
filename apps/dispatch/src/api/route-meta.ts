@@ -178,7 +178,7 @@ export const routeMeta = (
     build: onEntity(targets.build),
     run: onEntity(targets.run),
     volume: onEntity(targets.volume),
-    key: onEntity(targets.key),
+    environment_variable: onEntity(targets.environment_variable),
     secret_value: onEntity(targets.secret_value),
     approval: onEntity(targets.approval),
     machine: onEntity(targets.machine),

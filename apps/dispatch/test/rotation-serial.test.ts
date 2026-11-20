@@ -34,7 +34,7 @@ before(async () => {
   const stage = await createPreview(h, 'rotation', 'stage')
 
   projectId = project.id
-  const seeded = await h.call('PATCH', `/v1/projects/${projectId}/keys`, {
+  const seeded = await h.call('PATCH', `/v1/projects/${projectId}/environment-variables`, {
     token: token(),
     body: {
       target: 'preview',
@@ -65,7 +65,7 @@ before(async () => {
         port: 80,
       },
     ],
-    keys: reference,
+    environment_variables: reference,
     deploy: true,
   })
 
@@ -78,7 +78,7 @@ before(async () => {
         port: 80,
       },
     ],
-    keys: reference,
+    environment_variables: reference,
     deploy: true,
   })
 
@@ -95,13 +95,13 @@ after(async () => {
 const deploymentRows = (appId: string) =>
   rows<{ id: string; status: string }>(
     h,
-    "select id, status from deployment where app_id = ? and trigger like '%key_change%'",
+    "select id, status from deployment where app_id = ? and trigger like '%environment_variable_change%'",
     appId,
   )
 
 describe('secret rotation', () => {
   test('apply creates every dependent deployment but starts the second only after the first is active', async () => {
-    const changed = await h.call('PATCH', `/v1/projects/${projectId}/keys`, {
+    const changed = await h.call('PATCH', `/v1/projects/${projectId}/environment-variables`, {
       token: token(),
       body: {
         target: 'preview',
@@ -117,8 +117,8 @@ describe('secret rotation', () => {
     })
 
     assert.equal(changed.status, 200, changed.text)
-    const key = changed.body.keys[0].id as string
-    const applied = await h.call('POST', `/v1/keys/${key}/apply`, {
+    const key = changed.body.environment_variables[0].id as string
+    const applied = await h.call('POST', `/v1/environment-variables/${key}/apply`, {
       token: token(),
       body: {},
     })

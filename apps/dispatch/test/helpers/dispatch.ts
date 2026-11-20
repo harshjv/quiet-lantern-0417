@@ -105,7 +105,7 @@ export const startDispatch = async (
     opts: CallOptions = {},
   ): Promise<Reply<T>> => {
     const headers = new Headers({
-      'x-forwarded-for': '198.51.100.1',
+      'x-stationly-client-address': '198.51.100.1',
       ...opts.headers,
     })
 
@@ -289,7 +289,7 @@ export const addPerson = async (
     })
     .run()
   const { cookie } = await signIn(h, email, adminPassword, {
-    'x-forwarded-for': `203.0.113.${(people += 1)}`,
+    'x-stationly-client-address': `203.0.113.${(people += 1)}`,
   })
 
   return {

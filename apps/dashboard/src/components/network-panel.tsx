@@ -310,7 +310,7 @@ function Legend({ live }: { live: boolean }) {
       </span>
       <span className={item}>
         <span className={cn(line, 'border-foreground')} aria-hidden />
-        Uses, through a key reference
+        Uses, through an environment variable reference
       </span>
       {live && (
         <>

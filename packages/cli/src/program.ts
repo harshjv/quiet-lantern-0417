@@ -12,7 +12,7 @@ import { networkCommands } from './commands/network.ts'
 import { platformCommands } from './commands/platform.ts'
 import { machineCommands } from './commands/sandbox.ts'
 import { appCommands } from './commands/service.ts'
-import { keyCommands } from './commands/variables.ts'
+import { variableCommands } from './commands/variables.ts'
 import { volumeCommands } from './commands/volumes.ts'
 import { version } from './env.ts'
 import { registerGenerated } from './generated.ts'
@@ -24,7 +24,7 @@ export const handWrittenProgram = () => {
   authCommands(program)
   linkCommands(program)
   appCommands(program)
-  keyCommands(program)
+  variableCommands(program)
   networkCommands(program)
   volumeCommands(program)
   platformCommands(program)

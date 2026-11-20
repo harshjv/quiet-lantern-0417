@@ -70,7 +70,7 @@ export function NewPreview({ project, projectName }: { project: string; projectN
       }
       size="md"
       title="Create a preview"
-      description="Copies production’s apps onto their own network, with no domains until you add them. Volumes start empty, and production’s sealed values never reach a preview."
+      description="Copies production’s apps onto their own network, with no domains until you add them. Volumes start empty, and production’s secret values never reach a preview."
       also={<AlsoWith cli={commands.createPreview(projectName)} tool="create_preview" />}
       error={mutation.errorText}
       submitLabel="Create preview"

@@ -51,7 +51,7 @@ export const renderPlan = (plan: Plan) => {
       lines.push(`- ${label(change)} ${change.id}`)
     } else {
       lines.push(
-        `~ ${names.get(change.id ?? '') ?? `${change.entity} ${change.id}`} ${change.path || ''}: ${change.entity === 'key' ? 'value or settings change' : `${short(change.before)} -> ${short(change.after)}`}`,
+        `~ ${names.get(change.id ?? '') ?? `${change.entity} ${change.id}`} ${change.path || ''}: ${change.entity === 'environment_variable' ? 'value or settings change' : `${short(change.before)} -> ${short(change.after)}`}`,
       )
     }
   }

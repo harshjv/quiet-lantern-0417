@@ -193,6 +193,8 @@ export const volumeOwnerValues = ['service', 'station'] as const
 
 export const doctorStatusValues = ['ok', 'warn', 'fail'] as const
 
+export const hostnameStatusValues = ['pending', 'active', 'unreachable', 'wrong_gateway'] as const
+
 export const actorTypeValues = ['user', 'token', 'oauth_client', 'station', 'system'] as const
 
 export const ActorType = StringEnum(actorTypeValues, {
@@ -343,10 +345,10 @@ export const Diagnosis = Type.Object(
             files_changed: Count,
           }),
         ),
-        variables: Type.Optional(
+        environment_variables: Type.Optional(
           Type.Array(
             Type.Object({
-              key: Type.String(),
+              name: Type.String(),
               from_version: Count,
               to_version: Count,
             }),

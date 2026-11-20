@@ -5,10 +5,10 @@ import {
   appFieldText,
   appKindValues,
   dnsLogTail,
+  environmentVariableKindValues,
+  environmentVariableNamePattern,
+  environmentVariablePatchText,
   injectionValues,
-  keyKindValues,
-  keyNamePattern,
-  keyPatchText,
   portFieldText,
   portProtocolValues,
   portRange,
@@ -211,12 +211,12 @@ export const VolumeInput = t.Object(
   },
 )
 
-export const KeySet = t.Object(
+export const VariableSet = t.Object(
   {
     name: t.String({
-      pattern: keyNamePattern,
+      pattern: environmentVariableNamePattern,
     }),
-    kind: input(StringEnum(keyKindValues)),
+    kind: input(StringEnum(environmentVariableKindValues)),
     value: t.Optional(t.String()),
     reference: t.Optional(t.String()),
     injection: t.Optional(input(StringEnum(injectionValues))),
@@ -345,9 +345,9 @@ const mutable = {
       description: appFieldText.schedule,
     }),
   ),
-  keys: t.Optional(
-    t.Array(KeySet, {
-      description: 'App keys to set: name, kind, and value or reference',
+  environment_variables: t.Optional(
+    t.Array(VariableSet, {
+      description: 'App environment variables to set: name, kind, and value or reference',
     }),
   ),
 }
@@ -390,19 +390,19 @@ export const AppPatch = t.Object(
   },
 )
 
-export const KeysPatch = {
+export const EnvironmentVariablesPatch = {
   set: t.Optional(
-    t.Array(KeySet, {
-      description: keyPatchText.set,
+    t.Array(VariableSet, {
+      description: environmentVariablePatchText.set,
     }),
   ),
   unset: t.Optional(
     t.Array(
       t.String({
-        pattern: keyNamePattern,
+        pattern: environmentVariableNamePattern,
       }),
       {
-        description: keyPatchText.unset,
+        description: environmentVariablePatchText.unset,
       },
     ),
   ),
@@ -413,7 +413,7 @@ export const KeysPatch = {
   ),
   allow_unresolved: t.Optional(
     t.Boolean({
-      description: keyPatchText.allow_unresolved,
+      description: environmentVariablePatchText.allow_unresolved,
     }),
   ),
 }

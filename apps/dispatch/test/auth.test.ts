@@ -958,7 +958,7 @@ describe('sign-in', () => {
     const { reply, cookie } = await signIn(h)
 
     assert.equal(reply.status, 200)
-    assert.match(cookie, /session_token/)
+    assert.match(cookie, /__Host-better-auth\.session_token=/)
   })
 
   test('a Better Auth session token as a bearer is refused on /v1 without a proof', async () => {
@@ -1027,7 +1027,7 @@ describe('unauthenticated requests', () => {
 
   test('the thirty-first unauthenticated request from one address is rate limited', async () => {
     const headers = {
-      'x-forwarded-for': '203.0.113.77',
+      'x-stationly-client-address': '203.0.113.77',
     }
     let last: any
 
@@ -1042,7 +1042,7 @@ describe('unauthenticated requests', () => {
     assert.ok(Number(last.headers.get('retry-after')) > 0)
     const other = await h.call('GET', '/v1/projects', {
       headers: {
-        'x-forwarded-for': '203.0.113.78',
+        'x-stationly-client-address': '203.0.113.78',
       },
     })
 

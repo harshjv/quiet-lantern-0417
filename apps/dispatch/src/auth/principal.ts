@@ -10,6 +10,7 @@ import { token } from '../db/schema.ts'
 import { capScopes, inTeam, projectMachineToken, userScopes } from '../team/members.ts'
 
 import { apiKeyFromHeaders, canonicalOrigin, v1Permission, type AuthService } from './auth.ts'
+import { clientAddressOf } from './client-address.ts'
 import { liveGrant } from './grants.ts'
 import { ProofError, proofHeader, publicUrl, verifyProof } from './proof.ts'
 import { fullAdmin, type Scope } from './scopes.ts'
@@ -113,15 +114,12 @@ export const rateLimited = (explanation: string, retry: number) =>
     },
   )
 
-export const ipOf = (request: Request) =>
-  request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
-
 export const recordUnauthenticated = (request: Request) => {
-  unauthenticatedRequests.add(ipOf(request))
+  unauthenticatedRequests.add(clientAddressOf(request))
 }
 
 const checkUnauthenticatedLimit = (request: Request) => {
-  const retry = unauthenticatedRequests.retryAfter(ipOf(request))
+  const retry = unauthenticatedRequests.retryAfter(clientAddressOf(request))
 
   if (retry !== null) {
     throw rateLimited('Too many unauthenticated requests from this address.', retry)

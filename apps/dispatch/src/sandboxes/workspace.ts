@@ -12,7 +12,7 @@ import {
   workspaceSharedKeys,
   workspaceUser,
   type Actor,
-  type MachineKeySet,
+  type MachineEnvironmentVariableSet,
   type TaskMachineValue,
   type WorkspaceAgent,
   type WorkspaceSetupStep,
@@ -30,7 +30,7 @@ import {
 } from '../db/schema.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
-import { keysOf } from '../secrets/values.ts'
+import { variablesOf } from '../secrets/values.ts'
 
 type ActorValue = Static<typeof Actor>
 
@@ -231,17 +231,17 @@ export const setupCommand = (
   identity?.email ?? '',
 ]
 
-export const workspaceKeySets = (
+export const workspaceVariableSets = (
   db: Db,
   context: { project: string; preview: string | null },
   agent: WorkspaceAgent,
   key: string,
   taken: string[],
   kind: TaskMachineValue = 'own',
-): Static<typeof MachineKeySet>[] => {
+): Static<typeof MachineEnvironmentVariableSet>[] => {
   const shared = kind === 'own'
   const defined = new Set(
-    keysOf(db, {
+    variablesOf(db, {
       scope: 'project',
       id: context.project,
     })
@@ -254,7 +254,7 @@ export const workspaceKeySets = (
       ? [
           {
             name: workspaceEnv.token,
-            kind: 'sealed' as const,
+            kind: 'secret' as const,
             value: key,
           },
         ]

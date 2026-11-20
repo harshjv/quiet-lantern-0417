@@ -7,9 +7,9 @@ import { newId } from '../../db/ids.ts'
 import {
   app,
   approval,
+  environment_variable,
   grant,
   ipam_allocation,
-  key,
   machine,
   project,
   secret_value,
@@ -338,17 +338,17 @@ export const projectRoutes = (kit: Kit) => {
         db.transaction((tx) => {
           const vars = tx
             .select({
-              id: key.id,
+              id: environment_variable.id,
             })
-            .from(key)
-            .where(eq(key.project_id, row.id))
+            .from(environment_variable)
+            .where(eq(environment_variable.project_id, row.id))
             .all()
             .map((v) => v.id)
 
           if (vars.length) {
-            tx.delete(grant).where(inArray(grant.key_id, vars)).run()
-            tx.delete(secret_value).where(inArray(secret_value.key_id, vars)).run()
-            tx.delete(key).where(inArray(key.id, vars)).run()
+            tx.delete(grant).where(inArray(grant.environment_variable_id, vars)).run()
+            tx.delete(secret_value).where(inArray(secret_value.environment_variable_id, vars)).run()
+            tx.delete(environment_variable).where(inArray(environment_variable.id, vars)).run()
           }
 
           tx.delete(grant).where(eq(grant.project_id, row.id)).run()

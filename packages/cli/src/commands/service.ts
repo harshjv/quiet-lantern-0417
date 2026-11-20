@@ -16,7 +16,7 @@ export const appCommands = (program: Program) => {
   program
     .command('run')
     .description(
-      "Run a one-off command in the app's image and keys, streaming its output; put the command after --",
+      "Run a one-off command in the app's image and environment variables, streaming its output; put the command after --",
     )
     .argument('<command...>')
     .option('--detach', 'return once the run is created')

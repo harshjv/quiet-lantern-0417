@@ -52,7 +52,7 @@ test('a group completes to its subcommands with their summaries as hints', async
 
   assert.match(stdout, /^diagnosis\tThe diagnosis object of a failed deployment$/m)
   assert.match(stdout, /^wait\t/m)
-  assert.ok((await suggestions('keys', 'ap')).includes('apply'))
+  assert.ok((await suggestions('env', 'ap')).includes('apply'))
 })
 
 test('flags complete after their command, also behind global flags, and global flags at the root', async () => {

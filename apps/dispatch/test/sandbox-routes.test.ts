@@ -57,9 +57,9 @@ const routes: [string, string, number[]][] = [
   ['post', '/v1/machines/{machine}/shells', [201]],
   ['get', '/v1/machines/{machine}/runs', [200]],
   ['get', '/v1/machines/{machine}/metrics', [200]],
-  ['get', '/v1/machines/{machine}/keys', [200]],
-  ['get', '/v1/machines/{machine}/keys/resolved', [200]],
-  ['patch', '/v1/machines/{machine}/keys', [200]],
+  ['get', '/v1/machines/{machine}/environment-variables', [200]],
+  ['get', '/v1/machines/{machine}/environment-variables/resolved', [200]],
+  ['patch', '/v1/machines/{machine}/environment-variables', [200]],
   ['get', '/v1/machines/{machine}/connections', [200]],
   ['get', '/v1/machines/{machine}/dns-log', [200]],
   ['post', '/v1/machines/{machine}/snapshots', [201]],
@@ -93,7 +93,7 @@ describe('the OpenAPI document', () => {
       'MachineExec',
       'MachineShell',
       'MachineConnections',
-      'MachineKeysOutcome',
+      'MachineEnvironmentVariablesOutcome',
       'MachineSnapshotDeleted',
       'StorageGrown',
       'MachineSize',
@@ -150,8 +150,14 @@ describe('the OpenAPI document', () => {
       ['/v1/machines/{machine}/snapshots', `/v1/machines/${box.id}/snapshots?fields=*`],
       ['/v1/projects/{project}/machine-snapshots', placed(h, dev.id, `machine-snapshots?fields=*`)],
       ['/v1/machine-snapshots/{id}', `/v1/machine-snapshots/${snapshot.body.id}?fields=*`],
-      ['/v1/machines/{machine}/keys', `/v1/machines/${box.id}/keys`],
-      ['/v1/machines/{machine}/keys/resolved', `/v1/machines/${box.id}/keys/resolved`],
+      [
+        '/v1/machines/{machine}/environment-variables',
+        `/v1/machines/${box.id}/environment-variables`,
+      ],
+      [
+        '/v1/machines/{machine}/environment-variables/resolved',
+        `/v1/machines/${box.id}/environment-variables/resolved`,
+      ],
     ]
 
     for (const [path, url] of reads) {

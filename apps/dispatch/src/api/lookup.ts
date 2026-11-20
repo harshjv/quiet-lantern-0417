@@ -9,7 +9,7 @@ import {
   build,
   deployment,
   domain,
-  key,
+  environment_variable,
   machine,
   machine_snapshot,
   project,
@@ -29,7 +29,7 @@ export type PortRow = typeof app_port.$inferSelect
 export type VolumeRow = typeof volume.$inferSelect
 export type DomainRow = typeof domain.$inferSelect
 export type DeploymentRow = typeof deployment.$inferSelect
-export type KeyRow = typeof key.$inferSelect
+export type VariableRow = typeof environment_variable.$inferSelect
 export type ApprovalRow = typeof approval.$inferSelect
 
 export const decidable = () =>
@@ -329,7 +329,7 @@ export const runById = (db: Db, id: string) => {
   }
 }
 
-export const keyTarget = (db: Db, row: KeyRow): Target => {
+export const variableTarget = (db: Db, row: VariableRow): Target => {
   if (row.scope === 'app') {
     return appById(db, row.app_id!).target
   }
@@ -345,12 +345,14 @@ export const keyTarget = (db: Db, row: KeyRow): Target => {
   return anyTarget
 }
 
-export const keyById = (db: Db, id: string) => {
-  const row = db.select().from(key).where(eq(key.id, id)).get() ?? notFound('key', id)
+export const variableById = (db: Db, id: string) => {
+  const row =
+    db.select().from(environment_variable).where(eq(environment_variable.id, id)).get() ??
+    notFound('environment variable', id)
 
   return {
-    key: row,
-    target: keyTarget(db, row),
+    variable: row,
+    target: variableTarget(db, row),
   }
 }
 
@@ -358,11 +360,11 @@ export const secretValueById = (db: Db, id: string) => {
   const row =
     db.select().from(secret_value).where(eq(secret_value.id, id)).get() ??
     notFound('secret_value', id)
-  const owner = keyById(db, row.key_id)
+  const owner = variableById(db, row.environment_variable_id)
 
   return {
     secretValue: row,
-    key: owner.key,
+    variable: owner.variable,
     target: owner.target,
   }
 }
@@ -395,7 +397,7 @@ export const targets = {
   build: buildById,
   run: runById,
   volume: volumeById,
-  key: keyById,
+  environment_variable: variableById,
   secret_value: secretValueById,
   approval: approvalById,
   machine: machineById,

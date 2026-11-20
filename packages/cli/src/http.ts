@@ -36,9 +36,9 @@ export const credentialHeaders = async (
     : {}),
 })
 
-const redactSealed = (value: unknown): unknown => {
+const redactSecret = (value: unknown): unknown => {
   if (Array.isArray(value)) {
-    return value.map(redactSealed)
+    return value.map(redactSecret)
   }
 
   if (value === null || typeof value !== 'object') {
@@ -46,10 +46,10 @@ const redactSealed = (value: unknown): unknown => {
   }
 
   const object = value as Record<string, unknown>
-  const redacted = Object.fromEntries(Object.entries(object).map(([k, v]) => [k, redactSealed(v)]))
+  const redacted = Object.fromEntries(Object.entries(object).map(([k, v]) => [k, redactSecret(v)]))
 
-  if (object.kind === 'sealed' && typeof object.value === 'string') {
-    redacted.value = `[sealed, ${object.value.length} characters, not shown]`
+  if (object.kind === 'secret' && typeof object.value === 'string') {
+    redacted.value = `[secret, ${object.value.length} characters, not shown]`
   }
 
   return redacted
@@ -63,7 +63,7 @@ const bodyOf = async (request: Request) => {
   }
 
   try {
-    return redactSealed(JSON.parse(text))
+    return redactSecret(JSON.parse(text))
   } catch {
     return text
   }

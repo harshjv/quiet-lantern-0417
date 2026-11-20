@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,15 +46,24 @@ type checkBuilder struct {
 	finding []string
 	fix     []string
 	detail  map[string]any
+	steps   []protocol.DoctorStep
 }
+
+type doctorStep struct {
+	status  protocol.DoctorStatus
+	code    string
+	finding string
+	fix     string
+}
+
+var doctorRank = map[protocol.DoctorStatus]int{protocol.DoctorStatusOk: 0, protocol.DoctorStatusWarn: 1, protocol.DoctorStatusFail: 2}
 
 func newCheck(name string) *checkBuilder {
 	return &checkBuilder{name: name, status: protocol.DoctorStatusOk, detail: map[string]any{}}
 }
 
 func (c *checkBuilder) raise(status protocol.DoctorStatus, code, finding, fix string) {
-	rank := map[protocol.DoctorStatus]int{protocol.DoctorStatusOk: 0, protocol.DoctorStatusWarn: 1, protocol.DoctorStatusFail: 2}
-	if rank[status] > rank[c.status] {
+	if doctorRank[status] > doctorRank[c.status] {
 		c.status, c.code = status, code
 		c.finding = append([]string{finding}, c.finding...)
 		if fix != "" {
@@ -64,6 +74,20 @@ func (c *checkBuilder) raise(status protocol.DoctorStatus, code, finding, fix st
 	c.finding = append(c.finding, finding)
 	if fix != "" {
 		c.fix = append(c.fix, fix)
+	}
+}
+
+func (c *checkBuilder) step(name string, st doctorStep) {
+	out := protocol.DoctorStep{Name: name, Status: st.status, Finding: st.finding}
+	if st.fix != "" {
+		out.Fix = ptr(st.fix)
+	}
+	c.steps = append(c.steps, out)
+	if doctorRank[st.status] > doctorRank[c.status] {
+		c.status, c.code, c.finding, c.fix = st.status, st.code, []string{st.finding}, nil
+		if st.fix != "" {
+			c.fix = []string{st.fix}
+		}
 	}
 }
 
@@ -89,17 +113,24 @@ func (c *checkBuilder) build() protocol.DoctorCheck {
 	if len(c.detail) > 0 {
 		out.Detail = c.detail
 	}
+	out.Steps = c.steps
 	return out
 }
 
-func (s *Station) doctorRun(ctx context.Context, m dispatch.Message, _ protocol.DoctorRunBody) {
+func (s *Station) doctorRun(ctx context.Context, m dispatch.Message, body protocol.DoctorRunBody) {
 	ref := m.ID
-	s.send(protocol.MessageDoctorReport, &ref, s.doctorReport(ctx))
+	s.send(protocol.MessageDoctorReport, &ref, s.doctorReport(ctx, body.Checks))
 }
 
-func (s *Station) opDoctor(ctx context.Context, _ json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
+func (s *Station) opDoctor(ctx context.Context, params json.RawMessage, _ func(string, string)) (any, *protocol.ErrorBody) {
+	var p protocol.DoctorRunBody
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, invalidParams(err)
+		}
+	}
 	done := make(chan protocol.DoctorReportBody, 1)
-	s.post(ctx, func() { done <- s.doctorReport(ctx) })
+	s.post(ctx, func() { done <- s.doctorReport(ctx, p.Checks) })
 	select {
 	case r := <-done:
 		return r, nil
@@ -110,23 +141,38 @@ func (s *Station) opDoctor(ctx context.Context, _ json.RawMessage, _ func(string
 	}
 }
 
-func (s *Station) doctorReport(ctx context.Context) protocol.DoctorReportBody {
-	checks := []protocol.DoctorCheck{
-		s.checkComponents(ctx),
-		s.checkTrustedRoot(),
-		s.checkDisk(ctx),
-		s.checkKernel(),
-		s.checkLogStore(),
-		s.checkFirewallBackend(),
-		s.checkMarkAccept(),
-		s.checkWorkshopIsolation(),
-		s.checkHostPrerequisites(ctx),
-		s.checkNftTables(),
-		s.checkResolver(ctx),
-		s.checkLockfileMirror(),
-		s.checkLitestream(ctx),
-		s.checkSandboxRuntime(ctx),
-		s.checkSandboxStorage(),
+type doctorCheck struct {
+	name string
+	run  func() protocol.DoctorCheck
+}
+
+func (s *Station) doctorChecks(ctx context.Context) []doctorCheck {
+	return []doctorCheck{
+		{"component_health", func() protocol.DoctorCheck { return s.checkComponents(ctx) }},
+		{"trusted_root", s.checkTrustedRoot},
+		{"disk", func() protocol.DoctorCheck { return s.checkDisk(ctx) }},
+		{"kernel_features", s.checkKernel},
+		{"log_store", s.checkLogStore},
+		{"firewall_backend", s.checkFirewallBackend},
+		{"mark_accept", s.checkMarkAccept},
+		{"workshop_isolation", s.checkWorkshopIsolation},
+		{"host_prerequisites", func() protocol.DoctorCheck { return s.checkHostPrerequisites(ctx) }},
+		{"nft_tables", s.checkNftTables},
+		{"tunnel", s.checkTunnel},
+		{"resolver", func() protocol.DoctorCheck { return s.checkResolver(ctx) }},
+		{"lockfile_mirror", s.checkLockfileMirror},
+		{"litestream", func() protocol.DoctorCheck { return s.checkLitestream(ctx) }},
+		{"sandbox_runtime", func() protocol.DoctorCheck { return s.checkSandboxRuntime(ctx) }},
+		{"sandbox_storage", s.checkSandboxStorage},
+	}
+}
+
+func (s *Station) doctorReport(ctx context.Context, only []string) protocol.DoctorReportBody {
+	checks := []protocol.DoctorCheck{}
+	for _, dc := range s.doctorChecks(ctx) {
+		if len(only) == 0 || slices.Contains(only, dc.name) {
+			checks = append(checks, dc.run())
+		}
 	}
 	return protocol.DoctorReportBody{CheckedAt: tstamp(time.Now()), Checks: checks}
 }

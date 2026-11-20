@@ -61,7 +61,7 @@ const leafVersions = (snapshot: EnvSnapshot) => {
   for (const entry of snapshot.entries) {
     for (const leaf of leaves(entry.node)) {
       if (leaf.kind === 'value') {
-        out.set(`${leaf.key_id}|${leaf.target}`, {
+        out.set(`${leaf.environment_variable_id}|${leaf.target}`, {
           key: entry.key,
           secret_value_id: leaf.secret_value_id,
           version: leaf.version,
@@ -237,7 +237,7 @@ export const deployActionRoutes = (kit: Kit) => {
         `Deployment ${target.number} pins secret versions that were revoked or swept: ${revokedKeys.join(', ')}.`,
         'Restore the versions with revoke_secret_version undo, or deploy with current values.',
         {
-          keys: revokedKeys,
+          environment_variables: revokedKeys,
         },
       )
     }
@@ -266,7 +266,7 @@ export const deployActionRoutes = (kit: Kit) => {
         `Deployment ${target.number} pins secret versions older than the current heads for ${stale.join(', ')}.`,
         'Send confirm_stale_secrets = true (sly rollback --confirm-stale-secrets) to roll back with those older values.',
         {
-          keys: stale,
+          environment_variables: stale,
         },
       )
     }
@@ -279,7 +279,7 @@ export const deployActionRoutes = (kit: Kit) => {
               `The rollback runs older secret versions for ${stale.join(', ')}.`,
             ),
             details: {
-              keys: stale,
+              environment_variables: stale,
             },
           },
         ]
@@ -437,7 +437,7 @@ export const deployActionRoutes = (kit: Kit) => {
       {
         app: {
           id: 'redeploy',
-          summary: 'Redeploy the current image with current keys',
+          summary: 'Redeploy the current image with current environment variables',
           level: 'deploy',
           cli: {
             wait: 'wait_for_deployment',

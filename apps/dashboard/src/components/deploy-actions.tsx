@@ -300,10 +300,10 @@ export function RollbackButton({ app, deployment }: { app: App; deployment: Depl
 }
 
 const staleTitle = (codes: Set<string>) =>
-  codes.has('KEYS_CHANGED') && codes.has('CONFIG_CHANGED')
-    ? 'Keys and settings changed. Deploy to use them.'
-    : codes.has('KEYS_CHANGED')
-      ? 'Keys changed. Deploy to use them.'
+  codes.has('ENVIRONMENT_VARIABLES_CHANGED') && codes.has('CONFIG_CHANGED')
+    ? 'Environment variables and settings changed. Deploy to use them.'
+    : codes.has('ENVIRONMENT_VARIABLES_CHANGED')
+      ? 'Environment variables changed. Deploy to use them.'
       : 'Settings changed. Deploy to use them.'
 
 export function StaleBanner({ app }: { app: App }) {
@@ -320,7 +320,7 @@ export function StaleBanner({ app }: { app: App }) {
 
   const rolling = deployments.data?.items.find((d) => isInFlight(d.status))
   const sourceChanged = reasons.some(
-    (r) => r.code === 'CONFIG_CHANGED' && r.keys.includes('source'),
+    (r) => r.code === 'CONFIG_CHANGED' && r.names.includes('source'),
   )
 
   return (

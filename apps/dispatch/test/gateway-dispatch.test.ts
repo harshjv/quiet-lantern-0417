@@ -67,7 +67,7 @@ describe('the generation carries Dispatch routes', () => {
 
     assert.equal(target.component, 'dispatch')
     assert.equal(target.virtual_ip, '100.64.0.1')
-    assert.equal(target.port, 7900)
+    assert.equal(target.port, 7901)
     assert.match(target.hash, /^sha256:[0-9a-f]{64}$/)
   })
 
@@ -86,7 +86,7 @@ describe('the generation carries Dispatch routes', () => {
       assert.deepEqual(r.target, {
         system: 'dispatch',
         virtual_ip: '100.64.0.1',
-        port: 7900,
+        port: 7901,
       })
     }
   })
@@ -223,7 +223,7 @@ describe('the setup login link', () => {
 
   test('verifies once on the dashboard host as the Gateway forwards it, with a host-only secure session cookie', async () => {
     const forwarded = {
-      'x-forwarded-for': '198.51.100.7',
+      'x-stationly-client-address': '198.51.100.7',
       'x-forwarded-proto': 'https',
       'x-forwarded-host': dashboard,
     }
@@ -237,10 +237,11 @@ describe('the setup login link', () => {
     assert.equal(first.status, 302, await first.clone().text())
     assert.equal(first.headers.get('location'), `https://${dashboard}/`)
     const cookies = first.headers.getSetCookie()
-    const session = cookies.find((c) => c.startsWith('__Secure-better-auth.session_token='))
+    const session = cookies.find((c) => c.startsWith('__Host-better-auth.session_token='))
 
     assert.ok(session, cookies.join(' | '))
     assert.match(session, /;\s*Secure/i)
+    assert.match(session, /;\s*Path=\/(;|$)/i)
     assert.doesNotMatch(session, /Domain=/i)
     const cookie = session.split(';')[0]!
     const me = await h.fetch(
@@ -274,7 +275,7 @@ describe('the setup login link', () => {
     assert.equal(
       again.headers
         .getSetCookie()
-        .some((c) => c.startsWith('__Secure-better-auth.session_token=') && !/Max-Age=0/i.test(c)),
+        .some((c) => c.startsWith('__Host-better-auth.session_token=') && !/Max-Age=0/i.test(c)),
       false,
     )
   })

@@ -388,6 +388,29 @@ CREATE TABLE `drift` (
 	FOREIGN KEY (`server_id`) REFERENCES `server`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE TABLE `environment_variable` (
+	`id` text PRIMARY KEY NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	`scope` text NOT NULL,
+	`project_id` text,
+	`app_id` text,
+	`machine_id` text,
+	`name` text NOT NULL,
+	`kind` text NOT NULL,
+	`reference` text,
+	`injection` text DEFAULT 'env' NOT NULL,
+	`build` integer DEFAULT false NOT NULL,
+	`current_value_id` text,
+	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`app_id`) REFERENCES `app`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`machine_id`) REFERENCES `machine`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `environment_variable_global_name_unique` ON `environment_variable` (`name`) WHERE scope = 'global';--> statement-breakpoint
+CREATE UNIQUE INDEX `environment_variable_project_name_unique` ON `environment_variable` (`project_id`,`name`) WHERE scope = 'project';--> statement-breakpoint
+CREATE UNIQUE INDEX `environment_variable_app_name_unique` ON `environment_variable` (`app_id`,`name`) WHERE scope = 'app';--> statement-breakpoint
+CREATE UNIQUE INDEX `environment_variable_machine_name_unique` ON `environment_variable` (`machine_id`,`name`) WHERE scope = 'machine';--> statement-breakpoint
 CREATE TABLE `event` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
@@ -515,12 +538,12 @@ CREATE TABLE `grant` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
-	`key_id` text NOT NULL,
+	`environment_variable_id` text NOT NULL,
 	`project_id` text NOT NULL,
 	`alias` text,
 	`source` text NOT NULL,
 	`attachment_id` text,
-	FOREIGN KEY (`key_id`) REFERENCES `key`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`environment_variable_id`) REFERENCES `environment_variable`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`attachment_id`) REFERENCES `attachment`(`id`) ON UPDATE no action ON DELETE no action
 );
@@ -578,29 +601,6 @@ CREATE TABLE `jwks` (
 	`crv` text
 );
 --> statement-breakpoint
-CREATE TABLE `key` (
-	`id` text PRIMARY KEY NOT NULL,
-	`created_at` integer NOT NULL,
-	`updated_at` integer NOT NULL,
-	`scope` text NOT NULL,
-	`project_id` text,
-	`app_id` text,
-	`machine_id` text,
-	`name` text NOT NULL,
-	`kind` text NOT NULL,
-	`reference` text,
-	`injection` text DEFAULT 'env' NOT NULL,
-	`build` integer DEFAULT false NOT NULL,
-	`current_value_id` text,
-	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`app_id`) REFERENCES `app`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`machine_id`) REFERENCES `machine`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `key_global_name_unique` ON `key` (`name`) WHERE scope = 'global';--> statement-breakpoint
-CREATE UNIQUE INDEX `key_project_name_unique` ON `key` (`project_id`,`name`) WHERE scope = 'project';--> statement-breakpoint
-CREATE UNIQUE INDEX `key_app_name_unique` ON `key` (`app_id`,`name`) WHERE scope = 'app';--> statement-breakpoint
-CREATE UNIQUE INDEX `key_machine_name_unique` ON `key` (`machine_id`,`name`) WHERE scope = 'machine';--> statement-breakpoint
 CREATE TABLE `machine` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
@@ -977,7 +977,7 @@ CREATE TABLE `secret_value` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
-	`key_id` text NOT NULL,
+	`environment_variable_id` text NOT NULL,
 	`target` text DEFAULT 'production' NOT NULL,
 	`version` integer NOT NULL,
 	`ciphertext` blob NOT NULL,
@@ -985,11 +985,11 @@ CREATE TABLE `secret_value` (
 	`created_by` text NOT NULL,
 	`revoked_at` integer,
 	`needs_reentry` integer DEFAULT false NOT NULL,
-	FOREIGN KEY (`key_id`) REFERENCES `key`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`environment_variable_id`) REFERENCES `environment_variable`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`data_key_id`) REFERENCES `data_key`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `secret_value_target_version_unique` ON `secret_value` (`key_id`,`target`,`version`);--> statement-breakpoint
+CREATE UNIQUE INDEX `secret_value_target_version_unique` ON `secret_value` (`environment_variable_id`,`target`,`version`);--> statement-breakpoint
 CREATE TABLE `server` (
 	`id` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL,

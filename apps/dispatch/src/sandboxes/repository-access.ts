@@ -1,7 +1,7 @@
 import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 
-import type { MachineKeySet } from '@stationly/protocol'
+import type { MachineEnvironmentVariableSet } from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
@@ -9,13 +9,13 @@ import { target } from '../db/schema.ts'
 import { githubWeb } from '../github/client.ts'
 import { http, transientRetry, userAgent } from '../net/http.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { decryptValue, headValue, keysOf } from '../secrets/values.ts'
+import { decryptValue, headValue, variablesOf } from '../secrets/values.ts'
 
 export type RepositoryAccess = 'readable' | 'unreadable' | 'unknown'
 
 export type ReadRepository = (repository: string, token: string | null) => Promise<RepositoryAccess>
 
-const tokenKey = 'GH_TOKEN'
+const tokenVariable = 'GH_TOKEN'
 
 const probeTimeoutMs = 10_000
 
@@ -60,7 +60,7 @@ export const repositoryLabel = (repository: string) =>
     .replace(/\.git$/, '')
 
 export const projectHead = (db: Db, scope: { project: string; target: string }, name: string) => {
-  const found = keysOf(db, {
+  const found = variablesOf(db, {
     scope: 'project',
     id: scope.project,
   })
@@ -72,7 +72,7 @@ export const projectHead = (db: Db, scope: { project: string; target: string }, 
 
   return found
     ? (preview ??
-        (inPreview && found.kind === 'sealed' ? undefined : headValue(db, found.id, 'production')))
+        (inPreview && found.kind === 'secret' ? undefined : headValue(db, found.id, 'production')))
     : undefined
 }
 
@@ -93,7 +93,7 @@ export const requireRepositoryAccess = async (
     project: { id: string; name: string }
     target: string
     repository: string
-    keys: Static<typeof MachineKeySet>[] | undefined
+    variables: Static<typeof MachineEnvironmentVariableSet>[] | undefined
   },
 ) => {
   if (!isGitHubRepository(request.repository)) {
@@ -104,8 +104,8 @@ export const requireRepositoryAccess = async (
     return
   }
 
-  const supplied = request.keys?.find(
-    (set) => set.name === tokenKey && set.kind !== 'reference',
+  const supplied = request.variables?.find(
+    (set) => set.name === tokenVariable && set.kind !== 'reference',
   )?.value
   const stored = projectSecret(
     deps.db,
@@ -114,7 +114,7 @@ export const requireRepositoryAccess = async (
       project: request.project.id,
       target: request.target,
     },
-    tokenKey,
+    tokenVariable,
   )
   const token = supplied ?? stored
   const name = repositoryLabel(request.repository)
@@ -126,8 +126,8 @@ export const requireRepositoryAccess = async (
   if (!token) {
     fail(
       'REPO_ACCESS_REQUIRED',
-      `${name} cannot be read without credentials, and project ${request.project.name} has no ${tokenKey}.`,
-      `Set ${tokenKey} on project ${request.project.name} with set_project_keys: a fine-grained token with Contents read and write on ${name}, or the output of gh auth token.`,
+      `${name} cannot be read without credentials, and project ${request.project.name} has no ${tokenVariable}.`,
+      `Set ${tokenVariable} on project ${request.project.name} with set_project_environment_variables: a fine-grained token with Contents read and write on ${name}, or the output of gh auth token.`,
       details,
     )
   }
@@ -136,7 +136,7 @@ export const requireRepositoryAccess = async (
     fail(
       'REPO_ACCESS_DENIED',
       `The project's GitHub token cannot read ${name}.`,
-      `Set ${tokenKey} on project ${request.project.name} to a token that can read ${name}, or check the repository name.`,
+      `Set ${tokenVariable} on project ${request.project.name} to a token that can read ${name}, or check the repository name.`,
       details,
     )
   }

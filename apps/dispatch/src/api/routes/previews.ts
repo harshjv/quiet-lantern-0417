@@ -8,8 +8,8 @@ import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
 import { app, app_port, deployment, target, volume, type PreviewOrigin } from '../../db/schema.ts'
 import { DomainError } from '../../errors.ts'
-import { decryptValue, headValue, keysOf } from '../../secrets/values.ts'
-import { setKey, type KeyWrite } from '../../secrets/variables.ts'
+import { decryptValue, headValue, variablesOf } from '../../secrets/values.ts'
+import { setVariable, type VariableWrite } from '../../secrets/variables.ts'
 import { seesTarget } from '../access.ts'
 import { ChangeSet, commit, requireNoMachines } from '../changes.ts'
 import { audit, emit, type Call } from '../context.ts'
@@ -30,7 +30,7 @@ import {
   replies,
   Warnings,
 } from '../shapes.ts'
-import { settleKeyWrites } from '../stale.ts'
+import { settleVariableWrites } from '../stale.ts'
 
 const ttlText = 'Seconds until the preview is deleted; omit for a preview that never expires'
 
@@ -127,12 +127,12 @@ export const cloneInto = (
   const warnings: { code: string; explanation: string }[] = []
   const copied: string[] = []
   const decrypted: string[] = []
-  const writes: KeyWrite[] = []
+  const writes: VariableWrite[] = []
   const apps = db.select().from(app).where(eq(app.target_id, source.id)).orderBy(asc(app.id)).all()
   const copyable = (v: { kind: string }, head: Parameters<typeof decryptValue>[1]) => {
     const value = decryptValue(kit.deps.keyring, head)
 
-    return v.kind === 'sealed' ? value : value.replaceAll('${{', () => '$${{')
+    return v.kind === 'secret' ? value : value.replaceAll('${{', () => '$${{')
   }
 
   db.transaction((tx) => {
@@ -184,12 +184,12 @@ export const cloneInto = (
     }
 
     for (const svc of apps) {
-      for (const v of keysOf(tdb, {
+      for (const v of variablesOf(tdb, {
         scope: 'app',
         id: svc.id,
       }).all()) {
         const values = valueTargets
-          .filter((t) => v.kind !== 'sealed' || t === 'preview')
+          .filter((t) => v.kind !== 'secret' || t === 'preview')
           .flatMap((t) => {
             const head = v.reference === null ? headValue(tdb, v.id, t) : undefined
 
@@ -203,13 +203,13 @@ export const cloneInto = (
               : []
           })
         const write = (value: string, valueTarget: 'production' | 'preview', empty: boolean) => {
-          const result = setKey(tdb, kit.deps.keyring, {
+          const result = setVariable(tdb, kit.deps.keyring, {
             scope: 'app',
             app_id: idMap.get(svc.id)!,
             name: v.name,
             value,
             target: valueTarget,
-            sealed: v.kind === 'sealed',
+            secret: v.kind === 'secret',
             empty,
             injection: v.injection,
             build: v.build,
@@ -229,7 +229,7 @@ export const cloneInto = (
         }
 
         if (!values.length) {
-          if (v.kind === 'sealed') {
+          if (v.kind === 'secret') {
             write('', 'production', true)
           }
 
@@ -243,7 +243,7 @@ export const cloneInto = (
       }
     }
 
-    settleKeyWrites(tdb, writes)
+    settleVariableWrites(tdb, writes)
 
     if (decrypted.length) {
       audit(
@@ -411,7 +411,7 @@ export const previewRoutes = (kit: Kit) => {
         ),
         operation: {
           id: 'create_preview',
-          summary: "Create a preview: a copy of production's apps, never its sealed values",
+          summary: "Create a preview: a copy of production's apps, never its secret values",
           level: 'deploy',
           target: ({ params }: TargetInput) => ({
             project_id: projectByRef(db, params.project!).id,

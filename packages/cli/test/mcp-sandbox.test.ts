@@ -31,8 +31,8 @@ const localTools = ['push_local_source', 'forward_machine_port']
 const readTools = [
   'list_machines',
   'get_machine',
-  'list_machine_keys',
-  'get_machine_resolved_keys',
+  'list_machine_environment_variables',
+  'get_machine_resolved_environment_variables',
   'get_machine_connections',
   'get_machine_dns_log',
   'list_machine_snapshots',
@@ -47,7 +47,7 @@ const writeTools = [
   'start_machine',
   'stop_machine',
   'machine_exec',
-  'set_machine_keys',
+  'set_machine_environment_variables',
   'probe_machine_network',
   'snapshot_machine',
 ]
@@ -355,8 +355,8 @@ describe('tool calls', () => {
     assert.ok(['queued', 'running'].includes(run.body.status))
   })
 
-  test('set_machine_keys and the key reads never expose values, and exec output is redacted', async () => {
-    const set = await ok('set_machine_keys', {
+  test('set_machine_environment_variables and the environment variable reads never expose values, and exec output is redacted', async () => {
+    const set = await ok('set_machine_environment_variables', {
       machine: id,
       set: [
         {
@@ -367,32 +367,32 @@ describe('tool calls', () => {
       ],
     })
 
-    assert.equal(set.keys[0].name, 'GH_TOKEN')
-    const listed = await ok('list_machine_keys', {
+    assert.equal(set.environment_variables[0].name, 'GH_TOKEN')
+    const listed = await ok('list_machine_environment_variables', {
       machine: id,
     })
 
     assert.equal(listed.items.length, 1)
     assert.ok(!JSON.stringify(listed).includes('ghp_supersecretvalue123'))
-    const resolved = await ok('get_machine_resolved_keys', {
+    const resolved = await ok('get_machine_resolved_environment_variables', {
       machine: id,
     })
 
-    assert.equal(resolved.keys[0].name, 'GH_TOKEN')
-    const sealed = await h.call('PATCH', `/v1/machines/${id}/keys`, {
+    assert.equal(resolved.environment_variables[0].name, 'GH_TOKEN')
+    const secret = await h.call('PATCH', `/v1/machines/${id}/environment-variables`, {
       token: h.admin.token,
       body: {
         set: [
           {
             name: 'SEALED_TOKEN',
-            kind: 'sealed',
+            kind: 'secret',
             value: 'ghp_sealedsecretvalue456',
           },
         ],
       },
     })
 
-    assert.equal(sealed.status, 200, sealed.text)
+    assert.equal(secret.status, 200, secret.text)
     await station.waitFor(
       () => station.secrets.find((s) => s.purpose === 'sandbox' && s.values.SEALED_TOKEN),
       5000,

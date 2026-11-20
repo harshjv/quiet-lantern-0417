@@ -5,11 +5,11 @@ import {
   appWithDefaults,
   pointer,
   type AppDoc,
-  type AppKeyDoc,
   type AppOverrideDoc,
+  type AppVariableDoc,
   type DomainDoc,
   type ManifestDoc,
-  type ProjectKeyDoc,
+  type ProjectVariableDoc,
 } from '@stationly/manifest-schema'
 
 import { can } from '../api/access.ts'
@@ -17,7 +17,7 @@ import { ChangeSet, isTransient, leafDiff, placeName, type Change } from '../api
 import { configDeployTrigger } from '../api/deployments.ts'
 import { ApiError, fail } from '../api/errors.ts'
 import { generatedHostname, requireGatewayPin } from '../api/exposure.ts'
-import type { AppRow, KeyRow, ProjectRow, TargetRow } from '../api/lookup.ts'
+import type { AppRow, ProjectRow, TargetRow, VariableRow } from '../api/lookup.ts'
 import { oneLabelProblem } from '../auth/hostnames.ts'
 import type { Principal } from '../auth/principal.ts'
 import type { Level, Target } from '../auth/scopes.ts'
@@ -31,8 +31,8 @@ import { parseValue, type Segment } from '../secrets/reference.ts'
 import {
   decryptValue,
   headValue,
-  keysOf,
   nextValueVersion,
+  variablesOf,
   type ValueTarget,
 } from '../secrets/values.ts'
 
@@ -86,7 +86,7 @@ const overrideMerge = (base: AppDoc, override: AppOverrideDoc | undefined): AppD
         ...(value as Json),
       }
     } else if (
-      (key === 'limits' || key === 'schedule' || key === 'keys') &&
+      (key === 'limits' || key === 'schedule' || key === 'env') &&
       typeof value === 'object' &&
       !Array.isArray(value)
     ) {
@@ -137,11 +137,11 @@ const sortKeys = (value: unknown): unknown => {
 
 export const escapeLiteral = (value: string) => value.replaceAll('${{', () => '$${{')
 
-type DesiredKey =
+type DesiredVariable =
   | { kind: 'literal'; value: string; injection: 'env' | 'file'; build: boolean }
   | { kind: 'literal-generator'; reference: string; injection: 'env' | 'file'; build: boolean }
   | { kind: 'reference'; reference: string; injection: 'env' | 'file'; build: boolean }
-  | { kind: 'sealed'; reference: string | null; injection: 'env' | 'file'; build: boolean }
+  | { kind: 'secret'; reference: string | null; injection: 'env' | 'file'; build: boolean }
 
 const isGenerator = (segments: Segment[]) =>
   segments.length === 1 &&
@@ -184,7 +184,11 @@ const parseReference = (text: string, path: string, issues: Issue[]) => {
   }
 }
 
-const desiredAppKey = (raw: AppKeyDoc, path: string, issues: Issue[]): DesiredKey | null => {
+const desiredAppVariable = (
+  raw: AppVariableDoc,
+  path: string,
+  issues: Issue[],
+): DesiredVariable | null => {
   if (typeof raw !== 'object') {
     const text = canonicalScalar(raw)
 
@@ -224,8 +228,8 @@ const desiredAppKey = (raw: AppKeyDoc, path: string, issues: Issue[]): DesiredKe
   const build = raw.build ?? false
   const forms = [
     raw.value !== undefined,
-    raw.reference !== undefined && !raw.sealed,
-    raw.sealed === true,
+    raw.reference !== undefined && !raw.secret,
+    raw.secret === true,
   ].filter(Boolean).length
 
   if (forms !== 1) {
@@ -233,7 +237,7 @@ const desiredAppKey = (raw: AppKeyDoc, path: string, issues: Issue[]): DesiredKe
       path,
       code: 'REFERENCE_SYNTAX',
       message:
-        'Use exactly one of { value }, { reference } or { sealed: true }, optionally with a ${{secret(N)}} reference.',
+        'Use exactly one of { value }, { reference } or { secret: true }, optionally with a ${{secret(N)}} reference.',
     })
 
     return null
@@ -248,10 +252,10 @@ const desiredAppKey = (raw: AppKeyDoc, path: string, issues: Issue[]): DesiredKe
     }
   }
 
-  if (raw.sealed) {
+  if (raw.secret) {
     if (raw.reference === undefined) {
       return {
-        kind: 'sealed',
+        kind: 'secret',
         reference: null,
         injection,
         build,
@@ -268,14 +272,14 @@ const desiredAppKey = (raw: AppKeyDoc, path: string, issues: Issue[]): DesiredKe
       issues.push({
         path: `${path}/reference`,
         code: 'REFERENCE_SYNTAX',
-        message: 'A sealed key takes only ${{secret(N)}} as its reference.',
+        message: 'A secret environment variable takes only ${{secret(N)}} as its reference.',
       })
 
       return null
     }
 
     return {
-      kind: 'sealed',
+      kind: 'secret',
       reference: raw.reference,
       injection,
       build,
@@ -306,13 +310,13 @@ const desiredAppKey = (raw: AppKeyDoc, path: string, issues: Issue[]): DesiredKe
 }
 
 type ProjectDesired = {
-  sealed: boolean
+  secret: boolean
   reference: string | null
   value: string | null
 }
 
-const desiredProjectKey = (
-  raw: ProjectKeyDoc,
+const desiredProjectVariable = (
+  raw: ProjectVariableDoc,
   valueTarget: ValueTarget,
   path: string,
   issues: Issue[],
@@ -329,7 +333,7 @@ const desiredProjectKey = (
         path: at,
         code: 'PROJECT_REFERENCE',
         message:
-          'Project keys hold literals or ${{secret(N)}}; reference project values from app keys instead.',
+          'Project environment variables hold literals or ${{secret(N)}}; reference project values from app environment variables instead.',
       })
     }
 
@@ -343,26 +347,26 @@ const desiredProjectKey = (
       return issues.some((i) => i.path === path)
         ? null
         : {
-            sealed: false,
+            secret: false,
             reference: text,
             value: null,
           }
     }
 
     return {
-      sealed: false,
+      secret: false,
       reference: null,
       value: valueTarget === 'production' ? text : null,
     }
   }
 
-  if (raw.sealed) {
+  if (raw.secret) {
     if (raw.production !== undefined || raw.preview !== undefined) {
       issues.push({
         path,
         code: 'REFERENCE_SYNTAX',
         message:
-          'A sealed project key never carries values in the file; set them with set_project_keys.',
+          'A secret project environment variable never carries values in the file; set them with set_project_environment_variables.',
       })
     }
 
@@ -373,13 +377,13 @@ const desiredProjectKey = (
         issues.push({
           path: `${path}/reference`,
           code: 'PROJECT_REFERENCE',
-          message: 'A sealed project key takes only ${{secret(N)}}.',
+          message: 'A secret project environment variable takes only ${{secret(N)}}.',
         })
       }
     }
 
     return {
-      sealed: true,
+      secret: true,
       reference: raw.reference ?? null,
       value: null,
     }
@@ -389,7 +393,7 @@ const desiredProjectKey = (
     issues.push({
       path: `${path}/reference`,
       code: 'PROJECT_REFERENCE',
-      message: 'reference at project scope is only allowed with sealed: true.',
+      message: 'reference at project scope is only allowed with secret: true.',
     })
 
     return null
@@ -414,13 +418,13 @@ const desiredProjectKey = (
   }
 
   return {
-    sealed: false,
+    secret: false,
     reference: null,
     value: text(raw[valueTarget], `${path}/${valueTarget}`),
   }
 }
 
-const currentValue = (db: Db, keyring: Keyring, row: KeyRow, valueTarget: ValueTarget) => {
+const currentValue = (db: Db, keyring: Keyring, row: VariableRow, valueTarget: ValueTarget) => {
   const value = headValue(db, row.id, valueTarget, 'unset')
 
   return value
@@ -534,7 +538,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           path: string
         }[]
       | null
-    keys: Map<string, DesiredKey | null> | null
+    variables: Map<string, DesiredVariable | null> | null
   }
   const prepared: Prepared[] = []
 
@@ -863,20 +867,20 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       }
     })
 
-    const keys = svc.keys
+    const keys = svc.env
       ? new Map(
-          Object.entries(svc.keys).map(([key, value]) => {
-            const path = at('keys', key)
+          Object.entries(svc.env).map(([key, value]) => {
+            const path = at('env', key)
 
             if (key.startsWith('STATIONLY_')) {
               issues.push({
                 path,
-                code: 'RESERVED_KEY',
-                message: 'Keys starting STATIONLY_ are reserved.',
+                code: 'RESERVED_ENVIRONMENT_VARIABLE',
+                message: 'Environment variables starting STATIONLY_ are reserved.',
               })
             }
 
-            return [key, desiredAppKey(value, path, issues)]
+            return [key, desiredAppVariable(value, path, issues)]
           }),
         )
       : null
@@ -895,7 +899,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
         if (target.type === 'shared') {
           issues.push({
-            path: at('keys', key),
+            path: at('env', key),
             code: 'PHASE_UNAVAILABLE',
             message: `shared references ${phase1b}.`,
           })
@@ -915,14 +919,14 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
         if (input.allowUnresolved) {
           warnings.push({
-            code: 'KEY_TARGET_MISSING',
+            code: 'ENVIRONMENT_VARIABLE_TARGET_MISSING',
             explanation: message,
-            path: at('keys', key),
+            path: at('env', key),
           })
         } else {
           issues.push({
-            path: at('keys', key),
-            code: 'KEY_TARGET_MISSING',
+            path: at('env', key),
+            code: 'ENVIRONMENT_VARIABLE_TARGET_MISSING',
             message,
           })
         }
@@ -958,24 +962,24 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       desired,
       volumes,
       domains,
-      keys,
+      variables: keys,
     })
   }
 
-  const projectKeys = doc.keys
+  const projectVariables = doc.env
     ? new Map(
-        Object.entries(doc.keys).map(([key, value]) => {
-          const path = pointer(['keys', key])
+        Object.entries(doc.env).map(([key, value]) => {
+          const path = pointer(['env', key])
 
           if (key.startsWith('STATIONLY_')) {
             issues.push({
               path,
-              code: 'RESERVED_KEY',
-              message: 'Keys starting STATIONLY_ are reserved.',
+              code: 'RESERVED_ENVIRONMENT_VARIABLE',
+              message: 'Environment variables starting STATIONLY_ are reserved.',
             })
           }
 
-          return [key, desiredProjectKey(value, valueTarget, path, issues)]
+          return [key, desiredProjectVariable(value, valueTarget, path, issues)]
         }),
       )
     : null
@@ -1078,11 +1082,11 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     }
   }
 
-  const keyChanges = (
+  const variableChanges = (
     appName: string,
     parent: string,
-    existingRows: KeyRow[],
-    desired: Map<string, DesiredKey | null>,
+    existingRows: VariableRow[],
+    desired: Map<string, DesiredVariable | null>,
     appPath: string,
   ) => {
     const scope = 'app'
@@ -1096,20 +1100,20 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
       const prior = rows.get(name)
 
-      if (prior?.kind === 'sealed' && want.kind !== 'sealed') {
+      if (prior?.kind === 'secret' && want.kind !== 'secret') {
         issues.push({
-          path: `${appPath}/keys/${name}`,
+          path: `${appPath}/env/${name}`,
           code: 'TYPE',
-          message: `${name} is sealed; a sealed key cannot become ${want.kind}. Use another key.`,
+          message: `${name} is secret; a secret environment variable cannot become ${want.kind}. Use another name.`,
         })
         continue
       }
 
-      if (prior && prior.kind !== 'sealed' && want.kind === 'sealed') {
+      if (prior && prior.kind !== 'secret' && want.kind === 'secret') {
         issues.push({
-          path: `${appPath}/keys/${name}`,
+          path: `${appPath}/env/${name}`,
           code: 'TYPE',
-          message: `${name} is ${prior.kind}; converting it to sealed is not possible. Use another key.`,
+          message: `${name} is ${prior.kind}; converting it to secret is not possible. Use another name.`,
         })
         continue
       }
@@ -1122,20 +1126,20 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         allow_unresolved: true,
       }
 
-      if (want.kind === 'sealed') {
+      if (want.kind === 'secret') {
         if (!prior) {
           if (want.reference === null) {
             warnings.push({
-              code: 'SEALED_VALUE_MISSING',
-              explanation: `${name} is declared sealed and has no value in ${where}; set it with set_app_keys.`,
-              path: `${appPath}/keys/${name}`,
+              code: 'SECRET_VALUE_MISSING',
+              explanation: `${name} is declared secret and has no value in ${where}; set it with set_app_environment_variables.`,
+              path: `${appPath}/env/${name}`,
             })
             continue
           }
 
-          set.add('key', parent, {
+          set.add('environment_variable', parent, {
             ...base,
-            kind: 'sealed',
+            kind: 'secret',
             reference: want.reference,
             value_length: null,
             version: 1,
@@ -1151,7 +1155,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         }
 
         set.update(
-          'key',
+          'environment_variable',
           prior.id,
           '',
           {
@@ -1163,7 +1167,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           },
           {
             ...base,
-            kind: 'sealed',
+            kind: 'secret',
             reference: referenceChanged ? want.reference : null,
             value_length: null,
             version: referenceChanged ? nextValueVersion(db, prior.id, 'production') : null,
@@ -1200,7 +1204,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
         if (prior) {
           set.update(
-            'key',
+            'environment_variable',
             prior.id,
             '',
             {
@@ -1213,7 +1217,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             after,
           )
         } else {
-          set.add('key', parent, after)
+          set.add('environment_variable', parent, after)
         }
 
         changed = true
@@ -1243,7 +1247,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
       if (prior) {
         set.update(
-          'key',
+          'environment_variable',
           prior.id,
           '',
           {
@@ -1256,7 +1260,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           after,
         )
       } else {
-        set.add('key', parent, after)
+        set.add('environment_variable', parent, after)
       }
 
       changed = true
@@ -1268,14 +1272,14 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       }
 
       if (input.prune) {
-        set.remove('key', row.id, {
+        set.remove('environment_variable', row.id, {
           name: row.name,
           kind: row.kind,
         })
         changed = true
       } else {
         unmanaged.push({
-          entity: 'key',
+          entity: 'environment_variable',
           id: row.id,
           name: row.name,
           app: appName,
@@ -1344,8 +1348,8 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         })
       }
 
-      if (p.keys) {
-        keyChanges(p.name, ref, [], p.keys, appPath)
+      if (p.variables) {
+        variableChanges(p.name, ref, [], p.variables, appPath)
       }
 
       const source = desired.source as Json
@@ -1606,15 +1610,15 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       set.update('app_port', change.id, '/protocol', change.before, change.after)
     }
 
-    let keysChanged = false
+    let variablesChanged = false
 
-    if (p.keys) {
-      const rows = keysOf(db, {
+    if (p.variables) {
+      const rows = variablesOf(db, {
         scope: 'app',
         id: row.id,
       }).all()
 
-      keysChanged = keyChanges(p.name, row.id, rows, p.keys, appPath)
+      variablesChanged = variableChanges(p.name, row.id, rows, p.variables, appPath)
     }
 
     const running = ((desired.desired_state as string) ?? row.desired_state) === 'running'
@@ -1623,19 +1627,19 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
       row,
       source,
       sourceChanged,
-      deployReason.length || structural ? 'redeploy' : 'key_change',
+      deployReason.length || structural ? 'redeploy' : 'environment_variable_change',
     )
 
     if (
       trigger &&
       running &&
       stationReady(p.stationId) &&
-      (structural || deployReason.length || keysChanged)
+      (structural || deployReason.length || variablesChanged)
     ) {
       const reasons = [
         ...deployReason,
         ...(structural ? ['ports or volumes changed'] : []),
-        ...(keysChanged ? ['keys changed'] : []),
+        ...(variablesChanged ? ['environment variables changed'] : []),
       ]
 
       set.deploy(row.id, trigger, {
@@ -1668,35 +1672,35 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     }
   }
 
-  if (projectKeys) {
-    const rows = keysOf(db, {
+  if (projectVariables) {
+    const rows = variablesOf(db, {
       scope: 'project',
       id: project.id,
     }).all()
     const byName = new Map(rows.map((r) => [r.name, r]))
 
-    for (const [name, want] of [...projectKeys].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [name, want] of [...projectVariables].sort(([a], [b]) => a.localeCompare(b))) {
       if (!want) {
         continue
       }
 
       const prior = byName.get(name)
-      const path = pointer(['keys', name])
+      const path = pointer(['env', name])
 
-      if (prior?.kind === 'sealed' && !want.sealed) {
+      if (prior?.kind === 'secret' && !want.secret) {
         issues.push({
           path,
           code: 'TYPE',
-          message: `${name} is sealed; it cannot become a literal. Use another key.`,
+          message: `${name} is secret; it cannot become a literal. Use another name.`,
         })
         continue
       }
 
-      if (prior && prior.kind !== 'sealed' && want.sealed) {
+      if (prior && prior.kind !== 'secret' && want.secret) {
         issues.push({
           path,
           code: 'TYPE',
-          message: `${name} is ${prior.kind}; converting it to sealed is not possible. Use another key.`,
+          message: `${name} is ${prior.kind}; converting it to secret is not possible. Use another name.`,
         })
         continue
       }
@@ -1710,7 +1714,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
         const after: Json = {
           scope: 'project',
           name,
-          kind: want.sealed ? 'sealed' : 'literal',
+          kind: want.secret ? 'secret' : 'literal',
           reference,
           injection: prior?.injection ?? 'env',
           build: prior?.build ?? false,
@@ -1730,7 +1734,7 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
 
         if (targetRef) {
           set.update(
-            'key',
+            'environment_variable',
             targetRef,
             '',
             prior
@@ -1745,11 +1749,11 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
             after,
           )
         } else {
-          targetRef = set.add('key', project.id, after)
+          targetRef = set.add('environment_variable', project.id, after)
         }
       }
 
-      if (want.sealed) {
+      if (want.secret) {
         const hasValue = prior ? headValue(db, prior.id, valueTarget, 'unset') : null
 
         if (hasValue && (!want.reference || prior!.reference === want.reference)) {
@@ -1760,8 +1764,8 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
           write(valueTarget, null, want.reference)
         } else {
           warnings.push({
-            code: 'SEALED_VALUE_MISSING',
-            explanation: `${name} is declared sealed and has no value in ${where}; set it with set_project_keys.`,
+            code: 'SECRET_VALUE_MISSING',
+            explanation: `${name} is declared secret and has no value in ${where}; set it with set_project_environment_variables.`,
             path,
           })
         }
@@ -1790,18 +1794,18 @@ export const planManifest = async (input: PlanInput): Promise<Plan> => {
     }
 
     for (const row of rows) {
-      if (projectKeys.has(row.name)) {
+      if (projectVariables.has(row.name)) {
         continue
       }
 
       if (input.prune) {
-        set.remove('key', row.id, {
+        set.remove('environment_variable', row.id, {
           name: row.name,
           kind: row.kind,
         })
       } else {
         unmanaged.push({
-          entity: 'key',
+          entity: 'environment_variable',
           id: row.id,
           name: row.name,
         })
@@ -1838,14 +1842,14 @@ export const changeLevel = (change: Change): Level => {
     return 'admin'
   }
 
-  if (change.entity === 'key') {
+  if (change.entity === 'environment_variable') {
     const after = (change.op === 'remove' ? change.before : change.after) as Json
 
-    if (after?.scope === 'project' || after?.kind === 'sealed') {
+    if (after?.scope === 'project' || after?.kind === 'secret') {
       return 'admin'
     }
 
-    if (change.op === 'remove' && change.before.kind === 'sealed') {
+    if (change.op === 'remove' && change.before.kind === 'secret') {
       return 'admin'
     }
   }

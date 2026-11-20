@@ -19,13 +19,13 @@
       "description": "The project name; checked, never written",
       "type": "string"
     },
-    "keys": {
-      "description": "Project keys; absent: not managed by the Manifest",
+    "env": {
+      "description": "Project environment variables; absent: not managed by the Manifest",
       "additionalProperties": false,
       "type": "object",
       "patternProperties": {
         "^[A-Z_][A-Z0-9_]*$": {
-          "description": "A production value, production and preview values, or a sealed declaration",
+          "description": "A production value, production and preview values, or a secret declaration",
           "anyOf": [
             {
               "anyOf": [
@@ -41,7 +41,7 @@
               ]
             },
             {
-              "description": "The object form of a project key",
+              "description": "The object form of a project environment variable",
               "additionalProperties": false,
               "type": "object",
               "properties": {
@@ -71,13 +71,13 @@
                     }
                   ]
                 },
-                "sealed": {
-                  "description": "Declared; production and preview values are set with set_project_keys",
+                "secret": {
+                  "description": "Declared; production and preview values are set with set_project_environment_variables",
                   "const": true,
                   "type": "boolean"
                 },
                 "reference": {
-                  "description": "${{secret(N)}} with sealed: production and previews get their own generated values",
+                  "description": "${{secret(N)}} with secret: production and previews get their own generated values",
                   "type": "string"
                 }
               }
@@ -596,8 +596,8 @@
                 }
               }
             },
-            "keys": {
-              "description": "App keys; absent: not managed by the Manifest",
+            "env": {
+              "description": "App environment variables; absent: not managed by the Manifest",
               "additionalProperties": false,
               "type": "object",
               "patternProperties": {
@@ -618,7 +618,7 @@
                       ]
                     },
                     {
-                      "description": "The object form of an app key",
+                      "description": "The object form of an app environment variable",
                       "additionalProperties": false,
                       "type": "object",
                       "properties": {
@@ -627,11 +627,11 @@
                           "type": "string"
                         },
                         "reference": {
-                          "description": "A reference expression, or ${{secret(N)}} with sealed",
+                          "description": "A reference expression, or ${{secret(N)}} with secret",
                           "type": "string"
                         },
-                        "sealed": {
-                          "description": "Declares a sealed key whose value is set out of band",
+                        "secret": {
+                          "description": "Declares a secret environment variable whose value is set out of band",
                           "const": true,
                           "type": "boolean"
                         },
@@ -938,10 +938,10 @@
                         }
                       ]
                     },
-                    "keys": {
+                    "env": {
                       "anyOf": [
                         {
-                          "description": "Keys merged one by one",
+                          "description": "Environment variables merged one by one",
                           "additionalProperties": false,
                           "type": "object",
                           "patternProperties": {
@@ -962,7 +962,7 @@
                                   ]
                                 },
                                 {
-                                  "description": "The object form of an app key",
+                                  "description": "The object form of an app environment variable",
                                   "additionalProperties": false,
                                   "type": "object",
                                   "properties": {
@@ -971,11 +971,11 @@
                                       "type": "string"
                                     },
                                     "reference": {
-                                      "description": "A reference expression, or ${{secret(N)}} with sealed",
+                                      "description": "A reference expression, or ${{secret(N)}} with secret",
                                       "type": "string"
                                     },
-                                    "sealed": {
-                                      "description": "Declares a sealed key whose value is set out of band",
+                                    "secret": {
+                                      "description": "Declares a secret environment variable whose value is set out of band",
                                       "const": true,
                                       "type": "boolean"
                                     },

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import { QueryClient, queryOptions } from '@tanstack/react-query'
 
-import type { Deployment, DeploymentStep, Event, Key } from '../src/lib/api.ts'
+import type { Deployment, DeploymentStep, EnvironmentVariable, Event } from '../src/lib/api.ts'
 import {
   applyOptimistic,
   isOptimistic,
@@ -14,7 +14,7 @@ import {
 } from '../src/lib/cache.ts'
 import { completionOf, completionText, startedByAgent } from '../src/lib/completion.ts'
 import { stepProgress, withQueued } from '../src/lib/status.ts'
-import { withDraft, withoutKeys } from '../src/lib/variables.ts'
+import { withDraft, withoutVariables } from '../src/lib/variables.ts'
 
 type Row = { id: string; on: boolean }
 
@@ -128,8 +128,8 @@ test('a deploy queues a placeholder above the latest deployment', () => {
   assert.deepEqual(withQueued([], 'manual'), [])
 })
 
-const keyNamed = (name: string): Key => ({
-  id: `key_${name}`,
+const variableNamed = (name: string): EnvironmentVariable => ({
+  id: `var_${name}`,
   scope: 'app',
   name,
   kind: 'literal',
@@ -140,8 +140,8 @@ const keyNamed = (name: string): Key => ({
   bytes: null,
 })
 
-test('a saved key shows as a draft until the server answers', () => {
-  const list = [keyNamed('A')]
+test('a saved environment variable shows as a draft until the server answers', () => {
+  const list = [variableNamed('A')]
   const added = withDraft(
     list,
     {
@@ -169,12 +169,12 @@ test('a saved key shows as a draft until the server answers', () => {
   )
 
   assert.equal(changed.length, 1)
-  assert.equal(changed[0].id, 'key_A')
+  assert.equal(changed[0].id, 'var_A')
   assert.equal(changed[0].injection, 'file')
   assert.ok(isOptimistic(changed[0]))
   assert.ok(!isOptimistic(list[0]))
   assert.deepEqual(
-    withoutKeys(added, ['A']).map((v) => v.name),
+    withoutVariables(added, ['A']).map((v) => v.name),
     ['B'],
   )
 })

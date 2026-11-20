@@ -5,7 +5,14 @@ import { runActiveStatuses, type Actor, type MessageBody, type Observed } from '
 
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import { key, machine, machine_snapshot, run, secret_value, server } from '../db/schema.ts'
+import {
+  environment_variable,
+  machine,
+  machine_snapshot,
+  run,
+  secret_value,
+  server,
+} from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
@@ -104,13 +111,13 @@ export const snapshotsKept = (db: Db, machineId: string) =>
     .where(and(eq(machine_snapshot.machine_id, machineId), ne(machine_snapshot.status, 'deleting')))
     .get()?.n ?? 0
 
-const dropKeys = (db: Db, machineId: string) => {
+const dropVariables = (db: Db, machineId: string) => {
   const ids = db
     .select({
-      id: key.id,
+      id: environment_variable.id,
     })
-    .from(key)
-    .where(eq(key.machine_id, machineId))
+    .from(environment_variable)
+    .where(eq(environment_variable.machine_id, machineId))
     .all()
     .map((v) => v.id)
 
@@ -118,8 +125,8 @@ const dropKeys = (db: Db, machineId: string) => {
     return
   }
 
-  db.delete(secret_value).where(inArray(secret_value.key_id, ids)).run()
-  db.delete(key).where(inArray(key.id, ids)).run()
+  db.delete(secret_value).where(inArray(secret_value.environment_variable_id, ids)).run()
+  db.delete(environment_variable).where(inArray(environment_variable.id, ids)).run()
 }
 
 const endRuns = (db: Db, machineId: string) =>
@@ -158,7 +165,7 @@ export const requestDeletion = (
       })
       .where(eq(machine.id, row.id))
       .run()
-    dropKeys(tdb, row.id)
+    dropVariables(tdb, row.id)
     endRuns(tdb, row.id)
     revokeWorkspaceToken(tdb, row, by.actor)
   })
@@ -172,7 +179,7 @@ export const removeMachine = (db: Db, row: MachineRow) => {
   db.transaction((tx) => {
     const tdb = tx as unknown as Db
 
-    dropKeys(tdb, row.id)
+    dropVariables(tdb, row.id)
     stopMachineTasks(tdb, row.id, new Date())
     tdb.delete(machine).where(eq(machine.id, row.id)).run()
     emitEvent(tdb, 'machine.deleted', machineSubject(row), {

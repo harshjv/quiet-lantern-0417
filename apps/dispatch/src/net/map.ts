@@ -28,7 +28,7 @@ type MapDoc = Static<typeof NetworkMap>
 type AppEntry = MapDoc['apps'][number]
 type Switch = AppEntry['switch']
 type Warning = MapDoc['warnings'][number]
-type Edge = { from_app: string; to_app: string; keys: string[] }
+type Edge = { from_app: string; to_app: string; environment_variables: string[] }
 
 export type NetworkSources = {
   db: Db
@@ -362,7 +362,7 @@ export const networkMap = (
       from: nameOf.get(e.from_app)!,
       to: nameOf.get(e.to_app)!,
       kind: 'reference' as const,
-      keys: e.keys,
+      environment_variables: e.environment_variables,
     }))
     .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to))
 

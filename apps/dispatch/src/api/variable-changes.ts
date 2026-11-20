@@ -3,73 +3,73 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { Principal } from '../auth/principal.ts'
 import type { Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
-import { app, key, target } from '../db/schema.ts'
+import { app, environment_variable, target } from '../db/schema.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { hasReference, parseValue } from '../secrets/reference.ts'
 import {
   decryptValue,
   headValue,
-  keysOf,
   nextValueVersion,
+  variablesOf,
   type ValueTarget,
 } from '../secrets/values.ts'
 
 import { requireInstance, requireLevel } from './access.ts'
 import type { ChangeSet } from './changes.ts'
 import { fail, invalid } from './errors.ts'
-import type { KeyRow } from './lookup.ts'
+import type { VariableRow } from './lookup.ts'
 
-export type KeyItem = {
+export type VariableItem = {
   name: string
-  kind: 'literal' | 'reference' | 'sealed'
+  kind: 'literal' | 'reference' | 'secret'
   value?: string
   reference?: string
   injection?: 'env' | 'file'
   build?: boolean
 }
 
-export type KeyScope =
+export type VariableScope =
   | { scope: 'app'; parent: string; appId: string | null; valueTarget: ValueTarget; target: Target }
   | { scope: 'project'; parent: string; valueTarget: ValueTarget; target: Target }
   | { scope: 'machine'; parent: string; machineId: string; target: Target }
   | { scope: 'global'; target: Target }
 
-export const existingKeys = (db: Db, scope: KeyScope): KeyRow[] => {
+export const existingVariables = (db: Db, scope: VariableScope): VariableRow[] => {
   if (scope.scope === 'app') {
     if (!scope.appId) {
       return []
     }
 
-    return keysOf(db, {
+    return variablesOf(db, {
       scope: 'app',
       id: scope.appId,
     }).all()
   }
 
   if (scope.scope === 'machine') {
-    return keysOf(db, {
+    return variablesOf(db, {
       scope: 'machine',
       id: scope.machineId,
     }).all()
   }
 
   if (scope.scope === 'project') {
-    return keysOf(db, {
+    return variablesOf(db, {
       scope: 'project',
       id: scope.parent,
     }).all()
   }
 
-  return keysOf(db, {
+  return variablesOf(db, {
     scope: 'global',
   }).all()
 }
 
-export const dependentsOf = (db: Db, row: KeyRow) => {
+export const dependentsOf = (db: Db, row: VariableRow) => {
   const candidates = db
     .select()
-    .from(key)
-    .where(and(eq(key.scope, 'app'), eq(key.kind, 'reference')))
+    .from(environment_variable)
+    .where(and(eq(environment_variable.scope, 'app'), eq(environment_variable.kind, 'reference')))
     .all()
   const owner =
     row.scope === 'app' ? db.select().from(app).where(eq(app.id, row.app_id!)).get() : undefined
@@ -96,7 +96,7 @@ export const dependentsOf = (db: Db, row: KeyRow) => {
           .map((s) => s.id),
       )
     : new Set<string>()
-  const out: { entity: 'key'; id: string; name: string; app_id: string }[] = []
+  const out: { entity: 'environment_variable'; id: string; name: string; app_id: string }[] = []
 
   for (const candidate of candidates) {
     if (candidate.id === row.id || !candidate.reference) {
@@ -147,7 +147,7 @@ export const dependentsOf = (db: Db, row: KeyRow) => {
 
     if (hit) {
       out.push({
-        entity: 'key',
+        entity: 'environment_variable',
         id: candidate.id,
         name: candidate.name,
         app_id: candidate.app_id!,
@@ -158,7 +158,7 @@ export const dependentsOf = (db: Db, row: KeyRow) => {
   return out
 }
 
-const levelFor = (principal: Principal, scope: KeyScope, kind: string) => {
+const levelFor = (principal: Principal, scope: VariableScope, kind: string) => {
   if (scope.scope === 'global') {
     return requireInstance(principal, 'admin')
   }
@@ -167,14 +167,14 @@ const levelFor = (principal: Principal, scope: KeyScope, kind: string) => {
     return requireLevel(principal, scope.target, 'admin')
   }
 
-  return requireLevel(principal, scope.target, kind === 'sealed' ? 'admin' : 'deploy')
+  return requireLevel(principal, scope.target, kind === 'secret' ? 'admin' : 'deploy')
 }
 
 const unchanged = (
   db: Db,
   keyring: Keyring,
-  prior: KeyRow | undefined,
-  item: KeyItem,
+  prior: VariableRow | undefined,
+  item: VariableItem,
   valueTarget: ValueTarget,
 ) => {
   if (!prior || prior.kind !== item.kind) {
@@ -206,16 +206,16 @@ const unchanged = (
   return head !== undefined && decryptValue(keyring, head) === item.value
 }
 
-export const planKeys = (
+export const planVariables = (
   db: Db,
   keyring: Keyring,
   principal: Principal,
   set: ChangeSet,
-  scope: KeyScope,
-  input: { set?: KeyItem[]; unset?: string[]; allow_unresolved?: boolean },
+  scope: VariableScope,
+  input: { set?: VariableItem[]; unset?: string[]; allow_unresolved?: boolean },
   options: { replaceAll?: boolean } = {},
 ) => {
-  const existing = new Map(existingKeys(db, scope).map((v) => [v.name, v]))
+  const existing = new Map(existingVariables(db, scope).map((v) => [v.name, v]))
   const issues: { path: string; message: string }[] = []
   const items = input.set ?? []
 
@@ -226,7 +226,7 @@ export const planKeys = (
       if (scope.scope !== 'app' && scope.scope !== 'machine') {
         issues.push({
           path: `${path}/kind`,
-          message: `${scope.scope} keys hold values, not references`,
+          message: `${scope.scope} environment variables hold values, not references`,
         })
       }
 
@@ -252,13 +252,13 @@ export const planKeys = (
         issues.push({
           path: `${path}/reference`,
           message:
-            'a machine key references ${{project.KEY}}, ${{global.KEY}} or ${{secret(N)}} only, never an app',
+            'a machine environment variable references ${{project.KEY}}, ${{global.KEY}} or ${{secret(N)}} only, never an app',
         })
       }
     } else if (
       item.value === undefined &&
       !(item.kind === 'literal' && item.reference !== undefined) &&
-      !(item.kind === 'sealed' && existing.get(item.name)?.kind === 'sealed')
+      !(item.kind === 'secret' && existing.get(item.name)?.kind === 'secret')
     ) {
       issues.push({
         path: `${path}/value`,
@@ -294,10 +294,10 @@ export const planKeys = (
 
     const prior = existing.get(item.name)
 
-    if (prior?.kind === 'sealed' && item.kind !== 'sealed') {
+    if (prior?.kind === 'secret' && item.kind !== 'secret') {
       issues.push({
         path: `${path}/kind`,
-        message: `${item.name} is sealed; converting a sealed key is not possible`,
+        message: `${item.name} is secret; converting a secret environment variable is not possible`,
       })
     }
 
@@ -366,7 +366,7 @@ export const planKeys = (
 
     if (prior) {
       set.update(
-        'key',
+        'environment_variable',
         prior.id,
         '',
         {
@@ -377,7 +377,7 @@ export const planKeys = (
         after,
       )
     } else {
-      set.add('key', parent, after)
+      set.add('environment_variable', parent, after)
     }
   }
 
@@ -408,7 +408,7 @@ export const planKeys = (
       )
     }
 
-    set.remove('key', prior.id, {
+    set.remove('environment_variable', prior.id, {
       name: prior.name,
       kind: prior.kind,
     })

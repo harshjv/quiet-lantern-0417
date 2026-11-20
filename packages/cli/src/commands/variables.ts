@@ -49,7 +49,7 @@ const dotenv = (text: string) => {
   return Object.entries(parsed) as [string, string][]
 }
 
-const pairs = async (options: { file?: string; sealed?: true }, assignments: string[]) => {
+const pairs = async (options: { file?: string; secret?: true }, assignments: string[]) => {
   const result: (readonly [string, string])[] = []
 
   if (options.file) {
@@ -63,10 +63,10 @@ const pairs = async (options: { file?: string; sealed?: true }, assignments: str
 
     if (pair) {
       result.push(pair)
-    } else if (options.sealed) {
+    } else if (options.secret) {
       if (!interactive()) {
         throw inputRequired(
-          `The sealed value of ${assignment}`,
+          `The secret value of ${assignment}`,
           `--file <path> or --file - with ${assignment}=<value> on stdin`,
         )
       }
@@ -82,7 +82,7 @@ const pairs = async (options: { file?: string; sealed?: true }, assignments: str
     } else {
       throw usage(
         `${assignment} has no value.`,
-        `Write ${assignment}=<value>, or add --sealed to type a hidden value.`,
+        `Write ${assignment}=<value>, or add --secret to type a hidden value.`,
       )
     }
   }
@@ -95,7 +95,7 @@ const pairs = async (options: { file?: string; sealed?: true }, assignments: str
 }
 
 const toSet = (
-  options: { sealed?: true; build?: true },
+  options: { secret?: true; build?: true },
   [name, value]: readonly [string, string],
 ) => {
   const build = {
@@ -106,10 +106,10 @@ const toSet = (
       : {}),
   }
 
-  if (options.sealed) {
+  if (options.secret) {
     return {
       name,
-      kind: 'sealed' as const,
+      kind: 'secret' as const,
       value,
       ...build,
     }
@@ -132,11 +132,11 @@ const toSet = (
   }
 }
 
-type Patch = NonNullable<Parameters<Api['global-keys']['patch']>[0]>
+type Patch = NonNullable<Parameters<Api['global-environment-variables']['patch']>[0]>
 
 const patch = async (run: Run, scope: Scope, body: Patch) => {
   if (scope === 'global') {
-    return run.api.v1['global-keys'].patch(body)
+    return run.api.v1['global-environment-variables'].patch(body)
   }
 
   if (scope === 'machine') {
@@ -144,7 +144,7 @@ const patch = async (run: Run, scope: Scope, body: Patch) => {
       .machines({
         machine: await targetId(run, 'machine'),
       })
-      .keys.patch(body)
+      ['environment-variables'].patch(body)
   }
 
   if (scope === 'project') {
@@ -152,7 +152,7 @@ const patch = async (run: Run, scope: Scope, body: Patch) => {
       .projects({
         project: await projectRef(run),
       })
-      .keys.patch({
+      ['environment-variables'].patch({
         target: valueTarget(run),
         ...body,
       })
@@ -162,18 +162,18 @@ const patch = async (run: Run, scope: Scope, body: Patch) => {
     .apps({
       app: await appId(run),
     })
-    .keys.patch(body)
+    ['environment-variables'].patch(body)
 }
 
-export const keyCommands = (program: Program) => {
-  group(program, 'keys')
+export const variableCommands = (program: Program) => {
+  group(program, 'env')
     .command('set')
     .description(
-      'Set keys from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --sealed',
+      'Set environment variables from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --secret',
     )
     .argument(
       '[assignments...]',
-      'KEY=VALUE pairs; with --sealed, a bare KEY prompts for a hidden value',
+      'KEY=VALUE pairs; with --secret, a bare KEY prompts for a hidden value',
     )
     .addOption(
       new Option(
@@ -181,7 +181,7 @@ export const keyCommands = (program: Program) => {
         'default machine when --machine is selected, app when --app is, else project',
       ).choices(scopes),
     )
-    .option('--sealed', 'store as sealed: write-only, never returned')
+    .option('--secret', 'store as secret: write-only, never returned')
     .option('--file <path>', 'read KEY=VALUE lines from a file, or - for stdin')
     .option('--build', 'also pass to the build')
     .option('--apply', 'redeploy stale dependents')

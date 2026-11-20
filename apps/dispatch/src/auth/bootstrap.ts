@@ -5,6 +5,7 @@ import {
   gatewayHostAlias,
   networkLayout,
   type machineRuntimeValues,
+  type Observed,
   type SettingKey,
 } from '@stationly/protocol'
 
@@ -14,6 +15,7 @@ import { newId } from '../db/ids.ts'
 import { component, member, server } from '../db/schema.ts'
 import { readSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { DomainError } from '../errors.ts'
+import { systemRouteIds } from '../generation/build.ts'
 import { cidrProblem } from '../net/cidr.ts'
 import {
   hostArch,
@@ -25,6 +27,7 @@ import {
 } from '../platform/lockfile.ts'
 import { runtimeRefusal } from '../sandboxes/runtime.ts'
 import type { Keyring } from '../secrets/keyring.ts'
+import { hostnamesStatus } from '../station/domains.ts'
 
 import {
   loginLinkSeconds,
@@ -66,7 +69,7 @@ export const ensureInstanceId = (db: Db) => {
 }
 
 export const setupInstance = async (
-  deps: { db: Db; keyring: Keyring; auth: AuthService },
+  deps: { db: Db; keyring: Keyring; auth: AuthService; observed?: Observed },
   input: SetupInput,
   actor: SetupActor,
 ) => {
@@ -304,7 +307,7 @@ export const setupInstance = async (
     login_link_expires_at: new Date(Date.now() + loginLinkSeconds * 1000).toISOString(),
     hostnames: {
       ...input.hostnames,
-      status: 'pending',
+      status: hostnamesStatus(deps.observed, Object.values(systemRouteIds)),
     },
     reach: [
       `https://${input.hostnames.dashboard} through the Cloudflare Tunnel once its *.${zone} route points at http://${gatewayHostAlias}`,

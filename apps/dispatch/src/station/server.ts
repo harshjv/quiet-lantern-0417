@@ -37,7 +37,16 @@ import {
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { app, build, deployment, key, machine, run, server, token } from '../db/schema.ts'
+import {
+  app,
+  build,
+  deployment,
+  environment_variable,
+  machine,
+  run,
+  server,
+  token,
+} from '../db/schema.ts'
 import { readSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { env } from '../env.ts'
 import { DomainError } from '../errors.ts'
@@ -749,7 +758,7 @@ export const createStationServer = (options: StationServerOptions) => {
         machine_id: machineId,
       },
       (actor) => machineDeliver(db, keyring, machineId, actor),
-      'Set the machine keys again.',
+      'Set the machine environment variables again.',
       ref,
     )
 
@@ -1197,13 +1206,19 @@ export const createStationServer = (options: StationServerOptions) => {
 
     const buildSecretKeys = db
       .select({
-        name: key.name,
+        name: environment_variable.name,
       })
-      .from(key)
+      .from(environment_variable)
       .where(
         and(
-          eq(key.build, true),
-          or(eq(key.app_id, appId), and(eq(key.project_id, b.project_id), isNull(key.app_id))),
+          eq(environment_variable.build, true),
+          or(
+            eq(environment_variable.app_id, appId),
+            and(
+              eq(environment_variable.project_id, b.project_id),
+              isNull(environment_variable.app_id),
+            ),
+          ),
         ),
       )
       .all()
@@ -1308,7 +1323,7 @@ export const createStationServer = (options: StationServerOptions) => {
           requestId: `build_${b.id}`,
           purpose: 'build',
           after: {
-            keys: delivery.values.map((v) => v.key),
+            environment_variables: delivery.values.map((v) => v.key),
           },
         })
       }

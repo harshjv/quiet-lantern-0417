@@ -11,9 +11,9 @@ import type {
   Deployment,
   DeploymentStatus,
   Diagnosis,
+  EnvironmentVariable,
   Explanation,
   HostProbe,
-  Key,
   Machine,
   MachineSnapshot,
   MachineStatus,
@@ -74,7 +74,7 @@ export const appKind: Record<App['kind'], string> = {
 }
 
 export const staleReason: Record<NonNullable<App['stale_reasons']>[number]['code'], string> = {
-  KEYS_CHANGED: 'Keys changed',
+  ENVIRONMENT_VARIABLES_CHANGED: 'Environment variables changed',
   CONFIG_CHANGED: 'Settings changed',
 }
 
@@ -129,7 +129,7 @@ export const deploymentTrigger: Record<Deployment['trigger']['type'], string> = 
   push: 'Git push',
   manual: 'Manual',
   rollback: 'Rollback',
-  key_change: 'Key change',
+  environment_variable_change: 'Environment variable change',
   redeploy: 'Redeploy',
   base_image: 'Base image update',
   agent: 'Agent',
@@ -552,13 +552,13 @@ const rcodes: Record<string, string> = {
 
 export const rcode = (code: string) => rcodes[code] ?? code
 
-export const keyKind: Record<Key['kind'], string> = {
-  literal: 'Plain',
-  sealed: 'Sealed',
+export const variableKind: Record<EnvironmentVariable['kind'], string> = {
+  literal: 'Visible',
+  secret: 'Secret',
   reference: 'Reference',
 }
 
-export const injection: Record<Key['injection'], string> = {
+export const injection: Record<EnvironmentVariable['injection'], string> = {
   env: 'Environment variable',
   file: 'File',
 }
@@ -618,7 +618,7 @@ export const level: Record<Level, { label: string; hint: string }> = {
   },
   admin: {
     label: 'Admin',
-    hint: 'Everything Deploy allows, plus creating and deleting apps, domains and sealed keys.',
+    hint: 'Everything Deploy allows, plus creating and deleting apps, domains and secret environment variables.',
   },
 }
 

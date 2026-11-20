@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { KeysPanel } from '@/components/variables-panel'
+import { VariablesPanel } from '@/components/variables-panel'
 import { agentHints } from '@/lib/agent-hints'
 import type { App, Deployment } from '@/lib/api'
 import { isOptimistic } from '@/lib/cache'
@@ -45,14 +45,14 @@ import { cn } from '@/lib/utils'
 import { appLink } from './ops-live'
 import { Notice, Page, PageBoundary, PageTabPanel, PageTabs, Section } from './parts'
 
-const appTabs = ['deployments', 'logs', 'keys', 'network'] as const
+const appTabs = ['deployments', 'logs', 'environment-variables', 'network'] as const
 
 type AppTab = (typeof appTabs)[number]
 
 const tabLabel: Record<AppTab, string> = {
   deployments: 'Deployments',
   logs: 'Logs',
-  keys: 'Keys',
+  'environment-variables': 'Environment variables',
   network: 'Network',
 }
 
@@ -171,13 +171,15 @@ function AppView({ id, tab: shown }: { id: string; tab: string | null }) {
             />
           </Section>
         </PageTabPanel>
-        <PageTabPanel value="keys">
-          <KeysPanel
+        <PageTabPanel value="environment-variables">
+          <VariablesPanel
             target={{
               kind: 'app',
               app: app.id,
             }}
-            also={<AlsoWith cli={commands.setAppKey(scope)} tool="set_app_keys" />}
+            also={
+              <AlsoWith cli={commands.setAppVariable(scope)} tool="set_app_environment_variables" />
+            }
           />
         </PageTabPanel>
         <PageTabPanel value="network">

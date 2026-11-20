@@ -390,20 +390,20 @@ describe('exit codes', () => {
     assert.equal(JSON.parse(result.stdout).error.code, 'NAME_TAKEN')
   })
 
-  test('keys list lists the project keys', async () => {
+  test('env list lists the project environment variables', async () => {
     const set = await sly([
       '--json',
       '--project',
       'alpha',
       '--preview',
       'staging',
-      'keys',
+      'env',
       'set',
       'LISTED=yes',
     ])
 
     assert.equal(set.code, 0)
-    const listed = await sly(['--json', '--project', 'alpha', 'keys', 'list'])
+    const listed = await sly(['--json', '--project', 'alpha', 'env', 'list'])
 
     assert.equal(listed.code, 0)
     assert.ok(JSON.parse(listed.stdout).items.some((v: { name: string }) => v.name === 'LISTED'))
@@ -417,7 +417,7 @@ describe('exit codes', () => {
   })
 
   test('--json prints a usage error as an envelope on stdout and still exits 2', async () => {
-    const result = await sly(['--json', 'keys', 'set', 'A=b', '--scope', 'nope'])
+    const result = await sly(['--json', 'env', 'set', 'A=b', '--scope', 'nope'])
 
     assert.equal(result.code, 2)
     assert.equal(JSON.parse(result.stdout).error.code, 'VALIDATION_FAILED')

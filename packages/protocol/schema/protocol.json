@@ -1992,17 +1992,17 @@
                 }
               }
             },
-            "variables": {
+            "environment_variables": {
               "type": "array",
               "items": {
                 "type": "object",
                 "required": [
-                  "key",
+                  "name",
                   "from_version",
                   "to_version"
                 ],
                 "properties": {
-                  "key": {
+                  "name": {
                     "type": "string"
                   },
                   "from_version": {
@@ -2360,6 +2360,12 @@
         "detail": {
           "type": "object",
           "additionalProperties": {}
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DoctorStep"
+          }
         }
       }
     },
@@ -2403,6 +2409,33 @@
         "warn",
         "fail"
       ]
+    },
+    "DoctorStep": {
+      "title": "DoctorStep",
+      "type": "object",
+      "required": [
+        "name",
+        "status",
+        "finding",
+        "fix"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DoctorStatus"
+        },
+        "finding": {
+          "type": "string"
+        },
+        "fix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     },
     "DomainProbeBody": {
       "title": "DomainProbeBody",
@@ -3604,6 +3637,16 @@
           "additionalProperties": {}
         }
       }
+    },
+    "HostnameStatus": {
+      "title": "HostnameStatus",
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "unreachable",
+        "wrong_gateway"
+      ]
     },
     "HostProbe": {
       "title": "HostProbe",
@@ -5265,6 +5308,12 @@
         },
         "failure": {
           "$ref": "#/$defs/RouteProbeFailure"
+        },
+        "foreign_addresses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -5638,6 +5687,9 @@
         },
         "connections": {
           "type": "integer"
+        },
+        "wildcard": {
+          "$ref": "#/$defs/ObservedRouteProbe"
         }
       }
     },
@@ -6765,7 +6817,7 @@
           "type": "string"
         },
         "status": {
-          "type": "string"
+          "$ref": "#/$defs/HostnameStatus"
         }
       }
     },
@@ -7019,7 +7071,8 @@
       "type": "string",
       "enum": [
         "wrong_gateway",
-        "unreachable"
+        "unreachable",
+        "upstream_unhealthy"
       ]
     },
     "RouteTarget": {
@@ -8430,6 +8483,9 @@
         "gaming.quiet_period_s": {
           "minimum": 0,
           "type": "integer"
+        },
+        "domains.zone": {
+          "type": "string"
         }
       }
     },

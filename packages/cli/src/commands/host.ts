@@ -19,10 +19,11 @@ import {
   type RootSocketResult,
 } from '@stationly/protocol'
 
-import { action, group, type Program } from '../command.ts'
+import { action, group, seconds, type Program } from '../command.ts'
 import { env } from '../env.ts'
 import { Exit, exitCodes, usage, type EnvelopeCode } from '../errors.ts'
 import { bucketName, checkPair, endpointProblem, siblingSuggestion } from '../hostnames.ts'
+import { pollUntil } from '../kit.ts'
 import { ask, askSecret, choose, confirm, interactive, need, readStdin } from '../prompt.ts'
 
 const stationdRefusal = () =>
@@ -151,7 +152,7 @@ const render = (r: RootSocketResult<'setup'>) =>
     `  ${r.login_link ?? 'none'}`,
     '',
     'reached through Cloudflare Tunnel; this server opens no web port',
-    `hostnames ${r.hostnames.api} and ${r.hostnames.dashboard} are ${r.hostnames.status}; they answer once the tunnel connects`,
+    `hostnames ${r.hostnames.api} and ${r.hostnames.dashboard} are ${r.hostnames.status}`,
     r.litestream
       ? `Litestream bucket ${r.litestream.bucket}: ${r.litestream.note}`
       : 'no Litestream bucket: sly platform doctor reports "no off-host backup of Dispatch"',
@@ -159,6 +160,77 @@ const render = (r: RootSocketResult<'setup'>) =>
     ...r.reach.map((line) => `  ${line}`),
     '',
     'next: sly login --instance <api url> from a laptop, after enrolling TOTP on first sign-in',
+  ].join('\n')
+
+type DoctorCheck = RootSocketResult<'doctor'>['checks'][number]
+
+type TunnelWait = { ok: boolean; waited_s: number; check: DoctorCheck | null }
+
+const tunnelPollMs = 3000
+
+const stepMark = {
+  ok: '+',
+  warn: '.',
+  fail: 'x',
+} as const
+
+const tunnelCheck = async (socket: string) =>
+  (
+    await rootSocketCall(
+      socket,
+      'doctor',
+      {
+        checks: ['tunnel'],
+      },
+      () => {},
+    )
+  ).checks.find((c) => c.name === 'tunnel') ?? null
+
+const waitForTunnel = async (
+  socket: string,
+  timeoutS: number,
+  onStep: (line: string) => void,
+): Promise<TunnelWait> => {
+  const started = Date.now()
+  const shown = new Map<string, string>()
+  const check = await pollUntil(
+    async () => {
+      const found = await tunnelCheck(socket).catch(() => null)
+
+      for (const step of found?.steps ?? []) {
+        const line = `${stepMark[step.status]} ${step.name}: ${step.finding}`
+
+        if (shown.get(step.name) !== line) {
+          shown.set(step.name, line)
+          onStep(line)
+        }
+      }
+
+      return found
+    },
+    (found) => found?.status === 'ok',
+    started + timeoutS * 1000,
+    tunnelPollMs,
+  )
+
+  return {
+    ok: check?.status === 'ok',
+    waited_s: Math.round((Date.now() - started) / 1000),
+    check,
+  }
+}
+
+const renderMissed = (wait: TunnelWait) =>
+  [
+    `the install is set up, but it did not answer through Cloudflare within ${wait.waited_s} s:`,
+    ...(wait.check ? [] : ['  stationd did not report its tunnel check over the root socket']),
+    ...(wait.check?.steps ?? [])
+      .filter((step) => step.status !== 'ok')
+      .flatMap((step) => [
+        `  ${step.name}: ${step.finding}`,
+        ...(step.fix ? [`    fix: ${step.fix}`] : []),
+      ]),
+    'sly platform doctor repeats these checks',
   ].join('\n')
 
 const tunnelTokenPrompt =
@@ -450,6 +522,16 @@ export const hostCommands = (program: Program) => {
         'bucket access key id; the secret comes from LITESTREAM_SECRET_ACCESS_KEY',
       ).env('LITESTREAM_ACCESS_KEY_ID'),
     )
+    .option(
+      '--no-wait',
+      'return once the admin exists, without waiting for the install to answer through Cloudflare',
+    )
+    .option(
+      '--wait-timeout <duration>',
+      'how long to wait for the tunnel, the hostnames and the wildcard route to answer',
+      seconds,
+      300,
+    )
     .action(
       action(async (options) => {
         const tty = interactive()
@@ -579,11 +661,44 @@ export const hostCommands = (program: Program) => {
           }
         })
 
-        process.stdout.write(
-          options.json ? `${JSON.stringify(result, null, 2)}\n` : `${render(result)}\n`,
-        )
+        if (!options.json) {
+          process.stdout.write(`${render(result)}\n`)
+        }
 
-        if (!options.json && interactive()) {
+        const progress = !options.json && tty
+
+        if (options.wait && progress) {
+          process.stderr.write('\nwaiting for the install to answer through Cloudflare\n')
+        }
+
+        const wait = options.wait
+          ? await waitForTunnel(options.socket, options.waitTimeout, (line) => {
+              if (progress) {
+                process.stderr.write(`  ${line}\n`)
+              }
+            })
+          : null
+
+        if (options.json) {
+          process.stdout.write(
+            `${JSON.stringify(
+              {
+                ...result,
+                tunnel: wait,
+              },
+              null,
+              2,
+            )}\n`,
+          )
+        } else if (wait) {
+          process.stderr.write(
+            wait.ok
+              ? `the install answers through Cloudflare (${wait.waited_s} s)\n`
+              : `${renderMissed(wait)}\n`,
+          )
+        }
+
+        if (progress) {
           const stored = await need(undefined, {
             what: 'type "stored" once the recovery key is saved',
             flag: '--json',
@@ -596,7 +711,7 @@ export const hostCommands = (program: Program) => {
           }
         }
 
-        return exitCodes.ok
+        return wait && !wait.ok ? exitCodes.api : exitCodes.ok
       }),
     )
 }

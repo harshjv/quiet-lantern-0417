@@ -1643,16 +1643,31 @@ const BlobGrantRequestBody = Type.Object(
   },
 )
 
+const DoctorStatus = StringEnum(doctorStatusValues, {
+  title: 'DoctorStatus',
+})
+
+const DoctorStep = Type.Object(
+  {
+    name: Type.String(),
+    status: DoctorStatus,
+    finding: Type.String(),
+    fix: Nullable(Type.String()),
+  },
+  {
+    title: 'DoctorStep',
+  },
+)
+
 const DoctorCheck = Type.Object(
   {
     name: Type.String(),
-    status: StringEnum(doctorStatusValues, {
-      title: 'DoctorStatus',
-    }),
+    status: DoctorStatus,
     code: Nullable(Type.String()),
     finding: Type.String(),
     fix: Nullable(Type.String()),
     detail: Type.Optional(JsonObject),
+    steps: Type.Optional(Type.Array(DoctorStep)),
   },
   {
     title: 'DoctorCheck',

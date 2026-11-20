@@ -374,6 +374,7 @@ next_steps() {
 	say "installed. Nothing listens on the public interface but SSH until sly setup puts Dispatch on its hostnames."
 	if [ -n "$litestream_bucket" ]; then
 		say "Dispatch was restored from bucket $litestream_bucket; sign in with the existing admin, sly setup is not needed"
+		say "next, on this host as root, give this server its Cloudflare Tunnel token (no backup holds it):  sly platform tunnel-token --stdin"
 	else
 		say "next, on this host as root:  sly setup"
 	fi

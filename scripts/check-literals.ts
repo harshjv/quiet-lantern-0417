@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
-import { keyNamePattern, slugPattern } from '../packages/protocol/src/domain.ts'
+import { environmentVariableNamePattern, slugPattern } from '../packages/protocol/src/domain.ts'
 import { defaultRegistryAddress, networkLayout } from '../packages/protocol/src/network.ts'
 import { resourcePrefix, tokenPrefix } from '../packages/protocol/src/primitives.ts'
 import { releaseConfig } from '../packages/protocol/src/release-config.ts'
@@ -100,9 +100,9 @@ const constants: Constant[] = [
     pattern: regexSource(slugPattern),
   },
   {
-    name: 'key name pattern',
+    name: 'environment variable name pattern',
     home: 'packages/protocol/src/domain.ts',
-    pattern: regexSource(keyNamePattern),
+    pattern: regexSource(environmentVariableNamePattern),
   },
   {
     name: 'Dispatch port',

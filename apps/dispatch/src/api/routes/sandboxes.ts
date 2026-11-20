@@ -4,11 +4,12 @@ import { t } from 'elysia'
 
 import {
   dnsLogTail,
+  idPrefixes,
   MachineCreateBody,
+  MachineEnvironmentVariablesPatchBody,
   MachineExecBody,
   machineExecLimits,
   machineIdleStatuses,
-  MachineKeysPatchBody,
   machineNetworkValues,
   MachinePatchBody,
   MachineShellBody,
@@ -35,7 +36,7 @@ import { scopedTokenMaxSeconds } from '../../auth/auth.ts'
 import { dropToken, mintToken } from '../../auth/tokens.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { key, machine, machine_snapshot, run, server } from '../../db/schema.ts'
+import { environment_variable, machine, machine_snapshot, run, server } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import { shapeMachineSample } from '../../net/connections.ts'
 import { probeTarget } from '../../net/explain.ts'
@@ -64,12 +65,12 @@ import {
   machineSetupAs,
   repositoryName,
   setupCommand,
-  workspaceKeySets,
   workspacePath,
+  workspaceVariableSets,
 } from '../../sandboxes/workspace.ts'
 import { ephemeralDelivery } from '../../secrets/deliver.ts'
 import { newKeyPlaceholders, newPlaceholder } from '../../secrets/relay.ts'
-import { keysOf } from '../../secrets/values.ts'
+import { variablesOf } from '../../secrets/values.ts'
 import { gitIdentityOf } from '../../team/members.ts'
 import { can, requireHuman, requireLevel } from '../access.ts'
 import { ChangeSet, commit, placeName } from '../changes.ts'
@@ -99,13 +100,13 @@ import { DnsLogQuery, input, ProbeBody } from '../schemas.ts'
 import {
   ApprovalDetail,
   DnsLog,
-  Key,
+  EnvironmentVariable,
   Machine,
   MachineConnections,
   MachineCreated,
   MachineDeleted,
+  MachineEnvironmentVariablesOutcome,
   MachineExec,
-  MachineKeysOutcome,
   MachineMetricSample,
   MachineNetworkProbe,
   MachineShell,
@@ -117,7 +118,7 @@ import {
   Run,
   StorageGrown,
 } from '../shapes.ts'
-import { planKeys } from '../variable-changes.ts'
+import { planVariables } from '../variable-changes.ts'
 
 import { stationError } from './runs.ts'
 import { requireMintable } from './tokens.ts'
@@ -495,7 +496,7 @@ export const machineRoutes = (kit: Kit) => {
         project: ctx.project,
         target: ctx.target_row.id,
         repository: wanted.repository,
-        keys: body.keys,
+        variables: body.environment_variables,
       })
     }
 
@@ -595,10 +596,10 @@ export const machineRoutes = (kit: Kit) => {
             task_branch: taskBranch,
           }
         : null
-    const keys = [
-      ...(body.keys ?? []),
+    const variables = [
+      ...(body.environment_variables ?? []),
       ...(wanted && minted
-        ? workspaceKeySets(
+        ? workspaceVariableSets(
             db,
             {
               project: ctx.project.id,
@@ -606,7 +607,7 @@ export const machineRoutes = (kit: Kit) => {
             },
             wanted.agent,
             minted.key,
-            (body.keys ?? []).map((v) => v.name),
+            (body.environment_variables ?? []).map((v) => v.name),
             kind,
           )
         : []),
@@ -644,10 +645,10 @@ export const machineRoutes = (kit: Kit) => {
           })
           .run()
 
-        if (keys.length) {
+        if (variables.length) {
           const changes = new ChangeSet()
 
-          planKeys(
+          planVariables(
             tdb,
             keyring,
             call.principal,
@@ -659,7 +660,7 @@ export const machineRoutes = (kit: Kit) => {
               target: ctx.target,
             },
             {
-              set: keys,
+              set: variables,
             },
           )
           commit(
@@ -743,7 +744,7 @@ export const machineRoutes = (kit: Kit) => {
               start,
               forked_from: source?.forkedFrom ?? null,
               workspace,
-              keys: keys.map((v) => v.name),
+              environment_variables: variables.map((v) => v.name),
             },
           },
         )
@@ -1500,9 +1501,9 @@ export const machineRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/machines/:machine/keys',
+      '/machines/:machine/environment-variables',
       ({ ctx, query }) => {
-        const rows = keysOf(db, {
+        const rows = variablesOf(db, {
           scope: 'machine',
           id: ctx.machine.id,
         }).all()
@@ -1510,24 +1511,24 @@ export const machineRoutes = (kit: Kit) => {
         return {
           items: rows
             .sort((a, b) => a.name.localeCompare(b.name))
-            .map((row) => select(kit.views.key, row, kit.fields(query.fields))),
+            .map((row) => select(kit.views.variable, row, kit.fields(query.fields))),
           next_cursor: null,
         }
       },
       {
         machine: {
-          id: 'list_machine_keys',
-          summary: 'List the keys of a machine; values are never listed',
+          id: 'list_machine_environment_variables',
+          summary: 'List the environment variables of a machine; values are never listed',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(Key),
+          200: Page(EnvironmentVariable),
         }),
       },
     )
     .get(
-      '/machines/:machine/keys/resolved',
+      '/machines/:machine/environment-variables/resolved',
       async ({ ctx, request }) => {
         const call = await kit.call(request)
 
@@ -1537,9 +1538,9 @@ export const machineRoutes = (kit: Kit) => {
       },
       {
         machine: {
-          id: 'get_machine_resolved_keys',
+          id: 'get_machine_resolved_environment_variables',
           summary:
-            'The resolved keys of a machine with their sources; a value only with admin and never a sealed one',
+            'The resolved environment variables of a machine with their sources; a value only with admin and never a secret one',
           level: 'read',
         },
         response: replies({
@@ -1548,12 +1549,12 @@ export const machineRoutes = (kit: Kit) => {
       },
     )
     .patch(
-      '/machines/:machine/keys',
+      '/machines/:machine/environment-variables',
       async ({ ctx, request, body }) => {
         const call = await kit.call(request)
 
         if (ctx.target_row.kind === 'production') {
-          requireHuman(call.principal, 'A machine key change in production', {
+          requireHuman(call.principal, 'A machine environment variable change in production', {
             ...scopeOf(ctx.target_row),
           })
         }
@@ -1571,7 +1572,7 @@ export const machineRoutes = (kit: Kit) => {
 
         const changes = new ChangeSet()
 
-        planKeys(
+        planVariables(
           db,
           keyring,
           call.principal,
@@ -1587,7 +1588,7 @@ export const machineRoutes = (kit: Kit) => {
 
         if (changes.empty) {
           return {
-            keys: [],
+            environment_variables: [],
           }
         }
 
@@ -1604,7 +1605,7 @@ export const machineRoutes = (kit: Kit) => {
         if (!result.applied) {
           fail(
             'INTERNAL_ERROR',
-            'a machine key change waits for approval, which machine operations never do',
+            'a machine environment variable change waits for approval, which machine operations never do',
           )
         }
 
@@ -1612,13 +1613,13 @@ export const machineRoutes = (kit: Kit) => {
           ? [
               ...Object.values(result.refs),
               ...changes.changes.flatMap((c) => (c.op === 'update' ? [c.id] : [])),
-            ].filter((id) => id.startsWith('key_'))
+            ].filter((id) => id.startsWith(`${idPrefixes.environment_variable}_`))
           : []
 
         audit(
           db,
           call,
-          'machine.keys',
+          'machine.environment_variables',
           {
             entity: 'machine',
             id: ctx.machine.id,
@@ -1632,23 +1633,25 @@ export const machineRoutes = (kit: Kit) => {
         )
         stations.reconcile(ctx.machine.server_id)
         const rows = ids
-          .map((id) => db.select().from(key).where(eq(key.id, id)).get())
-          .filter((row): row is typeof key.$inferSelect => row !== undefined)
+          .map((id) =>
+            db.select().from(environment_variable).where(eq(environment_variable.id, id)).get(),
+          )
+          .filter((row): row is typeof environment_variable.$inferSelect => row !== undefined)
 
         return {
-          keys: rows.map((row) => select(kit.views.key, row, undefined)),
+          environment_variables: rows.map((row) => select(kit.views.variable, row, undefined)),
         }
       },
       {
         machine: {
-          id: 'set_machine_keys',
+          id: 'set_machine_environment_variables',
           summary:
-            "Set and unset a machine's keys; references to project and global keys keep values out of the agent's hands",
+            "Set and unset a machine's environment variables; references to project and global environment variables keep values out of the agent's hands",
           level: 'deploy',
         },
-        body: input(MachineKeysPatchBody),
+        body: input(MachineEnvironmentVariablesPatchBody),
         response: replies({
-          200: MachineKeysOutcome,
+          200: MachineEnvironmentVariablesOutcome,
         }),
       },
     )

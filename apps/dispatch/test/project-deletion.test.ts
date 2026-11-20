@@ -60,13 +60,13 @@ describe('project deletion', () => {
     await waitForActive(h, web.id)
     await approveWaiting(
       h,
-      await h.call('PATCH', `/v1/projects/${project.id}/keys`, {
+      await h.call('PATCH', `/v1/projects/${project.id}/environment-variables`, {
         token: token(),
         body: {
           set: [
             {
               name: 'SHARED',
-              kind: 'sealed',
+              kind: 'secret',
               value: 'hunter2hunter2',
             },
           ],
@@ -99,7 +99,10 @@ describe('project deletion', () => {
     )
     assert.equal(rows(h, 'select id from target where project_id = ?', project.id).length, 0)
     assert.equal(rows(h, 'select id from deployment where app_id = ?', web.id).length > 0, true)
-    assert.equal(rows(h, 'select id from key where project_id = ?', project.id).length, 0)
+    assert.equal(
+      rows(h, 'select id from environment_variable where project_id = ?', project.id).length,
+      0,
+    )
   })
 
   test('its approvals are kept as the audit trail, waiting ones superseded, and stay readable', async () => {
@@ -129,10 +132,10 @@ describe('project deletion', () => {
               port: 80,
             },
           ],
-          keys: [
+          environment_variables: [
             {
               name: 'TOKEN',
-              kind: 'sealed',
+              kind: 'secret',
               value: 'hunter2hunter2',
             },
           ],

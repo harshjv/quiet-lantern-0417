@@ -18,5 +18,6 @@ const (
 	NetworkFirstServiceVirtualHost = 3
 	NetworkDispatchHostAddress     = "127.0.0.1"
 	NetworkDispatchPort            = 7900
+	NetworkDispatchGatewayPort     = 7901
 	NetworkCredentialsProxyPort    = 7443
 )

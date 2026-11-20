@@ -5,105 +5,105 @@ package protocol
 type ErrorCode string
 
 const (
-	ErrorCodeValidationFailed            ErrorCode = "VALIDATION_FAILED"
-	ErrorCodeNameTaken                   ErrorCode = "NAME_TAKEN"
-	ErrorCodeIdempotencyMismatch         ErrorCode = "IDEMPOTENCY_MISMATCH"
-	ErrorCodeSettingFrozen               ErrorCode = "SETTING_FROZEN"
-	ErrorCodeHostnameDomainMismatch      ErrorCode = "HOSTNAME_DOMAIN_MISMATCH"
-	ErrorCodePasskeyResetRequired        ErrorCode = "PASSKEY_RESET_REQUIRED"
-	ErrorCodeWrongHost                   ErrorCode = "WRONG_HOST"
-	ErrorCodeUnauthenticated             ErrorCode = "UNAUTHENTICATED"
-	ErrorCodeAccessRequired              ErrorCode = "ACCESS_REQUIRED"
-	ErrorCodeForbiddenScope              ErrorCode = "FORBIDDEN_SCOPE"
-	ErrorCodeInstanceScopeRequired       ErrorCode = "INSTANCE_SCOPE_REQUIRED"
-	ErrorCodeRateLimited                 ErrorCode = "RATE_LIMITED"
-	ErrorCodeHumanRequired               ErrorCode = "HUMAN_REQUIRED"
-	ErrorCodeApprovalSuperseded          ErrorCode = "APPROVAL_SUPERSEDED"
-	ErrorCodeDeployInProgress            ErrorCode = "DEPLOY_IN_PROGRESS"
-	ErrorCodeDeployPreflightFailed       ErrorCode = "DEPLOY_PREFLIGHT_FAILED"
-	ErrorCodeNoCurrentDeployment         ErrorCode = "NO_CURRENT_DEPLOYMENT"
-	ErrorCodeDeploymentNotCancellable    ErrorCode = "DEPLOYMENT_NOT_CANCELLABLE"
-	ErrorCodeSharedAppIntermittent       ErrorCode = "SHARED_APP_INTERMITTENT"
-	ErrorCodeRollbackSecretRevoked       ErrorCode = "ROLLBACK_SECRET_REVOKED"
-	ErrorCodeStaleSecretsConfirmRequired ErrorCode = "STALE_SECRETS_CONFIRM_REQUIRED"
-	ErrorCodeStrategyVolumeConflict      ErrorCode = "STRATEGY_VOLUME_CONFLICT"
-	ErrorCodeHealthTimeout               ErrorCode = "HEALTH_TIMEOUT"
-	ErrorCodeOomKilled                   ErrorCode = "OOM_KILLED"
-	ErrorCodeExitNonzero                 ErrorCode = "EXIT_NONZERO"
-	ErrorCodeImagePruned                 ErrorCode = "IMAGE_PRUNED"
-	ErrorCodeStationInvariantViolation   ErrorCode = "STATION_INVARIANT_VIOLATION"
-	ErrorCodeBuildFailed                 ErrorCode = "BUILD_FAILED"
-	ErrorCodeSourceUnreachable           ErrorCode = "SOURCE_UNREACHABLE"
-	ErrorCodeSourceShaMismatch           ErrorCode = "SOURCE_SHA_MISMATCH"
-	ErrorCodeEventCursorExpired          ErrorCode = "EVENT_CURSOR_EXPIRED"
-	ErrorCodeSubnetExhausted             ErrorCode = "SUBNET_EXHAUSTED"
-	ErrorCodeDomainInvalid               ErrorCode = "DOMAIN_INVALID"
-	ErrorCodeTunnelUnsupportedProtocol   ErrorCode = "TUNNEL_UNSUPPORTED_PROTOCOL"
-	ErrorCodeGatewayNotPinned            ErrorCode = "GATEWAY_NOT_PINNED"
-	ErrorCodeNetworkTargetInvalid        ErrorCode = "NETWORK_TARGET_INVALID"
-	ErrorCodeKeyReferenceInvalid         ErrorCode = "KEY_REFERENCE_INVALID"
-	ErrorCodeKeyUnresolved               ErrorCode = "KEY_UNRESOLVED"
-	ErrorCodeKeyTargetMissing            ErrorCode = "KEY_TARGET_MISSING"
-	ErrorCodeKeyNotGranted               ErrorCode = "KEY_NOT_GRANTED"
-	ErrorCodeKeyCycle                    ErrorCode = "KEY_CYCLE"
-	ErrorCodeCredentialsUnavailable      ErrorCode = "CREDENTIALS_UNAVAILABLE"
-	ErrorCodeSecretsNeedReentry          ErrorCode = "SECRETS_NEED_REENTRY"
-	ErrorCodeSealedValueUnreadable       ErrorCode = "SEALED_VALUE_UNREADABLE"
-	ErrorCodeSecretVersionInUse          ErrorCode = "SECRET_VERSION_IN_USE"
-	ErrorCodeVolumeNotAdoptable          ErrorCode = "VOLUME_NOT_ADOPTABLE"
-	ErrorCodeVolumeBackupTargetMissing   ErrorCode = "VOLUME_BACKUP_TARGET_MISSING"
-	ErrorCodeReleaseNotFound             ErrorCode = "RELEASE_NOT_FOUND"
-	ErrorCodeUnsignedArtifact            ErrorCode = "UNSIGNED_ARTIFACT"
-	ErrorCodeUpgradeInProgress           ErrorCode = "UPGRADE_IN_PROGRESS"
-	ErrorCodeUpgradeFailed               ErrorCode = "UPGRADE_FAILED"
-	ErrorCodeMigrationIrreversible       ErrorCode = "MIGRATION_IRREVERSIBLE"
-	ErrorCodeGithubNotConnected          ErrorCode = "GITHUB_NOT_CONNECTED"
-	ErrorCodeGithubStateInvalid          ErrorCode = "GITHUB_STATE_INVALID"
-	ErrorCodeAttachmentExists            ErrorCode = "ATTACHMENT_EXISTS"
-	ErrorCodeAttachHookFailed            ErrorCode = "ATTACH_HOOK_FAILED"
-	ErrorCodeAttachmentAliasTaken        ErrorCode = "ATTACHMENT_ALIAS_TAKEN"
-	ErrorCodeFirewallCidrReserved        ErrorCode = "FIREWALL_CIDR_RESERVED"
-	ErrorCodeServerOffline               ErrorCode = "SERVER_OFFLINE"
-	ErrorCodeServerVersionSkew           ErrorCode = "SERVER_VERSION_SKEW"
-	ErrorCodeServerCapabilityMissing     ErrorCode = "SERVER_CAPABILITY_MISSING"
-	ErrorCodeRepoAccessRequired          ErrorCode = "REPO_ACCESS_REQUIRED"
-	ErrorCodeRepoAccessDenied            ErrorCode = "REPO_ACCESS_DENIED"
-	ErrorCodeApprovalClosed              ErrorCode = "APPROVAL_CLOSED"
-	ErrorCodeMachineNotRunning           ErrorCode = "MACHINE_NOT_RUNNING"
-	ErrorCodeMachineStateConflict        ErrorCode = "MACHINE_STATE_CONFLICT"
-	ErrorCodeMachineQuotaExceeded        ErrorCode = "MACHINE_QUOTA_EXCEEDED"
-	ErrorCodeMachineDiskFull             ErrorCode = "MACHINE_DISK_FULL"
-	ErrorCodeMachineStartFailed          ErrorCode = "MACHINE_START_FAILED"
-	ErrorCodeMachineStorageGrowFailed    ErrorCode = "MACHINE_STORAGE_GROW_FAILED"
-	ErrorCodeMachineImageUnpackFailed    ErrorCode = "MACHINE_IMAGE_UNPACK_FAILED"
-	ErrorCodeMachineRuntimeUnavailable   ErrorCode = "MACHINE_RUNTIME_UNAVAILABLE"
-	ErrorCodeDeleteHasDependents         ErrorCode = "DELETE_HAS_DEPENDENTS"
-	ErrorCodeNotFound                    ErrorCode = "NOT_FOUND"
-	ErrorCodeInternalError               ErrorCode = "INTERNAL_ERROR"
-	ErrorCodeInputRequired               ErrorCode = "INPUT_REQUIRED"
-	ErrorCodeSetupDone                   ErrorCode = "SETUP_DONE"
-	ErrorCodeHostAdminForbidden          ErrorCode = "HOST_ADMIN_FORBIDDEN"
-	ErrorCodeMasterKeyMismatch           ErrorCode = "MASTER_KEY_MISMATCH"
-	ErrorCodeProtocolAuthFailed          ErrorCode = "PROTOCOL_AUTH_FAILED"
-	ErrorCodeProtocolReplay              ErrorCode = "PROTOCOL_REPLAY"
-	ErrorCodeProtocolClockSkew           ErrorCode = "PROTOCOL_CLOCK_SKEW"
-	ErrorCodeStationRevoked              ErrorCode = "STATION_REVOKED"
-	ErrorCodeEnrollTokenInvalid          ErrorCode = "ENROLL_TOKEN_INVALID"
-	ErrorCodeEnrollTokenExpired          ErrorCode = "ENROLL_TOKEN_EXPIRED"
-	ErrorCodeProtocolDuplicateConnection ErrorCode = "PROTOCOL_DUPLICATE_CONNECTION"
-	ErrorCodeProtocolInvalidMessage      ErrorCode = "PROTOCOL_INVALID_MESSAGE"
-	ErrorCodeProtocolUnknownType         ErrorCode = "PROTOCOL_UNKNOWN_TYPE"
-	ErrorCodeProtocolCapabilityMissing   ErrorCode = "PROTOCOL_CAPABILITY_MISSING"
-	ErrorCodeProtocolMessageTooLarge     ErrorCode = "PROTOCOL_MESSAGE_TOO_LARGE"
-	ErrorCodeProtocolLimit               ErrorCode = "PROTOCOL_LIMIT"
-	ErrorCodeGenerationStale             ErrorCode = "GENERATION_STALE"
-	ErrorCodeGenerationInvalid           ErrorCode = "GENERATION_INVALID"
-	ErrorCodeNamespaceSetupFailed        ErrorCode = "NAMESPACE_SETUP_FAILED"
-	ErrorCodeSecretsMismatch             ErrorCode = "SECRETS_MISMATCH"
-	ErrorCodeSecretsUnavailable          ErrorCode = "SECRETS_UNAVAILABLE"
-	ErrorCodeRunDeploymentUnknown        ErrorCode = "RUN_DEPLOYMENT_UNKNOWN"
-	ErrorCodeStreamNotFound              ErrorCode = "STREAM_NOT_FOUND"
-	ErrorCodeStreamCreditExceeded        ErrorCode = "STREAM_CREDIT_EXCEEDED"
+	ErrorCodeValidationFailed                    ErrorCode = "VALIDATION_FAILED"
+	ErrorCodeNameTaken                           ErrorCode = "NAME_TAKEN"
+	ErrorCodeIdempotencyMismatch                 ErrorCode = "IDEMPOTENCY_MISMATCH"
+	ErrorCodeSettingFrozen                       ErrorCode = "SETTING_FROZEN"
+	ErrorCodeHostnameDomainMismatch              ErrorCode = "HOSTNAME_DOMAIN_MISMATCH"
+	ErrorCodePasskeyResetRequired                ErrorCode = "PASSKEY_RESET_REQUIRED"
+	ErrorCodeWrongHost                           ErrorCode = "WRONG_HOST"
+	ErrorCodeUnauthenticated                     ErrorCode = "UNAUTHENTICATED"
+	ErrorCodeAccessRequired                      ErrorCode = "ACCESS_REQUIRED"
+	ErrorCodeForbiddenScope                      ErrorCode = "FORBIDDEN_SCOPE"
+	ErrorCodeInstanceScopeRequired               ErrorCode = "INSTANCE_SCOPE_REQUIRED"
+	ErrorCodeRateLimited                         ErrorCode = "RATE_LIMITED"
+	ErrorCodeHumanRequired                       ErrorCode = "HUMAN_REQUIRED"
+	ErrorCodeApprovalSuperseded                  ErrorCode = "APPROVAL_SUPERSEDED"
+	ErrorCodeDeployInProgress                    ErrorCode = "DEPLOY_IN_PROGRESS"
+	ErrorCodeDeployPreflightFailed               ErrorCode = "DEPLOY_PREFLIGHT_FAILED"
+	ErrorCodeNoCurrentDeployment                 ErrorCode = "NO_CURRENT_DEPLOYMENT"
+	ErrorCodeDeploymentNotCancellable            ErrorCode = "DEPLOYMENT_NOT_CANCELLABLE"
+	ErrorCodeSharedAppIntermittent               ErrorCode = "SHARED_APP_INTERMITTENT"
+	ErrorCodeRollbackSecretRevoked               ErrorCode = "ROLLBACK_SECRET_REVOKED"
+	ErrorCodeStaleSecretsConfirmRequired         ErrorCode = "STALE_SECRETS_CONFIRM_REQUIRED"
+	ErrorCodeStrategyVolumeConflict              ErrorCode = "STRATEGY_VOLUME_CONFLICT"
+	ErrorCodeHealthTimeout                       ErrorCode = "HEALTH_TIMEOUT"
+	ErrorCodeOomKilled                           ErrorCode = "OOM_KILLED"
+	ErrorCodeExitNonzero                         ErrorCode = "EXIT_NONZERO"
+	ErrorCodeImagePruned                         ErrorCode = "IMAGE_PRUNED"
+	ErrorCodeStationInvariantViolation           ErrorCode = "STATION_INVARIANT_VIOLATION"
+	ErrorCodeBuildFailed                         ErrorCode = "BUILD_FAILED"
+	ErrorCodeSourceUnreachable                   ErrorCode = "SOURCE_UNREACHABLE"
+	ErrorCodeSourceShaMismatch                   ErrorCode = "SOURCE_SHA_MISMATCH"
+	ErrorCodeEventCursorExpired                  ErrorCode = "EVENT_CURSOR_EXPIRED"
+	ErrorCodeSubnetExhausted                     ErrorCode = "SUBNET_EXHAUSTED"
+	ErrorCodeDomainInvalid                       ErrorCode = "DOMAIN_INVALID"
+	ErrorCodeTunnelUnsupportedProtocol           ErrorCode = "TUNNEL_UNSUPPORTED_PROTOCOL"
+	ErrorCodeGatewayNotPinned                    ErrorCode = "GATEWAY_NOT_PINNED"
+	ErrorCodeNetworkTargetInvalid                ErrorCode = "NETWORK_TARGET_INVALID"
+	ErrorCodeEnvironmentVariableReferenceInvalid ErrorCode = "ENVIRONMENT_VARIABLE_REFERENCE_INVALID"
+	ErrorCodeEnvironmentVariableUnresolved       ErrorCode = "ENVIRONMENT_VARIABLE_UNRESOLVED"
+	ErrorCodeEnvironmentVariableTargetMissing    ErrorCode = "ENVIRONMENT_VARIABLE_TARGET_MISSING"
+	ErrorCodeEnvironmentVariableNotGranted       ErrorCode = "ENVIRONMENT_VARIABLE_NOT_GRANTED"
+	ErrorCodeEnvironmentVariableCycle            ErrorCode = "ENVIRONMENT_VARIABLE_CYCLE"
+	ErrorCodeCredentialsUnavailable              ErrorCode = "CREDENTIALS_UNAVAILABLE"
+	ErrorCodeSecretsNeedReentry                  ErrorCode = "SECRETS_NEED_REENTRY"
+	ErrorCodeSecretValueUnreadable               ErrorCode = "SECRET_VALUE_UNREADABLE"
+	ErrorCodeSecretVersionInUse                  ErrorCode = "SECRET_VERSION_IN_USE"
+	ErrorCodeVolumeNotAdoptable                  ErrorCode = "VOLUME_NOT_ADOPTABLE"
+	ErrorCodeVolumeBackupTargetMissing           ErrorCode = "VOLUME_BACKUP_TARGET_MISSING"
+	ErrorCodeReleaseNotFound                     ErrorCode = "RELEASE_NOT_FOUND"
+	ErrorCodeUnsignedArtifact                    ErrorCode = "UNSIGNED_ARTIFACT"
+	ErrorCodeUpgradeInProgress                   ErrorCode = "UPGRADE_IN_PROGRESS"
+	ErrorCodeUpgradeFailed                       ErrorCode = "UPGRADE_FAILED"
+	ErrorCodeMigrationIrreversible               ErrorCode = "MIGRATION_IRREVERSIBLE"
+	ErrorCodeGithubNotConnected                  ErrorCode = "GITHUB_NOT_CONNECTED"
+	ErrorCodeGithubStateInvalid                  ErrorCode = "GITHUB_STATE_INVALID"
+	ErrorCodeAttachmentExists                    ErrorCode = "ATTACHMENT_EXISTS"
+	ErrorCodeAttachHookFailed                    ErrorCode = "ATTACH_HOOK_FAILED"
+	ErrorCodeAttachmentAliasTaken                ErrorCode = "ATTACHMENT_ALIAS_TAKEN"
+	ErrorCodeFirewallCidrReserved                ErrorCode = "FIREWALL_CIDR_RESERVED"
+	ErrorCodeServerOffline                       ErrorCode = "SERVER_OFFLINE"
+	ErrorCodeServerVersionSkew                   ErrorCode = "SERVER_VERSION_SKEW"
+	ErrorCodeServerCapabilityMissing             ErrorCode = "SERVER_CAPABILITY_MISSING"
+	ErrorCodeRepoAccessRequired                  ErrorCode = "REPO_ACCESS_REQUIRED"
+	ErrorCodeRepoAccessDenied                    ErrorCode = "REPO_ACCESS_DENIED"
+	ErrorCodeApprovalClosed                      ErrorCode = "APPROVAL_CLOSED"
+	ErrorCodeMachineNotRunning                   ErrorCode = "MACHINE_NOT_RUNNING"
+	ErrorCodeMachineStateConflict                ErrorCode = "MACHINE_STATE_CONFLICT"
+	ErrorCodeMachineQuotaExceeded                ErrorCode = "MACHINE_QUOTA_EXCEEDED"
+	ErrorCodeMachineDiskFull                     ErrorCode = "MACHINE_DISK_FULL"
+	ErrorCodeMachineStartFailed                  ErrorCode = "MACHINE_START_FAILED"
+	ErrorCodeMachineStorageGrowFailed            ErrorCode = "MACHINE_STORAGE_GROW_FAILED"
+	ErrorCodeMachineImageUnpackFailed            ErrorCode = "MACHINE_IMAGE_UNPACK_FAILED"
+	ErrorCodeMachineRuntimeUnavailable           ErrorCode = "MACHINE_RUNTIME_UNAVAILABLE"
+	ErrorCodeDeleteHasDependents                 ErrorCode = "DELETE_HAS_DEPENDENTS"
+	ErrorCodeNotFound                            ErrorCode = "NOT_FOUND"
+	ErrorCodeInternalError                       ErrorCode = "INTERNAL_ERROR"
+	ErrorCodeInputRequired                       ErrorCode = "INPUT_REQUIRED"
+	ErrorCodeSetupDone                           ErrorCode = "SETUP_DONE"
+	ErrorCodeHostAdminForbidden                  ErrorCode = "HOST_ADMIN_FORBIDDEN"
+	ErrorCodeMasterKeyMismatch                   ErrorCode = "MASTER_KEY_MISMATCH"
+	ErrorCodeProtocolAuthFailed                  ErrorCode = "PROTOCOL_AUTH_FAILED"
+	ErrorCodeProtocolReplay                      ErrorCode = "PROTOCOL_REPLAY"
+	ErrorCodeProtocolClockSkew                   ErrorCode = "PROTOCOL_CLOCK_SKEW"
+	ErrorCodeStationRevoked                      ErrorCode = "STATION_REVOKED"
+	ErrorCodeEnrollTokenInvalid                  ErrorCode = "ENROLL_TOKEN_INVALID"
+	ErrorCodeEnrollTokenExpired                  ErrorCode = "ENROLL_TOKEN_EXPIRED"
+	ErrorCodeProtocolDuplicateConnection         ErrorCode = "PROTOCOL_DUPLICATE_CONNECTION"
+	ErrorCodeProtocolInvalidMessage              ErrorCode = "PROTOCOL_INVALID_MESSAGE"
+	ErrorCodeProtocolUnknownType                 ErrorCode = "PROTOCOL_UNKNOWN_TYPE"
+	ErrorCodeProtocolCapabilityMissing           ErrorCode = "PROTOCOL_CAPABILITY_MISSING"
+	ErrorCodeProtocolMessageTooLarge             ErrorCode = "PROTOCOL_MESSAGE_TOO_LARGE"
+	ErrorCodeProtocolLimit                       ErrorCode = "PROTOCOL_LIMIT"
+	ErrorCodeGenerationStale                     ErrorCode = "GENERATION_STALE"
+	ErrorCodeGenerationInvalid                   ErrorCode = "GENERATION_INVALID"
+	ErrorCodeNamespaceSetupFailed                ErrorCode = "NAMESPACE_SETUP_FAILED"
+	ErrorCodeSecretsMismatch                     ErrorCode = "SECRETS_MISMATCH"
+	ErrorCodeSecretsUnavailable                  ErrorCode = "SECRETS_UNAVAILABLE"
+	ErrorCodeRunDeploymentUnknown                ErrorCode = "RUN_DEPLOYMENT_UNKNOWN"
+	ErrorCodeStreamNotFound                      ErrorCode = "STREAM_NOT_FOUND"
+	ErrorCodeStreamCreditExceeded                ErrorCode = "STREAM_CREDIT_EXCEEDED"
 )
 
 type ErrorDefinition struct {
@@ -113,105 +113,105 @@ type ErrorDefinition struct {
 }
 
 var ErrorCatalog = map[ErrorCode]ErrorDefinition{
-	ErrorCodeValidationFailed:            {HTTPStatus: 400, Area: "validation", CloseCode: 0},
-	ErrorCodeNameTaken:                   {HTTPStatus: 409, Area: "validation", CloseCode: 0},
-	ErrorCodeIdempotencyMismatch:         {HTTPStatus: 409, Area: "validation", CloseCode: 0},
-	ErrorCodeSettingFrozen:               {HTTPStatus: 409, Area: "validation", CloseCode: 0},
-	ErrorCodeHostnameDomainMismatch:      {HTTPStatus: 422, Area: "validation", CloseCode: 0},
-	ErrorCodePasskeyResetRequired:        {HTTPStatus: 409, Area: "validation", CloseCode: 0},
-	ErrorCodeWrongHost:                   {HTTPStatus: 404, Area: "routing", CloseCode: 0},
-	ErrorCodeUnauthenticated:             {HTTPStatus: 401, Area: "auth", CloseCode: 0},
-	ErrorCodeAccessRequired:              {HTTPStatus: 401, Area: "auth", CloseCode: 0},
-	ErrorCodeForbiddenScope:              {HTTPStatus: 403, Area: "scope", CloseCode: 0},
-	ErrorCodeInstanceScopeRequired:       {HTTPStatus: 403, Area: "scope", CloseCode: 0},
-	ErrorCodeRateLimited:                 {HTTPStatus: 429, Area: "auth", CloseCode: 0},
-	ErrorCodeHumanRequired:               {HTTPStatus: 403, Area: "protected", CloseCode: 0},
-	ErrorCodeApprovalSuperseded:          {HTTPStatus: 409, Area: "protected", CloseCode: 0},
-	ErrorCodeDeployInProgress:            {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
-	ErrorCodeDeployPreflightFailed:       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeNoCurrentDeployment:         {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
-	ErrorCodeDeploymentNotCancellable:    {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
-	ErrorCodeSharedAppIntermittent:       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeRollbackSecretRevoked:       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeStaleSecretsConfirmRequired: {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
-	ErrorCodeStrategyVolumeConflict:      {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeHealthTimeout:               {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeOomKilled:                   {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeExitNonzero:                 {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeImagePruned:                 {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
-	ErrorCodeStationInvariantViolation:   {HTTPStatus: 422, Area: "server", CloseCode: 0},
-	ErrorCodeBuildFailed:                 {HTTPStatus: 422, Area: "build", CloseCode: 0},
-	ErrorCodeSourceUnreachable:           {HTTPStatus: 422, Area: "build", CloseCode: 0},
-	ErrorCodeSourceShaMismatch:           {HTTPStatus: 409, Area: "build", CloseCode: 0},
-	ErrorCodeEventCursorExpired:          {HTTPStatus: 410, Area: "events", CloseCode: 0},
-	ErrorCodeSubnetExhausted:             {HTTPStatus: 507, Area: "network", CloseCode: 0},
-	ErrorCodeDomainInvalid:               {HTTPStatus: 422, Area: "network", CloseCode: 0},
-	ErrorCodeTunnelUnsupportedProtocol:   {HTTPStatus: 422, Area: "network", CloseCode: 0},
-	ErrorCodeGatewayNotPinned:            {HTTPStatus: 409, Area: "network", CloseCode: 0},
-	ErrorCodeNetworkTargetInvalid:        {HTTPStatus: 422, Area: "network", CloseCode: 0},
-	ErrorCodeKeyReferenceInvalid:         {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeKeyUnresolved:               {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeKeyTargetMissing:            {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeKeyNotGranted:               {HTTPStatus: 403, Area: "secret", CloseCode: 0},
-	ErrorCodeKeyCycle:                    {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeCredentialsUnavailable:      {HTTPStatus: 503, Area: "secret", CloseCode: 0},
-	ErrorCodeSecretsNeedReentry:          {HTTPStatus: 422, Area: "secret", CloseCode: 0},
-	ErrorCodeSealedValueUnreadable:       {HTTPStatus: 403, Area: "secret", CloseCode: 0},
-	ErrorCodeSecretVersionInUse:          {HTTPStatus: 409, Area: "secret", CloseCode: 0},
-	ErrorCodeVolumeNotAdoptable:          {HTTPStatus: 409, Area: "volume", CloseCode: 0},
-	ErrorCodeVolumeBackupTargetMissing:   {HTTPStatus: 422, Area: "volume", CloseCode: 0},
-	ErrorCodeReleaseNotFound:             {HTTPStatus: 404, Area: "platform", CloseCode: 0},
-	ErrorCodeUnsignedArtifact:            {HTTPStatus: 422, Area: "platform", CloseCode: 0},
-	ErrorCodeUpgradeInProgress:           {HTTPStatus: 409, Area: "platform", CloseCode: 0},
-	ErrorCodeUpgradeFailed:               {HTTPStatus: 409, Area: "platform", CloseCode: 0},
-	ErrorCodeMigrationIrreversible:       {HTTPStatus: 409, Area: "platform", CloseCode: 0},
-	ErrorCodeGithubNotConnected:          {HTTPStatus: 409, Area: "github", CloseCode: 0},
-	ErrorCodeGithubStateInvalid:          {HTTPStatus: 400, Area: "github", CloseCode: 0},
-	ErrorCodeAttachmentExists:            {HTTPStatus: 409, Area: "attachment", CloseCode: 0},
-	ErrorCodeAttachHookFailed:            {HTTPStatus: 422, Area: "attachment", CloseCode: 0},
-	ErrorCodeAttachmentAliasTaken:        {HTTPStatus: 409, Area: "attachment", CloseCode: 0},
-	ErrorCodeFirewallCidrReserved:        {HTTPStatus: 422, Area: "firewall", CloseCode: 0},
-	ErrorCodeServerOffline:               {HTTPStatus: 503, Area: "server", CloseCode: 0},
-	ErrorCodeServerVersionSkew:           {HTTPStatus: 503, Area: "server", CloseCode: 0},
-	ErrorCodeServerCapabilityMissing:     {HTTPStatus: 422, Area: "server", CloseCode: 0},
-	ErrorCodeRepoAccessRequired:          {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeRepoAccessDenied:            {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeApprovalClosed:              {HTTPStatus: 409, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineNotRunning:           {HTTPStatus: 409, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineStateConflict:        {HTTPStatus: 409, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineQuotaExceeded:        {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineDiskFull:             {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineStartFailed:          {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineStorageGrowFailed:    {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineImageUnpackFailed:    {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeMachineRuntimeUnavailable:   {HTTPStatus: 422, Area: "machine", CloseCode: 0},
-	ErrorCodeDeleteHasDependents:         {HTTPStatus: 409, Area: "lifecycle", CloseCode: 0},
-	ErrorCodeNotFound:                    {HTTPStatus: 404, Area: "lifecycle", CloseCode: 0},
-	ErrorCodeInternalError:               {HTTPStatus: 500, Area: "internal", CloseCode: 0},
-	ErrorCodeInputRequired:               {HTTPStatus: 0, Area: "sly", CloseCode: 0},
-	ErrorCodeSetupDone:                   {HTTPStatus: 0, Area: "root socket", CloseCode: 0},
-	ErrorCodeHostAdminForbidden:          {HTTPStatus: 0, Area: "root socket", CloseCode: 0},
-	ErrorCodeMasterKeyMismatch:           {HTTPStatus: 0, Area: "root socket", CloseCode: 0},
-	ErrorCodeProtocolAuthFailed:          {HTTPStatus: 0, Area: "station protocol", CloseCode: 4001},
-	ErrorCodeProtocolReplay:              {HTTPStatus: 0, Area: "station protocol", CloseCode: 4001},
-	ErrorCodeProtocolClockSkew:           {HTTPStatus: 0, Area: "station protocol", CloseCode: 4001},
-	ErrorCodeStationRevoked:              {HTTPStatus: 0, Area: "station protocol", CloseCode: 4003},
-	ErrorCodeEnrollTokenInvalid:          {HTTPStatus: 0, Area: "station protocol", CloseCode: 4003},
-	ErrorCodeEnrollTokenExpired:          {HTTPStatus: 0, Area: "station protocol", CloseCode: 4003},
-	ErrorCodeProtocolDuplicateConnection: {HTTPStatus: 0, Area: "station protocol", CloseCode: 4009},
-	ErrorCodeProtocolInvalidMessage:      {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeProtocolUnknownType:         {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeProtocolCapabilityMissing:   {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeProtocolMessageTooLarge:     {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeProtocolLimit:               {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeGenerationStale:             {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeGenerationInvalid:           {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeNamespaceSetupFailed:        {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeSecretsMismatch:             {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeSecretsUnavailable:          {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeRunDeploymentUnknown:        {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeStreamNotFound:              {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
-	ErrorCodeStreamCreditExceeded:        {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeValidationFailed:                    {HTTPStatus: 400, Area: "validation", CloseCode: 0},
+	ErrorCodeNameTaken:                           {HTTPStatus: 409, Area: "validation", CloseCode: 0},
+	ErrorCodeIdempotencyMismatch:                 {HTTPStatus: 409, Area: "validation", CloseCode: 0},
+	ErrorCodeSettingFrozen:                       {HTTPStatus: 409, Area: "validation", CloseCode: 0},
+	ErrorCodeHostnameDomainMismatch:              {HTTPStatus: 422, Area: "validation", CloseCode: 0},
+	ErrorCodePasskeyResetRequired:                {HTTPStatus: 409, Area: "validation", CloseCode: 0},
+	ErrorCodeWrongHost:                           {HTTPStatus: 404, Area: "routing", CloseCode: 0},
+	ErrorCodeUnauthenticated:                     {HTTPStatus: 401, Area: "auth", CloseCode: 0},
+	ErrorCodeAccessRequired:                      {HTTPStatus: 401, Area: "auth", CloseCode: 0},
+	ErrorCodeForbiddenScope:                      {HTTPStatus: 403, Area: "scope", CloseCode: 0},
+	ErrorCodeInstanceScopeRequired:               {HTTPStatus: 403, Area: "scope", CloseCode: 0},
+	ErrorCodeRateLimited:                         {HTTPStatus: 429, Area: "auth", CloseCode: 0},
+	ErrorCodeHumanRequired:                       {HTTPStatus: 403, Area: "protected", CloseCode: 0},
+	ErrorCodeApprovalSuperseded:                  {HTTPStatus: 409, Area: "protected", CloseCode: 0},
+	ErrorCodeDeployInProgress:                    {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
+	ErrorCodeDeployPreflightFailed:               {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeNoCurrentDeployment:                 {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
+	ErrorCodeDeploymentNotCancellable:            {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
+	ErrorCodeSharedAppIntermittent:               {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeRollbackSecretRevoked:               {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeStaleSecretsConfirmRequired:         {HTTPStatus: 409, Area: "deploy", CloseCode: 0},
+	ErrorCodeStrategyVolumeConflict:              {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeHealthTimeout:                       {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeOomKilled:                           {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeExitNonzero:                         {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeImagePruned:                         {HTTPStatus: 422, Area: "deploy", CloseCode: 0},
+	ErrorCodeStationInvariantViolation:           {HTTPStatus: 422, Area: "server", CloseCode: 0},
+	ErrorCodeBuildFailed:                         {HTTPStatus: 422, Area: "build", CloseCode: 0},
+	ErrorCodeSourceUnreachable:                   {HTTPStatus: 422, Area: "build", CloseCode: 0},
+	ErrorCodeSourceShaMismatch:                   {HTTPStatus: 409, Area: "build", CloseCode: 0},
+	ErrorCodeEventCursorExpired:                  {HTTPStatus: 410, Area: "events", CloseCode: 0},
+	ErrorCodeSubnetExhausted:                     {HTTPStatus: 507, Area: "network", CloseCode: 0},
+	ErrorCodeDomainInvalid:                       {HTTPStatus: 422, Area: "network", CloseCode: 0},
+	ErrorCodeTunnelUnsupportedProtocol:           {HTTPStatus: 422, Area: "network", CloseCode: 0},
+	ErrorCodeGatewayNotPinned:                    {HTTPStatus: 409, Area: "network", CloseCode: 0},
+	ErrorCodeNetworkTargetInvalid:                {HTTPStatus: 422, Area: "network", CloseCode: 0},
+	ErrorCodeEnvironmentVariableReferenceInvalid: {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeEnvironmentVariableUnresolved:       {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeEnvironmentVariableTargetMissing:    {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeEnvironmentVariableNotGranted:       {HTTPStatus: 403, Area: "secret", CloseCode: 0},
+	ErrorCodeEnvironmentVariableCycle:            {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeCredentialsUnavailable:              {HTTPStatus: 503, Area: "secret", CloseCode: 0},
+	ErrorCodeSecretsNeedReentry:                  {HTTPStatus: 422, Area: "secret", CloseCode: 0},
+	ErrorCodeSecretValueUnreadable:               {HTTPStatus: 403, Area: "secret", CloseCode: 0},
+	ErrorCodeSecretVersionInUse:                  {HTTPStatus: 409, Area: "secret", CloseCode: 0},
+	ErrorCodeVolumeNotAdoptable:                  {HTTPStatus: 409, Area: "volume", CloseCode: 0},
+	ErrorCodeVolumeBackupTargetMissing:           {HTTPStatus: 422, Area: "volume", CloseCode: 0},
+	ErrorCodeReleaseNotFound:                     {HTTPStatus: 404, Area: "platform", CloseCode: 0},
+	ErrorCodeUnsignedArtifact:                    {HTTPStatus: 422, Area: "platform", CloseCode: 0},
+	ErrorCodeUpgradeInProgress:                   {HTTPStatus: 409, Area: "platform", CloseCode: 0},
+	ErrorCodeUpgradeFailed:                       {HTTPStatus: 409, Area: "platform", CloseCode: 0},
+	ErrorCodeMigrationIrreversible:               {HTTPStatus: 409, Area: "platform", CloseCode: 0},
+	ErrorCodeGithubNotConnected:                  {HTTPStatus: 409, Area: "github", CloseCode: 0},
+	ErrorCodeGithubStateInvalid:                  {HTTPStatus: 400, Area: "github", CloseCode: 0},
+	ErrorCodeAttachmentExists:                    {HTTPStatus: 409, Area: "attachment", CloseCode: 0},
+	ErrorCodeAttachHookFailed:                    {HTTPStatus: 422, Area: "attachment", CloseCode: 0},
+	ErrorCodeAttachmentAliasTaken:                {HTTPStatus: 409, Area: "attachment", CloseCode: 0},
+	ErrorCodeFirewallCidrReserved:                {HTTPStatus: 422, Area: "firewall", CloseCode: 0},
+	ErrorCodeServerOffline:                       {HTTPStatus: 503, Area: "server", CloseCode: 0},
+	ErrorCodeServerVersionSkew:                   {HTTPStatus: 503, Area: "server", CloseCode: 0},
+	ErrorCodeServerCapabilityMissing:             {HTTPStatus: 422, Area: "server", CloseCode: 0},
+	ErrorCodeRepoAccessRequired:                  {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeRepoAccessDenied:                    {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeApprovalClosed:                      {HTTPStatus: 409, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineNotRunning:                   {HTTPStatus: 409, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineStateConflict:                {HTTPStatus: 409, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineQuotaExceeded:                {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineDiskFull:                     {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineStartFailed:                  {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineStorageGrowFailed:            {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineImageUnpackFailed:            {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeMachineRuntimeUnavailable:           {HTTPStatus: 422, Area: "machine", CloseCode: 0},
+	ErrorCodeDeleteHasDependents:                 {HTTPStatus: 409, Area: "lifecycle", CloseCode: 0},
+	ErrorCodeNotFound:                            {HTTPStatus: 404, Area: "lifecycle", CloseCode: 0},
+	ErrorCodeInternalError:                       {HTTPStatus: 500, Area: "internal", CloseCode: 0},
+	ErrorCodeInputRequired:                       {HTTPStatus: 0, Area: "sly", CloseCode: 0},
+	ErrorCodeSetupDone:                           {HTTPStatus: 0, Area: "root socket", CloseCode: 0},
+	ErrorCodeHostAdminForbidden:                  {HTTPStatus: 0, Area: "root socket", CloseCode: 0},
+	ErrorCodeMasterKeyMismatch:                   {HTTPStatus: 0, Area: "root socket", CloseCode: 0},
+	ErrorCodeProtocolAuthFailed:                  {HTTPStatus: 0, Area: "station protocol", CloseCode: 4001},
+	ErrorCodeProtocolReplay:                      {HTTPStatus: 0, Area: "station protocol", CloseCode: 4001},
+	ErrorCodeProtocolClockSkew:                   {HTTPStatus: 0, Area: "station protocol", CloseCode: 4001},
+	ErrorCodeStationRevoked:                      {HTTPStatus: 0, Area: "station protocol", CloseCode: 4003},
+	ErrorCodeEnrollTokenInvalid:                  {HTTPStatus: 0, Area: "station protocol", CloseCode: 4003},
+	ErrorCodeEnrollTokenExpired:                  {HTTPStatus: 0, Area: "station protocol", CloseCode: 4003},
+	ErrorCodeProtocolDuplicateConnection:         {HTTPStatus: 0, Area: "station protocol", CloseCode: 4009},
+	ErrorCodeProtocolInvalidMessage:              {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeProtocolUnknownType:                 {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeProtocolCapabilityMissing:           {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeProtocolMessageTooLarge:             {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeProtocolLimit:                       {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeGenerationStale:                     {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeGenerationInvalid:                   {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeNamespaceSetupFailed:                {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeSecretsMismatch:                     {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeSecretsUnavailable:                  {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeRunDeploymentUnknown:                {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeStreamNotFound:                      {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
+	ErrorCodeStreamCreditExceeded:                {HTTPStatus: 0, Area: "station protocol", CloseCode: 0},
 }
 
 type WarningCode string
@@ -221,7 +221,7 @@ const (
 	WarningCodeStaleSecretVersions            WarningCode = "STALE_SECRET_VERSIONS"
 	WarningCodeDowntimeExpected               WarningCode = "DOWNTIME_EXPECTED"
 	WarningCodeBackupStopsApp                 WarningCode = "BACKUP_STOPS_APP"
-	WarningCodeSealedValueMissing             WarningCode = "SEALED_VALUE_MISSING"
+	WarningCodeSecretValueMissing             WarningCode = "SECRET_VALUE_MISSING"
 	WarningCodeSourcePolling                  WarningCode = "SOURCE_POLLING"
 	WarningCodeMachineRestartRequired         WarningCode = "MACHINE_RESTART_REQUIRED"
 	WarningCodeMachineSnapshotCrashConsistent WarningCode = "MACHINE_SNAPSHOT_CRASH_CONSISTENT"

@@ -18,14 +18,14 @@ func dispatchRoute(hostname string) doc {
 	return doc{
 		"hash":     testDigest,
 		"hostname": hostname,
-		"target":   doc{"system": "dispatch", "virtual_ip": dispatchVIP, "port": 7900},
+		"target":   doc{"system": "dispatch", "virtual_ip": dispatchVIP, "port": 7901},
 	}
 }
 
 func withDispatch(routes map[string]doc) func(d doc) {
 	return func(d doc) {
 		at(d, "station")["hosts_dispatch"] = true
-		d["system_targets"] = doc{"dispatch": doc{"hash": testDigest, "component": "dispatch", "virtual_ip": dispatchVIP, "port": 7900}}
+		d["system_targets"] = doc{"dispatch": doc{"hash": testDigest, "component": "dispatch", "virtual_ip": dispatchVIP, "port": 7901}}
 		rs := at(d, "gateway", "routes")
 		for id, r := range routes {
 			rs[id] = r
@@ -55,16 +55,16 @@ func TestDispatchHostnamesBecomeSystemRoutesToDispatchsVirtualIP(t *testing.T) {
 		t.Fatalf("routes %+v", gp.Routes)
 	}
 	for _, rp := range gp.Routes {
-		if rp.System != systemDispatch || rp.ServiceID != "" || rp.Upstream.String() != dispatchVIP+":7900" {
+		if rp.System != systemDispatch || rp.ServiceID != "" || rp.Upstream.String() != dispatchVIP+":7901" {
 			t.Errorf("route %s: %+v", rp.ID, rp)
 		}
 		cfg := string(rp.Config)
-		if !strings.Contains(cfg, "http://"+dispatchVIP+":7900") || !strings.Contains(cfg, "ClientIP(`"+gp.Cloudflared.String()+"/32`)") {
+		if !strings.Contains(cfg, "http://"+dispatchVIP+":7901") || !strings.Contains(cfg, "ClientIP(`"+gp.Cloudflared.String()+"/32`)") {
 			t.Errorf("route %s config:\n%s", rp.ID, cfg)
 		}
 	}
 	st, ok := gp.SystemTargets[systemDispatch]
-	if !ok || st.VIP.String() != dispatchVIP || st.Port != 7900 {
+	if !ok || st.VIP.String() != dispatchVIP || st.Port != 7901 {
 		t.Fatalf("system targets %+v", gp.SystemTargets)
 	}
 }
@@ -84,7 +84,7 @@ func TestTheDispatchVirtualIPMayNotBeAServicesAddress(t *testing.T) {
 }
 
 func TestTheDispatchSystemTargetUsesDispatchsPort(t *testing.T) {
-	expectRejected(t, protocol.ErrorCodeGenerationInvalid, "7900", edits(withDispatch(nil), func(d doc) {
+	expectRejected(t, protocol.ErrorCodeGenerationInvalid, "7901", edits(withDispatch(nil), func(d doc) {
 		at(d, "system_targets", "dispatch")["port"] = 8080
 	}))
 }

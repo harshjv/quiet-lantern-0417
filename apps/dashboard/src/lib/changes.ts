@@ -5,8 +5,8 @@ import {
   deploymentStrategy,
   deploymentTrigger,
   injection,
-  keyKind,
   sentence,
+  variableKind,
 } from './labels'
 
 export type Names = ReadonlyMap<string, string>
@@ -26,7 +26,7 @@ const nouns: Record<string, string> = {
   volume_snapshot: 'volume snapshot',
   volume_restore: 'volume restore',
   domain: 'domain',
-  key: 'key',
+  environment_variable: 'environment variable',
   deployment: 'deployment',
   preview: 'preview',
   setting: 'setting',
@@ -128,7 +128,7 @@ export const formatValue = (key: string, value: unknown, names: Names, entity?: 
 
     if (key === 'kind') {
       return (
-        (entity === 'key' ? known(keyKind, value) : null) ??
+        (entity === 'environment_variable' ? known(variableKind, value) : null) ??
         (entity === 'app' ? known(appKind, value) : null) ??
         sentence(value)
       )
@@ -175,7 +175,7 @@ export const formatValue = (key: string, value: unknown, names: Names, entity?: 
     .join(' · ')
 }
 
-const keyValue = (data: Data) =>
+const secretValue = (data: Data) =>
   typeof data.value_length === 'number'
     ? `Hidden · ${plural(data.value_length, 'byte')}${typeof data.version === 'number' ? ` · version ${data.version}` : ''}`
     : null
@@ -206,7 +206,7 @@ const objectFields = (entity: string, after: Data, before: Data | null, names: N
             value: now,
           }
     })
-  const value = entity === 'key' ? keyValue(after) : null
+  const value = entity === 'environment_variable' ? secretValue(after) : null
 
   return value
     ? [

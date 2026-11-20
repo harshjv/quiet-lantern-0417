@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,16 +29,23 @@ import (
 )
 
 const (
-	tunnelTokenFile    = "tunnel-token"
-	probeIDFile        = "probe-id"
-	tunnelInterval     = 15 * time.Second
-	tunnelReadyTimeout = 3 * time.Second
-	tunnelProbeTimeout = 10 * time.Second
+	tunnelTokenFile     = "tunnel-token"
+	probeIDFile         = "probe-id"
+	tunnelInterval      = 15 * time.Second
+	tunnelReadyTimeout  = 3 * time.Second
+	tunnelProbeTimeout  = 10 * time.Second
+	tunnelLookupTimeout = 3 * time.Second
+	dispatchHealthPath  = "/v1/healthz"
 )
 
 type routeProbe struct {
 	status  int
 	failure protocol.RouteProbeFailure
+	foreign []string
+}
+
+func (p routeProbe) same(o routeProbe) bool {
+	return p.status == o.status && p.failure == o.failure && slices.Equal(p.foreign, o.foreign)
 }
 
 type tunnelRuntime struct {
@@ -47,6 +56,7 @@ type tunnelRuntime struct {
 	ready       bool
 	connections int
 	probes      map[string]routeProbe
+	wildcard    *routeProbe
 	at          time.Time
 	busy        bool
 }
@@ -325,7 +335,14 @@ type tunnelReady struct {
 	ReadyConnection int `json:"readyConnections"`
 }
 
-func (s *Station) checkTunnel(ctx context.Context, now time.Time) {
+func (s *Station) domainsZone() string {
+	if s.plan == nil || s.plan.Generation.Station.Settings.DomainsZone == nil {
+		return ""
+	}
+	return strings.TrimSpace(*s.plan.Generation.Station.Settings.DomainsZone)
+}
+
+func (s *Station) probeTunnel(ctx context.Context, now time.Time) {
 	t := &s.gw.tunnel
 	if t.busy || now.Sub(t.at) < tunnelInterval {
 		return
@@ -340,8 +357,12 @@ func (s *Station) checkTunnel(ctx context.Context, now time.Time) {
 	}
 	running := s.cloudflaredWanted()
 	if !running && len(routes) == 0 {
-		t.ready, t.connections, t.probes = false, 0, nil
+		t.ready, t.connections, t.probes, t.wildcard = false, 0, nil, nil
 		return
+	}
+	zone := s.domainsZone()
+	if !slices.ContainsFunc(gp.Routes, func(rp RoutePlan) bool { return rp.System != "" }) {
+		zone = ""
 	}
 	metrics := netip.AddrPortFrom(gp.Cloudflared, docker.CloudflaredMetricsPort)
 	id := s.probeID()
@@ -353,7 +374,12 @@ func (s *Station) checkTunnel(ctx context.Context, now time.Time) {
 		}
 		probes := map[string]routeProbe{}
 		for _, rp := range routes {
-			probes[rp.ID] = probeTunnelRoute(ctx, rp.Hostname, id)
+			probes[rp.ID] = probeTunnelRoute(ctx, rp.Hostname, id, rp.System != "")
+		}
+		var wildcard *routeProbe
+		if zone != "" {
+			p := probeTunnelRoute(ctx, "probe-"+randomHex(8)+"."+zone, id, false)
+			wildcard = &p
 		}
 		select {
 		case s.inspections <- func() {
@@ -363,11 +389,15 @@ func (s *Station) checkTunnel(ctx context.Context, now time.Time) {
 			}
 			t.ready, t.connections = ready, connections
 			for rid, p := range probes {
-				if before, seen := t.probes[rid]; !seen || before != p {
-					s.log.Info("tunnel route probed", "route", rid, "status", p.status, "failure", p.failure)
+				if before, seen := t.probes[rid]; !seen || !before.same(p) {
+					s.log.Info("tunnel route probed", "route", rid, "status", p.status, "failure", p.failure, "foreign_addresses", p.foreign)
 				}
 			}
 			t.probes = probes
+			if wildcard != nil && (t.wildcard == nil || !t.wildcard.same(*wildcard)) {
+				s.log.Info("tunnel wildcard probed", "zone", zone, "status", wildcard.status, "failure", wildcard.failure, "foreign_addresses", wildcard.foreign)
+			}
+			t.wildcard = wildcard
 		}:
 		case <-ctx.Done():
 		}
@@ -396,7 +426,18 @@ var probeClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-func probeTunnelRoute(ctx context.Context, hostname, probeID string) routeProbe {
+func probeTunnelRoute(ctx context.Context, hostname, probeID string, system bool) routeProbe {
+	p := probeGateway(ctx, hostname, probeID)
+	if system && p.failure == "" {
+		if status := probeStatus(ctx, "https://"+hostname+dispatchHealthPath); status != http.StatusOK {
+			p = routeProbe{status: status, failure: protocol.RouteProbeFailureUpstreamUnhealthy}
+		}
+	}
+	p.foreign = foreignAddresses(ctx, hostname)
+	return p
+}
+
+func probeGateway(ctx context.Context, hostname, probeID string) routeProbe {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+hostname+gateway.TunnelProbePath+"/"+randomHex(8), nil)
 	if err != nil {
 		return routeProbe{failure: protocol.RouteProbeFailureUnreachable}
@@ -414,12 +455,39 @@ func probeTunnelRoute(ctx context.Context, hostname, probeID string) routeProbe 
 	return p
 }
 
-func (s *Station) observedTunnelProbe(id string) *protocol.ObservedRouteProbe {
-	p, ok := s.gw.tunnel.probes[id]
-	if !ok {
+func probeStatus(ctx context.Context, url string) int {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0
+	}
+	resp, err := probeClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	return resp.StatusCode
+}
+
+func foreignAddresses(ctx context.Context, hostname string) []string {
+	ctx, cancel := context.WithTimeout(ctx, tunnelLookupTimeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", hostname)
+	if err != nil {
 		return nil
 	}
-	out := &protocol.ObservedRouteProbe{Ok: p.failure == ""}
+	var out []string
+	for _, a := range addrs {
+		if !cloudflareAddr(a) {
+			out = append(out, a.Unmap().String())
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+func observedRouteProbe(p routeProbe) *protocol.ObservedRouteProbe {
+	out := &protocol.ObservedRouteProbe{Ok: p.failure == "", ForeignAddresses: p.foreign}
 	if p.status != 0 {
 		out.StatusCode = ptr(p.status)
 	}
@@ -429,11 +497,23 @@ func (s *Station) observedTunnelProbe(id string) *protocol.ObservedRouteProbe {
 	return out
 }
 
+func (s *Station) observedTunnelProbe(id string) *protocol.ObservedRouteProbe {
+	p, ok := s.gw.tunnel.probes[id]
+	if !ok {
+		return nil
+	}
+	return observedRouteProbe(p)
+}
+
 func (s *Station) observedTunnel() *protocol.ObservedTunnel {
 	if !s.plan.Gateway.Run && !s.tunnelConfigured() {
 		return nil
 	}
-	return &protocol.ObservedTunnel{Configured: s.tunnelConfigured(), Ready: s.gw.tunnel.ready, Connections: s.gw.tunnel.connections}
+	out := &protocol.ObservedTunnel{Configured: s.tunnelConfigured(), Ready: s.gw.tunnel.ready, Connections: s.gw.tunnel.connections}
+	if w := s.gw.tunnel.wildcard; w != nil {
+		out.Wildcard = observedRouteProbe(*w)
+	}
+	return out
 }
 
 func takeTunnelToken(p map[string]any) (string, *protocol.ErrorBody) {

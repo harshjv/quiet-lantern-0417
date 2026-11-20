@@ -3,7 +3,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { fixedWindow, ipOf, rateLimited, type Principal } from '../../auth/principal.ts'
+import { clientAddressOf } from '../../auth/client-address.ts'
+import { fixedWindow, rateLimited, type Principal } from '../../auth/principal.ts'
 import { isInstanceAdmin } from '../../auth/scopes.ts'
 import { newId } from '../../db/ids.ts'
 import {
@@ -629,13 +630,13 @@ export const teamRoutes = (kit: Kit) => {
     .post(
       '/join/:code',
       async ({ params, body, set, request }) => {
-        const retry = joins.retryAfter(ipOf(request))
+        const retry = joins.retryAfter(clientAddressOf(request))
 
         if (retry !== null) {
           throw rateLimited('Too many attempts to join from this address.', retry)
         }
 
-        joins.add(ipOf(request))
+        joins.add(clientAddressOf(request))
 
         const row = openInvite(params.code) ?? notFound('invite', 'this link')
         const email = body.email.trim().toLowerCase()

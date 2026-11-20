@@ -121,7 +121,7 @@ const sly = (args: string[], env: Record<string, string> = {}) =>
   new Promise<Run>((resolve) => {
     const child = execFile(
       process.execPath,
-      [entry, 'setup', ...args.map((a) => (a === '' ? socketPath : a))],
+      [entry, 'setup', '--no-wait', ...args.map((a) => (a === '' ? socketPath : a))],
       {
         env: {
           PATH: process.env.PATH,
@@ -158,7 +158,7 @@ const terminal = (args: string[], steps: Step[]) =>
 
     child.stdin!.end(
       JSON.stringify({
-        argv: [process.execPath, entry, 'setup', '--socket', socketPath, ...args],
+        argv: [process.execPath, entry, 'setup', '--no-wait', '--socket', socketPath, ...args],
         env: {
           PATH: process.env.PATH,
           HOME: dir,

@@ -14,8 +14,8 @@ import {
   deployment,
   deployment_step,
   domain,
+  environment_variable,
   event,
-  key,
   machine,
   machine_snapshot,
   notification_channel,
@@ -36,7 +36,7 @@ import type { EnvSnapshot } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { valueBytes } from '../secrets/keyring.ts'
 import { parseValue } from '../secrets/reference.ts'
-import { isSealed, leaves, Resolver } from '../secrets/resolve.ts'
+import { isSecret, leaves, Resolver } from '../secrets/resolve.ts'
 import { storedBytes } from '../secrets/variables.ts'
 import { snapshotView } from '../volumes/backups.ts'
 
@@ -58,11 +58,11 @@ import {
   type AppRow,
   type DeploymentRow,
   type DomainRow,
-  type KeyRow,
   type PortRow,
   type ProjectRow,
   type StationRow,
   type TargetRow,
+  type VariableRow,
   type VolumeRow,
 } from './lookup.ts'
 import * as shapes from './shapes.ts'
@@ -239,8 +239,8 @@ export const createViews = (db: Db) => {
   const snapshotIds = (snapshot: EnvSnapshot) =>
     (snapshot.entries ?? []).map((entry) => ({
       name: entry.key,
-      key_id: entry.key_id,
-      sealed: entry.sealed,
+      environment_variable_id: entry.environment_variable_id,
+      secret: entry.secret,
       values: leaves(entry.node).flatMap((leaf) =>
         leaf.kind === 'value'
           ? [
@@ -343,7 +343,7 @@ export const createViews = (db: Db) => {
     return row ? select(deploymentView, row, sub) : null
   }
 
-  const headVersion = (row: KeyRow) => {
+  const headVersion = (row: VariableRow) => {
     if (!row.current_value_id) {
       return null
     }
@@ -377,17 +377,17 @@ export const createViews = (db: Db) => {
     schema: shapes.SecretValue,
     full: (row) => ({
       id: row.id,
-      key_id: row.key_id,
+      environment_variable_id: row.environment_variable_id,
       target: row.target,
       version: row.version,
       bytes:
         db
           .select({
-            kind: key.kind,
+            kind: environment_variable.kind,
           })
-          .from(key)
-          .where(eq(key.id, row.key_id))
-          .get()?.kind === 'sealed'
+          .from(environment_variable)
+          .where(eq(environment_variable.id, row.environment_variable_id))
+          .get()?.kind === 'secret'
           ? valueBytes(row.ciphertext)
           : null,
       created_by: row.created_by,
@@ -398,7 +398,7 @@ export const createViews = (db: Db) => {
     }),
     summary: [
       'id',
-      'key_id',
+      'environment_variable_id',
       'target',
       'version',
       'bytes',
@@ -410,8 +410,8 @@ export const createViews = (db: Db) => {
     ],
   }
 
-  const keyView: View<KeyRow, typeof shapes.Key> = {
-    schema: shapes.Key,
+  const variableView: View<VariableRow, typeof shapes.EnvironmentVariable> = {
+    schema: shapes.EnvironmentVariable,
     full: (row) => {
       const base: Row = {
         ...stamps(row),
@@ -426,10 +426,10 @@ export const createViews = (db: Db) => {
         build: row.build,
         head_version: headVersion(row),
         bytes:
-          row.kind === 'sealed' && row.current_value_id
+          row.kind === 'secret' && row.current_value_id
             ? storedBytes(db, row.current_value_id)
             : null,
-        sealed: row.kind === 'sealed',
+        secret: row.kind === 'secret',
         value: null,
       }
 
@@ -441,7 +441,12 @@ export const createViews = (db: Db) => {
                 target: secret_value.target,
               })
               .from(secret_value)
-              .where(and(eq(secret_value.key_id, row.id), isNull(secret_value.revoked_at)))
+              .where(
+                and(
+                  eq(secret_value.environment_variable_id, row.id),
+                  isNull(secret_value.revoked_at),
+                ),
+              )
               .all()
               .map((h) => h.target),
           ),
@@ -469,7 +474,7 @@ export const createViews = (db: Db) => {
           db
             .select()
             .from(secret_value)
-            .where(eq(secret_value.key_id, row.id))
+            .where(eq(secret_value.environment_variable_id, row.id))
             .orderBy(desc(secret_value.id))
             .all(),
           sub,
@@ -606,14 +611,16 @@ export const createViews = (db: Db) => {
           : []
       },
       current_deployment: (row, sub) => deploymentSummary(row.current_deployment_id, sub),
-      keys: (row, sub) =>
+      environment_variables: (row, sub) =>
         projectAll(
-          keyView,
+          variableView,
           db
             .select()
-            .from(key)
-            .where(and(eq(key.scope, 'app'), eq(key.app_id, row.id)))
-            .orderBy(asc(key.name))
+            .from(environment_variable)
+            .where(
+              and(eq(environment_variable.scope, 'app'), eq(environment_variable.app_id, row.id)),
+            )
+            .orderBy(asc(environment_variable.name))
             .all(),
           sub,
         ),
@@ -624,13 +631,22 @@ export const createViews = (db: Db) => {
   const edgesOf = (targetId: string) => {
     const apps = appsOf(targetId)
     const byName = new Map(apps.map((s) => [s.name, s.id]))
-    const edges = new Map<string, { from_app: string; to_app: string; keys: string[] }>()
+    const edges = new Map<
+      string,
+      { from_app: string; to_app: string; environment_variables: string[] }
+    >()
 
     for (const svc of apps) {
       const vars = db
         .select()
-        .from(key)
-        .where(and(eq(key.scope, 'app'), eq(key.app_id, svc.id), eq(key.kind, 'reference')))
+        .from(environment_variable)
+        .where(
+          and(
+            eq(environment_variable.scope, 'app'),
+            eq(environment_variable.app_id, svc.id),
+            eq(environment_variable.kind, 'reference'),
+          ),
+        )
         .all()
 
       for (const v of vars) {
@@ -657,11 +673,11 @@ export const createViews = (db: Db) => {
           const edge = edges.get(id) ?? {
             from_app: svc.id,
             to_app: to,
-            keys: [],
+            environment_variables: [],
           }
 
-          if (!edge.keys.includes(v.name)) {
-            edge.keys.push(v.name)
+          if (!edge.environment_variables.includes(v.name)) {
+            edge.environment_variables.push(v.name)
           }
 
           edges.set(id, edge)
@@ -776,14 +792,19 @@ export const createViews = (db: Db) => {
       previews: (row, sub) => projectAll(previewView, previewsOf(row.id), sub),
       apps: (row, sub) => appsExpand(productionOf(db, row.id).id, sub),
       edges: (row) => edgesOf(productionOf(db, row.id).id),
-      keys: (row, sub) =>
+      environment_variables: (row, sub) =>
         projectAll(
-          keyView,
+          variableView,
           db
             .select()
-            .from(key)
-            .where(and(eq(key.scope, 'project'), eq(key.project_id, row.id)))
-            .orderBy(asc(key.name))
+            .from(environment_variable)
+            .where(
+              and(
+                eq(environment_variable.scope, 'project'),
+                eq(environment_variable.project_id, row.id),
+              ),
+            )
+            .orderBy(asc(environment_variable.name))
             .all(),
           sub,
         ),
@@ -1020,10 +1041,10 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const machineKeys = (row: MachineRow) => {
+  const machineVariables = (row: MachineRow) => {
     const resolver = Resolver.forMachine(db, row.id)
 
-    return resolver.machineKeys().map((v) => {
+    return resolver.machineVariables().map((v) => {
       try {
         const node = resolver.resolveMachine(v)
 
@@ -1031,17 +1052,17 @@ export const createViews = (db: Db) => {
           name: v.name,
           kind: v.kind,
           reference: v.reference,
-          sealed: isSealed(node),
+          secret: isSecret(node),
           sources: leaves(node).map((leaf) =>
             leaf.kind === 'value'
               ? {
                   from: leaf.from,
-                  key: leaf.key,
+                  name: leaf.key,
                   version: leaf.version,
                 }
               : {
                   from: 'export',
-                  key: leaf.key,
+                  name: leaf.key,
                 },
           ),
           error: null,
@@ -1055,7 +1076,7 @@ export const createViews = (db: Db) => {
           name: v.name,
           kind: v.kind,
           reference: v.reference,
-          sealed: v.kind === 'sealed',
+          secret: v.kind === 'secret',
           sources: [],
           error: {
             code: error.code,
@@ -1146,7 +1167,7 @@ export const createViews = (db: Db) => {
             .all(),
           sub,
         ),
-      keys: (row) => machineKeys(row),
+      environment_variables: (row) => machineVariables(row),
     },
   }
 
@@ -1217,7 +1238,7 @@ export const createViews = (db: Db) => {
     volume: volumeView,
     domain: domainView,
     deployment: deploymentView,
-    key: keyView,
+    variable: variableView,
     secretValue: secretValueView,
     approval: approvalView,
     token: tokenView,

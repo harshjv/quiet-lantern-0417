@@ -1,4 +1,4 @@
-import { keyNamePattern, slugPattern } from '@stationly/protocol'
+import { environmentVariableNamePattern, slugPattern } from '@stationly/protocol'
 
 import { SecretsError } from './errors.ts'
 
@@ -13,12 +13,12 @@ export type Segment =
   | { type: 'text'; text: string }
   | { type: 'reference'; offset: number; raw: string; target: Target }
 
-export const keyPattern = new RegExp(keyNamePattern)
+export const namePattern = new RegExp(environmentVariableNamePattern)
 const slug = new RegExp(slugPattern)
 const generatorPattern = /^secret\((\d{1,3})\)$/
 
 const invalid = (value: string, offset: number, reason: string) =>
-  new SecretsError('KEY_REFERENCE_INVALID', `${reason} at offset ${offset}`, {
+  new SecretsError('ENVIRONMENT_VARIABLE_REFERENCE_INVALID', `${reason} at offset ${offset}`, {
     offset,
     value_length: value.length,
     reason,
@@ -41,26 +41,30 @@ const parseTarget = (value: string, text: string, offset: number): Target => {
   }
 
   const parts = text.split('.')
-  const checkKey = (key: string | undefined, at: number) => {
-    if (key === undefined || !keyPattern.test(key)) {
-      throw invalid(value, at, `"${key ?? ''}" is not a key name (${keyNamePattern})`)
+  const checkName = (key: string | undefined, at: number) => {
+    if (key === undefined || !namePattern.test(key)) {
+      throw invalid(
+        value,
+        at,
+        `"${key ?? ''}" is not an environment variable name (${environmentVariableNamePattern})`,
+      )
     }
 
     return key
   }
-  const keyOffset = offset + text.lastIndexOf('.') + 1
+  const nameOffset = offset + text.lastIndexOf('.') + 1
 
   if (parts.length === 2 && parts[0] === 'project') {
     return {
       type: 'project',
-      key: checkKey(parts[1], keyOffset),
+      key: checkName(parts[1], nameOffset),
     }
   }
 
   if (parts.length === 2 && parts[0] === 'global') {
     return {
       type: 'global',
-      key: checkKey(parts[1], keyOffset),
+      key: checkName(parts[1], nameOffset),
     }
   }
 
@@ -72,7 +76,7 @@ const parseTarget = (value: string, text: string, offset: number): Target => {
     return {
       type: 'shared',
       alias: parts[1]!,
-      key: checkKey(parts[2], keyOffset),
+      key: checkName(parts[2], nameOffset),
     }
   }
 
@@ -84,7 +88,7 @@ const parseTarget = (value: string, text: string, offset: number): Target => {
     return {
       type: 'app',
       app: parts[0]!,
-      key: checkKey(parts[1], keyOffset),
+      key: checkName(parts[1], nameOffset),
     }
   }
 

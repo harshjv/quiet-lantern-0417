@@ -19,6 +19,10 @@ export const env = () =>
     runtimeEnv: process.env,
     server: {
       STATIONLY_PORT: z.string().default(String(networkLayout.dispatchPort)).transform(Number),
+      STATIONLY_GATEWAY_PORT: z
+        .string()
+        .default(String(networkLayout.dispatchGatewayPort))
+        .transform(Number),
       STATIONLY_DATABASE: optional,
       STATIONLY_BUILD_VERSION: blankAs(packageJson.version),
       STATIONLY_DISPATCH_DIGEST: optional,

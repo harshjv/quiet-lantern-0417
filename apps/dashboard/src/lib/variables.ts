@@ -1,41 +1,41 @@
-import { keyNamePattern as keyNameSource } from '@stationly/protocol/domain'
+import { environmentVariableNamePattern } from '@stationly/protocol/domain'
 
-import type { Key } from './api'
+import type { EnvironmentVariable } from './api'
 import { optimistic } from './cache.ts'
 import { inputPattern } from './format.ts'
 
-export type KeyKind = Key['kind']
+export type EnvironmentVariableKind = EnvironmentVariable['kind']
 
-export const keyKinds: KeyKind[] = ['literal', 'sealed', 'reference']
+export const variableKinds: EnvironmentVariableKind[] = ['literal', 'secret', 'reference']
 
-export const keyNamePattern = inputPattern(keyNameSource)
+export const variableNamePattern = inputPattern(environmentVariableNamePattern)
 
-export const keyNameTitle = 'Upper case letters, digits and underscores'
+export const variableNameTitle = 'Upper case letters, digits and underscores'
 
-export const sealedNote =
-  'Sealed values are write-only. No endpoint returns them, including to you.'
+export const secretNote =
+  'Secret values are write-only. No endpoint returns them, including to you.'
 
 export const noValueLabel = 'No value here'
 
-export const hasNoValue = (key: Pick<Key, 'kind' | 'head_version'>) =>
-  key.kind === 'sealed' && !key.head_version
+export const hasNoValue = (variable: Pick<EnvironmentVariable, 'kind' | 'head_version'>) =>
+  variable.kind === 'secret' && !variable.head_version
 
 export const buildNote =
-  'Build-time keys reach the Dockerfile as BuildKit secrets: read one with RUN --mount=type=secret,id=KEY. They never become build arguments or image layers.'
+  'Build-time environment variables reach the Dockerfile as BuildKit secrets: read one with RUN --mount=type=secret,id=KEY. They never become build arguments or image layers.'
 
 export const referencePlaceholder = '${{db.HOST}}'
 
 export const projectReference = '${{project.NAME}}'
 
-export type KeyEntry = {
+export type VariableEntry = {
   name: string
-  kind: KeyKind
+  kind: EnvironmentVariableKind
   value: string
   build: boolean
   injection?: 'env' | 'file'
 }
 
-const valueOf = (kind: KeyKind, value: string) =>
+const valueOf = (kind: EnvironmentVariableKind, value: string) =>
   kind === 'reference'
     ? {
         reference: value,
@@ -44,7 +44,7 @@ const valueOf = (kind: KeyKind, value: string) =>
         value,
       }
 
-export const toKeyInput = ({ name, kind, value, build, injection }: KeyEntry) => ({
+export const toVariableInput = ({ name, kind, value, build, injection }: VariableEntry) => ({
   name,
   kind,
   build,
@@ -56,13 +56,17 @@ export const toKeyInput = ({ name, kind, value, build, injection }: KeyEntry) =>
   ...valueOf(kind, value),
 })
 
-export const toMachineKeyInput = ({ name, kind, value }: KeyEntry) => ({
+export const toMachineVariableInput = ({ name, kind, value }: VariableEntry) => ({
   name,
   kind,
   ...valueOf(kind, value),
 })
 
-export const draftKey = (entry: KeyEntry, scope: Key['scope'], existing?: Key): Key =>
+export const draftVariable = (
+  entry: VariableEntry,
+  scope: EnvironmentVariable['scope'],
+  existing?: EnvironmentVariable,
+): EnvironmentVariable =>
   optimistic({
     id: `draft-${entry.name}`,
     head_version: null,
@@ -76,10 +80,14 @@ export const draftKey = (entry: KeyEntry, scope: Key['scope'], existing?: Key): 
     build: entry.build,
   })
 
-export const withDraft = (list: Key[], entry: KeyEntry, scope: Key['scope']) =>
+export const withDraft = (
+  list: EnvironmentVariable[],
+  entry: VariableEntry,
+  scope: EnvironmentVariable['scope'],
+) =>
   list.some((v) => v.name === entry.name)
-    ? list.map((v) => (v.name === entry.name ? draftKey(entry, scope, v) : v))
-    : [...list, draftKey(entry, scope)]
+    ? list.map((v) => (v.name === entry.name ? draftVariable(entry, scope, v) : v))
+    : [...list, draftVariable(entry, scope)]
 
-export const withoutKeys = (list: Key[], names: string[]) =>
+export const withoutVariables = (list: EnvironmentVariable[], names: string[]) =>
   list.filter((v) => !names.includes(v.name))

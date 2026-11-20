@@ -5,8 +5,8 @@ import {
   appsQuery,
   namesQuery,
   previewsQuery,
-  projectKeysQuery,
   projectsQuery,
+  projectVariablesQuery,
 } from '@/lib/queries'
 
 import { serversQuery } from './server-data'
@@ -59,8 +59,8 @@ export function useNames(projects: readonly (string | null)[]): Names {
   const previews = useQueries({
     queries: ids.map((id) => previewsQuery(id)),
   })
-  const keys = useQueries({
-    queries: ids.map((id) => projectKeysQuery(id, 'production')),
+  const variables = useQueries({
+    queries: ids.map((id) => projectVariablesQuery(id, 'production')),
   })
   const names = new Map<string, string>()
 
@@ -76,8 +76,8 @@ export function useNames(projects: readonly (string | null)[]): Names {
     names.set(preview.id, preview.name)
   }
 
-  for (const key of keys.flatMap((query) => query.data?.items ?? [])) {
-    names.set(key.id, key.name)
+  for (const variable of variables.flatMap((query) => query.data?.items ?? [])) {
+    names.set(variable.id, variable.name)
   }
 
   for (const app of apps.flatMap((query) => query.data?.items ?? [])) {
@@ -95,8 +95,8 @@ export function useNames(projects: readonly (string | null)[]): Names {
       names.set(domain.id, domain.hostname)
     }
 
-    for (const key of app.keys ?? []) {
-      names.set(key.id, key.name)
+    for (const variable of app.environment_variables ?? []) {
+      names.set(variable.id, variable.name)
     }
   }
 

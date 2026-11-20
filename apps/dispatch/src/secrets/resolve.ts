@@ -1,7 +1,15 @@
 import { and, asc, eq } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
-import { app, app_port, grant, key, machine, project, target } from '../db/schema.ts'
+import {
+  app,
+  app_port,
+  environment_variable,
+  grant,
+  machine,
+  project,
+  target,
+} from '../db/schema.ts'
 
 import { SecretsError } from './errors.ts'
 import { parseValue, type Segment } from './reference.ts'
@@ -12,13 +20,13 @@ export const maxHops = 8
 export type ValueNode = {
   kind: 'value'
   from: string
-  key_id: string
+  environment_variable_id: string
   key: string
   app_id: string | null
   target: ValueTarget
   secret_value_id: string
   version: number
-  sealed: boolean
+  secret: boolean
   generated?: boolean
 }
 
@@ -32,7 +40,7 @@ export type ExportNode = {
 
 export type TemplateNode = {
   kind: 'template'
-  key_id: string
+  environment_variable_id: string
   template: string
   parts: SourceNode[]
 }
@@ -41,13 +49,13 @@ export type SourceNode = ValueNode | ExportNode | TemplateNode
 
 type AppRow = typeof app.$inferSelect
 type MachineRow = typeof machine.$inferSelect
-type KeyRow = typeof key.$inferSelect
+type VariableRow = typeof environment_variable.$inferSelect
 type ReferenceSegment = Extract<Segment, { type: 'reference' }>
 
-export const isSealed = (node: SourceNode): boolean =>
-  node.kind === 'value' ? node.sealed : node.kind === 'template' ? node.parts.some(isSealed) : false
+export const isSecret = (node: SourceNode): boolean =>
+  node.kind === 'value' ? node.secret : node.kind === 'template' ? node.parts.some(isSecret) : false
 
-export const isRedacted = (leaf: ValueNode) => leaf.sealed || leaf.generated === true
+export const isRedacted = (leaf: ValueNode) => leaf.secret || leaf.generated === true
 
 export const holdsRedacted = (node: SourceNode) =>
   leaves(node).some((leaf) => leaf.kind === 'value' && isRedacted(leaf))
@@ -125,29 +133,36 @@ export class Resolver {
     })
   }
 
-  appKeys() {
+  appVariables() {
     return this.db
       .select()
-      .from(key)
-      .where(and(eq(key.scope, 'app'), eq(key.app_id, this.svc!.id)))
-      .orderBy(asc(key.name))
+      .from(environment_variable)
+      .where(
+        and(eq(environment_variable.scope, 'app'), eq(environment_variable.app_id, this.svc!.id)),
+      )
+      .orderBy(asc(environment_variable.name))
       .all()
   }
 
-  machineKeys() {
+  machineVariables() {
     return this.db
       .select()
-      .from(key)
-      .where(and(eq(key.scope, 'machine'), eq(key.machine_id, this.box!.id)))
-      .orderBy(asc(key.name))
+      .from(environment_variable)
+      .where(
+        and(
+          eq(environment_variable.scope, 'machine'),
+          eq(environment_variable.machine_id, this.box!.id),
+        ),
+      )
+      .orderBy(asc(environment_variable.name))
       .all()
   }
 
-  resolve(v: KeyRow): SourceNode {
-    return this.resolveAppKey(this.svc!, v, [])
+  resolve(v: VariableRow): SourceNode {
+    return this.resolveAppVariable(this.svc!, v, [])
   }
 
-  resolveMachine(v: KeyRow): SourceNode {
+  resolveMachine(v: VariableRow): SourceNode {
     const box = this.box!
 
     if (v.kind === 'reference' && v.reference !== null) {
@@ -165,8 +180,8 @@ export class Resolver {
             }
 
             throw new SecretsError(
-              'KEY_REFERENCE_INVALID',
-              'a machine key references project or global keys only',
+              'ENVIRONMENT_VARIABLE_REFERENCE_INVALID',
+              'a machine environment variable references project or global environment variables only',
               {
                 offset: segment.offset,
               },
@@ -178,7 +193,7 @@ export class Resolver {
 
       return {
         kind: 'template',
-        key_id: v.id,
+        environment_variable_id: v.id,
         template: v.reference,
         parts,
       }
@@ -187,10 +202,14 @@ export class Resolver {
     const row = headValue(this.db, v.id, 'production')
 
     if (!row) {
-      throw new SecretsError('KEY_UNRESOLVED', `${box.name}.${v.name} has no value`, {
-        key: v.name,
-        machine_id: box.id,
-      })
+      throw new SecretsError(
+        'ENVIRONMENT_VARIABLE_UNRESOLVED',
+        `${box.name}.${v.name} has no value`,
+        {
+          environment_variable: v.name,
+          machine_id: box.id,
+        },
+      )
     }
 
     return this.valueNode(v, row, 'machine', null)
@@ -200,55 +219,60 @@ export class Resolver {
     return this.place.kind === 'production' ? 'production' : `preview ${this.place.name}`
   }
 
-  private missing(label: string, v: KeyRow, details: Record<string, unknown>) {
+  private missing(label: string, v: VariableRow, details: Record<string, unknown>) {
     return new SecretsError(
-      'KEY_UNRESOLVED',
+      'ENVIRONMENT_VARIABLE_UNRESOLVED',
       `${label} has no value in ${this.where}`,
       {
-        key: v.name,
+        environment_variable: v.name,
         preview: this.place.kind === 'preview' ? this.place.name : null,
         ...details,
       },
-      this.place.kind === 'preview' && v.kind === 'sealed'
-        ? `Set a preview value for ${v.name}; previews never read production's sealed values.`
+      this.place.kind === 'preview' && v.kind === 'secret'
+        ? `Set a preview value for ${v.name}; previews never read production's secret values.`
         : `Set a value for ${v.name}.`,
     )
   }
 
-  private headFor(v: KeyRow) {
+  private headFor(v: VariableRow) {
     if (this.place.kind === 'production') {
       return headValue(this.db, v.id, 'production')
     }
 
     const preview = headValue(this.db, v.id, 'preview')
 
-    if (preview || (v.kind === 'sealed' && v.scope !== 'app')) {
+    if (preview || (v.kind === 'secret' && v.scope !== 'app')) {
       return preview
     }
 
     return headValue(this.db, v.id, 'production')
   }
 
-  private label(v: KeyRow, owner: AppRow) {
+  private label(v: VariableRow, owner: AppRow) {
     return `${owner.name}.${v.name}`
   }
 
-  private valueNode(v: KeyRow, row: SecretValueRow, from: string, appId: string | null): ValueNode {
+  private valueNode(
+    v: VariableRow,
+    row: SecretValueRow,
+    from: string,
+    appId: string | null,
+  ): ValueNode {
     return {
       kind: 'value',
       from,
-      key_id: v.id,
+      environment_variable_id: v.id,
       key: v.name,
       app_id: appId,
       target: row.target,
       secret_value_id: row.id,
       version: row.version,
-      sealed: v.kind === 'sealed',
+      secret: v.kind === 'secret',
       generated: v.kind === 'literal' && v.reference !== null,
     }
   }
 
-  private resolveAppKey(owner: AppRow, v: KeyRow, chain: string[]): SourceNode {
+  private resolveAppVariable(owner: AppRow, v: VariableRow, chain: string[]): SourceNode {
     const here = [...chain, this.label(v, owner)]
 
     if (v.kind === 'reference' && v.reference !== null) {
@@ -265,7 +289,7 @@ export class Resolver {
 
       return {
         kind: 'template',
-        key_id: v.id,
+        environment_variable_id: v.id,
         template: v.reference,
         parts,
       }
@@ -286,13 +310,13 @@ export class Resolver {
     owner: AppRow,
     segment: ReferenceSegment,
     chain: string[],
-    fromKey: string,
+    fromVariable: string,
   ): SourceNode {
     const ref = segment.target
 
     if (chain.length > maxHops) {
       throw new SecretsError(
-        'KEY_REFERENCE_INVALID',
+        'ENVIRONMENT_VARIABLE_REFERENCE_INVALID',
         `reference chain ${chain.join(' -> ')} is longer than ${maxHops} hops`,
         {
           hops: chain.length,
@@ -310,7 +334,7 @@ export class Resolver {
 
         if (!svc) {
           throw new SecretsError(
-            'KEY_TARGET_MISSING',
+            'ENVIRONMENT_VARIABLE_TARGET_MISSING',
             `app ${ref.app} does not exist in ${this.where}`,
             {},
           )
@@ -318,14 +342,20 @@ export class Resolver {
 
         const v = this.db
           .select()
-          .from(key)
-          .where(and(eq(key.scope, 'app'), eq(key.app_id, svc.id), eq(key.name, ref.key)))
+          .from(environment_variable)
+          .where(
+            and(
+              eq(environment_variable.scope, 'app'),
+              eq(environment_variable.app_id, svc.id),
+              eq(environment_variable.name, ref.key),
+            ),
+          )
           .get()
 
         if (v) {
-          if (v.id === fromKey || chain.includes(this.label(v, svc))) {
+          if (v.id === fromVariable || chain.includes(this.label(v, svc))) {
             throw new SecretsError(
-              'KEY_CYCLE',
+              'ENVIRONMENT_VARIABLE_CYCLE',
               `reference chain returns to itself: ${[...chain, this.label(v, svc)].join(' -> ')}`,
               {
                 cycle: [...chain, this.label(v, svc)],
@@ -333,15 +363,15 @@ export class Resolver {
             )
           }
 
-          return this.resolveAppKey(svc, v, chain)
+          return this.resolveAppVariable(svc, v, chain)
         }
 
         const value = this.exportOf(svc, ref.key)
 
         if (value === undefined) {
           throw new SecretsError(
-            'KEY_UNRESOLVED',
-            `app ${svc.name} has no key or export ${ref.key}`,
+            'ENVIRONMENT_VARIABLE_UNRESOLVED',
+            `app ${svc.name} has no environment variable or export ${ref.key}`,
             {},
           )
         }
@@ -361,12 +391,16 @@ export class Resolver {
         return this.resolveGlobal(ref.key)
       case 'shared':
         throw new SecretsError(
-          'KEY_TARGET_MISSING',
+          'ENVIRONMENT_VARIABLE_TARGET_MISSING',
           `attachment ${ref.alias} does not exist in ${this.where}; attachments arrive in phase 1b`,
           {},
         )
       case 'generator':
-        throw new SecretsError('KEY_REFERENCE_INVALID', 'secret(N) must be the entire value', {})
+        throw new SecretsError(
+          'ENVIRONMENT_VARIABLE_REFERENCE_INVALID',
+          'secret(N) must be the entire value',
+          {},
+        )
     }
   }
 
@@ -397,18 +431,28 @@ export class Resolver {
   private resolveProject(name: string): ValueNode {
     const v = this.db
       .select()
-      .from(key)
-      .where(and(eq(key.scope, 'project'), eq(key.project_id, this.projectId), eq(key.name, name)))
+      .from(environment_variable)
+      .where(
+        and(
+          eq(environment_variable.scope, 'project'),
+          eq(environment_variable.project_id, this.projectId),
+          eq(environment_variable.name, name),
+        ),
+      )
       .get()
 
     if (!v) {
-      throw new SecretsError('KEY_UNRESOLVED', `project key ${name} does not exist`, {})
+      throw new SecretsError(
+        'ENVIRONMENT_VARIABLE_UNRESOLVED',
+        `project environment variable ${name} does not exist`,
+        {},
+      )
     }
 
     const row = this.headFor(v)
 
     if (!row) {
-      throw this.missing(`project key ${name}`, v, {})
+      throw this.missing(`project environment variable ${name}`, v, {})
     }
 
     return this.valueNode(v, row, `project:${row.target}`, null)
@@ -417,39 +461,47 @@ export class Resolver {
   private resolveGlobal(name: string): ValueNode {
     const granted = this.db
       .select({
-        v: key,
+        v: environment_variable,
         alias: grant.alias,
       })
       .from(grant)
-      .innerJoin(key, eq(key.id, grant.key_id))
-      .where(and(eq(grant.project_id, this.projectId), eq(key.scope, 'global')))
+      .innerJoin(environment_variable, eq(environment_variable.id, grant.environment_variable_id))
+      .where(and(eq(grant.project_id, this.projectId), eq(environment_variable.scope, 'global')))
       .all()
       .find((g) => (g.alias ?? g.v.name) === name)
 
     if (!granted) {
       const exists = this.db
         .select({
-          id: key.id,
+          id: environment_variable.id,
         })
-        .from(key)
-        .where(and(eq(key.scope, 'global'), eq(key.name, name)))
+        .from(environment_variable)
+        .where(and(eq(environment_variable.scope, 'global'), eq(environment_variable.name, name)))
         .get()
 
       if (exists) {
         throw new SecretsError(
-          'KEY_NOT_GRANTED',
-          `global key ${name} exists but project ${this.projectId} holds no grant for it`,
+          'ENVIRONMENT_VARIABLE_NOT_GRANTED',
+          `global environment variable ${name} exists but project ${this.projectId} holds no grant for it`,
           {},
         )
       }
 
-      throw new SecretsError('KEY_UNRESOLVED', `global key ${name} does not exist`, {})
+      throw new SecretsError(
+        'ENVIRONMENT_VARIABLE_UNRESOLVED',
+        `global environment variable ${name} does not exist`,
+        {},
+      )
     }
 
     const row = headValue(this.db, granted.v.id, 'production')
 
     if (!row) {
-      throw new SecretsError('KEY_UNRESOLVED', `global key ${name} has no value`, {})
+      throw new SecretsError(
+        'ENVIRONMENT_VARIABLE_UNRESOLVED',
+        `global environment variable ${name} has no value`,
+        {},
+      )
     }
 
     return this.valueNode(granted.v, row, 'global', null)

@@ -1,8 +1,8 @@
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
 
 import { messages } from './messages.ts'
-import { ErrorBody, HostProbe, MachineRuntime } from './model.ts'
-import { JsonObject, Nullable } from './primitives.ts'
+import { ErrorBody, hostnameStatusValues, HostProbe, MachineRuntime } from './model.ts'
+import { JsonObject, Nullable, StringEnum } from './primitives.ts'
 
 export const rootSocketVersion = 1
 
@@ -116,7 +116,9 @@ const SetupResult = Type.Object(
       {
         api: Type.String(),
         dashboard: Type.String(),
-        status: Type.String(),
+        status: StringEnum(hostnameStatusValues, {
+          title: 'HostnameStatus',
+        }),
       },
       {
         title: 'RootSocketSetupHostnames',
@@ -225,7 +227,7 @@ export const rootSocketOps = {
   'host.probe': op(NoParams, HostProbeResult),
   'admin.recovery_key': op(NoParams, RecoveryKey),
   'tunnel.set_token': op(TunnelTokenParams, TunnelTokenResult),
-  doctor: op(NoParams, messages['doctor.report'].body),
+  doctor: op(messages['doctor.run'].body, messages['doctor.report'].body),
 }
 
 export type RootSocketOp = keyof typeof rootSocketOps

@@ -923,7 +923,7 @@ describe('production', () => {
       ['POST', `/v1/machines/${id}/snapshots`, {}],
       [
         'PATCH',
-        `/v1/machines/${id}/keys`,
+        `/v1/machines/${id}/environment-variables`,
         {
           set: [
             {
@@ -1365,7 +1365,7 @@ describe('snapshots and forks', () => {
     assert.equal(wrongStation.body.error.details.issues[0].path, '/server_id')
   })
 
-  test('a fork inherits network, allowlist, docker, command and ttl from a snapshot and from a live machine, and takes no keys', async () => {
+  test('a fork inherits network, allowlist, docker, command and ttl from a snapshot and from a live machine, and takes no environment variables', async () => {
     const egress = {
       mode: 'allowlist',
       domains: [
@@ -1385,10 +1385,10 @@ describe('snapshots and forks', () => {
       size: {
         cpu_millis: 1500,
       },
-      keys: [
+      environment_variables: [
         {
           name: 'TOKEN',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'hunter2hunter2',
         },
       ],
@@ -1432,7 +1432,8 @@ describe('snapshots and forks', () => {
 
     assert.equal(fromLive.status, 201, fromLive.text)
     expectInherited((await api('GET', `/v1/machines/${fromLive.body.id}?fields=*`)).body)
-    const keys = (await api('GET', `/v1/machines/${fromSnapshot.body.id}/keys`)).body
+    const keys = (await api('GET', `/v1/machines/${fromSnapshot.body.id}/environment-variables`))
+      .body
 
     assert.deepEqual(keys.items ?? keys, [])
     const doc = await station.waitForGeneration(

@@ -7,7 +7,7 @@ import type { MessageBody } from '@stationly/protocol'
 
 import { newId } from '../src/db/ids.ts'
 import { audit_event, event, server, setting, volume, volume_snapshot } from '../src/db/schema.ts'
-import { setKey } from '../src/secrets/variables.ts'
+import { setVariable } from '../src/secrets/variables.ts'
 import {
   BackupError,
   backupPlan,
@@ -33,7 +33,7 @@ const target = {
   endpoint: 'http://10.0.0.5:9000',
   bucket: 'my-backups',
   prefix: 'prod/volumes',
-  credentials_key: 'BACKUP_S3',
+  credentials_environment_variable: 'BACKUP_S3',
 }
 
 type Sent = { station: string; type: string; body: any }
@@ -104,12 +104,12 @@ describe('S3 volume backup targets', () => {
       })
       .run()
 
-  const setCredentials = (value: string, sealed = true) =>
-    setKey(h.db, h.deps.keyring, {
+  const setCredentials = (value: string, secret = true) =>
+    setVariable(h.db, h.deps.keyring, {
       scope: 'global',
       name: 'BACKUP_S3',
       value,
-      sealed,
+      secret,
       actor,
       request_id: `req_${newId('message')}`,
     })
@@ -216,7 +216,7 @@ describe('S3 volume backup targets', () => {
         prefix: 'a b',
       },
       {
-        credentials_key: 'lower',
+        credentials_environment_variable: 'lower',
       },
     ]) {
       assert.notEqual(
@@ -251,10 +251,10 @@ describe('S3 volume backup targets', () => {
     assert.ok(accepted.status === 200 || accepted.status === 202, accepted.text)
   })
 
-  test('a plan refuses a missing, a non-sealed and a malformed credentials key', () => {
+  test('a plan refuses a missing, a non-secret and a malformed credentials environment variable', () => {
     const missing = {
       ...target,
-      credentials_key: 'NOT_THERE',
+      credentials_environment_variable: 'NOT_THERE',
     }
 
     assert.throws(
@@ -262,13 +262,13 @@ describe('S3 volume backup targets', () => {
       (e: unknown) =>
         e instanceof BackupError &&
         e.code === 'VALIDATION_FAILED' &&
-        /not a global key/.test(e.message),
+        /not a global environment variable/.test(e.message),
     )
-    setKey(h.db, h.deps.keyring, {
+    setVariable(h.db, h.deps.keyring, {
       scope: 'global',
       name: 'PLAIN_S3',
       value: 'a:b',
-      sealed: false,
+      secret: false,
       actor,
       request_id: 'req_plain',
     })
@@ -276,9 +276,9 @@ describe('S3 volume backup targets', () => {
       () =>
         backupPlan(h.db, volumeId, {
           ...target,
-          credentials_key: 'PLAIN_S3',
+          credentials_environment_variable: 'PLAIN_S3',
         }),
-      (e: unknown) => e instanceof BackupError && /not sealed/.test(e.message),
+      (e: unknown) => e instanceof BackupError && /not secret/.test(e.message),
     )
     assert.equal(backupPlan(h.db, volumeId, undefined).target.type, 's3')
   })
@@ -457,7 +457,7 @@ describe('S3 volume backup targets', () => {
         (i) =>
           i.target.type === 's3' &&
           i.target.bucket === 'my-backups' &&
-          !JSON.stringify(i).includes('credentials_key'),
+          !JSON.stringify(i).includes('credentials_environment_variable'),
       ),
     )
     const delivered = sent.slice(0, 2).map((s) => (s.body as MessageBody<'secrets.deliver'>).target)
@@ -496,7 +496,7 @@ describe('S3 volume backup targets', () => {
     assert.deepEqual(again.expired, [ids[0]!])
   })
 
-  test('retention with a missing credentials key expires nothing and sends no delete', async () => {
+  test('retention with a missing credentials environment variable expires nothing and sends no delete', async () => {
     const ids = completeSnapshots(3, stationId)
 
     setSetting('volume_backup.keep', 1)
@@ -511,7 +511,7 @@ describe('S3 volume backup targets', () => {
       .set({
         target: {
           ...target,
-          credentials_key: 'GONE',
+          credentials_environment_variable: 'GONE',
         },
       })
       .where(eq(volume_snapshot.id, original.id))
@@ -521,7 +521,7 @@ describe('S3 volume backup targets', () => {
       .set({
         target: {
           ...target,
-          credentials_key: 'GONE',
+          credentials_environment_variable: 'GONE',
         },
       })
       .where(eq(volume_snapshot.id, ids[1]!))

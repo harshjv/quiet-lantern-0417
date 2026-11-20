@@ -785,18 +785,20 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
   const deploymentDocs: GenerationContent['deployments'] = {}
   const perApp = new Set<string>()
   let uncancelled = 0
-  let keyChangeAdmitted = false
+  let variableChangeAdmitted = false
   const dispatched = new Set(Object.keys(previous?.deployments ?? {}))
   const started = (dep: (typeof candidates)[number]) =>
     dispatched.has(dep.id) || dep.status !== 'queued' ? 0 : 1
 
   for (const dep of [...candidates].sort((a, b) => started(a) - started(b))) {
     const cancelled = dep.status === 'cancelled'
-    const serial = dep.trigger.type === 'key_change'
+    const serial = dep.trigger.type === 'environment_variable_change'
 
     if (
       !cancelled &&
-      (perApp.has(dep.app_id) || uncancelled >= st.concurrency_cap || (serial && keyChangeAdmitted))
+      (perApp.has(dep.app_id) ||
+        uncancelled >= st.concurrency_cap ||
+        (serial && variableChangeAdmitted))
     ) {
       continue
     }
@@ -865,7 +867,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       uncancelled++
 
       if (serial) {
-        keyChangeAdmitted = true
+        variableChangeAdmitted = true
       }
     }
   }
@@ -879,7 +881,7 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
     ? {
         system: 'dispatch' as const,
         virtual_ip: dispatchVirtualIp(settings['ipam.virtual_prefix']),
-        port: networkLayout.dispatchPort,
+        port: networkLayout.dispatchGatewayPort,
       }
     : null
   const systemHosts = new Map<string, string>()

@@ -223,6 +223,21 @@ const Doctor = Type.Object(
           finding: Str,
           fix: NStr,
           detail: Type.Optional(JsonObject),
+          steps: Type.Optional(
+            Type.Array(
+              Type.Object(
+                {
+                  name: Str,
+                  status: DoctorStatus,
+                  finding: Str,
+                  fix: NStr,
+                },
+                {
+                  additionalProperties: false,
+                },
+              ),
+            ),
+          ),
         },
         {
           additionalProperties: false,

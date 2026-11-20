@@ -64,8 +64,8 @@ export const openApiDocument = {
       "description": "Notification channels"
     },
     {
-      "name": "keys",
-      "description": "Keys, secret values and grants; sealed values are never shown"
+      "name": "environment-variables",
+      "description": "Environment variables, secret values and grants; secret values are never shown"
     },
     {
       "name": "approvals",
@@ -1486,7 +1486,7 @@ export const openApiDocument = {
           "previews"
         ],
         "operationId": "create_preview",
-        "summary": "Create a preview: a copy of production's apps, never its sealed values",
+        "summary": "Create a preview: a copy of production's apps, never its secret values",
         "x-stationly": {
           "level": "deploy",
           "cli": {
@@ -3295,8 +3295,8 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "keys": {
-                    "description": "App keys to set: name, kind, and value or reference",
+                  "environment_variables": {
+                    "description": "App environment variables to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -3315,7 +3315,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -3978,8 +3978,8 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "keys": {
-                    "description": "App keys to set: name, kind, and value or reference",
+                  "environment_variables": {
+                    "description": "App environment variables to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -3998,7 +3998,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -4661,8 +4661,8 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "keys": {
-                    "description": "App keys to set: name, kind, and value or reference",
+                  "environment_variables": {
+                    "description": "App environment variables to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -4681,7 +4681,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -5635,8 +5635,8 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "keys": {
-                    "description": "App keys to set: name, kind, and value or reference",
+                  "environment_variables": {
+                    "description": "App environment variables to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -5655,7 +5655,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -6299,8 +6299,8 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "keys": {
-                    "description": "App keys to set: name, kind, and value or reference",
+                  "environment_variables": {
+                    "description": "App environment variables to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -6319,7 +6319,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -6963,8 +6963,8 @@ export const openApiDocument = {
                       }
                     }
                   },
-                  "keys": {
-                    "description": "App keys to set: name, kind, and value or reference",
+                  "environment_variables": {
+                    "description": "App environment variables to set: name, kind, and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -6983,7 +6983,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -7935,10 +7935,10 @@ export const openApiDocument = {
                         }
                       ]
                     },
-                    "keys": {
+                    "environment_variables": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Key"
+                        "$ref": "#/components/schemas/EnvironmentVariable"
                       }
                     },
                     "exports": {
@@ -10169,7 +10169,7 @@ export const openApiDocument = {
                           "endpoint",
                           "bucket",
                           "prefix",
-                          "credentials_key"
+                          "credentials_environment_variable"
                         ],
                         "properties": {
                           "type": {
@@ -10187,7 +10187,7 @@ export const openApiDocument = {
                           "prefix": {
                             "type": "string"
                           },
-                          "credentials_key": {
+                          "credentials_environment_variable": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -10234,7 +10234,7 @@ export const openApiDocument = {
                           "endpoint",
                           "bucket",
                           "prefix",
-                          "credentials_key"
+                          "credentials_environment_variable"
                         ],
                         "properties": {
                           "type": {
@@ -10252,7 +10252,7 @@ export const openApiDocument = {
                           "prefix": {
                             "type": "string"
                           },
-                          "credentials_key": {
+                          "credentials_environment_variable": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -10299,7 +10299,7 @@ export const openApiDocument = {
                           "endpoint",
                           "bucket",
                           "prefix",
-                          "credentials_key"
+                          "credentials_environment_variable"
                         ],
                         "properties": {
                           "type": {
@@ -10317,7 +10317,7 @@ export const openApiDocument = {
                           "prefix": {
                             "type": "string"
                           },
-                          "credentials_key": {
+                          "credentials_environment_variable": {
                             "minLength": 1,
                             "type": "string"
                           }
@@ -10433,7 +10433,7 @@ export const openApiDocument = {
                                 "endpoint",
                                 "bucket",
                                 "prefix",
-                                "credentials_key"
+                                "credentials_environment_variable"
                               ],
                               "properties": {
                                 "type": {
@@ -10451,7 +10451,7 @@ export const openApiDocument = {
                                 "prefix": {
                                   "type": "string"
                                 },
-                                "credentials_key": {
+                                "credentials_environment_variable": {
                                   "minLength": 1,
                                   "type": "string"
                                 }
@@ -12984,7 +12984,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One or more of push, manual, rollback, key_change, redeploy, base_image, agent, comma separated",
+              "description": "One or more of push, manual, rollback, environment_variable_change, redeploy, base_image, agent, comma separated",
               "type": "string"
             }
           },
@@ -13474,7 +13474,7 @@ export const openApiDocument = {
             "in": "query",
             "required": false,
             "schema": {
-              "description": "One or more of push, manual, rollback, key_change, redeploy, base_image, agent, comma separated",
+              "description": "One or more of push, manual, rollback, environment_variable_change, redeploy, base_image, agent, comma separated",
               "type": "string"
             }
           },
@@ -14071,7 +14071,7 @@ export const openApiDocument = {
                             "push",
                             "manual",
                             "rollback",
-                            "key_change",
+                            "environment_variable_change",
                             "redeploy",
                             "base_image",
                             "agent"
@@ -14638,7 +14638,7 @@ export const openApiDocument = {
           "deployments"
         ],
         "operationId": "redeploy",
-        "summary": "Redeploy the current image with current keys",
+        "summary": "Redeploy the current image with current environment variables",
         "x-stationly": {
           "level": "deploy",
           "cli": {
@@ -15997,7 +15997,7 @@ export const openApiDocument = {
           "runs"
         ],
         "operationId": "run_command",
-        "summary": "Run a one-off command in the app's current image and keys",
+        "summary": "Run a one-off command in the app's current image and environment variables",
         "x-stationly": {
           "level": "deploy",
           "cli": false
@@ -17608,8 +17608,8 @@ export const openApiDocument = {
                     "description": "Time to live after each start (default 3600 s)",
                     "type": "integer"
                   },
-                  "keys": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                  "environment_variables": {
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -17628,7 +17628,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -17841,8 +17841,8 @@ export const openApiDocument = {
                     "description": "Time to live after each start (default 3600 s)",
                     "type": "integer"
                   },
-                  "keys": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                  "environment_variables": {
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -17861,7 +17861,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -18074,8 +18074,8 @@ export const openApiDocument = {
                     "description": "Time to live after each start (default 3600 s)",
                     "type": "integer"
                   },
-                  "keys": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                  "environment_variables": {
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -18094,7 +18094,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -20262,13 +20262,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/machines/{machine}/keys": {
+    "/v1/machines/{machine}/environment-variables": {
       "get": {
         "tags": [
           "machines"
         ],
-        "operationId": "list_machine_keys",
-        "summary": "List the keys of a machine; values are never listed",
+        "operationId": "list_machine_environment_variables",
+        "summary": "List the environment variables of a machine; values are never listed",
         "x-stationly": {
           "level": "read"
         },
@@ -20307,7 +20307,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Key"
+                        "$ref": "#/components/schemas/EnvironmentVariable"
                       }
                     },
                     "next_cursor": {
@@ -20437,8 +20437,8 @@ export const openApiDocument = {
         "tags": [
           "machines"
         ],
-        "operationId": "set_machine_keys",
-        "summary": "Set and unset a machine's keys; references to project and global keys keep values out of the agent's hands",
+        "operationId": "set_machine_environment_variables",
+        "summary": "Set and unset a machine's environment variables; references to project and global environment variables keep values out of the agent's hands",
         "x-stationly": {
           "level": "deploy"
         },
@@ -20461,7 +20461,7 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -20480,7 +20480,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -20493,7 +20493,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -20513,7 +20513,7 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -20532,7 +20532,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -20545,7 +20545,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -20565,7 +20565,7 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -20584,7 +20584,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -20597,7 +20597,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -20619,7 +20619,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MachineKeysOutcome"
+                  "$ref": "#/components/schemas/MachineEnvironmentVariablesOutcome"
                 }
               }
             }
@@ -20737,13 +20737,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/machines/{machine}/keys/resolved": {
+    "/v1/machines/{machine}/environment-variables/resolved": {
       "get": {
         "tags": [
           "machines"
         ],
-        "operationId": "get_machine_resolved_keys",
-        "summary": "The resolved keys of a machine with their sources; a value only with admin and never a sealed one",
+        "operationId": "get_machine_resolved_environment_variables",
+        "summary": "The resolved environment variables of a machine with their sources; a value only with admin and never a secret one",
         "x-stationly": {
           "level": "read"
         },
@@ -20770,7 +20770,7 @@ export const openApiDocument = {
                     "machine_id",
                     "project_id",
                     "preview_id",
-                    "keys"
+                    "environment_variables"
                   ],
                   "properties": {
                     "machine_id": {
@@ -20785,20 +20785,20 @@ export const openApiDocument = {
                         "null"
                       ]
                     },
-                    "keys": {
+                    "environment_variables": {
                       "type": "array",
                       "items": {
-                        "title": "ResolvedKey",
+                        "title": "ResolvedVariable",
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
                           "name",
-                          "key_id",
+                          "environment_variable_id",
                           "kind",
                           "reference",
                           "injection",
                           "build",
-                          "sealed",
+                          "secret",
                           "stale",
                           "error"
                         ],
@@ -20806,11 +20806,11 @@ export const openApiDocument = {
                           "name": {
                             "type": "string"
                           },
-                          "key_id": {
+                          "environment_variable_id": {
                             "type": "string"
                           },
                           "kind": {
-                            "$ref": "#/components/schemas/KeyKind"
+                            "$ref": "#/components/schemas/EnvironmentVariableKind"
                           },
                           "reference": {
                             "type": [
@@ -20828,7 +20828,7 @@ export const openApiDocument = {
                           "build": {
                             "type": "boolean"
                           },
-                          "sealed": {
+                          "secret": {
                             "type": "boolean"
                           },
                           "stale": {
@@ -20875,7 +20875,7 @@ export const openApiDocument = {
                                             "required": [
                                               "scope",
                                               "name",
-                                              "key_id",
+                                              "environment_variable_id",
                                               "kind",
                                               "secret_value_id",
                                               "version",
@@ -20907,7 +20907,7 @@ export const openApiDocument = {
                                               "name": {
                                                 "type": "string"
                                               },
-                                              "key_id": {
+                                              "environment_variable_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -20915,7 +20915,7 @@ export const openApiDocument = {
                                                 "enum": [
                                                   "literal",
                                                   "reference",
-                                                  "sealed"
+                                                  "secret"
                                                 ]
                                               },
                                               "secret_value_id": {
@@ -20970,7 +20970,7 @@ export const openApiDocument = {
                                               "scope",
                                               "app_id",
                                               "name",
-                                              "key_id",
+                                              "environment_variable_id",
                                               "kind",
                                               "reference"
                                             ],
@@ -20994,7 +20994,7 @@ export const openApiDocument = {
                                                   "null"
                                                 ]
                                               },
-                                              "key_id": {
+                                              "environment_variable_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -33265,13 +33265,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/apps/{app}/keys": {
+    "/v1/apps/{app}/environment-variables": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "list_app_keys",
-        "summary": "List the keys of an app; values are never listed",
+        "operationId": "list_app_environment_variables",
+        "summary": "List the environment variables of an app; values are never listed",
         "x-stationly": {
           "level": "read"
         },
@@ -33310,7 +33310,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Key"
+                        "$ref": "#/components/schemas/EnvironmentVariable"
                       }
                     },
                     "next_cursor": {
@@ -33438,10 +33438,10 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "set_app_keys",
-        "summary": "Set and unset app keys",
+        "operationId": "set_app_environment_variables",
+        "summary": "Set and unset app environment variables",
         "x-stationly": {
           "level": "deploy"
         },
@@ -33471,7 +33471,7 @@ export const openApiDocument = {
                     ]
                   },
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -33490,7 +33490,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -33513,7 +33513,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -33544,7 +33544,7 @@ export const openApiDocument = {
                     ]
                   },
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -33563,7 +33563,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -33586,7 +33586,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -33617,7 +33617,7 @@ export const openApiDocument = {
                     ]
                   },
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -33636,7 +33636,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -33659,7 +33659,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -33685,7 +33685,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KeysOutcome"
+                  "$ref": "#/components/schemas/EnvironmentVariablesOutcome"
                 }
               }
             }
@@ -33813,18 +33813,18 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/projects/{project}/keys": {
+    "/v1/projects/{project}/environment-variables": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "list_project_keys",
-        "summary": "List project keys; an app reads one only through a reference such as ${{project.NAME}}",
+        "operationId": "list_project_environment_variables",
+        "summary": "List project environment variables; an app reads one only through a reference such as ${{project.NAME}}",
         "x-stationly": {
           "level": "read",
           "cli": {
             "path": [
-              "keys",
+              "env",
               "list"
             ]
           }
@@ -33876,7 +33876,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Key"
+                        "$ref": "#/components/schemas/EnvironmentVariable"
                       }
                     },
                     "next_cursor": {
@@ -34004,10 +34004,10 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "set_project_keys",
-        "summary": "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads. An app gets a project key only through a reference such as ${{project.NAME}}",
+        "operationId": "set_project_environment_variables",
+        "summary": "Set and unset project environment variables: production's values, which wait for approval, or the preview values every preview reads. An app gets a project environment variable only through a reference such as ${{project.NAME}}",
         "x-stationly": {
           "level": "admin"
         },
@@ -34037,7 +34037,7 @@ export const openApiDocument = {
                     ]
                   },
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -34056,7 +34056,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -34079,7 +34079,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -34110,7 +34110,7 @@ export const openApiDocument = {
                     ]
                   },
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -34129,7 +34129,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -34152,7 +34152,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -34183,7 +34183,7 @@ export const openApiDocument = {
                     ]
                   },
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -34202,7 +34202,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -34225,7 +34225,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -34251,7 +34251,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KeysOutcome"
+                  "$ref": "#/components/schemas/EnvironmentVariablesOutcome"
                 }
               }
             }
@@ -34379,13 +34379,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/global-keys": {
+    "/v1/global-environment-variables": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "list_global_keys",
-        "summary": "List global keys",
+        "operationId": "list_global_environment_variables",
+        "summary": "List global environment variables",
         "x-stationly": {
           "level": "instance read"
         },
@@ -34416,7 +34416,7 @@ export const openApiDocument = {
                     "items": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Key"
+                        "$ref": "#/components/schemas/EnvironmentVariable"
                       }
                     },
                     "next_cursor": {
@@ -34544,10 +34544,10 @@ export const openApiDocument = {
       },
       "patch": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "set_global_keys",
-        "summary": "Set and unset global keys",
+        "operationId": "set_global_environment_variables",
+        "summary": "Set and unset global environment variables",
         "x-stationly": {
           "level": "instance admin"
         },
@@ -34560,7 +34560,7 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -34579,7 +34579,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -34602,7 +34602,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -34626,7 +34626,7 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -34645,7 +34645,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -34668,7 +34668,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -34692,7 +34692,7 @@ export const openApiDocument = {
                 "type": "object",
                 "properties": {
                   "set": {
-                    "description": "Keys to set: name, kind (literal, reference or sealed), and value or reference",
+                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
                     "type": "array",
                     "items": {
                       "additionalProperties": false,
@@ -34711,7 +34711,7 @@ export const openApiDocument = {
                           "enum": [
                             "literal",
                             "reference",
-                            "sealed"
+                            "secret"
                           ]
                         },
                         "value": {
@@ -34734,7 +34734,7 @@ export const openApiDocument = {
                     }
                   },
                   "unset": {
-                    "description": "Keys to remove",
+                    "description": "Environment variables to remove",
                     "type": "array",
                     "items": {
                       "pattern": "^[A-Z_][A-Z0-9_]*$",
@@ -34760,7 +34760,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KeysOutcome"
+                  "$ref": "#/components/schemas/EnvironmentVariablesOutcome"
                 }
               }
             }
@@ -34888,13 +34888,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/keys/{id}": {
+    "/v1/environment-variables/{id}": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "get_key",
-        "summary": "Get a key; never its value",
+        "operationId": "get_environment_variable",
+        "summary": "Get an environment variable; never its value",
         "x-stationly": {
           "level": "read"
         },
@@ -34923,7 +34923,7 @@ export const openApiDocument = {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Key"
+                  "$ref": "#/components/schemas/EnvironmentVariable"
                 }
               }
             }
@@ -35042,10 +35042,10 @@ export const openApiDocument = {
       },
       "delete": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "delete_key",
-        "summary": "Delete a key",
+        "operationId": "delete_environment_variable",
+        "summary": "Delete an environment variable",
         "x-stationly": {
           "level": "deploy"
         },
@@ -35085,7 +35085,7 @@ export const openApiDocument = {
                           "app_id",
                           "project_id",
                           "preview_id",
-                          "keys"
+                          "environment_variables"
                         ],
                         "properties": {
                           "app_id": {
@@ -35100,7 +35100,7 @@ export const openApiDocument = {
                               "null"
                             ]
                           },
-                          "keys": {
+                          "environment_variables": {
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -35237,13 +35237,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/keys/{id}/versions": {
+    "/v1/environment-variables/{id}/versions": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "list_key_versions",
-        "summary": "List the versions of a key; never their values",
+        "operationId": "list_environment_variable_versions",
+        "summary": "List the versions of an environment variable; never their values",
         "x-stationly": {
           "level": "read"
         },
@@ -35440,18 +35440,18 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/keys/{id}/apply": {
+    "/v1/environment-variables/{id}/apply": {
       "post": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "apply_key_changes",
-        "summary": "Redeploy every stale dependent of a key",
+        "operationId": "apply_environment_variable_changes",
+        "summary": "Redeploy every stale dependent of an environment variable",
         "x-stationly": {
           "level": "any",
           "cli": {
             "path": [
-              "keys",
+              "env",
               "apply"
             ]
           }
@@ -35768,7 +35768,7 @@ export const openApiDocument = {
     "/v1/secret-values/{id}/revoke": {
       "post": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
         "operationId": "revoke_secret_version",
         "summary": "Revoke a secret version",
@@ -35839,7 +35839,7 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "key_id",
+                    "environment_variable_id",
                     "target",
                     "version",
                     "bytes",
@@ -35854,7 +35854,7 @@ export const openApiDocument = {
                     "id": {
                       "type": "string"
                     },
-                    "key_id": {
+                    "environment_variable_id": {
                       "type": "string"
                     },
                     "target": {
@@ -36018,7 +36018,7 @@ export const openApiDocument = {
     "/v1/secret-values/{id}/restore": {
       "post": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
         "operationId": "restore_secret_version",
         "summary": "Undo a revocation",
@@ -36160,13 +36160,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/apps/{app}/keys/resolved": {
+    "/v1/apps/{app}/environment-variables/resolved": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "get_resolved_keys",
-        "summary": "The resolved keys of the next deployment; sealed values never appear",
+        "operationId": "get_resolved_environment_variables",
+        "summary": "The resolved environment variables of the next deployment; secret values never appear",
         "x-stationly": {
           "level": "read"
         },
@@ -36203,7 +36203,7 @@ export const openApiDocument = {
                     "project_id",
                     "preview_id",
                     "compared_with",
-                    "keys",
+                    "environment_variables",
                     "exports"
                   ],
                   "properties": {
@@ -36225,20 +36225,20 @@ export const openApiDocument = {
                         "null"
                       ]
                     },
-                    "keys": {
+                    "environment_variables": {
                       "type": "array",
                       "items": {
-                        "title": "ResolvedKey",
+                        "title": "ResolvedVariable",
                         "additionalProperties": false,
                         "type": "object",
                         "required": [
                           "name",
-                          "key_id",
+                          "environment_variable_id",
                           "kind",
                           "reference",
                           "injection",
                           "build",
-                          "sealed",
+                          "secret",
                           "stale",
                           "error"
                         ],
@@ -36246,11 +36246,11 @@ export const openApiDocument = {
                           "name": {
                             "type": "string"
                           },
-                          "key_id": {
+                          "environment_variable_id": {
                             "type": "string"
                           },
                           "kind": {
-                            "$ref": "#/components/schemas/KeyKind"
+                            "$ref": "#/components/schemas/EnvironmentVariableKind"
                           },
                           "reference": {
                             "type": [
@@ -36268,7 +36268,7 @@ export const openApiDocument = {
                           "build": {
                             "type": "boolean"
                           },
-                          "sealed": {
+                          "secret": {
                             "type": "boolean"
                           },
                           "stale": {
@@ -36315,7 +36315,7 @@ export const openApiDocument = {
                                             "required": [
                                               "scope",
                                               "name",
-                                              "key_id",
+                                              "environment_variable_id",
                                               "kind",
                                               "secret_value_id",
                                               "version",
@@ -36347,7 +36347,7 @@ export const openApiDocument = {
                                               "name": {
                                                 "type": "string"
                                               },
-                                              "key_id": {
+                                              "environment_variable_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -36355,7 +36355,7 @@ export const openApiDocument = {
                                                 "enum": [
                                                   "literal",
                                                   "reference",
-                                                  "sealed"
+                                                  "secret"
                                                 ]
                                               },
                                               "secret_value_id": {
@@ -36410,7 +36410,7 @@ export const openApiDocument = {
                                               "scope",
                                               "app_id",
                                               "name",
-                                              "key_id",
+                                              "environment_variable_id",
                                               "kind",
                                               "reference"
                                             ],
@@ -36434,7 +36434,7 @@ export const openApiDocument = {
                                                   "null"
                                                 ]
                                               },
-                                              "key_id": {
+                                              "environment_variable_id": {
                                                 "type": "string"
                                               },
                                               "kind": {
@@ -36627,13 +36627,13 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/keys/{id}/grants": {
+    "/v1/environment-variables/{id}/grants": {
       "get": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
         "operationId": "list_grants",
-        "summary": "List the grants of a global key",
+        "summary": "List the grants of a global environment variable",
         "x-stationly": {
           "level": "instance read"
         },
@@ -36668,7 +36668,7 @@ export const openApiDocument = {
                         "type": "object",
                         "required": [
                           "id",
-                          "key_id",
+                          "environment_variable_id",
                           "project_id",
                           "alias",
                           "source"
@@ -36677,7 +36677,7 @@ export const openApiDocument = {
                           "id": {
                             "type": "string"
                           },
-                          "key_id": {
+                          "environment_variable_id": {
                             "type": "string"
                           },
                           "project_id": {
@@ -36824,10 +36824,10 @@ export const openApiDocument = {
       },
       "post": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
-        "operationId": "grant_key",
-        "summary": "Grant a global key to a project",
+        "operationId": "grant_environment_variable",
+        "summary": "Grant a global environment variable to a project",
         "x-stationly": {
           "level": "instance admin"
         },
@@ -36853,12 +36853,12 @@ export const openApiDocument = {
                 ],
                 "properties": {
                   "project_id": {
-                    "description": "The project to grant the key to",
+                    "description": "The project to grant the environment variable to",
                     "type": "string"
                   },
                   "alias": {
                     "pattern": "^[A-Z_][A-Z0-9_]*$",
-                    "description": "The key inside the project, when the global key would collide",
+                    "description": "The name inside the project, when the global environment variable's name would collide",
                     "type": "string"
                   }
                 }
@@ -36873,12 +36873,12 @@ export const openApiDocument = {
                 ],
                 "properties": {
                   "project_id": {
-                    "description": "The project to grant the key to",
+                    "description": "The project to grant the environment variable to",
                     "type": "string"
                   },
                   "alias": {
                     "pattern": "^[A-Z_][A-Z0-9_]*$",
-                    "description": "The key inside the project, when the global key would collide",
+                    "description": "The name inside the project, when the global environment variable's name would collide",
                     "type": "string"
                   }
                 }
@@ -36893,12 +36893,12 @@ export const openApiDocument = {
                 ],
                 "properties": {
                   "project_id": {
-                    "description": "The project to grant the key to",
+                    "description": "The project to grant the environment variable to",
                     "type": "string"
                   },
                   "alias": {
                     "pattern": "^[A-Z_][A-Z0-9_]*$",
-                    "description": "The key inside the project, when the global key would collide",
+                    "description": "The name inside the project, when the global environment variable's name would collide",
                     "type": "string"
                   }
                 }
@@ -36917,7 +36917,7 @@ export const openApiDocument = {
                   "type": "object",
                   "required": [
                     "id",
-                    "key_id",
+                    "environment_variable_id",
                     "project_id",
                     "alias",
                     "source"
@@ -36926,7 +36926,7 @@ export const openApiDocument = {
                     "id": {
                       "type": "string"
                     },
-                    "key_id": {
+                    "environment_variable_id": {
                       "type": "string"
                     },
                     "project_id": {
@@ -37066,7 +37066,7 @@ export const openApiDocument = {
     "/v1/grants/{id}": {
       "delete": {
         "tags": [
-          "keys"
+          "environment-variables"
         ],
         "operationId": "revoke_grant",
         "summary": "Revoke a grant",
@@ -37109,7 +37109,7 @@ export const openApiDocument = {
                           "app_id",
                           "project_id",
                           "preview_id",
-                          "keys"
+                          "environment_variables"
                         ],
                         "properties": {
                           "app_id": {
@@ -37124,7 +37124,7 @@ export const openApiDocument = {
                               "null"
                             ]
                           },
-                          "keys": {
+                          "environment_variables": {
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -41954,6 +41954,41 @@ export const openApiDocument = {
                             "patternProperties": {
                               "^(.*)$": {}
                             }
+                          },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "name",
+                                "status",
+                                "finding",
+                                "fix"
+                              ],
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ok",
+                                    "warn",
+                                    "fail"
+                                  ]
+                                },
+                                "finding": {
+                                  "type": "string"
+                                },
+                                "fix": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -45620,17 +45655,17 @@ export const openApiDocument = {
                   }
                 }
               },
-              "variables": {
+              "environment_variables": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "required": [
-                    "key",
+                    "name",
                     "from_version",
                     "to_version"
                   ],
                   "properties": {
-                    "key": {
+                    "name": {
                       "type": "string"
                     },
                     "from_version": {
@@ -46335,14 +46370,14 @@ export const openApiDocument = {
           "TUNNEL_UNSUPPORTED_PROTOCOL",
           "GATEWAY_NOT_PINNED",
           "NETWORK_TARGET_INVALID",
-          "KEY_REFERENCE_INVALID",
-          "KEY_UNRESOLVED",
-          "KEY_TARGET_MISSING",
-          "KEY_NOT_GRANTED",
-          "KEY_CYCLE",
+          "ENVIRONMENT_VARIABLE_REFERENCE_INVALID",
+          "ENVIRONMENT_VARIABLE_UNRESOLVED",
+          "ENVIRONMENT_VARIABLE_TARGET_MISSING",
+          "ENVIRONMENT_VARIABLE_NOT_GRANTED",
+          "ENVIRONMENT_VARIABLE_CYCLE",
           "CREDENTIALS_UNAVAILABLE",
           "SECRETS_NEED_REENTRY",
-          "SEALED_VALUE_UNREADABLE",
+          "SECRET_VALUE_UNREADABLE",
           "SECRET_VERSION_IN_USE",
           "VOLUME_NOT_ADOPTABLE",
           "VOLUME_BACKUP_TARGET_MISSING",
@@ -46428,20 +46463,20 @@ export const openApiDocument = {
         "required": [
           "code",
           "explanation",
-          "keys"
+          "names"
         ],
         "properties": {
           "code": {
             "type": "string",
             "enum": [
-              "KEYS_CHANGED",
+              "ENVIRONMENT_VARIABLES_CHANGED",
               "CONFIG_CHANGED"
             ]
           },
           "explanation": {
             "type": "string"
           },
-          "keys": {
+          "names": {
             "type": "array",
             "items": {
               "type": "string"
@@ -46642,18 +46677,18 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "name",
-          "key_id",
-          "sealed",
+          "environment_variable_id",
+          "secret",
           "values"
         ],
         "properties": {
           "name": {
             "type": "string"
           },
-          "key_id": {
+          "environment_variable_id": {
             "type": "string"
           },
-          "sealed": {
+          "secret": {
             "type": "boolean"
           },
           "values": {
@@ -46964,17 +46999,17 @@ export const openApiDocument = {
                   }
                 }
               },
-              "variables": {
+              "environment_variables": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "required": [
-                    "key",
+                    "name",
                     "from_version",
                     "to_version"
                   ],
                   "properties": {
-                    "key": {
+                    "name": {
                       "type": "string"
                     },
                     "from_version": {
@@ -47165,7 +47200,7 @@ export const openApiDocument = {
                   "push",
                   "manual",
                   "rollback",
-                  "key_change",
+                  "environment_variable_change",
                   "redeploy",
                   "base_image",
                   "agent"
@@ -47522,7 +47557,7 @@ export const openApiDocument = {
                       "endpoint",
                       "bucket",
                       "prefix",
-                      "credentials_key"
+                      "credentials_environment_variable"
                     ],
                     "properties": {
                       "type": {
@@ -47540,7 +47575,7 @@ export const openApiDocument = {
                       "prefix": {
                         "type": "string"
                       },
-                      "credentials_key": {
+                      "credentials_environment_variable": {
                         "minLength": 1,
                         "type": "string"
                       }
@@ -47688,7 +47723,7 @@ export const openApiDocument = {
         "type": "object",
         "required": [
           "id",
-          "key_id",
+          "environment_variable_id",
           "target",
           "version",
           "bytes",
@@ -47702,7 +47737,7 @@ export const openApiDocument = {
           "id": {
             "type": "string"
           },
-          "key_id": {
+          "environment_variable_id": {
             "type": "string"
           },
           "target": {
@@ -47742,16 +47777,16 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/SecretValue"
       },
-      "KeyKind": {
+      "EnvironmentVariableKind": {
         "type": "string",
         "enum": [
           "literal",
           "reference",
-          "sealed"
+          "secret"
         ]
       },
-      "Key": {
-        "title": "Key",
+      "EnvironmentVariable": {
+        "title": "EnvironmentVariable",
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -47806,7 +47841,7 @@ export const openApiDocument = {
             "type": "string"
           },
           "kind": {
-            "$ref": "#/components/schemas/KeyKind"
+            "$ref": "#/components/schemas/EnvironmentVariableKind"
           },
           "reference": {
             "type": [
@@ -47836,7 +47871,7 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "sealed": {
+          "secret": {
             "type": "boolean"
           },
           "value": {
@@ -47859,7 +47894,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/Key"
+        "$id": "#/components/schemas/EnvironmentVariable"
       },
       "AppSource": {
         "title": "AppSource",
@@ -48302,10 +48337,10 @@ export const openApiDocument = {
               }
             ]
           },
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Key"
+              "$ref": "#/components/schemas/EnvironmentVariable"
             }
           },
           "exports": {
@@ -48324,7 +48359,7 @@ export const openApiDocument = {
         "required": [
           "from_app",
           "to_app",
-          "keys"
+          "environment_variables"
         ],
         "properties": {
           "from_app": {
@@ -48333,7 +48368,7 @@ export const openApiDocument = {
           "to_app": {
             "type": "string"
           },
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
               "type": "string"
@@ -48583,10 +48618,10 @@ export const openApiDocument = {
               "$ref": "#/components/schemas/Edge"
             }
           },
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Key"
+              "$ref": "#/components/schemas/EnvironmentVariable"
             }
           }
         },
@@ -48868,7 +48903,7 @@ export const openApiDocument = {
                   "push",
                   "manual",
                   "rollback",
-                  "key_change",
+                  "environment_variable_change",
                   "redeploy",
                   "base_image",
                   "agent"
@@ -49888,17 +49923,17 @@ export const openApiDocument = {
                   }
                 }
               },
-              "variables": {
+              "environment_variables": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "required": [
-                    "key",
+                    "name",
                     "from_version",
                     "to_version"
                   ],
                   "properties": {
-                    "key": {
+                    "name": {
                       "type": "string"
                     },
                     "from_version": {
@@ -51011,7 +51046,7 @@ export const openApiDocument = {
                 "from",
                 "to",
                 "kind",
-                "keys"
+                "environment_variables"
               ],
               "properties": {
                 "from": {
@@ -51024,7 +51059,7 @@ export const openApiDocument = {
                   "const": "reference",
                   "type": "string"
                 },
-                "keys": {
+                "environment_variables": {
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -54393,7 +54428,7 @@ export const openApiDocument = {
               }
             ]
           },
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
               "type": "object",
@@ -54781,7 +54816,7 @@ export const openApiDocument = {
               }
             ]
           },
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
               "type": "object",
@@ -55457,22 +55492,22 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/MachineShell"
       },
-      "MachineKeysOutcome": {
-        "title": "MachineKeysOutcome",
+      "MachineEnvironmentVariablesOutcome": {
+        "title": "MachineEnvironmentVariablesOutcome",
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "keys"
+          "environment_variables"
         ],
         "properties": {
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Key"
+              "$ref": "#/components/schemas/EnvironmentVariable"
             }
           }
         },
-        "$id": "#/components/schemas/MachineKeysOutcome"
+        "$id": "#/components/schemas/MachineEnvironmentVariablesOutcome"
       },
       "MachineSnapshotDeleted": {
         "title": "MachineSnapshotDeleted",
@@ -56132,10 +56167,10 @@ export const openApiDocument = {
               }
             ]
           },
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Key"
+              "$ref": "#/components/schemas/EnvironmentVariable"
             }
           },
           "exports": {
@@ -56159,20 +56194,20 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AppWritten"
       },
-      "KeysOutcome": {
+      "EnvironmentVariablesOutcome": {
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "keys",
+          "environment_variables",
           "stale_dependents",
           "deployments",
           "approvals"
         ],
         "properties": {
-          "keys": {
+          "environment_variables": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Key"
+              "$ref": "#/components/schemas/EnvironmentVariable"
             }
           },
           "stale_dependents": {
@@ -56184,7 +56219,7 @@ export const openApiDocument = {
                 "app_id",
                 "project_id",
                 "preview_id",
-                "keys"
+                "environment_variables"
               ],
               "properties": {
                 "app_id": {
@@ -56199,7 +56234,7 @@ export const openApiDocument = {
                     "null"
                   ]
                 },
-                "keys": {
+                "environment_variables": {
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -56377,7 +56412,7 @@ export const openApiDocument = {
             }
           }
         },
-        "$id": "#/components/schemas/KeysOutcome"
+        "$id": "#/components/schemas/EnvironmentVariablesOutcome"
       },
       "VolumeWritten": {
         "additionalProperties": false,

@@ -217,31 +217,31 @@
       "close": null
     },
     {
-      "code": "KEY_REFERENCE_INVALID",
+      "code": "ENVIRONMENT_VARIABLE_REFERENCE_INVALID",
       "http": 422,
       "area": "secret",
       "close": null
     },
     {
-      "code": "KEY_UNRESOLVED",
+      "code": "ENVIRONMENT_VARIABLE_UNRESOLVED",
       "http": 422,
       "area": "secret",
       "close": null
     },
     {
-      "code": "KEY_TARGET_MISSING",
+      "code": "ENVIRONMENT_VARIABLE_TARGET_MISSING",
       "http": 422,
       "area": "secret",
       "close": null
     },
     {
-      "code": "KEY_NOT_GRANTED",
+      "code": "ENVIRONMENT_VARIABLE_NOT_GRANTED",
       "http": 403,
       "area": "secret",
       "close": null
     },
     {
-      "code": "KEY_CYCLE",
+      "code": "ENVIRONMENT_VARIABLE_CYCLE",
       "http": 422,
       "area": "secret",
       "close": null
@@ -259,7 +259,7 @@
       "close": null
     },
     {
-      "code": "SEALED_VALUE_UNREADABLE",
+      "code": "SECRET_VALUE_UNREADABLE",
       "http": 403,
       "area": "secret",
       "close": null
@@ -600,7 +600,7 @@
     "STALE_SECRET_VERSIONS",
     "DOWNTIME_EXPECTED",
     "BACKUP_STOPS_APP",
-    "SEALED_VALUE_MISSING",
+    "SECRET_VALUE_MISSING",
     "SOURCE_POLLING",
     "MACHINE_RESTART_REQUIRED",
     "MACHINE_SNAPSHOT_CRASH_CONSISTENT"

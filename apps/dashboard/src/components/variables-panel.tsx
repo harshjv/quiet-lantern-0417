@@ -22,21 +22,26 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { KeyKindSelect, KeyNameInput, KeyNotes, KeyValueInput } from '@/components/variable-fields'
-import { api, idempotency, send, unwrap, type Change, type Key } from '@/lib/api'
+import {
+  VariableKindSelect,
+  VariableNameInput,
+  VariableNotes,
+  VariableValueInput,
+} from '@/components/variable-fields'
+import { api, idempotency, send, unwrap, type Change, type EnvironmentVariable } from '@/lib/api'
 import { editItems, isOptimistic } from '@/lib/cache'
 import { record } from '@/lib/changes'
 import { plural } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
-import { injection as injectionLabel, keyKind } from '@/lib/labels'
+import { injection as injectionLabel, variableKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
 import {
   approvalsQuery,
-  keysQuery,
-  machineKeysQuery,
   machineResolvedQuery,
-  projectKeysQuery,
+  machineVariablesQuery,
+  projectVariablesQuery,
   resolvedQuery,
+  variablesQuery,
 } from '@/lib/queries'
 import { toneOutline } from '@/lib/tone'
 import { highlight, useFresh } from '@/lib/use-fresh'
@@ -45,15 +50,15 @@ import {
   hasNoValue,
   noValueLabel,
   projectReference,
-  toKeyInput,
-  toMachineKeyInput,
+  toMachineVariableInput,
+  toVariableInput,
   withDraft,
-  withoutKeys,
-  type KeyEntry,
-  type KeyKind,
+  withoutVariables,
+  type EnvironmentVariableKind,
+  type VariableEntry,
 } from '@/lib/variables'
 
-export type KeyTarget =
+export type VariableTarget =
   | { kind: 'app'; app: string }
   | { kind: 'project'; project: string; target: 'production' | 'preview' }
   | { kind: 'machine'; machine: string }
@@ -61,18 +66,21 @@ export type KeyTarget =
 type Outcome =
   { waiting: true; body: { id: string } } | { waiting: false; body: { deployments: number } }
 
-type Patch = { set?: KeyEntry[]; unset?: string[]; apply: boolean }
+type Patch = { set?: VariableEntry[]; unset?: string[]; apply: boolean }
 
-async function patchKeys(target: KeyTarget, { set, unset, apply }: Patch): Promise<Outcome> {
+async function patchVariables(
+  target: VariableTarget,
+  { set, unset, apply }: Patch,
+): Promise<Outcome> {
   if (target.kind === 'machine') {
     await unwrap(
       api.v1
         .machines({
           machine: target.machine,
         })
-        .keys.patch(
+        ['environment-variables'].patch(
           {
-            set: set?.map(toMachineKeyInput),
+            set: set?.map(toMachineVariableInput),
             unset,
           },
           idempotency(),
@@ -88,7 +96,7 @@ async function patchKeys(target: KeyTarget, { set, unset, apply }: Patch): Promi
   }
 
   const body = {
-    set: set?.map(toKeyInput),
+    set: set?.map(toVariableInput),
     unset,
     apply,
   }
@@ -98,12 +106,12 @@ async function patchKeys(target: KeyTarget, { set, unset, apply }: Patch): Promi
           .apps({
             app: target.app,
           })
-          .keys.patch(body, idempotency())
+          ['environment-variables'].patch(body, idempotency())
       : api.v1
           .projects({
             project: target.project,
           })
-          .keys.patch(
+          ['environment-variables'].patch(
             {
               target: target.target,
               ...body,
@@ -127,23 +135,23 @@ async function patchKeys(target: KeyTarget, { set, unset, apply }: Patch): Promi
       }
 }
 
-const listQuery = (target: KeyTarget) =>
+const listQuery = (target: VariableTarget) =>
   target.kind === 'app'
-    ? keysQuery(target.app)
+    ? variablesQuery(target.app)
     : target.kind === 'machine'
-      ? machineKeysQuery(target.machine)
-      : projectKeysQuery(target.project, target.target)
+      ? machineVariablesQuery(target.machine)
+      : projectVariablesQuery(target.project, target.target)
 
-const drafts = (target: KeyTarget, { set = [], unset = [] }: Patch) => [
+const drafts = (target: VariableTarget, { set = [], unset = [] }: Patch) => [
   editItems(listQuery(target), (list) =>
-    withoutKeys(
+    withoutVariables(
       set.reduce((next, entry) => withDraft(next, entry, target.kind), list),
       unset,
     ),
   ),
 ]
 
-const announce = (target: KeyTarget, verb: string, deployments: number) => {
+const announce = (target: VariableTarget, verb: string, deployments: number) => {
   if (target.kind === 'machine') {
     return {
       title: verb,
@@ -160,19 +168,19 @@ const announce = (target: KeyTarget, verb: string, deployments: number) => {
   }
 }
 
-function KeyDialog({
+function VariableDialog({
   target,
   existing,
   open,
   onOpenChange,
 }: {
-  target: KeyTarget
-  existing: Key | null
+  target: VariableTarget
+  existing: EnvironmentVariable | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   const [name, setName] = useState(existing?.name ?? '')
-  const [kind, setKind] = useState<KeyKind>(existing?.kind ?? 'literal')
+  const [kind, setKind] = useState<EnvironmentVariableKind>(existing?.kind ?? 'literal')
   const [value, setValue] = useState('')
   const [reference, setReference] = useState(existing?.reference ?? '')
   const [injection, setInjection] = useState<'env' | 'file'>(existing?.injection ?? 'env')
@@ -189,8 +197,8 @@ function KeyDialog({
     enabled: loadsValue && target.kind === 'machine',
   })
   const current = loadsValue
-    ? (target.kind === 'machine' ? machineResolved : appResolved).data?.keys.find(
-        (v) => v.key_id === existing?.id,
+    ? (target.kind === 'machine' ? machineResolved : appResolved).data?.environment_variables.find(
+        (v) => v.environment_variable_id === existing?.id,
       )?.value
     : undefined
 
@@ -201,8 +209,8 @@ function KeyDialog({
   }, [current, touched])
   const verb = existing ? `${name} updated` : `${name} added`
   const mutation = useApiMutation({
-    mutationFn: (entry: KeyEntry) =>
-      patchKeys(target, {
+    mutationFn: (entry: VariableEntry) =>
+      patchVariables(target, {
         set: [entry],
         apply,
       }),
@@ -211,7 +219,7 @@ function KeyDialog({
         set: [entry],
         apply,
       }),
-    invalidate: ['keys'],
+    invalidate: ['environment-variables'],
     waiting: () => `${existing ? 'Change' : 'Add'} ${name.trim()}`,
     success: (body) => announce(target, verb, body.deployments),
     onSuccess: () => {
@@ -231,18 +239,18 @@ function KeyDialog({
 
         onOpenChange(next)
       }}
-      title={existing ? `Change ${existing.name}` : 'Add a key'}
+      title={existing ? `Change ${existing.name}` : 'Add an environment variable'}
       description={
         <>
           {target.kind === 'project' ? (
             <>
-              No app inherits it: an app reads it through a reference key such as{' '}
+              No app inherits it: an app reads it through a reference such as{' '}
               <Code>{projectReference}</Code>.
             </>
           ) : target.kind === 'machine' ? (
-            'Reference a project or global key to keep a credential out of an agent’s reach.'
+            'Reference a project or global environment variable to keep a credential out of an agent’s reach.'
           ) : (
-            'Reaches this app as an environment variable or a file.'
+            'Reaches this app as a variable or a file.'
           )}{' '}
           {target.kind === 'machine'
             ? 'Each save creates a new version.'
@@ -264,21 +272,21 @@ function KeyDialog({
       }
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_9rem]">
-        <Field id="key-name" label="Name">
-          <KeyNameInput
-            id="key-name"
+        <Field id="variable-name" label="Name">
+          <VariableNameInput
+            id="variable-name"
             value={name}
             onValueChange={setName}
             disabled={Boolean(existing)}
           />
         </Field>
-        <Field id="key-kind" label="Kind">
-          <KeyKindSelect id="key-kind" value={kind} onValueChange={setKind} />
+        <Field id="variable-kind" label="Kind">
+          <VariableKindSelect id="variable-kind" value={kind} onValueChange={setKind} />
         </Field>
       </div>
-      <Field id="key-value" label={isReference ? 'Reference' : 'Value'}>
-        <KeyValueInput
-          id="key-value"
+      <Field id="variable-value" label={isReference ? 'Reference' : 'Value'}>
+        <VariableValueInput
+          id="variable-value"
           kind={kind}
           multiline
           value={isReference ? reference : value}
@@ -300,11 +308,11 @@ function KeyDialog({
       {target.kind !== 'machine' && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex items-center gap-2">
-            <Label htmlFor="key-injection" className="font-normal">
+            <Label htmlFor="variable-injection" className="font-normal">
               Injected as
             </Label>
             <Select value={injection} onValueChange={(v) => setInjection(v as 'env' | 'file')}>
-              <SelectTrigger id="key-injection" size="sm">
+              <SelectTrigger id="variable-injection" size="sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -314,28 +322,28 @@ function KeyDialog({
             </Select>
           </div>
           <CheckboxField
-            id="key-build"
+            id="variable-build"
             checked={build}
             onCheckedChange={setBuild}
             label="Available at build time"
           />
           <CheckboxField
-            id="key-apply"
+            id="variable-apply"
             checked={apply}
             onCheckedChange={setApply}
             label="Redeploy dependents now"
           />
         </div>
       )}
-      <KeyNotes sealed={kind === 'sealed'} build={target.kind !== 'machine' && build} />
+      <VariableNotes secret={kind === 'secret'} build={target.kind !== 'machine' && build} />
     </FormDialog>
   )
 }
 
-function RemoveKey({ target, item }: { target: KeyTarget; item: Key }) {
+function RemoveVariable({ target, item }: { target: VariableTarget; item: EnvironmentVariable }) {
   const mutation = useApiMutation({
     mutationFn: () =>
-      patchKeys(target, {
+      patchVariables(target, {
         unset: [item.name],
         apply: false,
       }),
@@ -344,7 +352,7 @@ function RemoveKey({ target, item }: { target: KeyTarget; item: Key }) {
         unset: [item.name],
         apply: false,
       }),
-    invalidate: ['keys'],
+    invalidate: ['environment-variables'],
     waiting: () => `Remove ${item.name}`,
     success: (body) => announce(target, `${item.name} removed`, body.deployments),
   })
@@ -352,9 +360,9 @@ function RemoveKey({ target, item }: { target: KeyTarget; item: Key }) {
   return (
     <Confirm
       title={`Remove ${item.name}?`}
-      description="Apps that use it lose it on their next deployment. Stationly keeps it while another key references it."
-      action="Remove key"
-      cancel="Keep key"
+      description="Apps that use it lose it on their next deployment. Stationly keeps it while another environment variable references it."
+      action="Remove environment variable"
+      cancel="Keep environment variable"
       onConfirm={() => mutation.mutateAsync()}
       trigger={<RemoveButton label={`Remove ${item.name}`} disabled={isOptimistic(item)} />}
     />
@@ -366,7 +374,7 @@ function ValueCell({
   revealed,
   onSet,
 }: {
-  item: Key
+  item: EnvironmentVariable
   revealed: string | undefined
   onSet: () => void
 }) {
@@ -376,7 +384,7 @@ function ValueCell({
 
   if (hasNoValue(item)) {
     return (
-      <span className="inline-flex items-center gap-2 text-muted-foreground" data-sealed="true">
+      <span className="inline-flex items-center gap-2 text-muted-foreground" data-secret="true">
         <Lock className="size-3.5" aria-hidden />
         {noValueLabel}
         <Button size="xs" variant="outline" onClick={onSet}>
@@ -386,9 +394,9 @@ function ValueCell({
     )
   }
 
-  if (item.kind === 'sealed') {
+  if (item.kind === 'secret') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-sealed="true">
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-secret="true">
         <Lock className="size-3.5" aria-hidden />
         {`Hidden · ${item.bytes} bytes · version ${item.head_version}`}
       </span>
@@ -410,11 +418,16 @@ function ValueCell({
   )
 }
 
-const headVersion = (item: Key) => String(item.head_version)
+const headVersion = (item: EnvironmentVariable) => String(item.head_version)
 
-type Pending = { approval: string; op: Change['op']; name: string; kind: KeyKind | null }
+type Pending = {
+  approval: string
+  op: Change['op']
+  name: string
+  kind: EnvironmentVariableKind | null
+}
 
-function usePendingKeys(target: KeyTarget, items: Key[]) {
+function usePendingVariables(target: VariableTarget, items: EnvironmentVariable[]) {
   const waiting = useQuery({
     ...approvalsQuery('waiting'),
     enabled: target.kind !== 'machine',
@@ -427,7 +440,7 @@ function usePendingKeys(target: KeyTarget, items: Key[]) {
       const data = record(change.op === 'remove' ? change.before : change.after) ?? {}
       const name = typeof data.name === 'string' ? data.name : null
       const ours =
-        change.entity === 'key' &&
+        change.entity === 'environment_variable' &&
         name !== null &&
         (change.op === 'add'
           ? change.parent === parent && (target.kind !== 'project' || data.target === target.target)
@@ -439,7 +452,7 @@ function usePendingKeys(target: KeyTarget, items: Key[]) {
               approval: approval.id,
               op: change.op,
               name,
-              kind: (data.kind as KeyKind | undefined) ?? null,
+              kind: (data.kind as EnvironmentVariableKind | undefined) ?? null,
             },
           ]
         : []
@@ -448,7 +461,7 @@ function usePendingKeys(target: KeyTarget, items: Key[]) {
 
   return {
     adds: pending.filter((p) => p.op === 'add' && !items.some((item) => item.name === p.name)),
-    of: (item: Key) => pending.find((p) => p.op !== 'add' && p.name === item.name),
+    of: (item: EnvironmentVariable) => pending.find((p) => p.op !== 'add' && p.name === item.name),
   }
 }
 
@@ -477,16 +490,16 @@ function PendingBadge({ pending }: { pending: Pending | undefined }) {
   )
 }
 
-function KeyRows({
+function VariableRows({
   target,
   values,
   onEdit,
   onAdd,
   also,
 }: {
-  target: KeyTarget
+  target: VariableTarget
   values: Map<string, string>
-  onEdit: (item: Key) => void
+  onEdit: (item: EnvironmentVariable) => void
   onAdd: () => void
   also?: ReactNode
 }) {
@@ -494,28 +507,29 @@ function KeyRows({
   const items = [...data.items].sort((a, b) => a.name.localeCompare(b.name))
   const visible = items
   const fresh = useFresh(visible, headVersion)
-  const pending = usePendingKeys(target, items)
+  const pending = usePendingVariables(target, items)
 
   if (visible.length === 0 && pending.adds.length === 0) {
     return (
       <EmptyState
-        icon={entityIcon.key}
-        title="No keys yet"
+        icon={entityIcon.environment_variable}
+        title="No environment variables yet"
         description={
           target.kind === 'machine' ? (
-            'Keys reach this machine as environment variables. Seal the ones that hold secrets.'
+            'They reach this machine’s shells and processes. Mark the ones that hold secrets as secret.'
           ) : target.kind === 'project' ? (
             <>
-              A project key reaches no app by itself. Add a key to an app that references it, such
-              as <Code>{projectReference}</Code>. Seal the ones that hold secrets.
+              A project environment variable reaches no app by itself. Give an app one that
+              references it, such as <Code>{projectReference}</Code>. Mark the ones that hold
+              secrets as secret.
             </>
           ) : (
-            'Keys reach this app as environment variables. Seal the ones that hold secrets.'
+            'They reach this app when it deploys. Mark the ones that hold secrets as secret.'
           )
         }
         action={
           <Button size="sm" onClick={onAdd}>
-            <Plus /> Add key
+            <Plus /> Add environment variable
           </Button>
         }
         also={also}
@@ -527,7 +541,7 @@ function KeyRows({
     <TableFrame>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[28%]">Key</TableHead>
+          <TableHead className="w-[28%]">Name</TableHead>
           <TableHead className="w-24">Kind</TableHead>
           <TableHead>Value</TableHead>
           {target.kind !== 'machine' && (
@@ -546,13 +560,13 @@ function KeyRows({
                 target.target === 'preview' &&
                 !(item.targets ?? []).includes('preview') && (
                   <Badge variant="outline" className="ml-2 text-muted-foreground">
-                    {item.kind === 'sealed' ? 'No preview value' : 'Production value'}
+                    {item.kind === 'secret' ? 'No preview value' : 'Production value'}
                   </Badge>
                 )}
             </TableCell>
             <TableCell>
-              <Badge variant={item.kind === 'sealed' ? 'secondary' : 'outline'}>
-                {keyKind[item.kind]}
+              <Badge variant={item.kind === 'secret' ? 'secondary' : 'outline'}>
+                {variableKind[item.kind]}
               </Badge>
             </TableCell>
             <TableCell className="max-w-0 whitespace-normal">
@@ -574,7 +588,7 @@ function KeyRows({
               >
                 <Pencil />
               </Button>
-              <RemoveKey target={target} item={item} />
+              <RemoveVariable target={target} item={item} />
             </TableCell>
           </TableRow>
         ))}
@@ -590,7 +604,7 @@ function KeyRows({
               <PendingBadge pending={entry} />
             </TableCell>
             <TableCell>
-              {entry.kind && <Badge variant="outline">{keyKind[entry.kind]}</Badge>}
+              {entry.kind && <Badge variant="outline">{variableKind[entry.kind]}</Badge>}
             </TableCell>
             <TableCell className="whitespace-normal">
               Stationly adds it once an admin approves.
@@ -604,7 +618,7 @@ function KeyRows({
   )
 }
 
-export function KeysPanel({ target, also }: { target: KeyTarget; also?: ReactNode }) {
+export function VariablesPanel({ target, also }: { target: VariableTarget; also?: ReactNode }) {
   const [reveal, setReveal] = useState(false)
   const appResolved = useQuery({
     ...resolvedQuery(target.kind === 'app' ? target.app : ''),
@@ -615,12 +629,12 @@ export function KeysPanel({ target, also }: { target: KeyTarget; also?: ReactNod
     enabled: reveal && target.kind === 'machine',
   })
   const resolved = target.kind === 'machine' ? machineResolved : appResolved
-  const [editing, setEditing] = useState<Key | null>(null)
+  const [editing, setEditing] = useState<EnvironmentVariable | null>(null)
   const [adding, setAdding] = useState(false)
   const values = new Map(
-    (resolved.data?.keys ?? [])
-      .filter((v) => !v.sealed && v.value !== undefined)
-      .map((v) => [v.key_id, v.value!]),
+    (resolved.data?.environment_variables ?? [])
+      .filter((v) => !v.secret && v.value !== undefined)
+      .map((v) => [v.environment_variable_id, v.value!]),
   )
 
   return (
@@ -628,19 +642,19 @@ export function KeysPanel({ target, also }: { target: KeyTarget; also?: ReactNod
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           {target.kind === 'app' ? (
-            'Keys of this app. Stationly resolves references when it deploys.'
+            'Environment variables of this app. Stationly resolves references when it deploys.'
           ) : target.kind === 'machine' ? (
-            'Keys of this machine. Stationly resolves references when the machine starts and when a value changes.'
+            'Environment variables of this machine. Stationly resolves references when the machine starts and when a value changes.'
           ) : target.target === 'production' ? (
             <>
-              Keys of this project’s production. Nothing is inherited: an app reads one through a
-              reference key such as <Code>{projectReference}</Code>.
+              Environment variables of this project’s production. Nothing is inherited: an app reads
+              one through a reference such as <Code>{projectReference}</Code>.
             </>
           ) : (
             <>
-              Preview values of this project’s keys, read through references such as{' '}
-              <Code>{projectReference}</Code> from apps in every preview. A literal key without a
-              preview value reads its production value; production’s sealed values never reach a
+              Preview values of this project’s environment variables, read through references such
+              as <Code>{projectReference}</Code> from apps in every preview. A visible one without a
+              preview value reads its production value; production’s secret values never reach a
               preview.
             </>
           )}
@@ -654,22 +668,22 @@ export function KeysPanel({ target, also }: { target: KeyTarget; also?: ReactNod
               aria-pressed={reveal}
             >
               {reveal ? <EyeOff /> : <Eye />}
-              {reveal ? 'Hide values' : 'Show plain values'}
+              {reveal ? 'Hide values' : 'Show visible values'}
             </Button>
           )}
           <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus /> Add key
+            <Plus /> Add environment variable
           </Button>
         </div>
       </div>
       {reveal && (
         <p className="text-xs text-muted-foreground">
-          Stationly records each read of these values in the audit log. Sealed values stay hidden.
+          Stationly records each read of these values in the audit log. Secret values stay hidden.
         </p>
       )}
-      {resolved.isError && <ErrorState error={resolved.error} title="Couldn’t load key values" />}
-      <Panel title="Couldn’t load keys">
-        <KeyRows
+      {resolved.isError && <ErrorState error={resolved.error} title="Couldn’t load values" />}
+      <Panel title="Couldn’t load environment variables">
+        <VariableRows
           target={target}
           values={values}
           onEdit={setEditing}
@@ -678,10 +692,10 @@ export function KeysPanel({ target, also }: { target: KeyTarget; also?: ReactNod
         />
       </Panel>
       {adding && (
-        <KeyDialog target={target} existing={null} open={adding} onOpenChange={setAdding} />
+        <VariableDialog target={target} existing={null} open={adding} onOpenChange={setAdding} />
       )}
       {editing && (
-        <KeyDialog
+        <VariableDialog
           key={editing.id}
           target={target}
           existing={editing}

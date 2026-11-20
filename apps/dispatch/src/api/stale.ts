@@ -4,8 +4,8 @@ import type { Db } from '../db/client.ts'
 import {
   app,
   deployment,
+  environment_variable,
   event,
-  key,
   machine,
   target,
   type StaleReasonValue,
@@ -15,7 +15,7 @@ import { envDigest, envOf, generationEnv } from '../secrets/deploy.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import { leaves, Resolver } from '../secrets/resolve.ts'
 import { machineEntries } from '../secrets/sandbox.ts'
-import type { KeyWrite } from '../secrets/variables.ts'
+import type { VariableWrite } from '../secrets/variables.ts'
 
 import { configFields } from './deployments.ts'
 
@@ -25,7 +25,7 @@ export type StaleDependent = {
   app_id: string
   project_id: string
   preview_id: string | null
-  keys: string[]
+  environment_variables: string[]
 }
 
 const canonicalOrNull = (value: unknown) => canonical(value ?? null)
@@ -37,7 +37,7 @@ const pendingEnv = (db: Db, svc: AppRow) => {
   const entries = []
   const unresolved: string[] = []
 
-  for (const v of resolver.appKeys()) {
+  for (const v of resolver.appVariables()) {
     try {
       entries.push({
         key: v.name,
@@ -69,7 +69,7 @@ const pendingEnv = (db: Db, svc: AppRow) => {
   }
 }
 
-const changedKeys = (
+const changedVariables = (
   deployed: ReturnType<typeof envOf>,
   pending: ReturnType<typeof envOf>,
   unresolved: string[],
@@ -137,15 +137,15 @@ export const staleness = (db: Db, svc: AppRow) => {
   const digest = pending.unresolved.length ? null : envDigest(pending.env)
 
   if (digest === null || digest !== deployed.env_digest) {
-    const keys = changedKeys(deployed.env, pending.env, pending.unresolved)
+    const keys = changedVariables(deployed.env, pending.env, pending.unresolved)
     const unresolved = pending.unresolved.length
       ? ` ${list(pending.unresolved)} does not resolve, so the next deploy fails until it does.`
       : ''
 
     reasons.push({
-      code: 'KEYS_CHANGED',
-      explanation: `Keys changed since the last deploy${keys.length ? `: ${list(keys)}` : ''}. Deploy to apply them.${unresolved}`,
-      keys,
+      code: 'ENVIRONMENT_VARIABLES_CHANGED',
+      explanation: `Environment variables changed since the last deploy${keys.length ? `: ${list(keys)}` : ''}. Deploy to apply them.${unresolved}`,
+      names: keys,
     })
   }
 
@@ -159,7 +159,7 @@ export const staleness = (db: Db, svc: AppRow) => {
     reasons.push({
       code: 'CONFIG_CHANGED',
       explanation: `Configuration changed since the last deploy: ${list(fields)}. Deploy to apply it.`,
-      keys: [...fields],
+      names: [...fields],
     })
   }
 
@@ -213,10 +213,10 @@ const machineReaders = (db: Db) => {
   const owners = new Set(
     db
       .select({
-        id: key.machine_id,
+        id: environment_variable.machine_id,
       })
-      .from(key)
-      .where(eq(key.scope, 'machine'))
+      .from(environment_variable)
+      .where(eq(environment_variable.scope, 'machine'))
       .all()
       .map((v) => v.id),
   )
@@ -245,7 +245,7 @@ const machineReaders = (db: Db) => {
   return readers
 }
 
-export const settleKeyWrites = (db: Db, writes: KeyWrite[]) => {
+export const settleVariableWrites = (db: Db, writes: VariableWrite[]) => {
   const readers = refreshStale(db)
   const boxes = machineReaders(db)
 
@@ -254,12 +254,12 @@ export const settleKeyWrites = (db: Db, writes: KeyWrite[]) => {
       .values({
         type: 'secret.changed',
         subject: {
-          entity: 'key',
-          id: write.key_id,
+          entity: 'environment_variable',
+          id: write.environment_variable_id,
           project_id: write.project_id,
         },
         payload: {
-          key_id: write.key_id,
+          environment_variable_id: write.environment_variable_id,
           scope: write.scope,
           version: write.version,
           dependents: readers.get(write.secret_value_id) ?? [],
@@ -293,7 +293,7 @@ export const staleDependents = (
         return []
       }
 
-      const reason = svc.stale_reasons.find((r) => r.code === 'KEYS_CHANGED')
+      const reason = svc.stale_reasons.find((r) => r.code === 'ENVIRONMENT_VARIABLES_CHANGED')
 
       return reason
         ? [
@@ -301,7 +301,7 @@ export const staleDependents = (
               app_id: svc.id,
               project_id: env.project_id,
               preview_id: env.kind === 'preview' ? env.id : null,
-              keys: reason.keys,
+              environment_variables: reason.names,
             },
           ]
         : []

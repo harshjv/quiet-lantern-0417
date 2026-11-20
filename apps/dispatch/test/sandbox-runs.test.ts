@@ -37,7 +37,7 @@ const api = (method: string, path: string, body?: unknown, token = h.admin.token
   })
 
 const secret = 'ghp_projectsecret0123456789'
-const sealed = 'sealed-value-0123456789abcdef'
+const secretValue = 'secret-value-0123456789abcdef'
 const plain = 'plain-literal-value-98765'
 
 before(async () => {
@@ -488,17 +488,17 @@ describe('exec', () => {
   })
 })
 
-describe('keys', () => {
+describe('environment variables', () => {
   const set = (body: unknown, token = h.admin.token, id = boxId) =>
-    api('PATCH', `/v1/machines/${id}/keys`, body, token)
+    api('PATCH', `/v1/machines/${id}/environment-variables`, body, token)
 
   before(async () => {
-    const projectVars = await api('PATCH', `/v1/projects/alpha/keys`, {
+    const projectVars = await api('PATCH', `/v1/projects/alpha/environment-variables`, {
       target: 'preview',
       set: [
         {
           name: 'GH_TOKEN',
-          kind: 'sealed',
+          kind: 'secret',
           value: secret,
         },
       ],
@@ -507,7 +507,7 @@ describe('keys', () => {
     assert.equal(projectVars.status, 200, projectVars.text)
   })
 
-  test('literal, sealed and reference keys are set, delivered to stationd as purpose sandbox and never listed with values', async () => {
+  test('literal, secret and reference environment variables are set, delivered to stationd as purpose sandbox and never listed with values', async () => {
     const reply = await set({
       set: [
         {
@@ -517,8 +517,8 @@ describe('keys', () => {
         },
         {
           name: 'OWN_SEALED',
-          kind: 'sealed',
-          value: sealed,
+          kind: 'secret',
+          value: secretValue,
         },
         {
           name: 'GH_TOKEN',
@@ -534,18 +534,19 @@ describe('keys', () => {
     })
 
     assert.equal(reply.status, 200, reply.text)
-    assert.deepEqual(reply.body.keys.map((v: any) => v.name).sort(), [
+    assert.deepEqual(reply.body.environment_variables.map((v: any) => v.name).sort(), [
       'GENERATED',
       'GH_TOKEN',
       'OWN_SEALED',
       'PLAIN',
     ])
     assert.ok(
-      reply.body.keys.every(
+      reply.body.environment_variables.every(
         (v: any) => v.scope === 'machine' && v.injection === 'env' && v.build === false,
       ),
     )
-    const full = (await api('GET', `/v1/machines/${boxId}/keys?fields=machine_id`)).body.items
+    const full = (await api('GET', `/v1/machines/${boxId}/environment-variables?fields=machine_id`))
+      .body.items
 
     assert.ok(full.every((v: any) => v.machine_id === boxId))
     const delivery = await station.waitFor(
@@ -557,43 +558,49 @@ describe('keys', () => {
 
     assert.equal(delivery.purpose, 'sandbox')
     assert.equal(delivery.values.PLAIN, plain)
-    assert.equal(delivery.values.OWN_SEALED, sealed)
+    assert.equal(delivery.values.OWN_SEALED, secretValue)
     assert.equal(delivery.values.GH_TOKEN, secret)
     assert.ok(delivery.values.GENERATED!.length >= 32)
-    const listed = await api('GET', `/v1/machines/${boxId}/keys?fields=*`)
+    const listed = await api('GET', `/v1/machines/${boxId}/environment-variables?fields=*`)
 
     assert.equal(listed.status, 200)
     assert.equal(listed.body.items.length, 4)
     assert.ok(listed.body.items.every((v: any) => v.value === null))
     assert.ok(
       !listed.text.includes(secret) &&
-        !listed.text.includes(sealed) &&
+        !listed.text.includes(secretValue) &&
         !listed.text.includes(plain),
     )
   })
 
-  test('the resolved view shows sources for a project reference and a value only to admin, never for sealed ones', async () => {
-    const resolved = (await api('GET', `/v1/machines/${boxId}/keys/resolved`)).body
+  test('the resolved view shows sources for a project reference and a value only to admin, never for secret ones', async () => {
+    const resolved = (await api('GET', `/v1/machines/${boxId}/environment-variables/resolved`)).body
 
     assert.equal(resolved.machine_id, boxId)
-    const byKey = Object.fromEntries(resolved.keys.map((v: any) => [v.name, v]))
+    const byKey = Object.fromEntries(resolved.environment_variables.map((v: any) => [v.name, v]))
 
     assert.equal(byKey.PLAIN.value, plain)
-    assert.equal(byKey.OWN_SEALED.sealed, true)
+    assert.equal(byKey.OWN_SEALED.secret, true)
     assert.equal(byKey.OWN_SEALED.value, undefined)
     assert.equal(byKey.GH_TOKEN.value, undefined)
-    assert.equal(byKey.GH_TOKEN.sealed, true)
+    assert.equal(byKey.GH_TOKEN.secret, true)
     assert.equal(byKey.GH_TOKEN.parts[0].chain[0].scope, 'project')
     assert.equal(byKey.GH_TOKEN.parts[0].chain[0].name, 'GH_TOKEN')
     const asDeployer = (
-      await api('GET', `/v1/machines/${boxId}/keys/resolved`, undefined, deployToken)
+      await api(
+        'GET',
+        `/v1/machines/${boxId}/environment-variables/resolved`,
+        undefined,
+        deployToken,
+      )
     ).body
 
-    assert.ok(asDeployer.keys.every((v: any) => v.value === undefined))
+    assert.ok(asDeployer.environment_variables.every((v: any) => v.value === undefined))
     assert.ok(!JSON.stringify(asDeployer).includes(plain))
-    const expanded = (await api('GET', `/v1/machines/${boxId}?fields=keys`)).body.keys
+    const expanded = (await api('GET', `/v1/machines/${boxId}?fields=environment_variables`)).body
+      .environment_variables
 
-    assert.ok(expanded.some((v: any) => v.name === 'GH_TOKEN' && v.sealed === true))
+    assert.ok(expanded.some((v: any) => v.name === 'GH_TOKEN' && v.secret === true))
     assert.ok(!JSON.stringify(expanded).includes(secret))
   })
 
@@ -606,12 +613,12 @@ describe('keys', () => {
 
     assert.equal(
       (
-        await api('PATCH', `/v1/projects/alpha/keys`, {
+        await api('PATCH', `/v1/projects/alpha/environment-variables`, {
           target: 'preview',
           set: [
             {
               name: 'GH_TOKEN',
-              kind: 'sealed',
+              kind: 'secret',
               value: next,
             },
           ],
@@ -647,7 +654,7 @@ describe('keys', () => {
     assert.equal(after.sandboxes![boxId]!.env_digest, delivery.digest)
   })
 
-  test('exec output and logs are redacted with the machine key values', async () => {
+  test('exec output and logs are redacted with the machine environment variable values', async () => {
     const reply = await exec({
       command: ['env'],
     })
@@ -657,7 +664,7 @@ describe('keys', () => {
 
     assert.ok(!text.includes(plain) || text.includes('[redacted:'))
 
-    for (const value of [sealed, 'ghp_rotatedsecret9876543210']) {
+    for (const value of [secretValue, 'ghp_rotatedsecret9876543210']) {
       assert.ok(!text.includes(value), `${value} leaked: ${text}`)
     }
 
@@ -665,7 +672,7 @@ describe('keys', () => {
     const logs = await api('GET', `/v1/logs?run=${reply.body.id}&tail=50`)
 
     assert.equal(logs.status, 200, logs.text)
-    assert.ok(!logs.text.includes(sealed))
+    assert.ok(!logs.text.includes(secretValue))
     assert.match(logs.text, /\[redacted:/)
   })
 
@@ -703,14 +710,14 @@ describe('keys', () => {
     })
 
     assert.equal(unresolved.status, 422)
-    assert.equal(unresolved.body.error.code, 'KEY_UNRESOLVED')
+    assert.equal(unresolved.body.error.code, 'ENVIRONMENT_VARIABLE_UNRESOLVED')
     assert.equal(
       (
-        await api('PATCH', '/v1/global-keys', {
+        await api('PATCH', '/v1/global-environment-variables', {
           set: [
             {
               name: 'ORG_KEY',
-              kind: 'sealed',
+              kind: 'secret',
               value: 'org-key-0123456789',
             },
           ],
@@ -729,14 +736,14 @@ describe('keys', () => {
     })
 
     assert.equal(ungranted.status, 403)
-    assert.equal(ungranted.body.error.code, 'KEY_NOT_GRANTED')
-    const key = (await api('GET', '/v1/global-keys')).body.items.find(
+    assert.equal(ungranted.body.error.code, 'ENVIRONMENT_VARIABLE_NOT_GRANTED')
+    const key = (await api('GET', '/v1/global-environment-variables')).body.items.find(
       (v: any) => v.name === 'ORG_KEY',
     )
 
     assert.equal(
       (
-        await api('POST', `/v1/keys/${key.id}/grants`, {
+        await api('POST', `/v1/environment-variables/${key.id}/grants`, {
           project_id: project.id,
         })
       ).status,
@@ -775,13 +782,13 @@ describe('keys', () => {
     )
   })
 
-  test('a sealed key needs admin and a deploy token sets literals and references only', async () => {
-    const sealedByDeployer = await set(
+  test('a secret environment variable needs admin and a deploy token sets literals and references only', async () => {
+    const secretByDeployer = await set(
       {
         set: [
           {
             name: 'DEPLOYER_SEALED',
-            kind: 'sealed',
+            kind: 'secret',
             value: 'whatever-0123456789',
           },
         ],
@@ -789,8 +796,8 @@ describe('keys', () => {
       deployToken,
     )
 
-    assert.equal(sealedByDeployer.status, 403)
-    assert.equal(sealedByDeployer.body.error.code, 'FORBIDDEN_SCOPE')
+    assert.equal(secretByDeployer.status, 403)
+    assert.equal(secretByDeployer.body.error.code, 'FORBIDDEN_SCOPE')
     assert.equal(
       (
         await set(
@@ -824,7 +831,7 @@ describe('keys', () => {
     assert.equal(asReader.status, 403)
   })
 
-  test('deleting the machine deletes its key rows and a fork starts with none', async () => {
+  test('deleting the machine deletes its environment variable rows and a fork starts with none', async () => {
     const fork = await createMachine(h, envId, {
       name: 'key-fork',
       from: {
@@ -833,11 +840,14 @@ describe('keys', () => {
       start: false,
     })
 
-    assert.equal(rows(h, 'select id from key where machine_id = ?', fork.id).length, 0)
-    const withKeys = await createMachine(h, envId, {
+    assert.equal(
+      rows(h, 'select id from environment_variable where machine_id = ?', fork.id).length,
+      0,
+    )
+    const withVariables = await createMachine(h, envId, {
       name: 'created-with-keys',
       start: false,
-      keys: [
+      environment_variables: [
         {
           name: 'TOKEN',
           kind: 'reference',
@@ -846,10 +856,13 @@ describe('keys', () => {
       ],
     })
 
-    assert.equal(rows(h, 'select id from key where machine_id = ?', withKeys.id).length, 1)
+    assert.equal(
+      rows(h, 'select id from environment_variable where machine_id = ?', withVariables.id).length,
+      1,
+    )
     const unresolved = await api('POST', placed(h, envId, `machines`), {
       name: 'bad-keys',
-      keys: [
+      environment_variables: [
         {
           name: 'X',
           kind: 'reference',
@@ -860,10 +873,14 @@ describe('keys', () => {
 
     assert.equal(unresolved.status, 422)
     assert.equal(rows(h, "select id from machine where name = 'bad-keys'").length, 0)
-    assert.equal((await api('DELETE', `/v1/machines/${withKeys.id}`)).status, 200)
-    assert.equal(rows(h, 'select id from key where machine_id = ?', withKeys.id).length, 0)
+    assert.equal((await api('DELETE', `/v1/machines/${withVariables.id}`)).status, 200)
     assert.equal(
-      h.db.select().from(machine).where(eq(machine.id, withKeys.id)).get()?.status ?? 'deleting',
+      rows(h, 'select id from environment_variable where machine_id = ?', withVariables.id).length,
+      0,
+    )
+    assert.equal(
+      h.db.select().from(machine).where(eq(machine.id, withVariables.id)).get()?.status ??
+        'deleting',
       'deleting',
     )
   })

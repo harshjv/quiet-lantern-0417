@@ -151,7 +151,7 @@ export const settings = {
           endpoint: Str,
           bucket: Str,
           prefix: Type.String(),
-          credentials_key: Str,
+          credentials_environment_variable: Str,
         },
         {
           additionalProperties: false,
@@ -182,7 +182,9 @@ export const settings = {
     },
   ),
   'auth.passkey_rp_id': define(Str),
-  'domains.zone': define(Str),
+  'domains.zone': define(Str, {
+    station: true,
+  }),
 }
 
 export type SettingKey = keyof typeof settings

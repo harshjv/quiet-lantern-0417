@@ -3,21 +3,21 @@ import { test } from 'node:test'
 
 import { hasNoValue, noValueLabel } from '../src/lib/variables.ts'
 
-test('a sealed key with no version reads as having no value here', () => {
+test('a secret environment variable with no version reads as having no value here', () => {
   assert.equal(noValueLabel, 'No value here')
   assert.equal(
     hasNoValue({
-      kind: 'sealed',
+      kind: 'secret',
       head_version: null,
     }),
     true,
   )
 })
 
-test('a sealed key with a value, and every other kind, does not', () => {
+test('a secret environment variable with a value, and every other kind, does not', () => {
   assert.equal(
     hasNoValue({
-      kind: 'sealed',
+      kind: 'secret',
       head_version: 3,
     }),
     false,

@@ -7,7 +7,7 @@ import { after, before, describe, test } from 'node:test'
 
 import { workspaceEnv } from '@stationly/protocol'
 
-import { setupCommand, workspaceKeySets } from '../src/sandboxes/workspace.ts'
+import { setupCommand, workspaceVariableSets } from '../src/sandboxes/workspace.ts'
 
 import { startDispatch, type Dispatch } from './helpers/dispatch.ts'
 
@@ -117,9 +117,9 @@ describe('workspace setup', () => {
   })
 })
 
-test('a workspace receives its project, and its preview only in a preview, as literal keys', () => {
+test('a workspace receives its project, and its preview only in a preview, as literal environment variables', () => {
   const placed = (preview: string | null) =>
-    workspaceKeySets(
+    workspaceVariableSets(
       h.db,
       {
         project: 'prj_one',

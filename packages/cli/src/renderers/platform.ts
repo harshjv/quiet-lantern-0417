@@ -53,6 +53,12 @@ export const renderDoctor = (d: DoctorView) => {
     if (c.fix && c.status !== 'ok') {
       lines.push(`${''.padEnd(46)}fix: ${c.fix}`)
     }
+
+    for (const step of c.steps ?? []) {
+      if (step.status !== 'ok') {
+        lines.push(`${''.padEnd(46)}${step.status} ${step.name}: ${step.finding}`)
+      }
+    }
   }
 
   return lines.join('\n')

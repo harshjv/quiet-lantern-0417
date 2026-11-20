@@ -39,7 +39,7 @@ import { stationRoutes } from './routes/stations.ts'
 import { taskRoutes } from './routes/tasks.ts'
 import { teamRoutes } from './routes/team.ts'
 import { tokenRoutes } from './routes/tokens.ts'
-import { keyRoutes } from './routes/variables.ts'
+import { variableRoutes } from './routes/variables.ts'
 import { volumeRoutes } from './routes/volumes.ts'
 import { models } from './shapes.ts'
 
@@ -254,7 +254,7 @@ export const createApi = (deps: Deps) => {
     .use(logRoutes(kit))
     .use(eventRoutes(kit))
     .use(notificationRoutes(kit))
-    .use(keyRoutes(kit))
+    .use(variableRoutes(kit))
     .use(approvalRoutes(kit))
     .use(settingRoutes(kit))
     .use(tokenRoutes(kit))

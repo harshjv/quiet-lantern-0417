@@ -5,15 +5,15 @@ import { isTransient } from '../api/changes.ts'
 import {
   productionOf,
   type AppRow,
-  type KeyRow,
   type ProjectRow,
   type TargetRow,
+  type VariableRow,
 } from '../api/lookup.ts'
 import type { Db } from '../db/client.ts'
 import { app, app_port, domain, server, target, volume } from '../db/schema.ts'
 import { normalizeHealth } from '../generation/health.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { decryptValue, headValue, keysOf, type ValueTarget } from '../secrets/values.ts'
+import { decryptValue, headValue, variablesOf, type ValueTarget } from '../secrets/values.ts'
 
 import { defaultLimits } from './plan.ts'
 
@@ -22,13 +22,13 @@ type Json = Record<string, unknown>
 const sorted = <T>(entries: [string, T][]) =>
   Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)))
 
-const latest = (db: Db, keyring: Keyring, row: KeyRow, valueTarget: ValueTarget) => {
+const latest = (db: Db, keyring: Keyring, row: VariableRow, valueTarget: ValueTarget) => {
   const value = headValue(db, row.id, valueTarget)
 
   return value ? decryptValue(keyring, value) : null
 }
 
-const withFlags = (base: Json, row: KeyRow) => ({
+const withFlags = (base: Json, row: VariableRow) => ({
   ...base,
   ...(row.injection !== 'env'
     ? {
@@ -42,13 +42,13 @@ const withFlags = (base: Json, row: KeyRow) => ({
     : {}),
 })
 
-const appKey = (db: Db, keyring: Keyring, row: KeyRow): unknown => {
+const appVariable = (db: Db, keyring: Keyring, row: VariableRow): unknown => {
   const plain = row.injection === 'env' && !row.build
 
-  if (row.kind === 'sealed') {
+  if (row.kind === 'secret') {
     return withFlags(
       {
-        sealed: true,
+        secret: true,
         ...(row.reference
           ? {
               reference: row.reference,
@@ -171,7 +171,7 @@ const exportApp = (
         .orderBy(asc(domain.hostname))
         .all()
     : []
-  const keys = keysOf(db, {
+  const keys = variablesOf(db, {
     scope: 'app',
     id: svc.id,
   }).all()
@@ -302,7 +302,7 @@ const exportApp = (
   }
 
   if (keys.length) {
-    overridable.keys = sorted(keys.map((v) => [v.name, appKey(db, keyring, v)]))
+    overridable.env = sorted(keys.map((v) => [v.name, appVariable(db, keyring, v)]))
   }
 
   if (svc.desired_state !== 'running') {
@@ -358,17 +358,22 @@ const keyOrder = [
   'schedule',
   'volumes',
   'domains',
-  'keys',
+  'env',
   'desired_state',
 ]
 
 const order = (doc: Json) =>
   Object.fromEntries(keyOrder.filter((k) => doc[k] !== undefined).map((k) => [k, doc[k]]))
 
-const projectKey = (db: Db, keyring: Keyring, row: KeyRow, places: TargetRow[]): unknown => {
-  if (row.kind === 'sealed') {
+const projectVariable = (
+  db: Db,
+  keyring: Keyring,
+  row: VariableRow,
+  places: TargetRow[],
+): unknown => {
+  if (row.kind === 'secret') {
     return {
-      sealed: true,
+      secret: true,
       ...(row.reference
         ? {
             reference: row.reference,
@@ -405,15 +410,7 @@ const projectKey = (db: Db, keyring: Keyring, row: KeyRow, places: TargetRow[]):
 const diffOverride = (base: Json, other: Json) => {
   const out: Json = {}
 
-  for (const key of [
-    'source',
-    'server',
-    'limits',
-    'domains',
-    'desired_state',
-    'schedule',
-    'keys',
-  ]) {
+  for (const key of ['source', 'server', 'limits', 'domains', 'desired_state', 'schedule', 'env']) {
     const a = base[key]
     const b = other[key]
 
@@ -423,7 +420,7 @@ const diffOverride = (base: Json, other: Json) => {
 
     if (b === undefined) {
       out[key] = null
-    } else if (key === 'keys' && a && typeof a === 'object' && b && typeof b === 'object') {
+    } else if (key === 'env' && a && typeof a === 'object' && b && typeof b === 'object') {
       const changed = Object.fromEntries(
         Object.entries(b as Json).filter(
           ([k, v]) => JSON.stringify((a as Json)[k]) !== JSON.stringify(v),
@@ -475,7 +472,7 @@ export const exportManifest = (
         .where(eq(target.project_id, proj.id))
         .all()
         .filter((e) => e.id !== base.id && !isTransient(e))
-  const projectRows = keysOf(db, {
+  const projectRows = variablesOf(db, {
     scope: 'project',
     id: proj.id,
   }).all()
@@ -485,10 +482,10 @@ export const exportManifest = (
   }
 
   if (projectRows.length) {
-    doc.keys = sorted(
+    doc.env = sorted(
       projectRows.map((row) => [
         row.name,
-        projectKey(db, keyring, row, chosen ? [chosen] : [base, ...others]),
+        projectVariable(db, keyring, row, chosen ? [chosen] : [base, ...others]),
       ]),
     )
   }

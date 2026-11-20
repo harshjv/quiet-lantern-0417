@@ -25,6 +25,6 @@ export const entityIcon = {
   agent: Bot,
   conversation: MessagesSquare,
   server: Server,
-  key: Braces,
+  environment_variable: Braces,
   approval: Inbox,
 } satisfies Record<string, LucideIcon>

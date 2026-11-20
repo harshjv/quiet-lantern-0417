@@ -246,16 +246,16 @@ export const diagnosisQuery = (id: string) =>
       ),
   })
 
-export const keysQuery = (app: string) =>
+export const variablesQuery = (app: string) =>
   queryOptions({
-    queryKey: ['keys', 'of', app],
+    queryKey: ['environment-variables', 'of', app],
     queryFn: () =>
       unwrap(
         api.v1
           .apps({
             app,
           })
-          .keys.get(),
+          ['environment-variables'].get(),
       ),
   })
 
@@ -271,22 +271,22 @@ export const namesQuery = (project: string) =>
           .apps.get({
             query: {
               limit: 200,
-              fields: 'id,name,ports,volumes,domains,keys',
+              fields: 'id,name,ports,volumes,domains,environment_variables',
             },
           }),
       ),
   })
 
-export const projectKeysQuery = (project: string, target: 'production' | 'preview') =>
+export const projectVariablesQuery = (project: string, target: 'production' | 'preview') =>
   queryOptions({
-    queryKey: ['keys', 'project', project, target],
+    queryKey: ['environment-variables', 'project', project, target],
     queryFn: () =>
       unwrap(
         api.v1
           .projects({
             project,
           })
-          .keys.get({
+          ['environment-variables'].get({
             query: {
               target,
             },
@@ -296,14 +296,14 @@ export const projectKeysQuery = (project: string, target: 'production' | 'previe
 
 export const resolvedQuery = (app: string) =>
   queryOptions({
-    queryKey: ['keys', 'resolved', app],
+    queryKey: ['environment-variables', 'resolved', app],
     queryFn: () =>
       unwrap(
         api.v1
           .apps({
             app,
           })
-          .keys.resolved.get({
+          ['environment-variables'].resolved.get({
             query: {},
           }),
       ),
@@ -610,16 +610,16 @@ export const machineOwnSnapshotsQuery = (machine: string) =>
     refetchInterval: (query) => (snapshotsBusy(query.state.data?.items) ? 2000 : false),
   })
 
-export const machineKeysQuery = (machine: string) =>
+export const machineVariablesQuery = (machine: string) =>
   queryOptions({
-    queryKey: ['keys', 'of-machine', machine],
+    queryKey: ['environment-variables', 'of-machine', machine],
     queryFn: () =>
       unwrap(
         api.v1
           .machines({
             machine,
           })
-          .keys.get({
+          ['environment-variables'].get({
             query: {},
           }),
       ),
@@ -627,14 +627,14 @@ export const machineKeysQuery = (machine: string) =>
 
 export const machineResolvedQuery = (machine: string) =>
   queryOptions({
-    queryKey: ['keys', 'resolved-machine', machine],
+    queryKey: ['environment-variables', 'resolved-machine', machine],
     queryFn: () =>
       unwrap(
         api.v1
           .machines({
             machine,
           })
-          .keys.resolved.get(),
+          ['environment-variables'].resolved.get(),
       ),
     staleTime: 0,
     gcTime: 0,

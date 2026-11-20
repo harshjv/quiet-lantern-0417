@@ -5,9 +5,9 @@ import {
   appKindValues,
   desiredStateValues,
   domainFieldText,
+  environmentVariableNamePattern,
   firewallModeValues,
   injectionValues,
-  keyNamePattern,
   portFieldText,
   portProtocolValues,
   portRange,
@@ -37,10 +37,10 @@ const SlugMap = <T extends TSchema>(value: T, description: string) =>
       ...strict,
     },
   )
-const KeyMap = <T extends TSchema>(value: T, description: string) =>
+const NameMap = <T extends TSchema>(value: T, description: string) =>
   Type.Record(
     Type.String({
-      pattern: keyNamePattern,
+      pattern: environmentVariableNamePattern,
     }),
     value,
     {
@@ -367,7 +367,7 @@ export const Domain = Type.Object(
 
 const Scalar = Type.Union([Type.String(), Type.Number(), Type.Boolean()])
 
-const KeyObject = Type.Object(
+const VariableObject = Type.Object(
   {
     value: Optional(
       Type.String({
@@ -376,12 +376,12 @@ const KeyObject = Type.Object(
     ),
     reference: Optional(
       Type.String({
-        description: 'A reference expression, or ${{secret(N)}} with sealed',
+        description: 'A reference expression, or ${{secret(N)}} with secret',
       }),
     ),
-    sealed: Optional(
+    secret: Optional(
       Type.Literal(true, {
-        description: 'Declares a sealed key whose value is set out of band',
+        description: 'Declares a secret environment variable whose value is set out of band',
       }),
     ),
     injection: Optional(
@@ -398,39 +398,40 @@ const KeyObject = Type.Object(
     ),
   },
   {
-    description: 'The object form of an app key',
+    description: 'The object form of an app environment variable',
     ...strict,
   },
 )
 
-export const AppKey = Type.Union([Scalar, KeyObject], {
+export const AppVariable = Type.Union([Scalar, VariableObject], {
   description: 'A literal, a reference, an interpolation, or an object form',
 })
 
-const ProjectKeyObject = Type.Object(
+const ProjectVariableObject = Type.Object(
   {
     production: Optional(Scalar),
     preview: Optional(Scalar),
-    sealed: Optional(
+    secret: Optional(
       Type.Literal(true, {
-        description: 'Declared; production and preview values are set with set_project_keys',
+        description:
+          'Declared; production and preview values are set with set_project_environment_variables',
       }),
     ),
     reference: Optional(
       Type.String({
         description:
-          '${{secret(N)}} with sealed: production and previews get their own generated values',
+          '${{secret(N)}} with secret: production and previews get their own generated values',
       }),
     ),
   },
   {
-    description: 'The object form of a project key',
+    description: 'The object form of a project environment variable',
     ...strict,
   },
 )
 
-export const ProjectKey = Type.Union([Scalar, ProjectKeyObject], {
-  description: 'A production value, production and preview values, or a sealed declaration',
+export const ProjectVariable = Type.Union([Scalar, ProjectVariableObject], {
+  description: 'A production value, production and preview values, or a secret declaration',
 })
 
 const FirewallRule = Type.Object(
@@ -489,7 +490,7 @@ export const App = Type.Object(
         description: appFieldText.command,
       }),
     ),
-    build_args: Optional(KeyMap(Type.String(), appFieldText.build_args)),
+    build_args: Optional(NameMap(Type.String(), appFieldText.build_args)),
     ports: Optional(
       Type.Array(AppPort, {
         default: [],
@@ -562,7 +563,9 @@ export const App = Type.Object(
         description: 'Absent: not managed by the Manifest',
       }),
     ),
-    keys: Optional(KeyMap(AppKey, 'App keys; absent: not managed by the Manifest')),
+    env: Optional(
+      NameMap(AppVariable, 'App environment variables; absent: not managed by the Manifest'),
+    ),
     desired_state: Optional(
       StringEnum(desiredStateValues, {
         default: 'running',
@@ -618,7 +621,9 @@ export const AppOverride = Type.Object(
     domains: Optional(Type.Union([Type.Array(Domain), Type.Null()])),
     desired_state: Optional(Type.Union([StringEnum(desiredStateValues), Type.Null()])),
     schedule: Optional(Type.Union([Schedule, Type.Null()])),
-    keys: Optional(Type.Union([KeyMap(AppKey, 'Keys merged one by one'), Type.Null()])),
+    env: Optional(
+      Type.Union([NameMap(AppVariable, 'Environment variables merged one by one'), Type.Null()]),
+    ),
   },
   {
     description: 'Keys that may differ in one preview; null resets a key to its production value',
@@ -658,7 +663,12 @@ export const Manifest = Type.Object(
       pattern: slugPattern,
       description: 'The project name; checked, never written',
     }),
-    keys: Optional(KeyMap(ProjectKey, 'Project keys; absent: not managed by the Manifest')),
+    env: Optional(
+      NameMap(
+        ProjectVariable,
+        'Project environment variables; absent: not managed by the Manifest',
+      ),
+    ),
     apps: Optional(
       SlugMap(
         App,
@@ -683,8 +693,8 @@ export const Manifest = Type.Object(
 export type ManifestDoc = Static<typeof Manifest>
 export type AppDoc = Static<typeof App>
 export type AppOverrideDoc = Static<typeof AppOverride>
-export type AppKeyDoc = Static<typeof AppKey>
-export type ProjectKeyDoc = Static<typeof ProjectKey>
+export type AppVariableDoc = Static<typeof AppVariable>
+export type ProjectVariableDoc = Static<typeof ProjectVariable>
 export type DomainDoc = Static<typeof Domain>
 export type HealthDoc = Static<typeof Health>
 
@@ -695,5 +705,5 @@ export const overridableKeys = [
   'domains',
   'desired_state',
   'schedule',
-  'keys',
+  'env',
 ] as const

@@ -17,6 +17,7 @@ import type { Db } from '../db/client.ts'
 import * as schema from '../db/schema.ts'
 import { readSetting, settingsSnapshot } from '../db/settings.ts'
 
+import { clientAddressHeader } from './client-address.ts'
 import {
   grantClaims,
   levelScopes,
@@ -199,12 +200,15 @@ export const createAuth = (db: Db, surface: AuthSurface, secret: string, options
     },
     advanced: {
       ipAddress: {
-        ipAddressHeaders: ['x-forwarded-for'],
+        ipAddressHeaders: [clientAddressHeader],
       },
-      useSecureCookies: surface.baseURL.startsWith('https://'),
+      useSecureCookies: false,
+      cookiePrefix: '__Host-better-auth',
       defaultCookieAttributes: {
         httpOnly: true,
         sameSite: 'lax',
+        secure: true,
+        path: '/',
       },
     },
     databaseHooks: {

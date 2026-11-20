@@ -427,24 +427,24 @@ describe('lifecycle commands', () => {
     assert.notEqual(bad.code, 0)
   })
 
-  test('keys set takes a literal, a reference and sealed values, list and unset follow', async () => {
-    await h.call('PATCH', '/v1/projects/alpha/keys', {
+  test('env set takes a literal, a reference and secret values, list and unset follow', async () => {
+    await h.call('PATCH', '/v1/projects/alpha/environment-variables', {
       token: h.admin.token,
       body: {
         target: 'preview',
         set: [
           {
             name: 'GH_TOKEN',
-            kind: 'sealed',
+            kind: 'secret',
             value: 'ghp_supersecretvalue1',
           },
         ],
       },
     })
-    const set = await dev(['--json', 'keys', 'set', 'MODE=fast', 'GH_TOKEN=${{project.GH_TOKEN}}'])
+    const set = await dev(['--json', 'env', 'set', 'MODE=fast', 'GH_TOKEN=${{project.GH_TOKEN}}'])
 
     assertOk(set)
-    assert.deepEqual(bodyOf('PATCH', `/machines/${id}/keys`), {
+    assert.deepEqual(bodyOf('PATCH', `/machines/${id}/environment-variables`), {
       set: [
         {
           name: 'MODE',
@@ -460,38 +460,38 @@ describe('lifecycle commands', () => {
     })
     assert.deepEqual(
       json(set)
-        .keys.map((v: { name: string }) => v.name)
+        .environment_variables.map((v: { name: string }) => v.name)
         .sort(),
       ['GH_TOKEN', 'MODE'],
     )
-    const sealed = await dev(['--json', 'keys', 'set', '--sealed', 'API_KEY=abcdefgh12345'])
+    const secret = await dev(['--json', 'env', 'set', '--secret', 'API_KEY=abcdefgh12345'])
 
-    assertOk(sealed)
-    assert.deepEqual(bodyOf('PATCH', `/machines/${id}/keys`), {
+    assertOk(secret)
+    assert.deepEqual(bodyOf('PATCH', `/machines/${id}/environment-variables`), {
       set: [
         {
           name: 'API_KEY',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'abcdefgh12345',
         },
       ],
     })
-    assert.ok(!sealed.stdout.includes('abcdefgh12345'))
-    const listed = await dev(['--json', 'machines', 'list-keys'])
+    assert.ok(!secret.stdout.includes('abcdefgh12345'))
+    const listed = await dev(['--json', 'machines', 'list-environment-variables'])
 
     assertOk(listed)
     assert.deepEqual(
       json(listed).items.map((v: { name: string }) => v.name),
       ['API_KEY', 'GH_TOKEN', 'MODE'],
     )
-    const resolved = await dev(['--json', 'machines', 'get-resolved-keys'])
+    const resolved = await dev(['--json', 'machines', 'get-resolved-environment-variables'])
 
     assertOk(resolved)
     assert.equal(json(resolved).machine_id, id)
     const unset = await dev([
       '--json',
       'machines',
-      'set-keys',
+      'set-environment-variables',
       '--unset',
       'MODE',
       '--unset',
@@ -499,7 +499,7 @@ describe('lifecycle commands', () => {
     ])
 
     assertOk(unset)
-    assert.deepEqual(bodyOf('PATCH', `${nested()}/keys`), {
+    assert.deepEqual(bodyOf('PATCH', `${nested()}/environment-variables`), {
       unset: ['MODE', 'API_KEY'],
     })
   })

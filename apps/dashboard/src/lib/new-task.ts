@@ -22,7 +22,7 @@ export const githubTokenKey = 'GH_TOKEN'
 export const githubTokenLabel = 'GitHub token'
 
 export const githubTokenHelp = (project: string, repository: string) =>
-  `${project} has no GitHub token, and ${repository} is private or does not exist. Paste a fine-grained token with Contents read and write on that repository, or the output of gh auth token. Stationly stores it sealed for the whole project.`
+  `${project} has no GitHub token, and ${repository} is private or does not exist. Paste a fine-grained token with Contents read and write on that repository, or the output of gh auth token. Stationly stores it as a secret environment variable of the project.`
 
 type Failing = { code: string; details: Record<string, unknown> }
 

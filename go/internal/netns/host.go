@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/netip"
+	"os"
 	"slices"
 
 	"github.com/google/nftables"
@@ -143,6 +144,56 @@ func hostInputRules() [][]expr.Any {
 		))
 	}
 	return out
+}
+
+func HostWebListeners() ([]Socket, error) {
+	var out []Socket
+	for _, file := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		socks, err := procSockets(file, "tcp", tcpListen)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return out, err
+		}
+		for _, s := range socks {
+			if slices.Contains(WebPorts, s.Port) && !s.Address.IsLoopback() && !slices.Contains(out, s) {
+				out = append(out, s)
+			}
+		}
+	}
+	return out, nil
+}
+
+func WebPortDrops() ([]uint16, error) {
+	c, err := nftables.New()
+	if err != nil {
+		return WebPorts, err
+	}
+	rules, err := c.GetRules(hostTable, &nftables.Chain{Name: "input", Table: hostTable})
+	if err != nil {
+		return WebPorts, err
+	}
+	var missing []uint16
+	for _, p := range WebPorts {
+		if !slices.ContainsFunc(rules, func(r *nftables.Rule) bool { return dropsPort(r.Exprs, p) }) {
+			missing = append(missing, p)
+		}
+	}
+	return missing, nil
+}
+
+func dropsPort(exprs []expr.Any, p uint16) bool {
+	matches, drops := false, false
+	for _, e := range exprs {
+		switch e := e.(type) {
+		case *expr.Cmp:
+			matches = matches || (e.Op == expr.CmpOpEq && slices.Equal(e.Data, port(p)))
+		case *expr.Verdict:
+			drops = drops || e.Kind == expr.VerdictDrop
+		}
+	}
+	return matches && drops
 }
 
 func publishedWebPortRules(l HostLayout, bridges *nftables.Set) [][]expr.Any {

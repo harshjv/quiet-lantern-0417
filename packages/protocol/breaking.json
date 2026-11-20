@@ -214,5 +214,21 @@
   {
     "at": "protocol.json#/$defs/StationSettings/properties/gateway.rate_per_source",
     "reason": "30-ingress.md makes Cloudflare Tunnel the only ingress and removes direct mode, Let's Encrypt and public addresses; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/RootSocketSetupHostnames/properties/status",
+    "reason": "30-ingress.md: setup reports each hostname as pending, active, unreachable or wrong_gateway from the tunnel probe; sly and stationd ship together in one release"
+  },
+  {
+    "at": "protocol.json#/$defs/Diagnosis/properties/diff_from_last_good/properties/variables",
+    "reason": "Layer 3 renames key to environment variable and sealed to secret everywhere, the API, sly and the Manifest included; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/errors/SEALED_VALUE_UNREADABLE",
+    "reason": "Layer 3 renames key to environment variable and sealed to secret everywhere, the API, sly and the Manifest included; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "errors.json#/warnings/SEALED_VALUE_MISSING",
+    "reason": "Layer 3 renames key to environment variable and sealed to secret everywhere, the API, sly and the Manifest included; installations are reinstalled, not upgraded"
   }
 ]

@@ -14,6 +14,7 @@ export const networkLayout = {
   firstServiceVirtualHost: 3,
   dispatchHostAddress: '127.0.0.1',
   dispatchPort: 7900,
+  dispatchGatewayPort: 7901,
   credentialsProxyPort: 7443,
 } as const
 

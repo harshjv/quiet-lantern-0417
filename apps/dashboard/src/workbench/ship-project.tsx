@@ -29,7 +29,7 @@ import {
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { KeysPanel } from '@/components/variables-panel'
+import { VariablesPanel } from '@/components/variables-panel'
 import { agentHints } from '@/lib/agent-hints'
 import type { Approval, Preview } from '@/lib/api'
 import { approvalHeadline, type Names, type Places } from '@/lib/changes'
@@ -63,7 +63,15 @@ const NetworkPanel = lazy(() =>
   })),
 )
 
-const tabs = ['apps', 'previews', 'machines', 'network', 'keys', 'approvals', 'settings'] as const
+const tabs = [
+  'apps',
+  'previews',
+  'machines',
+  'network',
+  'environment-variables',
+  'approvals',
+  'settings',
+] as const
 
 type Tab = (typeof tabs)[number]
 
@@ -72,7 +80,7 @@ const tabLabel: Record<Tab, string> = {
   previews: 'Previews',
   machines: 'Machines',
   network: 'Network',
-  keys: 'Keys',
+  'environment-variables': 'Environment variables',
   approvals: 'Approvals',
   settings: 'Settings',
 }
@@ -236,15 +244,20 @@ function TabBody({
     )
   }
 
-  if (tab === 'keys') {
+  if (tab === 'environment-variables') {
     return (
-      <KeysPanel
+      <VariablesPanel
         target={{
           kind: 'project',
           project: place.project,
           target: isProduction(place) ? 'production' : 'preview',
         }}
-        also={<AlsoWith cli={commands.setProjectKey(scopeOf(place))} tool="set_project_keys" />}
+        also={
+          <AlsoWith
+            cli={commands.setProjectVariable(scopeOf(place))}
+            tool="set_project_environment_variables"
+          />
+        }
       />
     )
   }
@@ -552,7 +565,7 @@ function PreviewsTab({ place }: { place: PlaceView }) {
       icon={entityIcon.preview}
       title="Previews"
       count={previews.length}
-      note="Copies of production’s apps on their own network, with preview keys. A task’s preview gets generated domains; add a domain to an app here to reach it from outside. Named previews stay; task and pull request previews go when their work is done or they expire."
+      note="Copies of production’s apps on their own network, with preview values of project environment variables. A task’s preview gets generated domains; add a domain to an app here to reach it from outside. Named previews stay; task and pull request previews go when their work is done or they expire."
     >
       {previews.length === 0 ? (
         <EmptyState

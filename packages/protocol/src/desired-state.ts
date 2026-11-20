@@ -49,6 +49,7 @@ export const StationSettings = Type.Object(
     'platform.lockfile': Type.Optional(Json),
     'platform.allow_unsigned': Type.Boolean(),
     'gaming.quiet_period_s': Type.Optional(Seconds),
+    'domains.zone': Type.Optional(Type.String()),
   },
   {
     title: 'StationSettings',

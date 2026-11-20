@@ -37,13 +37,13 @@ import {
   Diagnosis as DiagnosisSchema,
   domainKindValues,
   domainStatusValues,
+  environmentVariableKindValues,
+  environmentVariableScopeValues,
   ErrorBody,
   errorCatalog,
   HealthCheck as HealthCheckSchema,
   injectionValues,
   JsonObject,
-  keyKindValues,
-  keyScopeValues,
   MachineEgressDomain as MachineEgressDomainSchema,
   machineEgressModeValues,
   MachineLimits as MachineLimitsSchema,
@@ -339,7 +339,7 @@ export const StaleReason = component(
     {
       code: StringEnum(staleReasonCodeValues),
       explanation: Str,
-      keys: Type.Array(Str),
+      names: Type.Array(Str),
     },
     {
       title: 'StaleReason',
@@ -425,8 +425,8 @@ export const EnvSnapshotEntry = component(
   Type.Object(
     {
       name: Str,
-      key_id: Str,
-      sealed: Bool,
+      environment_variable_id: Str,
+      secret: Bool,
       values: Type.Array(
         Type.Object({
           secret_value_id: Str,
@@ -572,7 +572,7 @@ export const BackupTargetShape = Type.Union([
         minLength: 1,
       }),
       prefix: Type.String(),
-      credentials_key: Type.String({
+      credentials_environment_variable: Type.String({
         minLength: 1,
       }),
     },
@@ -641,7 +641,7 @@ export const SecretValue = component(
     'SecretValue',
     {
       id: Str,
-      key_id: Str,
+      environment_variable_id: Str,
       target: StringEnum(targetKindValues),
       version: Int,
       bytes: NInt,
@@ -653,7 +653,7 @@ export const SecretValue = component(
     },
     [
       'id',
-      'key_id',
+      'environment_variable_id',
       'target',
       'version',
       'bytes',
@@ -666,31 +666,31 @@ export const SecretValue = component(
   ),
 )
 
-export const KeyKind = component(
-  'KeyKind',
-  StringEnum(keyKindValues, {
-    title: 'KeyKind',
+export const EnvironmentVariableKind = component(
+  'EnvironmentVariableKind',
+  StringEnum(environmentVariableKindValues, {
+    title: 'EnvironmentVariableKind',
   }),
 )
 
-export const Key = component(
-  'Key',
+export const EnvironmentVariable = component(
+  'EnvironmentVariable',
   selectable(
-    'Key',
+    'EnvironmentVariable',
     {
       ...stamps,
-      scope: StringEnum(keyScopeValues),
+      scope: StringEnum(environmentVariableScopeValues),
       project_id: NStr,
       app_id: NStr,
       machine_id: NStr,
       name: Str,
-      kind: KeyKind,
+      kind: EnvironmentVariableKind,
       reference: NStr,
       injection: StringEnum(injectionValues),
       build: Bool,
       head_version: NInt,
       bytes: NInt,
-      sealed: Bool,
+      secret: Bool,
       value: Type.Null(),
       targets: Type.Array(StringEnum(targetKindValues)),
       versions: Type.Array(SecretValue),
@@ -808,7 +808,7 @@ export const App = component(
       volumes: Type.Array(Volume),
       domains: Type.Array(Domain),
       current_deployment: Nullable(Deployment),
-      keys: Type.Array(Key),
+      environment_variables: Type.Array(EnvironmentVariable),
       exports: Type.Array(Export),
     },
     [
@@ -835,7 +835,7 @@ export const Edge = component(
     {
       from_app: Str,
       to_app: Str,
-      keys: Type.Array(Str),
+      environment_variables: Type.Array(Str),
     },
     {
       title: 'Edge',
@@ -939,7 +939,7 @@ export const Project = component(
       previews: Type.Array(Preview),
       apps: Type.Array(App),
       edges: Type.Array(Edge),
-      keys: Type.Array(Key),
+      environment_variables: Type.Array(EnvironmentVariable),
     },
     [
       'id',
@@ -1506,7 +1506,7 @@ export const NetworkMap = component(
             from: Str,
             to: Str,
             kind: Type.Literal('reference'),
-            keys: Type.Array(Str),
+            environment_variables: Type.Array(Str),
           },
           {
             additionalProperties: false,
@@ -2178,7 +2178,7 @@ export const Machine = component(
       snapshots: Type.Array(MachineSnapshot),
       runs: Type.Array(Run),
       metrics: Nullable(MachineMetricSample),
-      keys: Type.Array(JsonObject),
+      environment_variables: Type.Array(JsonObject),
     },
     [
       'id',
@@ -2290,14 +2290,14 @@ export const MachineShell = component(
   }),
 )
 
-export const MachineKeysOutcome = component(
-  'MachineKeysOutcome',
+export const MachineEnvironmentVariablesOutcome = component(
+  'MachineEnvironmentVariablesOutcome',
   Type.Object(
     {
-      keys: Type.Array(Key),
+      environment_variables: Type.Array(EnvironmentVariable),
     },
     {
-      title: 'MachineKeysOutcome',
+      title: 'MachineEnvironmentVariablesOutcome',
       additionalProperties: false,
     },
   ),

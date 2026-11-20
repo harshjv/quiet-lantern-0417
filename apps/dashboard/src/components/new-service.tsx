@@ -19,7 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { KeyKindSelect, KeyNameInput, KeyNotes, KeyValueInput } from '@/components/variable-fields'
+import {
+  VariableKindSelect,
+  VariableNameInput,
+  VariableNotes,
+  VariableValueInput,
+} from '@/components/variable-fields'
 import { api, idempotency, send } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { appKind } from '@/lib/labels'
@@ -29,7 +34,7 @@ import { appRepository } from '@/lib/new-task'
 import { placeName, previewQuery, scopeOf, type PlaceView } from '@/lib/place'
 import { myRepositoriesQuery, onlineStationsQuery, seedApp } from '@/lib/queries'
 import { useRows } from '@/lib/use-rows'
-import { toKeyInput, type KeyEntry } from '@/lib/variables'
+import { toVariableInput, type VariableEntry } from '@/lib/variables'
 
 type Kind = 'web' | 'worker'
 
@@ -83,7 +88,7 @@ export function NewApp({
       protocol: 'http',
     }),
   )
-  const keys = useRows<KeyEntry>([], () => ({
+  const variables = useRows<VariableEntry>([], () => ({
     name: '',
     kind: 'literal',
     value: '',
@@ -132,7 +137,7 @@ export function NewApp({
                       protocol: p.protocol,
                     }))
                   : [],
-              keys: keys.rows.map(toKeyInput),
+              environment_variables: variables.rows.map(toVariableInput),
               server_id: station || undefined,
               deploy_on_create: deploy,
             },
@@ -321,39 +326,39 @@ export function NewApp({
         </FieldSet>
       )}
 
-      <FieldSet legend="Keys (optional)">
-        {keys.rows.length > 0 && (
+      <FieldSet legend="Environment variables (optional)">
+        {variables.rows.length > 0 && (
           <ul className="space-y-2">
-            {keys.rows.map((v, i) => (
+            {variables.rows.map((v, i) => (
               <li
                 key={v.row}
                 className="grid grid-cols-[1fr_7rem_auto] items-center gap-2 sm:grid-cols-[10rem_7rem_1fr_auto]"
               >
-                <KeyNameInput
-                  aria-label={`Key ${i + 1} name`}
+                <VariableNameInput
+                  aria-label={`Environment variable ${i + 1} name`}
                   value={v.name}
                   onValueChange={(name) =>
-                    keys.update(v.row, {
+                    variables.update(v.row, {
                       name,
                     })
                   }
                   placeholder="KEY"
                 />
-                <KeyKindSelect
-                  label={`Key ${i + 1} kind`}
+                <VariableKindSelect
+                  label={`Environment variable ${i + 1} kind`}
                   value={v.kind}
                   onValueChange={(kind) =>
-                    keys.update(v.row, {
+                    variables.update(v.row, {
                       kind,
                     })
                   }
                 />
-                <KeyValueInput
+                <VariableValueInput
                   kind={v.kind}
-                  label={`Key ${i + 1} ${v.kind === 'reference' ? 'reference' : 'value'}`}
+                  label={`Environment variable ${i + 1} ${v.kind === 'reference' ? 'reference' : 'value'}`}
                   value={v.value}
                   onValueChange={(value) =>
-                    keys.update(v.row, {
+                    variables.update(v.row, {
                       value,
                     })
                   }
@@ -362,16 +367,16 @@ export function NewApp({
                 />
                 <RemoveButton
                   type="button"
-                  label={`Remove key ${i + 1}`}
+                  label={`Remove environment variable ${i + 1}`}
                   className="col-start-3 row-start-1 sm:col-start-4"
-                  onClick={() => keys.remove(v.row)}
+                  onClick={() => variables.remove(v.row)}
                 />
                 <CheckboxField
-                  id={`key-${v.row}-build`}
+                  id={`variable-${v.row}-build`}
                   className="col-span-full"
                   checked={v.build}
                   onCheckedChange={(build) =>
-                    keys.update(v.row, {
+                    variables.update(v.row, {
                       build,
                     })
                   }
@@ -382,12 +387,18 @@ export function NewApp({
             ))}
           </ul>
         )}
-        <Button type="button" variant="outline" size="sm" className="self-start" onClick={keys.add}>
-          <Plus /> Add key
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={variables.add}
+        >
+          <Plus /> Add environment variable
         </Button>
-        <KeyNotes
-          sealed={keys.rows.some((v) => v.kind === 'sealed')}
-          build={keys.rows.some((v) => v.build)}
+        <VariableNotes
+          secret={variables.rows.some((v) => v.kind === 'secret')}
+          build={variables.rows.some((v) => v.build)}
         />
       </FieldSet>
 

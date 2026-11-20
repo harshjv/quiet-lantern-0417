@@ -235,7 +235,7 @@ export const layoutNetwork = (map: NetworkMap): { nodes: MapNode[]; edges: Edge[
         target: `svc:${e.to}`,
         ...handles,
         type: from.x === to.x ? 'smoothstep' : 'default',
-        label: e.keys.join(', '),
+        label: e.environment_variables.join(', '),
         className: 'network-edge-reference',
         markerEnd: {
           type: MarkerType.ArrowClosed,

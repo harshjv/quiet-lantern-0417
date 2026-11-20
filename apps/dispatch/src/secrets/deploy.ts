@@ -12,7 +12,7 @@ import { sha256Digest } from '../generation/hash.ts'
 import { knownRedaction, refsOf, renderedDelivery } from './deliver.ts'
 import { SecretsError } from './errors.ts'
 import type { Keyring } from './keyring.ts'
-import { isSealed, Resolver, type SourceNode } from './resolve.ts'
+import { isSecret, Resolver, type SourceNode } from './resolve.ts'
 
 type ActorValue = Static<typeof Actor>
 type EnvEntryValue = Static<typeof EnvEntry>
@@ -21,11 +21,11 @@ type Purpose = SecretsDeliver['purpose']
 
 export type SnapshotEntry = {
   key: string
-  key_id: string
-  kind: 'literal' | 'reference' | 'sealed'
+  environment_variable_id: string
+  kind: 'literal' | 'reference' | 'secret'
   injection: 'env' | 'file'
   build: boolean
-  sealed: boolean
+  secret: boolean
   node: SourceNode
 }
 
@@ -33,7 +33,7 @@ export type EnvSnapshot = { resolved_at: string; entries: SnapshotEntry[] }
 
 export const snapshotOf = (db: Db, appId: string): EnvSnapshot => {
   const resolver = Resolver.forApp(db, appId)
-  const entries = resolver.appKeys().map((v) => {
+  const entries = resolver.appVariables().map((v) => {
     let node: SourceNode
 
     try {
@@ -50,11 +50,11 @@ export const snapshotOf = (db: Db, appId: string): EnvSnapshot => {
 
     return {
       key: v.name,
-      key_id: v.id,
+      environment_variable_id: v.id,
       kind: v.kind,
       injection: v.injection,
       build: v.build,
-      sealed: isSealed(node),
+      secret: isSecret(node),
       node,
     }
   })
@@ -70,7 +70,7 @@ export const createDeployment = (
   input: {
     app_id: string
     image_ref: string
-    trigger: 'manual' | 'key_change' | 'redeploy'
+    trigger: 'manual' | 'environment_variable_change' | 'redeploy'
     actor: ActorValue
   },
 ) => {

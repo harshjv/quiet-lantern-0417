@@ -104,8 +104,8 @@ export const commands = {
       ...(port === null ? [] : ['--port', String(port)]),
       '--probe',
     ),
-  setAppKey: (scope: AppScope) => sly(...appScoped(scope), 'keys', 'set', 'KEY=value'),
-  setProjectKey: (scope: Scope) => sly(...scoped(scope), 'keys', 'set', 'KEY=value'),
+  setAppVariable: (scope: AppScope) => sly(...appScoped(scope), 'env', 'set', 'KEY=value'),
+  setProjectVariable: (scope: Scope) => sly(...scoped(scope), 'env', 'set', 'KEY=value'),
   addDomain: (port: string | null) =>
     sly('domains', 'add', port ?? '<port-id>', '--hostname', '<hostname>'),
   setMachineRuntime: (station: string) =>
@@ -117,7 +117,7 @@ export const commands = {
     sly(...scoped(scope), 'machines', 'create', '<name>', '--ttl-s', '2h'),
   snapshotMachine: (scope: Scope, machine: string) =>
     sly(...scoped(scope), '--machine', machine, 'machines', 'snapshot'),
-  setMachineKey: (machine: string) => sly('--machine', machine, 'keys', 'set', 'KEY=value'),
+  setMachineVariable: (machine: string) => sly('--machine', machine, 'env', 'set', 'KEY=value'),
   forward: (machine: string, port: number) =>
     sly('--machine', machine, 'machines', 'forward', String(port)),
 } as const
@@ -139,14 +139,14 @@ export const tools = [
   'probe_network',
   'start_machine',
   'update_machine',
-  'set_app_keys',
-  'set_project_keys',
+  'set_app_environment_variables',
+  'set_project_environment_variables',
   'add_domain',
   'update_server',
   'update_app',
   'create_machine',
   'snapshot_machine',
-  'set_machine_keys',
+  'set_machine_environment_variables',
 ] as const
 
 export type Tool = (typeof tools)[number]

@@ -74,12 +74,12 @@ const create = (name: string, repository: string, extra: Record<string, unknown>
   })
 
 const setToken = (value: string, projectId = project.id, target = 'preview') =>
-  asHuman('PATCH', `/v1/projects/${projectId}/keys`, {
+  asHuman('PATCH', `/v1/projects/${projectId}/environment-variables`, {
     target,
     set: [
       {
         name: 'GH_TOKEN',
-        kind: 'sealed',
+        kind: 'secret',
         value,
       },
     ],
@@ -134,7 +134,7 @@ describe('the repository check at workspace create', () => {
     assert.deepEqual(counts(), before)
   })
 
-  test('a human stores the token as a sealed project key, a deploy token cannot', async () => {
+  test('a human stores the token as a secret project environment variable, a deploy token cannot', async () => {
     const minted = await asAdmin('POST', '/v1/tokens', {
       name: 'deployer',
       kind: 'scoped',
@@ -146,14 +146,14 @@ describe('the repository check at workspace create', () => {
         },
       ],
     })
-    const refused = await h.call('PATCH', `/v1/projects/${project.id}/keys`, {
+    const refused = await h.call('PATCH', `/v1/projects/${project.id}/environment-variables`, {
       token: minted.body.key,
       body: {
         target: 'preview',
         set: [
           {
             name: 'GH_TOKEN',
-            kind: 'sealed',
+            kind: 'secret',
             value: guarded,
           },
         ],
@@ -193,10 +193,10 @@ describe('the repository check at workspace create', () => {
 
   test('a GH_TOKEN in the body counts as the project token', async () => {
     const reply = await create('secret-four', 'https://github.com/acme/other', {
-      keys: [
+      environment_variables: [
         {
           name: 'GH_TOKEN',
-          kind: 'sealed',
+          kind: 'secret',
           value: guarded,
         },
       ],

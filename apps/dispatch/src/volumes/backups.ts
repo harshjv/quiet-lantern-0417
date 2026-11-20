@@ -21,7 +21,7 @@ import { settingSchedule } from '../schedule.ts'
 import { ephemeralDelivery } from '../secrets/deliver.ts'
 import { SecretsError } from '../secrets/errors.ts'
 import type { Keyring } from '../secrets/keyring.ts'
-import { sealedGlobalExists, sealedGlobalValue } from '../secrets/variables.ts'
+import { secretGlobalExists, secretGlobalValue } from '../secrets/variables.ts'
 import { appSubject, emitEvent } from '../station/events.ts'
 import type { StationServer } from '../station/server.ts'
 
@@ -77,7 +77,7 @@ const utcStamp = (d: Date) =>
     .replace(/\.\d{3}Z$/, 'Z')
 
 const credentialsFormat =
-  'Store the access key id and the secret access key as ACCESS_KEY_ID:SECRET_ACCESS_KEY, for example sly keys set --scope global --sealed BACKUP_S3=AKIA...:wJal...'
+  'Store the access key id and the secret access key as ACCESS_KEY_ID:SECRET_ACCESS_KEY, for example sly env set --scope global --secret BACKUP_S3=AKIA...:wJal...'
 
 const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget => {
   if (!target) {
@@ -105,20 +105,20 @@ const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget =
     )
   }
 
-  const held = sealedGlobalExists(db, target.credentials_key)
+  const held = secretGlobalExists(db, target.credentials_environment_variable)
 
   if (!held) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `credentials_key ${target.credentials_key} is not a global key.`,
+      `credentials_environment_variable ${target.credentials_environment_variable} is not a global environment variable.`,
       credentialsFormat,
     )
   }
 
-  if (!held.sealed) {
+  if (!held.secret) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `credentials_key ${target.credentials_key} is not sealed.`,
+      `credentials_environment_variable ${target.credentials_environment_variable} is not secret.`,
       credentialsFormat,
     )
   }
@@ -128,7 +128,7 @@ const checkedTarget = (db: Db, target: BackupTarget | undefined): BackupTarget =
     endpoint: target.endpoint,
     bucket: target.bucket,
     prefix: target.prefix,
-    credentials_key: target.credentials_key,
+    credentials_environment_variable: target.credentials_environment_variable,
   }
 }
 
@@ -164,16 +164,20 @@ const deliverCredentials = async (
   }
 
   const { db, stations, keyring } = deps
-  let held: ReturnType<typeof sealedGlobalValue>
+  let held: ReturnType<typeof secretGlobalValue>
 
   try {
-    held = sealedGlobalValue(db, keyring, target.credentials_key)
+    held = secretGlobalValue(db, keyring, target.credentials_environment_variable)
   } catch (error) {
     if (
       error instanceof SecretsError &&
       (error.code === 'SECRETS_UNAVAILABLE' || error.code === 'SECRETS_NEED_REENTRY')
     ) {
-      throw new BackupError(error.code, error.message, 'Set the sealed global key again.')
+      throw new BackupError(
+        error.code,
+        error.message,
+        'Set the secret global environment variable again.',
+      )
     }
 
     if (error instanceof SecretsError) {
@@ -190,7 +194,7 @@ const deliverCredentials = async (
   if (!accessKeyId || !secretAccessKey) {
     throw new BackupError(
       'VALIDATION_FAILED',
-      `${target.credentials_key} does not hold ACCESS_KEY_ID:SECRET_ACCESS_KEY.`,
+      `${target.credentials_environment_variable} does not hold ACCESS_KEY_ID:SECRET_ACCESS_KEY.`,
       credentialsFormat,
     )
   }

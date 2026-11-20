@@ -33,13 +33,13 @@ import {
   doctorStatusValues,
   domainKindValues,
   domainStatusValues,
+  environmentVariableKindValues,
+  environmentVariableScopeValues,
   firewallModeValues,
   flowVerdictValues,
   githubRepositorySelectionValues,
   grantSourceValues,
   injectionValues,
-  keyKindValues,
-  keyScopeValues,
   machineNetworkValues,
   machineRuntimeValues,
   machineSnapshotStatusValues,
@@ -98,7 +98,7 @@ type ErrorBodyValue = Static<typeof ErrorBody>
 export type StaleReasonValue = {
   code: (typeof staleReasonCodeValues)[number]
   explanation: string
-  keys: string[]
+  names: string[]
 }
 type EntityTarget = { entity: string; id: string }
 export type BaseImageRecord = {
@@ -862,19 +862,19 @@ export const run = sqliteTable('run', {
   actor: json<ActorValue>('actor'),
 })
 
-export const key = sqliteTable(
-  'key',
+export const environment_variable = sqliteTable(
+  'environment_variable',
   {
-    ...entity('key'),
+    ...entity('environment_variable'),
     scope: text('scope', {
-      enum: keyScopeValues,
+      enum: environmentVariableScopeValues,
     }).notNull(),
     project_id: text('project_id').references(() => project.id),
     app_id: text('app_id').references(() => app.id),
     machine_id: text('machine_id').references(() => machine.id),
     name: text('name').notNull(),
     kind: text('kind', {
-      enum: keyKindValues,
+      enum: environmentVariableKindValues,
     }).notNull(),
     reference: text('reference'),
     injection: text('injection', {
@@ -886,16 +886,16 @@ export const key = sqliteTable(
     current_value_id: text('current_value_id'),
   },
   (table) => [
-    uniqueIndex('key_global_name_unique')
+    uniqueIndex('environment_variable_global_name_unique')
       .on(table.name)
       .where(sql`scope = 'global'`),
-    uniqueIndex('key_project_name_unique')
+    uniqueIndex('environment_variable_project_name_unique')
       .on(table.project_id, table.name)
       .where(sql`scope = 'project'`),
-    uniqueIndex('key_app_name_unique')
+    uniqueIndex('environment_variable_app_name_unique')
       .on(table.app_id, table.name)
       .where(sql`scope = 'app'`),
-    uniqueIndex('key_machine_name_unique')
+    uniqueIndex('environment_variable_machine_name_unique')
       .on(table.machine_id, table.name)
       .where(sql`scope = 'machine'`),
   ],
@@ -929,9 +929,9 @@ export const secret_value = sqliteTable(
   'secret_value',
   {
     ...entity('secret_value'),
-    key_id: text('key_id')
+    environment_variable_id: text('environment_variable_id')
       .notNull()
-      .references(() => key.id),
+      .references(() => environment_variable.id),
     target: text('target', {
       enum: targetKindValues,
     })
@@ -947,15 +947,19 @@ export const secret_value = sqliteTable(
     needs_reentry: bool('needs_reentry').notNull().default(false),
   },
   (table) => [
-    uniqueIndex('secret_value_target_version_unique').on(table.key_id, table.target, table.version),
+    uniqueIndex('secret_value_target_version_unique').on(
+      table.environment_variable_id,
+      table.target,
+      table.version,
+    ),
   ],
 )
 
 export const grant = sqliteTable('grant', {
   ...entity('grant'),
-  key_id: text('key_id')
+  environment_variable_id: text('environment_variable_id')
     .notNull()
-    .references(() => key.id),
+    .references(() => environment_variable.id),
   project_id: text('project_id')
     .notNull()
     .references(() => project.id),
@@ -1193,7 +1197,13 @@ export const attestation = sqliteTable(
 
 export type StoredBackupTarget =
   | { type: 'path'; path: string }
-  | { type: 's3'; endpoint: string; bucket: string; prefix: string; credentials_key: string }
+  | {
+      type: 's3'
+      endpoint: string
+      bucket: string
+      prefix: string
+      credentials_environment_variable: string
+    }
 
 export const volume_snapshot = sqliteTable('volume_snapshot', {
   ...entity('volume_snapshot'),

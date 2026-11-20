@@ -3,7 +3,7 @@ import { after, before, test } from 'node:test'
 
 import { and, eq } from 'drizzle-orm'
 
-import { key, secret_value } from '../src/db/schema.ts'
+import { environment_variable, secret_value } from '../src/db/schema.ts'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import { FakeRegistry } from './helpers/registry.ts'
@@ -18,7 +18,7 @@ import {
 let h: Dispatch
 let registry: FakeRegistry
 
-type Value = { name: string; kind: 'literal' | 'sealed'; value: string }
+type Value = { name: string; kind: 'literal' | 'secret'; value: string }
 
 const api = (method: string, path: string, body?: unknown, headers?: Record<string, string>) =>
   h.call(method, path, {
@@ -30,7 +30,7 @@ const api = (method: string, path: string, body?: unknown, headers?: Record<stri
 const setValues = async (projectId: string, set: Value[]) => {
   const reply = await approveWaiting(
     h,
-    await api('PATCH', `/v1/projects/${projectId}/keys`, {
+    await api('PATCH', `/v1/projects/${projectId}/environment-variables`, {
       target: 'production',
       set,
       apply: false,
@@ -51,11 +51,21 @@ const projectWith = async (name: string, set: Value[]) => {
 const versionsOf = (projectId: string, name: string, scope: 'project' | 'app' = 'project') => {
   const row = h.db
     .select()
-    .from(key)
-    .where(and(eq(key.project_id, projectId), eq(key.scope, scope), eq(key.name, name)))
+    .from(environment_variable)
+    .where(
+      and(
+        eq(environment_variable.project_id, projectId),
+        eq(environment_variable.scope, scope),
+        eq(environment_variable.name, name),
+      ),
+    )
     .get()!
 
-  return h.db.select().from(secret_value).where(eq(secret_value.key_id, row.id)).all()
+  return h.db
+    .select()
+    .from(secret_value)
+    .where(eq(secret_value.environment_variable_id, row.id))
+    .all()
 }
 
 const needReentry = (projectId: string, name: string, scope: 'project' | 'app' = 'project') => {
@@ -66,7 +76,7 @@ const needReentry = (projectId: string, name: string, scope: 'project' | 'app' =
     .set({
       needs_reentry: true,
     })
-    .where(eq(secret_value.key_id, head!.key_id))
+    .where(eq(secret_value.environment_variable_id, head!.environment_variable_id))
     .run()
 
   return head!
@@ -117,7 +127,7 @@ test('a preview refuses a production value that needs re-entry and creates no pr
     name: 'web',
     kind: 'worker',
     ref: 'nginx:1.27',
-    keys: [
+    environment_variables: [
       {
         name: 'TOKEN',
         kind: 'literal',
@@ -143,17 +153,17 @@ test('a preview refuses a production value that needs re-entry and creates no pr
   )
 })
 
-test('a plan treats a sealed value that needs re-entry as missing', async () => {
+test('a plan treats a secret value that needs re-entry as missing', async () => {
   const project = await projectWith('plan-reentry', [
     {
       name: 'KEPT',
-      kind: 'sealed',
-      value: 'sealed-kept-value',
+      kind: 'secret',
+      value: 'secret-kept-value',
     },
     {
       name: 'LOST',
-      kind: 'sealed',
-      value: 'sealed-lost-value',
+      kind: 'secret',
+      value: 'secret-lost-value',
     },
   ])
 
@@ -163,12 +173,12 @@ test('a plan treats a sealed value that needs re-entry as missing', async () => 
     manifest: {
       version: 1,
       project: 'plan-reentry',
-      keys: {
+      env: {
         KEPT: {
-          sealed: true,
+          secret: true,
         },
         LOST: {
-          sealed: true,
+          secret: true,
         },
       },
     },
@@ -177,9 +187,9 @@ test('a plan treats a sealed value that needs re-entry as missing', async () => 
   assert.equal(plan.status, 200, plan.text)
   assert.deepEqual(
     plan.body.warnings
-      .filter((w: any) => w.code === 'SEALED_VALUE_MISSING')
+      .filter((w: any) => w.code === 'SECRET_VALUE_MISSING')
       .map((w: any) => w.path),
-    ['/keys/LOST'],
+    ['/env/LOST'],
   )
 })
 

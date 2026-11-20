@@ -4,7 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import { and, eq } from 'drizzle-orm'
 
 import { createPreview as createPreviewRow } from '../src/api/routes/previews.ts'
-import { app, key, project, secret_value } from '../src/db/schema.ts'
+import { app, environment_variable, project, secret_value } from '../src/db/schema.ts'
 import { decryptValue, headValue } from '../src/secrets/values.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
@@ -105,8 +105,8 @@ const pullRequest = (number: number) => {
 const keyOf = (appId: string, name: string) =>
   h.db
     .select()
-    .from(key)
-    .where(and(eq(key.app_id, appId), eq(key.name, name)))
+    .from(environment_variable)
+    .where(and(eq(environment_variable.app_id, appId), eq(environment_variable.name, name)))
     .get()!
 
 const valueOf = (appId: string, name: string, target: 'production' | 'preview' = 'production') => {
@@ -125,12 +125,12 @@ const approved = async (reply: { status: number; body: any; text: string }) => {
 
 const setAppPreviewValue = async (appId: string, name: string, value: string) =>
   approved(
-    await asAdmin('PATCH', `/v1/apps/${appId}/keys`, {
+    await asAdmin('PATCH', `/v1/apps/${appId}/environment-variables`, {
       target: 'preview',
       set: [
         {
           name,
-          kind: 'sealed',
+          kind: 'secret',
           value,
         },
       ],
@@ -149,10 +149,10 @@ before(async () => {
     name: 'db',
     kind: 'worker',
     ref: 'nginx:1.27',
-    keys: [
+    environment_variables: [
       {
         name: 'URL',
-        kind: 'sealed',
+        kind: 'secret',
         value: 'postgres://prod-password@db',
       },
     ],
@@ -165,10 +165,10 @@ before(async () => {
         port: 8080,
       },
     ],
-    keys: [
+    environment_variables: [
       {
         name: 'API_KEY',
-        kind: 'sealed',
+        kind: 'secret',
         value: 'production-api-key',
       },
       {
@@ -184,12 +184,12 @@ before(async () => {
     ],
   })
   await approved(
-    await asHuman('PATCH', `/v1/projects/${proj.id}/keys`, {
+    await asHuman('PATCH', `/v1/projects/${proj.id}/environment-variables`, {
       target: 'production',
       set: [
         {
           name: 'PROJECT_SECRET',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'production-project-secret',
         },
         {
@@ -207,18 +207,18 @@ after(async () => {
   registry.restore()
 })
 
-describe("a preview never reads production's sealed values", () => {
-  test('plain values and references are copied, a sealed app key arrives with no value', async () => {
+describe("a preview never reads production's secret values", () => {
+  test('visible values and references are copied, a secret app environment variable arrives with no value', async () => {
     const copy = await clone()
 
     assert.equal(valueOf(copy.web.id, 'PLAIN'), 'visible')
     assert.equal(keyOf(copy.web.id, 'DATABASE_URL').reference, '${{db.URL}}')
-    assert.equal(keyOf(copy.web.id, 'API_KEY').kind, 'sealed')
+    assert.equal(keyOf(copy.web.id, 'API_KEY').kind, 'secret')
     assert.equal(
       h.db
         .select()
         .from(secret_value)
-        .where(eq(secret_value.key_id, keyOf(copy.web.id, 'API_KEY').id))
+        .where(eq(secret_value.environment_variable_id, keyOf(copy.web.id, 'API_KEY').id))
         .all().length,
       0,
     )
@@ -226,7 +226,7 @@ describe("a preview never reads production's sealed values", () => {
     assert.equal(valueOf(copy.db.id, 'URL', 'preview'), null)
   })
 
-  test('project keys hold no copy; a preview reads them through their one preview value', async () => {
+  test('project environment variables hold no copy; a preview reads them through their one preview value', async () => {
     await clone()
     const previewRows = (name: string) =>
       h.db
@@ -235,11 +235,16 @@ describe("a preview never reads production's sealed values", () => {
         .where(
           and(
             eq(
-              secret_value.key_id,
+              secret_value.environment_variable_id,
               h.db
                 .select()
-                .from(key)
-                .where(and(eq(key.project_id, proj.id), eq(key.name, name)))
+                .from(environment_variable)
+                .where(
+                  and(
+                    eq(environment_variable.project_id, proj.id),
+                    eq(environment_variable.name, name),
+                  ),
+                )
                 .get()!.id,
             ),
             eq(secret_value.target, 'preview'),
@@ -260,29 +265,29 @@ describe("a preview never reads production's sealed values", () => {
   })
 })
 
-describe('a missing sealed value is a clear state', () => {
-  test('a deploy in the preview is refused naming the key and the preview, with the fix', async () => {
+describe('a missing secret value is a clear state', () => {
+  test('a deploy in the preview is refused naming the environment variable and the preview, with the fix', async () => {
     const copy = await clone('needs-keys')
     const refused = await deploy(copy.web.id)
 
     assert.equal(refused.status, 422, refused.text)
-    assert.equal(refused.body.error.code, 'KEY_UNRESOLVED')
-    assert.equal(refused.body.error.details.key, 'API_KEY')
+    assert.equal(refused.body.error.code, 'ENVIRONMENT_VARIABLE_UNRESOLVED')
+    assert.equal(refused.body.error.details.environment_variable, 'API_KEY')
     assert.equal(refused.body.error.details.preview, 'needs-keys')
     assert.equal(
       refused.body.error.fix,
-      "Set a preview value for API_KEY; previews never read production's sealed values.",
+      "Set a preview value for API_KEY; previews never read production's secret values.",
     )
   })
 
-  test('a reference to a sealed key with no preview value is unresolved, and resolves once it has one', async () => {
+  test('a reference to a secret environment variable with no preview value is unresolved, and resolves once it has one', async () => {
     const plain = await clone('no-database')
 
-    await asAdmin('PATCH', `/v1/apps/${plain.web.id}/keys`, {
+    await asAdmin('PATCH', `/v1/apps/${plain.web.id}/environment-variables`, {
       set: [
         {
           name: 'API_KEY',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'preview-api-key',
         },
       ],
@@ -300,11 +305,11 @@ describe('a missing sealed value is a clear state', () => {
 
     assert.equal(valueOf(copy.db.id, 'URL', 'preview'), 'postgres://preview-password@db')
     assert.equal(valueOf(copy.db.id, 'URL'), null)
-    await asAdmin('PATCH', `/v1/apps/${copy.web.id}/keys`, {
+    await asAdmin('PATCH', `/v1/apps/${copy.web.id}/environment-variables`, {
       set: [
         {
           name: 'API_KEY',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'preview-api-key',
         },
       ],
@@ -316,7 +321,7 @@ describe('a missing sealed value is a clear state', () => {
   })
 })
 
-describe("a sealed app key's preview value", () => {
+describe("a secret app environment variable's preview value", () => {
   test('is copied into previews made afterwards, never its production value', async () => {
     const before = await clone()
 
@@ -331,19 +336,19 @@ describe("a sealed app key's preview value", () => {
     assert.equal(valueOf(after.web.id, 'API_KEY'), null)
   })
 
-  test('is listed with the key', async () => {
-    const listed = await asAdmin('GET', `/v1/apps/${web.id}/keys`)
+  test('is listed with the environment variable', async () => {
+    const listed = await asAdmin('GET', `/v1/apps/${web.id}/environment-variables`)
     const entry = listed.body.items.find((item: any) => item.name === 'API_KEY')
 
     assert.deepEqual(entry.targets, ['preview', 'production'])
   })
 })
 
-describe('a project key in previews', () => {
+describe('a project environment variable in previews', () => {
   let api: any
 
-  const projectKey = (name: string, kind: 'sealed' | 'literal', value: string) =>
-    asHuman('PATCH', `/v1/projects/${proj.id}/keys`, {
+  const projectKey = (name: string, kind: 'secret' | 'literal', value: string) =>
+    asHuman('PATCH', `/v1/projects/${proj.id}/environment-variables`, {
       target: 'production',
       set: [
         {
@@ -355,13 +360,13 @@ describe('a project key in previews', () => {
     })
 
   before(async () => {
-    await approved(await projectKey('EVERYWHERE_SECRET', 'sealed', 'stripe-live-key'))
+    await approved(await projectKey('EVERYWHERE_SECRET', 'secret', 'stripe-live-key'))
     await approved(await projectKey('EVERYWHERE_PLAIN', 'literal', 'plain-production'))
     api = await createApp(h, production, {
       name: 'api',
       kind: 'worker',
       ref: 'nginx:1.27',
-      keys: [
+      environment_variables: [
         {
           name: 'STRIPE_KEY',
           kind: 'reference',
@@ -373,7 +378,7 @@ describe('a project key in previews', () => {
       name: 'site',
       kind: 'worker',
       ref: 'nginx:1.27',
-      keys: [
+      environment_variables: [
         {
           name: 'MODE',
           kind: 'reference',
@@ -383,12 +388,12 @@ describe('a project key in previews', () => {
     })
   })
 
-  test('a sealed one with no preview value does not resolve', async () => {
+  test('a secret one with no preview value does not resolve', async () => {
     const pr = pullRequest(7)
     const refused = await deploy(pr.api.id)
 
     assert.equal(refused.status, 422, refused.text)
-    assert.equal(refused.body.error.code, 'KEY_UNRESOLVED')
+    assert.equal(refused.body.error.code, 'ENVIRONMENT_VARIABLE_UNRESOLVED')
     assert.match(refused.body.error.explanation, /EVERYWHERE_SECRET/)
     assert.equal(refused.body.error.details.preview, 'pr-7')
     assert.match(refused.body.error.fix, /preview value/)
@@ -400,13 +405,13 @@ describe('a project key in previews', () => {
     assert.ok(accepted.status === 201 || accepted.status === 202, accepted.text)
   })
 
-  test('a sealed one resolves once it has a preview value, shared by every preview', async () => {
-    const set = await asAdmin('PATCH', `/v1/projects/${proj.id}/keys`, {
+  test('a secret one resolves once it has a preview value, shared by every preview', async () => {
+    const set = await asAdmin('PATCH', `/v1/projects/${proj.id}/environment-variables`, {
       target: 'preview',
       set: [
         {
           name: 'EVERYWHERE_SECRET',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'stripe-test-key',
         },
       ],

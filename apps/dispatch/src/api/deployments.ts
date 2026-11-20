@@ -183,8 +183,8 @@ export const configDeployTrigger = (
   svc: Pick<AppRow, 'current_deployment_id'>,
   source: { type?: unknown },
   sourceChanged = false,
-  reuse: 'redeploy' | 'key_change' = 'redeploy',
-): 'manual' | 'redeploy' | 'key_change' | null => {
+  reuse: 'redeploy' | 'environment_variable_change' = 'redeploy',
+): 'manual' | 'redeploy' | 'environment_variable_change' | null => {
   if (!svc.current_deployment_id) {
     return source.type === 'local' ? null : 'manual'
   }
@@ -317,7 +317,7 @@ export const createDeploymentRecord = (db: Db, input: DeploymentInput) => {
   }
 
   const source = svc.source as Source
-  const reuse = input.trigger === 'redeploy' || input.trigger === 'key_change'
+  const reuse = input.trigger === 'redeploy' || input.trigger === 'environment_variable_change'
 
   if (reuse && !current?.image_ref) {
     fail(

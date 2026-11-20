@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
 
 import type { Db } from '../db/client.ts'
-import { key, secret_value } from '../db/schema.ts'
+import { environment_variable, secret_value } from '../db/schema.ts'
 
 import { SecretsError } from './errors.ts'
 import type { Keyring } from './keyring.ts'
@@ -10,22 +10,23 @@ export type SecretValueRow = typeof secret_value.$inferSelect
 
 export type Reentry = 'refuse' | 'unset'
 
-export type KeyOwner = { scope: 'app' | 'project' | 'machine'; id: string } | { scope: 'global' }
+export type VariableOwner =
+  { scope: 'app' | 'project' | 'machine'; id: string } | { scope: 'global' }
 
 const ownerColumn = {
-  app: key.app_id,
-  project: key.project_id,
-  machine: key.machine_id,
+  app: environment_variable.app_id,
+  project: environment_variable.project_id,
+  machine: environment_variable.machine_id,
 }
 
-export const keysOf = (db: Pick<Db, 'select'>, owner: KeyOwner) =>
+export const variablesOf = (db: Pick<Db, 'select'>, owner: VariableOwner) =>
   db
     .select()
-    .from(key)
+    .from(environment_variable)
     .where(
       owner.scope === 'global'
-        ? eq(key.scope, 'global')
-        : and(eq(key.scope, owner.scope), eq(ownerColumn[owner.scope], owner.id)),
+        ? eq(environment_variable.scope, 'global')
+        : and(eq(environment_variable.scope, owner.scope), eq(ownerColumn[owner.scope], owner.id)),
     )
 
 export type ValueTarget = SecretValueRow['target']
@@ -55,7 +56,7 @@ export const headValue = (
     .from(secret_value)
     .where(
       and(
-        eq(secret_value.key_id, keyId),
+        eq(secret_value.environment_variable_id, keyId),
         eq(secret_value.target, target),
         isNull(secret_value.revoked_at),
       ),
@@ -81,7 +82,7 @@ export const nextValueVersion = (db: Db, keyId: string, target: ValueTarget) =>
       version: secret_value.version,
     })
     .from(secret_value)
-    .where(and(eq(secret_value.key_id, keyId), eq(secret_value.target, target)))
+    .where(and(eq(secret_value.environment_variable_id, keyId), eq(secret_value.target, target)))
     .orderBy(desc(secret_value.version))
     .limit(1)
     .get()?.version ?? 0) + 1

@@ -72,7 +72,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       },
     ],
     deploy: true,
-    keys: [
+    environment_variables: [
       {
         name: 'DATABASE_URL',
         kind: 'reference',
@@ -80,7 +80,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       },
       {
         name: 'API_KEY',
-        kind: 'sealed',
+        kind: 'secret',
         value: 'hunter2',
       },
       {
@@ -176,7 +176,7 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
       },
     }),
   )
-  await h.call('PATCH', `/v1/apps/${stagingWeb.id}/keys`, {
+  await h.call('PATCH', `/v1/apps/${stagingWeb.id}/environment-variables`, {
     token,
     body: {
       set: [

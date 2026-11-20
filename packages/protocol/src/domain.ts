@@ -6,7 +6,7 @@ type MachineStatus = (typeof machineStatusValues)[number]
 
 export const slugPattern = '^[a-z0-9][a-z0-9-]{0,62}$'
 
-export const keyNamePattern = '^[A-Z_][A-Z0-9_]*$'
+export const environmentVariableNamePattern = '^[A-Z_][A-Z0-9_]*$'
 
 export const serverStatusValues = ['enrolling', 'online', 'offline', 'asleep'] as const
 
@@ -33,9 +33,9 @@ export const domainKindValues = ['generated', 'custom'] as const
 
 export const domainStatusValues = ['pending', 'active', 'error'] as const
 
-export const keyScopeValues = ['global', 'project', 'app', 'machine'] as const
+export const environmentVariableScopeValues = ['global', 'project', 'app', 'machine'] as const
 
-export const keyKindValues = ['literal', 'reference', 'sealed'] as const
+export const environmentVariableKindValues = ['literal', 'reference', 'secret'] as const
 
 export const targetKindValues = ['production', 'preview'] as const
 
@@ -77,13 +77,13 @@ export const baseImageCheckValues = [
   'unreachable',
 ] as const
 
-export const staleReasonCodeValues = ['KEYS_CHANGED', 'CONFIG_CHANGED'] as const
+export const staleReasonCodeValues = ['ENVIRONMENT_VARIABLES_CHANGED', 'CONFIG_CHANGED'] as const
 
 export const deploymentTriggerValues = [
   'push',
   'manual',
   'rollback',
-  'key_change',
+  'environment_variable_change',
   'redeploy',
   'base_image',
   'agent',

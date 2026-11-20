@@ -29,8 +29,8 @@ export const volumeFieldText = {
   mount_path: 'Absolute, unique per app, not /run/secrets',
 } as const
 
-export const keyPatchText = {
-  set: 'Keys to set: name, kind (literal, reference or sealed), and value or reference',
-  unset: 'Keys to remove',
+export const environmentVariablePatchText = {
+  set: 'Environment variables to set: name, kind (literal, reference or secret), and value or reference',
+  unset: 'Environment variables to remove',
   allow_unresolved: 'Accept a reference whose target does not exist yet (default false)',
 } as const

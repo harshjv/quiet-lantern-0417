@@ -183,26 +183,27 @@ export const ObservedRun = Type.Object(
   },
 )
 
+export const ObservedRouteProbe = Type.Object(
+  {
+    ok: Type.Boolean(),
+    status_code: Nullable(Type.Integer()),
+    failure: Type.Optional(
+      StringEnum(['wrong_gateway', 'unreachable', 'upstream_unhealthy'], {
+        title: 'RouteProbeFailure',
+      }),
+    ),
+    foreign_addresses: Type.Optional(Type.Array(Type.String())),
+  },
+  {
+    title: 'ObservedRouteProbe',
+  },
+)
+
 export const ObservedRoute = Type.Object(
   {
     applied_hash: appliedHash,
     ...outcome,
-    probe: Nullable(
-      Type.Object(
-        {
-          ok: Type.Boolean(),
-          status_code: Nullable(Type.Integer()),
-          failure: Type.Optional(
-            StringEnum(['wrong_gateway', 'unreachable'], {
-              title: 'RouteProbeFailure',
-            }),
-          ),
-        },
-        {
-          title: 'ObservedRouteProbe',
-        },
-      ),
-    ),
+    probe: Nullable(ObservedRouteProbe),
   },
   {
     title: 'ObservedRoute',
@@ -219,6 +220,7 @@ export const ObservedGateway = Type.Object(
           configured: Type.Boolean(),
           ready: Type.Boolean(),
           connections: Type.Integer(),
+          wildcard: Type.Optional(ObservedRouteProbe),
         },
         {
           title: 'ObservedTunnel',

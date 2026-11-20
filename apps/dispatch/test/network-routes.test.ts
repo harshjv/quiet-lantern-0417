@@ -73,7 +73,7 @@ before(async () => {
         port: 3000,
       },
     ],
-    keys: [
+    environment_variables: [
       {
         name: 'DATABASE_URL',
         kind: 'reference',
@@ -167,7 +167,7 @@ describe('network map', () => {
         from: 'web',
         to: 'db',
         kind: 'reference',
-        keys: ['DATABASE_URL'],
+        environment_variables: ['DATABASE_URL'],
       },
     ])
   })

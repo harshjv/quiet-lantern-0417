@@ -3,18 +3,19 @@ import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { t } from 'elysia'
 
 import {
+  environmentVariableNamePattern,
   grantSourceValues,
-  keyNamePattern,
+  idPrefixes,
   Nullable,
   StringEnum,
   targetKindValues,
 } from '@stationly/protocol'
 
-import { deployment, grant, key, project, secret_value } from '../../db/schema.ts'
+import { deployment, environment_variable, grant, project, secret_value } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import type { EnvSnapshot } from '../../secrets/deploy.ts'
 import { leaves } from '../../secrets/resolve.ts'
-import { keysOf, type ValueTarget } from '../../secrets/values.ts'
+import { variablesOf, type ValueTarget } from '../../secrets/values.ts'
 import { can } from '../access.ts'
 import { ChangeSet, commit, type CommitResult } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
@@ -24,22 +25,22 @@ import type { Kit } from '../kit.ts'
 import {
   appById,
   isProduction,
-  keyById,
   productionOf,
   projectByRef,
+  variableById,
   type TargetRow,
 } from '../lookup.ts'
 import { getQuery } from '../pagination.ts'
 import { Resolved, resolvedView } from '../resolved.ts'
 import type { TargetInput } from '../route-meta.ts'
-import { input, KeysPatch } from '../schemas.ts'
+import { EnvironmentVariablesPatch, input } from '../schemas.ts'
 import {
   Approval,
   ApprovalDetail,
   Change,
   component,
+  EnvironmentVariable,
   extend,
-  Key,
   Page,
   replies,
   SecretValue,
@@ -50,14 +51,19 @@ import {
   staleDependents,
   type StaleDependent as StaleDependentRow,
 } from '../stale.ts'
-import { dependentsOf, planKeys, type KeyItem, type KeyScope } from '../variable-changes.ts'
+import {
+  dependentsOf,
+  planVariables,
+  type VariableItem,
+  type VariableScope,
+} from '../variable-changes.ts'
 
 const StaleDependent = Type.Object(
   {
     app_id: Type.String(),
     project_id: Type.String(),
     preview_id: Nullable(Type.String()),
-    keys: Type.Array(Type.String()),
+    environment_variables: Type.Array(Type.String()),
   },
   {
     additionalProperties: false,
@@ -77,11 +83,11 @@ const Applied = Type.Object(applied, {
   additionalProperties: false,
 })
 
-const KeysOutcome = component(
-  'KeysOutcome',
+const EnvironmentVariablesOutcome = component(
+  'EnvironmentVariablesOutcome',
   Type.Object(
     {
-      keys: Type.Array(Key),
+      environment_variables: Type.Array(EnvironmentVariable),
       stale_dependents: Type.Array(StaleDependent),
       ...applied,
     },
@@ -104,7 +110,7 @@ const DeletedWithStale = Type.Object(
 const Grant = Type.Object(
   {
     id: Type.String(),
-    key_id: Type.String(),
+    environment_variable_id: Type.String(),
     project_id: Type.String(),
     alias: Nullable(Type.String()),
     source: StringEnum(grantSourceValues),
@@ -119,22 +125,22 @@ const RevokedValue = extend(SecretValue, {
   warnings: Warnings,
 })
 
-const keysReplies = replies({
-  200: KeysOutcome,
+const variablesReplies = replies({
+  200: EnvironmentVariablesOutcome,
   202: ApprovalDetail,
 })
 
 type PatchInput = {
-  set?: KeyItem[]
+  set?: VariableItem[]
   unset?: string[]
   apply?: boolean
   allow_unresolved?: boolean
 }
 
-export const keyRoutes = (kit: Kit) => {
+export const variableRoutes = (kit: Kit) => {
   const { db, keyring } = kit.deps
-  const list = (rows: (typeof key.$inferSelect)[], fields?: string) => ({
-    items: projectAll(kit.views.key, rows, kit.fields(fields)),
+  const list = (rows: (typeof environment_variable.$inferSelect)[], fields?: string) => ({
+    items: projectAll(kit.views.variable, rows, kit.fields(fields)),
     next_cursor: null,
   })
 
@@ -153,8 +159,8 @@ export const keyRoutes = (kit: Kit) => {
 
       const changes = new ChangeSet()
 
-      changes.deploy(ctx.app.id, 'key_change', {
-        reason: `${dependent.keys.join(', ')} changed`,
+      changes.deploy(ctx.app.id, 'environment_variable_change', {
+        reason: `${dependent.environment_variables.join(', ')} changed`,
         supersede: true,
       })
       const result = commit(
@@ -203,13 +209,15 @@ export const keyRoutes = (kit: Kit) => {
           deployments: [],
           approvals: [],
         }
-    const keys = ids()
-      .map((id) => db.select().from(key).where(eq(key.id, id)).get())
-      .filter((row): row is typeof key.$inferSelect => row !== undefined)
-      .map((row) => select(kit.views.key, row, undefined))
+    const variables = ids()
+      .map((id) =>
+        db.select().from(environment_variable).where(eq(environment_variable.id, id)).get(),
+      )
+      .filter((row): row is typeof environment_variable.$inferSelect => row !== undefined)
+      .map((row) => select(kit.views.variable, row, undefined))
 
     return {
-      keys,
+      environment_variables: variables,
       stale_dependents,
       deployments: appliedStale.deployments,
       approvals: appliedStale.approvals,
@@ -218,7 +226,7 @@ export const keyRoutes = (kit: Kit) => {
 
   const patch = (
     call: Call,
-    scope: KeyScope,
+    scope: VariableScope,
     targetRow: TargetRow | null,
     protect: boolean,
     input: PatchInput,
@@ -227,11 +235,11 @@ export const keyRoutes = (kit: Kit) => {
   ) => {
     const changes = new ChangeSet()
 
-    planKeys(db, keyring, call.principal, changes, scope, input)
+    planVariables(db, keyring, call.principal, changes, scope, input)
 
     if (changes.empty) {
       return {
-        keys: [],
+        environment_variables: [],
         stale_dependents: [],
         deployments: [],
         approvals: [],
@@ -255,7 +263,7 @@ export const keyRoutes = (kit: Kit) => {
             ...changes.changes
               .filter((c) => c.op === 'update')
               .map((c) => (c.op === 'update' ? c.id : '')),
-          ].filter((id) => id.startsWith('key_'))
+          ].filter((id) => id.startsWith(`${idPrefixes.environment_variable}_`))
         : [],
     )
   }
@@ -299,41 +307,41 @@ export const keyRoutes = (kit: Kit) => {
   }
 
   return kit
-    .router('keys', '/v1')
+    .router('environment-variables', '/v1')
     .get(
-      '/apps/:app/keys',
+      '/apps/:app/environment-variables',
       ({ ctx, query }) => {
         return list(
-          keysOf(db, {
+          variablesOf(db, {
             scope: 'app',
             id: ctx.app.id,
           })
-            .orderBy(asc(key.name))
+            .orderBy(asc(environment_variable.name))
             .all(),
           query.fields,
         )
       },
       {
         app: {
-          id: 'list_app_keys',
-          summary: 'List the keys of an app; values are never listed',
+          id: 'list_app_environment_variables',
+          summary: 'List the environment variables of an app; values are never listed',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(Key),
+          200: Page(EnvironmentVariable),
         }),
       },
     )
     .get(
-      '/projects/:project/keys',
+      '/projects/:project/environment-variables',
       ({ ctx, query }) => {
         const proj = ctx.project
-        let rows = keysOf(db, {
+        let rows = variablesOf(db, {
           scope: 'project',
           id: proj.id,
         })
-          .orderBy(asc(key.name))
+          .orderBy(asc(environment_variable.name))
           .all()
 
         if (query.target) {
@@ -345,7 +353,12 @@ export const keyRoutes = (kit: Kit) => {
                 id: secret_value.id,
               })
               .from(secret_value)
-              .where(and(eq(secret_value.key_id, row.id), eq(secret_value.target, wanted)))
+              .where(
+                and(
+                  eq(secret_value.environment_variable_id, row.id),
+                  eq(secret_value.target, wanted),
+                ),
+              )
               .get(),
           )
         }
@@ -354,12 +367,12 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         project: {
-          id: 'list_project_keys',
+          id: 'list_project_environment_variables',
           summary:
-            'List project keys; an app reads one only through a reference such as ${{project.NAME}}',
+            'List project environment variables; an app reads one only through a reference such as ${{project.NAME}}',
           level: 'read',
           cli: {
-            path: ['keys', 'list'],
+            path: ['env', 'list'],
           },
         },
         query: t.Object({
@@ -367,60 +380,60 @@ export const keyRoutes = (kit: Kit) => {
           target: valueTargetQuery,
         }),
         response: replies({
-          200: Page(Key),
+          200: Page(EnvironmentVariable),
         }),
       },
     )
     .get(
-      '/global-keys',
+      '/global-environment-variables',
       ({ query }) => {
         return list(
-          keysOf(db, {
+          variablesOf(db, {
             scope: 'global',
           })
-            .orderBy(asc(key.name))
+            .orderBy(asc(environment_variable.name))
             .all(),
           query.fields,
         )
       },
       {
         operation: {
-          id: 'list_global_keys',
-          summary: 'List global keys',
+          id: 'list_global_environment_variables',
+          summary: 'List global environment variables',
           level: 'instance read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Page(Key),
+          200: Page(EnvironmentVariable),
         }),
       },
     )
     .get(
-      '/keys/:id',
+      '/environment-variables/:id',
       ({ ctx, query }) => {
-        return select(kit.views.key, ctx.key, kit.fields(query.fields))
+        return select(kit.views.variable, ctx.variable, kit.fields(query.fields))
       },
       {
-        key: {
-          id: 'get_key',
-          summary: 'Get a key; never its value',
+        environment_variable: {
+          id: 'get_environment_variable',
+          summary: 'Get an environment variable; never its value',
           level: 'read',
         },
         query: t.Object(getQuery),
         response: replies({
-          200: Key,
+          200: EnvironmentVariable,
         }),
       },
     )
     .get(
-      '/keys/:id/versions',
+      '/environment-variables/:id/versions',
       ({ ctx, query }) => {
         const rows = db
           .select()
           .from(secret_value)
           .where(
             and(
-              eq(secret_value.key_id, ctx.key.id),
+              eq(secret_value.environment_variable_id, ctx.variable.id),
               query.target === undefined ? undefined : eq(secret_value.target, query.target),
               query.revoked === undefined
                 ? undefined
@@ -438,9 +451,9 @@ export const keyRoutes = (kit: Kit) => {
         }
       },
       {
-        key: {
-          id: 'list_key_versions',
-          summary: 'List the versions of a key; never their values',
+        environment_variable: {
+          id: 'list_environment_variable_versions',
+          summary: 'List the versions of an environment variable; never their values',
           level: 'read',
         },
         query: t.Object({
@@ -458,7 +471,7 @@ export const keyRoutes = (kit: Kit) => {
       },
     )
     .patch(
-      '/apps/:app/keys',
+      '/apps/:app/environment-variables',
       async ({ ctx, request, body, set }) => {
         const call = await kit.call(request)
         const { target: valueTarget, ...input } = body
@@ -481,24 +494,24 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         app: {
-          id: 'set_app_keys',
-          summary: 'Set and unset app keys',
+          id: 'set_app_environment_variables',
+          summary: 'Set and unset app environment variables',
           level: 'deploy',
         },
         body: t.Object(
           {
             target: valueTargetQuery,
-            ...KeysPatch,
+            ...EnvironmentVariablesPatch,
           },
           {
             additionalProperties: false,
           },
         ),
-        response: keysReplies,
+        response: variablesReplies,
       },
     )
     .patch(
-      '/projects/:project/keys',
+      '/projects/:project/environment-variables',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
         const { target: chosen, ...input } = body
@@ -521,9 +534,9 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'set_project_keys',
+          id: 'set_project_environment_variables',
           summary:
-            "Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads. An app gets a project key only through a reference such as ${{project.NAME}}",
+            "Set and unset project environment variables: production's values, which wait for approval, or the preview values every preview reads. An app gets a project environment variable only through a reference such as ${{project.NAME}}",
           level: 'admin',
           target: ({ params, body }: TargetInput) =>
             projectScope(params.project!, (body as { target?: ValueTarget }).target).target,
@@ -531,17 +544,17 @@ export const keyRoutes = (kit: Kit) => {
         body: t.Object(
           {
             target: valueTargetQuery,
-            ...KeysPatch,
+            ...EnvironmentVariablesPatch,
           },
           {
             additionalProperties: false,
           },
         ),
-        response: keysReplies,
+        response: variablesReplies,
       },
     )
     .patch(
-      '/global-keys',
+      '/global-environment-variables',
       async ({ request, body, set }) => {
         const call = await kit.call(request)
         const protect = readSetting(db, 'platform.protected') && !call.principal.human
@@ -564,26 +577,26 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'set_global_keys',
-          summary: 'Set and unset global keys',
+          id: 'set_global_environment_variables',
+          summary: 'Set and unset global environment variables',
           level: 'instance admin',
         },
-        body: t.Object(KeysPatch, {
+        body: t.Object(EnvironmentVariablesPatch, {
           additionalProperties: false,
         }),
-        response: keysReplies,
+        response: variablesReplies,
       },
     )
     .delete(
-      '/keys/:id',
+      '/environment-variables/:id',
       async ({ ctx, request, set }) => {
         const call = await kit.call(request)
         const changes = new ChangeSet()
         let place: TargetRow | null = null
-        let scope: KeyScope
+        let scope: VariableScope
 
-        if (ctx.key.scope === 'app') {
-          const svc = appById(db, ctx.key.app_id!)
+        if (ctx.variable.scope === 'app') {
+          const svc = appById(db, ctx.variable.app_id!)
 
           place = svc.target_row
           scope = {
@@ -593,11 +606,11 @@ export const keyRoutes = (kit: Kit) => {
             valueTarget: 'production',
             target: svc.target,
           }
-        } else if (ctx.key.scope === 'project') {
-          place = productionOf(db, ctx.key.project_id!)
+        } else if (ctx.variable.scope === 'project') {
+          place = productionOf(db, ctx.variable.project_id!)
           scope = {
             scope: 'project',
-            parent: ctx.key.project_id!,
+            parent: ctx.variable.project_id!,
             valueTarget: 'production',
             target: ctx.target,
           }
@@ -608,12 +621,12 @@ export const keyRoutes = (kit: Kit) => {
           }
         }
 
-        planKeys(db, keyring, call.principal, changes, scope, {
-          unset: [ctx.key.name],
+        planVariables(db, keyring, call.principal, changes, scope, {
+          unset: [ctx.variable.name],
         })
         const protect = place
           ? isProduction(place)
-          : ctx.key.scope === 'global' &&
+          : ctx.variable.scope === 'global' &&
             readSetting(db, 'platform.protected') &&
             !call.principal.human
         const result = commit(
@@ -632,13 +645,13 @@ export const keyRoutes = (kit: Kit) => {
 
         return {
           deleted: true as const,
-          stale_dependents: staleFor(ctx.key.project_id),
+          stale_dependents: staleFor(ctx.variable.project_id),
         }
       },
       {
-        key: {
-          id: 'delete_key',
-          summary: 'Delete a key',
+        environment_variable: {
+          id: 'delete_environment_variable',
+          summary: 'Delete an environment variable',
           level: 'deploy',
         },
         response: replies({
@@ -648,17 +661,17 @@ export const keyRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/keys/:id/apply',
+      '/environment-variables/:id/apply',
       async ({ request, params }) => {
         const call = await kit.call(request)
-        const ctx = keyById(db, params.id)
-        const apps = new Set(dependentsOf(db, ctx.key).map((dep) => dep.app_id))
+        const ctx = variableById(db, params.id)
+        const apps = new Set(dependentsOf(db, ctx.variable).map((dep) => dep.app_id))
 
-        if (ctx.key.app_id) {
-          apps.add(ctx.key.app_id)
+        if (ctx.variable.app_id) {
+          apps.add(ctx.variable.app_id)
         }
 
-        const dependents = staleDependents(db, ctx.key.project_id, apps)
+        const dependents = staleDependents(db, ctx.variable.project_id, apps)
         const result = applyStale(call, dependents)
 
         return {
@@ -668,11 +681,11 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'apply_key_changes',
-          summary: 'Redeploy every stale dependent of a key',
+          id: 'apply_environment_variable_changes',
+          summary: 'Redeploy every stale dependent of an environment variable',
           level: 'any',
           cli: {
-            path: ['keys', 'apply'],
+            path: ['env', 'apply'],
           },
         },
         response: replies({
@@ -689,7 +702,7 @@ export const keyRoutes = (kit: Kit) => {
         if (pinnedBy.length && !body?.force) {
           fail(
             'SECRET_VERSION_IN_USE',
-            `Version ${ctx.secretValue.version} of ${ctx.key.name} is pinned by active deployments.`,
+            `Version ${ctx.secretValue.version} of ${ctx.variable.name} is pinned by active deployments.`,
             'Deploy a newer version first, or send force = true; a restart of those apps will then fail.',
             {
               deployments: pinnedBy,
@@ -714,7 +727,7 @@ export const keyRoutes = (kit: Kit) => {
           },
           {
             after: {
-              key_id: ctx.key.id,
+              environment_variable_id: ctx.variable.id,
               version: ctx.secretValue.version,
               force: Boolean(body?.force),
             },
@@ -789,7 +802,7 @@ export const keyRoutes = (kit: Kit) => {
           },
           {
             after: {
-              key_id: ctx.key.id,
+              environment_variable_id: ctx.variable.id,
               version: ctx.secretValue.version,
             },
           },
@@ -814,7 +827,7 @@ export const keyRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/apps/:app/keys/resolved',
+      '/apps/:app/environment-variables/resolved',
       async ({ ctx, request, query }) => {
         const call = await kit.call(request)
 
@@ -825,8 +838,9 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         app: {
-          id: 'get_resolved_keys',
-          summary: 'The resolved keys of the next deployment; sealed values never appear',
+          id: 'get_resolved_environment_variables',
+          summary:
+            'The resolved environment variables of the next deployment; secret values never appear',
           level: 'read',
         },
         query: t.Object({
@@ -842,20 +856,20 @@ export const keyRoutes = (kit: Kit) => {
       },
     )
     .get(
-      '/keys/:id/grants',
+      '/environment-variables/:id/grants',
       ({ params }) => {
-        const ctx = keyById(db, params.id)
+        const ctx = variableById(db, params.id)
         const rows = db
           .select()
           .from(grant)
-          .where(eq(grant.key_id, ctx.key.id))
+          .where(eq(grant.environment_variable_id, ctx.variable.id))
           .orderBy(desc(grant.id))
           .all()
 
         return {
           items: rows.map((g) => ({
             id: g.id,
-            key_id: g.key_id,
+            environment_variable_id: g.environment_variable_id,
             project_id: g.project_id,
             alias: g.alias,
             source: g.source,
@@ -866,7 +880,7 @@ export const keyRoutes = (kit: Kit) => {
       {
         operation: {
           id: 'list_grants',
-          summary: 'List the grants of a global key',
+          summary: 'List the grants of a global environment variable',
           level: 'instance read',
         },
         response: replies({
@@ -875,17 +889,17 @@ export const keyRoutes = (kit: Kit) => {
       },
     )
     .post(
-      '/keys/:id/grants',
+      '/environment-variables/:id/grants',
       async ({ request, params, body, set }) => {
         const call = await kit.call(request)
-        const ctx = keyById(db, params.id)
+        const ctx = variableById(db, params.id)
 
-        if (ctx.key.scope !== 'global') {
-          fail('VALIDATION_FAILED', 'Only global keys are granted.', undefined, {
+        if (ctx.variable.scope !== 'global') {
+          fail('VALIDATION_FAILED', 'Only global environment variables are granted.', undefined, {
             issues: [
               {
                 path: '/id',
-                message: `key is ${ctx.key.scope}`,
+                message: `environment variable is ${ctx.variable.scope}`,
               },
             ],
           })
@@ -894,14 +908,17 @@ export const keyRoutes = (kit: Kit) => {
         const proj =
           db.select().from(project).where(eq(project.id, body.project_id)).get() ??
           notFound('project', body.project_id)
-        const name = body.alias ?? ctx.key.name
+        const name = body.alias ?? ctx.variable.name
         const taken = db
           .select({
             alias: grant.alias,
-            name: key.name,
+            name: environment_variable.name,
           })
           .from(grant)
-          .innerJoin(key, eq(key.id, grant.key_id))
+          .innerJoin(
+            environment_variable,
+            eq(environment_variable.id, grant.environment_variable_id),
+          )
           .where(eq(grant.project_id, proj.id))
           .all()
           .some((g) => (g.alias ?? g.name) === name)
@@ -920,7 +937,7 @@ export const keyRoutes = (kit: Kit) => {
         const id = db
           .insert(grant)
           .values({
-            key_id: ctx.key.id,
+            environment_variable_id: ctx.variable.id,
             project_id: proj.id,
             alias: body.alias ?? null,
             source: 'manual',
@@ -941,7 +958,7 @@ export const keyRoutes = (kit: Kit) => {
           },
           {
             after: {
-              key_id: ctx.key.id,
+              environment_variable_id: ctx.variable.id,
               project_id: proj.id,
               alias: body.alias ?? null,
             },
@@ -951,7 +968,7 @@ export const keyRoutes = (kit: Kit) => {
 
         return {
           id,
-          key_id: ctx.key.id,
+          environment_variable_id: ctx.variable.id,
           project_id: proj.id,
           alias: body.alias ?? null,
           source: 'manual' as const,
@@ -959,19 +976,20 @@ export const keyRoutes = (kit: Kit) => {
       },
       {
         operation: {
-          id: 'grant_key',
-          summary: 'Grant a global key to a project',
+          id: 'grant_environment_variable',
+          summary: 'Grant a global environment variable to a project',
           level: 'instance admin',
         },
         body: t.Object(
           {
             project_id: t.String({
-              description: 'The project to grant the key to',
+              description: 'The project to grant the environment variable to',
             }),
             alias: t.Optional(
               t.String({
-                pattern: keyNamePattern,
-                description: 'The key inside the project, when the global key would collide',
+                pattern: environmentVariableNamePattern,
+                description:
+                  "The name inside the project, when the global environment variable's name would collide",
               }),
             ),
           },
@@ -1004,7 +1022,7 @@ export const keyRoutes = (kit: Kit) => {
           },
           {
             before: {
-              key_id: row.key_id,
+              environment_variable_id: row.environment_variable_id,
               project_id: row.project_id,
               alias: row.alias,
             },

@@ -93,7 +93,7 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
   const keys = [...new Set([...from.keys(), ...to.keys()])]
     .filter((k) => from.get(k) !== to.get(k))
     .map((k) => ({
-      key: k,
+      name: k,
       from_version: from.get(k) ?? 0,
       to_version: to.get(k) ?? 0,
     }))
@@ -132,7 +132,7 @@ const diffFrom = (db: Db, dep: DeploymentRow): DiagnosisValue['diff_from_last_go
       : {}),
     ...(keys.length
       ? {
-          variables: keys,
+          environment_variables: keys,
         }
       : {}),
     ...(config.length

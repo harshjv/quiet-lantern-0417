@@ -251,7 +251,7 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
       {!task && (
         <Section
           title="Changes"
-          note="Stationly applies them in this order, all or nothing. Key values stay hidden: a new value shows only its length and version."
+          note="Stationly applies them in this order, all or nothing. Values of environment variables stay hidden: a new value shows only its length and version."
         >
           {a.changes && a.changes.length > 0 ? (
             <ChangeDiff changes={a.changes} names={names} />

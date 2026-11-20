@@ -59,7 +59,7 @@ after(async () => {
 })
 
 describe('what a generation holds for machines', () => {
-  test('a station that reports no machine capability gets no machine keys at all', async () => {
+  test('a station that reports no machine capability gets no machine environment variables at all', async () => {
     const plain = await startFakeStation(h, 'station-plain')
     const doc = await plain.waitForGeneration()
 

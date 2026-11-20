@@ -3,23 +3,30 @@ import { randomBytes } from 'node:crypto'
 import type { Static } from '@sinclair/typebox'
 import { and, eq, isNull } from 'drizzle-orm'
 
-import { keyNamePattern, type Actor } from '@stationly/protocol'
+import { environmentVariableNamePattern, type Actor } from '@stationly/protocol'
 
 import { recordAudit } from '../db/audit.ts'
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
-import { app, deployment, key, machine, secret_value, target } from '../db/schema.ts'
+import {
+  app,
+  deployment,
+  environment_variable,
+  machine,
+  secret_value,
+  target,
+} from '../db/schema.ts'
 
 import type { EnvSnapshot } from './deploy.ts'
 import { SecretsError } from './errors.ts'
 import { valueBytes, type Keyring } from './keyring.ts'
-import { hasReference, keyPattern, parseValue } from './reference.ts'
-import { isSealed, leaves, render, Resolver, type SourceNode, type ValueNode } from './resolve.ts'
+import { hasReference, namePattern, parseValue } from './reference.ts'
+import { isSecret, leaves, render, Resolver, type SourceNode, type ValueNode } from './resolve.ts'
 import { decryptValue, headValue, nextValueVersion, type ValueTarget } from './values.ts'
 
 type ActorValue = Static<typeof Actor>
 
-export type KeyInput = {
+export type VariableInput = {
   scope: 'global' | 'project' | 'app' | 'machine'
   project_id?: string
   app_id?: string
@@ -27,7 +34,7 @@ export type KeyInput = {
   target?: ValueTarget
   name: string
   value: string
-  sealed?: boolean
+  secret?: boolean
   injection?: 'env' | 'file'
   build?: boolean
   empty?: boolean
@@ -36,10 +43,10 @@ export type KeyInput = {
   request_id: string
 }
 
-export type KeyWrite = {
-  key_id: string
+export type VariableWrite = {
+  environment_variable_id: string
   project_id: string | null
-  scope: KeyInput['scope']
+  scope: VariableInput['scope']
   actor: ActorValue
   secret_value_id: string
   version: number
@@ -63,38 +70,56 @@ const generatorOf = (value: string) => {
   }
 }
 
-const deferrable = new Set(['KEY_UNRESOLVED', 'KEY_TARGET_MISSING', 'KEY_NOT_GRANTED'])
+const deferrable = new Set([
+  'ENVIRONMENT_VARIABLE_UNRESOLVED',
+  'ENVIRONMENT_VARIABLE_TARGET_MISSING',
+  'ENVIRONMENT_VARIABLE_NOT_GRANTED',
+])
 
-const findKey = (db: Db, input: KeyInput) => {
+const findVariable = (db: Db, input: VariableInput) => {
   const parent =
     input.scope === 'app'
-      ? eq(key.app_id, input.app_id!)
+      ? eq(environment_variable.app_id, input.app_id!)
       : input.scope === 'machine'
-        ? eq(key.machine_id, input.machine_id!)
+        ? eq(environment_variable.machine_id, input.machine_id!)
         : input.scope === 'project'
-          ? eq(key.project_id, input.project_id!)
-          : isNull(key.app_id)
+          ? eq(environment_variable.project_id, input.project_id!)
+          : isNull(environment_variable.app_id)
 
   return db
     .select()
-    .from(key)
-    .where(and(eq(key.scope, input.scope), parent, eq(key.name, input.name)))
+    .from(environment_variable)
+    .where(
+      and(
+        eq(environment_variable.scope, input.scope),
+        parent,
+        eq(environment_variable.name, input.name),
+      ),
+    )
     .get()
 }
 
-export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
-  if (!keyPattern.test(input.name)) {
-    throw new SecretsError('VALIDATION_FAILED', `key ${input.name} must match ${keyNamePattern}`, {
-      key: input.name,
-    })
+export const setVariable = (db: Db, keyring: Keyring, input: VariableInput) => {
+  if (!namePattern.test(input.name)) {
+    throw new SecretsError(
+      'VALIDATION_FAILED',
+      `environment variable ${input.name} must match ${environmentVariableNamePattern}`,
+      {
+        environment_variable: input.name,
+      },
+    )
   }
 
   const valueTarget = input.target ?? 'production'
 
   if (valueTarget === 'preview' && input.scope !== 'project' && input.scope !== 'app') {
-    throw new SecretsError('VALIDATION_FAILED', `only project and app keys hold preview values`, {
-      key: input.name,
-    })
+    throw new SecretsError(
+      'VALIDATION_FAILED',
+      `only project and app environment variables hold preview values`,
+      {
+        environment_variable: input.name,
+      },
+    )
   }
 
   let projectId = input.project_id ?? null
@@ -132,17 +157,17 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
     projectId = box.project_id
   }
 
-  let kind: 'literal' | 'reference' | 'sealed'
+  let kind: 'literal' | 'reference' | 'secret'
   let reference: string | null = null
   let plaintext: string | null
-  const sealedGenerator = input.sealed ? generatorOf(input.value) : null
+  const secretGenerator = input.secret ? generatorOf(input.value) : null
 
-  if (sealedGenerator) {
-    kind = 'sealed'
+  if (secretGenerator) {
+    kind = 'secret'
     reference = input.value
-    plaintext = randomBytes(sealedGenerator.bytes).toString('base64url')
-  } else if (input.sealed) {
-    kind = 'sealed'
+    plaintext = randomBytes(secretGenerator.bytes).toString('base64url')
+  } else if (input.secret) {
+    kind = 'secret'
     plaintext = input.empty ? null : input.value
   } else {
     const segments = parseValue(input.value)
@@ -158,8 +183,8 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
       input.scope !== 'machine'
     ) {
       throw new SecretsError(
-        'KEY_REFERENCE_INVALID',
-        `${input.scope} keys hold values, not references`,
+        'ENVIRONMENT_VARIABLE_REFERENCE_INVALID',
+        `${input.scope} environment variables hold values, not references`,
         {
           offset: 0,
         },
@@ -181,19 +206,19 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
   }
 
   return db.transaction((tx) => {
-    const existing = findKey(tx, input)
+    const existing = findVariable(tx, input)
 
-    if (existing?.kind === 'sealed' && kind !== 'sealed') {
+    if (existing?.kind === 'secret' && kind !== 'secret') {
       throw new SecretsError(
         'VALIDATION_FAILED',
-        `${input.name} is sealed; converting a sealed key is not possible, create a new key instead`,
+        `${input.name} is secret; converting a secret environment variable is not possible, create a new one instead`,
         {
-          key: input.name,
+          environment_variable: input.name,
         },
       )
     }
 
-    const keyId = existing?.id ?? newId('key')
+    const variableId = existing?.id ?? newId('environment_variable')
     const fields = {
       kind,
       reference,
@@ -202,11 +227,14 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
     }
 
     if (existing) {
-      tx.update(key).set(fields).where(eq(key.id, keyId)).run()
+      tx.update(environment_variable)
+        .set(fields)
+        .where(eq(environment_variable.id, variableId))
+        .run()
     } else {
-      tx.insert(key)
+      tx.insert(environment_variable)
         .values({
-          id: keyId,
+          id: variableId,
           scope: input.scope,
           project_id: projectId,
           app_id: input.app_id ?? null,
@@ -221,16 +249,16 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
 
     if (plaintext !== null) {
       const id = newId('secret_value')
-      const version = nextValueVersion(tx, keyId, valueTarget)
-      const sealedValue = keyring.encrypt(id, plaintext)
+      const version = nextValueVersion(tx, variableId, valueTarget)
+      const secretValue = keyring.encrypt(id, plaintext)
 
       tx.insert(secret_value)
         .values({
           id,
-          key_id: keyId,
+          environment_variable_id: variableId,
           target: valueTarget,
           version,
-          ...sealedValue,
+          ...secretValue,
           created_by: input.actor,
         })
         .run()
@@ -240,14 +268,18 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
       }
     }
 
-    tx.update(key)
+    tx.update(environment_variable)
       .set({
         current_value_id: written?.secret_value_id ?? null,
       })
-      .where(eq(key.id, keyId))
+      .where(eq(environment_variable.id, variableId))
       .run()
 
-    const row = tx.select().from(key).where(eq(key.id, keyId)).get()!
+    const row = tx
+      .select()
+      .from(environment_variable)
+      .where(eq(environment_variable.id, variableId))
+      .get()!
     let unresolved: SecretsError | null = null
 
     if (input.scope === 'app') {
@@ -284,10 +316,10 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
 
     recordAudit(tx, {
       actor: input.actor,
-      action: 'key.set',
+      action: 'environment_variable.set',
       target: {
-        entity: 'key',
-        id: keyId,
+        entity: 'environment_variable',
+        id: variableId,
       },
       requestId: input.request_id,
       after: {
@@ -299,9 +331,9 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
         reference,
       },
     })
-    const write: KeyWrite | null = written
+    const write: VariableWrite | null = written
       ? {
-          key_id: keyId,
+          environment_variable_id: variableId,
           project_id: projectId,
           scope: input.scope,
           actor: input.actor,
@@ -310,7 +342,7 @@ export const setKey = (db: Db, keyring: Keyring, input: KeyInput) => {
       : null
 
     return {
-      key_id: keyId,
+      environment_variable_id: variableId,
       kind,
       write,
       unresolved: unresolved?.toJSON() ?? null,
@@ -336,7 +368,7 @@ const deployedVersions = (db: Db, svc: typeof app.$inferSelect) => {
   for (const entry of snapshot?.entries ?? []) {
     for (const leaf of leaves(entry.node)) {
       if (leaf.kind === 'value') {
-        versions.set(`${leaf.key_id}:${leaf.target}`, leaf.version)
+        versions.set(`${leaf.environment_variable_id}:${leaf.target}`, leaf.version)
       }
     }
   }
@@ -354,7 +386,7 @@ export const resolvedView = (
   const svc = db.select().from(app).where(eq(app.id, appId)).get()!
   const deployed = deployedVersions(db, svc)
 
-  return resolver.appKeys().map((v) => {
+  return resolver.appVariables().map((v) => {
     const base = {
       name: v.name,
       kind: v.kind,
@@ -374,7 +406,7 @@ export const resolvedView = (
       return {
         ...base,
         sources: [],
-        sealed: v.kind === 'sealed',
+        secret: v.kind === 'secret',
         stale: true,
         error: error.toJSON(),
       }
@@ -405,22 +437,22 @@ export const resolvedView = (
           key: leaf.key,
           secret_value_id: leaf.secret_value_id,
           version: leaf.version,
-          deployed_version: deployed.get(`${leaf.key_id}:${leaf.target}`) ?? null,
-          sealed: leaf.sealed,
+          deployed_version: deployed.get(`${leaf.environment_variable_id}:${leaf.target}`) ?? null,
+          secret: leaf.secret,
         }
       }),
     )
-    const sealed = isSealed(node)
+    const secret = isSecret(node)
     const stale =
       svc.current_deployment_id !== null &&
       sources.some((s) => 'version' in s && s.version !== s.deployed_version)
     const value =
-      options.admin && !sealed ? render(node, (leaf) => decryptLeaf(db, keyring, leaf)) : undefined
+      options.admin && !secret ? render(node, (leaf) => decryptLeaf(db, keyring, leaf)) : undefined
 
     return {
       ...base,
       sources,
-      sealed,
+      secret,
       ...(value === undefined
         ? {}
         : {
@@ -446,7 +478,7 @@ export const decryptLeaf = (db: Db, keyring: Keyring, leaf: ValueNode) => {
       'ROLLBACK_SECRET_REVOKED',
       `${leaf.key} version ${leaf.version} is revoked`,
       {
-        keys: [leaf.key],
+        environment_variables: [leaf.key],
       },
     )
   }
@@ -466,31 +498,39 @@ export const storedBytes = (db: Db, secretValueId: string) => {
   return row ? valueBytes(row.ciphertext) : null
 }
 
-export const sealedGlobalValue = (db: Db, keyring: Keyring, name: string) => {
+export const secretGlobalValue = (db: Db, keyring: Keyring, name: string) => {
   const row = db
     .select()
-    .from(key)
-    .where(and(eq(key.scope, 'global'), eq(key.name, name)))
+    .from(environment_variable)
+    .where(and(eq(environment_variable.scope, 'global'), eq(environment_variable.name, name)))
     .get()
 
   if (!row) {
-    throw new SecretsError('NOT_FOUND', `global key ${name} does not exist`, {
-      key: name,
+    throw new SecretsError('NOT_FOUND', `global environment variable ${name} does not exist`, {
+      environment_variable: name,
     })
   }
 
-  if (row.kind !== 'sealed') {
-    throw new SecretsError('VALIDATION_FAILED', `global key ${name} is not sealed`, {
-      key: name,
-    })
+  if (row.kind !== 'secret') {
+    throw new SecretsError(
+      'VALIDATION_FAILED',
+      `global environment variable ${name} is not secret`,
+      {
+        environment_variable: name,
+      },
+    )
   }
 
   const value = headValue(db, row.id, 'production')
 
   if (!value) {
-    throw new SecretsError('SECRETS_UNAVAILABLE', `global key ${name} has no value`, {
-      key: name,
-    })
+    throw new SecretsError(
+      'SECRETS_UNAVAILABLE',
+      `global environment variable ${name} has no value`,
+      {
+        environment_variable: name,
+      },
+    )
   }
 
   return {
@@ -499,18 +539,18 @@ export const sealedGlobalValue = (db: Db, keyring: Keyring, name: string) => {
   }
 }
 
-export const sealedGlobalExists = (db: Db, name: string) => {
+export const secretGlobalExists = (db: Db, name: string) => {
   const row = db
     .select({
-      kind: key.kind,
+      kind: environment_variable.kind,
     })
-    .from(key)
-    .where(and(eq(key.scope, 'global'), eq(key.name, name)))
+    .from(environment_variable)
+    .where(and(eq(environment_variable.scope, 'global'), eq(environment_variable.name, name)))
     .get()
 
   return row
     ? {
-        sealed: row.kind === 'sealed',
+        secret: row.kind === 'secret',
       }
     : null
 }

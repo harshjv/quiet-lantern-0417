@@ -65,9 +65,9 @@ function Changes({ diff }: { diff: NonNullable<Diagnosis['diff_from_last_good']>
           )}
         </li>
       )}
-      {diff.variables?.map((v) => (
-        <li key={v.key}>
-          Key <Code>{v.key}</Code> from version {v.from_version ?? 'none'} to{' '}
+      {diff.environment_variables?.map((v) => (
+        <li key={v.name}>
+          Environment variable <Code>{v.name}</Code> from version {v.from_version ?? 'none'} to{' '}
           {v.to_version ?? 'none'}
         </li>
       ))}
@@ -84,7 +84,7 @@ function Changes({ diff }: { diff: NonNullable<Diagnosis['diff_from_last_good']>
         </li>
       ))}
       {!diff.source &&
-        !diff.variables?.length &&
+        !diff.environment_variables?.length &&
         !diff.config?.length &&
         !diff.base_images?.length && (
           <li className="text-muted-foreground">
@@ -97,7 +97,7 @@ function Changes({ diff }: { diff: NonNullable<Diagnosis['diff_from_last_good']>
 
 const changeCount = (diff: NonNullable<Diagnosis['diff_from_last_good']>) =>
   (diff.source ? 1 : 0) +
-  (diff.variables?.length ?? 0) +
+  (diff.environment_variables?.length ?? 0) +
   (diff.config?.length ?? 0) +
   (diff.base_images?.length ?? 0)
 

@@ -35,7 +35,7 @@ export const machineEntries = (db: Db, machineId: string): Entry[] => {
   const resolver = Resolver.forMachine(db, machineId)
   const entries: Entry[] = []
 
-  for (const v of resolver.machineKeys()) {
+  for (const v of resolver.machineVariables()) {
     try {
       entries.push({
         key: v.name,

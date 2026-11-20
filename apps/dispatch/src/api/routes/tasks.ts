@@ -23,7 +23,7 @@ import { approval, machine, project, server, task } from '../../db/schema.ts'
 import { requestDeletion, startMachine } from '../../sandboxes/lifecycle.ts'
 import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
 import { isRepositoryName, repositoryName } from '../../sandboxes/workspace.ts'
-import { keysOf } from '../../secrets/values.ts'
+import { variablesOf } from '../../secrets/values.ts'
 import { emitEvent } from '../../station/events.ts'
 import { approvalOf, approvalState, decideApproval } from '../../tasks/approvals.ts'
 import {
@@ -178,7 +178,7 @@ const requireKey = (
 ) => {
   const preset = workspaceAgents[agent]
   const keys = new Set(
-    keysOf(db, {
+    variablesOf(db, {
       scope: 'project',
       id: projectId,
     })
@@ -388,7 +388,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
         project: proj,
         target: ctx.target_row.id,
         repository: body.repository,
-        keys: undefined,
+        variables: undefined,
       })
     }
 

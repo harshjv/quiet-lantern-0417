@@ -246,7 +246,7 @@ function DeleteProject({ id, name }: { id: string; name: string }) {
   return (
     <DangerZone
       title="Delete this project"
-      text="Deletes the project, its production and its keys. It must have no previews, apps or machines left."
+      text="Deletes the project, its production and its environment variables. It must have no previews, apps or machines left."
     >
       <FormDialog
         open={open}

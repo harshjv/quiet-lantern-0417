@@ -5,7 +5,7 @@ import { t, type Static } from 'elysia'
 import { appKindValues, appStatusValues } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
-import { app, app_port, deployment, key, server, volume } from '../../db/schema.ts'
+import { app, app_port, deployment, environment_variable, server, volume } from '../../db/schema.ts'
 import {
   healthPortMissing,
   normalizeHealth,
@@ -43,7 +43,7 @@ import {
   Warnings,
   type Ref,
 } from '../shapes.ts'
-import { planKeys } from '../variable-changes.ts'
+import { planVariables } from '../variable-changes.ts'
 
 export const withDeployments = <S extends TObject>(schema: S | Ref<S>) =>
   extend(schema, {
@@ -193,14 +193,14 @@ const portIssues = (kind: string, ports: { port: number }[]) => {
 export const dependentsOfApp = (kit: Kit, svc: AppRow) =>
   kit.deps.db
     .select({
-      id: key.id,
-      name: key.name,
-      app_id: key.app_id,
-      reference: key.reference,
+      id: environment_variable.id,
+      name: environment_variable.name,
+      app_id: environment_variable.app_id,
+      reference: environment_variable.reference,
     })
-    .from(key)
-    .innerJoin(app, eq(app.id, key.app_id))
-    .where(and(eq(key.kind, 'reference'), eq(app.target_id, svc.target_id)))
+    .from(environment_variable)
+    .innerJoin(app, eq(app.id, environment_variable.app_id))
+    .where(and(eq(environment_variable.kind, 'reference'), eq(app.target_id, svc.target_id)))
     .all()
     .filter((v) => v.app_id !== svc.id)
     .filter((v) => {
@@ -213,7 +213,7 @@ export const dependentsOfApp = (kit: Kit, svc: AppRow) =>
       }
     })
     .map((v) => ({
-      entity: 'key',
+      entity: 'environment_variable',
       id: v.id,
       name: v.name,
       app_id: v.app_id,
@@ -390,8 +390,8 @@ const planCreate = (kit: Kit, principal: Principal, env: TargetRow, body: Create
     })
   }
 
-  if (body.keys?.length) {
-    planKeys(
+  if (body.environment_variables?.length) {
+    planVariables(
       db,
       kit.deps.keyring,
       principal,
@@ -404,7 +404,7 @@ const planCreate = (kit: Kit, principal: Principal, env: TargetRow, body: Create
         target: scopeOf(env),
       },
       {
-        set: body.keys,
+        set: body.environment_variables,
         allow_unresolved: true,
       },
     )
@@ -583,8 +583,8 @@ const planPatch = (kit: Kit, principal: Principal, ctx: AppContext, body: PatchB
     (next.multi_writer_safe as boolean | undefined) ?? svc.multi_writer_safe,
   )
 
-  if (body.keys) {
-    planKeys(
+  if (body.environment_variables) {
+    planVariables(
       db,
       kit.deps.keyring,
       principal,
@@ -597,7 +597,7 @@ const planPatch = (kit: Kit, principal: Principal, ctx: AppContext, body: PatchB
         target: ctx.target,
       },
       {
-        set: body.keys,
+        set: body.environment_variables,
         allow_unresolved: true,
       },
       {
@@ -795,7 +795,7 @@ export const appRoutes = (kit: Kit) => {
         if (dependents.length) {
           fail(
             'DELETE_HAS_DEPENDENTS',
-            `${ctx.app.name} is referenced by other apps' keys.`,
+            `${ctx.app.name} is referenced by other apps' environment variables.`,
             'Remove those references first.',
             {
               dependents,

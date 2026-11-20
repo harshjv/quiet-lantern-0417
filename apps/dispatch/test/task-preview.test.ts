@@ -85,12 +85,12 @@ before(async () => {
 
   const keyed = await approveWaiting(
     h,
-    await asHuman('PATCH', `/v1/projects/${project.id}/keys`, {
+    await asHuman('PATCH', `/v1/projects/${project.id}/environment-variables`, {
       target: 'production',
       set: [
         {
           name: 'ANTHROPIC_API_KEY',
-          kind: 'sealed',
+          kind: 'secret',
           value: 'sk-ant-test-value',
         },
       ],

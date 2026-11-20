@@ -80,6 +80,42 @@ sly domains list
   List the domains of an app
 sly domains remove <id>
   Remove a domain
+sly env
+  Environment variables, secret values and grants; secret values are never shown
+sly env apply <id>
+  Redeploy every stale dependent of an environment variable
+sly env delete <id>
+  Delete an environment variable
+sly env get <id>
+  Get an environment variable; never its value
+sly env get-resolved
+  The resolved environment variables of the next deployment; secret values never appear
+sly env grant <id>
+  Grant a global environment variable to a project
+sly env list
+  List project environment variables; an app reads one only through a reference such as ${{project.NAME}}
+sly env list-app
+  List the environment variables of an app; values are never listed
+sly env list-global
+  List global environment variables
+sly env list-grants <id>
+  List the grants of a global environment variable
+sly env list-versions <id>
+  List the versions of an environment variable; never their values
+sly env restore-secret-version <id>
+  Undo a revocation
+sly env revoke-grant <id>
+  Revoke a grant
+sly env revoke-secret-version <id>
+  Revoke a secret version
+sly env set [assignments...]
+  Set environment variables from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --secret
+sly env set-app
+  Set and unset app environment variables
+sly env set-global
+  Set and unset global environment variables
+sly env set-project
+  Set and unset project environment variables: production's values, which wait for approval, or the preview values every preview reads. An app gets a project environment variable only through a reference such as ${{project.NAME}}
 sly events
   Events visible to the caller; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
 sly github
@@ -100,42 +136,6 @@ sly invites list
   Invites, newest first, without their codes; for an admin
 sly invites revoke <invite>
   Revoke an invite so its link stops working; needs a human admin
-sly keys
-  Keys, secret values and grants; sealed values are never shown
-sly keys apply <id>
-  Redeploy every stale dependent of a key
-sly keys delete <id>
-  Delete a key
-sly keys get <id>
-  Get a key; never its value
-sly keys get-resolved
-  The resolved keys of the next deployment; sealed values never appear
-sly keys grant <id>
-  Grant a global key to a project
-sly keys list
-  List project keys; an app reads one only through a reference such as ${{project.NAME}}
-sly keys list-app
-  List the keys of an app; values are never listed
-sly keys list-global
-  List global keys
-sly keys list-grants <id>
-  List the grants of a global key
-sly keys list-versions <id>
-  List the versions of a key; never their values
-sly keys restore-secret-version <id>
-  Undo a revocation
-sly keys revoke-grant <id>
-  Revoke a grant
-sly keys revoke-secret-version <id>
-  Revoke a secret version
-sly keys set [assignments...]
-  Set keys from KEY=VALUE arguments, a dotenv file or stdin, prompting for a hidden value of a bare KEY with --sealed
-sly keys set-app
-  Set and unset app keys
-sly keys set-global
-  Set and unset global keys
-sly keys set-project
-  Set and unset project keys: production's values, which wait for approval, or the preview values every preview reads. An app gets a project key only through a reference such as ${{project.NAME}}
 sly link
   Write .stationly/context.json in the working directory: the instance, project, preview and app later commands default to
 sly login
@@ -164,16 +164,16 @@ sly machines get-dns-log [machine]
   The machine's recent DNS queries from the resolver's ring, newest first, as untrusted data
 sly machines get-metrics [machine]
   Latest live metrics sample of a machine
-sly machines get-resolved-keys [machine]
-  The resolved keys of a machine with their sources; a value only with admin and never a sealed one
+sly machines get-resolved-environment-variables [machine]
+  The resolved environment variables of a machine with their sources; a value only with admin and never a secret one
 sly machines get-snapshot <id>
   Get a machine snapshot
 sly machines grow-storage <server>
   Grow a server's machine filesystem to size_bytes while machines run; needs approval for a non-human actor under platform.protected
 sly machines list
   List the machines of production or a preview
-sly machines list-keys [machine]
-  List the keys of a machine; values are never listed
+sly machines list-environment-variables [machine]
+  List the environment variables of a machine; values are never listed
 sly machines list-project-snapshots
   List the machine snapshots of production or a preview
 sly machines list-runs [machine]
@@ -182,8 +182,8 @@ sly machines list-snapshots [machine]
   List the snapshots of a machine
 sly machines probe-network [machine]
   Ask the machine's resolver as the machine, or judge one TCP handshake with the machine ruleset and send it from the server when the ruleset accepts the destination
-sly machines set-keys [machine]
-  Set and unset a machine's keys; references to project and global keys keep values out of the agent's hands
+sly machines set-environment-variables [machine]
+  Set and unset a machine's environment variables; references to project and global environment variables keep values out of the agent's hands
 sly machines shell [words...]
   Interactive shell in a running machine: sly machines shell <machine>; needs a terminal and a human actor in production
 sly machines snapshot [machine]
@@ -285,7 +285,7 @@ sly ports update <id>
 sly previews
   A project's previews: copies of production's apps at their own URLs
 sly previews create <name>
-  Create a preview: a copy of production's apps, never its sealed values
+  Create a preview: a copy of production's apps, never its secret values
 sly previews delete [preview]
   Delete a preview, its apps and its network
 sly previews describe [preview]
@@ -309,11 +309,11 @@ sly projects update [project]
 sly push [path]
   Upload a local directory (honoring .dockerignore) as the app source and deploy it
 sly redeploy
-  Redeploy the current image with current keys
+  Redeploy the current image with current environment variables
 sly rollback
   Roll back to a previous deployment
 sly run <command...>
-  Run a one-off command in the app's image and keys, streaming its output; put the command after --
+  Run a one-off command in the app's image and environment variables, streaming its output; put the command after --
 sly runs
   One-off runs of an app
 sly runs cancel <id>

@@ -254,7 +254,7 @@ describe('app dependents', () => {
           port: 3000,
         },
       ],
-      keys: [
+      environment_variables: [
         {
           name: 'DATABASE_URL',
           kind: 'reference',
@@ -268,11 +268,11 @@ describe('app dependents', () => {
     assert.equal(refused.body.error.code, 'DELETE_HAS_DEPENDENTS')
     assert.deepEqual(
       refused.body.error.details.dependents.map((d: any) => [d.entity, d.name, d.app_id]),
-      [['key', 'DATABASE_URL', web.id]],
+      [['environment_variable', 'DATABASE_URL', web.id]],
     )
     assert.equal((await api('GET', `/v1/apps/${db.id}`)).status, 200)
     const cleared = await api('PATCH', `/v1/apps/${web.id}`, {
-      keys: [],
+      environment_variables: [],
       deploy: false,
     })
 

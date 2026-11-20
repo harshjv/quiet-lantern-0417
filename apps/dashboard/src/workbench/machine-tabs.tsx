@@ -11,7 +11,7 @@ import { CopiedFilesNotice, SnapshotMachine } from '@/components/sandbox-actions
 import { MachineNetwork } from '@/components/sandbox-network'
 import { SnapshotsTable } from '@/components/snapshots-table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { KeysPanel } from '@/components/variables-panel'
+import { VariablesPanel } from '@/components/variables-panel'
 import type { Machine } from '@/lib/api'
 import { commands, type Scope } from '@/lib/commands'
 import { snapshotSource } from '@/lib/labels'
@@ -26,13 +26,13 @@ const MachineTerminal = lazy(() =>
   })),
 )
 
-const tabs = ['terminal', 'keys', 'logs', 'snapshots', 'network'] as const
+const tabs = ['terminal', 'environment-variables', 'logs', 'snapshots', 'network'] as const
 
 type Tab = (typeof tabs)[number]
 
 const tabTitle: Record<Tab, string> = {
   terminal: 'Terminal',
-  keys: 'Keys',
+  'environment-variables': 'Environment variables',
   logs: 'Logs',
   snapshots: 'Snapshots',
   network: 'Network',
@@ -105,13 +105,18 @@ export function MachineTabs({
           <MachineTerminal machine={machine} />
         </Panel>
       </TabsContent>
-      <TabsContent value="keys" className="mt-4">
-        <KeysPanel
+      <TabsContent value="environment-variables" className="mt-4">
+        <VariablesPanel
           target={{
             kind: 'machine',
             machine: machine.id,
           }}
-          also={<AlsoWith cli={commands.setMachineKey(machine.id)} tool="set_machine_keys" />}
+          also={
+            <AlsoWith
+              cli={commands.setMachineVariable(machine.id)}
+              tool="set_machine_environment_variables"
+            />
+          }
         />
       </TabsContent>
       <TabsContent value="logs" className="mt-4">

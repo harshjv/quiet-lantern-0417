@@ -453,7 +453,7 @@ func Run(ctx context.Context, opts Options) error {
 			s.advanceGateway(ctx)
 			s.advanceComponents(ctx)
 			s.reportComponents(s.plan.Generation)
-			s.checkTunnel(ctx, now)
+			s.probeTunnel(ctx, now)
 			s.advanceRuns(ctx, now)
 			s.reconcileSandboxes(ctx, now)
 			s.syncSandboxMetrics(ctx, now)

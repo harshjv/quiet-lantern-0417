@@ -131,8 +131,7 @@ export const parseInput = (input: unknown): Parsed =>
 
 const aliases: Record<string, string> = {
   timetable: 'schedule',
-  env: 'keys',
-  vars: 'keys',
+  vars: 'env',
   image: 'source',
   replicas: '',
   dockerfile_path: 'source.dockerfile',

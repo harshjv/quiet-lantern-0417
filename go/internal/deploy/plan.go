@@ -293,8 +293,8 @@ func checkGeneration(g *protocol.Generation, applied *protocol.Generation) *Reje
 		if !g.Station.HostsDispatch {
 			return invalid("system target %s is on a station whose hosts_dispatch is false", name)
 		}
-		if st.Port != protocol.NetworkDispatchPort {
-			return invalid("system target %s port %d is not Dispatch's port %d", name, st.Port, protocol.NetworkDispatchPort)
+		if st.Port != protocol.NetworkDispatchGatewayPort {
+			return invalid("system target %s port %d is not Dispatch's Gateway port %d", name, st.Port, protocol.NetworkDispatchGatewayPort)
 		}
 		vip, err := netip.ParseAddr(st.VirtualIp)
 		if err != nil || !vip.Is4() || !virtualPrefix.Contains(vip) {

@@ -6,7 +6,7 @@ export const groups = {
   apps: [['apps'], ['previews'], ['projects']],
   deployments: [['deployments'], ['apps'], ['projects'], ['previews']],
   health: [['apps'], ['projects']],
-  keys: [['keys'], ['apps']],
+  'environment-variables': [['environment-variables'], ['apps']],
   domains: [['domains'], ['apps'], ['network']],
   networking: [['ports'], ['domains'], ['apps'], ['deployments'], ['network']],
   machines: [['machines'], ['machine-snapshots'], ['tasks'], ['projects']],
@@ -19,7 +19,13 @@ export const groups = {
 
 export type Group = keyof typeof groups
 
-export const approvalDecided: Group[] = ['approvals', 'apps', 'keys', 'networking', 'deployments']
+export const approvalDecided: Group[] = [
+  'approvals',
+  'apps',
+  'environment-variables',
+  'networking',
+  'deployments',
+]
 
 export const invalidateGroups = (client: QueryClient, names: Group[]) => {
   const keys = new Map<string, QueryKey>(

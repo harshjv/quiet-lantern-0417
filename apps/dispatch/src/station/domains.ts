@@ -1,7 +1,12 @@
 import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 
-import { remedy, type Diagnosis, type Observed } from '@stationly/protocol'
+import {
+  remedy,
+  type Diagnosis,
+  type hostnameStatusValues,
+  type Observed,
+} from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { app, app_port, domain } from '../db/schema.ts'
@@ -67,6 +72,30 @@ const derive = (d: DomainRow, route: Route): { status: Status; error: DiagnosisV
     error: null,
   }
 }
+
+export type HostnameStatus = (typeof hostnameStatusValues)[number]
+
+export const hostnameStatus = (route: Route | undefined): HostnameStatus => {
+  if (!route?.probe) {
+    return 'pending'
+  }
+
+  if (route.probe.ok) {
+    return 'active'
+  }
+
+  return route.probe.failure === 'wrong_gateway' ? 'wrong_gateway' : 'unreachable'
+}
+
+const statusRank: HostnameStatus[] = ['active', 'pending', 'unreachable', 'wrong_gateway']
+
+export const hostnamesStatus = (
+  observed: Pick<Observed, 'gateway'> | undefined,
+  routeIds: string[],
+) =>
+  routeIds
+    .map((id) => hostnameStatus(observed?.gateway.routes[id]))
+    .reduce((worst, s) => (statusRank.indexOf(s) > statusRank.indexOf(worst) ? s : worst), 'active')
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 

@@ -29,6 +29,7 @@ export type DoctorRow = {
   finding: string
   fix: string | null
   detail?: Record<string, unknown>
+  steps?: { name: string; status: Status; finding: string; fix: string | null }[]
 }
 
 const rank: Record<Status, number> = {
@@ -504,6 +505,11 @@ export const runDoctor = async (
           ...(c.detail
             ? {
                 detail: c.detail,
+              }
+            : {}),
+          ...(c.steps
+            ? {
+                steps: c.steps,
               }
             : {}),
         }))

@@ -21,7 +21,7 @@ export const idPrefixes = {
   deployment_step: 'stp',
   build: 'bld',
   run: 'run',
-  key: 'key',
+  environment_variable: 'var',
   secret_value: 'sec',
   grant: 'grt',
   attachment: 'att',

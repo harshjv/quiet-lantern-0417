@@ -10,8 +10,8 @@ import {
   approval,
   approval_value,
   domain,
+  environment_variable,
   ipam_allocation,
-  key,
   machine,
   machine_snapshot,
   run,
@@ -23,7 +23,7 @@ import {
 import { deleteSetting, storedSetting, writeSetting } from '../db/settings.ts'
 import { startUpgrade } from '../platform/upgrade.ts'
 import { requestDeletion, systemActor } from '../sandboxes/lifecycle.ts'
-import { setKey, type KeyWrite } from '../secrets/variables.ts'
+import { setVariable, type VariableWrite } from '../secrets/variables.ts'
 import type { BackupTarget } from '../volumes/backups.ts'
 
 import { recordHealth, refreshAppStatus } from './app-status.ts'
@@ -34,7 +34,7 @@ import { fail } from './errors.ts'
 import { ensureNetwork } from './ipam.ts'
 import { isProduction, placeName, type ApprovalRow, type TargetRow } from './lookup.ts'
 import { requesterOf, requireRequesterRule } from './requester.ts'
-import { refreshStale, settleKeyWrites } from './stale.ts'
+import { refreshStale, settleVariableWrites } from './stale.ts'
 import { applyStationField, stationFields, type StationField } from './station-fields.ts'
 
 export type Store = Pick<Deps, 'db' | 'keyring'>
@@ -47,7 +47,7 @@ export type Entity =
   | 'volume_snapshot'
   | 'volume_restore'
   | 'domain'
-  | 'key'
+  | 'environment_variable'
   | 'deployment'
   | 'preview'
   | 'setting'
@@ -333,16 +333,16 @@ const removeApp = (db: Db, appId: string) => {
     .run()
   const vars = db
     .select({
-      id: key.id,
+      id: environment_variable.id,
     })
-    .from(key)
-    .where(eq(key.app_id, svc.id))
+    .from(environment_variable)
+    .where(eq(environment_variable.app_id, svc.id))
     .all()
     .map((v) => v.id)
 
   if (vars.length) {
-    db.delete(secret_value).where(inArray(secret_value.key_id, vars)).run()
-    db.delete(key).where(inArray(key.id, vars)).run()
+    db.delete(secret_value).where(inArray(secret_value.environment_variable_id, vars)).run()
+    db.delete(environment_variable).where(inArray(environment_variable.id, vars)).run()
   }
 
   db.delete(virtual_ip).where(eq(virtual_ip.app_id, svc.id)).run()
@@ -468,8 +468,8 @@ const applyChanges = (
       : value)
   const resolveAll = (after: Json) =>
     Object.fromEntries(Object.entries(after).map(([k, v]) => [k, isRef(v) ? resolve(v) : v]))
-  let keysChanged = false
-  const writes: KeyWrite[] = []
+  let variablesChanged = false
+  const writes: VariableWrite[] = []
   const touched = new Set<string>()
   let lockfileBefore: LockfileDoc | null = null
 
@@ -549,14 +549,14 @@ const applyChanges = (
           break
         }
 
-        case 'key': {
+        case 'environment_variable': {
           const scope = after.scope as 'global' | 'project' | 'app' | 'machine'
-          const kind = after.kind as 'literal' | 'reference' | 'sealed'
+          const kind = after.kind as 'literal' | 'reference' | 'secret'
           const value =
             typeof after.value_id === 'string'
               ? plaintext(after.value_id)
               : ((after.reference as string | null) ?? '')
-          const result = setKey(db, keyring, {
+          const result = setVariable(db, keyring, {
             scope,
             project_id: scope === 'project' ? parent! : undefined,
             app_id: scope === 'app' ? parent! : undefined,
@@ -564,7 +564,7 @@ const applyChanges = (
             target: (after.target as 'production' | 'preview' | undefined) ?? 'production',
             name: after.name as string,
             value,
-            sealed: kind === 'sealed',
+            secret: kind === 'secret',
             injection: after.injection as 'env' | 'file' | undefined,
             build: after.build as boolean | undefined,
             allow_unresolved: Boolean(after.allow_unresolved),
@@ -572,13 +572,13 @@ const applyChanges = (
             request_id: call.request_id,
           })
 
-          refs[change.ref] = result.key_id
+          refs[change.ref] = result.environment_variable_id
 
           if (result.write) {
             writes.push(result.write)
           }
 
-          keysChanged = true
+          variablesChanged = true
           break
         }
 
@@ -799,22 +799,22 @@ const applyChanges = (
           break
         }
 
-        case 'key': {
+        case 'environment_variable': {
           const row =
-            db.select().from(key).where(eq(key.id, id)).get() ??
-            fail('NOT_FOUND', `key ${id} does not exist.`)
+            db.select().from(environment_variable).where(eq(environment_variable.id, id)).get() ??
+            fail('NOT_FOUND', `environment variable ${id} does not exist.`)
           const after = change.after as Json
-          const kind = after.kind as 'literal' | 'reference' | 'sealed'
+          const kind = after.kind as 'literal' | 'reference' | 'secret'
 
-          if (kind === 'sealed' && typeof after.value_id !== 'string' && !after.reference) {
-            db.update(key)
+          if (kind === 'secret' && typeof after.value_id !== 'string' && !after.reference) {
+            db.update(environment_variable)
               .set({
                 injection: (after.injection as 'env' | 'file' | undefined) ?? row.injection,
                 build: (after.build as boolean | undefined) ?? row.build,
               })
-              .where(eq(key.id, id))
+              .where(eq(environment_variable.id, id))
               .run()
-            keysChanged = true
+            variablesChanged = true
             break
           }
 
@@ -822,7 +822,7 @@ const applyChanges = (
             typeof after.value_id === 'string'
               ? plaintext(after.value_id)
               : ((after.reference as string | null) ?? '')
-          const result = setKey(db, keyring, {
+          const result = setVariable(db, keyring, {
             scope: row.scope,
             project_id: row.project_id ?? undefined,
             app_id: row.app_id ?? undefined,
@@ -830,7 +830,7 @@ const applyChanges = (
             target: (after.target as 'production' | 'preview' | undefined) ?? 'production',
             name: row.name,
             value,
-            sealed: kind === 'sealed',
+            secret: kind === 'secret',
             injection: after.injection as 'env' | 'file' | undefined,
             build: after.build as boolean | undefined,
             allow_unresolved: Boolean(after.allow_unresolved),
@@ -842,7 +842,7 @@ const applyChanges = (
             writes.push(result.write)
           }
 
-          keysChanged = true
+          variablesChanged = true
           break
         }
 
@@ -934,18 +934,18 @@ const applyChanges = (
       case 'domain':
         db.delete(domain).where(eq(domain.id, id)).run()
         break
-      case 'key':
-        db.delete(secret_value).where(eq(secret_value.key_id, id)).run()
-        db.delete(key).where(eq(key.id, id)).run()
-        keysChanged = true
+      case 'environment_variable':
+        db.delete(secret_value).where(eq(secret_value.environment_variable_id, id)).run()
+        db.delete(environment_variable).where(eq(environment_variable.id, id)).run()
+        variablesChanged = true
         break
       default:
         fail('VALIDATION_FAILED', `removing ${change.entity} through an approval is not supported.`)
     }
   }
 
-  if (keysChanged) {
-    settleKeyWrites(db, writes)
+  if (variablesChanged) {
+    settleVariableWrites(db, writes)
   } else {
     refreshStale(db, [...touched])
   }
@@ -971,7 +971,7 @@ const applyChanges = (
 
 export const stripValues = (changes: Change[]) =>
   changes.map((change) => {
-    if (change.entity !== 'key' || change.op === 'remove') {
+    if (change.entity !== 'environment_variable' || change.op === 'remove') {
       return change
     }
 

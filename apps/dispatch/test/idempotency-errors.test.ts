@@ -584,7 +584,7 @@ describe('error envelope', () => {
 
   test('repeated unauthenticated requests from one address end in RATE_LIMITED with Retry-After', async () => {
     const headers = {
-      'x-forwarded-for': '203.0.113.77',
+      'x-stationly-client-address': '203.0.113.77',
     }
     const send = () =>
       h.call('GET', '/v1/projects', {

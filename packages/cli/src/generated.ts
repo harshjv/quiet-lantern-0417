@@ -41,6 +41,7 @@ import { human } from './output.ts'
 import { need } from './prompt.ts'
 import { renderer, type Renderer } from './renderers/index.ts'
 import { follow, reply, replyThen, waitUntilDone } from './respond.ts'
+import { groupOf } from './tags.ts'
 
 type Scalar = 'string' | 'integer' | 'number' | 'boolean'
 
@@ -77,7 +78,7 @@ export const derivedPath = (operationId: string, tag: string) => {
   const nouns = tag.split('-')
 
   return [
-    tag,
+    groupOf(tag),
     words.filter((word) => !nouns.includes(word) && !nouns.includes(plural(word))).join('-'),
   ]
 }

@@ -10,19 +10,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { keyKind } from '@/lib/labels'
+import { variableKind } from '@/lib/labels'
 import { cn } from '@/lib/utils'
 import {
   buildNote,
-  keyKinds,
-  keyNamePattern,
-  keyNameTitle,
   referencePlaceholder,
-  sealedNote,
-  type KeyKind,
+  secretNote,
+  variableKinds,
+  variableNamePattern,
+  variableNameTitle,
+  type EnvironmentVariableKind,
 } from '@/lib/variables'
 
-export function KeyNameInput({
+export function VariableNameInput({
   value,
   onValueChange,
   className,
@@ -37,14 +37,14 @@ export function KeyNameInput({
       {...props}
       value={value}
       onChange={(e) => onValueChange(e.target.value.toUpperCase())}
-      pattern={keyNamePattern}
-      title={keyNameTitle}
+      pattern={variableNamePattern}
+      title={variableNameTitle}
       className={cn('font-mono', className)}
     />
   )
 }
 
-export function KeyKindSelect({
+export function VariableKindSelect({
   id,
   label,
   value,
@@ -52,18 +52,18 @@ export function KeyKindSelect({
 }: {
   id?: string
   label?: string
-  value: KeyKind
-  onValueChange: (kind: KeyKind) => void
+  value: EnvironmentVariableKind
+  onValueChange: (kind: EnvironmentVariableKind) => void
 }) {
   return (
-    <Select value={value} onValueChange={(v) => onValueChange(v as KeyKind)}>
+    <Select value={value} onValueChange={(v) => onValueChange(v as EnvironmentVariableKind)}>
       <SelectTrigger id={id} aria-label={label} className="w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {keyKinds.map((kind) => (
+        {variableKinds.map((kind) => (
           <SelectItem key={kind} value={kind}>
-            {keyKind[kind]}
+            {variableKind[kind]}
           </SelectItem>
         ))}
       </SelectContent>
@@ -72,7 +72,7 @@ export function KeyKindSelect({
 }
 
 type ValueProps = {
-  kind: KeyKind
+  kind: EnvironmentVariableKind
   value: string
   onValueChange: (value: string) => void
   multiline?: boolean
@@ -82,7 +82,7 @@ type ValueProps = {
   className?: string
 }
 
-export function KeyValueInput({
+export function VariableValueInput({
   kind,
   value,
   onValueChange,
@@ -115,18 +115,18 @@ export function KeyValueInput({
   return (
     <Input
       {...shared}
-      type={kind === 'sealed' ? 'password' : 'text'}
-      autoComplete={kind === 'sealed' ? 'new-password' : 'off'}
+      type={kind === 'secret' ? 'password' : 'text'}
+      autoComplete={kind === 'secret' ? 'new-password' : 'off'}
       onChange={(e) => onValueChange(e.target.value)}
       placeholder={kind === 'reference' ? referencePlaceholder : placeholder}
     />
   )
 }
 
-export function KeyNotes({ sealed, build }: { sealed: boolean; build: boolean }) {
+export function VariableNotes({ secret, build }: { secret: boolean; build: boolean }) {
   return (
     <>
-      {sealed && <Hint>{sealedNote}</Hint>}
+      {secret && <Hint>{secretNote}</Hint>}
       {build && <Hint>{buildNote}</Hint>}
     </>
   )

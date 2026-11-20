@@ -60,8 +60,8 @@ export const operationTags = [
     description: 'Notification channels',
   },
   {
-    name: 'keys',
-    description: 'Keys, secret values and grants; sealed values are never shown',
+    name: 'environment-variables',
+    description: 'Environment variables, secret values and grants; secret values are never shown',
   },
   {
     name: 'approvals',

@@ -72,14 +72,14 @@ const built: Record<keyof typeof commands, string[]> = {
   setHealth: [commands.setHealth(app, 3000), commands.setHealth(app, null)],
   logs: [commands.logs(app, 'dep_01', null), commands.logs(app, 'dep_01', 'bld_01')],
   probe: [commands.probe(app, 'db.internal', 5432), commands.probe(app, 'db', null)],
-  setAppKey: [commands.setAppKey(app)],
-  setProjectKey: [commands.setProjectKey(scope)],
+  setAppVariable: [commands.setAppVariable(app)],
+  setProjectVariable: [commands.setProjectVariable(scope)],
   addDomain: [commands.addDomain('spt_01'), commands.addDomain(null)],
   setMachineRuntime: [commands.setMachineRuntime('home')],
   startMachine: [commands.startMachine(scope, 'web-sbx')],
   createMachine: [commands.createMachine(scope)],
   snapshotMachine: [commands.snapshotMachine(scope, 'web-sbx')],
-  setMachineKey: [commands.setMachineKey('sbx_01')],
+  setMachineVariable: [commands.setMachineVariable('sbx_01')],
   forward: [commands.forward('sbx_01', 3000)],
 }
 

@@ -84,7 +84,7 @@ const groupsFor = (event: EventRow): Group[] => {
   }
 
   if (event.type === 'secret.changed') {
-    return ['keys']
+    return ['environment-variables']
   }
 
   return []

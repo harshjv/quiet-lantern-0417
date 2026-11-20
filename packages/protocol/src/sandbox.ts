@@ -1,7 +1,11 @@
 import { Type } from '@sinclair/typebox'
 
-import { keyKindValues, keyNamePattern, slugPattern } from './domain.ts'
-import { keyPatchText } from './field-text.ts'
+import {
+  environmentVariableKindValues,
+  environmentVariableNamePattern,
+  slugPattern,
+} from './domain.ts'
+import { environmentVariablePatchText } from './field-text.ts'
 import {
   machineEgressModeValues,
   machineNetworkValues,
@@ -73,12 +77,12 @@ export const MachineEgressInput = Type.Object(
   },
 )
 
-export const MachineKeySet = Type.Object(
+export const MachineEnvironmentVariableSet = Type.Object(
   {
     name: Type.String({
-      pattern: keyNamePattern,
+      pattern: environmentVariableNamePattern,
     }),
-    kind: StringEnum(keyKindValues),
+    kind: StringEnum(environmentVariableKindValues),
     value: Type.Optional(Type.String()),
     reference: Type.Optional(Type.String()),
   },
@@ -180,9 +184,9 @@ export const MachineCreateBody = Type.Object(
     ),
     runtime: Type.Optional(MachineRuntime),
     ...configurable,
-    keys: Type.Optional(
-      Type.Array(MachineKeySet, {
-        description: keyPatchText.set,
+    environment_variables: Type.Optional(
+      Type.Array(MachineEnvironmentVariableSet, {
+        description: environmentVariablePatchText.set,
       }),
     ),
     workspace: Type.Optional(MachineWorkspaceInput),
@@ -286,26 +290,26 @@ export const MachineShellBody = Type.Object(
   },
 )
 
-export const MachineKeysPatchBody = Type.Object(
+export const MachineEnvironmentVariablesPatchBody = Type.Object(
   {
     set: Type.Optional(
-      Type.Array(MachineKeySet, {
-        description: keyPatchText.set,
+      Type.Array(MachineEnvironmentVariableSet, {
+        description: environmentVariablePatchText.set,
       }),
     ),
     unset: Type.Optional(
       Type.Array(
         Type.String({
-          pattern: keyNamePattern,
+          pattern: environmentVariableNamePattern,
         }),
         {
-          description: keyPatchText.unset,
+          description: environmentVariablePatchText.unset,
         },
       ),
     ),
     allow_unresolved: Type.Optional(
       Type.Boolean({
-        description: keyPatchText.allow_unresolved,
+        description: environmentVariablePatchText.allow_unresolved,
       }),
     ),
   },

@@ -895,19 +895,19 @@ const blockedBy = (error: unknown): Blocked => {
   }
 }
 
-const storeProjectKey = (project: string, name: string, value: string) =>
+const storeProjectSecret = (project: string, name: string, value: string) =>
   send(
     api.v1
       .projects({
         project,
       })
-      .keys.patch(
+      ['environment-variables'].patch(
         {
           target: 'production',
           set: [
             {
               name,
-              kind: 'sealed',
+              kind: 'secret',
               value: value.trim(),
             },
           ],
@@ -962,8 +962,9 @@ function FirstProject() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-8">
       <h1 className="font-display text-2xl">Start with a project</h1>
       <p className="max-w-prose text-sm text-muted-foreground">
-        Every task works inside a project: its repositories, keys, apps and machine. Create the
-        first project, add its first app in Ship, then come back here and ask an agent to build.
+        Every task works inside a project: its repositories, environment variables, apps and
+        machine. Create the first project, add its first app in Ship, then come back here and ask an
+        agent to build.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setCreating(true)}>
@@ -1030,15 +1031,15 @@ function Composer({
       ].map((value) => [value.toLowerCase(), value]),
     ).values(),
   ]
-  const projectKeys = useQuery({
-    queryKey: ['keys', 'project', chosen],
+  const projectVariables = useQuery({
+    queryKey: ['environment-variables', 'project', chosen],
     queryFn: () =>
       unwrap(
         api.v1
           .projects({
             project: chosen,
           })
-          .keys.get(),
+          ['environment-variables'].get(),
       ),
     enabled: Boolean(chosen),
   })
@@ -1049,14 +1050,14 @@ function Composer({
     queryFn: () => unwrap(api.v1.me.keys.get()),
   })
   const keyMissing =
-    projectKeys.data !== undefined &&
+    projectVariables.data !== undefined &&
     myKeys.data !== undefined &&
     !preset.keys.some(
       (key) =>
-        projectKeys.data.items.some((item) => item.name === key) ||
+        projectVariables.data.items.some((item) => item.name === key) ||
         myKeys.data.items.some((item) => item.name === key && item.set),
     )
-  const keyChecked = projectKeys.data !== undefined && myKeys.data !== undefined
+  const keyChecked = projectVariables.data !== undefined && myKeys.data !== undefined
   const ready = Boolean(url && chosen) && keyChecked && !keyMissing
   const asking =
     blocked?.kind === 'token' ? 'token' : blocked?.kind === 'key' || keyMissing ? 'key' : null
@@ -1088,7 +1089,7 @@ function Composer({
       return
     }
 
-    const stored = await storeProjectKey(
+    const stored = await storeProjectSecret(
       chosen,
       asking === 'key' ? credentialKey(preset.keys, value) : githubTokenKey,
       value,
@@ -1096,7 +1097,7 @@ function Composer({
 
     setWaitingKey(stored.waiting ? stored.body.id : null)
     void queries.invalidateQueries({
-      queryKey: ['keys', 'project', chosen],
+      queryKey: ['environment-variables', 'project', chosen],
     })
     void queries.invalidateQueries({
       queryKey: ['approvals'],
@@ -1213,8 +1214,8 @@ function Composer({
           <span className="flex flex-col gap-2">
             {asking === 'key'
               ? admin
-                ? `${preset.keyHelp} Stationly stores it sealed for the whole project.`
-                : `${preset.keyHelp} Stationly stores it sealed as your own key; only your tasks use it.`
+                ? `${preset.keyHelp} Stationly stores it as a secret environment variable of the project.`
+                : `${preset.keyHelp} Stationly stores it as your own secret key; only your tasks use it.`
               : admin
                 ? githubTokenHelp(chosen, repositoryName(url ?? repository))
                 : 'Stationly cannot read this repository. Connect GitHub in Your account with an account that can, or ask an admin for a project token.'}

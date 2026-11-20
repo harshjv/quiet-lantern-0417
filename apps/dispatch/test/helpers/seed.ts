@@ -92,7 +92,7 @@ export type AppSeed = {
   kind?: string
   ref: string
   ports?: { port: number; protocol?: string }[]
-  keys?: unknown[]
+  environment_variables?: unknown[]
   deploy?: boolean
   extra?: Record<string, unknown>
 }
@@ -108,7 +108,7 @@ export const createApp = async (h: Api, targetId: string, seed: AppSeed) => {
         ref: seed.ref,
       },
       ports: seed.ports,
-      keys: seed.keys,
+      environment_variables: seed.environment_variables,
       deploy_on_create: seed.deploy ?? false,
       ...seed.extra,
     },

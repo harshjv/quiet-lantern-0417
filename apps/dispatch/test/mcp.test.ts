@@ -353,7 +353,12 @@ describe('tools per access level', () => {
 
     assert.ok(names.includes('restart_app') && names.includes('deploy'))
 
-    for (const hidden of ['create_app', 'create_project', 'delete_app', 'set_project_keys']) {
+    for (const hidden of [
+      'create_app',
+      'create_project',
+      'delete_app',
+      'set_project_environment_variables',
+    ]) {
       assert.ok(!names.includes(hidden), hidden)
     }
   })
@@ -376,8 +381,8 @@ describe('tools per access level', () => {
     const instance = await toolNames(adminToken)
     const scoped = await toolNames(projectAdminToken)
 
-    assert.ok(instance.includes('grant_key') && instance.includes('list_servers'))
-    assert.ok(!scoped.includes('grant_key') && !scoped.includes('list_servers'))
+    assert.ok(instance.includes('grant_environment_variable') && instance.includes('list_servers'))
+    assert.ok(!scoped.includes('grant_environment_variable') && !scoped.includes('list_servers'))
     assert.ok(scoped.includes('create_app'))
   })
 })

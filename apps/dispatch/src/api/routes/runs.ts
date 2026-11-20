@@ -182,7 +182,7 @@ export const runRoutes = (kit: Kit) => {
       {
         app: {
           id: 'run_command',
-          summary: "Run a one-off command in the app's current image and keys",
+          summary: "Run a one-off command in the app's current image and environment variables",
           level: 'deploy',
           cli: false,
         },

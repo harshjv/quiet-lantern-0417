@@ -9,6 +9,7 @@ import { createAttachServer } from './api/attach.ts'
 import { createApp, createFetch } from './app.ts'
 import { AuthService } from './auth/auth.ts'
 import { ensureInstanceId, SetupError, setupInstance, type SetupInput } from './auth/bootstrap.ts'
+import { stampClientAddress } from './auth/client-address.ts'
 import { createMetadataFetch } from './auth/metadata-fetch.ts'
 import { createDashboard, dashboardDir } from './dashboard.ts'
 import { openDb } from './db/client.ts'
@@ -36,6 +37,7 @@ import { pruneBackups, startBackupScheduler } from './volumes/backups.ts'
 
 const {
   STATIONLY_PORT: port,
+  STATIONLY_GATEWAY_PORT: gatewayPort,
   STATIONLY_BUILD_VERSION: version,
   STATIONLY_DATABASE: databasePath,
   STATIONLY_RESOLVER: resolver,
@@ -90,6 +92,7 @@ const hostAdmin: HostAdmin = async (stationId, op, params) => {
         db,
         keyring,
         auth,
+        observed: stations.observedOf(stationId),
       },
       params as SetupInput,
       {
@@ -248,24 +251,36 @@ log('dispatch.version', {
   digest: digest ?? null,
   database: databasePath,
 })
-const server = createServer((req, res) => {
-  if (!stations.handleRequest(req, res)) {
-    appHandler(req, res)
-  }
-})
 
-server.on('upgrade', (req, socket, head) => {
-  if (attach.matches(req)) {
-    return attach.handleUpgrade(req, socket, head)
-  }
+const listen = (listenPort: number, viaGateway: boolean) => {
+  const listener = createServer((req, res) => {
+    stampClientAddress(req, viaGateway)
 
-  stations.handleUpgrade(req, socket, head)
-})
-server.listen(port, () =>
-  log('listening', {
-    port,
-  }),
-)
+    if (!stations.handleRequest(req, res)) {
+      appHandler(req, res)
+    }
+  })
+
+  listener.on('upgrade', (req, socket, head) => {
+    stampClientAddress(req, viaGateway)
+
+    if (attach.matches(req)) {
+      return attach.handleUpgrade(req, socket, head)
+    }
+
+    stations.handleUpgrade(req, socket, head)
+  })
+  listener.listen(listenPort, () =>
+    log('listening', {
+      port: listenPort,
+      via_gateway: viaGateway,
+    }),
+  )
+
+  return listener
+}
+
+const servers = [listen(port, false), listen(gatewayPort, true)]
 
 const shutdown = async () => {
   upgrades.stop()
@@ -282,8 +297,16 @@ const shutdown = async () => {
   github.stop()
   attach.close()
   await stations.close()
-  server.close(() => process.exit(0))
-  server.closeAllConnections()
+  await Promise.all(
+    servers.map(
+      (listener) =>
+        new Promise<void>((resolve) => {
+          listener.close(() => resolve())
+          listener.closeAllConnections()
+        }),
+    ),
+  )
+  process.exit(0)
 }
 
 const onSignal = () =>

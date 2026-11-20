@@ -20,9 +20,9 @@ let h: Dispatch
 let registry: FakeRegistry
 let deploymentId: string
 
-const sealedValue = 'sealed value/with+chars 1234'
+const secretValue = 'secret value/with+chars 1234'
 const literalValue = 'https://app.example.com/base'
-const projectSealed = 'project-sealed-9876543210'
+const projectSecret = 'project-secret-9876543210'
 const projectLiteral = 'plain-project-literal'
 const actor = {
   type: 'system',
@@ -38,14 +38,14 @@ before(async () => {
   const project = await createProject(h, 'redaction')
   const set = await approveWaiting(
     h,
-    await h.call('PATCH', `/v1/projects/${project.id}/keys`, {
+    await h.call('PATCH', `/v1/projects/${project.id}/environment-variables`, {
       token: h.admin.token,
       body: {
         set: [
           {
             name: 'PROJ_SEALED',
-            kind: 'sealed',
-            value: projectSealed,
+            kind: 'secret',
+            value: projectSecret,
           },
           {
             name: 'PROJ_LITERAL',
@@ -68,7 +68,7 @@ before(async () => {
       },
     ],
     deploy: true,
-    keys: [
+    environment_variables: [
       {
         name: 'BASE_URL',
         kind: 'literal',
@@ -76,8 +76,8 @@ before(async () => {
       },
       {
         name: 'API_KEY',
-        kind: 'sealed',
-        value: sealedValue,
+        kind: 'secret',
+        value: secretValue,
       },
       {
         name: 'SECRET_KEY',
@@ -108,8 +108,8 @@ after(async () => {
 
 const decode = (value: string) => Buffer.from(value, 'base64url').toString('utf8')
 
-describe('log redaction covers sealed values and generated secrets only', () => {
-  test('secrets.deliver carries the sealed value, the generated secret and the entries that embed a sealed value', () => {
+describe('log redaction covers secret values and generated secrets only', () => {
+  test('secrets.deliver carries the secret value, the generated secret and the entries that embed a secret value', () => {
     const body = secretsDeliver(h.deps.db, h.deps.keyring, deploymentId, 'deploy', actor)
     const redaction = body.redaction.map((r) => ({
       key: r.key,
@@ -118,10 +118,10 @@ describe('log redaction covers sealed values and generated secrets only', () => 
     const values = redaction.map((r) => r.value)
     const generated = decode(body.values.find((v) => v.key === 'SECRET_KEY')!.value)
 
-    assert.ok(values.includes(sealedValue))
+    assert.ok(values.includes(secretValue))
     assert.ok(values.includes(generated))
-    assert.ok(values.includes(projectSealed))
-    assert.ok(values.includes(`postgres://u:${projectSealed}@db/app`))
+    assert.ok(values.includes(projectSecret))
+    assert.ok(values.includes(`postgres://u:${projectSecret}@db/app`))
 
     for (const literal of [literalValue, projectLiteral, `https://${projectLiteral}/x`]) {
       assert.ok(!values.includes(literal), `${literal} must not be redacted`)
@@ -130,13 +130,13 @@ describe('log redaction covers sealed values and generated secrets only', () => 
     assert.equal(decode(body.values.find((v) => v.key === 'BASE_URL')!.value), literalValue)
   })
 
-  test('the serve-time redactor replaces a sealed value and a generated secret in every encoded form and leaves literals', () => {
+  test('the serve-time redactor replaces a secret value and a generated secret in every encoded form and leaves literals', () => {
     const known = redactionKnown(h.deps.db, h.deps.keyring, deploymentId, actor, 'req_test')
     const generated = known.find((k) => k.key === 'SECRET_KEY')!.value
     const redact = buildRedactor(known)
 
     for (const [key, value] of [
-      ['API_KEY', sealedValue],
+      ['API_KEY', secretValue],
       ['SECRET_KEY', generated],
     ] as const) {
       for (const form of encodedForms(value)) {
