@@ -1,14 +1,16 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowLeft, Check, CircleDashed, Loader2, Square, TriangleAlert, X } from 'lucide-react'
 import { useRef } from 'react'
 
 import { Trigger } from '@/components/actor'
+import { Code } from '@/components/code'
 import { DiagnosisPanel } from '@/components/diagnosis'
 import { Disclosure } from '@/components/disclosure'
 import { FirstLive } from '@/components/first-live'
 import { LogViewer } from '@/components/log-viewer'
-import { KeyValue, Mono } from '@/components/page'
+import { Name } from '@/components/name'
+import { KeyValue } from '@/components/page'
 import { Panel } from '@/components/panel'
 import { DeploymentStatusBadge } from '@/components/status'
 import { Time, useNow } from '@/components/time'
@@ -25,7 +27,7 @@ import {
   deploymentStrategy,
   stepStatus,
 } from '@/lib/labels'
-import { appTo } from '@/lib/links'
+import { appTo, newTaskTo } from '@/lib/links'
 import { isFirstLive } from '@/lib/moments'
 import { useApiMutation } from '@/lib/mutation'
 import {
@@ -114,12 +116,7 @@ function DeploymentView({ id }: { id: string }) {
             )}
             {d.status === 'failed' && (
               <Button asChild size="sm">
-                <Link
-                  to="/build/new"
-                  search={{
-                    fix: `deployment:${d.id}`,
-                  }}
-                >
+                <Link {...newTaskTo(trail.project.name, `deployment:${d.id}`)}>
                   <TriangleAlert /> Fix with an agent
                 </Link>
               </Button>
@@ -129,15 +126,19 @@ function DeploymentView({ id }: { id: string }) {
       >
         <div className="-mt-4 flex flex-col gap-2">
           <Link
-            {...appTo(app.id)}
+            {...appTo(trail.project.name, app.id)}
             className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <ArrowLeft className="size-3.5" aria-hidden />
-            {app.name} in {trail.project.name} / {trail.place.previewName ?? 'production'}
+            <Name kind="app" chip={false}>
+              {app.name}
+            </Name>
+            <span>{trail.project.name}</span>
+            <span className="text-xs">{trail.place.previewName ?? 'production'}</span>
           </Link>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <DeploymentStatusBadge status={d.status} />
-            <Mono>{d.id}</Mono>
+            <Code>{d.id}</Code>
             <Time value={d.started_at ?? d.created_at} />
             {live && <StepHeader steps={steps} />}
           </p>
@@ -174,7 +175,7 @@ function DeploymentView({ id }: { id: string }) {
             <Steps steps={steps} />
           )}
         </Section>
-        <Section title="Logs" note="Stationly hides known secret values in these logs.">
+        <Section title="Logs" note="Known secret values are hidden.">
           <Logs deployment={d} live={live} />
         </Section>
       </Page>
@@ -190,13 +191,13 @@ function Facts({ deployment: d }: { deployment: Deployment }) {
         ['Trigger', <Trigger key="trigger" trigger={d.trigger} />],
         [
           'Commit',
-          d.trigger.source_sha ? <Mono key="sha">{shortSha(d.trigger.source_sha)}</Mono> : 'none',
+          d.trigger.source_sha ? <Code key="sha">{shortSha(d.trigger.source_sha)}</Code> : 'none',
         ],
         ['Strategy', deploymentStrategy[d.strategy]],
         ['Duration', duration(d.started_at, d.finished_at)],
         ['Started', stamp(d.started_at)],
         ['Finished', stamp(d.finished_at)],
-        ['Image', d.image_ref ? <Mono key="image">{shortDigest(d.image_ref)}</Mono> : 'none'],
+        ['Image', d.image_ref ? <Code key="image">{shortDigest(d.image_ref)}</Code> : 'none'],
         [
           'Build',
           d.build
@@ -213,11 +214,26 @@ function Facts({ deployment: d }: { deployment: Deployment }) {
 }
 
 function Logs({ deployment: d, live }: { deployment: Deployment; live: boolean }) {
+  const shown = useSearch({
+    from: '/_app/_outside/deployments/$deployment',
+    select: (search) => search.logs,
+  })
+  const navigate = useNavigate()
+  const fallback =
+    d.build && (d.status === 'building' || d.build.status === 'failed') ? 'build' : 'runtime'
+
   return (
     <Panel title="Couldn’t load logs">
       <Tabs
-        defaultValue={
-          d.build && (d.status === 'building' || d.build.status === 'failed') ? 'build' : 'runtime'
+        value={shown ?? fallback}
+        onValueChange={(next) =>
+          void navigate({
+            to: '.',
+            search: (prev) => ({
+              ...prev,
+              logs: next === 'build' ? 'build' : 'runtime',
+            }),
+          })
         }
       >
         <TabsList>
@@ -302,7 +318,7 @@ function StepIcon({ status }: { status: DeploymentStep['status'] }) {
 
 function Steps({ steps }: { steps: DeploymentStep[] }) {
   if (steps.length === 0) {
-    return <p className="text-sm text-muted-foreground">No step has started yet.</p>
+    return <p className="text-sm text-muted-foreground">No steps yet</p>
   }
 
   return (
@@ -321,7 +337,7 @@ function Steps({ steps }: { steps: DeploymentStep[] }) {
             <span className="text-xs text-muted-foreground">Attempt {step.attempt}</span>
           )}
           <span className="text-muted-foreground">{stepStatus[step.status]}</span>
-          <span className="ml-auto flex gap-3 font-mono text-xs text-muted-foreground tabular-nums">
+          <span className="ml-auto flex gap-3 text-xs text-muted-foreground tabular-nums">
             <span>{clock(step.started_at)}</span>
             {step.started_at && <span>{duration(step.started_at, step.finished_at)}</span>}
           </span>
@@ -333,7 +349,15 @@ function Steps({ steps }: { steps: DeploymentStep[] }) {
 
 function StepHeader({ steps }: { steps: DeploymentStep[] }) {
   const now = useNow(1000)
-  const text = stepProgress(steps, new Date(now))
+  const progress = stepProgress(steps, new Date(now))
 
-  return text && <span className="text-foreground tabular-nums">{text}</span>
+  return (
+    progress && (
+      <span className="inline-flex items-baseline gap-2 tabular-nums">
+        <span className="text-foreground">{progress.name}</span>
+        <span className="text-xs">{progress.position}</span>
+        <span className="text-xs">{progress.elapsed}</span>
+      </span>
+    )
+  )
 }

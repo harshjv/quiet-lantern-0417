@@ -209,12 +209,6 @@
     "capability": "sandbox.v1",
     "outboxed": true
   },
-  "sandbox.snapshot.status": {
-    "from": "station",
-    "body": "SandboxSnapshotStatusBody",
-    "capability": "sandbox.v1",
-    "outboxed": true
-  },
   "build.start": {
     "from": "dispatch",
     "body": "BuildStartBody",

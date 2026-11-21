@@ -200,7 +200,7 @@ func allMessageNames() []string {
 		MessageRunStatus, MessageRunExited, MessageBuildStatus, MessageBuildResult, MessageHealthResult, MessageContainerExited,
 		MessageDiskPressure, MessageRegistryMaintenance, MessageComponentStatus, MessageLogGap, MessageAuditRecord,
 		MessageGuardAck, MessageFlowRollup, MessageScanResult, MessageOutboxGap, MessageVolumeBackupResult,
-		MessageVolumeRestoreResult, MessageSandboxStatus, MessageSandboxSnapshotStatus, MessageSandboxStorageGrow,
+		MessageVolumeRestoreResult, MessageSandboxStatus, MessageSandboxStorageGrow,
 		MessageSandboxStorageGrown, MessageBuildStart, MessageBuildAccepted, MessageBuildCancel, MessageBuildCancelled,
 		MessageRunStart, MessageRunAccepted, MessageRunCancel, MessageRunCancelled, MessageLogsQuery, MessageLogsPage,
 		MessageLogsFollow, MessageMetricsSubscribe, MessageMetricsSample, MessageMetricsSampleResult, MessageNetworkSubscribe,

@@ -34,7 +34,7 @@ const credentialOwner = (db: Db, box: typeof machine.$inferSelect, placeholder: 
       owner: task.owner,
     })
     .from(task)
-    .where(and(eq(task.machine_id, box.id), eq(task.machine, 'own')))
+    .where(and(eq(task.machine_id, box.id), eq(task.isolated, true)))
     .get()?.owner.id
 
   return key

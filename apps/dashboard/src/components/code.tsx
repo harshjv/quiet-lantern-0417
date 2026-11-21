@@ -3,6 +3,8 @@ import { Terminal } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 
 import { CopyButton } from '@/components/copy'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { placeholders, type Tool } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
@@ -50,6 +52,26 @@ export function Code({
         className="opacity-0 group-hover/code:opacity-100 focus-visible:opacity-100"
       />
     </span>
+  )
+}
+
+export function CodeInput({ className, ...props }: ComponentProps<typeof Input>) {
+  return <Input spellCheck={false} {...props} className={cn('font-mono', className)} />
+}
+
+export function CodeTextarea({ className, ...props }: ComponentProps<typeof Textarea>) {
+  return <Textarea spellCheck={false} {...props} className={cn('font-mono', className)} />
+}
+
+export function Output({ className, ...props }: ComponentProps<'pre'>) {
+  return (
+    <pre
+      className={cn(
+        'max-h-72 overflow-auto bg-muted p-3 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]',
+        className,
+      )}
+      {...props}
+    />
   )
 }
 
@@ -170,7 +192,6 @@ export function AlsoWith({
         className,
       )}
     >
-      <span>Also with</span>
       {cli && (
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <Terminal className="size-3.5 shrink-0" aria-label="sly" />

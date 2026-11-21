@@ -40,8 +40,8 @@ export function NewPreview({ project, projectName }: { project: string; projectN
       const started = created.deployments.length
 
       return {
-        title: `${created.name} created`,
-        description: `${plural(created.app_count, 'app')} copied from production${started ? `, ${plural(started, 'deployment')} started` : ''}.`,
+        title: `Created ${created.name}`,
+        description: `${plural(created.app_count, 'app')}${started ? `, ${plural(started, 'deployment')}` : ''}`,
       }
     },
     onSuccess: (result) => {
@@ -70,7 +70,7 @@ export function NewPreview({ project, projectName }: { project: string; projectN
       }
       size="md"
       title="Create a preview"
-      description="Copies production’s apps onto their own network, with no domains until you add them. Volumes start empty, and production’s secret values never reach a preview."
+      description="Production’s apps on their own network, without domains, volumes or secret values."
       also={<AlsoWith cli={commands.createPreview(projectName)} tool="create_preview" />}
       error={mutation.errorText}
       submitLabel="Create preview"

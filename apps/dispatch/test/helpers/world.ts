@@ -7,10 +7,10 @@ import {
   createMachine,
   createPreview,
   createProject,
+  pinPlatform,
   placed,
   productionId,
   rows,
-  seedLockfile,
   waitForActive,
   waitForDeployment,
   waitForMachine,
@@ -24,7 +24,6 @@ export type World = {
   locked: string
   apps: Record<string, string>
   machine: string
-  snapshot: string
   lockedApp: string
   scoped: string
   waiting: { id: string } | null
@@ -35,7 +34,9 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
 
   registry.publish('postgres:17')
   registry.publish('nginx:1.27')
-  seedLockfile(h)
+  pinPlatform(h, {
+    machines: true,
+  })
   const station = await startFakeStation(h, 'station-1', {
     machines: {},
   })
@@ -192,36 +193,9 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
 
   const box = await createMachine(h, staging, {
     name: 'scratch',
-    image: {
-      ref: 'nginx:1.27',
-    },
-    network: 'environment',
-    egress: {
-      mode: 'allowlist',
-      domains: [
-        {
-          domain: 'github.com',
-          ports: [443, 22],
-        },
-      ],
-    },
   })
 
   await waitForMachine(h, box.id, 'running')
-  const snapshot = await h.call('POST', `/v1/machines/${box.id}/snapshots`, {
-    token,
-    body: {
-      name: 'seed',
-    },
-  })
-
-  await createMachine(h, staging, {
-    name: 'parked',
-    image: {
-      ref: 'nginx:1.27',
-    },
-    start: false,
-  })
 
   const scoped = await mintToken(
     h,
@@ -253,7 +227,6 @@ export const seedWorld = async (h: Dispatch, registry: FakeRegistry): Promise<Wo
     staging,
     locked,
     machine: box.id,
-    snapshot: snapshot.body.id,
     apps: {
       db: db.id,
       web: web.id,

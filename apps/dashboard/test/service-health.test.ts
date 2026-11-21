@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { App } from '../src/lib/api.ts'
-import { healthChangeText, healthLine, healthPortNote, healthWhy } from '../src/lib/health-text.ts'
+import { healthChangeText, healthFacts, healthPortNote, healthWhy } from '../src/lib/health-text.ts'
 
 const timing = {
   interval_s: 5,
@@ -12,54 +12,68 @@ const timing = {
   failures: 3,
 }
 
-test('an http check reads as one line with its port, timing and thresholds', () => {
-  assert.equal(
-    healthLine({
+test('an http check reads as facts with its port, timing and thresholds', () => {
+  assert.deepEqual(
+    healthFacts({
       type: 'http',
       path: '/',
       port: 3000,
       ...timing,
     }),
-    'HTTP GET / on port 3000 · every 5 s, 3 s timeout · 2 passes to go live, 3 failures before it is failing',
+    [
+      ['Check', 'HTTP GET /'],
+      ['Port', '3000'],
+      ['Every', '5 s'],
+      ['Timeout', '3 s'],
+      ['Healthy after', '2 passes'],
+      ['Failing after', '3 failures'],
+    ],
   )
 })
 
 test('an http check names its Host header when one is set', () => {
-  assert.equal(
-    healthLine({
+  assert.deepEqual(
+    healthFacts({
       type: 'http',
       path: '/ready',
       port: 8080,
       host: 'web.internal',
       ...timing,
-    }),
-    'HTTP GET /ready on port 8080 with Host web.internal · every 5 s, 3 s timeout · 2 passes to go live, 3 failures before it is failing',
+    }).slice(0, 3),
+    [
+      ['Check', 'HTTP GET /ready'],
+      ['Port', '8080'],
+      ['Host', 'web.internal'],
+    ],
   )
 })
 
-test('a tcp, image, alive and absent check each read in one line', () => {
-  assert.equal(
-    healthLine({
+test('a tcp, image, alive and absent check each name their check', () => {
+  assert.deepEqual(
+    healthFacts({
       type: 'tcp',
       port: 5432,
       ...timing,
-    }),
-    'TCP connect to port 5432 · every 5 s, 3 s timeout · 2 passes to go live, 3 failures before it is failing',
+    }).slice(0, 2),
+    [
+      ['Check', 'TCP connect'],
+      ['Port', '5432'],
+    ],
   )
-  assert.equal(
-    healthLine({
+  assert.deepEqual(
+    healthFacts({
       type: 'image',
     }),
-    'The image’s own HEALTHCHECK',
+    [['Check', 'The image’s HEALTHCHECK']],
   )
-  assert.equal(
-    healthLine({
+  assert.deepEqual(
+    healthFacts({
       type: 'alive',
       seconds: 10,
     }),
-    'Running for 10 s without exiting',
+    [['Check', 'Running for 10 s']],
   )
-  assert.equal(healthLine(null), 'No health check; runs are judged by their exit code')
+  assert.deepEqual(healthFacts(null), [['Check', 'None, judged by exit code']])
 })
 
 test('a default check says why it was chosen and a set one does not', () => {
@@ -76,7 +90,7 @@ test('a default check says why it was chosen and a set one does not', () => {
       health: http,
       health_default: true,
     }),
-    'Default for a web app: the first http port',
+    'Default: the first HTTP port',
   )
   assert.equal(
     healthWhy({
@@ -88,7 +102,7 @@ test('a default check says why it was chosen and a set one does not', () => {
       },
       health_default: true,
     }),
-    'Default for a web app with no http port: the first port',
+    'Default: the first port',
   )
   assert.equal(
     healthWhy({
@@ -99,7 +113,7 @@ test('a default check says why it was chosen and a set one does not', () => {
       },
       health_default: true,
     }),
-    'Default for a worker: it has no port to check',
+    'Default: a worker has no port',
   )
   assert.equal(
     healthWhy({

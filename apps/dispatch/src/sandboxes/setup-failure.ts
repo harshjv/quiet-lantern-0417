@@ -1,5 +1,3 @@
-import { eq } from 'drizzle-orm'
-
 import {
   setupFailedMarker,
   workspaceSetupStepValues,
@@ -7,8 +5,7 @@ import {
 } from '@stationly/protocol'
 
 import type { Redactor } from '../api/redaction.ts'
-import type { Db } from '../db/client.ts'
-import { run, type machine } from '../db/schema.ts'
+import type { run } from '../db/schema.ts'
 
 type RunRow = typeof run.$inferSelect
 
@@ -32,34 +29,5 @@ export const setupFailureOf = (setup: Pick<RunRow, 'failure'>, redact: Redactor)
       .filter((line) => !line.startsWith(setupFailedMarker))
       .slice(-tailLines)
       .map((line) => redact(line).slice(0, tailChars)),
-  }
-}
-
-export const workspaceSetupOf = (db: Db, row: typeof machine.$inferSelect) => {
-  if (!row.workspace) {
-    return null
-  }
-
-  const setup = db.select().from(run).where(eq(run.id, row.workspace.setup_run_id)).get()
-  const state =
-    !setup || setup.status === 'queued' || setup.status === 'running'
-      ? 'pending'
-      : setup.status === 'succeeded'
-        ? 'succeeded'
-        : 'failed'
-
-  const {
-    cleanup: _cleanup,
-    token_placeholder: _placeholder,
-    credential_placeholders: _credentials,
-    ...workspace
-  } = row.workspace
-
-  return {
-    ...workspace,
-    setup: {
-      state,
-      step: state === 'failed' ? setupFailureOf(setup!, (text) => text).step : null,
-    },
   }
 }

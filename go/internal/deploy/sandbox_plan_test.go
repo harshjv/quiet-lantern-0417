@@ -89,7 +89,6 @@ func sandboxGeneration() *protocol.Generation {
 				Egress: protocol.SandboxEgress{Mode: protocol.SandboxEgressModeAllowlist, Domains: []protocol.SandboxEgressDomain{{Domain: "github.com", Ports: []int{443, 22}}, {Domain: "githubusercontent.com", Wildcard: true}}},
 			},
 		},
-		SandboxSnapshots: protocol.GenerationSandboxSnapshots{},
 	}
 }
 
@@ -98,8 +97,7 @@ func TestCheckSandboxes(t *testing.T) {
 	taken := func() map[string]netip.Prefix {
 		return map[string]netip.Prefix{"system network": netip.MustParsePrefix("10.200.0.0/24"), "environment env_01": netip.MustParsePrefix("10.200.10.0/24")}
 	}
-	none := func(string, string) bool { return false }
-	if r := checkSandboxes(sandboxGeneration(), pool, taken(), none); r != nil {
+	if r := checkSandboxes(sandboxGeneration(), pool, taken()); r != nil {
 		t.Fatalf("valid generation rejected: %v", r)
 	}
 	cases := []struct {
@@ -135,15 +133,6 @@ func TestCheckSandboxes(t *testing.T) {
 			s.Egress.Domains = []protocol.SandboxEgressDomain{{Domain: "example.com", Ports: []int{1, 2, 3, 4, 5, 6, 7, 8, 9}}}
 			g.Sandboxes["sbx_01JCB4ABCDEF"] = s
 		}, "egress"},
-		{"fork of a snapshot not on the station", func(g *protocol.Generation) {
-			s := g.Sandboxes["sbx_01JCB4ABCDEF"]
-			id := "sbs_01JCB9ABCDEF"
-			s.Disk.From = &protocol.SandboxDiskFrom{SnapshotId: &id}
-			g.Sandboxes["sbx_01JCB4ABCDEF"] = s
-		}, "not on this station"},
-		{"snapshot of an unknown sandbox", func(g *protocol.Generation) {
-			g.SandboxSnapshots["sbs_01JCB9ABCDEF"] = protocol.DesiredSandboxSnapshot{SandboxId: "sbx_01JCB4GONE00", Status: protocol.DesiredSandboxSnapshotStatusActive}
-		}, "neither in the generation"},
 		{"zero size", func(g *protocol.Generation) {
 			s := g.Sandboxes["sbx_01JCB4ABCDEF"]
 			s.Size.DiskBytes = 0
@@ -155,7 +144,7 @@ func TestCheckSandboxes(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			g := sandboxGeneration()
 			c.mutate(g)
-			r := checkSandboxes(g, pool, taken(), none)
+			r := checkSandboxes(g, pool, taken())
 			if r == nil || !strings.Contains(r.Body.Explanation, c.want) {
 				t.Fatalf("checkSandboxes = %v, want a rejection containing %q", r, c.want)
 			}
@@ -163,27 +152,6 @@ func TestCheckSandboxes(t *testing.T) {
 				t.Fatalf("code %s", r.Body.Code)
 			}
 		})
-	}
-	held := func(kind, id string) bool { return kind == "snapshot" && id == "sbs_01JCB9ABCDEF" }
-	g := sandboxGeneration()
-	s := g.Sandboxes["sbx_01JCB4ABCDEF"]
-	id := "sbs_01JCB9ABCDEF"
-	s.Disk.From = &protocol.SandboxDiskFrom{SnapshotId: &id}
-	g.Sandboxes["sbx_01JCB4ABCDEF"] = s
-	if r := checkSandboxes(g, pool, taken(), held); r != nil {
-		t.Fatalf("fork of a snapshot held on the station rejected: %v", r)
-	}
-	g = sandboxGeneration()
-	s = g.Sandboxes["sbx_01JCB4ABCDEF"]
-	gone := "sbx_01JCB4GONE00"
-	s.Disk.From = &protocol.SandboxDiskFrom{SandboxId: &gone}
-	g.Sandboxes["sbx_01JCB4ABCDEF"] = s
-	if r := checkSandboxes(g, pool, taken(), none); r == nil {
-		t.Fatalf("a new fork of a sandbox that is not on the station was accepted")
-	}
-	diskHeld := func(kind, id string) bool { return kind == "sandbox" && id == "sbx_01JCB4ABCDEF" }
-	if r := checkSandboxes(g, pool, taken(), diskHeld); r != nil {
-		t.Fatalf("an existing fork whose source was deleted was rejected: %v", r)
 	}
 }
 

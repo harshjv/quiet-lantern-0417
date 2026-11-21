@@ -5,21 +5,16 @@ import { Option } from '@commander-js/extra-typings'
 
 import { call, group, type Program } from '../command.ts'
 import { inputRequired, usage } from '../errors.ts'
-import { targetId } from '../generated.ts'
 import { appId, projectRef, type Api, type Run } from '../kit.ts'
 import { interactive, need, readStdin } from '../prompt.ts'
 
-const scopes = ['app', 'project', 'global', 'machine'] as const
+const scopes = ['app', 'project', 'global'] as const
 
 type Scope = (typeof scopes)[number]
 
 const scopeOf = (run: Run, chosen: Scope | undefined): Scope => {
   if (chosen) {
     return chosen
-  }
-
-  if (run.selection.machine) {
-    return 'machine'
   }
 
   return run.selection.app ? 'app' : 'project'
@@ -139,14 +134,6 @@ const patch = async (run: Run, scope: Scope, body: Patch) => {
     return run.api.v1['global-environment-variables'].patch(body)
   }
 
-  if (scope === 'machine') {
-    return run.api.v1
-      .machines({
-        machine: await targetId(run, 'machine'),
-      })
-      ['environment-variables'].patch(body)
-  }
-
   if (scope === 'project') {
     return run.api.v1
       .projects({
@@ -176,10 +163,9 @@ export const variableCommands = (program: Program) => {
       'KEY=VALUE pairs; with --secret, a bare KEY prompts for a hidden value',
     )
     .addOption(
-      new Option(
-        '--scope <scope>',
-        'default machine when --machine is selected, app when --app is, else project',
-      ).choices(scopes),
+      new Option('--scope <scope>', 'default app when --app is selected, else project').choices(
+        scopes,
+      ),
     )
     .option('--secret', 'store as secret: write-only, never returned')
     .option('--file <path>', 'read KEY=VALUE lines from a file, or - for stdin')
@@ -193,7 +179,7 @@ export const variableCommands = (program: Program) => {
 
         return patch(run, scope, {
           set,
-          apply: scope === 'machine' ? undefined : options.apply,
+          apply: options.apply,
           allow_unresolved: options.allowUnresolved,
         })
       }),

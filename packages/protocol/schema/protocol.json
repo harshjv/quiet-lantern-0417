@@ -1429,7 +1429,6 @@
         "env_digest",
         "network",
         "egress",
-        "disk",
         "reach"
       ],
       "properties": {
@@ -1496,9 +1495,6 @@
         "egress": {
           "$ref": "#/$defs/SandboxEgress"
         },
-        "disk": {
-          "$ref": "#/$defs/SandboxDisk"
-        },
         "reach": {
           "type": "array",
           "items": {
@@ -1536,36 +1532,6 @@
           "type": "string"
         }
       }
-    },
-    "DesiredSandboxSnapshot": {
-      "title": "DesiredSandboxSnapshot",
-      "type": "object",
-      "required": [
-        "hash",
-        "sandbox_id",
-        "status"
-      ],
-      "properties": {
-        "hash": {
-          "pattern": "^sha256:[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "sandbox_id": {
-          "pattern": "^sbx_[0-9A-HJKMNP-TV-Z]{26}$",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/DesiredSandboxSnapshotStatus"
-        }
-      }
-    },
-    "DesiredSandboxSnapshotStatus": {
-      "title": "DesiredSandboxSnapshotStatus",
-      "type": "string",
-      "enum": [
-        "active",
-        "destroy"
-      ]
     },
     "DesiredSandboxStatus": {
       "title": "DesiredSandboxStatus",
@@ -3178,12 +3144,6 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/DesiredSandbox"
-          }
-        },
-        "sandbox_snapshots": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/DesiredSandboxSnapshot"
           }
         }
       }
@@ -4935,12 +4895,6 @@
             "$ref": "#/$defs/ObservedSandbox"
           }
         },
-        "sandbox_snapshots": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/ObservedSandboxSnapshot"
-          }
-        },
         "sandbox_bases": {
           "type": "object",
           "additionalProperties": {
@@ -5516,49 +5470,6 @@
         }
       }
     },
-    "ObservedSandboxSnapshot": {
-      "title": "ObservedSandboxSnapshot",
-      "type": "object",
-      "required": [
-        "applied_hash",
-        "result",
-        "taken_at",
-        "referenced_bytes",
-        "exclusive_bytes"
-      ],
-      "properties": {
-        "applied_hash": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "result": {
-          "$ref": "#/$defs/ObjectResult"
-        },
-        "failure": {
-          "$ref": "#/$defs/ErrorBody"
-        },
-        "blocked_by": {
-          "type": "string"
-        },
-        "taken_at": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "referenced_bytes": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "exclusive_bytes": {
-          "minimum": 0,
-          "type": "integer"
-        }
-      }
-    },
     "ObservedService": {
       "title": "ObservedService",
       "type": "object",
@@ -5762,12 +5673,6 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/ObservedSandbox"
-          }
-        },
-        "sandbox_snapshots": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/ObservedSandboxSnapshot"
           }
         },
         "sandbox_bases": {
@@ -7350,6 +7255,10 @@
           "pattern": "^[A-Za-z0-9_-]*$",
           "maxLength": 349526,
           "type": "string"
+        },
+        "record": {
+          "description": "false keeps a machine run's output out of the log store; it reaches only the attached stream",
+          "type": "boolean"
         }
       }
     },
@@ -7471,54 +7380,6 @@
           "type": "integer"
         }
       }
-    },
-    "SandboxDisk": {
-      "title": "SandboxDisk",
-      "type": "object",
-      "required": [
-        "from"
-      ],
-      "properties": {
-        "from": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SandboxDiskSource"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "SandboxDiskSource": {
-      "title": "SandboxDiskSource",
-      "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "snapshot_id"
-          ],
-          "properties": {
-            "snapshot_id": {
-              "pattern": "^sbs_[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "required": [
-            "sandbox_id"
-          ],
-          "properties": {
-            "sandbox_id": {
-              "pattern": "^sbx_[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        }
-      ]
     },
     "SandboxEgress": {
       "title": "SandboxEgress",
@@ -7647,66 +7508,6 @@
         "disk_bytes": {
           "minimum": 1,
           "type": "integer"
-        }
-      }
-    },
-    "SandboxSnapshotReportStatus": {
-      "title": "SandboxSnapshotReportStatus",
-      "type": "string",
-      "enum": [
-        "ready",
-        "failed",
-        "deleted"
-      ]
-    },
-    "SandboxSnapshotStatusBody": {
-      "title": "SandboxSnapshotStatusBody",
-      "type": "object",
-      "required": [
-        "seq",
-        "snapshot_id",
-        "status",
-        "taken_at",
-        "exclusive_bytes",
-        "referenced_bytes",
-        "failure"
-      ],
-      "properties": {
-        "seq": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "snapshot_id": {
-          "pattern": "^sbs_[0-9A-HJKMNP-TV-Z]{26}$",
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/SandboxSnapshotReportStatus"
-        },
-        "taken_at": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "exclusive_bytes": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "referenced_bytes": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "failure": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Diagnosis"
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       }
     },
@@ -8677,8 +8478,7 @@
         "container",
         "network",
         "volume",
-        "sandbox_disk",
-        "sandbox_snapshot"
+        "sandbox_disk"
       ]
     },
     "Untrusted": {

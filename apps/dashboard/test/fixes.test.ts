@@ -3,15 +3,7 @@ import { test } from 'node:test'
 
 import { remedyCatalog } from '@stationly/protocol'
 
-import type { NetworkMap } from '../src/lib/api.ts'
-import {
-  errorFix,
-  findingPlan,
-  findingRemedy,
-  planFix,
-  remedies,
-  type FixContext,
-} from '../src/lib/fixes.ts'
+import { errorFix, planFix, remedies, type FixContext } from '../src/lib/fixes.ts'
 
 const context: FixContext = {
   project: 'shop',
@@ -29,17 +21,6 @@ const context: FixContext = {
     build: null,
   },
 }
-
-type MapApp = NetworkMap['apps'][number]
-type Finding = NetworkMap['warnings'][number]
-
-const mapApp = (name: string, status: MapApp['status']) =>
-  ({
-    id: `svc_${name}`,
-    name,
-    status,
-    server_id: 'sta_home',
-  }) as MapApp
 
 test('every remedy in the catalog has a fix and nothing else does', () => {
   assert.deepEqual(Object.keys(remedies).sort(), [...remedyCatalog].sort())
@@ -184,66 +165,10 @@ test('an unknown fix code still offers the agent prompt', () => {
   assert.equal(plan.prompt, 'In shop production on Stationly, help me with this: Do the new thing.')
 })
 
-test('a stopped app gets Start and a never-deployed one gets Deploy', () => {
-  const finding = {
-    code: 'SWITCH_NO_TARGET',
-    explanation: 'web has no running deployment.',
-    details: {
-      app: 'web',
-    },
-  } as Finding
-  const scope = {
-    project: 'shop',
-    preview: null,
-  }
-
-  assert.equal(
-    findingPlan(finding, [mapApp('web', 'stopped')], scope)?.button?.run.tool,
-    'start_app',
-  )
-  assert.equal(findingPlan(finding, [mapApp('web', 'failing')], scope)?.button?.run.tool, 'deploy')
-})
-
-test('findings without a remedy or a known app offer no fix', () => {
-  assert.equal(findingRemedy.SERVER_STALE, null)
-  assert.equal(
-    findingPlan(
-      {
-        code: 'SWITCH_NO_TARGET',
-        explanation: 'gone has no running deployment.',
-        details: {
-          app: 'gone',
-        },
-      },
-      [],
-      {
-        project: 'shop',
-        preview: null,
-      },
-    ),
-    null,
-  )
-})
-
 test('error codes with a remedy map to a fix that keeps the API fix text', () => {
-  assert.deepEqual(errorFix('MACHINE_NOT_RUNNING', 'Start it first.'), {
-    code: 'START_TARGET',
-    text: 'Start it first.',
+  assert.deepEqual(errorFix('NO_CURRENT_DEPLOYMENT', 'Deploy it first.'), {
+    code: 'DEPLOY_TARGET',
+    text: 'Deploy it first.',
   })
   assert.equal(errorFix('SERVER_OFFLINE', 'Wait for the station.'), null)
-  const plan = planFix(errorFix('MACHINE_NOT_RUNNING', 'Start it first.')!, {
-    ...context,
-    subject: {
-      kind: 'machine',
-      id: 'sbx_1',
-      name: 'web-sbx',
-    },
-  })
-
-  assert.deepEqual(plan.button?.run, {
-    tool: 'start_machine',
-    name: 'web-sbx',
-    machine: 'sbx_1',
-  })
-  assert.equal(plan.command, 'sly --project shop --machine web-sbx machines start')
 })

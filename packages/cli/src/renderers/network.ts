@@ -140,9 +140,7 @@ export const connectionsText = (doc: ConnectionsDoc) => {
 
 type ExplanationDoc = Data<ReturnType<Api['projects']>['network']['explain']['get']>
 
-type Probed =
-  | Data<ReturnType<Api['apps']>['network']['probe']['post']>
-  | Data<ReturnType<Api['machines']>['network']['probe']['post']>
+type Probed = Data<ReturnType<Api['apps']>['network']['probe']['post']>
 
 type DnsDoc = Data<ReturnType<Api['apps']>['dns-log']['get']>
 
@@ -197,7 +195,7 @@ export const probeText = (doc: Probed) => {
   }
 
   const lines = [
-    `${doc.at} probe ${doc.kind} from ${'app' in doc ? doc.app : doc.machine} to ${doc.to}${doc.port ? `:${doc.port}` : ''}`,
+    `${doc.at} probe ${doc.kind} from ${doc.app} to ${doc.to}${doc.port ? `:${doc.port}` : ''}`,
   ]
 
   if (doc.dns) {

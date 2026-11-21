@@ -97,14 +97,14 @@ function CreateToken({ onCreated }: { onCreated: (created: Created) => void }) {
         </Button>
       }
       title="Create a personal token"
-      description="It acts with your full admin access, for a script or a CI job. Stationly shows the key once."
+      description="Full admin access for a script or CI job. Shown once."
       error={create.errorText}
       submitLabel="Create token"
       pending={create.isPending}
       submitDisabled={!name.trim()}
       onSubmit={() => create.mutate()}
     >
-      <Field id="token-name" label="Name" hint="Where it runs, such as ci-deploy.">
+      <Field id="token-name" label="Name" hint="Where it runs.">
         <Input
           id="token-name"
           required
@@ -138,11 +138,8 @@ function ShownOnce({ created, onClose }: { created: Created; onClose: () => void
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Copy {created.name} now</DialogTitle>
-          <DialogDescription>
-            Stationly shows this key only here. Set it where the script runs; sly reads it from the
-            environment.
-          </DialogDescription>
+          <DialogTitle>Copy the key now</DialogTitle>
+          <DialogDescription>Shown only here. Set it where sly runs.</DialogDescription>
         </DialogHeader>
         <CommandBlock
           commands={[
@@ -165,7 +162,7 @@ export function PersonalTokens() {
   return (
     <Section
       title="Personal tokens"
-      note="For scripts and CI. A personal token holds full admin access but never counts as a person, so it can’t approve changes. Every admin sees these and can revoke them."
+      note="Full admin access for scripts and CI. Cannot approve changes."
       action={<CreateToken onCreated={setCreated} />}
     >
       {tokens.isPending ? (
@@ -175,7 +172,7 @@ export function PersonalTokens() {
           {failureText(tokens.error)}
         </Notice>
       ) : tokens.data.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No personal tokens yet.</p>
+        <p className="text-sm text-muted-foreground">No personal tokens</p>
       ) : (
         <ItemList>
           {tokens.data.map((token) => (
@@ -197,8 +194,8 @@ export function PersonalTokens() {
                 <RevokeToken
                   token={token}
                   title={`Revoke ${token.name}?`}
-                  description="Anything that uses it loses access at once. A new token has a new key."
-                  revoked={`${token.name} revoked`}
+                  description="Anything that uses it loses access at once."
+                  revoked={`Revoked ${token.name}`}
                 />
               }
             />

@@ -92,7 +92,7 @@ func (s *Station) observed() protocol.Observed {
 	}
 	g := s.plan.Generation
 	o.StationId = g.StationId
-	o.Sandboxes, o.SandboxSnapshots, o.SandboxBases = s.observedSandboxes()
+	o.Sandboxes, o.SandboxBases = s.observedSandboxes()
 	o.Unknown = append(slices.Clone(o.Unknown), s.sbx.unknown...)
 	if pin, ok := g.Components["coupler_image"]; ok {
 		o.Components["coupler_image"] = protocol.ObservedComponent{Version: pin.Version, Digest: (*string)(pin.Digest), Status: protocol.ComponentStatusOk}

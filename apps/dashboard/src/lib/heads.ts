@@ -4,14 +4,13 @@ import {
   appQuery,
   approvalQuery,
   deploymentQuery,
-  machineQuery,
   previewQueryOf,
   projectQuery,
   taskQuery,
 } from './queries'
 import { placeTitle, titled } from './title'
 
-export type Heading = { title: string[]; project?: string }
+export type Heading = { title: string[] }
 
 type Placed = { project_id: string; preview_id: string | null }
 
@@ -22,8 +21,7 @@ const placed = async (client: QueryClient, row: Placed, name: string): Promise<H
     : null
 
   return {
-    title: [name, placeTitle(project.name, preview?.name ?? null), 'Ship'],
-    project: project.name,
+    title: [name, placeTitle(project.name, preview?.name ?? null)],
   }
 }
 
@@ -45,13 +43,6 @@ export const deploymentHeading = (client: QueryClient, id: string) =>
       ),
   )
 
-export const machineHeading = (client: QueryClient, id: string) =>
-  settled(
-    client
-      .ensureQueryData(machineQuery(id))
-      .then((machine) => placed(client, machine, machine.name)),
-  )
-
 export const approvalHeading = (client: QueryClient, id: string) =>
   settled(
     client.ensureQueryData(approvalQuery(id)).then((approval) => ({
@@ -62,7 +53,7 @@ export const approvalHeading = (client: QueryClient, id: string) =>
 export const taskHeading = (client: QueryClient, id: string) =>
   settled(
     client.ensureQueryData(taskQuery(id)).then((task) => ({
-      title: [task.title, task.project.name, 'Build'],
+      title: [task.title, task.project.name],
     })),
   )
 

@@ -32,10 +32,10 @@ import { portRoutes } from './routes/ports.ts'
 import { previewRoutes } from './routes/previews.ts'
 import { projectRoutes } from './routes/projects.ts'
 import { runRoutes } from './routes/runs.ts'
-import { machineRoutes } from './routes/sandboxes.ts'
 import { appRoutes } from './routes/services.ts'
 import { settingRoutes } from './routes/settings.ts'
 import { stationRoutes } from './routes/stations.ts'
+import { taskWorktreeRoutes } from './routes/task-worktree.ts'
 import { taskRoutes } from './routes/tasks.ts'
 import { teamRoutes } from './routes/team.ts'
 import { tokenRoutes } from './routes/tokens.ts'
@@ -128,7 +128,6 @@ const toApiError = (code: string | number, error: unknown): ApiError => {
 
 export const createApi = (deps: Deps) => {
   const kit = createKit(deps)
-  const machines = machineRoutes(kit)
   const idempotencyKeys = new WeakMap<Request, string>()
 
   return new Elysia({
@@ -246,9 +245,9 @@ export const createApi = (deps: Deps) => {
     .use(deploymentRoutes(kit))
     .use(deployActionRoutes(kit))
     .use(runRoutes(kit))
-    .use(machines.routes)
     .use(agentEventRoutes(kit))
-    .use(taskRoutes(kit, machines.createMachine))
+    .use(taskRoutes(kit))
+    .use(taskWorktreeRoutes(kit))
     .use(teamRoutes(kit))
     .use(blobRoutes(kit))
     .use(logRoutes(kit))

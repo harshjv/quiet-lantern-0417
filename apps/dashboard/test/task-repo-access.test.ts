@@ -21,22 +21,19 @@ test('a token the project already has that still cannot read it is an error with
   assert.equal(githubTokenRefused(failure('REPO_ACCESS_REQUIRED')), false)
 })
 
-test('the token help names the project, the repository and how to get one', () => {
-  const help = githubTokenHelp('yolo', 'acme/app')
-
-  assert.match(help, /^yolo has no GitHub token, and acme\/app is private or does not exist\./)
-  assert.match(help, /Contents read and write/)
-  assert.match(help, /gh auth token/)
+test('the token help says why and how to get one', () => {
+  assert.match(githubTokenHelp, /^Private or missing repository\./)
+  assert.match(githubTokenHelp, /Contents read and write/)
+  assert.match(githubTokenHelp, /gh auth token/)
 })
 
 const clone = {
   step: 'clone' as const,
   repository: 'https://github.com/harshjv/etherbit-next-ui',
   branch: null,
-  project: 'yolo',
 }
 
-test('a clone that GitHub asked credentials for says so, names the project and asks for a token', () => {
+test('a clone that GitHub asked credentials for says so and asks for a token', () => {
   const found = setupFailure({
     ...clone,
     tail: ["fatal: could not read Username for 'https://github.com': No such device or address"],
@@ -45,7 +42,7 @@ test('a clone that GitHub asked credentials for says so, names the project and a
   assert.equal(found.title, 'Could not clone harshjv/etherbit-next-ui.')
   assert.equal(
     found.advice,
-    'GitHub asked for credentials, so the repository is private or does not exist. Add a GitHub token to project yolo and start a new task.',
+    'Private or missing repository. Add a GitHub token, then start a new task.',
   )
   assert.equal(found.needsToken, true)
 })

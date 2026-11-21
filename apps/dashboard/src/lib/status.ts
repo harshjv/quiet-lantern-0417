@@ -1,8 +1,4 @@
-import {
-  deploymentCancellableStatuses,
-  deploymentOpenStatuses,
-  machineIdleStatuses,
-} from '@stationly/protocol/domain'
+import { deploymentCancellableStatuses, deploymentOpenStatuses } from '@stationly/protocol/domain'
 
 import type { Deployment, DeploymentStatus, DeploymentStep } from './api'
 import { optimistic } from './cache.ts'
@@ -19,21 +15,6 @@ export const isTerminal = (status: DeploymentStatus | undefined) =>
   status ? !inFlight.has(status) : false
 
 export const isCancellable = (status: DeploymentStatus) => cancellable.has(status)
-
-const idle = new Set<string>(machineIdleStatuses)
-
-const live = new Set<string>(['running', 'starting', 'creating'])
-
-const transient = new Set<string>(['creating', 'starting', 'stopping', 'deleting'])
-
-export const isIdle = (status: string) => idle.has(status)
-
-export const isLive = (status: string) => live.has(status)
-
-export const isTransient = (status: string) => transient.has(status)
-
-export const snapshotsBusy = (items: { status: string }[] | undefined) =>
-  items?.some((s) => s.status === 'creating' || s.status === 'deleting') ?? false
 
 export type TriggerType = Deployment['trigger']['type']
 
@@ -79,9 +60,9 @@ export const stepProgress = (steps: DeploymentStep[], now = new Date()) => {
 
   const names = [...new Set(steps.filter((s) => s.status !== 'skipped').map((s) => s.step))]
 
-  return [
-    `Step ${names.indexOf(current.step) + 1} of ${names.length}`,
-    deploymentStep[current.step],
-    duration(current.started_at, null, now),
-  ].join(' · ')
+  return {
+    position: `Step ${names.indexOf(current.step) + 1} of ${names.length}`,
+    name: deploymentStep[current.step],
+    elapsed: duration(current.started_at, null, now),
+  }
 }

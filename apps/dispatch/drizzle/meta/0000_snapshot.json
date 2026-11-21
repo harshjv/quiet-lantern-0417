@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "58fa3c7b-2ee3-4311-b771-c8799e27535b",
+  "id": "d1883c89-7abb-48d7-a5e2-da59d651c6f5",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -4257,20 +4257,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "forked_from": {
-          "name": "forked_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "disk_from": {
-          "name": "disk_from",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "address": {
           "name": "address",
           "type": "text",
@@ -4350,177 +4336,6 @@
         "machine_server_id_server_id_fk": {
           "name": "machine_server_id_server_id_fk",
           "tableFrom": "machine",
-          "tableTo": "server",
-          "columnsFrom": [
-            "server_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "machine_snapshot": {
-      "name": "machine_snapshot",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "machine_id": {
-          "name": "machine_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "target_id": {
-          "name": "target_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "server_id": {
-          "name": "server_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "image": {
-          "name": "image",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "size": {
-          "name": "size",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "runtime": {
-          "name": "runtime",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'gvisor'"
-        },
-        "settings": {
-          "name": "settings",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'{\"network\":\"isolated\",\"docker\":false,\"egress\":{\"mode\":\"open\",\"domains\":[]},\"command\":null,\"ttl_s\":3600}'"
-        },
-        "source_state": {
-          "name": "source_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "taken_at": {
-          "name": "taken_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "exclusive_bytes": {
-          "name": "exclusive_bytes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "referenced_bytes": {
-          "name": "referenced_bytes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "failure": {
-          "name": "failure",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "machine_snapshot_target_name_unique": {
-          "name": "machine_snapshot_target_name_unique",
-          "columns": [
-            "target_id",
-            "name"
-          ],
-          "isUnique": true,
-          "where": "name is not null"
-        }
-      },
-      "foreignKeys": {
-        "machine_snapshot_server_id_server_id_fk": {
-          "name": "machine_snapshot_server_id_server_id_fk",
-          "tableFrom": "machine_snapshot",
           "tableTo": "server",
           "columnsFrom": [
             "server_id"
@@ -7650,13 +7465,13 @@
           "notNull": true,
           "autoincrement": false
         },
-        "machine": {
-          "name": "machine",
-          "type": "text",
+        "isolated": {
+          "name": "isolated",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'own'"
+          "default": false
         },
         "worktree": {
           "name": "worktree",

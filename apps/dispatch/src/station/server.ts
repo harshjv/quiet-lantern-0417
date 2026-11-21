@@ -1631,7 +1631,7 @@ export const createStationServer = (options: StationServerOptions) => {
           observedByStation.set(stationId, merged)
           const update = envelope.body as MessageBody<'observed.update'>
 
-          if (update.station || update.sandboxes || update.sandbox_snapshots) {
+          if (update.station || update.sandboxes) {
             ingestObservedMachines(db, stationId, merged)
           }
 

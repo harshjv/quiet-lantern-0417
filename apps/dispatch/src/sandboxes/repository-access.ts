@@ -1,7 +1,11 @@
 import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 
-import type { MachineEnvironmentVariableSet } from '@stationly/protocol'
+import {
+  repositoryShorthand,
+  repositoryUrlPattern,
+  type MachineEnvironmentVariableSet,
+} from '@stationly/protocol'
 
 import { fail } from '../api/errors.ts'
 import type { Db } from '../db/client.ts'
@@ -46,6 +50,16 @@ export const readRepository: ReadRepository = async (repository, token) => {
   } catch {
     return 'unknown'
   }
+}
+
+export const repositoryUrlOf = (text: string) => {
+  const value = text.trim()
+
+  if (repositoryShorthand.test(value)) {
+    return `${githubWeb()}/${value.replace(/\.git$/, '')}`
+  }
+
+  return new RegExp(repositoryUrlPattern).test(value) ? value : null
 }
 
 export const isGitHubRepository = (repository: string) =>

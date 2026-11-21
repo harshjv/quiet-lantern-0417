@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
-import { after, before, describe, test } from 'node:test'
+import { after, before, describe, mock, test } from 'node:test'
 
+import { eq } from 'drizzle-orm'
 import WebSocket from 'ws'
 
+import { newId } from '../src/db/ids.ts'
+import { machine, run, task } from '../src/db/schema.ts'
+
 import {
+  addPerson,
   localOrigin,
   mintToken,
   serveOverHttp,
@@ -13,12 +18,11 @@ import {
 } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
 import {
-  createMachine,
-  createPreview,
+  approveWaiting,
   createProject,
+  machineRowOf,
   pinPlatform,
-  placed,
-  productionId,
+  rows,
   waitForMachine,
 } from './helpers/seed.ts'
 
@@ -26,12 +30,10 @@ let h: Dispatch
 let station: FakeStation
 let server: Awaited<ReturnType<typeof serveOverHttp>>
 let project: any
-let envId: string
-let lockedId: string
+let taskId: string
 let boxId: string
+let strangerCookie: string
 let deployToken: string
-let otherDeployToken: string
-let readToken: string
 
 const wsUrl = (path: string) => `${server.url.replace(/^http/, 'ws')}${path}`
 
@@ -125,26 +127,130 @@ const bearer = (token: string) => ({
   authorization: `Bearer ${token}`,
 })
 
+const session = (cookie: string) => ({
+  cookie,
+  origin: localOrigin,
+})
+
+const asHuman = (method: string, path: string, body?: unknown) =>
+  h.call(method, path, {
+    ...session(h.admin.cookie),
+    body,
+  })
+
+const taskRow = (id: string) => h.db.select().from(task).where(eq(task.id, id)).get()!
+
+const setMachineStatus = (id: string, status: 'running' | 'stopped') =>
+  h.db
+    .update(machine)
+    .set({
+      status,
+    })
+    .where(eq(machine.id, id))
+    .run()
+
+const openShell = async () => {
+  const deadline = Date.now() + 5000
+
+  for (;;) {
+    const reply = await asHuman('POST', `/v1/tasks/${taskId}/shells`)
+
+    if (reply.status === 201 || Date.now() > deadline) {
+      assert.equal(reply.status, 201, reply.text)
+
+      return reply.body
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
+const seedMachineRun = (kind: 'shell' | 'exec', exec: { attach: boolean; task_id?: string }) => {
+  const id = newId('run')
+
+  h.db
+    .insert(run)
+    .values({
+      id,
+      app_id: null,
+      machine_id: boxId,
+      deployment_id: null,
+      kind,
+      command: ['true'],
+      status: 'queued',
+      log_ref: `logs/sandboxes/${boxId}/${id}`,
+      tty: kind === 'shell',
+      actor: {
+        type: 'user',
+        id: h.admin.userId,
+        client: null,
+      },
+      exec: {
+        cwd: '/root',
+        user: null,
+        timeout_s: null,
+        stdin: null,
+        env_keys: [],
+        ...exec,
+      },
+    })
+    .run()
+
+  return id
+}
+
+const forwardPath = (port: number | string, id = taskId) => `/v1/tasks/${id}/forward?port=${port}`
+
 before(async () => {
   h = await startDispatch()
   pinPlatform(h, {
     machines: true,
   })
   station = await startFakeStation(h, 'station-1', {
-    machines: {},
+    machines: {
+      interactiveShell: true,
+    },
   })
   server = await serveOverHttp(h, {
     attach: true,
   })
   project = await createProject(h, 'alpha')
-  envId = (await createPreview(h, 'alpha', 'dev')).id
-  lockedId = productionId(h, project.id)
-  boxId = (
-    await createMachine(h, envId, {
-      name: 'previewable',
-    })
-  ).id
+  mock.method(h.deps.github, 'resolveRepo', () =>
+    Promise.resolve({
+      auth: 'public' as const,
+      default_branch: 'main',
+    }),
+  )
+
+  const keyed = await approveWaiting(
+    h,
+    await asHuman('PATCH', `/v1/projects/${project.id}/environment-variables`, {
+      target: 'production',
+      set: [
+        {
+          name: 'ANTHROPIC_API_KEY',
+          kind: 'secret',
+          value: 'sk-ant-test-value',
+        },
+      ],
+    }),
+  )
+
+  assert.equal(keyed.status, 200, keyed.text)
+
+  const created = await asHuman('POST', '/v1/tasks', {
+    project: 'alpha',
+    repository: 'https://github.com/acme/app',
+    agent: 'claude',
+    prompt: 'Make the button blue',
+    isolated: true,
+  })
+
+  assert.equal(created.status, 202, created.text)
+  taskId = created.body.id
+  boxId = taskRow(taskId).machine_id
   await waitForMachine(h, boxId, 'running')
+  strangerCookie = (await addPerson(h, 'stranger@example.com', 'admin')).cookie
   deployToken = await mintToken(
     h,
     [
@@ -156,114 +262,67 @@ before(async () => {
     ],
     'deployer',
   )
-  otherDeployToken = await mintToken(
-    h,
-    [
-      {
-        project_id: project.id,
-        target: '*',
-        level: 'deploy',
-      },
-    ],
-    'other-deployer',
-  )
-  readToken = await mintToken(
-    h,
-    [
-      {
-        project_id: project.id,
-        target: '*',
-        level: 'read',
-      },
-    ],
-    'reader',
-  )
 })
 
 after(async () => {
+  mock.restoreAll()
   await server.close()
   await h.close()
 })
 
 describe('the port forward WebSocket', () => {
-  test('a request without credentials is 401 and read access is 403', async () => {
-    const anonymous = await refused(`/v1/machines/${boxId}/forward?port=3000`, {})
+  test('a request without credentials is 401, a token is HUMAN_REQUIRED and a person who does not own the task is 403', async () => {
+    const anonymous = await refused(forwardPath(3000), {})
 
     assert.equal(anonymous.status, 401)
     assert.equal(anonymous.body.error.code, 'UNAUTHENTICATED')
-    const reader = await refused(`/v1/machines/${boxId}/forward?port=3000`, bearer(readToken))
 
-    assert.equal(reader.status, 403)
-    assert.equal(reader.body.error.code, 'FORBIDDEN_SCOPE')
-    assert.equal(reader.body.error.details.required.level, 'deploy')
+    for (const token of [deployToken, h.admin.token]) {
+      const refusal = await refused(forwardPath(3000), bearer(token))
+
+      assert.equal(refusal.status, 403)
+      assert.equal(refusal.body.error.code, 'HUMAN_REQUIRED')
+      assert.equal(refusal.body.error.details.reason, 'human_required')
+    }
+
+    const stranger = await refused(forwardPath(3000), session(strangerCookie))
+
+    assert.equal(stranger.status, 403)
+    assert.equal(stranger.body.error.code, 'FORBIDDEN_SCOPE')
   })
 
-  test('an unknown machine is 404, a port outside 1 to 65535 is 400 and a stopped machine is 409', async () => {
+  test('an unknown task is 404, a port outside 1 to 65535 is 400 and a stopped machine is 409', async () => {
     const unknown = await refused(
-      '/v1/machines/sbx_01ARZ3NDEKTSV4RRFFQ69G5FAV/forward?port=3000',
-      bearer(deployToken),
+      forwardPath(3000, 'tsk_01ARZ3NDEKTSV4RRFFQ69G5FAV'),
+      session(h.admin.cookie),
     )
 
     assert.equal(unknown.status, 404)
 
     for (const port of ['0', '70000', 'abc', '']) {
-      const bad = await refused(`/v1/machines/${boxId}/forward?port=${port}`, bearer(deployToken))
+      const bad = await refused(forwardPath(port), session(h.admin.cookie))
 
       assert.equal(bad.status, 400, port)
       assert.equal(bad.body.error.code, 'VALIDATION_FAILED')
     }
 
-    const cold = await createMachine(h, envId, {
-      name: 'cold-forward',
-      start: false,
-    })
-    const stopped = await refused(`/v1/machines/${cold.id}/forward?port=3000`, bearer(deployToken))
+    setMachineStatus(boxId, 'stopped')
+    const stopped = await refused(forwardPath(3000), session(h.admin.cookie))
 
+    setMachineStatus(boxId, 'running')
     assert.equal(stopped.status, 409)
     assert.equal(stopped.body.error.code, 'MACHINE_NOT_RUNNING')
-    assert.match(stopped.body.error.fix, /start_machine/)
-  })
-
-  test('in production a token is refused and a human session is accepted', async () => {
-    const locked = await h.call('POST', placed(h, lockedId, `machines`), {
-      cookie: h.admin.cookie,
-      origin: localOrigin,
-      body: {
-        name: 'locked-forward',
-      },
-    })
-
-    assert.equal(locked.status, 201, locked.text)
-    await waitForMachine(h, locked.body.id, 'running')
-    const token = await refused(
-      `/v1/machines/${locked.body.id}/forward?port=8080`,
-      bearer(h.admin.token),
-    )
-
-    assert.equal(token.status, 403)
-    assert.equal(token.body.error.code, 'HUMAN_REQUIRED')
-    assert.equal(token.body.error.details.reason, 'human_required')
-    const session = await open(`/v1/machines/${locked.body.id}/forward?port=8080`, {
-      cookie: h.admin.cookie,
-      origin: localOrigin,
-    })
-
-    await until(
-      () => session.control.find((m) => m.type === 'forwarding'),
-      'the forwarding message',
-    )
-    session.ws.close()
-    await session.closed
+    assert.equal(stopped.body.error.details.status, 'stopped')
   })
 
   test('an accepted forward moves bytes both ways through stationd on the channel-0 frames', async () => {
-    const session = await open(`/v1/machines/${boxId}/forward?port=3000`, bearer(deployToken))
+    const forward = await open(forwardPath(3000), session(h.admin.cookie))
     const ready = await until(
-      () => session.control.find((m) => m.type === 'forwarding'),
+      () => forward.control.find((m) => m.type === 'forwarding'),
       'the forwarding message',
     )
 
-    assert.deepEqual([ready.machine_id, ready.port], [boxId, 3000])
+    assert.deepEqual([ready.task_id, ready.port], [taskId, 3000])
     const opened = station.received.find(
       (m) => m.type === 'forward.open' && (m.body as any).sandbox_id === boxId,
     )!.body as any
@@ -272,11 +331,12 @@ describe('the port forward WebSocket', () => {
       [opened.sandbox_id, opened.port, opened.service_id, opened.environment_id],
       [boxId, 3000, undefined, undefined],
     )
-    session.ws.send(Buffer.concat([Buffer.from([0]), Buffer.from('GET / HTTP/1.1')]), {
+    assert.equal(rows(h, "select id from audit_event where action = 'task.forward'").length, 1)
+    forward.ws.send(Buffer.concat([Buffer.from([0]), Buffer.from('GET / HTTP/1.1')]), {
       binary: true,
     })
     const echoed = await until(
-      () => session.frames.find((f) => f.text === 'GET / HTTP/1.1'.toUpperCase()),
+      () => forward.frames.find((f) => f.text === 'GET / HTTP/1.1'.toUpperCase()),
       'the echoed frame',
     )
 
@@ -285,33 +345,31 @@ describe('the port forward WebSocket', () => {
       station.forwarded.find((f) => f.sandbox_id === boxId && f.port === 3000)?.data,
       ['GET / HTTP/1.1'],
     )
-    session.ws.close()
-    await session.closed
+    forward.ws.close()
+    await forward.closed
     await until(() => station.received.some((m) => m.type === 'stream.cancel'), 'stream.cancel')
   })
 
   test('a connection stationd cannot make ends the stream with reason connect_failed', async () => {
-    const session = await open(`/v1/machines/${boxId}/forward?port=9`, bearer(deployToken))
-    const end = await until(() => session.control.find((m) => m.type === 'end'), 'the end message')
+    const forward = await open(forwardPath(9), session(h.admin.cookie))
+    const end = await until(() => forward.control.find((m) => m.type === 'end'), 'the end message')
 
     assert.equal(end.reason, 'connect_failed')
-    await session.closed
+    await forward.closed
   })
 
   test('at most 16 forwards are open per machine', async () => {
     const sessions: Session[] = []
 
     for (let i = 0; i < 16; i++) {
-      sessions.push(
-        await open(`/v1/machines/${boxId}/forward?port=${4000 + i}`, bearer(deployToken)),
-      )
+      sessions.push(await open(forwardPath(4000 + i), session(h.admin.cookie)))
     }
 
     for (const s of sessions) {
       await until(() => s.control.find((m) => m.type === 'forwarding'), 'forwarding')
     }
 
-    const extra = await refused(`/v1/machines/${boxId}/forward?port=5000`, bearer(deployToken))
+    const extra = await refused(forwardPath(5000), session(h.admin.cookie))
 
     assert.equal(extra.status, 429)
     assert.equal(extra.body.error.code, 'RATE_LIMITED')
@@ -323,100 +381,57 @@ describe('the port forward WebSocket', () => {
   })
 })
 
-describe('the attach WebSocket for machine runs', () => {
-  test('an exec created with attach = true streams its output and reports its exit', async () => {
-    const created = await h.call('POST', `/v1/machines/${boxId}/exec`, {
-      token: deployToken,
-      body: {
-        command: ['echo', 'attached'],
-        attach: true,
-      },
-    })
-
-    assert.equal(created.status, 201, created.text)
-    const session = await open(created.body.attach_url, bearer(deployToken))
-    const exit = await until(
-      () => session.control.find((m) => m.type === 'exit'),
-      'the exit message',
-    )
-
-    assert.equal(exit.status, 'succeeded')
-    assert.equal(exit.exit_code, 0)
-    assert.ok(session.control.some((m) => m.type === 'attached' && m.tty === false))
-    assert.equal(session.frames[0]!.channel, 1)
-    assert.match(session.frames[0]!.text, /\$ echo attached/)
-    const sent = station.received
-      .filter((m) => m.type === 'run.start' && (m.body as any).run_id === created.body.id)
-      .at(-1)!.body as any
-
-    assert.deepEqual(
-      [sent.attach, sent.sandbox_id, sent.service_id, sent.deployment_id, sent.rows, sent.cols],
-      [true, boxId, null, null, null, null],
-    )
-    await session.closed
-  })
-
-  test('a shell attaches once, only by the actor that created it, and a second attach is refused', async () => {
-    const shell = await h.call('POST', `/v1/machines/${boxId}/shells`, {
-      token: deployToken,
-      body: {
-        cwd: '/root',
-      },
-    })
-
-    assert.equal(shell.status, 201, shell.text)
-    const stranger = await refused(
-      `${shell.body.attach_url}?rows=40&cols=132`,
-      bearer(otherDeployToken),
-    )
+describe('the attach WebSocket for task shells', () => {
+  test('a shell attaches once, only by the task owner, and a second attach is refused', async () => {
+    const shell = await openShell()
+    const stranger = await refused(`${shell.attach_url}?rows=40&cols=132`, session(strangerCookie))
 
     assert.equal(stranger.status, 403)
     assert.equal(stranger.body.error.code, 'FORBIDDEN_SCOPE')
-    const reader = await refused(shell.body.attach_url, bearer(readToken))
+    const token = await refused(shell.attach_url, bearer(deployToken))
 
-    assert.equal(reader.status, 403)
-    const session = await open(`${shell.body.attach_url}?rows=40&cols=132`, bearer(deployToken))
+    assert.equal(token.status, 403)
+    assert.equal(token.body.error.code, 'FORBIDDEN_SCOPE')
+    const attached = await open(`${shell.attach_url}?rows=40&cols=132`, session(h.admin.cookie))
 
-    await until(() => session.control.find((m) => m.type === 'exit'), 'the shell to end')
+    await until(() => attached.control.some((m) => m.type === 'attached'), 'the attach')
     const sent = station.received
-      .filter((m) => m.type === 'run.start' && (m.body as any).run_id === shell.body.id)
+      .filter((m) => m.type === 'run.start' && (m.body as any).run_id === shell.id)
       .at(-1)!.body as any
 
     assert.deepEqual(
       [sent.kind, sent.tty, sent.rows, sent.cols, sent.cwd, sent.sandbox_id],
-      ['shell', true, 40, 132, '/root', boxId],
+      [
+        'shell',
+        true,
+        40,
+        132,
+        taskRow(taskId).worktree ?? machineRowOf(h, boxId).workspace!.path,
+        boxId,
+      ],
     )
-    await session.closed
-    const again = await refused(shell.body.attach_url, bearer(deployToken))
+    attached.ws.send(Buffer.concat([Buffer.from([0]), Buffer.from('exit\r')]))
+    const exit = await until(
+      () => attached.control.find((m) => m.type === 'exit'),
+      'the exit message',
+    )
+
+    assert.deepEqual([exit.run_id, exit.status, exit.exit_code], [shell.id, 'succeeded', 0])
+    await attached.closed
+    const again = await refused(shell.attach_url, session(h.admin.cookie))
 
     assert.equal(again.status, 400)
     assert.equal(again.body.error.code, 'VALIDATION_FAILED')
   })
 
   test('control frames that are not a valid resize or eof are dropped and the shell keeps running', async () => {
-    const interactive = await startFakeStation(h, 'station-2', {
-      machines: {
-        interactiveShell: true,
-      },
-    })
-    const box = await createMachine(h, envId, {
-      name: 'interactive',
-      server_id: 'station-2',
-    })
-
-    await waitForMachine(h, box.id, 'running')
-    const shell = await h.call('POST', `/v1/machines/${box.id}/shells`, {
-      token: deployToken,
-      body: {},
-    })
-
-    assert.equal(shell.status, 201, shell.text)
-    const session = await open(`${shell.body.attach_url}?rows=24&cols=80`, bearer(deployToken))
+    const shell = await openShell()
+    const attached = await open(`${shell.attach_url}?rows=24&cols=80`, session(h.admin.cookie))
     const stdin = (text: string) =>
-      session.ws.send(Buffer.concat([Buffer.from([0]), Buffer.from(text)]))
-    const resizes = () => interactive.shellResizes.filter((r) => r.run_id === shell.body.id)
+      attached.ws.send(Buffer.concat([Buffer.from([0]), Buffer.from(text)]))
+    const resizes = () => station.shellResizes.filter((r) => r.run_id === shell.id)
 
-    await until(() => session.control.some((m) => m.type === 'attached'), 'the attach')
+    await until(() => attached.control.some((m) => m.type === 'attached'), 'the attach')
 
     for (const frame of [
       'null',
@@ -426,33 +441,45 @@ describe('the attach WebSocket for machine runs', () => {
       '{"type":"resize","rows":0,"cols":80}',
       '{"type":"resize","rows":50,"cols":160}',
     ]) {
-      session.ws.send(frame)
+      attached.ws.send(frame)
     }
 
     await until(() => resizes().length > 0, 'the resize')
     stdin('stty size\r')
-    await until(() => session.frames.some((f) => f.text.includes('50 160')), 'the new window size')
+    await until(() => attached.frames.some((f) => f.text.includes('50 160')), 'the new window size')
     assert.deepEqual(resizes(), [
       {
-        run_id: shell.body.id,
+        run_id: shell.id,
         rows: 50,
         cols: 160,
       },
     ])
     stdin('exit\r')
-    await session.closed
+    await attached.closed
   })
 
-  test('a detached exec cannot be attached', async () => {
-    const detached = await h.call('POST', `/v1/machines/${boxId}/exec`, {
-      token: deployToken,
-      body: {
-        command: ['true'],
-        wait_s: 5,
-      },
-    })
-    const reply = await refused(`/v1/runs/${detached.body.id}/attach`, bearer(deployToken))
+  test('a machine run that belongs to no task is refused', async () => {
+    const reply = await refused(
+      `/v1/runs/${seedMachineRun('shell', {
+        attach: true,
+      })}/attach`,
+      session(h.admin.cookie),
+    )
+
+    assert.equal(reply.status, 403)
+    assert.equal(reply.body.error.code, 'FORBIDDEN_SCOPE')
+  })
+
+  test('a detached exec of a task cannot be attached', async () => {
+    const reply = await refused(
+      `/v1/runs/${seedMachineRun('exec', {
+        attach: false,
+        task_id: taskId,
+      })}/attach`,
+      session(h.admin.cookie),
+    )
 
     assert.equal(reply.status, 400)
+    assert.equal(reply.body.error.code, 'VALIDATION_FAILED')
   })
 })

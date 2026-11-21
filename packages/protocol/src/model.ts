@@ -739,10 +739,6 @@ export const MachineStatusReason = StringEnum(machineStatusReasonValues, {
   title: 'SandboxStatusReason',
 })
 
-export const machineSnapshotStatusValues = ['creating', 'ready', 'failed', 'deleting'] as const
-
-export const machineSourceStateValues = ['running', 'stopped'] as const
-
 export const machineEgressModeValues = ['open', 'allowlist'] as const
 
 export const machineLimitsDefaults = {
@@ -750,12 +746,6 @@ export const machineLimitsDefaults = {
   max_running: 20,
   memory_bytes: null,
   min_free_bytes: null,
-} as const
-
-export const machineTtl = {
-  min: 60,
-  max: 2592000,
-  default: 3600,
 } as const
 
 export const machineEgressLimits = {

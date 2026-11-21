@@ -47,32 +47,28 @@ type Setup = {
 export const setup: Record<McpClient, Setup> = {
   'claude-code': {
     inRepository: true,
-    after:
-      'It writes .mcp.json there. Restart Claude Code and approve the stationly server when it asks.',
+    after: 'Restart Claude Code and approve the stationly server.',
   },
   cursor: {
-    after:
-      'Add the server it prints to .cursor/mcp.json in your repository, or to ~/.cursor/mcp.json for every project. Then reload Cursor.',
+    after: 'Add the printed server to .cursor/mcp.json, then reload Cursor.',
     snippet: {
       caption: '.cursor/mcp.json',
       code: server('cursor'),
     },
   },
   codex: {
-    after: 'Then register the server with Codex, which writes it to ~/.codex/config.toml.',
+    after: 'Then register the server with Codex.',
     follow: 'codex mcp add stationly -- sly mcp --client codex',
   },
   windsurf: {
-    after:
-      'Windsurf is now Devin Desktop. Add the server to ~/.config/devin/mcp_config.json, or to .devin/mcp_config.json in your repository.',
+    after: 'Add the printed server to ~/.config/devin/mcp_config.json in Devin Desktop.',
     snippet: {
       caption: 'mcp_config.json',
       code: server('windsurf'),
     },
   },
   generic: {
-    after:
-      'Add the server it prints to your client’s MCP settings. The client starts sly on your computer and talks to it over stdio.',
+    after: 'Add the printed server to your client’s MCP settings.',
     snippet: {
       caption: 'MCP server definition',
       code: server('generic'),

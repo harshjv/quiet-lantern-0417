@@ -88,8 +88,8 @@ export const startShip = async (
   if (!box || box.status !== 'running' || !row.worktree) {
     fail(
       'MACHINE_NOT_RUNNING',
-      `The machine of task ${row.title} is not running, so its work cannot be pushed.`,
-      'Reply to the task to start its machine, then ship again.',
+      `Task ${row.title} is not running, so its work cannot be pushed.`,
+      'Reply to the task to start it, then ship again.',
       {
         machine_id: row.machine_id,
       },
@@ -235,10 +235,23 @@ export const startShip = async (
   return request
 }
 
-const pullRequestBody = (row: TaskRow, dashboardOrigin: string) =>
-  [`Work from the Stationly task "${row.title}".`, '', `Task: ${dashboardOrigin}/build/${row.id}`]
+const pullRequestBody = (db: Db, row: TaskRow, dashboardOrigin: string) => {
+  const owner = db
+    .select({
+      name: project.name,
+    })
+    .from(project)
+    .where(eq(project.id, row.project_id))
+    .get()!
+
+  return [
+    `Work from the Stationly task "${row.title}".`,
+    '',
+    `Task: ${dashboardOrigin}/p/${encodeURIComponent(owner.name)}/build/${row.id}`,
+  ]
     .join('\n')
     .trim()
+}
 
 const linkPreview = (db: Db, row: TaskRow, repo: string, number: number) => {
   if (!row.preview_id) {
@@ -358,7 +371,7 @@ export const advanceShips = async (deps: { db: Db; github: GitHub; dashboardOrig
       const pull = await deps.github.openPullRequest(repo, {
         branch: row.branch,
         title: row.title,
-        body: pullRequestBody(row, deps.dashboardOrigin),
+        body: pullRequestBody(db, row, deps.dashboardOrigin),
       })
 
       db.update(task)

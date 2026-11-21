@@ -2,16 +2,15 @@ import type { LinkOptions } from '@tanstack/react-router'
 import { defaultFilter } from 'cmdk'
 
 import { agentHints } from './agent-hints.ts'
-import type { App, Deployment, Machine, Preview, Project } from './api.ts'
+import type { App, Deployment, Preview, Project } from './api.ts'
 import { commands, type AppScope, type Scope } from './commands.ts'
 import { byName } from './format.ts'
-import { appTo, machineTo, placeTo } from './links.ts'
+import { appTo, placeTo } from './links.ts'
 
 export type Space = {
   project: string
   preview: Pick<Preview, 'id' | 'name'> | null
   apps: readonly Pick<App, 'id' | 'name'>[]
-  machines: readonly Pick<Machine, 'id' | 'name'>[]
   deployments: readonly Pick<Deployment, 'id' | 'number' | 'app_id'>[]
 }
 
@@ -71,19 +70,7 @@ export const destinations = (
           value: app.id,
           label: app.name,
           hint: spaceName(space),
-          to: appTo(app.id),
-        }),
-      ),
-    ),
-  ),
-  machines: productionFirst(
-    spaces.flatMap((space) =>
-      space.machines.map((machine) =>
-        placed(space, {
-          value: machine.id,
-          label: machine.name,
-          hint: spaceName(space),
-          to: machineTo(machine.id),
+          to: appTo(space.project, app.id),
         }),
       ),
     ),
@@ -164,7 +151,6 @@ export type Page =
   | { kind: 'project'; project: string }
   | { kind: 'place'; scope: Scope }
   | { kind: 'app'; scope: AppScope }
-  | { kind: 'machine'; scope: Scope; machine: string }
 
 export const pageProject = (page: Page) =>
   page.kind === 'project' ? page.project : 'scope' in page ? page.scope.project : null
@@ -199,10 +185,5 @@ export const pageText = (page: Page): PageText => {
         prompt: hint.prompt(page.scope),
       }
     }
-
-    case 'machine':
-      return {
-        command: commands.startMachine(page.scope, page.machine),
-      }
   }
 }

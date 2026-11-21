@@ -4,7 +4,6 @@ import { Loader2, Wrench } from 'lucide-react'
 import { Code, Command } from '@/components/code'
 import { CopyButton } from '@/components/copy'
 import { deployCopy, useDeploy, useRollback } from '@/components/deploy-actions'
-import { useMachinePower } from '@/components/sandbox-actions'
 import { Button } from '@/components/ui/button'
 import { api, idempotency, send, type ApiFailure } from '@/lib/api'
 import { errorFix, planFix, type Fix, type FixContext, type FixPlan, type Run } from '@/lib/fixes'
@@ -82,8 +81,8 @@ function RollbackRun({ run, ...props }: Pressable & { run: RunOf<'rollback'> }) 
 }
 
 const appCopy = {
-  start_app: (name: string) => `${name} is starting`,
-  update_app: (name: string) => `${name} updated`,
+  start_app: (name: string) => `Starting ${name}`,
+  update_app: (name: string) => `Updated ${name}`,
 } as const
 
 function AppRun({ run, ...props }: Pressable & { run: RunOf<'start_app' | 'update_app'> }) {
@@ -104,9 +103,7 @@ function AppRun({ run, ...props }: Pressable & { run: RunOf<'start_app' | 'updat
     waiting: () => props.label,
     success: (body) => ({
       title: appCopy[run.tool](run.name),
-      description: body.deployments[0]
-        ? `Deployment #${body.deployments[0].number} is rolling it out.`
-        : undefined,
+      description: body.deployments[0] ? `Deploying #${body.deployments[0].number}` : undefined,
     }),
     onSuccess: (result) => {
       const deployment = !result.waiting && result.body.deployments[0]
@@ -126,18 +123,6 @@ function AppRun({ run, ...props }: Pressable & { run: RunOf<'start_app' | 'updat
   return <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate()} />
 }
 
-function MachineRun({ run, ...props }: Pressable & { run: RunOf<'start_machine'> }) {
-  const mutation = useMachinePower(
-    {
-      id: run.machine,
-      name: run.name,
-    },
-    'start',
-  )
-
-  return <FixButton {...props} pending={mutation.isPending} onClick={() => mutation.mutate()} />
-}
-
 function RunButton({ run, ...props }: Pressable & { run: Run }) {
   if (run.tool === 'deploy') {
     return <DeployRun {...props} run={run} />
@@ -145,10 +130,6 @@ function RunButton({ run, ...props }: Pressable & { run: Run }) {
 
   if (run.tool === 'rollback') {
     return <RollbackRun {...props} run={run} />
-  }
-
-  if (run.tool === 'start_machine') {
-    return <MachineRun {...props} run={run} />
   }
 
   return <AppRun {...props} run={run} />
@@ -204,7 +185,7 @@ function FixItem({ plan, lead, primary }: { plan: FixPlan; lead: boolean; primar
     >
       <div className="flex items-start gap-3">
         <p className={cn('min-w-0 flex-1 text-sm', lead && 'font-medium')}>{plan.text}</p>
-        <span className="shrink-0 font-mono text-xs text-muted-foreground">{plan.code}</span>
+        <Code className="shrink-0 text-xs">{plan.code}</Code>
       </div>
       <FixActions plan={plan} primary={primary} />
     </li>

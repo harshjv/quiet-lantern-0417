@@ -4,28 +4,26 @@ import { after, before, describe, test } from 'node:test'
 import { Value } from '@sinclair/typebox/value'
 import { eq } from 'drizzle-orm'
 
-import { Generation } from '@stationly/protocol'
+import { Generation, machineSizeDefaults, workspaceEgress } from '@stationly/protocol'
 import { releaseRepositories } from '@stationly/protocol/release-config'
 
 import { machine } from '../src/db/schema.ts'
+import { requestDeletion, stopMachine, systemActor } from '../src/sandboxes/lifecycle.ts'
 
 import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
-import { FakeRegistry } from './helpers/registry.ts'
 import {
-  createApp,
   createMachine,
   createPreview,
   createProject,
+  machineRowOf,
   pinPlatform,
-  placed,
   rows,
   toolchainImageDigest,
   waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
-let registry: FakeRegistry
 let station: FakeStation
 let envId: string
 let project: any
@@ -39,9 +37,6 @@ const api = (method: string, path: string, body?: unknown) =>
 const latest = () => station.generations.at(-1)!
 
 before(async () => {
-  registry = FakeRegistry.install()
-  registry.publish('nginx:1.27')
-  registry.publish('alpine:3.20')
   h = await startDispatch()
   pinPlatform(h, {
     machines: true,
@@ -55,43 +50,20 @@ before(async () => {
 
 after(async () => {
   await h.close()
-  registry.restore()
 })
 
 describe('what a generation holds for machines', () => {
-  test('a station that reports no machine capability gets no machine environment variables at all', async () => {
+  test('a station that reports no machine capability gets no machine entries at all', async () => {
     const plain = await startFakeStation(h, 'station-plain')
     const doc = await plain.waitForGeneration()
 
     assert.equal(doc.sandboxes, undefined)
-    assert.equal(doc.sandbox_snapshots, undefined)
     assert.equal(doc.station.sandbox_network, undefined)
   })
 
-  test('an isolated machine with Docker and an allowlist carries every field of the Machine object, and the station gets its machine network', async () => {
+  test('a workspace machine carries every field of its entry, and the station gets its machine network', async () => {
     const box = await createMachine(h, envId, {
       name: 'full',
-      docker: true,
-      command: ['sleep', 'infinity'],
-      size: {
-        cpu_millis: 4000,
-        memory_bytes: 8589934592,
-        disk_bytes: 42949672960,
-      },
-      ttl_s: 7200,
-      egress: {
-        mode: 'allowlist',
-        domains: [
-          {
-            domain: 'github.com',
-            ports: [443, 22],
-          },
-          {
-            domain: 'githubusercontent.com',
-            wildcard: true,
-          },
-        ],
-      },
     })
     const doc = await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined)
     const entry = doc.sandboxes![box.id] as any
@@ -109,8 +81,8 @@ describe('what a generation holds for machines', () => {
         docker: entry.docker,
         network: entry.network,
         egress: entry.egress,
-        disk: entry.disk,
         reach: entry.reach,
+        api_relay: entry.api_relay,
       },
       {
         environment_id: envId,
@@ -118,44 +90,28 @@ describe('what a generation holds for machines', () => {
         name: 'full',
         status: 'active',
         desired_state: 'running',
-        command: ['sleep', 'infinity'],
-        size: {
-          cpu_millis: 4000,
-          memory_bytes: 8589934592,
-          disk_bytes: 42949672960,
-        },
-        docker: true,
+        command: null,
+        size: box.size,
+        docker: false,
         network: 'isolated',
-        egress: {
-          mode: 'allowlist',
-          domains: [
-            {
-              domain: 'github.com',
-              wildcard: false,
-              ports: [443, 22],
-            },
-            {
-              domain: 'githubusercontent.com',
-              wildcard: true,
-              ports: [443],
-            },
-          ],
-        },
-        disk: {
-          from: null,
-        },
+        egress: box.egress,
         reach: [],
+        api_relay: true,
       },
     )
+    assert.equal(entry.size.cpu_millis, machineSizeDefaults.cpu_millis)
+    assert.deepEqual(
+      entry.egress.domains.map((d: { domain: string }) => d.domain),
+      workspaceEgress('claude').domains.map((d) => d.domain),
+    )
+    assert.equal(entry.egress.mode, 'allowlist')
+    assert.equal(entry.stop_at, null)
     assert.deepEqual(entry.image, {
       ref: null,
       digest: toolchainImageDigest,
       image_ref: `${releaseRepositories.sandbox_toolchain}@${toolchainImageDigest}`,
     })
     assert.match(entry.env_digest, /^sha256:[0-9a-f]{64}$/)
-    const left = Date.parse(entry.stop_at) - Date.now()
-
-    assert.ok(left > 7190_000 && left <= 7200_000)
     const net = doc.station.sandbox_network!
 
     assert.equal(net.bridge_name, 'sly-sandbox')
@@ -164,7 +120,6 @@ describe('what a generation holds for machines', () => {
     const taken = new Set(Object.values(doc.environments).map((e) => e.network.subnet))
 
     assert.ok(!taken.has(net.subnet))
-    assert.deepEqual(doc.sandbox_snapshots, {})
     assert.equal(Value.Check(Generation, doc), true)
     assert.equal(
       rows<{ machine_subnet: string }>(
@@ -176,113 +131,18 @@ describe('what a generation holds for machines', () => {
     )
   })
 
-  test('a machine that joins its preview network brings that network and its virtual IPs into the generation', async () => {
-    const env = await createPreview(h, 'alpha', 'joined')
-    const web = await createApp(h, env.id, {
-      name: 'web',
-      ref: 'nginx:1.27',
-      ports: [
-        {
-          port: 80,
-        },
-      ],
-      extra: {
-        server_id: station.stationId,
-      },
-    })
-    const box = await createMachine(h, env.id, {
-      name: 'joiner',
-      network: 'environment',
-      start: false,
-    })
-    const doc = await station.waitForGeneration(
-      (d) => d.sandboxes?.[box.id] !== undefined && d.environments[env.id] !== undefined,
-    )
-    const entry = doc.sandboxes![box.id] as any
-
-    assert.equal(entry.network, 'environment')
-    const vips = rows<{ id: string }>(
-      h,
-      'select id from virtual_ip where target_id = ? and app_id = ?',
-      env.id,
-      web.id,
-    )
-
-    assert.deepEqual(
-      entry.reach,
-      vips.map((v) => v.id),
-    )
-    assert.ok((doc.environments[env.id] as any).network.subnet)
-    assert.equal(entry.desired_state, 'stopped')
-    assert.equal(entry.stop_at, null)
-    const network = (await api('GET', placed(h, env.id, `network`))).body
-
-    assert.deepEqual(
-      network.machines.map((s: any) => [s.id, s.name, s.status, s.egress.mode]),
-      [[box.id, 'joiner', 'stopped', 'open']],
-    )
-    assert.ok(
-      network.paths.some((p: any) => p.path === 'sandbox_inbound' && p.verdict === 'blocked'),
-    )
-    assert.ok(!network.paths.some((p: any) => p.path === 'domain_not_allowed'))
-    await api('PATCH', `/v1/machines/${box.id}`, {
-      egress: {
-        mode: 'allowlist',
-        domains: [
-          {
-            domain: 'example.com',
-          },
-        ],
-      },
-    })
-    const withList = (await api('GET', placed(h, env.id, `network`))).body
-
-    assert.ok(withList.paths.some((p: any) => p.path === 'domain_not_allowed'))
-    const isolatedElsewhere = (await api('GET', placed(h, envId, `network`))).body
-
-    assert.deepEqual(isolatedElsewhere.machines, [])
-  })
-
-  test('a custom image is pinned by digest as a registry reference', async () => {
-    const box = await createMachine(h, envId, {
-      name: 'pinned',
-      image: {
-        ref: 'alpine:3.20',
-      },
-      start: false,
-    })
-    const doc = await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined)
-    const image = (doc.sandboxes![box.id] as any).image
-
-    assert.equal(image.ref, 'alpine:3.20')
-    assert.equal(image.digest, box.image.digest)
-    assert.equal(image.image_ref, `docker.io/library/alpine@${box.image.digest}`)
-  })
-
-  test('stop_at, desired_state and a changed ttl_s follow the row from one generation to the next', async () => {
+  test('desired_state and stop_at follow the row from one generation to the next', async () => {
     const box = await createMachine(h, envId, {
       name: 'moving',
-      ttl_s: 600,
     })
 
     await waitForMachine(h, box.id, 'running')
-    const before = (await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined))
+    const running = (await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined))
       .sandboxes![box.id] as any
 
-    await api('PATCH', `/v1/machines/${box.id}`, {
-      ttl_s: 7200,
-    })
-    const extended = (
-      await station.waitForGeneration(
-        (d) =>
-          d.sandboxes?.[box.id] !== undefined &&
-          (d.sandboxes[box.id] as any).stop_at !== before.stop_at,
-      )
-    ).sandboxes![box.id] as any
-
-    assert.ok(Date.parse(extended.stop_at) - Date.parse(before.stop_at) > 6000_000)
-    assert.notEqual(extended.hash, before.hash)
-    await api('POST', `/v1/machines/${box.id}/stop`)
+    assert.equal(running.desired_state, 'running')
+    stopMachine(h.db, machineRowOf(h, box.id))
+    h.deps.stations.reconcile()
     const stopped = (
       await station.waitForGeneration(
         (d) => (d.sandboxes?.[box.id] as any)?.desired_state === 'stopped',
@@ -291,16 +151,20 @@ describe('what a generation holds for machines', () => {
 
     assert.equal(stopped.stop_at, null)
     assert.equal(stopped.status, 'active')
+    assert.notEqual(stopped.hash, running.hash)
   })
 
   test('a deleted machine is sent with status destroy and leaves the generation once the station reports it deleted', async () => {
     const box = await createMachine(h, envId, {
       name: 'vanishing',
-      start: false,
     })
 
     await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined)
-    await api('DELETE', `/v1/machines/${box.id}`)
+    requestDeletion(h.db, machineRowOf(h, box.id), {
+      actor: systemActor,
+      reason: 'user',
+    })
+    h.deps.stations.reconcile()
     const destroyedDoc = await station.waitForGeneration(
       (d) => (d.sandboxes?.[box.id] as any)?.status === 'destroy',
     )
@@ -322,38 +186,13 @@ describe('what a generation holds for machines', () => {
     )
   })
 
-  test('snapshots are sent active, then destroy, then dropped', async () => {
-    const box = await createMachine(h, envId, {
-      name: 'snapped',
-      start: false,
-    })
-    const snapshot = (await api('POST', `/v1/machines/${box.id}/snapshots`, {})).body
-    const active = (
-      await station.waitForGeneration((d) => d.sandbox_snapshots?.[snapshot.id] !== undefined)
-    ).sandbox_snapshots![snapshot.id] as any
-
-    assert.deepEqual([active.sandbox_id, active.status], [box.id, 'active'])
-    assert.match(active.hash, /^sha256:/)
-    await api('DELETE', `/v1/machine-snapshots/${snapshot.id}`)
-    const gone = await station.waitForGeneration(
-      (d) => (d.sandbox_snapshots?.[snapshot.id] as any)?.status === 'destroy',
-    )
-
-    assert.equal((gone.sandbox_snapshots![snapshot.id] as any).status, 'destroy')
-    await station.waitFor(
-      () => rows(h, 'select id from machine_snapshot where id = ?', snapshot.id).length === 0,
-      5000,
-      'the snapshot row to be removed',
-    )
-  })
-
   test('a machine whose object does not match the schema keeps its last applied version and raises a generation finding', async () => {
     const box = await createMachine(h, envId, {
       name: 'invalid-later',
     })
     const good = (await station.waitForGeneration((d) => d.sandboxes?.[box.id] !== undefined))
       .sandboxes![box.id] as any
-    const row = h.db.select().from(machine).where(eq(machine.id, box.id)).get()!
+    const row = machineRowOf(h, box.id)
 
     h.db
       .update(machine)
@@ -362,7 +201,6 @@ describe('what a generation holds for machines', () => {
           ref: null,
           digest: 'sha256:short',
         },
-        ttl_s: 1,
       })
       .where(eq(machine.id, box.id))
       .run()
@@ -381,7 +219,6 @@ describe('what a generation holds for machines', () => {
       .update(machine)
       .set({
         image: row.image,
-        ttl_s: row.ttl_s,
       })
       .where(eq(machine.id, box.id))
       .run()

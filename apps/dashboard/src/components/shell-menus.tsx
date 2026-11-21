@@ -41,7 +41,7 @@ export function LiveIndicator({ state }: { state: StreamState }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex items-center gap-1.5 px-2 py-1 font-mono text-xs text-muted-foreground"
+          className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground"
           role="status"
           aria-label={liveText[state]}
           tabIndex={0}
@@ -56,9 +56,7 @@ export function LiveIndicator({ state }: { state: StreamState }) {
           {state === 'live' ? null : liveText[state]}
         </span>
       </TooltipTrigger>
-      <TooltipContent>
-        {liveText[state]}. Status changes appear without refreshing. Reconnects on its own.
-      </TooltipContent>
+      <TooltipContent>{liveText[state]}</TooltipContent>
     </Tooltip>
   )
 }
@@ -148,7 +146,7 @@ export function AccountMenu({ onHelp }: { onHelp: () => void }) {
       <DropdownMenuContent side="top" align="start" className="w-60">
         <DropdownMenuLabel className="flex flex-col">
           <span className="truncate">{account.name}</span>
-          <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+          <span className="truncate text-xs font-normal text-muted-foreground">
             {account.detail}
           </span>
         </DropdownMenuLabel>
@@ -164,7 +162,7 @@ export function AccountMenu({ onHelp }: { onHelp: () => void }) {
         <DropdownMenuSeparator />
         <ThemeChoice />
         <DropdownMenuItem asChild>
-          <Link to="/projects" onClick={() => setGuideHidden(false)}>
+          <Link to="/" onClick={() => setGuideHidden(false)}>
             <ListChecks /> Get started
           </Link>
         </DropdownMenuItem>

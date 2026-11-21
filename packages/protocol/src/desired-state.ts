@@ -517,46 +517,11 @@ export const DesiredSandbox = Type.Object(
     env_digest: Digest,
     network: MachineNetwork,
     egress: MachineEgress,
-    disk: Type.Object(
-      {
-        from: Nullable(
-          Type.Union(
-            [
-              Type.Object({
-                snapshot_id: Id('machine_snapshot'),
-              }),
-              Type.Object({
-                sandbox_id: Id('machine'),
-              }),
-            ],
-            {
-              title: 'SandboxDiskSource',
-            },
-          ),
-        ),
-      },
-      {
-        title: 'SandboxDisk',
-      },
-    ),
     reach: Type.Array(Id('virtual_ip')),
     api_relay: Type.Optional(Type.Literal(true)),
   },
   {
     title: 'DesiredSandbox',
-  },
-)
-
-export const DesiredSandboxSnapshot = Type.Object(
-  {
-    hash: Digest,
-    sandbox_id: Id('machine'),
-    status: StringEnum(['active', 'destroy'], {
-      title: 'DesiredSandboxSnapshotStatus',
-    }),
-  },
-  {
-    title: 'DesiredSandboxSnapshot',
   },
 )
 
@@ -590,7 +555,6 @@ export const Generation = Type.Object(
     workshops: IdMap(DesiredWorkshop),
     system_targets: IdMap(SystemTarget),
     sandboxes: Type.Optional(IdMap(DesiredSandbox)),
-    sandbox_snapshots: Type.Optional(IdMap(DesiredSandboxSnapshot)),
   },
   {
     title: 'Generation',

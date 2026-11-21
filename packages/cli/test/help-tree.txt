@@ -144,56 +144,6 @@ sly logout
   Revoke the sly session on the instance, then forget it and its machine key
 sly logs
   Read logs for one selector; follow = true streams new lines as SSE
-sly machines
-  Persistent Linux machines for agents, isolated with gVisor
-sly machines create [name]
-  Create a machine, or fork one from a snapshot or a live machine disk with from
-sly machines delete [machine]
-  Delete a machine and its disk; its snapshots stay
-sly machines delete-snapshot <id>
-  Delete a machine snapshot
-sly machines exec <words...>
-  Run a command in a running machine and stream its output: sly machines exec <machine> -- <command>
-sly machines forward <port> [machine]
-  Listen on 127.0.0.1 and forward to a port of a running machine
-sly machines get [machine]
-  Get a machine
-sly machines get-connections [machine]
-  Live connections and refused attempts of a machine; one sample
-sly machines get-dns-log [machine]
-  The machine's recent DNS queries from the resolver's ring, newest first, as untrusted data
-sly machines get-metrics [machine]
-  Latest live metrics sample of a machine
-sly machines get-resolved-environment-variables [machine]
-  The resolved environment variables of a machine with their sources; a value only with admin and never a secret one
-sly machines get-snapshot <id>
-  Get a machine snapshot
-sly machines grow-storage <server>
-  Grow a server's machine filesystem to size_bytes while machines run; needs approval for a non-human actor under platform.protected
-sly machines list
-  List the machines of production or a preview
-sly machines list-environment-variables [machine]
-  List the environment variables of a machine; values are never listed
-sly machines list-project-snapshots
-  List the machine snapshots of production or a preview
-sly machines list-runs [machine]
-  List the runs of a machine
-sly machines list-snapshots [machine]
-  List the snapshots of a machine
-sly machines probe-network [machine]
-  Ask the machine's resolver as the machine, or judge one TCP handshake with the machine ruleset and send it from the server when the ruleset accepts the destination
-sly machines set-environment-variables [machine]
-  Set and unset a machine's environment variables; references to project and global environment variables keep values out of the agent's hands
-sly machines shell [words...]
-  Interactive shell in a running machine: sly machines shell <machine>; needs a terminal and a human actor in production
-sly machines snapshot [machine]
-  Take a read-only copy of a machine's disk; files on the disk, credentials included, are copied into every snapshot and fork
-sly machines start [machine]
-  Start a stopped machine; ttl_s replaces the stored one
-sly machines stop [machine]
-  Stop a machine and keep its disk
-sly machines update [machine]
-  Change a machine: ttl_s extends from now, egress and disk size apply at once, the rest at the next start
 sly manifest
   The Manifest: stationly.yaml
 sly manifest apply
@@ -237,7 +187,7 @@ sly network
 sly network describe
   Get the network map of production or a preview: subnets, DNS names, virtual IPs, Switch targets, domains and every path
 sly network explain
-  Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.
+  Why the selected app can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.
 sly network get-connections
   Live connections of an app grouped by peer, and refused attempts with the path that refused them; one sample
 sly network get-dns-log
@@ -330,6 +280,8 @@ sly servers enroll <name>
   Create a server in enrolling state and a one-time enrollment token (15 minutes)
 sly servers get <server>
   Get a server by id or name
+sly servers grow-task-storage <server>
+  Grow a server's task storage to size_bytes while tasks run; needs approval for a non-human actor under platform.protected
 sly servers list
   List servers; removed servers only with revoked = true
 sly servers remove <server>
@@ -349,13 +301,17 @@ sly shell
 sly tasks
   tasks
 sly tasks create
-  Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor
+  Start a task: a branch, a working copy and, with a prompt, the agent's first turn once it is set up. Without a prompt the task is finished after setup and its first reply starts the agent. Needs a human actor
 sly tasks decide <task> <approval>
   Allow or deny a tool call the task's agent asked for; needs a human actor
 sly tasks delete <task>
-  Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor
+  Delete a task, its working copy and its conversations; the branch on GitHub stays. Needs a human actor
 sly tasks events <task>
   Events of every conversation of a task, for an instance admin; Accept: text/event-stream streams them, resuming after since or Last-Event-ID
+sly tasks files <task>
+  List a directory of a task's worktree, directories first, without following symlinks; for the task's owner or an admin
+sly tasks forward <task> [port]
+  Listen on 127.0.0.1 and forward to a port of a task, as its owner: sly tasks forward <task> [port]; the task's port by default
 sly tasks get <task>
   A task with its status and setup; for an instance admin
 sly tasks interrupt <task>
@@ -364,8 +320,12 @@ sly tasks list
   Tasks, newest first, with their status and setup; for an instance admin
 sly tasks preview <task>
   Deploy a task's worktree into its own preview, made the first time; needs a human, the task's owner or an admin
+sly tasks read <task>
+  Read a file of a task's worktree, its first 256 KiB; a path that leaves the worktree, symlinks included, is refused. For the task's owner or an admin
 sly tasks reply <task>
   Send the next prompt to a task; only a human actor may send one
+sly tasks shell <task>
+  Interactive shell in a task's worktree, as you, its owner: sly tasks shell <task>; needs a terminal
 sly tasks ship <task>
   Push a task's branch, open its pull request and ask an admin to approve merging it; needs a human, the task's owner or an admin
 sly tokens

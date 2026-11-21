@@ -30,7 +30,6 @@ const idQueries: Record<string, string> = {
   approval: 'select id from approval',
   'environment-variable': 'select id from environment_variable',
   machine: 'select id from machine',
-  'machine-snapshot': 'select id from machine_snapshot',
   'notification-channel': 'select id from notification_channel',
 }
 
@@ -47,7 +46,6 @@ const segmentKinds: Record<string, string> = {
   approvals: 'approval',
   'environment-variables': 'environment-variable',
   machines: 'machine',
-  'machine-snapshots': 'machine-snapshot',
   'notification-channels': 'notification-channel',
 }
 
@@ -61,6 +59,8 @@ const fixedQuery: Record<string, string> = {
 }
 
 const documented = new Set([400, 404, 409, 422, 503])
+
+const workspaceTokenOnly = (path: string) => path.startsWith('/v1/machines/{machine}/agent/')
 
 const listOperations = async (h: Dispatch) => {
   const doc = (
@@ -184,7 +184,8 @@ const sweep = (
               )
             } else {
               assert.ok(
-                documented.has(reply.status),
+                documented.has(reply.status) ||
+                  (workspaceTokenOnly(op.path) && reply.body?.error?.code === 'FORBIDDEN_SCOPE'),
                 `${where} answered ${reply.status}: ${reply.text}`,
               )
               assert.ok(

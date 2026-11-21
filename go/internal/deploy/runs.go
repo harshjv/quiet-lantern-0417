@@ -57,6 +57,7 @@ type runRecord struct {
 	Detail       map[string]any         `json:"detail"`
 	Requested    bool                   `json:"requested,omitempty"`
 	Attach       bool                   `json:"attach,omitempty"`
+	Unrecorded   bool                   `json:"unrecorded,omitempty"`
 	TTY          bool                   `json:"tty,omitempty"`
 	Rows         int                    `json:"rows,omitempty"`
 	Cols         int                    `json:"cols,omitempty"`

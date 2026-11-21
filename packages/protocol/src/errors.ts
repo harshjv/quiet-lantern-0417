@@ -638,7 +638,6 @@ export const warningCatalog = [
   'SECRET_VALUE_MISSING',
   'SOURCE_POLLING',
   'MACHINE_RESTART_REQUIRED',
-  'MACHINE_SNAPSHOT_CRASH_CONSISTENT',
 ] as const
 
 export type WarningCode = (typeof warningCatalog)[number]

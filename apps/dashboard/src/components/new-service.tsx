@@ -3,12 +3,11 @@ import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
-import { AlsoWith } from '@/components/code'
+import { AlsoWith, CodeInput } from '@/components/code'
 import { RemoveButton } from '@/components/confirm'
 import { CheckboxField, Field, FieldSet, hintId } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { SlugInput } from '@/components/slug-input'
-import { Term } from '@/components/term'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -151,16 +150,14 @@ export function NewApp({
     invalidate: ['apps'],
     waiting: () => `Create ${name} in ${placeName(place)}`,
     success: (body) => ({
-      title: `${body.name} created`,
-      description: body.deployments.length
-        ? 'Its first deployment started.'
-        : 'Deploy it from its page when you’re ready.',
+      title: `Created ${body.name}`,
+      description: body.deployments.length ? 'First deployment started.' : undefined,
     }),
     onSuccess: (result) => {
       onOpenChange(false)
 
       if (!result.waiting) {
-        void navigate(appTo(result.body.id))
+        void navigate(appTo(place.projectName, result.body.id))
       }
     },
   })
@@ -177,12 +174,6 @@ export function NewApp({
       }}
       size="lg"
       title={`New app in ${placeName(place)}`}
-      description={
-        <>
-          Runs a container image, or builds a GitHub repository and redeploys on every push. For a
-          template, use sly or a <Term name="manifest" />.
-        </>
-      }
       error={mutation.errorText}
       also={<AlsoWith cli={commands.createApp(scopeOf(place), choice)} tool="create_app" />}
       submitLabel="Create app"
@@ -236,16 +227,14 @@ export function NewApp({
         <Field
           id="app-image"
           label="Image"
-          hint="Use a tag like nginx:1.27 or a digest. Stationly pins the tag to a digest when you create the app. Deploy picks up a newer image for the tag; Redeploy keeps the pinned one."
+          hint="A tag or a digest. Stationly pins a tag to its digest."
         >
-          <Input
+          <CodeInput
             id="app-image"
             required
             value={image}
             onChange={(e) => setImage(e.target.value)}
-            className="font-mono"
             placeholder="traefik/whoami@sha256:…"
-            spellCheck={false}
             aria-describedby={hintId('app-image')}
           />
         </Field>
@@ -270,7 +259,7 @@ export function NewApp({
       {kind === 'web' && (
         <FieldSet
           legend="Ports"
-          hint="HTTP ports can have a domain. TCP ports stay inside the network."
+          hint="HTTP ports take a domain. TCP ports stay inside the network."
         >
           <ul className="space-y-2">
             {ports.rows.map((p, i) => (
@@ -287,7 +276,7 @@ export function NewApp({
                       port: e.target.value,
                     })
                   }
-                  className="w-28 font-mono"
+                  className="w-28 tabular-nums"
                 />
                 <Select
                   value={p.protocol}
@@ -460,20 +449,14 @@ function RepositoryFields({
 }) {
   return (
     <>
-      <Field
-        id="app-repository"
-        label="Repository"
-        hint="owner/name or a github.com URL. Stationly builds it through the GitHub App when the App is installed on it, and reads a public repository without one."
-      >
-        <Input
+      <Field id="app-repository" label="Repository" hint="owner/name or a github.com URL.">
+        <CodeInput
           id="app-repository"
           required
           list="app-repositories"
           value={repository}
           onChange={(e) => onRepository(e.target.value)}
-          className="font-mono"
           placeholder="owner/name"
-          spellCheck={false}
           aria-invalid={invalid}
           aria-describedby={hintId('app-repository')}
         />
@@ -495,14 +478,12 @@ function RepositoryFields({
               : 'Every push to it deploys.'
           }
         >
-          <Input
+          <CodeInput
             id="app-branch"
             required={!defaultBranch}
             value={branch}
             onChange={(e) => onBranch(e.target.value)}
-            className="font-mono"
             placeholder={defaultBranch ?? 'main'}
-            spellCheck={false}
             aria-describedby={hintId('app-branch')}
           />
         </Field>
@@ -524,26 +505,22 @@ function RepositoryFields({
           label="Folder (optional)"
           hint="Where the build starts inside the repository."
         >
-          <Input
+          <CodeInput
             id="app-folder"
             value={folder}
             onChange={(e) => onFolder(e.target.value)}
-            className="font-mono"
             placeholder="/"
             pattern="/.*"
-            spellCheck={false}
             aria-describedby={hintId('app-folder')}
           />
         </Field>
         {builder === 'dockerfile' && (
           <Field id="app-dockerfile" label="Dockerfile (optional)" hint="Relative to the folder.">
-            <Input
+            <CodeInput
               id="app-dockerfile"
               value={dockerfile}
               onChange={(e) => onDockerfile(e.target.value)}
-              className="font-mono"
               placeholder="Dockerfile"
-              spellCheck={false}
               aria-describedby={hintId('app-dockerfile')}
             />
           </Field>

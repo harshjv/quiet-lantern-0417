@@ -48,10 +48,7 @@ function Connected({ project }: { project: string }) {
 
   return (
     <div className="space-y-2 rounded-md border border-dashed p-3 text-sm">
-      <p className="font-medium">No agent connected yet</p>
-      <p className="text-muted-foreground">
-        With sly installed and signed in, this adds Stationly to Claude Code for {project}.
-      </p>
+      <p className="font-medium">No agent connected</p>
       <CommandBlock
         commands={commands.mcpInstall({
           client: 'claude-code',
@@ -79,9 +76,7 @@ export function AgentSheet<S extends Scope>({ hint, scope }: { hint: Hint<S>; sc
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
         <SheetHeader className="border-b">
           <SheetTitle>Do this with your agent</SheetTitle>
-          <SheetDescription>
-            Paste the prompt into an agent that has Stationly connected.
-          </SheetDescription>
+          <SheetDescription>Paste the prompt into a connected agent.</SheetDescription>
         </SheetHeader>
         <div className="space-y-6 p-4">
           <Connected project={scope.project} />

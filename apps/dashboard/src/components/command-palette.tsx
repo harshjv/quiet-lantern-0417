@@ -20,7 +20,6 @@ import { toast } from 'sonner'
 
 import { NewProject } from '@/components/new-project'
 import { NewApp } from '@/components/new-service'
-import { NewMachine } from '@/components/sandboxes-panel'
 import { ShortcutKeys } from '@/components/shortcut-keys'
 import {
   Command,
@@ -36,6 +35,7 @@ import { isInstanceAdmin } from '@/lib/agent-session'
 import { signOut } from '@/lib/auth'
 import { commands } from '@/lib/commands'
 import { entityIcon } from '@/lib/icons'
+import { newTaskTo, taskTo } from '@/lib/links'
 import {
   destinations,
   pageProject,
@@ -52,8 +52,6 @@ import {
   appQuery,
   appsQuery,
   deploymentQuery,
-  machineQuery,
-  machinesQuery,
   meQuery,
   placeDeploymentsQuery,
   previewsQuery,
@@ -62,12 +60,11 @@ import {
 } from '@/lib/queries'
 import type { ShortcutId } from '@/lib/shortcuts'
 import { pages } from '@/workbench/outside'
-import { modeHome, useMode, useProject, type Mode } from '@/workbench/where'
+import { inProject, useProject, viewTo } from '@/workbench/where'
 
 type Here = { page: Page | null; place: PlaceView | null }
 
-type Creating =
-  { kind: 'project' } | { kind: 'app'; place: PlaceView } | { kind: 'machine'; place: PlaceView }
+type Creating = { kind: 'project' } | { kind: 'app'; place: PlaceView }
 
 const nowhere: Here = {
   page: null,
@@ -129,22 +126,6 @@ const appHere = (client: QueryClient, appId: string): Here => {
     : nowhere
 }
 
-const machineHere = (client: QueryClient, machineId: string): Here => {
-  const machine = client.getQueryData(machineQuery(machineId).queryKey)
-  const found = machine && trail(client, machine)
-
-  return found
-    ? {
-        place: found.place,
-        page: {
-          kind: 'machine',
-          scope: found.scope,
-          machine: machine.name,
-        },
-      }
-    : nowhere
-}
-
 const projectHere = (client: QueryClient, name: string, previewName: string | null): Here => {
   const project = projectWhere(client, (p) => p.name === name)
   const place =
@@ -164,17 +145,12 @@ const projectHere = (client: QueryClient, name: string, previewName: string | nu
 type Params = {
   app?: string
   deployment?: string
-  machine?: string
   project?: string
   preview?: string
 }
 
-const locate = (client: QueryClient, mode: Mode, params: Params): Here => {
-  if (mode !== 'ship') {
-    return nowhere
-  }
-
-  const { app, deployment, machine, project } = params
+const locate = (client: QueryClient, params: Params): Here => {
+  const { app, deployment, project } = params
 
   if (app) {
     return appHere(client, app)
@@ -184,10 +160,6 @@ const locate = (client: QueryClient, mode: Mode, params: Params): Here => {
     const found = client.getQueryData(deploymentQuery(deployment).queryKey)
 
     return found ? appHere(client, found.app_id) : nowhere
-  }
-
-  if (machine) {
-    return machineHere(client, machine)
   }
 
   if (project) {
@@ -238,13 +210,10 @@ function useDestinations(searching: boolean) {
   const apps = useQueries({
     queries: each(appsQuery),
   })
-  const machines = useQueries({
-    queries: each(machinesQuery),
-  })
   const deployments = useQueries({
     queries: each(placeDeploymentsQuery),
   })
-  const pending = [projects, tasks, ...previews, ...apps, ...machines, ...deployments].some(
+  const pending = [projects, tasks, ...previews, ...apps, ...deployments].some(
     (query) => query.isPending && query.fetchStatus === 'fetching',
   )
 
@@ -254,12 +223,7 @@ function useDestinations(searching: boolean) {
       value: task.id,
       label: task.title,
       hint: task.project.name,
-      to: {
-        to: '/build/$task',
-        params: {
-          task: task.id,
-        },
-      },
+      to: taskTo(task.project.name, task.id),
     })),
     found: destinations(
       projectItems,
@@ -267,7 +231,6 @@ function useDestinations(searching: boolean) {
         project: space.project,
         preview: space.preview,
         apps: apps[index]?.data?.items ?? [],
-        machines: machines[index]?.data?.items ?? [],
         deployments: deployments[index]?.data?.items ?? [],
       })),
     ),
@@ -310,19 +273,19 @@ const modeGoTo: GoTo[] = [
   {
     label: 'Build',
     icon: Blocks,
-    to: (project) => modeHome('build', project),
+    to: inProject((project) => viewTo('build', project)),
     shortcut: 'build',
   },
   {
     label: 'Ship',
     icon: Rocket,
-    to: (project) => modeHome('ship', project),
+    to: inProject((project) => viewTo('ship', project)),
     shortcut: 'ship',
   },
   {
     label: 'Observe',
     icon: Eye,
-    to: (project) => modeHome('observe', project),
+    to: inProject((project) => viewTo('observe', project)),
     shortcut: 'observe',
   },
 ]
@@ -364,11 +327,6 @@ const groups: { heading: string; icon: LucideIcon; key: keyof ReturnType<typeof 
       heading: 'Apps',
       icon: entityIcon.app,
       key: 'apps',
-    },
-    {
-      heading: 'Machines',
-      icon: entityIcon.machine,
-      key: 'machines',
     },
     {
       heading: 'Recent deployments',
@@ -414,7 +372,6 @@ function PaletteContent({
   const current = useProject()
   const here = locate(
     client,
-    useMode(),
     useParams({
       strict: false,
     }),
@@ -487,12 +444,7 @@ function PaletteContent({
           terms: 'create task',
           icon: Plus,
           shortcut: 'newTask',
-          onSelect: goto({
-            to: '/build/new',
-            search: {
-              project: current ?? undefined,
-            },
-          }),
+          onSelect: goto(inProject(newTaskTo)(current)),
         },
         {
           value: 'create project',
@@ -516,19 +468,6 @@ function PaletteContent({
                 onSelect: run(() =>
                   onCreate({
                     kind: 'app',
-                    place,
-                  }),
-                ),
-              },
-              {
-                value: 'create machine',
-                label: 'New machine',
-                hint: placeHint,
-                terms: 'create machine',
-                icon: Plus,
-                onSelect: run(() =>
-                  onCreate({
-                    kind: 'machine',
                     place,
                   }),
                 ),
@@ -679,9 +618,6 @@ export function CommandPalette({
       </CommandDialog>
       {creating?.kind === 'project' && <NewProject open onOpenChange={done} />}
       {creating?.kind === 'app' && <NewApp place={creating.place} open onOpenChange={done} />}
-      {creating?.kind === 'machine' && (
-        <NewMachine place={creating.place} open onOpenChange={done} />
-      )}
     </>
   )
 }

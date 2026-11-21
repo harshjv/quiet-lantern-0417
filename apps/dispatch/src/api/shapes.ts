@@ -44,17 +44,10 @@ import {
   HealthCheck as HealthCheckSchema,
   injectionValues,
   JsonObject,
-  MachineEgressDomain as MachineEgressDomainSchema,
   machineEgressModeValues,
   MachineLimits as MachineLimitsSchema,
-  machineNetworkValues,
   MachineRuntimeAdvice as MachineRuntimeAdviceSchema,
   MachineRuntime as MachineRuntimeSchema,
-  machineRuntimeValues,
-  MachineSize as MachineSizeSchema,
-  machineSnapshotStatusValues,
-  machineSourceStateValues,
-  machineStatusReasonValues,
   machineStatusValues,
   networkDirectionValues,
   networkPathIds,
@@ -90,7 +83,7 @@ import {
   strategyValues,
   StringEnum,
   targetKindValues,
-  taskMachineValues,
+  taskFileKindValues,
   taskStatusValues,
   tokenKindValues,
   tokenLevelValues,
@@ -916,6 +909,80 @@ export const StatusCounts = component(
   ),
 )
 
+export const ProjectServer = component(
+  'ProjectServer',
+  Type.Object(
+    {
+      id: Str,
+      name: Str,
+      status: StringEnum(serverStatusValues),
+      last_seen_at: NTime,
+      memory: Type.Object(
+        {
+          used: Int,
+          total: NInt,
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+      tunnel: Nullable(
+        Type.Object(
+          {
+            configured: Bool,
+            ready: Bool,
+            connections: Int,
+          },
+          {
+            additionalProperties: false,
+          },
+        ),
+      ),
+    },
+    {
+      title: 'ProjectServer',
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const TaskSlots = component(
+  'TaskSlots',
+  Type.Object(
+    {
+      server_id: Str,
+      total: Int,
+      busy: Int,
+      queued: Int,
+    },
+    {
+      title: 'TaskSlots',
+      additionalProperties: false,
+    },
+  ),
+)
+
+const TaskEgress = Type.Object(
+  {
+    mode: StringEnum(machineEgressModeValues),
+    domains: Type.Array(
+      Type.Object(
+        {
+          domain: Str,
+          wildcard: Bool,
+          ports: Type.Array(Int),
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
+  },
+)
+
 export const Project = component(
   'Project',
   selectable(
@@ -934,12 +1001,14 @@ export const Project = component(
       waiting_approvals: Int,
       app_count: Int,
       status_counts: StatusCounts,
-      machine_count: Int,
-      workspace_count: Int,
+      task_count: Int,
       previews: Type.Array(Preview),
       apps: Type.Array(App),
       edges: Type.Array(Edge),
       environment_variables: Type.Array(EnvironmentVariable),
+      servers: Type.Array(ProjectServer),
+      task_slots: Nullable(TaskSlots),
+      task_egress: Nullable(TaskEgress),
     },
     [
       'id',
@@ -948,8 +1017,7 @@ export const Project = component(
       'waiting_approvals',
       'app_count',
       'status_counts',
-      'machine_count',
-      'workspace_count',
+      'task_count',
     ],
   ),
 )
@@ -1771,20 +1839,6 @@ export const NetworkProbe = component(
   ),
 )
 
-export const MachineNetworkProbe = component(
-  'MachineNetworkProbe',
-  Type.Object(
-    {
-      machine: Str,
-      ...probeShape,
-    },
-    {
-      title: 'MachineNetworkProbe',
-      additionalProperties: false,
-    },
-  ),
-)
-
 export const DnsLog = component(
   'DnsLog',
   Type.Object(
@@ -1819,137 +1873,6 @@ export const DnsLog = component(
     },
     {
       title: 'DnsLog',
-      additionalProperties: false,
-    },
-  ),
-)
-
-export const MachineSize = component('MachineSize', MachineSizeSchema)
-
-export const MachineStatus = component(
-  'MachineStatus',
-  StringEnum(machineStatusValues, {
-    title: 'MachineStatus',
-  }),
-)
-
-export const MachineImage = component(
-  'MachineImage',
-  Type.Object(
-    {
-      ref: NStr,
-      digest: Str,
-    },
-    {
-      title: 'MachineImage',
-      additionalProperties: false,
-    },
-  ),
-)
-
-const MachineEgressView = Type.Object(
-  {
-    mode: StringEnum(machineEgressModeValues),
-    domains: Type.Optional(Type.Array(component('MachineEgressDomain', MachineEgressDomainSchema))),
-  },
-  {
-    additionalProperties: false,
-  },
-)
-
-const MachineForkedFrom = Type.Object(
-  {
-    machine_id: NStr,
-    snapshot_id: NStr,
-  },
-  {
-    additionalProperties: false,
-  },
-)
-
-const MachineWorkspace = Type.Object(
-  {
-    kind: Type.Optional(StringEnum(taskMachineValues)),
-    agent: StringEnum(workspaceAgentValues),
-    repository: NStr,
-    branch: NStr,
-    path: Str,
-    level: StringEnum(tokenLevelValues),
-    token_id: Str,
-    setup_run_id: Str,
-    task_branch: Type.Optional(NStr),
-    setup: Type.Object(
-      {
-        state: StringEnum(['pending', 'succeeded', 'failed']),
-        step: NullableEnum(workspaceSetupStepValues),
-      },
-      {
-        additionalProperties: false,
-      },
-    ),
-  },
-  {
-    additionalProperties: false,
-  },
-)
-
-export const MachineSnapshot = component(
-  'MachineSnapshot',
-  selectable(
-    'MachineSnapshot',
-    {
-      ...stamps,
-      machine_id: Str,
-      project_id: Str,
-      preview_id: NStr,
-      server_id: Str,
-      name: NStr,
-      runtime: StringEnum(machineRuntimeValues),
-      status: StringEnum(machineSnapshotStatusValues),
-      source_state: StringEnum(machineSourceStateValues),
-      taken_at: NTime,
-      exclusive_bytes: Int,
-      referenced_bytes: Int,
-      image: MachineImage,
-      size: MachineSize,
-      failure: Nullable(Diagnosis),
-    },
-    [
-      'id',
-      'machine_id',
-      'project_id',
-      'preview_id',
-      'server_id',
-      'name',
-      'runtime',
-      'status',
-      'source_state',
-      'taken_at',
-      'exclusive_bytes',
-      'referenced_bytes',
-    ],
-  ),
-)
-
-export const MachineMetricSample = component(
-  'MachineMetricSample',
-  Type.Object(
-    {
-      machine_id: Str,
-      container_id: Str,
-      at: Time,
-      cpu_pct: Type.Number(),
-      memory_bytes: Int,
-      memory_limit_bytes: Int,
-      net_rx_bps: Int,
-      net_tx_bps: Int,
-      blk_read_bps: Int,
-      blk_write_bps: Int,
-      disk_used_bytes: Type.Optional(Int),
-      disk_limit_bytes: Type.Optional(Int),
-    },
-    {
-      title: 'MachineMetricSample',
       additionalProperties: false,
     },
   ),
@@ -2040,11 +1963,7 @@ export const Task = component(
       branch: Str,
       agent: StringEnum(workspaceAgentValues),
       model: NStr,
-      machine: Type.Object({
-        id: Str,
-        name: Str,
-        kind: StringEnum(taskMachineValues),
-      }),
+      isolated: Type.Boolean(),
       port: Nullable(Type.Integer()),
       ship: Nullable(Approval),
       preview: Nullable(
@@ -2119,6 +2038,68 @@ export const AgentInputAccepted = component(
   ),
 )
 
+const taskWorktreeSource = Type.Literal('task worktree')
+
+export const TaskDirectory = component(
+  'TaskDirectory',
+  Type.Object(
+    {
+      path: Str,
+      untrusted: Type.Object(
+        {
+          source: taskWorktreeSource,
+          entries: Type.Array(
+            Type.Object(
+              {
+                name: Str,
+                kind: StringEnum(taskFileKindValues),
+                size: Nullable(Int),
+                modified_at: Str,
+              },
+              {
+                additionalProperties: false,
+              },
+            ),
+          ),
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+      truncated: Bool,
+    },
+    {
+      title: 'TaskDirectory',
+      additionalProperties: false,
+    },
+  ),
+)
+
+export const TaskFile = component(
+  'TaskFile',
+  Type.Object(
+    {
+      path: Str,
+      size: Int,
+      binary: Bool,
+      truncated: Bool,
+      untrusted: Type.Object(
+        {
+          source: taskWorktreeSource,
+          text: NStr,
+        },
+        {
+          additionalProperties: false,
+        },
+      ),
+    },
+    {
+      title: 'TaskFile',
+      additionalProperties: false,
+    },
+  ),
+)
+
 export const TaskDeleted = component(
   'TaskDeleted',
   Type.Object(
@@ -2144,123 +2125,6 @@ export const TaskPage = component(
   ),
 )
 
-export const Machine = component(
-  'Machine',
-  selectable(
-    'Machine',
-    {
-      ...stamps,
-      project_id: Str,
-      preview_id: NStr,
-      server_id: Str,
-      name: Str,
-      status: MachineStatus,
-      status_reason: NullableEnum(machineStatusReasonValues),
-      desired_state: StringEnum(desiredStateValues),
-      image: MachineImage,
-      size: MachineSize,
-      runtime: StringEnum(machineRuntimeValues),
-      network: StringEnum(machineNetworkValues),
-      docker: Bool,
-      egress: MachineEgressView,
-      ttl_s: NInt,
-      stop_at: NTime,
-      delete_at: NTime,
-      address: NStr,
-      disk_used_bytes: Int,
-      forked_from: Nullable(MachineForkedFrom),
-      workspace: Nullable(MachineWorkspace),
-      command: Nullable(Type.Array(Str)),
-      exit_code: NInt,
-      failure: Nullable(Diagnosis),
-      started_at: NTime,
-      stopped_at: NTime,
-      snapshots: Type.Array(MachineSnapshot),
-      runs: Type.Array(Run),
-      metrics: Nullable(MachineMetricSample),
-      environment_variables: Type.Array(JsonObject),
-    },
-    [
-      'id',
-      'project_id',
-      'preview_id',
-      'server_id',
-      'name',
-      'status',
-      'status_reason',
-      'desired_state',
-      'image',
-      'size',
-      'runtime',
-      'network',
-      'docker',
-      'egress',
-      'ttl_s',
-      'stop_at',
-      'delete_at',
-      'address',
-      'disk_used_bytes',
-      'forked_from',
-      'workspace',
-      'created_at',
-    ],
-  ),
-)
-
-export const MachineCreated = component(
-  'MachineCreated',
-  extend(Machine, {
-    warnings: Warnings,
-  }),
-)
-
-export const MachineDeleted = component(
-  'MachineDeleted',
-  Type.Object(
-    {
-      deleted: Type.Literal(true),
-      snapshots_kept: Int,
-    },
-    {
-      title: 'MachineDeleted',
-      additionalProperties: false,
-    },
-  ),
-)
-
-export const MachineSnapshotCreated = component(
-  'MachineSnapshotCreated',
-  extend(MachineSnapshot, {
-    warnings: Warnings,
-  }),
-)
-
-export const MachineConnections = component(
-  'MachineConnections',
-  Type.Object<TProperties>(
-    {
-      machine: Type.Object(
-        {
-          id: Str,
-          name: Str,
-        },
-        {
-          additionalProperties: false,
-        },
-      ),
-      ...Object.fromEntries(
-        Object.entries(definitionOf(NetworkConnections).properties).filter(
-          ([key]) => key !== 'app' && key !== 'deployment_id',
-        ),
-      ),
-    },
-    {
-      title: 'MachineConnections',
-      additionalProperties: false,
-    },
-  ),
-)
-
 export const StorageGrown = component(
   'StorageGrown',
   Type.Object(
@@ -2275,45 +2139,12 @@ export const StorageGrown = component(
   ),
 )
 
-export const MachineExec = component(
-  'MachineExec',
-  extend(Run, {
-    attach_url: Type.Optional(Str),
-  }),
-)
-
-export const MachineShell = component(
-  'MachineShell',
+export const TaskShell = component(
+  'TaskShell',
   extend(Run, {
     tty: Bool,
     attach_url: Str,
   }),
-)
-
-export const MachineEnvironmentVariablesOutcome = component(
-  'MachineEnvironmentVariablesOutcome',
-  Type.Object(
-    {
-      environment_variables: Type.Array(EnvironmentVariable),
-    },
-    {
-      title: 'MachineEnvironmentVariablesOutcome',
-      additionalProperties: false,
-    },
-  ),
-)
-
-export const MachineSnapshotDeleted = component(
-  'MachineSnapshotDeleted',
-  Type.Object(
-    {
-      deleted: Type.Literal(true),
-    },
-    {
-      title: 'MachineSnapshotDeleted',
-      additionalProperties: false,
-    },
-  ),
 )
 
 const InviteFields = {

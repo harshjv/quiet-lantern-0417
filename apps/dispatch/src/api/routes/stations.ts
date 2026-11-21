@@ -4,13 +4,19 @@ import { Type } from '@sinclair/typebox'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { enrollTokenPrefix, serverStatusValues, slugPattern } from '@stationly/protocol'
+import {
+  enrollTokenPrefix,
+  serverStatusValues,
+  slugPattern,
+  TaskStorageGrowRequest,
+} from '@stationly/protocol'
 
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
 import { app, machine, server, token } from '../../db/schema.ts'
 import { readSetting } from '../../db/settings.ts'
 import { runtimeRefusal } from '../../sandboxes/runtime.ts'
+import { growStorage, requireGrowable } from '../../sandboxes/storage.ts'
 import { ChangeSet, commit } from '../changes.ts'
 import { audit } from '../context.ts'
 import { fail, invalid } from '../errors.ts'
@@ -18,8 +24,11 @@ import { project as select } from '../fields.ts'
 import type { Kit } from '../kit.ts'
 import { stationByRef } from '../lookup.ts'
 import { before, collect, filterOne, getQuery, listQuery } from '../pagination.ts'
-import { ApprovalDetail, Page, replies, Server } from '../shapes.ts'
+import { input } from '../schemas.ts'
+import { ApprovalDetail, Page, replies, Server, StorageGrown } from '../shapes.ts'
 import { drainRefusal, stationFields } from '../station-fields.ts'
+
+import { stationError } from './runs.ts'
 
 const intermittent = t.Optional(
   t.Boolean({
@@ -365,8 +374,8 @@ export const stationRoutes = (kit: Kit) => {
         if (apps.length || boxes.length) {
           fail(
             'DELETE_HAS_DEPENDENTS',
-            `Server ${row.name} still runs ${apps.length} apps and ${boxes.length} machines.`,
-            'Move or delete its apps and delete its machines first.',
+            `Server ${row.name} still runs ${apps.length} apps and the computers of ${boxes.length} tasks or projects.`,
+            'Move or delete its apps, and delete the tasks and projects whose computers it runs.',
             {
               dependents: [
                 ...apps.map((s) => ({
@@ -531,6 +540,84 @@ export const stationRoutes = (kit: Kit) => {
         ),
         response: replies({
           201: Enrollment,
+        }),
+      },
+    )
+    .post(
+      '/servers/:server/task-storage/grow',
+      async ({ request, params, body, set }) => {
+        const call = await kit.call(request)
+        const st = stationByRef(db, params.server)
+        const before = requireGrowable(st, body.size_bytes).filesystem_bytes
+
+        if (readSetting(db, 'platform.protected') && !call.principal.human) {
+          const changes = new ChangeSet()
+
+          changes.add('task_storage', st.id, {
+            size_bytes: body.size_bytes,
+          })
+          const result = commit(
+            kit.deps,
+            call,
+            {
+              target: null,
+              protect: true,
+            },
+            changes,
+          )
+
+          if (!result.applied) {
+            return kit.approvalBody(result, set)
+          }
+        }
+
+        const grown = await growStorage(
+          {
+            db,
+            stations: kit.deps.stations,
+          },
+          st.id,
+          body.size_bytes,
+          stationError,
+        )
+
+        audit(
+          db,
+          call,
+          'server.task_storage_grow',
+          {
+            entity: 'server',
+            id: st.id,
+          },
+          {
+            before: {
+              filesystem_bytes: before,
+            },
+            after: {
+              filesystem_bytes: grown.filesystem_bytes,
+            },
+          },
+        )
+
+        return {
+          filesystem_bytes: grown.filesystem_bytes,
+          filesystem_free_bytes: grown.filesystem_free_bytes,
+        }
+      },
+      {
+        operation: {
+          id: 'grow_task_storage',
+          summary:
+            "Grow a server's task storage to size_bytes while tasks run; needs approval for a non-human actor under platform.protected",
+          level: 'instance admin',
+          cli: {
+            path: ['servers', 'grow-task-storage'],
+          },
+        },
+        body: input(TaskStorageGrowRequest),
+        response: replies({
+          200: StorageGrown,
+          202: ApprovalDetail,
         }),
       },
     )

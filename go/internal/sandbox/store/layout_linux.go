@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var layoutDirs = []string{dirBases, dirDisks, dirSnapshots, dirPartial, dirLogs}
+var layoutDirs = []string{dirBases, dirDisks, dirPartial, dirLogs}
 
 const dirFlags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
 

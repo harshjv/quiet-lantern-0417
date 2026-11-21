@@ -1,27 +1,25 @@
 import { randomBytes } from 'node:crypto'
 
-import type { Static } from '@sinclair/typebox'
 import { eq } from 'drizzle-orm'
 import { t } from 'elysia'
 
 import {
   agentPromptLimit,
-  MachineCreateBody,
-  taskMachineValues,
   taskSlotMemoryBytes,
   taskSlotsDefault,
+  taskTitleLimit,
   workspaceAgents,
   workspaceAgentValues,
-  type TaskMachineValue,
 } from '@stationly/protocol'
 
 import type { Principal } from '../../auth/principal.ts'
 import { fullAdmin, isInstanceAdmin } from '../../auth/scopes.ts'
 import type { Db } from '../../db/client.ts'
 import { newId } from '../../db/ids.ts'
-import { approval, machine, project, server, task } from '../../db/schema.ts'
-import { requestDeletion, startMachine } from '../../sandboxes/lifecycle.ts'
-import { requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
+import { approval, machine, project, task } from '../../db/schema.ts'
+import { createMachine } from '../../sandboxes/create.ts'
+import { requestDeletion } from '../../sandboxes/lifecycle.ts'
+import { repositoryUrlOf, requireRepositoryAccess } from '../../sandboxes/repository-access.ts'
 import { isRepositoryName, repositoryName } from '../../sandboxes/workspace.ts'
 import { variablesOf } from '../../secrets/values.ts'
 import { emitEvent } from '../../station/events.ts'
@@ -42,6 +40,7 @@ import {
   machineUserFor,
   nextPort,
   projectMachine,
+  queueTask,
   removeWorktree,
   resumeTask,
   slotsFor,
@@ -53,6 +52,7 @@ import { previewAddress } from '../../tasks/preview.ts'
 import {
   addInput,
   conversationById,
+  inboxItems,
   latestConversation,
   runnerLive,
   startConversation,
@@ -60,16 +60,23 @@ import {
 } from '../../tasks/runner.ts'
 import { shipView, startShip } from '../../tasks/ship.ts'
 import { taskChanged, taskSubject, type TaskRow } from '../../tasks/status.ts'
-import { branchSlug, listTasks, taskItem, titleOf, uniqueBranch } from '../../tasks/views.ts'
+import { branchSlug, listTasks, taskItem, titleFor, uniqueBranch } from '../../tasks/views.ts'
 import { githubTokenOf, listKeys } from '../../team/keys.ts'
 import { memberLevel } from '../../team/members.ts'
-import { requireHuman, requireLevel, seesProject } from '../access.ts'
+import { personOf, requireHuman, requireLevel, seesTask } from '../access.ts'
 import { supersedeWaiting } from '../changes.ts'
 import { audit, type Call } from '../context.ts'
-import { requireConnected } from '../deployments.ts'
-import { ApiError, fail, invalid, notFound } from '../errors.ts'
+import { ApiError, invalid, notFound } from '../errors.ts'
 import type { Kit } from '../kit.ts'
-import { projectByRef, scopeOf, targetById, targetInProject } from '../lookup.ts'
+import {
+  projectByRef,
+  projectIdByRef,
+  scopeOf,
+  targetById,
+  targetInProject,
+  taskById,
+  visibleTask,
+} from '../lookup.ts'
 import {
   AgentApprovalState,
   AgentEventPage,
@@ -83,20 +90,9 @@ import {
   TaskPreview,
 } from '../shapes.ts'
 import { createSse } from '../sse.ts'
+import { wakeMachine } from '../wake.ts'
 
 import { deployPreview, removePreview } from './task-preview.ts'
-
-type CreateMachine = (
-  call: Call,
-  ctx: ReturnType<typeof targetById>,
-  body: Static<typeof MachineCreateBody>,
-  options?: {
-    taskBranch?: string | null
-    kind?: TaskMachineValue
-    memoryBytes?: number
-    repositoryReadable?: boolean
-  },
-) => Promise<{ id: string }>
 
 const drainSize = 200
 const fallbackPollMs = 1000
@@ -167,9 +163,6 @@ const onBehalf = (call: Call): Call => ({
   },
 })
 
-const taskById = (db: Db, id: string) =>
-  db.select().from(task).where(eq(task.id, id)).get() ?? notFound('task', id)
-
 const requireKey = (
   db: Db,
   projectId: string,
@@ -202,32 +195,11 @@ const requireKey = (
   }
 }
 
-export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
+export const taskRoutes = (kit: Kit) => {
   const { db } = kit.deps
 
   const redactor = (row: TaskRow, principal: Principal, requestId: string) => () =>
     kit.machineRedaction([row.machine_id], principal.actor, requestId)
-
-  const personOf = (principal: Principal) =>
-    principal.token_kind === 'session' || principal.token_kind === 'personal'
-      ? principal.user_id
-      : null
-
-  const sees = (principal: Principal, row: Pick<TaskRow, 'owner' | 'project_id'>) =>
-    isInstanceAdmin(principal.scopes) ||
-    (personOf(principal) !== null &&
-      row.owner.id === personOf(principal) &&
-      seesProject(principal, row.project_id))
-
-  const visibleTask = (call: Call, id: string) => {
-    const row = taskById(db, id)
-
-    if (!sees(call.principal, row)) {
-      notFound('task', id)
-    }
-
-    return row
-  }
 
   const shown = (row: TaskRow, call: Call) =>
     taskItem(
@@ -239,66 +211,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
   const wake = (call: Call, row: TaskRow, refusal: string) => {
     const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
-    return wakeBox(call, box, `task ${row.title}`, refusal)
-  }
-
-  const wakeBox = (
-    call: Call,
-    box: typeof machine.$inferSelect | undefined,
-    owner: string,
-    refusal: string,
-  ) => {
-    if (!box) {
-      fail(
-        'MACHINE_NOT_RUNNING',
-        `The workspace of ${owner} is gone, so ${refusal}.`,
-        'Start a new task.',
-        {
-          status: 'deleted',
-        },
-      )
-    }
-
-    if (box!.status === 'stopped') {
-      requireConnected(kit.deps, box!.server_id)
-      startMachine(
-        db,
-        db.select().from(server).where(eq(server.id, box!.server_id)).get()!,
-        call.principal,
-        box!,
-        null,
-      )
-      audit(
-        db,
-        call,
-        'machine.start',
-        {
-          entity: 'machine',
-          id: box!.id,
-        },
-        {
-          before: {
-            status: box!.status,
-          },
-        },
-      )
-      kit.deps.stations.reconcile(box!.server_id)
-
-      return true
-    }
-
-    if (!['creating', 'starting', 'running'].includes(box!.status)) {
-      fail(
-        'MACHINE_NOT_RUNNING',
-        `The workspace of ${owner} is ${box!.status}, so ${refusal}.`,
-        'Start a new task.',
-        {
-          status: box!.status,
-        },
-      )
-    }
-
-    return false
+    return wakeMachine(kit, call, box, `task ${row.title}`, refusal)
   }
 
   const createProjectMachine = async (
@@ -318,6 +231,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
     for (const [attempt, name] of names.entries()) {
       try {
         created = await createMachine(
+          kit,
           call,
           ctx,
           {
@@ -392,11 +306,42 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
       })
     }
 
-    wakeBox(call, found, `project ${proj.name}`, 'it cannot start a task')
+    wakeMachine(kit, call, found, `project ${proj.name}`, 'it cannot start a task')
     machineSetupRerun(db, found)
     kit.deps.stations.reconcile(found.server_id)
 
     return db.select().from(machine).where(eq(machine.id, found.id)).get()!
+  }
+
+  const firstReply = (call: Call, row: TaskRow, text: string, set: { status?: unknown }) => {
+    const settingUp = row.status === 'setting_up'
+    const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
+    const roomy = row.isolated || !box || freeSlots(db, box, row.id) > 0
+
+    if (!settingUp) {
+      wake(call, row, 'it cannot take a prompt')
+    }
+
+    const opened = startConversation(db, row.id, {
+      adapter: row.agent,
+      model: row.model,
+      prompt: text,
+      actor: call.principal.actor,
+    })
+    const stored = inboxItems(db, opened, 0)[0]!
+
+    if (settingUp && !roomy) {
+      queueTask(db, row)
+    } else if (!settingUp && claimSlot(db, row)) {
+      resumeTask(db, row)
+    }
+
+    set.status = 202
+
+    return {
+      id: stored.id,
+      seq: stored.seq,
+    }
   }
 
   const start = (row: TaskRow, since: number | undefined, conversationId: string | undefined) => {
@@ -506,6 +451,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         const page = listTasks(db, {
           owner: isInstanceAdmin(call.principal.scopes) ? null : (personOf(call.principal) ?? ''),
+          project: query.project ? projectIdByRef(db, query.project) : undefined,
           limit: query.limit ?? defaultPageSize,
           cursor: query.cursor,
           archived: query.archived ?? false,
@@ -516,7 +462,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
         return {
           ...page,
           items: page.items.filter((item) =>
-            sees(call.principal, {
+            seesTask(call.principal, {
               owner: item.owner,
               project_id: item.project.id,
             }),
@@ -551,6 +497,11 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
               description: 'Include archived tasks',
             }),
           ),
+          project: t.Optional(
+            t.String({
+              description: 'Only the tasks of this project, by id or name',
+            }),
+          ),
         }),
         response: replies({
           200: TaskPage,
@@ -564,8 +515,17 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Starting a task')
 
+        const repository =
+          repositoryUrlOf(body.repository) ??
+          invalid([
+            {
+              path: '/repository',
+              message: 'must be an https git URL, or owner/name for a GitHub repository',
+            },
+          ])
+
         const proj = projectByRef(db, body.project)
-        const onProject = (body.machine ?? 'project') === 'project'
+        const onProject = !body.isolated
         const env = targetInProject(db, proj, body.preview)
 
         requireLevel(call.principal, scopeOf(env), memberLevel)
@@ -573,14 +533,14 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
         const actingCall = onBehalf(call)
         const ownToken = await githubTokenOf(kit.deps.auth, db, call.principal.user_id)
         const readable =
-          !!ownToken && (await kit.deps.readRepository(body.repository, ownToken)) === 'readable'
+          !!ownToken && (await kit.deps.readRepository(repository, ownToken)) === 'readable'
 
         if (onProject && env.kind !== 'production') {
           invalid([
             {
               path: '/preview',
               message:
-                "a task on the project machine runs in the project's production; ask for machine own to use a preview",
+                "a task shared with the project runs in the project's production; run it on its own to use a preview",
             },
           ])
         }
@@ -608,38 +568,49 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireKey(db, proj.id, body.agent, call.principal.user_id)
 
-        const title = titleOf(body.prompt)
-        const branch = uniqueBranch(db, body.repository, branchSlug(title))
+        const title = titleFor(body)
+        const branch = uniqueBranch(db, repository, branchSlug(title))
         const model = body.model ?? preset.models[0]?.id ?? null
         const id = newId('task')
         let created: { id: string } | null = onProject
-          ? await machineFor(actingCall, ctx, proj, body, readable)
+          ? await machineFor(
+              actingCall,
+              ctx,
+              proj,
+              {
+                agent: body.agent,
+                repository,
+              },
+              readable,
+            )
           : null
         const port = onProject ? nextPort(db, created!.id) : null
 
         if (onProject && port === null) {
           invalid([
             {
-              path: '/machine',
-              message: `the machine of project ${proj.name} has no free port for another task; delete finished tasks or ask for machine own`,
+              path: '/isolated',
+              message: `project ${proj.name} has no free port for another task; delete finished tasks or run this one on its own`,
             },
           ])
         }
 
         const queued =
           onProject &&
+          body.prompt !== undefined &&
           freeSlots(db, db.select().from(machine).where(eq(machine.id, created!.id)).get()!) <= 0
 
         for (let attempt = 0; !created; attempt += 1) {
           try {
             created = await createMachine(
+              kit,
               actingCall,
               ctx,
               {
                 name: workspaceName(title),
                 workspace: {
                   agent: body.agent,
-                  repository: body.repository,
+                  repository,
                   ...(body.base_branch
                     ? {
                         branch: body.base_branch,
@@ -688,13 +659,13 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
                 id: call.principal.actor.id,
               },
               title,
-              repository: body.repository,
+              repository,
               base_branch: body.base_branch ?? null,
               branch,
               agent: body.agent,
               model,
               machine_id: created.id,
-              machine: onProject ? 'project' : 'own',
+              isolated: !onProject,
               worktree: member ? worktreeOf(branch, id, homeOf(member.name)) : null,
               port,
               status: queued ? 'queued' : 'setting_up',
@@ -703,17 +674,21 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
               updated_at: now,
             })
             .run()
-          startConversation(
-            tdb,
-            id,
-            {
-              adapter: body.agent,
-              model,
-              prompt: body.prompt,
-              actor: call.principal.actor,
-            },
-            now,
-          )
+
+          if (body.prompt !== undefined) {
+            startConversation(
+              tdb,
+              id,
+              {
+                adapter: body.agent,
+                model,
+                prompt: body.prompt,
+                actor: call.principal.actor,
+              },
+              now,
+            )
+          }
+
           emitEvent(
             tdb,
             'task.created',
@@ -737,10 +712,10 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
             {
               after: {
                 title,
-                repository: body.repository,
+                repository,
                 branch,
                 agent: body.agent,
-                machine: onProject ? 'project' : 'own',
+                isolated: !onProject,
                 machine_id: created.id,
               },
             },
@@ -755,7 +730,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
         operation: {
           id: 'create_task',
           summary:
-            'Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor',
+            "Start a task: a branch, a working copy and, with a prompt, the agent's first turn once it is set up. Without a prompt the task is finished after setup and its first reply starts the agent. Needs a human actor",
           level: 'any',
           mcp: false,
           cli: {
@@ -769,11 +744,11 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
           preview: t.Optional(
             t.String({
               description:
-                "A preview, by id or name, for the task's own machine to join; production by default",
+                'A preview, by id or name, for a task on its own to join; production by default',
             }),
           ),
           repository: t.String({
-            description: 'An https git URL',
+            description: 'An https git URL, or owner/name for a GitHub repository',
           }),
           base_branch: t.Optional(
             t.String({
@@ -786,14 +761,26 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
               description: "One of the agent's models, default the first",
             }),
           ),
-          prompt: t.String({
-            minLength: 1,
-            maxLength: agentPromptLimit,
-          }),
-          machine: t.Optional(
-            t.UnionEnum([...taskMachineValues], {
+          prompt: t.Optional(
+            t.String({
+              minLength: 1,
+              maxLength: agentPromptLimit,
               description:
-                "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
+                "The agent's first prompt; without it the task waits for its first reply",
+            }),
+          ),
+          title: t.Optional(
+            t.String({
+              minLength: 1,
+              maxLength: taskTitleLimit,
+              description:
+                "The task's name, required without a prompt; the prompt's first line by default",
+            }),
+          ),
+          isolated: t.Optional(
+            t.Boolean({
+              description:
+                "true runs the task on a computer of its own; false (the default) shares the project's computer, in a worktree of its own",
             }),
           ),
         }),
@@ -807,7 +794,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
       async ({ params, request }) => {
         const call = await kit.call(request)
 
-        return shown(visibleTask(call, params.task), call)
+        return shown(visibleTask(db, call.principal, params.task), call)
       },
       {
         operation: {
@@ -828,7 +815,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
     .get(
       '/tasks/:task/events',
       async ({ params, request, query }) => {
-        const row = visibleTask(await kit.call(request), params.task)
+        const row = visibleTask(db, (await kit.call(request)).principal, params.task)
 
         return (request.headers.get('accept') ?? '').includes('text/event-stream')
           ? ((await stream(row, request, query)) as never)
@@ -860,10 +847,14 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Sending a prompt to a task')
 
-        const row = visibleTask(call, params.task)
+        const row = visibleTask(db, call.principal, params.task)
         const session = latestConversation(db, row.id)
 
-        if (!session || session.origin === 'terminal') {
+        if (!session) {
+          return firstReply(call, row, body.text, set)
+        }
+
+        if (session.origin === 'terminal') {
           invalid([
             {
               path: '/task',
@@ -877,7 +868,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         const stored = addInput(
           db,
-          session!,
+          session,
           {
             kind: 'prompt',
             text: body.text,
@@ -898,8 +889,8 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
           if (claimSlot(db, row)) {
             resumeTask(db, row)
           }
-        } else if (!runnerLive(session!)) {
-          wantRunner(db, session!.id)
+        } else if (!runnerLive(session)) {
+          wantRunner(db, session.id)
         }
 
         set.status = 202
@@ -935,7 +926,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Deciding a tool approval')
 
-        const row = visibleTask(call, params.task)
+        const row = visibleTask(db, call.principal, params.task)
         const approval =
           approvalOf(db, row.id, params.approval) ?? notFound('approval', params.approval)
         const session = conversationById(db, approval.conversation_id)
@@ -1004,7 +995,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Making a preview')
 
-        const row = visibleTask(call, params.task)
+        const row = visibleTask(db, call.principal, params.task)
         const deployed = await deployPreview(kit, onBehalf(call), row)
 
         audit(
@@ -1053,7 +1044,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Shipping a task')
 
-        const row = visibleTask(call, params.task)
+        const row = visibleTask(db, call.principal, params.task)
         const shipped = await startShip(
           {
             db,
@@ -1108,7 +1099,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Interrupting a task')
 
-        const row = visibleTask(call, params.task)
+        const row = visibleTask(db, call.principal, params.task)
         const session = latestConversation(db, row.id)
 
         if (row.status === 'queued') {
@@ -1187,7 +1178,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         requireHuman(call.principal, 'Deleting a task')
 
-        const row = visibleTask(call, params.task)
+        const row = visibleTask(db, call.principal, params.task)
         const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
         db.transaction((tx) => {
@@ -1218,7 +1209,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
 
         removePreview(kit, onBehalf(call), row)
 
-        if (box && row.machine === 'project') {
+        if (box && !row.isolated) {
           removeWorktree(db, row, (station) => kit.deps.stations.reconcile(station))
         } else if (box) {
           requestDeletion(db, box, {
@@ -1236,7 +1227,7 @@ export const taskRoutes = (kit: Kit, createMachine: CreateMachine) => {
         operation: {
           id: 'delete_task',
           summary:
-            'Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor',
+            'Delete a task, its working copy and its conversations; the branch on GitHub stays. Needs a human actor',
           level: 'any',
           mcp: false,
           cli: {

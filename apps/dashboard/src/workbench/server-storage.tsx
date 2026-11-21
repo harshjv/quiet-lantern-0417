@@ -9,17 +9,13 @@ import { Field, Suffixed } from '@/components/field'
 import { FormError } from '@/components/form-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { api, idempotency, send } from '@/lib/api'
-import { bytes } from '@/lib/format'
+import { bytes, usedOf } from '@/lib/format'
 import { useApiMutation } from '@/lib/mutation'
 
 import { Section } from './parts'
 import type { ServerView } from './server-data'
-
-const backingText = {
-  device: 'its own disk',
-  loop_file: 'a file on the host disk',
-} as const
 
 const growProblem = (size: number, current: number, max: number) => {
   if (!Number.isFinite(size) || size <= current) {
@@ -33,7 +29,7 @@ const growProblem = (size: number, current: number, max: number) => {
   return null
 }
 
-export function MachineStorage({ server }: { server: ServerView }) {
+export function TaskStorage({ server }: { server: ServerView }) {
   const client = useQueryClient()
   const storage = server.capabilities?.sandboxes
   const [text, setText] = useState('')
@@ -45,7 +41,7 @@ export function MachineStorage({ server }: { server: ServerView }) {
           .servers({
             server: server.id,
           })
-          ['machine-storage'].grow.post(
+          ['task-storage'].grow.post(
             {
               size_bytes,
             },
@@ -53,8 +49,8 @@ export function MachineStorage({ server }: { server: ServerView }) {
           ),
       ),
     invalidate: ['stations'],
-    waiting: () => `Growing machine storage on ${server.name}`,
-    success: (body) => `Machine storage on ${server.name} is now ${bytes(body.filesystem_bytes)}`,
+    waiting: () => `Growing task storage on ${server.name}`,
+    success: (body) => `Task storage on ${server.name} is now ${bytes(body.filesystem_bytes)}`,
     onSuccess: () => {
       setText('')
       void client.invalidateQueries({
@@ -66,6 +62,8 @@ export function MachineStorage({ server }: { server: ServerView }) {
   if (!storage) {
     return null
   }
+
+  const used = storage.filesystem_bytes - storage.filesystem_free_bytes
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -80,11 +78,20 @@ export function MachineStorage({ server }: { server: ServerView }) {
   }
 
   return (
-    <Section
-      icon={HardDrive}
-      title="Machine storage"
-      note={`Machine disks live on ${backingText[storage.filesystem_backing]}: ${bytes(storage.filesystem_free_bytes)} free of ${bytes(storage.filesystem_bytes)}, and it can grow to ${bytes(storage.filesystem_max_bytes)} while machines run.`}
-    >
+    <Section icon={HardDrive} title="Task storage">
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm tabular-nums">
+          {usedOf(used, storage.filesystem_bytes)}{' '}
+          <span className="text-xs text-muted-foreground">
+            max {bytes(storage.filesystem_max_bytes)}
+          </span>
+        </span>
+        <Progress
+          value={Math.round((used / storage.filesystem_bytes) * 100)}
+          aria-label={`Task storage ${usedOf(used, storage.filesystem_bytes)}`}
+          className="h-1"
+        />
+      </div>
       <form className="flex flex-col gap-3" onSubmit={submit}>
         <FormError>{problem ?? grow.errorText}</FormError>
         <div className="flex items-end gap-3">
@@ -126,10 +133,7 @@ export function RemoveServer({ server, onRemoved }: { server: ServerView; onRemo
           .delete(undefined, idempotency()),
       ),
     invalidate: ['stations'],
-    success: () => ({
-      title: `${server.name} removed`,
-      description: 'Its key is revoked, so it cannot connect again.',
-    }),
+    success: () => `Removed ${server.name}`,
     onSuccess: onRemoved,
   })
 
@@ -139,11 +143,11 @@ export function RemoveServer({ server, onRemoved }: { server: ServerView; onRemo
         <p className="text-sm text-muted-foreground">
           {server.status === 'enrolling'
             ? 'Cancels the pairing. Its command stops working.'
-            : 'Revokes its key and disconnects it. Move its apps and delete its machines first.'}
+            : 'Revokes its key. Move its apps and delete its tasks first.'}
         </p>
         <Confirm
           title={`Remove ${server.name}?`}
-          description="Stationly revokes the server’s key, so it cannot connect again. To use the host again, add it as a new server."
+          description="Revokes its key for good. Add the host again as a new server."
           action="Remove server"
           cancel="Keep server"
           onConfirm={() => remove.mutateAsync()}

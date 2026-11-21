@@ -6,19 +6,11 @@ import {
   type QueryKey,
 } from '@tanstack/react-query'
 
-import {
-  api,
-  unwrap,
-  type App,
-  type Deployment,
-  type Machine,
-  type MachineSnapshot,
-  type Preview,
-} from './api'
-import { merge, mergeItem, on, seed, seedItem, type Edit } from './cache'
+import { api, unwrap, type App, type Deployment, type Preview } from './api'
+import { on, seed, seedItem, type Edit } from './cache'
 import { logTail, type LogSelector } from './logs'
-import { placeKey, placeOf, previewQuery, type Place } from './place'
-import { isTerminal, isTransient, snapshotsBusy } from './status'
+import { placeKey, previewQuery, type Place } from './place'
+import { isTerminal } from './status'
 
 export const load = <TQueryFnData, TError, TData, TQueryKey extends QueryKey>(
   client: QueryClient,
@@ -38,6 +30,11 @@ export const meQuery = queryOptions({
   queryKey: ['me'],
   queryFn: () => unwrap(api.v1.me.get()),
   staleTime: 60_000,
+})
+
+export const membersQuery = queryOptions({
+  queryKey: ['members'],
+  queryFn: () => unwrap(api.v1.members.get()),
 })
 
 export const myRepositoriesQuery = queryOptions({
@@ -71,6 +68,24 @@ export const projectQuery = (project: string) =>
             query: {},
           }),
       ),
+  })
+
+export const canvasProjectQuery = (project: string) =>
+  queryOptions({
+    queryKey: ['projects', project, 'canvas'],
+    queryFn: () =>
+      unwrap(
+        api.v1
+          .projects({
+            project,
+          })
+          .get({
+            query: {
+              fields: 'id,name,waiting_approvals,servers,task_slots,task_egress',
+            },
+          }),
+      ),
+    refetchInterval: 15_000,
   })
 
 export const projectSettingsQuery = (project: string) =>
@@ -170,7 +185,7 @@ export const appQuery = (app: string) =>
           .get({
             query: {
               fields:
-                'id,project_id,preview_id,name,kind,status,status_reason,desired_state,server_id,source,current_deployment_id,stale,stale_reasons,health,health_default,last_health_change,ports,current_deployment',
+                'id,project_id,preview_id,name,kind,status,status_reason,desired_state,server_id,source,current_deployment_id,stale,stale_reasons,health,health_default,last_health_change,ports,current_deployment,domains',
             },
           }),
       ),
@@ -195,9 +210,9 @@ export const deploymentsQuery = (app: string) =>
       ),
   })
 
-export const placeDeploymentsQuery = (place: Place) =>
+export const placeDeploymentsQuery = (place: Place, limit = 10) =>
   queryOptions({
-    queryKey: ['deployments', 'in', placeKey(place)],
+    queryKey: ['deployments', 'in', placeKey(place), limit],
     queryFn: () =>
       unwrap(
         api.v1
@@ -207,7 +222,7 @@ export const placeDeploymentsQuery = (place: Place) =>
           .deployments.get({
             query: {
               ...previewQuery(place),
-              limit: 10,
+              limit,
               fields: 'id,app_id,number,status,trigger,started_at,finished_at,failure,created_at',
             },
           }),
@@ -341,23 +356,6 @@ export const portsQuery = (app: string) =>
       ),
   })
 
-export const machineStationQuery = queryOptions({
-  queryKey: ['stations', 'online', 'machine_memory'],
-  queryFn: async () => {
-    const page = await unwrap(
-      api.v1.servers.get({
-        query: {
-          status: 'online',
-          limit: 2,
-          fields: 'machine_memory',
-        },
-      }),
-    )
-
-    return page.items.length === 1 ? page.items[0]! : null
-  },
-})
-
 export const onlineStationsQuery = queryOptions({
   queryKey: ['stations', 'online'],
   queryFn: () =>
@@ -372,40 +370,18 @@ export const onlineStationsQuery = queryOptions({
   staleTime: 60_000,
 })
 
-export const connectionsQuery = (app: string) =>
+export const appMetricsQuery = (app: string) =>
   queryOptions({
-    queryKey: ['connections', app],
+    queryKey: ['metrics', app],
     queryFn: () =>
       unwrap(
         api.v1
           .apps({
             app,
           })
-          .connections.get({
-            query: {},
-          }),
+          .metrics.get(),
       ),
-    staleTime: Infinity,
-    retry: false,
-  })
-
-export const dnsLogQuery = (app: string) =>
-  queryOptions({
-    queryKey: ['dns-log', app],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .apps({
-            app,
-          })
-          ['dns-log'].get({
-            query: {
-              tail: 50,
-            },
-          }),
-      ),
-    staleTime: Infinity,
-    retry: false,
+    refetchInterval: 10_000,
   })
 
 export const logsQuery = (selector: LogSelector) =>
@@ -501,9 +477,6 @@ export const approvalQuery = (id: string) =>
       ),
   })
 
-const machineFields =
-  'id,project_id,preview_id,server_id,name,status,status_reason,desired_state,image,size,network,docker,egress,ttl_s,stop_at,delete_at,address,disk_used_bytes,forked_from,workspace,created_at,failure,exit_code'
-
 export const tasksQuery = queryOptions({
   queryKey: ['tasks'],
   queryFn: () =>
@@ -515,6 +488,20 @@ export const tasksQuery = queryOptions({
       }),
     ),
 })
+
+export const projectTasksQuery = (project: string) =>
+  queryOptions({
+    queryKey: ['tasks', 'in', project],
+    queryFn: () =>
+      unwrap(
+        api.v1.tasks.get({
+          query: {
+            project,
+            limit: 200,
+          },
+        }),
+      ),
+  })
 
 export const taskQuery = (task: string) =>
   queryOptions({
@@ -529,117 +516,6 @@ export const taskQuery = (task: string) =>
       ),
   })
 
-export const machinesQuery = (place: Place) =>
-  queryOptions({
-    queryKey: ['machines', 'of', placeKey(place)],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .projects({
-            project: place.project,
-          })
-          .machines.get({
-            query: {
-              ...previewQuery(place),
-              limit: 200,
-              fields: machineFields,
-            },
-          }),
-      ),
-    refetchInterval: (query) =>
-      query.state.data?.items.some((s) => isTransient(s.status)) ? 2000 : false,
-  })
-
-export const machineQuery = (machine: string) =>
-  queryOptions({
-    queryKey: ['machines', machine],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .machines({
-            machine,
-          })
-          .get({
-            query: {
-              fields: `${machineFields},metrics`,
-            },
-          }),
-      ),
-    refetchInterval: (query) =>
-      query.state.data && !isTransient(query.state.data.status)
-        ? query.state.data.status === 'running'
-          ? 5000
-          : false
-        : 2000,
-  })
-
-export const machineSnapshotsQuery = (place: Place) =>
-  queryOptions({
-    queryKey: ['machine-snapshots', 'of', placeKey(place)],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .projects({
-            project: place.project,
-          })
-          ['machine-snapshots'].get({
-            query: {
-              ...previewQuery(place),
-              limit: 200,
-            },
-          }),
-      ),
-    refetchInterval: (query) => (snapshotsBusy(query.state.data?.items) ? 2000 : false),
-  })
-
-export const machineOwnSnapshotsQuery = (machine: string) =>
-  queryOptions({
-    queryKey: ['machine-snapshots', 'from', machine],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .machines({
-            machine,
-          })
-          .snapshots.get({
-            query: {
-              limit: 200,
-            },
-          }),
-      ),
-    refetchInterval: (query) => (snapshotsBusy(query.state.data?.items) ? 2000 : false),
-  })
-
-export const machineVariablesQuery = (machine: string) =>
-  queryOptions({
-    queryKey: ['environment-variables', 'of-machine', machine],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .machines({
-            machine,
-          })
-          ['environment-variables'].get({
-            query: {},
-          }),
-      ),
-  })
-
-export const machineResolvedQuery = (machine: string) =>
-  queryOptions({
-    queryKey: ['environment-variables', 'resolved-machine', machine],
-    queryFn: () =>
-      unwrap(
-        api.v1
-          .machines({
-            machine,
-          })
-          ['environment-variables'].resolved.get(),
-      ),
-    staleTime: 0,
-    gcTime: 0,
-  })
-
 export const seedPreview = (project: string, preview: Preview) => [
   seed(previewQueryOf(preview.id), preview),
   seedItem(previewsQuery(project), preview),
@@ -649,37 +525,6 @@ export const seedApp = (app: App) => [seed(appQuery(app.id), app)]
 
 export const seedDeployment = (deployment: Deployment) => [
   seed(deploymentQuery(deployment.id), deployment),
-]
-
-export const seedMachine = (machine: Machine) => [
-  seed(machineQuery(machine.id), machine),
-  seedItem(machinesQuery(placeOf(machine)), machine),
-]
-
-export const patchMachine = (
-  machine: Pick<Machine, 'id'> & Partial<Pick<Machine, 'project_id' | 'preview_id'>>,
-  data: Partial<Machine>,
-) => [
-  merge(machineQuery(machine.id), data),
-  ...(machine.project_id
-    ? [
-        mergeItem(
-          machinesQuery(
-            placeOf({
-              project_id: machine.project_id,
-              preview_id: machine.preview_id ?? null,
-            }),
-          ),
-          machine.id,
-          data,
-        ),
-      ]
-    : []),
-]
-
-export const seedSnapshot = (snapshot: MachineSnapshot) => [
-  seedItem(machineOwnSnapshotsQuery(snapshot.machine_id), snapshot),
-  seedItem(machineSnapshotsQuery(placeOf(snapshot)), snapshot),
 ]
 
 export const apiOriginQuery = queryOptions({

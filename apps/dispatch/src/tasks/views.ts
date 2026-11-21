@@ -34,6 +34,25 @@ export const titleOf = (text: string) => {
   return `${(space > titleLength / 2 ? cut.slice(0, space) : cut).trimEnd()}…`
 }
 
+export const titleFor = (body: { prompt?: string; title?: string }) => {
+  const named = body.title?.replace(/\s+/g, ' ').trim()
+
+  if (named) {
+    return named
+  }
+
+  if (body.prompt !== undefined) {
+    return titleOf(body.prompt)
+  }
+
+  return invalid([
+    {
+      path: '/title',
+      message: 'a task without a prompt needs a title',
+    },
+  ])
+}
+
 export const branchSlug = (title: string) =>
   `task/${
     title
@@ -79,6 +98,7 @@ const projectSetupOf = (
   row: TaskRow,
   box: typeof machine.$inferSelect | undefined,
   now: number,
+  awaitsRunner: boolean,
 ) => {
   const machineRun = runOf(db, box?.workspace?.setup_run_id)
   const ownRun = runOf(db, row.setup_run_id)
@@ -117,7 +137,7 @@ const projectSetupOf = (
 
   const finished = ownRun!.finished_at?.getTime() ?? now
 
-  return now - finished <= startTimeoutMs
+  return !awaitsRunner || now - finished <= startTimeoutMs
     ? {
         setup: {
           state: 'starting',
@@ -134,7 +154,12 @@ const projectSetupOf = (
       }
 }
 
-const setupOf = (db: Db, box: typeof machine.$inferSelect | undefined, now: number) => {
+const setupOf = (
+  db: Db,
+  box: typeof machine.$inferSelect | undefined,
+  now: number,
+  awaitsRunner: boolean,
+) => {
   const runId = box?.workspace?.setup_run_id ?? null
 
   if (!box || box.status !== 'running') {
@@ -161,7 +186,7 @@ const setupOf = (db: Db, box: typeof machine.$inferSelect | undefined, now: numb
 
   const finished = setup.finished_at?.getTime() ?? now
 
-  if (setup.status === 'succeeded' && now - finished <= startTimeoutMs) {
+  if (setup.status === 'succeeded' && (!awaitsRunner || now - finished <= startTimeoutMs)) {
     return {
       setup: {
         state: 'starting',
@@ -190,6 +215,16 @@ const firstPrompt = (db: Db, taskId: string) =>
     .orderBy(asc(task_inbox.seq))
     .limit(1)
     .get()?.text ?? null
+
+const hasConversation = (db: Db, taskId: string) =>
+  db
+    .select({
+      id: conversation.id,
+    })
+    .from(conversation)
+    .where(eq(conversation.task_id, taskId))
+    .limit(1)
+    .get() !== undefined
 
 const modelOf = (db: Db, row: TaskRow) =>
   db
@@ -223,11 +258,12 @@ const previewView = (db: Db, row: TaskRow) => {
 export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now()): TaskItem => {
   const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
   const proj = db.select().from(project).where(eq(project.id, row.project_id)).get()
+  const awaitsRunner = hasConversation(db, row.id)
   const pending =
     row.status === 'setting_up'
-      ? row.machine === 'project'
-        ? projectSetupOf(db, row, box, now)
-        : setupOf(db, box, now)
+      ? !row.isolated
+        ? projectSetupOf(db, row, box, now, awaitsRunner)
+        : setupOf(db, box, now, awaitsRunner)
       : null
   const prompt = firstPrompt(db, row.id)
 
@@ -248,11 +284,7 @@ export const taskItem = (db: Db, row: TaskRow, redact: Redactor, now = Date.now(
     branch: row.branch,
     agent: row.agent,
     model: modelOf(db, row),
-    machine: {
-      id: row.machine_id,
-      name: box?.name ?? row.machine_id,
-      kind: row.machine,
-    },
+    isolated: row.isolated,
     port: row.port,
     ship: shipOf(db, row.id),
     preview: previewView(db, row),
@@ -288,6 +320,7 @@ export const listTasks = (
   db: Db,
   options: {
     owner: string | null
+    project: string | undefined
     limit: number
     cursor: string | undefined
     archived: boolean
@@ -304,6 +337,7 @@ export const listTasks = (
         options.owner !== null
           ? sql`json_extract(${task.owner}, '$.id') = ${options.owner}`
           : undefined,
+        options.project ? eq(task.project_id, options.project) : undefined,
         after ? lt(task.id, after) : undefined,
       ),
     )

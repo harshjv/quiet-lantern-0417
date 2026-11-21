@@ -4,10 +4,7 @@ import type { Approval } from './api'
 
 export const waitingTitle = 'Waiting for approval'
 
-const waitingText = (act?: string) =>
-  act
-    ? `${act}. Nothing changes until an admin approves it.`
-    : 'Nothing changes until an admin approves it.'
+const waitingText = (act?: string) => (act ? `${act}. Waits for an admin.` : 'Waits for an admin.')
 
 export const toastWaiting = (act?: string) =>
   toast.message(waitingTitle, {

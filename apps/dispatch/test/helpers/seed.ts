@@ -1,11 +1,24 @@
 import { and, eq } from 'drizzle-orm'
 
+import type { tokenLevelValues, WorkspaceAgent, WorkspaceKindValue } from '@stationly/protocol'
 import { releaseRepositories } from '@stationly/protocol/release-config'
 
-import { app, approval, setting, target, task, type ApprovalShip } from '../../src/db/schema.ts'
+import { ApiError } from '../../src/api/errors.ts'
+import { createKit } from '../../src/api/kit.ts'
+import { targetById } from '../../src/api/lookup.ts'
+import {
+  app,
+  approval,
+  machine,
+  setting,
+  target,
+  task,
+  type ApprovalShip,
+} from '../../src/db/schema.ts'
 import { lockfileFor, parseManifest, sha256Of, storeRelease } from '../../src/platform/lockfile.ts'
+import { createMachine as createWorkspaceMachine } from '../../src/sandboxes/create.ts'
 
-import type { Dispatch } from './dispatch.ts'
+import { localOrigin, type Dispatch } from './dispatch.ts'
 
 type Api = Pick<Dispatch, 'call' | 'admin' | 'db'>
 
@@ -333,22 +346,104 @@ export const rows = <T = Record<string, unknown>>(
 
 export const toolchainImageDigest = toolchainDigest
 
-export const createMachine = async (
-  h: Api,
+let machineCount = 0
+
+export type MachineInput = {
+  name?: string
+  repository?: string
+  agent?: WorkspaceAgent
+  level?: (typeof tokenLevelValues)[number]
+  kind?: WorkspaceKindValue
+  memoryBytes?: number
+  repositoryReadable?: boolean
+  token?: string
+  human?: boolean
+}
+
+export const tryCreateMachine = async (
+  h: Pick<Dispatch, 'deps' | 'db' | 'admin'>,
   targetId: string,
-  body: Record<string, unknown> = {},
-  expect = [201],
-) =>
-  must<any>(
-    await h.call('POST', placed(h, targetId, 'machines'), {
-      token: h.admin.token,
-      body,
+  input: MachineInput = {},
+) => {
+  const kit = createKit(h.deps)
+  const call = await kit.call(
+    new Request(`${localOrigin}/v1/me`, {
+      headers: input.human
+        ? {
+            cookie: h.admin.cookie,
+          }
+        : {
+            authorization: `Bearer ${input.token ?? h.admin.token}`,
+          },
     }),
-    ...expect,
   )
 
+  try {
+    const created = await createWorkspaceMachine(
+      kit,
+      call,
+      targetById(h.db, targetId),
+      {
+        name: input.name ?? `machine-${(machineCount += 1)}`,
+        workspace: {
+          agent: input.agent ?? 'claude',
+          repository: input.repository ?? 'https://github.com/acme/web',
+          level: input.level ?? 'deploy',
+        },
+      },
+      {
+        repositoryReadable: input.repositoryReadable ?? true,
+        kind: input.kind,
+        memoryBytes: input.memoryBytes,
+      },
+    )
+
+    return {
+      status: 201,
+      body: machineRowOf(h, created.id) as any,
+      text: '',
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError)) {
+      throw error
+    }
+
+    const body = {
+      error: {
+        code: error.code,
+        explanation: error.message,
+        fix: error.fix,
+        details: error.details,
+      },
+    }
+
+    return {
+      status: error.status,
+      body: body as any,
+      text: JSON.stringify(body),
+    }
+  }
+}
+
+export const createMachine = async (
+  h: Pick<Dispatch, 'deps' | 'db' | 'admin'>,
+  targetId: string,
+  input: MachineInput = {},
+) => {
+  const reply = await tryCreateMachine(h, targetId, input)
+
+  if (reply.status !== 201) {
+    throw new Error(`createMachine answered ${reply.status}: ${reply.text}`)
+  }
+
+  return machineRowOf(h, reply.body.id)
+}
+
+export const machineRowOf = (h: Pick<Dispatch, 'db'>, id: string) =>
+  h.db.select().from(machine).where(eq(machine.id, id)).get()!
+
 export const waitForMachine = async (
-  h: Api & Partial<Pick<Dispatch, 'deps'>>,
+  h: Pick<Dispatch, 'db'> & Partial<Pick<Dispatch, 'deps'>>,
   machineId: string,
   status: string,
   timeoutMs = 8000,
@@ -357,19 +452,14 @@ export const waitForMachine = async (
 
   for (;;) {
     h.deps?.stations.reconcile()
-    const box = must<any>(
-      await h.call('GET', `/v1/machines/${machineId}?fields=*`, {
-        token: h.admin.token,
-      }),
-      200,
-    )
+    const box = machineRowOf(h, machineId)
 
-    if (box.status === status) {
+    if (box?.status === status) {
       return box
     }
 
     if (Date.now() > deadline) {
-      throw new Error(`machine ${machineId} stayed ${box.status}, wanted ${status}`)
+      throw new Error(`machine ${machineId} stayed ${box?.status}, wanted ${status}`)
     }
 
     await new Promise((resolve) => setTimeout(resolve, 50))

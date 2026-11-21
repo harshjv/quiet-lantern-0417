@@ -1,15 +1,13 @@
-const repositoryShape = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+import { repositoryShorthand, repositoryUrlPattern } from '@stationly/protocol'
 
 export const repositoryUrl = (text: string) => {
   const value = text.trim()
 
-  if (repositoryShape.test(value)) {
+  if (repositoryShorthand.test(value)) {
     return `https://github.com/${value.replace(/\.git$/, '')}`
   }
 
-  return /^https:\/\/[A-Za-z0-9.-]+(:[0-9]+)?(\/[A-Za-z0-9._~-]+)+$/.test(value)
-    ? value.replace(/\.git$/, '')
-    : null
+  return new RegExp(repositoryUrlPattern).test(value) ? value.replace(/\.git$/, '') : null
 }
 
 export const credentialKey = (keys: readonly string[], value: string) =>
@@ -21,8 +19,8 @@ export const githubTokenKey = 'GH_TOKEN'
 
 export const githubTokenLabel = 'GitHub token'
 
-export const githubTokenHelp = (project: string, repository: string) =>
-  `${project} has no GitHub token, and ${repository} is private or does not exist. Paste a fine-grained token with Contents read and write on that repository, or the output of gh auth token. Stationly stores it as a secret environment variable of the project.`
+export const githubTokenHelp =
+  'Private or missing repository. Paste a token with Contents read and write, or gh auth token output.'
 
 type Failing = { code: string; details: Record<string, unknown> }
 
@@ -62,3 +60,12 @@ export const projectRepositories = (
     ).values(),
   ]
 }
+
+export const taskBrief = (prompt: string | null, title: string) =>
+  prompt?.trim()
+    ? {
+        prompt,
+      }
+    : {
+        title: title.trim(),
+      }

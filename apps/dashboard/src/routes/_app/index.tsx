@@ -1,9 +1,7 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
+
+import { AllProjects } from '@/workbench/ship-live'
 
 export const Route = createFileRoute('/_app/')({
-  beforeLoad: () => {
-    throw redirect({
-      to: '/build',
-    })
-  },
+  component: AllProjects,
 })

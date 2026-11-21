@@ -98,28 +98,45 @@ const lingerMs = 30_000
 const inTurn = (row: TaskRow) => (slotStatuses as readonly string[]).includes(row.status)
 
 export const holdsSlot = (db: Db, row: TaskRow) => {
-  if (row.machine !== 'project') {
+  if (row.isolated) {
     return false
-  }
-
-  if (inTurn(row)) {
-    return true
   }
 
   const session = latestConversation(db, row.id)
 
-  return !!session && runnerLive(session)
+  if (!session) {
+    return false
+  }
+
+  return inTurn(row) || runnerLive(session)
 }
 
 const tasksOn = (db: Db, machineId: string) =>
   db.select().from(task).where(eq(task.machine_id, machineId)).all()
 
-export const freeSlots = (db: Db, box: MachineRow, except?: string) =>
-  slotsOf(db, box) -
+const busySlots = (db: Db, box: MachineRow, except?: string) =>
   tasksOn(db, box.id).filter((row) => row.id !== except && holdsSlot(db, row)).length
 
+export const freeSlots = (db: Db, box: MachineRow, except?: string) =>
+  slotsOf(db, box) - busySlots(db, box, except)
+
+export const taskSlotsOf = (db: Db, row: Pick<ProjectRow, 'machine'>) => {
+  const box = projectMachine(db, row)
+
+  if (!box) {
+    return null
+  }
+
+  return {
+    server_id: box.server_id,
+    total: slotsOf(db, box),
+    busy: busySlots(db, box),
+    queued: tasksOn(db, box.id).filter((other) => other.status === 'queued').length,
+  }
+}
+
 export const claimSlot = (db: Db, row: TaskRow, now = new Date()) => {
-  if (row.machine !== 'project' || holdsSlot(db, row)) {
+  if (row.isolated || holdsSlot(db, row)) {
     return true
   }
 
@@ -152,7 +169,7 @@ const setupSucceeded = (db: Db, runId: string | null) =>
 export const resumeTask = (db: Db, row: TaskRow, now = new Date()) => {
   const session = latestConversation(db, row.id)
 
-  if (row.machine === 'project' && !setupSucceeded(db, row.setup_run_id)) {
+  if (!row.isolated && !setupSucceeded(db, row.setup_run_id)) {
     const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
     if (box) {
@@ -230,9 +247,7 @@ const reclaimSlots = (db: Db, box: MachineRow, wanted: number, now = new Date())
   const lingering = tasksOn(db, box.id)
     .filter(
       (row) =>
-        row.machine === 'project' &&
-        !inTurn(row) &&
-        new Date(activityOf(row).since).getTime() < settledBefore,
+        !row.isolated && !inTurn(row) && new Date(activityOf(row).since).getTime() < settledBefore,
     )
     .flatMap((row) => {
       const session = latestConversation(db, row.id)
@@ -434,8 +449,8 @@ export const machineUserByToken = (db: Db, machineId: string, tokenId: string | 
         .get()
     : undefined
 
-export const machineUserOf = (db: Db, row: Pick<TaskRow, 'machine' | 'machine_id' | 'owner'>) =>
-  row.machine === 'project' && row.owner.id
+export const machineUserOf = (db: Db, row: Pick<TaskRow, 'isolated' | 'machine_id' | 'owner'>) =>
+  !row.isolated && row.owner.id
     ? db
         .select()
         .from(machine_user)
@@ -444,6 +459,16 @@ export const machineUserOf = (db: Db, row: Pick<TaskRow, 'machine' | 'machine_id
         )
         .get()
     : undefined
+
+export const taskRunAs = (
+  box: Pick<MachineRow, 'workspace'>,
+  row: Pick<TaskRow, 'worktree'>,
+  member: MachineUserRow | undefined,
+) => ({
+  user: member?.name ?? workspaceUser.name,
+  home: member ? homeOf(member.name) : workspaceUser.home,
+  worktree: row.worktree ?? box.workspace?.path ?? null,
+})
 
 export const worktreeOf = (branch: string, taskId: string, home: string) =>
   `${home}/tasks/${branch.replace(/^task\//, '')}-${taskId.slice(-4).toLowerCase()}`
@@ -583,7 +608,7 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
     })
     .from(task)
     .innerJoin(machine, eq(machine.id, task.machine_id))
-    .where(and(eq(task.machine, 'project'), eq(task.status, 'setting_up')))
+    .where(and(eq(task.isolated, false), eq(task.status, 'setting_up')))
     .all()
 
   for (const { task: row, box } of pending) {
@@ -600,6 +625,7 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
     const own = ownRun?.status
     const timedOut =
       own === 'succeeded' &&
+      !!latestConversation(db, row.id) &&
       !!ownRun?.finished_at &&
       Date.now() - ownRun.finished_at.getTime() > startTimeoutMs
 
@@ -692,8 +718,39 @@ export const startTaskSetups = async (db: Db, deps: MachineDeps) => {
   }
 }
 
-export const taskSetupReady = (db: Db, row: Pick<TaskRow, 'machine' | 'setup_run_id'>) =>
-  row.machine !== 'project' || setupSucceeded(db, row.setup_run_id)
+export const settleUnstartedTasks = (db: Db) => {
+  const unstarted = db
+    .select({
+      task,
+      box: machine,
+    })
+    .from(task)
+    .innerJoin(machine, eq(machine.id, task.machine_id))
+    .where(eq(task.status, 'setting_up'))
+    .all()
+    .filter(({ task: row }) => !latestConversation(db, row.id))
+
+  for (const { task: row, box } of unstarted) {
+    if (
+      box.status !== 'running' ||
+      runStatus(db, box.workspace?.setup_run_id) !== 'succeeded' ||
+      !taskSetupReady(db, row)
+    ) {
+      continue
+    }
+
+    db.update(task)
+      .set({
+        status: 'finished',
+      })
+      .where(eq(task.id, row.id))
+      .run()
+    taskChanged(db, row)
+  }
+}
+
+export const taskSetupReady = (db: Db, row: Pick<TaskRow, 'isolated' | 'setup_run_id'>) =>
+  row.isolated || setupSucceeded(db, row.setup_run_id)
 
 export const removeWorktree = (db: Db, row: TaskRow, reconcile: (station: string) => void) => {
   const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
@@ -738,7 +795,7 @@ export const removeWorktree = (db: Db, row: TaskRow, reconcile: (station: string
 export const stopTask = (db: Db, row: TaskRow, now = new Date()) => {
   closePendingApprovals(db, row.id, now)
 
-  if (row.machine === 'project' && !setupSucceeded(db, row.setup_run_id)) {
+  if (!row.isolated && !setupSucceeded(db, row.setup_run_id)) {
     db.update(task)
       .set({
         setup_run_id: null,
@@ -790,7 +847,7 @@ export const tasksInUse = (db: Db, machineId: string) =>
 export const taskOnMachine = (db: Db, machineId: string, cwd: string | undefined) => {
   const all = tasksOn(db, machineId)
 
-  if (all.length === 1 && all[0]!.machine === 'own') {
+  if (all.length === 1 && all[0]!.isolated) {
     return all[0]!
   }
 

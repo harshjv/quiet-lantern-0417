@@ -1,7 +1,12 @@
 import { and, desc, eq, gte, inArray, type SQL } from 'drizzle-orm'
 import { t } from 'elysia'
 
-import { runKindValues, runStatusValues, runTerminalStatuses } from '@stationly/protocol'
+import {
+  runActiveStatuses,
+  runKindValues,
+  runStatusValues,
+  runTerminalStatuses,
+} from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { machine, run } from '../db/schema.ts'
@@ -36,6 +41,15 @@ export const pollUntil = async (
     )
   }
 }
+
+export const activeMachineRuns = (db: Db, machineId: string) =>
+  db
+    .select({
+      id: run.id,
+    })
+    .from(run)
+    .where(and(eq(run.machine_id, machineId), inArray(run.status, [...runActiveStatuses])))
+    .all().length
 
 export const waitForRun = async (db: Db, id: string, seconds: number, signal: AbortSignal) => {
   let row = runRow(db, id)

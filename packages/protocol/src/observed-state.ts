@@ -282,19 +282,6 @@ export const ObservedSandbox = Type.Object(
   },
 )
 
-export const ObservedSandboxSnapshot = Type.Object(
-  {
-    applied_hash: appliedHash,
-    ...outcome,
-    taken_at: Nullable(Timestamp),
-    referenced_bytes: Bytes,
-    exclusive_bytes: Bytes,
-  },
-  {
-    title: 'ObservedSandboxSnapshot',
-  },
-)
-
 export const ObservedSandboxBase = Type.Object(
   {
     state: StringEnum(['unpacking', 'ready', 'failed'], {
@@ -309,7 +296,7 @@ export const ObservedSandboxBase = Type.Object(
 
 export const UnknownObject = Type.Object(
   {
-    kind: StringEnum(['container', 'network', 'volume', 'sandbox_disk', 'sandbox_snapshot'], {
+    kind: StringEnum(['container', 'network', 'volume', 'sandbox_disk'], {
       title: 'UnknownObjectKind',
     }),
     id: Type.Optional(Type.String()),
@@ -332,7 +319,6 @@ const observedMaps = {
   workshops: IdMap(ObservedWorkshop),
   system_targets: IdMap(ObservedSystemTarget),
   sandboxes: Type.Optional(IdMap(ObservedSandbox)),
-  sandbox_snapshots: Type.Optional(IdMap(ObservedSandboxSnapshot)),
   sandbox_bases: Type.Optional(IdMap(ObservedSandboxBase)),
 }
 
@@ -364,7 +350,6 @@ export const ObservedUpdate = Type.Object(
     workshops: Type.Optional(observedMaps.workshops),
     system_targets: Type.Optional(observedMaps.system_targets),
     sandboxes: observedMaps.sandboxes,
-    sandbox_snapshots: observedMaps.sandbox_snapshots,
     sandbox_bases: observedMaps.sandbox_bases,
   },
   {

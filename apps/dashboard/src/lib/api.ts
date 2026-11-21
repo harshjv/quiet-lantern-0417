@@ -23,13 +23,6 @@ export type Preview = Data<ReturnType<V1['previews']>['get']>
 export type NetworkMap = Data<ReturnType<V1['projects']>['network']['get']>
 export type Connections = Data<ReturnType<V1['apps']>['connections']['get']>
 export type Explanation = Data<ReturnType<V1['projects']>['network']['explain']['get']>
-export type Probe = Exclude<
-  Data<ReturnType<V1['apps']>['network']['probe']['post']>,
-  {
-    status: string
-  }
->
-export type DnsLog = Data<ReturnType<V1['apps']>['dns-log']['get']>
 export type App = Data<ReturnType<V1['apps']>['get']>
 export type AppStatus = App['status']
 export type Deployment = Data<ReturnType<V1['deployments']>['get']>
@@ -39,13 +32,9 @@ export type Diagnosis = Data<ReturnType<V1['deployments']>['diagnosis']['get']>
 export type Domain = Data<ReturnType<V1['domains']>['get']>
 export type AppPort = Item<Data<ReturnType<V1['apps']>['ports']['get']>>
 export type EnvironmentVariable = Data<ReturnType<V1['environment-variables']>['get']>
-export type Machine = Data<ReturnType<V1['machines']>['get']>
 export type Tasks = Data<V1['tasks']['get']>
 export type Task = Data<ReturnType<V1['tasks']>['get']>
 export type TaskEvents = Data<ReturnType<V1['tasks']>['events']['get']>
-export type MachineStatus = Machine['status']
-export type MachineSnapshot = Item<Data<ReturnType<V1['projects']>['machine-snapshots']['get']>>
-export type MachineShell = Data<ReturnType<V1['machines']>['shells']['post']>
 export type Approval = Data<ReturnType<V1['approvals']>['get']>
 export type Change = NonNullable<Approval['changes']>[number]
 export type LogPage = Data<V1['logs']['get']>
@@ -73,6 +62,11 @@ export class ApiFailure extends Error {
     this.requestId = body?.request_id ?? null
   }
 }
+
+export const isStarting = (error: unknown) =>
+  error instanceof ApiFailure &&
+  error.code === 'MACHINE_NOT_RUNNING' &&
+  error.details.status === 'starting'
 
 type EdenResult = { data: unknown; error: unknown; status: number }
 

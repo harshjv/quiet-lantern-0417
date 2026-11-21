@@ -272,7 +272,7 @@ func checkGeneration(g *protocol.Generation, applied *protocol.Generation) *Reje
 		}
 		bridges[env.Network.BridgeName] = envID
 	}
-	if r := checkSandboxes(g, pool, taken, sandboxHeld); r != nil {
+	if r := checkSandboxes(g, pool, taken); r != nil {
 		return r
 	}
 	vipHolders := map[string]string{}

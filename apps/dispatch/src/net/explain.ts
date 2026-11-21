@@ -260,7 +260,7 @@ export const explainNetwork = async (
 
   if (!asApp && !asMachine) {
     return targetInvalid(
-      `from ${input.from} is not an app or machine of ${placeName(env)}.`,
+      `from ${input.from} is not an app of ${placeName(env)}.`,
       ['internet', ...apps.map((s) => s.name), ...boxes.map((b) => b.name)],
       {
         field: 'from',
@@ -572,12 +572,7 @@ export const explainNetwork = async (
     )
     fixes.push(
       box
-        ? fix('START_TARGET', `Start ${box.name}; it is not running.`, {
-            tool: 'start_machine',
-            input: {
-              machine: box.id,
-            },
-          })
+        ? fix('START_TARGET', `Reply to the task on ${box.name} or open its terminal to start it.`)
         : startFix(asApp!),
     )
 
@@ -656,14 +651,7 @@ export const explainNetwork = async (
   const joinFix = () =>
     fix(
       'JOIN_ENVIRONMENT',
-      `${source.name} is isolated, so its resolver answers NXDOMAIN for every .internal name. Create it with network = environment, or change network while it is stopped and start it again.`,
-      {
-        tool: 'update_machine',
-        input: {
-          machine: source.id,
-          network: 'environment',
-        },
-      },
+      `${source.name} is isolated, so its resolver answers NXDOMAIN for every .internal name; reach the app through its preview or production address instead.`,
     )
   const skipFrom = (names: readonly HopName[]) => names.map((name) => hop(name, 'skipped'))
 
@@ -726,23 +714,6 @@ export const explainNetwork = async (
             wildcard: d.wildcard,
             ports: d.ports,
           }))
-          const next = entry
-            ? box.egress.domains.map((d) =>
-                d === entry
-                  ? {
-                      ...d,
-                      ports: [...d.ports, port],
-                    }
-                  : d,
-              )
-            : [
-                ...box.egress.domains,
-                {
-                  domain: target.host,
-                  wildcard: false,
-                  ports: [port],
-                },
-              ]
 
           hops.push(
             hop('dns', 'skipped', {
@@ -769,21 +740,7 @@ export const explainNetwork = async (
               'ALLOW_DOMAIN',
               entry
                 ? `${entry.domain} is listed without port ${port}; add the port to its entry.`
-                : `Add ${target.host}:${port} to ${source.name}'s allowlist.`,
-              {
-                tool: 'update_machine',
-                input: {
-                  machine: source.id,
-                  egress: {
-                    mode: 'allowlist',
-                    domains: next.map((d) => ({
-                      domain: d.domain,
-                      wildcard: d.wildcard,
-                      ports: d.ports,
-                    })),
-                  },
-                },
-              },
+                : `Add ${target.host}:${port} to the project's allowed domains.`,
             ),
           )
           hops.push(...skipFrom(['firewall']))

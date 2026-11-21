@@ -1,7 +1,8 @@
 import { AlsoWith } from '@/components/code'
+import { KeyValue } from '@/components/page'
 import type { App } from '@/lib/api'
 import { commands, type AppScope } from '@/lib/commands'
-import { healthLine, healthPortNote, healthWhy } from '@/lib/health-text'
+import { healthFacts, healthPortNote, healthWhy } from '@/lib/health-text'
 
 export function AppHealth({ app, scope }: { app: App; scope: AppScope }) {
   const why = healthWhy(app)
@@ -10,9 +11,9 @@ export function AppHealth({ app, scope }: { app: App; scope: AppScope }) {
 
   return (
     <div className="space-y-2">
-      <div>
+      <div className="space-y-2">
         <div className="text-xs text-muted-foreground">Health check</div>
-        <p className="text-sm">{healthLine(app.health)}</p>
+        <KeyValue items={healthFacts(app.health)} />
         {why && <p className="text-xs text-muted-foreground">{why}</p>}
         {note && <p className="text-xs text-muted-foreground">{note}</p>}
       </div>

@@ -245,10 +245,10 @@ test('integer fields named *_bytes take sizes, *_s and *_seconds take durations'
   const program = buildProgram()
 
   assert.match(
-    find(program, ['machines', 'grow-storage'])!.helpInformation(),
+    find(program, ['servers', 'grow-task-storage'])!.helpInformation(),
     /--size-bytes <size>/,
   )
-  assert.match(find(program, ['machines', 'create'])!.helpInformation(), /--ttl-s <duration>/)
+  assert.match(find(program, ['apps', 'update'])!.helpInformation(), /--drain-timeout-s <duration>/)
   assert.match(find(program, ['previews', 'create'])!.helpInformation(), /--ttl-seconds <duration>/)
 })
 
@@ -268,9 +268,8 @@ test(
       'export_manifest',
       'get_agent_inbox',
       'get_tool_approval',
-      'machine_exec',
-      'open_machine_shell',
       'open_shell',
+      'open_task_shell',
       'platform_upgrade',
       'post_agent_events',
       'report_runner_exit',

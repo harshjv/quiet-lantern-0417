@@ -9,7 +9,6 @@ export const groups = {
   'environment-variables': [['environment-variables'], ['apps']],
   domains: [['domains'], ['apps'], ['network']],
   networking: [['ports'], ['domains'], ['apps'], ['deployments'], ['network']],
-  machines: [['machines'], ['machine-snapshots'], ['tasks'], ['projects']],
   tasks: [['tasks'], ['approvals']],
   stations: [['stations']],
   approvals: [['approvals']],

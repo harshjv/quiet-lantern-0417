@@ -24,11 +24,13 @@ export function Panel({
   title,
   rows,
   resetKey,
+  fallback,
   children,
 }: {
   title?: string
   rows?: number
   resetKey?: unknown
+  fallback?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -36,7 +38,7 @@ export function Panel({
       getResetKey={() => resetKey}
       errorComponent={({ error, reset }) => <Failure error={error} title={title} onRetry={reset} />}
     >
-      <Suspense fallback={<Rows count={rows} />}>{children}</Suspense>
+      <Suspense fallback={fallback ?? <Rows count={rows} />}>{children}</Suspense>
     </CatchBoundary>
   )
 }

@@ -178,7 +178,7 @@
           "error",
           {
             "allowed": [
-              "/v1/machines/{}/forward",
+              "/v1/tasks/{}/forward",
               "/v1/events?types={}",
               "/v1/logs?{}",
               "/v1/environments/{}/network/live"

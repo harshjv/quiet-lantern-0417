@@ -133,8 +133,8 @@ export const deployPreview = async (kit: Kit, call: Call, row: TaskRow) => {
   if (!box?.workspace || box.status !== 'running') {
     fail(
       'MACHINE_NOT_RUNNING',
-      `The machine of task ${row.title} is not running, so its worktree cannot be deployed.`,
-      'Reply to the task to start its machine, then make the preview again.',
+      `Task ${row.title} is not running, so its worktree cannot be deployed.`,
+      'Reply to the task to start it, then make the preview again.',
       {
         machine_id: row.machine_id,
       },

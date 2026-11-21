@@ -39,12 +39,12 @@ test('an unknown shell is a usage error', async () => {
 test('the first word completes to every group and top-level command, generated or hand-written', async () => {
   const words = await suggestions('')
 
-  for (const word of ['apps', 'machines', 'deploy', 'logs', 'login', 'push', 'completion']) {
+  for (const word of ['apps', 'tasks', 'deploy', 'logs', 'login', 'push', 'completion']) {
     assert.ok(words.includes(word), word)
   }
 
   assert.ok(!words.includes('complete'))
-  assert.deepEqual(await suggestions('mach'), ['machines'])
+  assert.deepEqual(await suggestions('task'), ['tasks'])
 })
 
 test('a group completes to its subcommands with their summaries as hints', async () => {

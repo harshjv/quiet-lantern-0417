@@ -32,10 +32,7 @@ import { cn } from '@/lib/utils'
 
 export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <Badge
-      variant="outline"
-      className={cn('gap-1.5 font-mono text-xs font-normal', toneBadge[tone])}
-    >
+    <Badge variant="outline" className={cn('gap-1.5 text-xs font-normal', toneBadge[tone])}>
       <span className="size-1.5 bg-current" aria-hidden />
       {children}
     </Badge>
@@ -117,12 +114,12 @@ export function Section({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center gap-3">
-        <h2 className="flex items-center gap-2 font-mono text-xs tracking-wider text-muted-foreground uppercase">
+        <h2 className="flex items-center gap-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
           {Icon && <Icon className="size-3.5" aria-hidden />}
           {title}
         </h2>
         {count !== undefined && (
-          <span className="border px-1.5 font-mono text-xs leading-5 tabular-nums">{count}</span>
+          <span className="border px-1.5 text-xs leading-5 tabular-nums">{count}</span>
         )}
         <span className="flex-1" aria-hidden />
         {facts}
@@ -188,7 +185,7 @@ export function Meta({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex items-center gap-1.5 font-mono text-xs" aria-label={label}>
+        <span className="inline-flex items-center gap-1.5 text-xs" aria-label={label}>
           <Icon className="size-3.5 shrink-0" aria-hidden />
           <span className="sr-only">{label}: </span>
           {children}

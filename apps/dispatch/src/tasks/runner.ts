@@ -3,12 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Static } from '@sinclair/typebox'
 import { and, asc, desc, eq, gt, inArray, isNull, max } from 'drizzle-orm'
 
-import {
-  workspaceUser,
-  type Actor,
-  type AgentEventInputValue,
-  type AgentEventType,
-} from '@stationly/protocol'
+import type { Actor, AgentEventInputValue, AgentEventType } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import { newId } from '../db/ids.ts'
@@ -22,12 +17,13 @@ import { closePendingApprovals } from './approvals.ts'
 import {
   claimSlot,
   deliveredRun,
-  homeOf,
   machineUserOf,
   memberKeyPlaceholders,
   memberRelayEnv,
   promoteQueued,
+  settleUnstartedTasks,
   startTaskSetups,
+  taskRunAs,
   taskSetupReady,
   type MachineDeps,
 } from './machine.ts'
@@ -426,6 +422,7 @@ export const wantStrandedRunners = (db: Db, now = new Date()) => {
 export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
   promoteQueued(db)
   await startTaskSetups(db, deps)
+  settleUnstartedTasks(db)
   wantStrandedRunners(db)
 
   const wanted = db
@@ -460,15 +457,7 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
 
     const id = newId('run')
     const member = machineUserOf(db, owner)
-    const as = member
-      ? {
-          user: member.name,
-          home: homeOf(member.name),
-        }
-      : {
-          user: workspaceUser.name,
-          home: workspaceUser.home,
-        }
+    const as = taskRunAs(row, owner, member)
 
     db.update(conversation)
       .set({
@@ -522,7 +511,7 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
           kind: 'exec',
           command: runnerCommand(
             session,
-            owner.worktree ?? workspace.path,
+            as.worktree ?? workspace.path,
             owner.port,
             member?.name ?? null,
           ),
@@ -537,6 +526,7 @@ export const startPendingRunners = async (db: Db, deps: MachineDeps) => {
             stdin: null,
             env_keys: delivered.envKeys,
             attach: false,
+            task_id: owner.id,
           },
         })
         .run()

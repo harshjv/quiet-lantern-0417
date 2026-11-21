@@ -16,8 +16,8 @@ export const requireGrowable = (st: StationRow, sizeBytes: number) => {
   if (!machines) {
     fail(
       'SERVER_CAPABILITY_MISSING',
-      `Server ${st.name} reports no machine capability.`,
-      'Install machine support on the server, then retry.',
+      `Server ${st.name} cannot run tasks.`,
+      'Install task support on the server, then retry.',
       {
         missing: 'machines',
         server_id: st.id,
@@ -83,7 +83,7 @@ export const growStorage = async (
 
     fail(
       'MACHINE_STORAGE_GROW_FAILED',
-      `Growing the machine filesystem failed at ${grown.step}: ${grown.error ?? 'no detail'}.`,
+      `Growing task storage failed at ${grown.step}: ${grown.error ?? 'no detail'}.`,
       'Read the step and error, fix the host, then grow again; the filesystem is as it was or larger.',
       {
         step: grown.step,

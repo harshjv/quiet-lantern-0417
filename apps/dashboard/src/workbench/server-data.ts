@@ -74,7 +74,7 @@ export const serverStatus: Record<Station['status'], { label: string; tone: Tone
 }
 
 export const versionSkewText: Record<Exclude<Station['version_skew'], 'ok'>, string> = {
-  behind: 'Its stationd is older than the release. It catches up on the next upgrade.',
-  ahead: 'Its stationd is newer than the release this instance pins.',
-  unsupported: 'Its stationd is too far from the release to take new work. Upgrade it.',
+  behind: 'Older than the release. Catches up on the next upgrade.',
+  ahead: 'Newer than the release this instance pins.',
+  unsupported: 'Too far from the release to take new work. Upgrade it.',
 }

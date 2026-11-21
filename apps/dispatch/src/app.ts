@@ -17,7 +17,7 @@ import {
 import { rememberSentUrl } from './auth/proof.ts'
 import type { Dashboard } from './dashboard.ts'
 import type { Db } from './db/client.ts'
-import { app, machine, project, target } from './db/schema.ts'
+import { app, project, target } from './db/schema.ts'
 import { createMcpRoute } from './mcp/route.ts'
 
 export const createApp = (deps: Deps) => {
@@ -159,28 +159,6 @@ const inTarget = (db: Db, targetId: string, rest: string[], previewId: string | 
       ? ['/v1/apps', svc.id, ...rest.slice(2)].join('/')
       : {
           entity: 'app',
-          ref: rest[1]!,
-        }
-  }
-
-  if (rest[0] === 'machines' && rest.length >= 2) {
-    const box = db
-      .select({
-        id: machine.id,
-      })
-      .from(machine)
-      .where(
-        and(
-          eq(machine.target_id, targetId),
-          byRef(rest[1]!, 'sbx') ? eq(machine.id, rest[1]!) : eq(machine.name, rest[1]!),
-        ),
-      )
-      .get()
-
-    return box
-      ? ['/v1/machines', box.id, ...rest.slice(2)].join('/')
-      : {
-          entity: 'machine',
           ref: rest[1]!,
         }
   }

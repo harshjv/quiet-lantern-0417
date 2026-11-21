@@ -51,7 +51,7 @@ export const requireRuntime = (st: StationRow, requested: MachineRuntimeValue | 
       ? `Server ${st.name} offers no machine runtime.`
       : `Server ${st.name} does not offer the machine runtime ${runtime}; it offers ${offered.length ? offered.join(', ') : 'none'}.`,
     offered.length
-      ? `Create the machine with runtime ${offered[0]}, or on a server that offers ${runtime}.`
+      ? `Set the server's default_machine_runtime to ${offered[0]}, or start the task on a server that offers ${runtime}.`
       : `Upgrade stationd on ${st.name} with sly platform upgrade so it reports its machine runtimes, then retry.`,
     {
       server: st.id,

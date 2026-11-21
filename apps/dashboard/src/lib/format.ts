@@ -60,6 +60,16 @@ export const span = (seconds: number) => {
   return `${total} s`
 }
 
+export const secondsUntil = (iso: string | null | undefined, nowMs: number) => {
+  if (!iso) {
+    return null
+  }
+
+  const at = Date.parse(iso)
+
+  return Number.isNaN(at) ? null : Math.round((at - nowMs) / 1000)
+}
+
 export const clock = (value: string | null | undefined) => {
   const date = parsed(value)
 
@@ -131,7 +141,7 @@ export const changeSummary = (summary: {
     summary.deployments && `starts ${plural(summary.deployments, 'deployment')}`,
   ]
     .filter(Boolean)
-    .join(' · ') || 'No changes'
+    .join(', ') || 'No changes'
 
 export const repositoryName = (url: string) => {
   const parts = url

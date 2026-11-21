@@ -103,8 +103,8 @@ function Join() {
             {info.isPending
               ? 'Checking your invite…'
               : info.data
-                ? `${info.data.invited_by} invited you to ${info.data.team} as ${roleText[info.data.role]}.`
-                : 'This invite link is no longer valid. Ask the person who sent it for a new one.'}
+                ? `Invited by ${info.data.invited_by} to ${info.data.team} as ${roleText[info.data.role]}.`
+                : 'This invite link is no longer valid. Ask for a new one.'}
           </CardDescription>
         </CardHeader>
         {info.data && (

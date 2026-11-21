@@ -43,6 +43,11 @@ export const runStartBody = (
               stdin: r.exec.stdin,
             }
           : {}),
+        ...(r.exec?.record === false
+          ? {
+              record: false,
+            }
+          : {}),
       }
     : {}),
 })

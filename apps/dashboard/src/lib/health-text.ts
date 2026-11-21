@@ -1,30 +1,40 @@
 import type { App } from './api'
+import { plural } from './format.ts'
 
 type Check = NonNullable<App['health']>
 
-const timing = (check: Extract<Check, { interval_s: number }>) =>
-  `every ${check.interval_s} s, ${check.timeout_s} s timeout · ${check.passes} passes to go live, ${check.failures} failures before it is failing`
+type Fact = [string, string]
 
-export const healthLine = (health: App['health']) => {
+const timing = (check: Extract<Check, { interval_s: number }>): Fact[] => [
+  ['Every', `${check.interval_s} s`],
+  ['Timeout', `${check.timeout_s} s`],
+  ['Healthy after', plural(check.passes, 'pass', 'passes')],
+  ['Failing after', plural(check.failures, 'failure')],
+]
+
+export const healthFacts = (health: App['health']): Fact[] => {
   if (!health) {
-    return 'No health check; runs are judged by their exit code'
+    return [['Check', 'None, judged by exit code']]
   }
 
   if (health.type === 'http') {
-    const host = health.host ? ` with Host ${health.host}` : ''
-
-    return `HTTP GET ${health.path} on port ${health.port}${host} · ${timing(health)}`
+    return [
+      ['Check', `HTTP GET ${health.path}`],
+      ['Port', String(health.port)],
+      ...(health.host ? [['Host', health.host] satisfies Fact] : []),
+      ...timing(health),
+    ]
   }
 
   if (health.type === 'tcp') {
-    return `TCP connect to port ${health.port} · ${timing(health)}`
+    return [['Check', 'TCP connect'], ['Port', String(health.port)], ...timing(health)]
   }
 
   if (health.type === 'image') {
-    return 'The image’s own HEALTHCHECK'
+    return [['Check', 'The image’s HEALTHCHECK']]
   }
 
-  return `Running for ${health.seconds} s without exiting`
+  return [['Check', `Running for ${health.seconds} s`]]
 }
 
 export const healthWhy = (app: Pick<App, 'kind' | 'health' | 'health_default'>) => {
@@ -33,16 +43,14 @@ export const healthWhy = (app: Pick<App, 'kind' | 'health' | 'health_default'>) 
   }
 
   if (app.health.type === 'http') {
-    return 'Default for a web app: the first http port'
+    return 'Default: the first HTTP port'
   }
 
   if (app.health.type === 'tcp') {
-    return 'Default for a web app with no http port: the first port'
+    return 'Default: the first port'
   }
 
-  return app.kind === 'worker'
-    ? 'Default for a worker: it has no port to check'
-    : 'Default for an app with no port'
+  return app.kind === 'worker' ? 'Default: a worker has no port' : 'Default: no port'
 }
 
 export const healthPortNote = (

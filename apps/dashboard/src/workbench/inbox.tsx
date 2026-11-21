@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
   CircleCheck,
   CircleX,
@@ -11,18 +11,27 @@ import {
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
+import { Name } from '@/components/name'
 import { Rows } from '@/components/page'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { failureText, type Approval, type Me } from '@/lib/api'
 import { approvalHeadline, approvalPlace, type Names, type Places } from '@/lib/changes'
 import { changeSummary, shortAgo } from '@/lib/format'
 import { actorText, approvalSource, approvalStatus } from '@/lib/labels'
+import { taskTo } from '@/lib/links'
 import { approvalsQuery, meQuery, projectsQuery } from '@/lib/queries'
 import type { Tone } from '@/lib/tone'
 
 import { deciderOf } from './approval-actions'
-import { useTaskRows, type Task } from './data'
+import { useProjectList, useTaskRows, type Task } from './data'
 import { useNames, usePlaces } from './names'
 import {
   ItemList,
@@ -36,9 +45,10 @@ import {
   type Fact,
 } from './parts'
 import { ShipDecision, shipProblem, shipState, shipStatusText } from './ship-approval'
-import { useProject } from './where'
 
-type Group = 'decide' | 'others' | 'broken' | 'done'
+export const inboxGroups = ['needs-you', 'waiting', 'failed', 'finished'] as const
+
+type Group = (typeof inboxGroups)[number]
 
 type Item = {
   id: string
@@ -55,44 +65,40 @@ type Decided = Exclude<Approval['status'], 'waiting'>
 
 const decidedStatuses: Decided[] = ['approved', 'rejected', 'superseded']
 
-const groups: { id: Group; title: string; tab: string }[] = [
+const groups: { id: Group; label: string }[] = [
   {
-    id: 'decide',
-    title: 'Needs your decision',
-    tab: 'Decide',
+    id: 'needs-you',
+    label: 'Needs you',
   },
   {
-    id: 'others',
-    title: 'Waiting on someone else',
-    tab: 'On others',
+    id: 'waiting',
+    label: 'Waiting',
   },
   {
-    id: 'broken',
-    title: 'Something broke',
-    tab: 'Broken',
+    id: 'failed',
+    label: 'Failed',
   },
   {
-    id: 'done',
-    title: 'Finished',
-    tab: 'Done',
+    id: 'finished',
+    label: 'Finished',
   },
 ]
 
-const counted: Group[] = ['decide', 'broken']
+const counted: Group[] = ['needs-you', 'failed']
 
 const taskShapes: Partial<Record<Task['state'], { group: Group; icon: LucideIcon; tone: Tone }>> = {
   waiting: {
-    group: 'decide',
+    group: 'needs-you',
     icon: MessageCircleQuestion,
     tone: 'warning',
   },
   failed: {
-    group: 'broken',
+    group: 'failed',
     icon: CircleX,
     tone: 'danger',
   },
   finished: {
-    group: 'done',
+    group: 'finished',
     icon: CircleCheck,
     tone: 'success',
   },
@@ -107,7 +113,11 @@ const taskItems = (rows: Task[]) =>
           {
             id: t.id,
             ...shape,
-            title: t.title,
+            title: (
+              <Name kind="task" chip={false}>
+                {t.title}
+              </Name>
+            ),
             label: t.title,
             meta: [
               {
@@ -125,14 +135,7 @@ const taskItems = (rows: Task[]) =>
             ],
             action: (
               <Button asChild size="sm">
-                <Link
-                  to="/build/$task"
-                  params={{
-                    task: t.id,
-                  }}
-                >
-                  Open
-                </Link>
+                <Link {...taskTo(t.project, t.id)}>Open</Link>
               </Button>
             ),
           },
@@ -228,7 +231,7 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Names, plac
 
     return {
       id: approval.id,
-      group: failed ? 'broken' : yours && state === 'open' ? 'decide' : 'others',
+      group: failed ? 'failed' : yours && state === 'open' ? 'needs-you' : 'waiting',
       icon: Rocket,
       tone: failed ? 'danger' : 'warning',
       title: <ApprovalTitle approval={approval} />,
@@ -236,16 +239,9 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Names, plac
       meta: approvalFacts(approval, names, places, shipProblem(approval) ?? shipStatusText[state]),
       action: (
         <>
-          {approval.task_id && (
+          {approval.task_id && approval.project_id && names.has(approval.project_id) && (
             <Button asChild size="sm" variant="ghost">
-              <Link
-                to="/build/$task"
-                params={{
-                  task: approval.task_id,
-                }}
-              >
-                Open task
-              </Link>
+              <Link {...taskTo(names.get(approval.project_id)!, approval.task_id)}>Open task</Link>
             </Button>
           )}
           <ShipDecision approval={approval} />
@@ -256,7 +252,7 @@ const approvalItem = (approval: Approval, me: Me | undefined, names: Names, plac
 
   return {
     id: approval.id,
-    group: yours ? 'decide' : 'others',
+    group: yours ? 'needs-you' : 'waiting',
     icon: InboxIcon,
     tone: 'warning',
     title: <ApprovalTitle approval={approval} />,
@@ -280,8 +276,7 @@ function useProjectNames(): Names {
 const inProject = (approval: Approval, project: string | null, names: Names) =>
   !project || (approval.project_id !== null && names.get(approval.project_id) === project)
 
-export function useInbox() {
-  const project = useProject()
+export function useInbox(project: string | null) {
   const rows = useTaskRows()
   const me = useQuery(meQuery)
   const approvals = useQuery(approvalsQuery('waiting'))
@@ -301,22 +296,51 @@ export function useInbox() {
   }
 }
 
-export const useInboxCount = () => useInbox().items.filter((i) => counted.includes(i.group)).length
+export const useInboxCount = (project: string | null) =>
+  useInbox(project).items.filter((i) => counted.includes(i.group)).length
+
+const useInboxSearch = () => {
+  const search = useSearch({
+    from: '/_app/_outside/inbox',
+  })
+  const navigate = useNavigate()
+  const set = (next: Partial<typeof search>) =>
+    void navigate({
+      to: '/inbox',
+      search: (prev) => ({
+        ...prev,
+        ...next,
+      }),
+    })
+
+  return {
+    search,
+    set,
+  }
+}
 
 function WaitingItems() {
-  const { items, pending, error } = useInbox()
-  const [filter, setFilter] = useState<Group | 'all'>('all')
+  const { search, set } = useInboxSearch()
+  const { items, pending, error } = useInbox(search.project ?? null)
+  const filter = search.group ?? 'all'
   const [cleared, setCleared] = useState<string[]>([])
   const open = items.filter((i) => !cleared.includes(i.id))
   const shown = groups.filter((g) => filter === 'all' || g.id === filter)
 
   return (
-    <PageTabs value={filter} onValueChange={(v) => setFilter(v as Group | 'all')}>
+    <PageTabs
+      value={filter}
+      onValueChange={(v) =>
+        set({
+          group: inboxGroups.find((g) => g === v),
+        })
+      }
+    >
       <TabsList>
         <TabsTrigger value="all">All {open.length}</TabsTrigger>
         {groups.map((g) => (
           <TabsTrigger key={g.id} value={g.id}>
-            {g.tab} {open.filter((i) => i.group === g.id).length}
+            {g.label} {open.filter((i) => i.group === g.id).length}
           </TabsTrigger>
         ))}
       </TabsList>
@@ -330,45 +354,49 @@ function WaitingItems() {
         {pending ? (
           <Rows count={3} />
         ) : open.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing is waiting on you. Changes to production, questions from agents, work waiting to
-            ship and tasks that failed show up here.
-          </p>
+          <p className="text-sm text-muted-foreground">Nothing waiting on you</p>
         ) : (
           shown.map((g) => {
             const rows = open.filter((i) => i.group === g.id)
+            const list = (
+              <ItemList key={g.id}>
+                {rows.map((i) => (
+                  <ItemRow
+                    key={i.id}
+                    icon={i.icon}
+                    tone={i.tone}
+                    title={i.title}
+                    meta={i.meta}
+                    action={
+                      <>
+                        {i.action}
+                        {i.group === 'finished' && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={`Clear ${i.label}`}
+                            onClick={() => setCleared([...cleared, i.id])}
+                          >
+                            <X />
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
+                ))}
+              </ItemList>
+            )
 
-            return (
-              rows.length > 0 && (
-                <Section key={g.id} title={g.title} count={rows.length}>
-                  <ItemList>
-                    {rows.map((i) => (
-                      <ItemRow
-                        key={i.id}
-                        icon={i.icon}
-                        tone={i.tone}
-                        title={i.title}
-                        meta={i.meta}
-                        action={
-                          <>
-                            {i.action}
-                            {i.group === 'done' && (
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
-                                aria-label={`Clear ${i.label}`}
-                                onClick={() => setCleared([...cleared, i.id])}
-                              >
-                                <X />
-                              </Button>
-                            )}
-                          </>
-                        }
-                      />
-                    ))}
-                  </ItemList>
-                </Section>
-              )
+            if (rows.length === 0) {
+              return null
+            }
+
+            return filter === 'all' ? (
+              <Section key={g.id} title={g.label} count={rows.length}>
+                {list}
+              </Section>
+            ) : (
+              list
             )
           })
         )}
@@ -384,15 +412,23 @@ const decidedIcon: Record<Decided, LucideIcon> = {
 }
 
 function History() {
-  const project = useProject()
-  const [status, setStatus] = useState<Decided>('approved')
+  const { search, set } = useInboxSearch()
+  const project = search.project ?? null
+  const status = search.status ?? 'approved'
   const approvals = useQuery(approvalsQuery(status))
   const names = useProjectNames()
   const places = usePlaces((approvals.data?.items ?? []).map((a) => a.project_id))
   const rows = (approvals.data?.items ?? []).filter((a) => inProject(a, project, names))
 
   return (
-    <PageTabs value={status} onValueChange={(v) => setStatus(v as Decided)}>
+    <PageTabs
+      value={status}
+      onValueChange={(v) =>
+        set({
+          status: decidedStatuses.find((s) => s === v),
+        })
+      }
+    >
       <TabsList>
         {decidedStatuses.map((s) => (
           <TabsTrigger key={s} value={s}>
@@ -443,22 +479,68 @@ function History() {
   )
 }
 
+const allProjects = ':all'
+
+function ProjectFilter({
+  project,
+  onChange,
+}: {
+  project: string | null
+  onChange: (project: string | undefined) => void
+}) {
+  const projects = useProjectList()
+
+  return (
+    <Select
+      value={project ?? allProjects}
+      onValueChange={(v) => onChange(v === allProjects ? undefined : v)}
+    >
+      <SelectTrigger className="w-48" aria-label="Project">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={allProjects}>All projects</SelectItem>
+        {projects.map((p) => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 export function Inbox() {
-  const [view, setView] = useState<'waiting' | 'history'>('waiting')
+  const { search, set } = useInboxSearch()
+  const view = search.view ?? 'waiting'
 
   return (
     <PageTabs
       value={view}
-      onValueChange={(v) => setView(v as 'waiting' | 'history')}
+      onValueChange={(v) =>
+        set({
+          view: v === 'history' ? 'history' : undefined,
+        })
+      }
       className="contents"
     >
       <Page
         title="Inbox"
         actions={
-          <TabsList>
-            <TabsTrigger value="waiting">Waiting</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
-          </TabsList>
+          <span className="flex flex-wrap items-center gap-2">
+            <ProjectFilter
+              project={search.project ?? null}
+              onChange={(project) =>
+                set({
+                  project,
+                })
+              }
+            />
+            <TabsList>
+              <TabsTrigger value="waiting">Current</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+            </TabsList>
+          </span>
         }
       >
         <PageTabPanel value="waiting">

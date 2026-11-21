@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { ChoiceCards } from '@/components/choice-cards'
-import { AlsoWith, Code } from '@/components/code'
+import { AlsoWith, Code, CodeInput } from '@/components/code'
 import { Confirm, RemoveButton } from '@/components/confirm'
 import { CopyButton } from '@/components/copy'
 import { Field } from '@/components/field'
@@ -13,7 +13,6 @@ import { EmptyState, ErrorState, Subsection } from '@/components/page'
 import { Term } from '@/components/term'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -89,10 +88,10 @@ function AddDomain({
         ? `Add ${hostname.trim()} to ${scope.app}`
         : `Add a generated domain to ${scope.app}`,
     success: (body) => ({
-      title: `${body.hostname} added`,
+      title: `Added ${body.hostname}`,
       description: body.tunnel_route
-        ? 'Add the tunnel route shown on the domain row in Cloudflare.'
-        : 'It goes live once Stationly reaches it through Cloudflare.',
+        ? 'Add its tunnel route in Cloudflare, shown on its row.'
+        : undefined,
     }),
     onSuccess: () => onOpenChange(false),
   })
@@ -104,7 +103,7 @@ function AddDomain({
       title="Add a domain"
       description={
         <>
-          The <Term name="gateway" /> routes the hostname to an HTTP port of {scope.app}.
+          The <Term name="gateway" /> routes it to an HTTP port.
         </>
       }
       error={mutation.errorText}
@@ -117,7 +116,7 @@ function AddDomain({
       {ports.isError && <ErrorState error={ports.error} title="Couldn’t load ports" />}
       {ports.data && http.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {scope.app} has no HTTP port that takes a domain. gRPC ports can’t have one.
+          No HTTP port without gRPC. Add one under Ports.
         </p>
       ) : (
         <>
@@ -144,13 +143,12 @@ function AddDomain({
           />
           {mode === 'custom' && (
             <Field id="domain-host" label="Hostname">
-              <Input
+              <CodeInput
                 id="domain-host"
                 required
                 placeholder="app.example.com"
                 value={hostname}
                 onChange={(e) => setHostname(e.target.value)}
-                className="font-mono"
               />
             </Field>
           )}
@@ -172,13 +170,13 @@ function RemoveDomain({ domain }: { domain: Domain }) {
       ),
     invalidate: ['domains'],
     waiting: () => `Remove ${domain.hostname}`,
-    success: () => `${domain.hostname} removed`,
+    success: () => `Removed ${domain.hostname}`,
   })
 
   return (
     <Confirm
       title={`Remove ${domain.hostname}?`}
-      description="Visitors to it get an error right away. Tunnel routes you added in Cloudflare stay as they are."
+      description="Visitors get an error at once. Your Cloudflare tunnel routes stay."
       action="Remove domain"
       cancel="Keep domain"
       onConfirm={() => mutation.mutateAsync()}
@@ -215,11 +213,7 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
         <EmptyState
           icon={entityIcon.domain}
           title="No domains yet"
-          description={
-            noHttp
-              ? `Domains route to HTTP ports without gRPC, and ${scope.app} has none. Add one above.`
-              : `A domain serves ${scope.app} over HTTPS on a hostname you own, or on a generated one.`
-          }
+          description={noHttp ? 'No HTTP port without gRPC. Add one under Ports.' : undefined}
           action={
             !noHttp && (
               <Button size="sm" onClick={() => setAdding(true)}>
@@ -239,9 +233,9 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
                   href={`https://${domain.hostname}`}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="font-mono text-sm font-medium underline-offset-4 hover:underline"
+                  className="underline-offset-4 hover:underline"
                 >
-                  {domain.hostname}
+                  <Code>{domain.hostname}</Code>
                 </a>
                 <CopyButton value={domain.hostname} label="hostname" />
                 <span
@@ -278,9 +272,7 @@ export function DomainsPanel({ app, scope }: { app: string; scope: AppScope }) {
                       />
                     </div>
                   ))}
-                  {domain.error.code && (
-                    <p className="font-mono text-xs text-muted-foreground">{domain.error.code}</p>
-                  )}
+                  {domain.error.code && <Code className="text-xs">{domain.error.code}</Code>}
                 </div>
               )}
               {domain.tunnel_route && (

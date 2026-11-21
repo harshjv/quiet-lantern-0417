@@ -10,8 +10,7 @@ const project = (name: string, counts: Partial<Project> = {}): Project => ({
   preview_count: 0,
   waiting_approvals: 0,
   app_count: 0,
-  machine_count: 0,
-  workspace_count: 0,
+  task_count: 0,
   status_counts: {
     healthy: 0,
     deploying: 0,
@@ -43,8 +42,7 @@ test('a fresh instance has every step to do', () => {
     secure: false,
     project: false,
     app: false,
-    machine: false,
-    workspace: false,
+    task: false,
     agent: false,
   })
 })
@@ -128,23 +126,20 @@ test('only a healthy app checks off the deploy step', () => {
   assert.equal(healthy.apps, 3)
 })
 
-test('machines count across projects', () => {
+test('tasks count across projects', () => {
   const progress = guideProgress({
     ...fresh,
     projects: [
       project('web'),
       project('api', {
-        machine_count: 2,
-        workspace_count: 1,
+        task_count: 1,
       }),
     ],
   })
 
   assert.equal(progress.done.project, true)
-  assert.equal(progress.done.machine, true)
-  assert.equal(progress.machines, 2)
-  assert.equal(progress.done.workspace, true)
-  assert.equal(progress.workspaces, 1)
+  assert.equal(progress.done.task, true)
+  assert.equal(progress.tasks, 1)
 })
 
 test('an agent is connected once its token makes a call', () => {

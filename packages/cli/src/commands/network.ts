@@ -2,7 +2,6 @@ import { Option } from '@commander-js/extra-typings'
 
 import { action, group, integer, type Program } from '../command.ts'
 import { exitCodes, usage } from '../errors.ts'
-import { targetId } from '../generated.ts'
 import { appId, connect, previewId, projectRef, send, type Run } from '../kit.ts'
 import { json, print, waiting } from '../output.ts'
 import { explanationText, probeText } from '../renderers/network.ts'
@@ -11,7 +10,7 @@ type Origin = {
   from: string
   project: string
   preview: string | undefined
-  kind: 'app' | 'machine' | 'internet'
+  kind: 'app' | 'internet'
 }
 
 const originOf = async (run: Run, fromInternet: boolean): Promise<Origin> => {
@@ -24,26 +23,6 @@ const originOf = async (run: Run, fromInternet: boolean): Promise<Origin> => {
     }
   }
 
-  if (run.selection.machine) {
-    const machine = await targetId(run, 'machine')
-    const box = (
-      await send(
-        run.api.v1
-          .machines({
-            machine,
-          })
-          .get(),
-      )
-    ).data
-
-    return {
-      from: machine,
-      project: box.project_id,
-      preview: box.preview_id ?? undefined,
-      kind: 'machine',
-    }
-  }
-
   return {
     from: await appId(run),
     project: await projectRef(run),
@@ -53,33 +32,22 @@ const originOf = async (run: Run, fromInternet: boolean): Promise<Origin> => {
 }
 
 const probe = async (run: Run, origin: Origin, to: string, port: number | undefined) =>
-  origin.kind === 'machine'
-    ? send(
-        run.api.v1
-          .machines({
-            machine: origin.from,
-          })
-          .network.probe.post({
-            to,
-            port,
-          }),
-      )
-    : send(
-        run.api.v1
-          .apps({
-            app: origin.from,
-          })
-          .network.probe.post({
-            to,
-            port,
-          }),
-      )
+  send(
+    run.api.v1
+      .apps({
+        app: origin.from,
+      })
+      .network.probe.post({
+        to,
+        port,
+      }),
+  )
 
 export const networkCommands = (program: Program) => {
   group(program, 'network')
     .command('explain')
     .description(
-      'Why the selected app or machine can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.',
+      'Why the selected app can or cannot reach a target (or, with --from-internet, why the internet can or cannot reach a domain), hop by hop with fixes. --probe makes two calls, the explanation and then the probe, and prints both; with --json it prints { explanation, probe }.',
     )
     .option('--from-internet', 'explain the inbound path from the internet')
     .requiredOption(
@@ -88,18 +56,14 @@ export const networkCommands = (program: Program) => {
     )
     .option('--port <port>', "port; defaults to the target's only declared port", integer)
     .option('--udp', 'judge UDP instead of TCP')
-    .addOption(
-      new Option('--probe', 'then send the probe from the app or machine').conflicts(
-        'fromInternet',
-      ),
-    )
+    .addOption(new Option('--probe', 'then send the probe from the app').conflicts('fromInternet'))
     .action(
       action(async (options) => {
         const fromInternet = Boolean(options.fromInternet)
 
-        if (fromInternet && (options.app || options.machine)) {
+        if (fromInternet && options.app) {
           throw usage(
-            'Give --app, --machine or --from-internet, not two of them.',
+            'Give --app or --from-internet, not both.',
             'sly network explain --from-internet --to web.example.com',
           )
         }

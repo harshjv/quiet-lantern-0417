@@ -6,9 +6,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { releaseConfig } from '@stationly/protocol/release-config'
 
 import { Code } from '@/components/code'
+import { Name } from '@/components/name'
 import { NewProject } from '@/components/new-project'
 import { NewApp, type AppPreset } from '@/components/new-service'
-import { NewMachine } from '@/components/sandboxes-panel'
 import { AppStatusDot } from '@/components/status'
 import { Button } from '@/components/ui/button'
 import type { Project } from '@/lib/api'
@@ -16,7 +16,7 @@ import { passkeysAvailable, passkeysQuery, sessionQuery } from '@/lib/auth'
 import { guideProgress, guideVisible, setGuideHidden, useGuideHidden } from '@/lib/first-run'
 import { byName, plural } from '@/lib/format'
 import { client } from '@/lib/labels'
-import { placeTo } from '@/lib/links'
+import { inboxTo, newTaskTo, placeTo } from '@/lib/links'
 import { agentTokensQuery } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
@@ -39,7 +39,7 @@ type Step = {
   action?: (next: boolean) => ReactNode
 }
 
-type Dialog = 'project' | 'app' | 'machine' | null
+type Dialog = 'project' | 'app' | null
 
 const variant = (next: boolean) => (next ? 'default' : 'outline')
 
@@ -53,7 +53,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
   })
   const first = [...projects].sort(byName)[0]
   const keys = passkeys.data?.length
-  const { healthy, deploying, apps, machines, workspaces, used, waiting, done } = guideProgress({
+  const { healthy, deploying, apps, tasks, used, waiting, done } = guideProgress({
     projects,
     totp: session.data ? Boolean(session.data.user.twoFactorEnabled) : undefined,
     passkeys: keys,
@@ -84,11 +84,16 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
       id: 'project',
       title: 'Create a project',
       done: done.project,
-      detail: first
-        ? projects.length > 1
-          ? `${first.name} and ${plural(projects.length - 1, 'other')}`
-          : first.name
-        : 'A project groups apps that deploy together.',
+      detail: first ? (
+        <span className="inline-flex items-center gap-2">
+          <Name kind="project">{first.name}</Name>
+          {projects.length > 1 && (
+            <span className="text-xs tabular-nums">+{projects.length - 1}</span>
+          )}
+        </span>
+      ) : (
+        'A project groups apps that deploy together.'
+      ),
       action: (next) => (
         <Button size="sm" variant={variant(next)} onClick={() => open('project')}>
           Create project
@@ -108,15 +113,15 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         ) : deploying > 0 ? (
           <span className="inline-flex items-center gap-2">
             <AppStatusDot status="deploying" />
-            Deploying. This step checks off when it turns healthy.
+            Deploying
           </span>
         ) : apps > 0 ? (
-          'No app is healthy yet.'
+          'No healthy app yet'
         ) : first && first.waiting_approvals > 0 ? (
-          'Your first app waits for an approval. An admin approves it, then it deploys.'
+          'Waiting for an approval'
         ) : first ? (
           <>
-            Try <Code>{helloSource}</Code>, a small web server that answers with the request it got.
+            Try <Code>{helloSource}</Code>, a web server that echoes each request.
           </>
         ) : (
           needsProject
@@ -129,7 +134,7 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
               </Button>
             ) : first.waiting_approvals > 0 ? (
               <Button asChild size="sm" variant={variant(next)}>
-                <Link {...placeTo(first.name, null, 'approvals')}>Review approval</Link>
+                <Link {...inboxTo(first.name)}>Review approval</Link>
               </Button>
             ) : (
               <Button size="sm" variant={variant(next)} onClick={() => open('app')}>
@@ -139,44 +144,19 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
         : undefined,
     },
     {
-      id: 'machine',
-      title: 'Open a machine',
-      done: done.machine,
-      detail:
-        machines > 0
-          ? plural(machines, 'machine', 'machines')
-          : first
-            ? 'A shell on a fresh machine, right in your browser.'
-            : needsProject,
-      action: first
-        ? (next) => (
-            <Button size="sm" variant={variant(next)} onClick={() => open('machine')}>
-              Create machine
-            </Button>
-          )
-        : undefined,
-    },
-    {
-      id: 'workspace',
+      id: 'task',
       title: 'Start a task',
-      done: done.workspace,
+      done: done.task,
       detail:
-        workspaces > 0
-          ? plural(workspaces, 'task')
+        tasks > 0
+          ? plural(tasks, 'task')
           : first
-            ? 'Start a task: Claude Code works on it on a branch of its own.'
+            ? 'An agent works on it on its own branch.'
             : needsProject,
       action: first
         ? (next) => (
             <Button asChild size="sm" variant={variant(next)}>
-              <Link
-                to="/build/new"
-                search={{
-                  project: first.name,
-                }}
-              >
-                New task
-              </Link>
+              <Link {...newTaskTo(first.name)}>New task</Link>
             </Button>
           )
         : undefined,
@@ -186,9 +166,9 @@ function useSteps(projects: Project[], open: (dialog: Dialog) => void) {
       title: 'Connect an agent',
       done: done.agent,
       detail: used
-        ? `${client(used.name)} is connected`
+        ? `${client(used.name)} connected`
         : waiting
-          ? `${client(waiting.name)} has its token. Waiting for its first call.`
+          ? `${client(waiting.name)} waiting for the first call`
           : 'Claude Code, Cursor, Codex or any MCP client.',
       action: (next) => (
         <Button asChild size="sm" variant={variant(next)}>
@@ -285,11 +265,7 @@ function Dialogs({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
     previewName: null,
   }
 
-  return guide.dialog === 'app' ? (
-    <NewApp place={place} preset={hello} open onOpenChange={close} />
-  ) : (
-    <NewMachine place={place} open onOpenChange={close} />
-  )
+  return <NewApp place={place} preset={hello} open onOpenChange={close} />
 }
 
 export function GetStarted({ guide }: { guide: ReturnType<typeof useGetStarted> }) {
@@ -306,11 +282,6 @@ export function GetStarted({ guide }: { guide: ReturnType<typeof useGetStarted> 
           <h2 id="get-started-title" className="text-sm font-semibold">
             {guide.complete ? 'You’re all set' : 'Get started with Stationly'}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {guide.complete
-              ? 'Your first app is live, and you have a machine, a task and a connected agent.'
-              : 'From a fresh instance to a live URL, a shell and an agent that deploys.'}
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <span className="text-xs text-muted-foreground tabular-nums">

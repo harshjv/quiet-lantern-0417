@@ -205,51 +205,32 @@
   color: var(--muted-foreground);
 }
 
-.react-flow.network-canvas .network-edge-reference .react-flow__edge-path {
-  stroke: var(--foreground);
-  stroke-width: 1.5;
-}
-
-.react-flow.network-canvas .network-edge-inbound .react-flow__edge-path {
+.react-flow.network-canvas .canvas-edge {
   stroke: var(--muted-foreground);
-  stroke-width: 1;
-  opacity: 0.7;
+  stroke-width: 1.25;
+  opacity: 0.6;
 }
 
-.react-flow.network-canvas .network-edge-live .react-flow__edge-path {
+.react-flow.network-canvas .canvas-edge-busy {
   stroke: var(--chart-2);
-  stroke-width: 2;
+  stroke-width: 1.75;
+  stroke-dasharray: 5 7;
+  opacity: 1;
+  animation: canvas-flow 0.9s linear infinite;
 }
 
-.react-flow.network-canvas .network-edge-refused .react-flow__edge-path {
-  stroke: var(--destructive);
-  stroke-width: 1.5;
-  stroke-dasharray: 6 4;
-}
-
-.react-flow.network-canvas .traffic-edge-allowed .react-flow__edge-path {
-  stroke: var(--color-emerald-500);
-  stroke-width: 1.5;
-}
-
-.react-flow.network-canvas .traffic-edge-rejected .react-flow__edge-path {
+.react-flow.network-canvas .canvas-edge-outbound {
   stroke: var(--color-amber-500);
-  stroke-width: 1.5;
-  stroke-dasharray: 2 4;
 }
 
-.react-flow.network-canvas .traffic-edge-blocked .react-flow__edge-path {
-  stroke: var(--color-red-500);
-  stroke-width: 1.5;
-  stroke-dasharray: 6 4;
-}
-
-.react-flow.network-canvas .traffic-edge-allowed {
-  color: var(--color-emerald-500);
+@keyframes canvas-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .react-flow.network-canvas .react-flow__edge.animated path {
+  .react-flow.network-canvas .canvas-edge-busy {
     animation: none;
   }
 }

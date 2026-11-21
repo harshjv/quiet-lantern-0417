@@ -9,19 +9,19 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws'
 import { machineExecLimits, runTerminalStatuses } from '@stationly/protocol'
 
 import { authenticate, type Principal } from '../auth/principal.ts'
-import { run } from '../db/schema.ts'
+import { machine, run } from '../db/schema.ts'
 import { runStartBody } from '../station/run-start.ts'
 import { StationRequestError, toBuffer, type StreamHandle } from '../station/server.ts'
 
-import { can, requireHuman } from './access.ts'
+import { can, ownsTask, requireHuman } from './access.ts'
 import { assignRequestId, audit, type Deps } from './context.ts'
 import { requireLink } from './deployments.ts'
 import { ApiError, envelope } from './errors.ts'
-import { isProduction, machineById, runOwner } from './lookup.ts'
+import { runOwner, taskById } from './lookup.ts'
 import { pollUntil, runRow } from './runs.ts'
 
 const attachPath = /^\/v1\/runs\/(run_[0-9A-HJKMNP-TV-Z]{26})\/attach$/
-const forwardPath = /^\/v1\/machines\/(sbx_[0-9A-HJKMNP-TV-Z]{26})\/forward$/
+const forwardPath = /^\/v1\/tasks\/(tsk_[0-9A-HJKMNP-TV-Z]{26})\/forward$/
 const exitWaitMs = 10_000
 
 const requestOf = (req: IncomingMessage) => {
@@ -123,8 +123,20 @@ export const createAttachServer = (deps: Deps) => {
     }
 
     const owner = runOwner(db, r)
+    const taskId = r.exec?.task_id
 
-    if (!can(principal, owner.target, 'deploy')) {
+    if (r.machine_id && !taskId) {
+      throw new ApiError(
+        'FORBIDDEN_SCOPE',
+        "Only a task's shell attaches; open one with open_task_shell.",
+      )
+    }
+
+    if (taskId && !ownsTask(principal, taskById(db, taskId))) {
+      throw new ApiError('FORBIDDEN_SCOPE', "Only the task's owner can attach to its shell.")
+    }
+
+    if (!taskId && !can(principal, owner.target, 'deploy')) {
       throw new ApiError(
         'FORBIDDEN_SCOPE',
         'Attaching to a shell needs deploy on its production or preview.',
@@ -180,35 +192,25 @@ export const createAttachServer = (deps: Deps) => {
     const request = requestOf(req)
     const requestId = assignRequestId(request)
     const url = new URL(request.url)
-    const machineId = forwardPath.exec(url.pathname)![1]!
+    const taskId = forwardPath.exec(url.pathname)![1]!
     const principal: Principal = await authenticate(db, deps.auth, request)
-    const ctx = machineById(db, machineId)
 
-    if (!can(principal, ctx.target, 'deploy')) {
-      throw new ApiError(
-        'FORBIDDEN_SCOPE',
-        'Forwarding a machine port needs deploy on its production or preview.',
-        undefined,
-        {
-          required: {
-            ...ctx.target,
-            level: 'deploy',
-          },
-        },
-      )
+    requireHuman(principal, "Forwarding a task's port")
+    const row = taskById(db, taskId)
+
+    if (!ownsTask(principal, row)) {
+      throw new ApiError('FORBIDDEN_SCOPE', "Only the task's owner can forward its ports.")
     }
 
-    if (isProduction(ctx.target_row)) {
-      requireHuman(principal, 'A port forward in production', ctx.target)
-    }
+    const box = db.select().from(machine).where(eq(machine.id, row.machine_id)).get()
 
-    if (ctx.machine.status !== 'running') {
+    if (box?.status !== 'running') {
       throw new ApiError(
         'MACHINE_NOT_RUNNING',
-        `Machine ${ctx.machine.name} is ${ctx.machine.status}, so no port can be forwarded.`,
-        'Start the machine with start_machine, then forward again.',
+        `Task ${row.title} is not running, so no port can be forwarded.`,
+        'Open its terminal or reply to it, then forward again.',
         {
-          status: ctx.machine.status,
+          status: box?.status ?? 'deleted',
         },
       )
     }
@@ -231,10 +233,10 @@ export const createAttachServer = (deps: Deps) => {
       )
     }
 
-    if ((forwards.get(machineId) ?? 0) >= machineExecLimits.forwards) {
+    if ((forwards.get(box.id) ?? 0) >= machineExecLimits.forwards) {
       throw new ApiError(
         'RATE_LIMITED',
-        `Machine ${ctx.machine.name} already has ${machineExecLimits.forwards} forwards open.`,
+        `Task ${row.title} already has ${machineExecLimits.forwards} forwards open.`,
         'Close one forward, then open another.',
         {
           limit: machineExecLimits.forwards,
@@ -242,13 +244,14 @@ export const createAttachServer = (deps: Deps) => {
       )
     }
 
-    requireLink(stations, ctx.machine.server_id)
+    requireLink(stations, box.server_id)
 
     return {
       request,
       requestId,
       principal,
-      ctx,
+      task: row,
+      box,
       port,
     }
   }
@@ -428,8 +431,8 @@ export const createAttachServer = (deps: Deps) => {
     ws: WebSocket,
     admitted: Awaited<ReturnType<typeof admitForward>>,
   ) => {
-    const { ctx, port, principal, requestId } = admitted
-    const machineId = ctx.machine.id
+    const { task: row, box, port, principal, requestId } = admitted
+    const machineId = box.id
 
     sessions.add(ws)
     forwards.set(machineId, (forwards.get(machineId) ?? 0) + 1)
@@ -473,7 +476,7 @@ export const createAttachServer = (deps: Deps) => {
 
     try {
       handle = await stations.openStream(
-        ctx.machine.server_id,
+        box.server_id,
         'forward.open',
         {
           sandbox_id: machineId,
@@ -525,10 +528,10 @@ export const createAttachServer = (deps: Deps) => {
           request_id: requestId,
           idempotency_key: null,
         },
-        'machine.forward',
+        'task.forward',
         {
-          entity: 'machine',
-          id: machineId,
+          entity: 'task',
+          id: row.id,
         },
         {
           after: {
@@ -538,7 +541,7 @@ export const createAttachServer = (deps: Deps) => {
       )
       sendControl({
         type: 'forwarding',
-        machine_id: machineId,
+        task_id: row.id,
         port,
       })
     } catch (error) {

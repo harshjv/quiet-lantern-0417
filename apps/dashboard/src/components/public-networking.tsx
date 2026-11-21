@@ -36,8 +36,8 @@ const specOf = (p: AppPort): PortSpec => ({
 })
 
 const protocolHelp: Record<Protocol, string> = {
-  http: 'Reachable through a domain with HTTPS.',
-  tcp: 'Reachable only from inside its network, for databases and other protocols.',
+  http: 'Takes a domain with HTTPS.',
+  tcp: 'Inside its network only, for databases and other protocols.',
 }
 
 type PortsChange = { ports: PortSpec[]; done: string; waiting: string }
@@ -166,7 +166,7 @@ function GrpcChoice({
       checked={checked}
       onCheckedChange={onChange}
       label="gRPC"
-      hint="This port speaks gRPC over HTTP/2."
+      hint="gRPC over HTTP/2."
     />
   )
 }
@@ -237,14 +237,12 @@ function AddPort({
           max={65535}
           value={port}
           onChange={(e) => setPort(e.target.value)}
-          className="w-32 font-mono"
+          className="w-32 tabular-nums"
           aria-invalid={taken || undefined}
           aria-describedby={taken ? 'port-number-taken' : undefined}
         />
         {taken && (
-          <FormError id="port-number-taken">
-            {app.name} already has port {port}. Edit that port instead.
-          </FormError>
+          <FormError id="port-number-taken">Port {port} exists. Edit that port instead.</FormError>
         )}
       </Field>
       <ProtocolChoice value={protocol} onChange={setProtocol} name="add-port-protocol" />
@@ -301,7 +299,7 @@ function EditPort({
       open
       onOpenChange={(next) => !next && onClose()}
       title={`Edit port ${target.port}`}
-      description={`Saving deploys ${app.name}. You can’t change the protocol while a domain uses this port.`}
+      description={`Saving deploys ${app.name}. A domain on this port fixes its protocol.`}
       error={change.isError && <FailureNotice error={change.error} />}
       submitLabel="Save and deploy"
       pending={change.isPending}
@@ -382,7 +380,7 @@ function PortsPart({
   return (
     <Subsection
       title="Ports"
-      description="What the container listens on. HTTP ports can have a domain. TCP ports stay inside the network."
+      description="What the container listens on."
       actions={
         <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
           <Plus /> Add port
@@ -399,7 +397,7 @@ function PortsPart({
             className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-card px-4 py-3"
             data-testid={`port-${port.port}`}
           >
-            <span className="font-mono text-sm font-medium tabular-nums">{port.port}</span>
+            <span className="text-sm font-medium tabular-nums">{port.port}</span>
             <Badge variant="outline">{port.protocol.toUpperCase()}</Badge>
             {port.grpc && <Badge variant="secondary">gRPC</Badge>}
             <Reach port={port} domains={domains} />
@@ -465,10 +463,11 @@ export function PublicNetworking({ app, production }: { app: App; production: bo
         <h2 id="public-networking" className="text-base font-semibold">
           Public networking
         </h2>
-        <p className="text-sm text-muted-foreground">
-          The internet reaches {app.name} on HTTP ports through domains.
-          {production && ' This is production, so changes wait for an approval.'}
-        </p>
+        {production && (
+          <p className="text-sm text-muted-foreground">
+            Changes to production wait for an approval.
+          </p>
+        )}
       </div>
       {app.kind !== 'web' ? (
         <EmptyState

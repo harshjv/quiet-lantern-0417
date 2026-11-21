@@ -42,8 +42,6 @@ import {
   injectionValues,
   machineNetworkValues,
   machineRuntimeValues,
-  machineSnapshotStatusValues,
-  machineSourceStateValues,
   machineStatusReasonValues,
   machineStatusValues,
   notificationChannelKindValues,
@@ -82,11 +80,11 @@ import {
   type ShipPhaseValue,
   type StationCapabilities,
   type WorkspaceAgent as TaskAgent,
-  type TaskMachineValue,
   type TaskStatusValue,
   type tokenLevelValues,
   type ToolApprovalStatusValue,
   type WorkspaceAgent,
+  type WorkspaceKindValue,
 } from '@stationly/protocol'
 
 import { newId } from './ids.ts'
@@ -306,7 +304,7 @@ export type MachineFailure = DiagnosisValue
 export type WorkspaceCleanup = { clone: string; worktree: string; branch: string; user?: string }
 
 export type MachineWorkspace = {
-  kind?: TaskMachineValue
+  kind?: WorkspaceKindValue
   agent: WorkspaceAgent
   repository: string | null
   branch: string | null
@@ -358,8 +356,6 @@ export const machine = sqliteTable(
     }),
     exit_code: integer('exit_code'),
     failure: json<MachineFailure>('failure'),
-    forked_from: json<{ machine_id: string | null; snapshot_id: string | null }>('forked_from'),
-    disk_from: json<{ snapshot_id: string } | { sandbox_id: string }>('disk_from'),
     address: text('address'),
     disk_used_bytes: integer('disk_used_bytes').notNull().default(0),
     started_at: timestamp('started_at'),
@@ -379,14 +375,6 @@ export const machine = sqliteTable(
   ],
 )
 
-export type MachineSnapshotSettings = {
-  network: (typeof machineNetworkValues)[number]
-  docker: boolean
-  egress: Static<typeof MachineEgress>
-  command: string[] | null
-  ttl_s: number | null
-}
-
 export const task = sqliteTable(
   'task',
   {
@@ -401,7 +389,7 @@ export const task = sqliteTable(
     agent: text('agent').$type<TaskAgent>().notNull(),
     model: text('model'),
     machine_id: text('machine_id').notNull(),
-    machine: text('machine').$type<TaskMachineValue>().notNull().default('own'),
+    isolated: bool('isolated').notNull().default(false),
     worktree: text('worktree'),
     port: integer('port'),
     setup_run_id: text('setup_run_id'),
@@ -624,55 +612,6 @@ export const tool_approval = sqliteTable(
   ],
 )
 
-export const machine_snapshot = sqliteTable(
-  'machine_snapshot',
-  {
-    ...entity('machine_snapshot'),
-    machine_id: text('machine_id').notNull(),
-    target_id: text('target_id').notNull(),
-    project_id: text('project_id').notNull(),
-    server_id: text('server_id')
-      .notNull()
-      .references(() => server.id),
-    name: text('name'),
-    image: json<{ ref: string | null; digest: string }>('image').notNull(),
-    size: json<Static<typeof MachineSize>>('size').notNull(),
-    runtime: text('runtime', {
-      enum: machineRuntimeValues,
-    })
-      .notNull()
-      .default('gvisor'),
-    settings: json<MachineSnapshotSettings>('settings')
-      .notNull()
-      .default({
-        network: 'isolated',
-        docker: false,
-        egress: {
-          mode: 'open',
-          domains: [],
-        },
-        command: null,
-        ttl_s: 3600,
-      }),
-    source_state: text('source_state', {
-      enum: machineSourceStateValues,
-    }).notNull(),
-    status: text('status', {
-      enum: machineSnapshotStatusValues,
-    }).notNull(),
-    taken_at: timestamp('taken_at'),
-    exclusive_bytes: integer('exclusive_bytes').notNull().default(0),
-    referenced_bytes: integer('referenced_bytes').notNull().default(0),
-    failure: json<DiagnosisValue>('failure'),
-    created_by: json<ActorValue>('created_by').notNull(),
-  },
-  (table) => [
-    uniqueIndex('machine_snapshot_target_name_unique')
-      .on(table.target_id, table.name)
-      .where(sql`name is not null`),
-  ],
-)
-
 export const app_port = sqliteTable(
   'app_port',
   {
@@ -836,6 +775,8 @@ export type RunExec = {
   env_keys: string[]
   attach: boolean
   credentials?: RunCredential[]
+  task_id?: string
+  record?: false
 }
 
 export const run = sqliteTable('run', {

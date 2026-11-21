@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   isArrayLiteralExpression,
@@ -43,9 +44,9 @@ import {
 } from 'typescript/unstable/ast'
 import { API } from 'typescript/unstable/sync'
 
-type Surface = 'dashboard' | 'cli' | 'api'
+export type Surface = 'dashboard' | 'cli' | 'api'
 
-type Kind =
+export type Kind =
   | 'heading'
   | 'button'
   | 'label'
@@ -59,7 +60,7 @@ type Kind =
   | 'toast'
   | 'other'
 
-type Entry = {
+export type Entry = {
   surface: Surface
   kind: Kind
   text: string
@@ -111,7 +112,7 @@ const classNames = /(^| )(dark:)?(text|bg|border)-[a-z]+(-\d+)?(\/\d+)?( |$)/
 
 const worthy = (text: string) => /\p{L}/u.test(text.replaceAll(hole, '')) && !classNames.test(text)
 
-const words = (text: string) => text.split(' ').filter((word) => /\p{L}/u.test(word)).length
+export const words = (text: string) => text.split(' ').filter((word) => /\p{L}/u.test(word)).length
 
 type Piece = { text: string; at: Node }
 
@@ -742,96 +743,109 @@ const findingsOf = (strings: Entry[]) => {
   }
 }
 
-const tracked = execFileSync(
-  'git',
-  ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-  {
-    encoding: 'utf8',
-  },
-).split('\0')
-const api = new API({
-  cwd: process.cwd(),
-})
-const collected: Entry[] = []
-const unparsed: string[] = []
-
-try {
-  const snapshot = api.updateSnapshot({
-    openProjects: surfaces.map((s) => resolve(s.config)),
+export const collectStrings = (wanted: readonly Surface[] = surfaces.map((s) => s.surface)) => {
+  const tracked = execFileSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    {
+      encoding: 'utf8',
+    },
+  ).split('\0')
+  const api = new API({
+    cwd: process.cwd(),
   })
+  const collected: Entry[] = []
+  const unparsed: string[] = []
 
-  for (const { surface, root, config } of surfaces) {
-    const program = snapshot.getProject(resolve(config))!.program
+  try {
+    const chosen = surfaces.filter((s) => wanted.includes(s.surface))
+    const snapshot = api.updateSnapshot({
+      openProjects: chosen.map((s) => resolve(s.config)),
+    })
 
-    for (const file of tracked.filter(
-      (f) => f.startsWith(`${root}/`) && /\.tsx?$/.test(f) && !skipped.some((p) => p.test(f)),
-    )) {
-      const source = program.getSourceFile(resolve(file))
+    for (const { surface, root, config } of chosen) {
+      const program = snapshot.getProject(resolve(config))!.program
 
-      if (source) {
-        extract(surface, file, source, collected)
-      } else {
-        unparsed.push(file)
+      for (const file of tracked.filter(
+        (f) => f.startsWith(`${root}/`) && /\.tsx?$/.test(f) && !skipped.some((p) => p.test(f)),
+      )) {
+        const source = program.getSourceFile(resolve(file))
+
+        if (source) {
+          extract(surface, file, source, collected)
+        } else {
+          unparsed.push(file)
+        }
       }
     }
+  } finally {
+    api.close()
   }
-} finally {
-  api.close()
-}
 
-const seen = new Set<string>()
-const strings = collected.filter((entry) => {
-  const id = `${entry.file}:${entry.line}:${entry.text}`
+  const seen = new Set<string>()
+  const strings = collected.filter((entry) => {
+    const id = `${entry.file}:${entry.line}:${entry.text}`
 
-  return !seen.has(id) && !!seen.add(id)
-})
-
-const counts = Object.fromEntries(
-  surfaces.map(({ surface }) => {
-    const mine = strings.filter((e) => e.surface === surface)
-    const kinds: Record<string, number> = {}
-
-    for (const entry of mine) {
-      kinds[entry.kind] = (kinds[entry.kind] ?? 0) + 1
-    }
-
-    return [
-      surface,
-      {
-        total: mine.length,
-        kinds,
-      },
-    ]
-  }),
-)
-
-const catalogue = {
-  generated_at: new Date().toISOString(),
-  counts,
-  unparsed,
-  vocabulary: vocabulary('docs/01-vocabulary.md'),
-  strings,
-  findings: findingsOf(strings),
-}
-
-process.stdout.write(
-  `${JSON.stringify(
-    {
-      counts,
-      unparsed,
-      vocabulary: catalogue.vocabulary.length,
-    },
-    null,
-    2,
-  )}\n`,
-)
-
-const target = process.argv[2]
-
-if (target) {
-  mkdirSync(dirname(resolve(target)), {
-    recursive: true,
+    return !seen.has(id) && !!seen.add(id)
   })
-  writeFileSync(target, `${JSON.stringify(catalogue, null, 2)}\n`)
-  process.stdout.write(`wrote ${target}\n`)
+
+  return {
+    strings,
+    unparsed,
+  }
+}
+
+const writeCatalogue = (target: string | undefined) => {
+  const { strings, unparsed } = collectStrings()
+  const counts = Object.fromEntries(
+    surfaces.map(({ surface }) => {
+      const mine = strings.filter((e) => e.surface === surface)
+      const kinds: Record<string, number> = {}
+
+      for (const entry of mine) {
+        kinds[entry.kind] = (kinds[entry.kind] ?? 0) + 1
+      }
+
+      return [
+        surface,
+        {
+          total: mine.length,
+          kinds,
+        },
+      ]
+    }),
+  )
+
+  const catalogue = {
+    generated_at: new Date().toISOString(),
+    counts,
+    unparsed,
+    vocabulary: vocabulary('docs/01-vocabulary.md'),
+    strings,
+    findings: findingsOf(strings),
+  }
+
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        counts,
+        unparsed,
+        vocabulary: catalogue.vocabulary.length,
+      },
+      null,
+      2,
+    )}\n`,
+  )
+
+  if (target) {
+    mkdirSync(dirname(resolve(target)), {
+      recursive: true,
+    })
+    writeFileSync(target, `${JSON.stringify(catalogue, null, 2)}\n`)
+    process.stdout.write(`wrote ${target}\n`)
+  }
+}
+
+if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  writeCatalogue(process.argv[2])
 }

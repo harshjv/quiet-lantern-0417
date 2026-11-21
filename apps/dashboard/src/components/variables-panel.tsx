@@ -7,6 +7,7 @@ import { Code } from '@/components/code'
 import { Confirm, RemoveButton } from '@/components/confirm'
 import { CheckboxField, Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
+import { Name } from '@/components/name'
 import { EmptyState, ErrorState } from '@/components/page'
 import { Panel } from '@/components/panel'
 import { Saving } from '@/components/status'
@@ -28,21 +29,14 @@ import {
   VariableNotes,
   VariableValueInput,
 } from '@/components/variable-fields'
-import { api, idempotency, send, unwrap, type Change, type EnvironmentVariable } from '@/lib/api'
+import { api, idempotency, send, type Change, type EnvironmentVariable } from '@/lib/api'
 import { editItems, isOptimistic } from '@/lib/cache'
 import { record } from '@/lib/changes'
 import { plural } from '@/lib/format'
 import { entityIcon } from '@/lib/icons'
 import { injection as injectionLabel, variableKind } from '@/lib/labels'
 import { useApiMutation } from '@/lib/mutation'
-import {
-  approvalsQuery,
-  machineResolvedQuery,
-  machineVariablesQuery,
-  projectVariablesQuery,
-  resolvedQuery,
-  variablesQuery,
-} from '@/lib/queries'
+import { approvalsQuery, projectVariablesQuery, resolvedQuery, variablesQuery } from '@/lib/queries'
 import { toneOutline } from '@/lib/tone'
 import { highlight, useFresh } from '@/lib/use-fresh'
 import { cn } from '@/lib/utils'
@@ -50,7 +44,6 @@ import {
   hasNoValue,
   noValueLabel,
   projectReference,
-  toMachineVariableInput,
   toVariableInput,
   withDraft,
   withoutVariables,
@@ -61,7 +54,6 @@ import {
 export type VariableTarget =
   | { kind: 'app'; app: string }
   | { kind: 'project'; project: string; target: 'production' | 'preview' }
-  | { kind: 'machine'; machine: string }
 
 type Outcome =
   { waiting: true; body: { id: string } } | { waiting: false; body: { deployments: number } }
@@ -72,29 +64,6 @@ async function patchVariables(
   target: VariableTarget,
   { set, unset, apply }: Patch,
 ): Promise<Outcome> {
-  if (target.kind === 'machine') {
-    await unwrap(
-      api.v1
-        .machines({
-          machine: target.machine,
-        })
-        ['environment-variables'].patch(
-          {
-            set: set?.map(toMachineVariableInput),
-            unset,
-          },
-          idempotency(),
-        ),
-    )
-
-    return {
-      waiting: false,
-      body: {
-        deployments: 0,
-      },
-    }
-  }
-
   const body = {
     set: set?.map(toVariableInput),
     unset,
@@ -138,9 +107,7 @@ async function patchVariables(
 const listQuery = (target: VariableTarget) =>
   target.kind === 'app'
     ? variablesQuery(target.app)
-    : target.kind === 'machine'
-      ? machineVariablesQuery(target.machine)
-      : projectVariablesQuery(target.project, target.target)
+    : projectVariablesQuery(target.project, target.target)
 
 const drafts = (target: VariableTarget, { set = [], unset = [] }: Patch) => [
   editItems(listQuery(target), (list) =>
@@ -151,20 +118,12 @@ const drafts = (target: VariableTarget, { set = [], unset = [] }: Patch) => [
   ),
 ]
 
-const announce = (target: VariableTarget, verb: string, deployments: number) => {
-  if (target.kind === 'machine') {
-    return {
-      title: verb,
-      description:
-        'Shells and commands use the new value now. The machine’s startup process gets it on next start.',
-    }
-  }
-
+const announce = (verb: string, deployments: number) => {
   return {
     title: verb,
     description: deployments
       ? `${plural(deployments, 'deployment')} started.`
-      : 'Apps that use it pick it up on their next deploy.',
+      : 'Apps read it on their next deploy.',
   }
 }
 
@@ -192,12 +151,8 @@ function VariableDialog({
     ...resolvedQuery(target.kind === 'app' ? target.app : ''),
     enabled: loadsValue && target.kind === 'app',
   })
-  const machineResolved = useQuery({
-    ...machineResolvedQuery(target.kind === 'machine' ? target.machine : ''),
-    enabled: loadsValue && target.kind === 'machine',
-  })
   const current = loadsValue
-    ? (target.kind === 'machine' ? machineResolved : appResolved).data?.environment_variables.find(
+    ? appResolved.data?.environment_variables.find(
         (v) => v.environment_variable_id === existing?.id,
       )?.value
     : undefined
@@ -207,7 +162,7 @@ function VariableDialog({
       setValue(current)
     }
   }, [current, touched])
-  const verb = existing ? `${name} updated` : `${name} added`
+  const verb = existing ? `Updated ${name}` : `Added ${name}`
   const mutation = useApiMutation({
     mutationFn: (entry: VariableEntry) =>
       patchVariables(target, {
@@ -221,7 +176,7 @@ function VariableDialog({
       }),
     invalidate: ['environment-variables'],
     waiting: () => `${existing ? 'Change' : 'Add'} ${name.trim()}`,
-    success: (body) => announce(target, verb, body.deployments),
+    success: (body) => announce(verb, body.deployments),
     onSuccess: () => {
       setValue('')
       onOpenChange(false)
@@ -241,21 +196,11 @@ function VariableDialog({
       }}
       title={existing ? `Change ${existing.name}` : 'Add an environment variable'}
       description={
-        <>
-          {target.kind === 'project' ? (
-            <>
-              No app inherits it: an app reads it through a reference such as{' '}
-              <Code>{projectReference}</Code>.
-            </>
-          ) : target.kind === 'machine' ? (
-            'Reference a project or global environment variable to keep a credential out of an agent’s reach.'
-          ) : (
-            'Reaches this app as a variable or a file.'
-          )}{' '}
-          {target.kind === 'machine'
-            ? 'Each save creates a new version.'
-            : 'Each save creates a new version. Running deployments keep the one they started with.'}
-        </>
+        target.kind === 'project' ? (
+          <>
+            Apps read it through a reference such as <Code>{projectReference}</Code>.
+          </>
+        ) : undefined
       }
       error={mutation.errorText}
       submitLabel="Save"
@@ -305,37 +250,35 @@ function VariableDialog({
           }
         />
       </Field>
-      {target.kind !== 'machine' && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="variable-injection" className="font-normal">
-              Injected as
-            </Label>
-            <Select value={injection} onValueChange={(v) => setInjection(v as 'env' | 'file')}>
-              <SelectTrigger id="variable-injection" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="env">{injectionLabel.env}</SelectItem>
-                <SelectItem value="file">{injectionLabel.file}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <CheckboxField
-            id="variable-build"
-            checked={build}
-            onCheckedChange={setBuild}
-            label="Available at build time"
-          />
-          <CheckboxField
-            id="variable-apply"
-            checked={apply}
-            onCheckedChange={setApply}
-            label="Redeploy dependents now"
-          />
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="variable-injection" className="font-normal">
+            Read as
+          </Label>
+          <Select value={injection} onValueChange={(v) => setInjection(v as 'env' | 'file')}>
+            <SelectTrigger id="variable-injection" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="env">{injectionLabel.env}</SelectItem>
+              <SelectItem value="file">{injectionLabel.file}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      )}
-      <VariableNotes secret={kind === 'secret'} build={target.kind !== 'machine' && build} />
+        <CheckboxField
+          id="variable-build"
+          checked={build}
+          onCheckedChange={setBuild}
+          label="Available at build time"
+        />
+        <CheckboxField
+          id="variable-apply"
+          checked={apply}
+          onCheckedChange={setApply}
+          label="Redeploy dependents now"
+        />
+      </div>
+      <VariableNotes secret={kind === 'secret'} build={build} />
     </FormDialog>
   )
 }
@@ -354,13 +297,13 @@ function RemoveVariable({ target, item }: { target: VariableTarget; item: Enviro
       }),
     invalidate: ['environment-variables'],
     waiting: () => `Remove ${item.name}`,
-    success: (body) => announce(target, `${item.name} removed`, body.deployments),
+    success: (body) => announce(`Removed ${item.name}`, body.deployments),
   })
 
   return (
     <Confirm
       title={`Remove ${item.name}?`}
-      description="Apps that use it lose it on their next deployment. Stationly keeps it while another environment variable references it."
+      description="Apps that use it lose it on their next deployment."
       action="Remove environment variable"
       cancel="Keep environment variable"
       onConfirm={() => mutation.mutateAsync()}
@@ -396,9 +339,13 @@ function ValueCell({
 
   if (item.kind === 'secret') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground" data-secret="true">
+      <span className="inline-flex items-center gap-2 text-muted-foreground" data-secret="true">
         <Lock className="size-3.5" aria-hidden />
-        {`Hidden · ${item.bytes} bytes · version ${item.head_version}`}
+        Hidden
+        {item.bytes !== null && (
+          <span className="text-xs tabular-nums">{plural(item.bytes, 'byte')}</span>
+        )}
+        <span className="text-xs tabular-nums">Version {item.head_version}</span>
       </span>
     )
   }
@@ -412,8 +359,15 @@ function ValueCell({
   }
 
   return (
-    <span className="text-muted-foreground">
-      {item.head_version ? `Hidden · version ${item.head_version}` : 'Not set'}
+    <span className="inline-flex items-center gap-2 text-muted-foreground">
+      {item.head_version ? (
+        <>
+          Hidden
+          <span className="text-xs tabular-nums">Version {item.head_version}</span>
+        </>
+      ) : (
+        'Not set'
+      )}
     </span>
   )
 }
@@ -430,7 +384,6 @@ type Pending = {
 function usePendingVariables(target: VariableTarget, items: EnvironmentVariable[]) {
   const waiting = useQuery({
     ...approvalsQuery('waiting'),
-    enabled: target.kind !== 'machine',
   })
   const parent =
     target.kind === 'app' ? target.app : target.kind === 'project' ? target.project : null
@@ -515,17 +468,11 @@ function VariableRows({
         icon={entityIcon.environment_variable}
         title="No environment variables yet"
         description={
-          target.kind === 'machine' ? (
-            'They reach this machine’s shells and processes. Mark the ones that hold secrets as secret.'
-          ) : target.kind === 'project' ? (
+          target.kind === 'project' ? (
             <>
-              A project environment variable reaches no app by itself. Give an app one that
-              references it, such as <Code>{projectReference}</Code>. Mark the ones that hold
-              secrets as secret.
+              Apps read one through a reference such as <Code>{projectReference}</Code>.
             </>
-          ) : (
-            'They reach this app when it deploys. Mark the ones that hold secrets as secret.'
-          )
+          ) : undefined
         }
         action={
           <Button size="sm" onClick={onAdd}>
@@ -544,9 +491,7 @@ function VariableRows({
           <TableHead className="w-[28%]">Name</TableHead>
           <TableHead className="w-24">Kind</TableHead>
           <TableHead>Value</TableHead>
-          {target.kind !== 'machine' && (
-            <TableHead className="hidden w-36 md:table-cell">Injection</TableHead>
-          )}
+          <TableHead className="hidden w-36 md:table-cell">Read as</TableHead>
           <ActionsHead className="w-20" />
         </TableRow>
       </TableHeader>
@@ -554,7 +499,9 @@ function VariableRows({
         {visible.map((item) => (
           <TableRow key={item.id} className={cn(fresh.has(item.id) && highlight)}>
             <TableCell>
-              <span className="font-mono text-[0.8125rem] font-medium">{item.name}</span>
+              <Name kind="environment_variable" chip={false}>
+                {item.name}
+              </Name>
               <PendingBadge pending={pending.of(item)} />
               {target.kind === 'project' &&
                 target.target === 'preview' &&
@@ -572,12 +519,10 @@ function VariableRows({
             <TableCell className="max-w-0 whitespace-normal">
               <ValueCell item={item} revealed={values.get(item.id)} onSet={() => onEdit(item)} />
             </TableCell>
-            {target.kind !== 'machine' && (
-              <TableCell className="hidden text-muted-foreground md:table-cell">
-                {injectionLabel[item.injection]}
-                {item.build && ' · also at build'}
-              </TableCell>
-            )}
+            <TableCell className="hidden text-muted-foreground md:table-cell">
+              {injectionLabel[item.injection]}
+              {item.build && <span className="ml-2 text-xs">Also at build</span>}
+            </TableCell>
             <TableCell className="text-right">
               <Button
                 variant="ghost"
@@ -598,18 +543,16 @@ function VariableRows({
             className="text-muted-foreground"
           >
             <TableCell>
-              <span className="font-mono text-[0.8125rem] font-medium text-foreground">
+              <Name kind="environment_variable" chip={false} className="text-foreground">
                 {entry.name}
-              </span>
+              </Name>
               <PendingBadge pending={entry} />
             </TableCell>
             <TableCell>
               {entry.kind && <Badge variant="outline">{variableKind[entry.kind]}</Badge>}
             </TableCell>
-            <TableCell className="whitespace-normal">
-              Stationly adds it once an admin approves.
-            </TableCell>
-            {target.kind !== 'machine' && <TableCell className="hidden md:table-cell" />}
+            <TableCell className="whitespace-normal">Waiting for approval</TableCell>
+            <TableCell className="hidden md:table-cell" />
             <TableCell />
           </TableRow>
         ))}
@@ -620,15 +563,10 @@ function VariableRows({
 
 export function VariablesPanel({ target, also }: { target: VariableTarget; also?: ReactNode }) {
   const [reveal, setReveal] = useState(false)
-  const appResolved = useQuery({
+  const resolved = useQuery({
     ...resolvedQuery(target.kind === 'app' ? target.app : ''),
     enabled: reveal && target.kind === 'app',
   })
-  const machineResolved = useQuery({
-    ...machineResolvedQuery(target.kind === 'machine' ? target.machine : ''),
-    enabled: reveal && target.kind === 'machine',
-  })
-  const resolved = target.kind === 'machine' ? machineResolved : appResolved
   const [editing, setEditing] = useState<EnvironmentVariable | null>(null)
   const [adding, setAdding] = useState(false)
   const values = new Map(
@@ -640,25 +578,17 @@ export function VariablesPanel({ target, also }: { target: VariableTarget; also?
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {target.kind === 'app' ? (
-            'Environment variables of this app. Stationly resolves references when it deploys.'
-          ) : target.kind === 'machine' ? (
-            'Environment variables of this machine. Stationly resolves references when the machine starts and when a value changes.'
-          ) : target.target === 'production' ? (
-            <>
-              Environment variables of this project’s production. Nothing is inherited: an app reads
-              one through a reference such as <Code>{projectReference}</Code>.
-            </>
-          ) : (
-            <>
-              Preview values of this project’s environment variables, read through references such
-              as <Code>{projectReference}</Code> from apps in every preview. A visible one without a
-              preview value reads its production value; production’s secret values never reach a
-              preview.
-            </>
-          )}
-        </p>
+        {target.kind !== 'app' && (
+          <p className="text-sm text-muted-foreground">
+            {target.target === 'production' ? (
+              <>
+                Apps read one through a reference such as <Code>{projectReference}</Code>.
+              </>
+            ) : (
+              'Without a preview value, visible ones read production’s; secret ones stay unset.'
+            )}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           {target.kind !== 'project' && (
             <Button
@@ -676,11 +606,7 @@ export function VariablesPanel({ target, also }: { target: VariableTarget; also?
           </Button>
         </div>
       </div>
-      {reveal && (
-        <p className="text-xs text-muted-foreground">
-          Stationly records each read of these values in the audit log. Secret values stay hidden.
-        </p>
-      )}
+      {reveal && <p className="text-xs text-muted-foreground">Each read goes in the audit log.</p>}
       {resolved.isError && <ErrorState error={resolved.error} title="Couldn’t load values" />}
       <Panel title="Couldn’t load environment variables">
         <VariableRows

@@ -1,5 +1,12 @@
-import { Link, Outlet, useLocation, useNavigate, useParams } from '@tanstack/react-router'
-import { Bell, Blocks, Folder, LayoutGrid, Plus, Search } from 'lucide-react'
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useParams,
+  type LinkOptions,
+} from '@tanstack/react-router'
+import { Bell, Blocks, LayoutGrid, Plus, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { CommandPalette } from '@/components/command-palette'
@@ -30,6 +37,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { inboxTo, newTaskTo, taskTo } from '@/lib/links'
 import { useLiveEvents } from '@/lib/live'
 import { useShortcut, type ShortcutId } from '@/lib/shortcuts'
 import { toneText } from '@/lib/tone'
@@ -39,7 +47,7 @@ import { taskTone, useProjectList, useTaskRows, type TaskState } from './data'
 import { useInboxCount } from './inbox'
 import { failingApps, useLiveApps } from './ops-live'
 import { OutsideNav } from './outside'
-import { modeHome, useMode, useProject, type Mode } from './where'
+import { inProject, isView, useMode, useProject, viewTo, type View } from './where'
 
 function useShellShortcuts(
   setPalette: (toggle: (open: boolean) => boolean) => void,
@@ -47,24 +55,16 @@ function useShellShortcuts(
 ) {
   const navigate = useNavigate()
   const project = useProject()
-  const home = (mode: Mode) => () => void navigate(modeHome(mode, project))
+  const go = (to: (project: string) => LinkOptions) => () => void navigate(inProject(to)(project))
+  const view = (next: View) => go((p) => viewTo(next, p))
 
   useShortcut('palette', () => setPalette((open) => !open))
   useShortcut('help', onHelp)
-  useShortcut(
-    'newTask',
-    () =>
-      void navigate({
-        to: '/build/new',
-        search: {
-          project: project ?? undefined,
-        },
-      }),
-  )
-  useShortcut('build', home('build'))
-  useShortcut('ship', home('ship'))
-  useShortcut('observe', home('observe'))
-  useShortcut('inbox', home('outside'))
+  useShortcut('newTask', go(newTaskTo))
+  useShortcut('build', view('build'))
+  useShortcut('ship', view('ship'))
+  useShortcut('observe', view('observe'))
+  useShortcut('inbox', () => void navigate(inboxTo(project)))
   useShortcut(
     'connect',
     () =>
@@ -141,14 +141,9 @@ export function App() {
             </span>
             <span className="flex-1 font-display text-base">Stationly</span>
           </div>
-          {mode === 'build' && (
+          {mode === 'build' && project && (
             <Button asChild variant="outline" className="justify-start">
-              <Link
-                to="/build/new"
-                search={{
-                  project: project ?? undefined,
-                }}
-              >
+              <Link {...newTaskTo(project)}>
                 <Plus /> New task <ShortcutKeys id="newTask" className="ml-auto" />
               </Link>
             </Button>
@@ -163,55 +158,70 @@ export function App() {
           </Button>
         </SidebarHeader>
         <SidebarContent>
-          {mode === 'build' && <TaskList project={project} />}
-          {(mode === 'ship' || mode === 'observe') && <ProjectList mode={mode} project={project} />}
-          {mode === 'outside' && <OutsideNav />}
+          {mode === 'build' && project ? (
+            <TaskList project={project} />
+          ) : mode === 'outside' ? (
+            <OutsideNav />
+          ) : (
+            <ProjectList view={isView(mode) ? mode : 'overview'} project={project} />
+          )}
         </SidebarContent>
         <SidebarFooter>
           <AccountMenu onHelp={openHelp} />
         </SidebarFooter>
       </Sidebar>
       <div className="relative flex min-w-0 flex-1 flex-col overflow-clip bg-background">
-        <header className="grid h-14 shrink-0 grid-cols-3 items-center gap-4 border-b px-4">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-4 py-2 md:grid md:h-14 md:grid-cols-3 md:py-0">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger className="md:hidden" aria-label="Open the menu" />
-            <Select
-              value={project ?? 'all'}
-              onValueChange={(v) => void navigate(modeHome(mode, v === 'all' ? null : v))}
-            >
-              <SelectTrigger className="w-48 max-w-full" aria-label="Project">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All projects</SelectItem>
-                {projectList.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            spacing={0}
-            className="justify-self-center"
-            value={mode === 'outside' ? '' : mode}
-            onValueChange={(v) => v && void navigate(modeHome(v as Mode, project))}
-            aria-label="Mode"
-          >
-            {modeItems.map((m) => (
-              <ToggleGroupItem
-                key={m.mode}
-                value={m.mode}
-                className="min-w-24 font-display"
-                aria-label={`${m.label}, ${spoken(m.shortcut)}`}
+            {project && (
+              <Select
+                value={project}
+                onValueChange={(v) => void navigate(viewTo(isView(mode) ? mode : 'overview', v))}
               >
-                {m.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+                <SelectTrigger className="w-48 max-w-full" aria-label="Project">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectList.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          {project ? (
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              spacing={0}
+              className="order-last w-full md:order-none md:w-auto md:justify-self-center"
+              value={isView(mode) ? mode : ''}
+              onValueChange={(v) => {
+                const next = viewItems.find((item) => item.view === v)
+
+                if (next) {
+                  void navigate(viewTo(next.view, project))
+                }
+              }}
+              aria-label="View"
+            >
+              {viewItems.map((m) => (
+                <ToggleGroupItem
+                  key={m.view}
+                  value={m.view}
+                  className="flex-1 font-display md:min-w-24 md:flex-none"
+                  aria-label={m.shortcut ? `${m.label}, ${spoken(m.shortcut)}` : m.label}
+                >
+                  {m.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          ) : (
+            <span className="hidden md:block" />
+          )}
           <div className="flex items-center justify-end gap-2">
             <LiveIndicator state={live} />
             <InboxButton />
@@ -232,19 +242,23 @@ export function App() {
   )
 }
 
-const modeItems: { mode: Exclude<Mode, 'outside'>; label: string; shortcut: ShortcutId }[] = [
+const viewItems: { view: View; label: string; shortcut?: ShortcutId }[] = [
   {
-    mode: 'build',
+    view: 'overview',
+    label: 'Overview',
+  },
+  {
+    view: 'build',
     label: 'Build',
     shortcut: 'build',
   },
   {
-    mode: 'ship',
+    view: 'ship',
     label: 'Ship',
     shortcut: 'ship',
   },
   {
-    mode: 'observe',
+    view: 'observe',
     label: 'Observe',
     shortcut: 'observe',
   },
@@ -259,13 +273,12 @@ const taskStateIcon: Record<TaskState, State> = {
   failed: 'failed',
 }
 
-function TaskList({ project }: { project: string | null }) {
-  const tasks = useTaskRows()
+function TaskList({ project }: { project: string }) {
+  const shown = useTaskRows(project)
   const current = useParams({
     strict: false,
     select: (params) => params.task,
   })
-  const shown = tasks.filter((t) => !project || t.project === project)
   const groups: [string, TaskState[]][] = [
     ['Waiting on you', ['waiting']],
     ['Running', ['working', 'setup']],
@@ -288,25 +301,17 @@ function TaskList({ project }: { project: string | null }) {
                   className="h-auto items-start py-2"
                   isActive={current === t.id}
                 >
-                  <Link
-                    to="/build/$task"
-                    params={{
-                      task: t.id,
-                    }}
-                    search={{
-                      project: project ?? undefined,
-                    }}
-                  >
+                  <Link {...taskTo(project, t.id)}>
                     <StateIcon state={taskStateIcon[t.state]} className="mt-0.5" />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="flex gap-2">
                         <span className="min-w-0 flex-1 truncate">{t.title}</span>
                         <span className="text-xs text-muted-foreground tabular-nums">{t.age}</span>
                       </span>
-                      <span className="flex min-w-0 items-center gap-3 font-mono text-xs">
+                      <span className="flex min-w-0 items-center gap-3 text-xs">
                         <span
                           className={cn(
-                            'truncate',
+                            'shrink-0',
                             t.state === 'waiting'
                               ? toneText[taskTone[t.state]]
                               : 'text-muted-foreground',
@@ -314,11 +319,8 @@ function TaskList({ project }: { project: string | null }) {
                         >
                           {t.reason}
                         </span>
-                        {!project && (
-                          <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
-                            <Folder className="size-3" aria-label="Project" />
-                            {t.project}
-                          </span>
+                        {t.detail && (
+                          <span className="min-w-0 truncate text-muted-foreground">{t.detail}</span>
                         )}
                       </span>
                     </span>
@@ -333,7 +335,7 @@ function TaskList({ project }: { project: string | null }) {
   })
 }
 
-function ProjectList({ mode, project }: { mode: 'ship' | 'observe'; project: string | null }) {
+function ProjectList({ view, project }: { view: View; project: string | null }) {
   const listed = useProjectList()
   const liveApps = useLiveApps(null)
   const toneOf = (id: string) => {
@@ -348,7 +350,7 @@ function ProjectList({ mode, project }: { mode: 'ship' | 'observe'; project: str
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton asChild isActive={!project}>
-            <Link {...modeHome(mode, null)}>
+            <Link to="/">
               <LayoutGrid /> All projects
             </Link>
           </SidebarMenuButton>
@@ -359,7 +361,7 @@ function ProjectList({ mode, project }: { mode: 'ship' | 'observe'; project: str
           return (
             <SidebarMenuItem key={p.id}>
               <SidebarMenuButton asChild isActive={project === p.id}>
-                <Link {...modeHome(mode, p.id)}>
+                <Link {...viewTo(view, p.id)}>
                   <span className={cn('size-2 bg-current', toneText[tone])} aria-hidden />
                   {p.name}
                 </Link>
@@ -373,13 +375,13 @@ function ProjectList({ mode, project }: { mode: 'ship' | 'observe'; project: str
 }
 
 function InboxButton() {
-  const count = useInboxCount()
   const project = useProject()
+  const count = useInboxCount(project)
 
   return (
     <Button asChild variant="ghost" size="sm">
-      <Link {...modeHome('outside', project)} aria-label={`Inbox, ${count} waiting`}>
-        <Bell /> Inbox{' '}
+      <Link {...inboxTo(project)} aria-label={`Inbox, ${count} waiting`}>
+        <Bell /> <span className="hidden sm:inline">Inbox</span>{' '}
         {count > 0 && <span className={cn('tabular-nums', toneText.warning)}>{count}</span>}
       </Link>
     </Button>

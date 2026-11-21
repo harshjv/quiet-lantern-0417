@@ -86,20 +86,6 @@ func (f FS) MakeDisk(ctx context.Context, id, source string, limit uint64) error
 	return nil
 }
 
-func (f FS) Snapshot(ctx context.Context, diskID, snapID string) error {
-	if !validName(diskID) || !validName(snapID) {
-		return fmt.Errorf("%w: snapshot %q of disk %q", ErrInvalidPath, snapID, diskID)
-	}
-	if f.SnapshotExists(snapID) {
-		return nil
-	}
-	if !f.DiskExists(diskID) {
-		return fmt.Errorf("snapshot %s: disk %s does not exist", snapID, diskID)
-	}
-	_, err := f.btrfs(ctx, "subvolume", "snapshot", "-r", f.DiskPath(diskID), f.SnapshotPath(snapID))
-	return err
-}
-
 func (f FS) SetLimit(ctx context.Context, path string, limit uint64) error {
 	p, err := f.subvolumePath(path)
 	if err != nil {

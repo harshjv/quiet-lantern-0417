@@ -22,7 +22,6 @@ export const createProgram = () =>
       'preview id or name (default from STATIONLY_PREVIEW, else production)',
     )
     .option('--app <app>', 'app id or name')
-    .option('--machine <machine>', 'machine id or name')
     .exitOverride()
     .configureOutput({
       writeErr: (text) => process.stderr.write(text),

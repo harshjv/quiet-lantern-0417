@@ -191,7 +191,6 @@ const qgroupShowSimple = `Qgroupid    Referenced    Exclusive  Max referenced  M
 0/270         58802176     58802176      2147483648           none   disks/sbx_01jcb4grow01
 0/373            32768        32768      4294967296           none   <stale>
 0/381         16842752     16842752      4294967296           none   <stale>
-0/457            16384        16384            none           none   snapshots/s1
 0/957            16384        16384            none           none   disks/f1
 `
 
@@ -200,7 +199,6 @@ const qgroupShowLayoutSubvolumes = `Qgroupid    Referenced    Exclusive  Max ref
 0/5                  0            0            none           none   <toplevel>
 0/256                0            0            none           none   bases
 0/257                0            0            none           none   disks
-0/258                0            0            none           none   snapshots
 0/259                0            0            none           none   partial
 0/260                0            0            none           none   bases/toolchain
 0/267                0            0            none           none   disks/sbx_01jcb4joined
@@ -218,7 +216,6 @@ func TestUsage(t *testing.T) {
 		"disks/d1":               {Referenced: 4276224, Exclusive: 4276224, Limit: 21474836480},
 		"disks/d2":               {Referenced: 4276224, Exclusive: 4276224, Limit: 21474836480},
 		"disks/sbx_01jcb4grow01": {Referenced: 58802176, Exclusive: 58802176, Limit: 2147483648},
-		"snapshots/s1":           {Referenced: 16384, Exclusive: 16384},
 		"disks/f1":               {Referenced: 16384, Exclusive: 16384},
 	}
 	if !reflect.DeepEqual(usage, want) {
@@ -246,7 +243,7 @@ func TestUsageWithoutPathColumn(t *testing.T) {
 	f := tempFS(t)
 	got := install(t,
 		fakeCall{match: "btrfs qgroup show", out: "qgroupid         rfer         excl     max_rfer     max_excl \n--------         ----         ----     --------     -------- \n0/5             16384        16384         none         none \n0/257         4276224      4276224    1073741824         none \n0/300           16384        16384         none         none \n1/100           16384        16384         none         none \n"},
-		fakeCall{match: "btrfs subvolume list", out: "ID 257 gen 20 top level 5 path disks/d1\nID 258 gen 21 top level 5 path snapshots/s1\n"},
+		fakeCall{match: "btrfs subvolume list", out: "ID 257 gen 20 top level 5 path disks/d1\n"},
 	)
 	usage, err := f.Usage(context.Background())
 	if err != nil {
@@ -276,11 +273,10 @@ func TestSubvolumes(t *testing.T) {
 	f := tempFS(t)
 	install(t, fakeCall{match: "btrfs subvolume list", out: `ID 256 gen 9 top level 5 path bases
 ID 257 gen 9 top level 5 path disks
-ID 258 gen 9 top level 5 path snapshots
 ID 259 gen 9 top level 5 path partial
 ID 260 gen 41 top level 256 path bases/toolchain
 ID 267 gen 1203 top level 257 path disks/sbx_01jcb4joined
-ID 270 gen 1300 top level 5 path <FS_TREE>/snapshots/snap_1
+ID 270 gen 1300 top level 5 path <FS_TREE>/disks/sbx_01jcb4tree01
 ID 271 gen 1301 top level 259 path partial/tc-go
 ID 280 gen 1310 top level 267 path disks/sbx_01jcb4joined/var/lib/docker/btrfs/subvolumes/abc
 ID 281 gen 1311 top level 5 path elsewhere
@@ -289,7 +285,7 @@ ID 281 gen 1311 top level 5 path elsewhere
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"bases/toolchain": true, "disks/sbx_01jcb4joined": true, "snapshots/snap_1": true, "partial/tc-go": true}
+	want := map[string]bool{"bases/toolchain": true, "disks/sbx_01jcb4joined": true, "disks/sbx_01jcb4tree01": true, "partial/tc-go": true}
 	if !reflect.DeepEqual(subs, want) {
 		t.Fatalf("subvolumes = %v, want %v", subs, want)
 	}
@@ -308,7 +304,7 @@ func TestCleanPartial(t *testing.T) {
 }
 
 func TestDeleteValidation(t *testing.T) {
-	f := tempFS(t, "disks/sbx_1", "snapshots/snap_1", "bases/sha256:ab-amd64", "partial/x", "logs/sbx_1")
+	f := tempFS(t, "disks/sbx_1", "bases/sha256:ab-amd64", "partial/x", "logs/sbx_1")
 	for _, p := range []string{
 		"",
 		f.Mount,
@@ -342,7 +338,7 @@ func TestDeleteValidation(t *testing.T) {
 			t.Errorf("Delete(%q) ran %q", p, got.calls)
 		}
 	}
-	for _, p := range []string{f.Mount + "/disks/sbx_1", "snapshots/snap_1", f.BasePath("sha256:ab-amd64"), "partial/x"} {
+	for _, p := range []string{f.Mount + "/disks/sbx_1", "disks/sbx_1", f.BasePath("sha256:ab-amd64"), "partial/x"} {
 		got := install(t)
 		if err := f.Delete(context.Background(), p); err != nil {
 			t.Errorf("Delete(%q) = %v", p, err)
@@ -362,7 +358,7 @@ func TestDeleteValidation(t *testing.T) {
 }
 
 func TestMakeDisk(t *testing.T) {
-	f := tempFS(t, "bases/sha256:ab-amd64", "partial", "disks", "snapshots/snap_1")
+	f := tempFS(t, "bases/sha256:ab-amd64", "partial", "disks")
 	got := install(t)
 	if err := f.MakeDisk(context.Background(), "sbx_1", f.BasePath("sha256:ab-amd64"), 2*GiB); err != nil {
 		t.Fatal(err)
@@ -371,16 +367,6 @@ func TestMakeDisk(t *testing.T) {
 		"btrfs subvolume snapshot $M/bases/sha256:ab-amd64 $M/partial/disk-sbx_1",
 		"btrfs qgroup limit 2147483648 $M/partial/disk-sbx_1",
 		"rename $M/partial/disk-sbx_1 $M/disks/sbx_1",
-	)
-
-	got = install(t)
-	if err := f.MakeDisk(context.Background(), "sbx_2", f.SnapshotPath("snap_1"), 0); err != nil {
-		t.Fatal(err)
-	}
-	checkCalls(t, f, got,
-		"btrfs subvolume snapshot $M/snapshots/snap_1 $M/partial/disk-sbx_2",
-		"btrfs qgroup limit none $M/partial/disk-sbx_2",
-		"rename $M/partial/disk-sbx_2 $M/disks/sbx_2",
 	)
 }
 
@@ -391,12 +377,12 @@ func TestMakeDiskExistingAndLeftover(t *testing.T) {
 		t.Fatalf("existing disk: %v, ran %q", err, got.calls)
 	}
 	got = install(t)
-	if err := f.MakeDisk(context.Background(), "sbx_2", f.DiskPath("sbx_1"), GiB); err != nil {
+	if err := f.MakeDisk(context.Background(), "sbx_2", f.BasePath("b"), GiB); err != nil {
 		t.Fatal(err)
 	}
 	checkCalls(t, f, got,
 		"btrfs subvolume delete $M/partial/disk-sbx_2",
-		"btrfs subvolume snapshot $M/disks/sbx_1 $M/partial/disk-sbx_2",
+		"btrfs subvolume snapshot $M/bases/b $M/partial/disk-sbx_2",
 		"btrfs qgroup limit 1073741824 $M/partial/disk-sbx_2",
 		"rename $M/partial/disk-sbx_2 $M/disks/sbx_2",
 	)
@@ -405,22 +391,6 @@ func TestMakeDiskExistingAndLeftover(t *testing.T) {
 		if err := f.MakeDisk(context.Background(), "sbx_3", src, GiB); err == nil || len(got.calls) != 0 {
 			t.Errorf("MakeDisk from %q = %v, ran %q", src, err, got.calls)
 		}
-	}
-}
-
-func TestSnapshot(t *testing.T) {
-	f := tempFS(t, "disks/sbx_1", "snapshots/snap_old")
-	got := install(t)
-	if err := f.Snapshot(context.Background(), "sbx_1", "snap_1"); err != nil {
-		t.Fatal(err)
-	}
-	checkCalls(t, f, got, "btrfs subvolume snapshot -r $M/disks/sbx_1 $M/snapshots/snap_1")
-	got = install(t)
-	if err := f.Snapshot(context.Background(), "sbx_1", "snap_old"); err != nil || len(got.calls) != 0 {
-		t.Fatalf("existing snapshot: %v, ran %q", err, got.calls)
-	}
-	if err := f.Snapshot(context.Background(), "sbx_missing", "snap_2"); err == nil {
-		t.Fatal("snapshot of a missing disk accepted")
 	}
 }
 
@@ -631,14 +601,13 @@ func TestPaths(t *testing.T) {
 	for got, want := range map[string]string{
 		f.BasePath("sha256:ab-amd64"): Mount + "/bases/sha256:ab-amd64",
 		f.DiskPath("sbx_1"):           Mount + "/disks/sbx_1",
-		f.SnapshotPath("snap_1"):      Mount + "/snapshots/snap_1",
 		f.LogDir("sbx_1"):             Mount + "/logs/sbx_1",
 	} {
 		if got != want {
 			t.Errorf("%s, want %s", got, want)
 		}
 	}
-	if f.DiskExists("../../etc") || f.BaseExists("") || f.SnapshotExists("/") {
+	if f.DiskExists("../../etc") || f.BaseExists("") {
 		t.Fatal("invalid name reported as existing")
 	}
 }

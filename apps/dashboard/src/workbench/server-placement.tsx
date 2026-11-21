@@ -1,5 +1,5 @@
 import { Gauge, SlidersHorizontal } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 
 import { gibibyte } from '@stationly/protocol/format'
 
@@ -16,7 +16,7 @@ import { patchServer, type ServerView } from './server-data'
 
 type ServerChange = NonNullable<Parameters<ReturnType<typeof api.v1.servers>['patch']>[0]>
 
-type MachineLimits = ServerView['machine_limits']
+type TaskLimits = ServerView['machine_limits']
 
 const useServerUpdate = (server: ServerView) =>
   useApiMutation({
@@ -38,7 +38,7 @@ const useServerUpdate = (server: ServerView) =>
       } as Partial<ServerView>),
     invalidate: ['stations'],
     waiting: () => `The change to ${server.name}`,
-    success: () => `${server.name} saved`,
+    success: () => `Saved ${server.name}`,
     failure: () => `change ${server.name}`,
   })
 
@@ -114,7 +114,7 @@ export function Placement({ server }: { server: ServerView }) {
       <Toggle
         id={`intermittent-${server.id}`}
         label="Sleeps at times"
-        hint="Shown as asleep, not offline, when its heartbeats stop."
+        hint="Shown as asleep, not offline, when heartbeats stop."
         checked={server.intermittent}
         onChange={(intermittent) =>
           update.mutate({
@@ -123,7 +123,7 @@ export function Placement({ server }: { server: ServerView }) {
         }
       />
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
-        <Field id={`cap-${server.id}`} label="Deployments at once" hint="The rest wait in a queue.">
+        <Field id={`cap-${server.id}`} label="Deployments at once">
           <Input
             id={`cap-${server.id}`}
             type="number"
@@ -143,19 +143,19 @@ export function Placement({ server }: { server: ServerView }) {
 export function Limits({ server }: { server: ServerView }) {
   const update = useServerUpdate(server)
   const limits = server.machine_limits
-  const [maxMachines, setMaxMachines] = useState(String(limits.max_machines))
+  const [maxTasks, setMaxTasks] = useState(String(limits.max_machines))
   const [maxRunning, setMaxRunning] = useState(String(limits.max_running))
   const [memory, setMemory] = useState(gibText(limits.memory_bytes))
   const [minFree, setMinFree] = useState(gibText(limits.min_free_bytes))
-  const wanted: MachineLimits = {
-    max_machines: Number(maxMachines),
+  const wanted: TaskLimits = {
+    max_machines: Number(maxTasks),
     max_running: Number(maxRunning),
     memory_bytes: gibValue(memory),
     min_free_bytes: gibValue(minFree),
   }
   const changed = Object.fromEntries(
-    Object.entries(wanted).filter(([key, value]) => limits[key as keyof MachineLimits] !== value),
-  ) as Partial<MachineLimits>
+    Object.entries(wanted).filter(([key, value]) => limits[key as keyof TaskLimits] !== value),
+  ) as Partial<TaskLimits>
   const submit = (event: FormEvent) => {
     event.preventDefault()
     update.mutate({
@@ -167,7 +167,6 @@ export function Limits({ server }: { server: ServerView }) {
     label: string,
     value: string,
     set: (v: string) => void,
-    hint: ReactNode,
     unit?: string,
   ) => {
     const input = (
@@ -184,49 +183,19 @@ export function Limits({ server }: { server: ServerView }) {
     )
 
     return (
-      <Field id={id} label={label} hint={hint}>
+      <Field id={id} label={label}>
         {unit ? <Suffixed suffix={unit}>{input}</Suffixed> : input}
       </Field>
     )
   }
 
   return (
-    <Section
-      icon={Gauge}
-      title="Machine slots"
-      note="How many machines this server holds and runs at once, and the memory they may take."
-    >
+    <Section icon={Gauge} title="Task slots">
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
-        {limitField(
-          `max-machines-${server.id}`,
-          'Machines in all',
-          maxMachines,
-          setMaxMachines,
-          'Running and stopped.',
-        )}
-        {limitField(
-          `max-running-${server.id}`,
-          'Running at once',
-          maxRunning,
-          setMaxRunning,
-          'The rest wait stopped.',
-        )}
-        {limitField(
-          `memory-${server.id}`,
-          'Memory for machines',
-          memory,
-          setMemory,
-          'Empty leaves it to the host.',
-          'GiB',
-        )}
-        {limitField(
-          `min-free-${server.id}`,
-          'Keep free on the host',
-          minFree,
-          setMinFree,
-          'Memory machines never take.',
-          'GiB',
-        )}
+        {limitField(`max-tasks-${server.id}`, 'Tasks in all', maxTasks, setMaxTasks)}
+        {limitField(`max-running-${server.id}`, 'Running at once', maxRunning, setMaxRunning)}
+        {limitField(`memory-${server.id}`, 'Memory for tasks', memory, setMemory, 'GiB')}
+        {limitField(`min-free-${server.id}`, 'Keep free on the host', minFree, setMinFree, 'GiB')}
         <SaveRow pending={update.isPending} disabled={Object.keys(changed).length === 0} />
       </form>
     </Section>

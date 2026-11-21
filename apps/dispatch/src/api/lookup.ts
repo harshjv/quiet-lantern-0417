@@ -1,5 +1,6 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm'
 
+import type { Principal } from '../auth/principal.ts'
 import { anyTarget, type Target } from '../auth/scopes.ts'
 import type { Db } from '../db/client.ts'
 import {
@@ -11,15 +12,16 @@ import {
   domain,
   environment_variable,
   machine,
-  machine_snapshot,
   project,
   run,
   secret_value,
   server,
   target,
+  task,
   volume,
 } from '../db/schema.ts'
 
+import { seesTask } from './access.ts'
 import { notFound } from './errors.ts'
 
 export type ProjectRow = typeof project.$inferSelect
@@ -39,7 +41,6 @@ export const decidable = () =>
   )
 export type StationRow = typeof server.$inferSelect
 export type MachineRow = typeof machine.$inferSelect
-export type MachineSnapshotRow = typeof machine_snapshot.$inferSelect
 
 export type AppContext = {
   app: AppRow
@@ -268,33 +269,6 @@ export const machineInTarget = (db: Db, targetId: string, ref: string) =>
     )
     .get()
 
-export type SnapshotContext = {
-  snapshot: MachineSnapshotRow
-  target_row: TargetRow
-  project: ProjectRow
-  target: Target
-}
-
-export const snapshotById = (db: Db, id: string): SnapshotContext => {
-  const row =
-    db.select().from(machine_snapshot).where(eq(machine_snapshot.id, id)).get() ??
-    notFound('machine_snapshot', id)
-  const env = db.select().from(target).where(eq(target.id, row.target_id)).get()
-
-  if (!env) {
-    return notFound('machine_snapshot', id)
-  }
-
-  const proj = db.select().from(project).where(eq(project.id, env.project_id)).get()!
-
-  return {
-    snapshot: row,
-    target_row: env,
-    project: proj,
-    target: scopeOf(env),
-  }
-}
-
 export type RunOwner = { target: Target; target_row: TargetRow; server_id: string }
 
 export const runOwner = (
@@ -401,7 +375,19 @@ export const targets = {
   secret_value: secretValueById,
   approval: approvalById,
   machine: machineById,
-  machine_snapshot: snapshotById,
 } satisfies Record<string, (db: Db, id: string) => { target: Target }>
 
 export type TargetEntity = keyof typeof targets
+
+export const taskById = (db: Db, id: string) =>
+  db.select().from(task).where(eq(task.id, id)).get() ?? notFound('task', id)
+
+export const visibleTask = (db: Db, principal: Principal, id: string) => {
+  const row = taskById(db, id)
+
+  if (!seesTask(principal, row)) {
+    notFound('task', id)
+  }
+
+  return row
+}

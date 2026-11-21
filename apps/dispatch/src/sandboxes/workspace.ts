@@ -13,8 +13,8 @@ import {
   workspaceUser,
   type Actor,
   type MachineEnvironmentVariableSet,
-  type TaskMachineValue,
   type WorkspaceAgent,
+  type WorkspaceKindValue,
   type WorkspaceSetupStep,
 } from '@stationly/protocol'
 
@@ -237,7 +237,7 @@ export const workspaceVariableSets = (
   agent: WorkspaceAgent,
   key: string,
   taken: string[],
-  kind: TaskMachineValue = 'own',
+  kind: WorkspaceKindValue = 'own',
 ): Static<typeof MachineEnvironmentVariableSet>[] => {
   const shared = kind === 'own'
   const defined = new Set(

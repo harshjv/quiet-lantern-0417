@@ -110,7 +110,7 @@ export function RejectDialog({
         </Button>
       }
       title="Reject this change?"
-      description="Stationly applies none of these changes. Whoever asked sees your reason."
+      description="Nothing is applied. Whoever asked sees your reason."
       submitLabel="Reject change"
       submitVariant="destructive"
       pending={pending}

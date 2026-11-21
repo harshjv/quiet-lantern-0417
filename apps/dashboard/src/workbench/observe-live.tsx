@@ -1,8 +1,8 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Activity as ActivityIcon, Box, CircleAlert } from 'lucide-react'
-import { useState } from 'react'
 
+import { Code, Output } from '@/components/code'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -15,8 +15,8 @@ import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, unwrap } from '@/lib/api'
 import { bytes, shortAgo, usedOf } from '@/lib/format'
 import { appStatus } from '@/lib/labels'
-import { appTo } from '@/lib/links'
-import { logsQuery } from '@/lib/queries'
+import { appTo, newTaskTo, observeTo } from '@/lib/links'
+import { appMetricsQuery, logsQuery } from '@/lib/queries'
 
 import { fixOf } from './fix-live'
 import { failingApps, placeName, reportsMetrics, useLiveApps, type LiveApp } from './ops-live'
@@ -27,20 +27,26 @@ const tabs = ['attention', 'logs', 'metrics', 'activity'] as const
 export function LiveObserve({
   project,
   tab: shown,
+  app,
 }: {
-  project: string | null
+  project: string
   tab: string | null
+  app: string | null
 }) {
   const navigate = useNavigate()
   const tab = tabs.find((t) => t === shown) ?? 'attention'
   const apps = useLiveApps(project)
   const select = (next: string) =>
     void navigate({
-      to: '/observe/{-$tab}',
-      params: {
-        tab: next === 'attention' ? undefined : next,
-      },
+      ...observeTo(project, next === 'attention' ? undefined : next),
       search: (prev) => prev,
+    })
+  const pick = (next: string) =>
+    void navigate({
+      ...observeTo(project, tab === 'attention' ? undefined : tab),
+      search: {
+        app: next,
+      },
     })
 
   return (
@@ -56,7 +62,7 @@ export function LiveObserve({
           <Attention apps={apps} />
         </PageTabPanel>
         <PageTabPanel value="logs">
-          <Logs apps={apps} />
+          <Logs apps={apps} picked={app} onPick={pick} />
         </PageTabPanel>
         <PageTabPanel value="metrics">
           <Metrics apps={apps} />
@@ -75,7 +81,7 @@ function Attention({ apps }: { apps: LiveApp[] }) {
   return (
     <Section title="Needs attention" count={troubled.length}>
       {troubled.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Every app is healthy.</p>
+        <p className="text-sm text-muted-foreground">All healthy</p>
       ) : (
         <ItemList>
           {troubled.map((live) => (
@@ -110,15 +116,10 @@ function Attention({ apps }: { apps: LiveApp[] }) {
               action={
                 <>
                   <Button asChild size="sm" variant="outline">
-                    <Link {...appTo(live.app.id)}>Open</Link>
+                    <Link {...appTo(live.place.project.name, live.app.id)}>Open</Link>
                   </Button>
                   <Button asChild size="sm">
-                    <Link
-                      to="/build/new"
-                      search={{
-                        fix: fixOf(live),
-                      }}
-                    >
+                    <Link {...newTaskTo(live.place.project.name, fixOf(live))}>
                       Fix with an agent
                     </Link>
                   </Button>
@@ -132,8 +133,15 @@ function Attention({ apps }: { apps: LiveApp[] }) {
   )
 }
 
-function Logs({ apps }: { apps: LiveApp[] }) {
-  const [picked, setPicked] = useState<string | null>(null)
+function Logs({
+  apps,
+  picked,
+  onPick,
+}: {
+  apps: LiveApp[]
+  picked: string | null
+  onPick: (app: string) => void
+}) {
   const chosen = picked ?? apps[0]?.app.id ?? null
   const logs = useQuery({
     ...logsQuery({
@@ -147,7 +155,7 @@ function Logs({ apps }: { apps: LiveApp[] }) {
     <Section
       title="Logs"
       action={
-        <Select value={chosen ?? undefined} onValueChange={setPicked}>
+        <Select value={chosen ?? undefined} onValueChange={onPick}>
           <SelectTrigger className="w-64" aria-label="App">
             <SelectValue placeholder="Pick an app" />
           </SelectTrigger>
@@ -161,12 +169,12 @@ function Logs({ apps }: { apps: LiveApp[] }) {
         </Select>
       }
     >
-      <pre className="max-h-96 overflow-auto bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
+      <Output className="max-h-96">
         {(logs.data ?? [])
           .slice(-300)
           .map((line) => `${line.at.slice(11, 19)}  ${line.text}`)
           .join('\n') || (chosen ? 'No log lines yet.' : 'No apps yet.')}
-      </pre>
+      </Output>
     </Section>
   )
 }
@@ -181,22 +189,13 @@ type Sample = {
 function Metrics({ apps }: { apps: LiveApp[] }) {
   const samples = useQueries({
     queries: apps.map((live) => ({
-      queryKey: ['metrics', live.app.id],
-      queryFn: () =>
-        unwrap(
-          api.v1
-            .apps({
-              app: live.app.id,
-            })
-            .metrics.get(),
-        ),
-      refetchInterval: 10_000,
+      ...appMetricsQuery(live.app.id),
       enabled: reportsMetrics(live.app),
     })),
   })
 
   return (
-    <Section title="Now" note="Each app's current sample. History comes later.">
+    <Section title="Now">
       <ItemList>
         {apps.map((live, index) => {
           const sample = (samples[index]?.data ?? {}) as Sample
@@ -278,7 +277,7 @@ function Activity() {
           <ItemRow
             key={row.id}
             icon={ActivityIcon}
-            title={<span className="font-mono text-sm">{row.action}</span>}
+            title={<Code>{row.action}</Code>}
             meta={[
               {
                 kind: 'user',

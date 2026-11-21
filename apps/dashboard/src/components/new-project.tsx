@@ -34,8 +34,7 @@ export function NewProject({
     seed: (project) => [seed(projectQuery(project.name), project)],
     invalidate: ['projects'],
     success: (project) => ({
-      title: `${project.name} created`,
-      description: 'Add an app to its production.',
+      title: `Created ${project.name}`,
     }),
     onSuccess: (result) => {
       onOpenChange(false)
@@ -57,7 +56,7 @@ export function NewProject({
         }
       }}
       title="Create a project"
-      description="Starts with production. Every change to production waits for an approval; previews apply at once."
+      description="Changes to production wait for an approval; previews apply at once."
       also={<AlsoWith cli={commands.createProject()} tool="create_project" />}
       error={mutation.errorText}
       submitLabel="Create project"

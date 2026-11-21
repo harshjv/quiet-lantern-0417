@@ -17,6 +17,7 @@ import {
   machineById,
   runById,
   stationByRef,
+  visibleTask,
 } from '../lookup.ts'
 import { previewQuery, since, until } from '../pagination.ts'
 import { input } from '../schemas.ts'
@@ -365,6 +366,10 @@ export const logRoutes = (kit: Kit) => {
     const { run: r, ...owner } = runById(db, query.run!)
 
     requireLevel(call.principal, owner.target, 'read')
+
+    if (r.exec?.task_id) {
+      visibleTask(db, call.principal, r.exec.task_id)
+    }
 
     return {
       call,

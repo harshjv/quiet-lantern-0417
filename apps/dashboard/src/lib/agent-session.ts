@@ -542,7 +542,7 @@ export type AgentStatusView = {
 
 const statusViews: Record<AgentStatusValue, AgentStatusView> = {
   none: {
-    label: 'No session yet',
+    label: 'No conversation yet',
     tone: 'neutral',
     pulse: false,
     dot: false,
@@ -560,7 +560,7 @@ const statusViews: Record<AgentStatusValue, AgentStatusView> = {
     dot: true,
   },
   ready: {
-    label: 'Finished, waiting for your reply',
+    label: 'Finished',
     tone: 'success',
     pulse: false,
     dot: true,
@@ -572,7 +572,7 @@ const statusViews: Record<AgentStatusValue, AgentStatusView> = {
     dot: true,
   },
   ended: {
-    label: 'Session ended',
+    label: 'Conversation ended',
     tone: 'neutral',
     pulse: false,
     dot: true,
@@ -614,9 +614,9 @@ export const agentStatusView = (
 }
 
 export const attentionText = {
-  permission: 'Claude is waiting for you to approve a tool call.',
-  question: 'Claude is asking you a question.',
-  plan: 'Claude is waiting for you to approve a plan.',
+  permission: 'Approve a tool call',
+  question: 'Answer a question',
+  plan: 'Approve a plan',
 } as const
 
 type Scope = {

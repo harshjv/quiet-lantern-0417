@@ -24,7 +24,7 @@ import {
 import { isPinned } from '../platform/image-source.ts'
 import { effectivePins } from '../platform/lockfile.ts'
 import { upgradeOnComponent } from '../platform/upgrade.ts'
-import { applySnapshotStatus, applyStatus } from '../sandboxes/lifecycle.ts'
+import { applyStatus } from '../sandboxes/lifecycle.ts'
 import { activateDeployment } from '../secrets/deploy.ts'
 import type { Keyring } from '../secrets/keyring.ts'
 import { recordBackupResult, recordRestoreResult } from '../volumes/backups.ts'
@@ -127,7 +127,6 @@ const effects: {
   ) => boolean
 } = {
   'sandbox.status': (db, _k, stationId, body) => applyStatus(db, stationId, body),
-  'sandbox.snapshot.status': (db, _k, stationId, body) => applySnapshotStatus(db, stationId, body),
   'volume.backup.result': (db, _k, stationId, body) => recordBackupResult(db, stationId, body),
   'volume.restore.result': (db, _k, stationId, body) => recordRestoreResult(db, stationId, body),
   'deployment.step': (db, _k, _s, body) => {

@@ -71,19 +71,8 @@ type sbxRecord struct {
 	LogOffsets map[string]int64                   `json:"log_offsets,omitempty"`
 }
 
-type snapRecord struct {
-	ID        string                                     `json:"id"`
-	SandboxID string                                     `json:"sandbox_id"`
-	Hash      string                                     `json:"hash"`
-	Status    protocol.SandboxSnapshotReportStatus       `json:"status"`
-	TakenAt   *string                                    `json:"taken_at"`
-	Failure   *protocol.SandboxSnapshotStatusBodyFailure `json:"failure,omitempty"`
-	Reported  string                                     `json:"reported,omitempty"`
-}
-
 type sbxFile struct {
-	Sandboxes map[string]*sbxRecord  `json:"sandboxes"`
-	Snapshots map[string]*snapRecord `json:"snapshots"`
+	Sandboxes map[string]*sbxRecord `json:"sandboxes"`
 }
 
 type sbxState struct {
@@ -142,7 +131,6 @@ type sandboxSet struct {
 	kernel    string
 	kernelOK  bool
 	states    map[string]*sbxState
-	snaps     map[string]*snapRecord
 	bases     map[string]*baseState
 	vars      map[string]*sbxVars
 	execs     map[string]*sbxExec
@@ -164,7 +152,6 @@ func newSandboxSet(rt sandbox.Runtime) sandboxSet {
 		rt:     rt,
 		fs:     store.Open(store.Mount),
 		states: map[string]*sbxState{},
-		snaps:  map[string]*snapRecord{},
 		bases:  map[string]*baseState{},
 		vars:   map[string]*sbxVars{},
 		execs:  map[string]*sbxExec{},
@@ -185,14 +172,6 @@ func kernelRelease() string {
 	return strings.TrimSpace(string(b))
 }
 
-func sandboxHeld(kind, id string) bool {
-	fs := store.Open(store.Mount)
-	if kind == "snapshot" {
-		return fs.SnapshotExists(id)
-	}
-	return fs.DiskExists(id)
-}
-
 func (s *Station) loadSandboxes() error {
 	s.sbx = newSandboxSet(s.opts.Sandbox)
 	s.sbx.kernel = kernelRelease()
@@ -205,15 +184,11 @@ func (s *Station) loadSandboxes() error {
 		rec.ID = id
 		s.sbx.states[id] = &sbxState{rec: rec, oom: &atomic.Int64{}, forwards: newForwardSet(), wasRunning: rec.Status == protocol.SandboxReportStatusRunning || rec.Status == protocol.SandboxReportStatusStarting}
 	}
-	for id, rec := range f.Snapshots {
-		rec.ID = id
-		s.sbx.snaps[id] = rec
-	}
 	return nil
 }
 
 func (s *Station) saveSandboxes() {
-	f := sbxFile{Sandboxes: map[string]*sbxRecord{}, Snapshots: s.sbx.snaps}
+	f := sbxFile{Sandboxes: map[string]*sbxRecord{}}
 	for id, st := range s.sbx.states {
 		f.Sandboxes[id] = st.rec
 	}
@@ -455,17 +430,10 @@ func (s *Station) reconcileSandboxes(ctx context.Context, now time.Time) {
 			s.stopSandbox(ctx, st, reasonOf(protocol.SandboxStatusReasonUser), nil)
 		}
 	}
-	for id, rec := range s.sbx.snaps {
-		if _, ok := g.SandboxSnapshots[id]; !ok && rec.Status == protocol.SandboxSnapshotReportStatusDeleted {
-			delete(s.sbx.snaps, id)
-			pruned = true
-		}
-	}
 	if pruned {
 		s.saveSandboxes()
 	}
 	if ready {
-		s.reconcileSnapshots(ctx)
 		s.sandboxHousekeeping(ctx, now)
 	}
 }
@@ -544,36 +512,14 @@ func (s *Station) makeSandboxDisk(ctx context.Context, st *sbxState, d protocol.
 		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineDiskFull, "disk", "the sandbox filesystem has %d bytes free, below min_free_bytes %d", free, s.minFreeBytes()))
 		return
 	}
-	var source string
-	switch f := d.Disk.From; {
-	case f != nil && f.SnapshotId != nil:
-		if !fs.SnapshotExists(*f.SnapshotId) {
-			if _, pending := s.plan.Generation.SandboxSnapshots[*f.SnapshotId]; pending {
-				return
-			}
-			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineStartFailed, "disk", "snapshot %s is not on this station", *f.SnapshotId))
-			return
+	key := baseKey(d.Image.Digest)
+	if !fs.BaseExists(key) {
+		if f := s.ensureBase(ctx, key, d.Image.ImageRef); f != nil {
+			s.failSandbox(st, &protocol.SandboxStatusBodyFailure{Code: f.Code, Phase: protocol.DiagnosisPhase("unpack"), Summary: f.Explanation, Details: protocol.DiagnosisDetails{"step": "unpack"}})
 		}
-		source = fs.SnapshotPath(*f.SnapshotId)
-	case f != nil && f.SandboxId != nil:
-		if !fs.DiskExists(*f.SandboxId) {
-			if src := s.sbx.states[*f.SandboxId]; src != nil && !src.rec.DiskReady {
-				return
-			}
-			s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineStartFailed, "disk", "sandbox %s has no disk on this station", *f.SandboxId))
-			return
-		}
-		source = fs.DiskPath(*f.SandboxId)
-	default:
-		key := baseKey(d.Image.Digest)
-		if !fs.BaseExists(key) {
-			if f := s.ensureBase(ctx, key, d.Image.ImageRef); f != nil {
-				s.failSandbox(st, &protocol.SandboxStatusBodyFailure{Code: f.Code, Phase: protocol.DiagnosisPhase("unpack"), Summary: f.Explanation, Details: protocol.DiagnosisDetails{"step": "unpack"}})
-			}
-			return
-		}
-		source = fs.BasePath(key)
+		return
 	}
+	source := fs.BasePath(key)
 	start := time.Now()
 	if err := fs.MakeDisk(ctx, rec.ID, source, limit); err != nil {
 		s.failSandbox(st, sandboxFailure(protocol.DiagnosisPhaseDisk, protocol.ErrorCodeMachineStartFailed, "disk", "make the disk from %s: %v", source, err))
@@ -1441,86 +1387,6 @@ func (s *Station) adoptSandboxes(ctx context.Context) {
 	s.saveSandboxes()
 }
 
-func (s *Station) reconcileSnapshots(ctx context.Context) {
-	g := s.plan.Generation
-	fs := s.sbx.fs
-	for _, id := range slices.Sorted(maps.Keys(g.SandboxSnapshots)) {
-		d := g.SandboxSnapshots[id]
-		rec := s.sbx.snaps[id]
-		if rec == nil {
-			rec = &snapRecord{ID: id, SandboxID: d.SandboxId}
-			s.sbx.snaps[id] = rec
-		}
-		rec.Hash = d.Hash
-		if d.Status == protocol.DesiredSandboxSnapshotStatusDestroy {
-			if rec.Status == protocol.SandboxSnapshotReportStatusDeleted {
-				continue
-			}
-			if fs.SnapshotExists(id) {
-				if err := fs.Delete(ctx, fs.SnapshotPath(id)); err != nil {
-					s.log.Error("delete sandbox snapshot", "snapshot", id, "error", err)
-					continue
-				}
-			}
-			rec.Status = protocol.SandboxSnapshotReportStatusDeleted
-			s.reportSnapshot(rec)
-			continue
-		}
-		if rec.Status == protocol.SandboxSnapshotReportStatusReady || rec.Status == protocol.SandboxSnapshotReportStatusFailed {
-			continue
-		}
-		if fs.SnapshotExists(id) {
-			rec.Status = protocol.SandboxSnapshotReportStatusReady
-			if rec.TakenAt == nil {
-				rec.TakenAt = stamp(time.Now())
-			}
-			s.reportSnapshot(rec)
-			continue
-		}
-		src := s.sbx.states[d.SandboxId]
-		if src != nil && src.busy {
-			continue
-		}
-		if !fs.DiskExists(d.SandboxId) {
-			if src != nil && !src.rec.DiskReady && src.rec.Status != protocol.SandboxReportStatusFailed {
-				continue
-			}
-			rec.Status = protocol.SandboxSnapshotReportStatusFailed
-			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeMachineStateConflict), Phase: protocol.DiagnosisPhaseDisk, Summary: "sandbox " + d.SandboxId + " has no disk on this station"}
-			s.reportSnapshot(rec)
-			continue
-		}
-		if free := s.sbx.info.FreeBytes; free < s.minFreeBytes() {
-			rec.Status = protocol.SandboxSnapshotReportStatusFailed
-			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeMachineDiskFull), Phase: protocol.DiagnosisPhaseDisk, Summary: fmt.Sprintf("the sandbox filesystem has %d bytes free, below min_free_bytes %d", free, s.minFreeBytes())}
-			s.reportSnapshot(rec)
-			continue
-		}
-		start := time.Now()
-		if err := fs.Snapshot(ctx, d.SandboxId, id); err != nil {
-			rec.Status = protocol.SandboxSnapshotReportStatusFailed
-			rec.Failure = &protocol.SandboxSnapshotStatusBodyFailure{Code: string(protocol.ErrorCodeMachineStartFailed), Phase: protocol.DiagnosisPhaseDisk, Summary: err.Error()}
-			s.reportSnapshot(rec)
-			continue
-		}
-		rec.Status, rec.TakenAt = protocol.SandboxSnapshotReportStatusReady, stamp(time.Now())
-		s.reportSnapshot(rec)
-		s.log.Info("sandbox snapshot taken", "snapshot", id, "sandbox", d.SandboxId, "took_ms", time.Since(start).Milliseconds())
-	}
-}
-
-func (s *Station) reportSnapshot(rec *snapRecord) {
-	key := string(rec.Status)
-	if rec.Reported != key {
-		rec.Reported = key
-		u := s.sbx.usage["snapshots/"+rec.ID]
-		body := map[string]any{"snapshot_id": rec.ID, "status": rec.Status, "taken_at": rec.TakenAt, "exclusive_bytes": int(u.Exclusive), "referenced_bytes": int(u.Exclusive), "failure": rec.Failure}
-		s.emit(protocol.MessageSandboxSnapshotStatus, body)
-		s.log.Info("sandbox snapshot status", "snapshot", rec.ID, "status", rec.Status)
-	}
-	s.saveSandboxes()
-}
-
 func (s *Station) sandboxHousekeeping(ctx context.Context, now time.Time) {
 	fs := s.sbx.fs
 	if !s.sbx.usageBusy && now.Sub(s.sbx.usageAt) >= sandboxUsageEvery {
@@ -1570,10 +1436,6 @@ func (s *Station) unknownSubvolumes(subvols map[string]bool) []protocol.UnknownO
 		case "disks":
 			if _, ok := g.Sandboxes[id]; !ok {
 				out = append(out, protocol.UnknownObject{Kind: protocol.UnknownObjectKindSandboxDisk, Id: ptr(id)})
-			}
-		case "snapshots":
-			if _, ok := g.SandboxSnapshots[id]; !ok {
-				out = append(out, protocol.UnknownObject{Kind: protocol.UnknownObjectKindSandboxSnapshot, Id: ptr(id)})
 			}
 		}
 	}
@@ -1654,12 +1516,11 @@ func (s *Station) cleanCouplers(ctx context.Context) {
 	}
 }
 
-func (s *Station) observedSandboxes() (protocol.ObservedSandboxes, protocol.ObservedSandboxSnapshots, protocol.ObservedSandboxBases) {
+func (s *Station) observedSandboxes() (protocol.ObservedSandboxes, protocol.ObservedSandboxBases) {
 	boxes := protocol.ObservedSandboxes{}
-	snaps := protocol.ObservedSandboxSnapshots{}
 	bases := protocol.ObservedSandboxBases{}
 	if s.plan == nil {
-		return boxes, snaps, bases
+		return boxes, bases
 	}
 	g := s.plan.Generation
 	for id, st := range s.sbx.states {
@@ -1689,21 +1550,6 @@ func (s *Station) observedSandboxes() (protocol.ObservedSandboxes, protocol.Obse
 		}
 		boxes[id] = o
 	}
-	for id, rec := range s.sbx.snaps {
-		if rec.Status == protocol.SandboxSnapshotReportStatusDeleted {
-			continue
-		}
-		u := s.sbx.usage["snapshots/"+id]
-		o := protocol.ObservedSandboxSnapshot{Result: protocol.ObjectResultOk, TakenAt: protocol.ObservedSandboxSnapshotTakenAt(rec.TakenAt), ExclusiveBytes: int(u.Exclusive), ReferencedBytes: int(u.Exclusive)}
-		if d, ok := g.SandboxSnapshots[id]; ok {
-			o.AppliedHash = protocol.ObservedSandboxSnapshotAppliedHash(ptr(d.Hash))
-		}
-		if rec.Status == protocol.SandboxSnapshotReportStatusFailed && rec.Failure != nil {
-			o.Result = protocol.ObjectResultFailed
-			o.Failure = &protocol.ErrorBody{Code: rec.Failure.Code, Explanation: rec.Failure.Summary, Fix: "Take the snapshot again."}
-		}
-		snaps[id] = o
-	}
 	for key, b := range s.sbx.bases {
 		state := protocol.SandboxBaseStateReady
 		switch {
@@ -1716,7 +1562,7 @@ func (s *Station) observedSandboxes() (protocol.ObservedSandboxes, protocol.Obse
 		}
 		bases[key] = protocol.ObservedSandboxBase{State: state, ReferencedBytes: int(s.sbx.usage["bases/"+key].Referenced)}
 	}
-	return boxes, snaps, bases
+	return boxes, bases
 }
 
 func (s *Station) sandboxAckResults(failed func(string, *protocol.ErrorBody)) {

@@ -1,19 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { Tag } from 'lucide-react'
 
-import { KeyValue, Mono, Rows } from '@/components/page'
+import { Code } from '@/components/code'
+import { KeyValue, Rows } from '@/components/page'
 import { Failure } from '@/components/panel'
 import { EmptyRow, TableFrame } from '@/components/table-frame'
 import { Time } from '@/components/time'
-import { Badge } from '@/components/ui/badge'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { InventoryComponent, Station } from '@/lib/api'
-import { plural } from '@/lib/format'
+import { blank, plural } from '@/lib/format'
 import { inventoryQuery, releasesQuery } from '@/lib/queries'
+import { toneText } from '@/lib/tone'
+import { cn } from '@/lib/utils'
 import { Section } from '@/workbench/parts'
 import { upgradeActive, UpgradeButton, UpgradeProgress } from '@/workbench/server-upgrade'
 
-const shortDigest = (digest: string | null) => digest?.replace(/^sha256:/, '').slice(0, 12) ?? '—'
+const shortDigest = (digest: string) => digest.replace(/^sha256:/, '').slice(0, 12)
 
 export function ComponentsTable({
   items,
@@ -37,29 +39,27 @@ export function ComponentsTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {items.length === 0 && (
-          <EmptyRow columns={5}>No components are installed from a release yet.</EmptyRow>
-        )}
+        {items.length === 0 && <EmptyRow columns={5}>No components from a release yet</EmptyRow>}
         {items.map((item) => (
           <TableRow key={item.id}>
             <TableCell>
-              <Mono className="font-medium">{item.name}</Mono>
+              <span className="font-medium">{item.name}</span>
             </TableCell>
             <TableCell className="hidden text-muted-foreground sm:table-cell">
               {stationName(item.server_id)}
             </TableCell>
             <TableCell>
-              <span className="inline-flex items-center gap-2">
-                <Mono>{item.version}</Mono>
+              <span className="inline-flex items-center gap-2 tabular-nums">
+                {item.version}
                 {item.drift && (
-                  <Badge variant="outline" title={`The lockfile pins ${item.lockfile_version}`}>
-                    Drift
-                  </Badge>
+                  <span className={cn('text-xs', toneText.warning)}>
+                    Pinned {item.lockfile_version}
+                  </span>
                 )}
               </span>
             </TableCell>
             <TableCell className="hidden md:table-cell">
-              <Mono className="text-muted-foreground">{shortDigest(item.digest)}</Mono>
+              {item.digest ? <Code>{shortDigest(item.digest)}</Code> : blank}
             </TableCell>
             <TableCell className="hidden text-muted-foreground md:table-cell">
               <Time value={item.since} />
@@ -79,13 +79,13 @@ function Newer() {
   }
 
   if (!data.enabled) {
-    return <span className="text-sm text-muted-foreground">Release checks are off</span>
+    return <span className="text-sm text-muted-foreground">Newer releases not checked</span>
   }
 
   return (
     <span className="text-sm text-muted-foreground">
       {data.available.length === 0
-        ? 'No newer release found'
+        ? 'No newer release'
         : plural(data.available.length, 'newer release')}
     </span>
   )
@@ -97,13 +97,11 @@ export function ReleaseSection({ stations }: { stations: Pick<Station, 'id' | 'n
     refetchInterval: (query) => (upgradeActive(query.state.data?.upgrade) ? 3000 : false),
   })
   const release = data?.release
-  const drift = data?.items.filter((item) => item.drift) ?? []
 
   return (
     <Section
       icon={Tag}
       title="Release"
-      note="The Stationly release this instance runs and the version of each component."
       facts={<Newer />}
       action={<UpgradeButton current={release?.version ?? null} upgrade={data?.upgrade ?? null} />}
     >
@@ -116,16 +114,16 @@ export function ReleaseSection({ stations }: { stations: Pick<Station, 'id' | 'n
           <KeyValue
             framed
             items={[
-              [
-                'Version',
-                <Mono key="version">{release ? `v${release.version}` : 'Not installed'}</Mono>,
-              ],
-              ['Channel', release?.channel ?? '—'],
+              ['Version', release ? `v${release.version}` : 'Not installed'],
+              ['Channel', release?.channel ?? blank],
               [
                 'Published',
-                release?.published_at ? <Time key="published" value={release.published_at} /> : '—',
+                release?.published_at ? (
+                  <Time key="published" value={release.published_at} />
+                ) : (
+                  blank
+                ),
               ],
-              ['Drift', drift.length === 0 ? 'None' : plural(drift.length, 'component')],
             ]}
           />
           {data.upgrade && <UpgradeProgress upgrade={data.upgrade} stations={stations} />}

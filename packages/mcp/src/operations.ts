@@ -73,7 +73,6 @@ export const slugPaths: Record<string, string> = {
   project: 'project',
   preview: 'project/preview',
   app: 'project/app, or project/preview/app in a preview',
-  machine: 'project/machine, or project/preview/machine in a preview',
 }
 
 const parents = ['projects', 'previews']

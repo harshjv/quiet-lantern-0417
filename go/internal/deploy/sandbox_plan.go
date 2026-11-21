@@ -100,7 +100,7 @@ func decideSandbox(f sbxFacts, now time.Time) sbxDecision {
 	return sbxDecision{}
 }
 
-func checkSandboxes(g *protocol.Generation, pool netip.Prefix, taken map[string]netip.Prefix, held func(kind, id string) bool) *Rejection {
+func checkSandboxes(g *protocol.Generation, pool netip.Prefix, taken map[string]netip.Prefix) *Rejection {
 	invalid := func(format string, args ...any) *Rejection {
 		return reject(protocol.ErrorCodeGenerationInvalid, "Fix the generation and send it again.", format, args...)
 	}
@@ -131,29 +131,6 @@ func checkSandboxes(g *protocol.Generation, pool netip.Prefix, taken map[string]
 		}
 		if _, err := dns.ParseDomains(allowDomains(sb.Egress)); err != nil {
 			return invalid("sandbox %s egress: %v", id, err)
-		}
-		if f := sb.Disk.From; f != nil && !held("sandbox", id) {
-			switch {
-			case f.SnapshotId != nil && f.SandboxId != nil:
-				return invalid("sandbox %s disk.from names both a snapshot and a sandbox", id)
-			case f.SnapshotId != nil:
-				if _, ok := g.SandboxSnapshots[*f.SnapshotId]; !ok && !held("snapshot", *f.SnapshotId) {
-					return invalid("sandbox %s forks snapshot %s, which is not on this station", id, *f.SnapshotId)
-				}
-			case f.SandboxId != nil:
-				if _, ok := g.Sandboxes[*f.SandboxId]; !ok && !held("sandbox", *f.SandboxId) {
-					return invalid("sandbox %s forks sandbox %s, which is not on this station", id, *f.SandboxId)
-				}
-			}
-		}
-	}
-	for _, id := range slices.Sorted(maps.Keys(g.SandboxSnapshots)) {
-		snap := g.SandboxSnapshots[id]
-		if !sandboxIDPattern.MatchString(id) || id[:4] != "sbs_" {
-			return invalid("snapshot key %q is not a snapshot id", id)
-		}
-		if _, ok := g.Sandboxes[snap.SandboxId]; !ok && !held("sandbox", snap.SandboxId) && !held("snapshot", id) {
-			return invalid("snapshot %s names sandbox %s, which is neither in the generation nor on this station", id, snap.SandboxId)
 		}
 	}
 	n := g.Station.SandboxNetwork

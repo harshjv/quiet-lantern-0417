@@ -612,23 +612,6 @@ const SandboxStatusBody = Type.Object(
   },
 )
 
-const SandboxSnapshotStatusBody = Type.Object(
-  {
-    seq,
-    snapshot_id: Id('machine_snapshot'),
-    status: StringEnum(['ready', 'failed', 'deleted'], {
-      title: 'SandboxSnapshotReportStatus',
-    }),
-    taken_at: Nullable(Timestamp),
-    exclusive_bytes: Bytes,
-    referenced_bytes: Bytes,
-    failure: Nullable(Diagnosis),
-  },
-  {
-    title: 'SandboxSnapshotStatusBody',
-  },
-)
-
 const SandboxStorageGrowBody = Type.Object(
   {
     size_bytes: Bytes,
@@ -750,6 +733,12 @@ const RunStartBody = Type.Object(
       Type.String({
         pattern: '^[A-Za-z0-9_-]*$',
         maxLength: Math.ceil((sandboxStdinMaxBytes * 4) / 3),
+      }),
+    ),
+    record: Type.Optional(
+      Type.Boolean({
+        description:
+          "false keeps a machine run's output out of the log store; it reaches only the attached stream",
       }),
     ),
   },
@@ -1931,7 +1920,6 @@ export const messages = {
   'volume.backup.result': outboxed(VolumeBackupResultBody, 'volumes.v1'),
   'volume.restore.result': outboxed(VolumeRestoreResultBody, 'volumes.v1'),
   'sandbox.status': outboxed(SandboxStatusBody, 'sandbox.v1'),
-  'sandbox.snapshot.status': outboxed(SandboxSnapshotStatusBody, 'sandbox.v1'),
 
   'build.start': message('dispatch', BuildStartBody),
   'build.accepted': message('station', BuildRefBody),

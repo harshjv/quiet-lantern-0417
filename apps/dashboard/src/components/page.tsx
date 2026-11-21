@@ -1,6 +1,7 @@
 import { CircleAlert, Inbox, RotateCw, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+import { Code } from '@/components/code'
 import { CopyButton } from '@/components/copy'
 import { ErrorFix } from '@/components/fix'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -99,16 +100,18 @@ export function Subsection({
 }
 
 function ErrorFooter({ failure }: { failure: ApiFailure }) {
-  const details = [
-    failure.code,
-    ...(failure.requestId ? [`Request ${failure.requestId}`] : []),
-  ].join(' · ')
+  const details = [failure.code, ...(failure.requestId ? [failure.requestId] : [])]
 
   return (
-    <div className="flex items-center gap-1 pt-1 font-mono text-xs text-muted-foreground">
-      <span className="min-w-0 truncate">{details}</span>
+    <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+      <Code className="text-xs">{failure.code}</Code>
+      {failure.requestId && (
+        <span className="inline-flex items-center gap-1">
+          Request <Code className="text-xs">{failure.requestId}</Code>
+        </span>
+      )}
       <CopyButton
-        value={`${details}\n${window.location.href}`}
+        value={[...details, window.location.href].join('\n')}
         label="error details"
         className="size-5"
       />
@@ -205,10 +208,6 @@ export function Rows({ count = 3 }: { count?: number }) {
       )}
     </div>
   )
-}
-
-export function Mono({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cn('font-mono text-[0.8125rem]', className)}>{children}</span>
 }
 
 export function KeyValue({

@@ -1,17 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import {
-  Bot,
-  Clock,
-  ExternalLink,
-  Eye,
-  Folder,
-  GitBranch,
-  Loader2,
-  Rocket,
-  SearchX,
-} from 'lucide-react'
-import { useReducer, useState } from 'react'
+import { ExternalLink, Eye, Folder, Loader2, Rocket, SearchX } from 'lucide-react'
+import { useReducer, useState, type ReactNode } from 'react'
 
 import {
   agentLabel,
@@ -36,16 +26,20 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  usePromptInputController,
 } from '@/components/ai-elements/prompt-input'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { Tool, ToolContent, ToolHeader, ToolOutput } from '@/components/ai-elements/tool'
-import { Field } from '@/components/field'
+import { Code, Output } from '@/components/code'
+import { CheckboxField, Field } from '@/components/field'
+import { Name } from '@/components/name'
 import { NewProject } from '@/components/new-project'
 import { EmptyState } from '@/components/page'
 import { Failure } from '@/components/panel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   applyPart,
   applyProgress,
@@ -74,7 +68,9 @@ import {
   type Task,
 } from '@/lib/api'
 import { useEventStream } from '@/lib/event-stream'
-import { plural, repositoryName, shortAgo } from '@/lib/format'
+import { blank, plural, repositoryName, shortAgo } from '@/lib/format'
+import { entityIcon } from '@/lib/icons'
+import { newTaskTo, placeTo, taskTo, type TaskFilePlace } from '@/lib/links'
 import {
   credentialKey,
   githubTokenHelp,
@@ -84,10 +80,12 @@ import {
   needsGithubToken,
   projectRepositories,
   repositoryUrl,
+  taskBrief,
 } from '@/lib/new-task'
 import { productionOf } from '@/lib/place'
 import {
   appsQuery,
+  membersQuery,
   meQuery,
   myRepositoriesQuery,
   projectsQuery,
@@ -99,7 +97,7 @@ import { toneText } from '@/lib/tone'
 
 import { asRow, taskTone, useProjectList } from './data'
 import { fixTarget, useFixPrefill, type FixTarget } from './fix-live'
-import { AgentSays, Checklist, Meta, Notice, StatusPill, type Step } from './parts'
+import { AgentSays, Checklist, Notice, StatusPill, type Step } from './parts'
 import {
   PullRequestLink,
   ShipDecision,
@@ -108,7 +106,10 @@ import {
   useShipStatus,
   type ShipApproval,
 } from './ship-approval'
+import { changedFileCount, ChangesView, TaskChanges } from './task-changes'
+import { TaskFiles } from './task-files'
 import { TaskMenu } from './task-menu'
+import { TaskTerminal } from './task-terminal'
 
 type Action = { stored: AgentEventValue } | { part: AgentLivePart } | { progress: AgentProgress }
 
@@ -151,27 +152,21 @@ const runnerAgents = (Object.keys(workspaceAgents) as WorkspaceAgent[]).filter(
   (agent) => workspaceAgents[agent].runner,
 )
 
-export function LiveBuild({ task: id, project }: { task?: string; project: string | null }) {
-  return id ? <TaskById id={id} /> : <LatestTask project={project} />
-}
+const taskTabs = ['conversation', 'changes', 'terminal', 'files'] as const
 
-function LatestTask({ project }: { project: string | null }) {
-  const { data, isPending } = useQuery(tasksQuery)
+type TaskTab = (typeof taskTabs)[number]
 
-  if (isPending) {
-    return null
-  }
-
-  const task = (data?.items ?? []).find((t) => !project || t.project.name === project)
-
-  if (!task) {
-    return <LiveComposer project={project} />
-  }
-
-  return <LiveThread key={task.id} task={task} />
-}
-
-function TaskById({ id }: { id: string }) {
+export function TaskView({
+  id,
+  project,
+  tab,
+  place,
+}: {
+  id: string
+  project: string
+  tab: string | null
+  place: TaskFilePlace
+}) {
   const { data: task, error, refetch } = useQuery(taskQuery(id))
 
   if (error instanceof ApiFailure && error.status === 404) {
@@ -181,10 +176,10 @@ function TaskById({ id }: { id: string }) {
         <EmptyState
           icon={SearchX}
           title="This task doesn’t exist"
-          description="It may have been deleted, or the link is wrong. Start a new task, or pick one from the list."
+          description="Deleted, or the link is wrong."
           action={
             <Button asChild size="sm" variant="outline">
-              <Link to="/build/new">New task</Link>
+              <Link {...newTaskTo(project)}>New task</Link>
             </Button>
           }
         />
@@ -204,17 +199,28 @@ function TaskById({ id }: { id: string }) {
     return null
   }
 
-  return <LiveThread key={task.id} task={task} />
+  return (
+    <LiveThread
+      key={task.id}
+      task={task}
+      tab={taskTabs.find((t) => t === tab) ?? 'conversation'}
+      place={place}
+    />
+  )
 }
 
-export function NewTask({ project, fix }: { project: string | null; fix: string | null }) {
-  return fix ? <FixComposer target={fixTarget(fix)} /> : <LiveComposer project={project} />
+export function NewTask({ project, fix }: { project: string; fix: string | null }) {
+  return fix ? (
+    <FixComposer project={project} target={fixTarget(fix)} />
+  ) : (
+    <LiveComposer project={project} />
+  )
 }
 
 const setupSteps: { state: string; label: string }[] = [
   {
     state: 'creating',
-    label: 'Starting the machine',
+    label: 'Starting',
   },
   {
     state: 'setting_up',
@@ -233,18 +239,13 @@ function SetupProgress({ task }: { task: Task }) {
       tail: task.failure.tail,
       repository: task.repository,
       branch: task.base_branch,
-      project: task.project.name,
     })
 
     return (
       <Notice tone="danger" title={failure.title}>
         <span className="flex flex-col gap-2">
           {failure.advice}
-          {task.failure.tail.length > 0 && (
-            <pre className="overflow-auto bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
-              {task.failure.tail.join('\n')}
-            </pre>
-          )}
+          {task.failure.tail.length > 0 && <Output>{task.failure.tail.join('\n')}</Output>}
         </span>
       </Notice>
     )
@@ -283,16 +284,14 @@ function ToolCallView({ call }: { call: ToolCall }) {
         state={toolState[call.state]}
       />
       <ToolContent className="flex flex-col gap-3 p-3">
-        <pre className="bg-muted p-3 font-mono text-xs break-all whitespace-pre-wrap">
-          {call.summary}
-        </pre>
+        <Output className="break-all">{call.summary}</Output>
         {call.output ? (
           <ToolOutput
             output={call.state === 'failed' ? undefined : call.output}
             errorText={call.state === 'failed' ? call.output : undefined}
           />
         ) : (
-          <p className="font-mono text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {call.state === 'running' ? 'Running' : 'Output is kept only for calls that fail.'}
           </p>
         )}
@@ -314,14 +313,14 @@ function ProgressView({ progress }: { progress: AgentProgress }) {
 
   if (data.kind === 'retrying') {
     return (
-      <p className="font-mono text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Retrying after an API error{data.attempt ? ` (attempt ${data.attempt})` : ''}
       </p>
     )
   }
 
   return (
-    <Shimmer className="font-mono text-xs">
+    <Shimmer className="text-xs">
       {data.tokens ? `Thinking, about ${data.tokens} tokens` : 'Thinking'}
     </Shimmer>
   )
@@ -375,22 +374,21 @@ function ApprovalCard({ item, actions }: { item: ApprovalItem; actions: ThreadAc
   return (
     <div className="flex flex-col gap-3 border border-border p-4">
       <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="font-medium">Claude asks to use {item.tool}</span>
+        <span className="font-medium">
+          Claude asks to use <Code className="text-xs">{item.tool}</Code>
+        </span>
         {item.status === 'pending' && (
-          <span className="font-mono text-xs text-muted-foreground">Waits until {until}</span>
+          <span className="text-xs text-muted-foreground">Waits until {until}</span>
         )}
       </div>
-      <pre className="max-h-64 overflow-auto bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
-        {approvalBody(item)}
-      </pre>
+      <Output className="max-h-64">{approvalBody(item)}</Output>
       {item.truncated && (
         <p className={`text-xs ${toneText.warning}`}>
-          Cut to fit: the agent asks to run more than this shows. Deny it and ask for a smaller step
-          if you cannot tell what it does.
+          Cut to fit. Deny it if you can’t tell what it runs.
         </p>
       )}
       {item.status !== 'pending' ? (
-        <p className="font-mono text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {closedText[item.status]}
           {item.message ? `: ${item.message}` : ''}
         </p>
@@ -436,11 +434,7 @@ function BlockedLine({ item, actions }: { item: BlockedItem; actions: ThreadActi
         Auto mode blocked {item.tool}
         {item.reason ? <span className="text-muted-foreground"> {item.reason}</span> : null}
       </p>
-      {item.summary && (
-        <pre className="max-h-40 overflow-auto bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
-          {item.summary}
-        </pre>
-      )}
+      {item.summary && <Output className="max-h-40">{item.summary}</Output>}
       <div>
         <Button
           size="sm"
@@ -458,63 +452,6 @@ function BlockedLine({ item, actions }: { item: BlockedItem; actions: ThreadActi
   )
 }
 
-type ChangesItem = Extract<Turn['items'][number], { kind: 'changes' }>
-
-const changesLine = (item: ChangesItem) => {
-  const count = item.files.length + item.moreFiles
-  const added = item.files.reduce((sum, file) => sum + (file.added ?? 0), 0)
-  const removed = item.files.reduce((sum, file) => sum + (file.removed ?? 0), 0)
-
-  return [
-    count ? `${plural(count, 'file')} changed, +${added} −${removed}` : null,
-    item.commits.length ? plural(item.commits.length, 'commit') : null,
-  ]
-    .filter(Boolean)
-    .join(', ')
-}
-
-function ChangesView({ item }: { item: ChangesItem }) {
-  return (
-    <details className="border border-border text-sm">
-      <summary className="cursor-pointer px-3 py-2 font-mono text-xs text-muted-foreground">
-        {changesLine(item)}
-      </summary>
-      <div className="flex flex-col gap-2 border-t border-border p-3">
-        {item.commits.map((commit) => (
-          <p key={commit.sha} className="font-mono text-xs">
-            <span className="text-muted-foreground">{commit.sha.slice(0, 7)}</span> {commit.subject}
-          </p>
-        ))}
-        {item.files.map((file) => (
-          <details key={file.path}>
-            <summary className="cursor-pointer font-mono text-xs">
-              {file.path}{' '}
-              <span className="text-muted-foreground">
-                {file.added === null ? 'binary' : `+${file.added} −${file.removed}`}
-              </span>
-            </summary>
-            {file.diff ? (
-              <pre className="mt-1 max-h-72 overflow-auto bg-muted p-2 font-mono text-xs whitespace-pre">
-                {file.diff}
-              </pre>
-            ) : null}
-          </details>
-        ))}
-        {item.moreFiles > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {plural(item.moreFiles, 'more file')} not listed.
-          </p>
-        )}
-        {item.truncated && (
-          <p className="text-xs text-muted-foreground">
-            Some diffs are cut. Run git diff in the task's worktree for the whole change.
-          </p>
-        )}
-      </div>
-    </details>
-  )
-}
-
 function TurnView({ turn, actions }: { turn: Turn; actions: ThreadActions }) {
   return (
     <>
@@ -527,7 +464,7 @@ function TurnView({ turn, actions }: { turn: Turn; actions: ThreadActions }) {
         item.kind === 'tools' ? (
           item.calls.map((call) => <ToolCallView key={call.id} call={call} />)
         ) : item.kind === 'note' ? (
-          <p key={item.id} className="font-mono text-xs text-muted-foreground">
+          <p key={item.id} className="text-xs text-muted-foreground">
             {item.text}
           </p>
         ) : item.kind === 'approval' ? (
@@ -542,7 +479,7 @@ function TurnView({ turn, actions }: { turn: Turn; actions: ThreadActions }) {
           </AgentSays>
         ),
       )}
-      {turn.stopped && <p className="font-mono text-xs text-muted-foreground">Stopped</p>}
+      {turn.stopped && <p className="text-xs text-muted-foreground">Stopped</p>}
       {turn.failure && (
         <Notice tone="danger" title="This turn failed">
           {turn.failure}
@@ -552,7 +489,7 @@ function TurnView({ turn, actions }: { turn: Turn; actions: ThreadActions }) {
   )
 }
 
-function LiveThread({ task }: { task: Task }) {
+function LiveThread({ task, tab, place }: { task: Task; tab: TaskTab; place: TaskFilePlace }) {
   const queries = useQueryClient()
   const navigate = useNavigate()
   const [state, dispatch] = useReducer(reduce, emptyAgentState)
@@ -639,9 +576,7 @@ function LiveThread({ task }: { task: Task }) {
     mutationFn: () => unwrap(target.preview.post(undefined, idempotency())),
     onSuccess: (made) => {
       setProblem(null)
-      setPreviewNote(
-        `Deploying this task's worktree to ${made.preview.name}${made.url ? ` at ${made.url}` : ''}. It takes a few minutes to build.`,
-      )
+      setPreviewNote(`${made.preview.name}${made.url ? ` at ${made.url}` : ''}`)
       refresh()
     },
     onError: (error) => setProblem(failureText(error)),
@@ -662,14 +597,12 @@ function LiveThread({ task }: { task: Task }) {
     mutationFn: () => unwrap(target.delete(undefined, idempotency())),
     onSuccess: () => {
       refresh()
-      void navigate({
-        to: '/build/new',
-      })
+      void navigate(newTaskTo(task.project.name))
     },
     onError: (error) => setProblem(failureText(error)),
   })
   const restart = useMutation({
-    mutationFn: async (machine?: 'own') => {
+    mutationFn: async (isolated: boolean) => {
       const next = await unwrap(
         api.v1.tasks.post(
           {
@@ -678,12 +611,8 @@ function LiveThread({ task }: { task: Task }) {
             base_branch: task.base_branch ?? undefined,
             agent: task.agent,
             model: task.model ?? undefined,
-            prompt: task.prompt ?? task.title,
-            ...(machine
-              ? {
-                  machine,
-                }
-              : {}),
+            ...taskBrief(task.prompt, task.title),
+            isolated,
           },
           idempotency(),
         ),
@@ -695,41 +624,34 @@ function LiveThread({ task }: { task: Task }) {
     },
     onSuccess: (next) => {
       refresh()
-      void navigate({
-        to: '/build/$task',
-        params: {
-          task: next.id,
-        },
-      })
+      void navigate(taskTo(task.project.name, next.id))
     },
     onError: (error) => setProblem(failureText(error)),
   })
 
+  const owned = useOwned(task)
+  const shownTabs = taskTabs.filter((t) => t !== 'terminal' || owned)
+  const shown = shownTabs.find((t) => t === tab) ?? 'conversation'
+  const changedFiles = changedFileCount(turns)
+
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 px-6 pt-6">
-      <div className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <h1 className="text-lg font-semibold">{task.title}</h1>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <StatusPill tone={taskTone[row.state]}>{row.reason}</StatusPill>
-            <Meta icon={Folder} label="Project">
-              {task.project.name}
-            </Meta>
-            <Meta icon={GitBranch} label="Branch">
-              {task.branch}
-            </Meta>
-            <Meta icon={Bot} label="Agent">
-              {task.model ? modelLabel(task.model) : agentLabel(task.agent)}
-            </Meta>
-            <Meta icon={Clock} label="Started">
-              {shortAgo(task.created_at)}
-            </Meta>
-          </div>
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4 px-6 pt-6">
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <h1 className="min-w-0 truncate text-lg font-semibold">
+            <Name kind="task" chip={false} className="font-semibold">
+              {task.title}
+            </Name>
+          </h1>
+          <StatusPill tone={taskTone[row.state]}>{row.reason}</StatusPill>
+          {row.detail && (
+            <span className="shrink-0 text-sm text-muted-foreground">{row.detail}</span>
+          )}
         </div>
         {task.preview?.url && (
           <Button asChild variant="outline" size="sm">
             <a href={task.preview.url} target="_blank" rel="noreferrer">
-              <ExternalLink /> Preview
+              <ExternalLink /> Open preview
             </a>
           </Button>
         )}
@@ -753,108 +675,218 @@ function LiveThread({ task }: { task: Task }) {
         )}
         <TaskMenu branch={task.branch} remove={() => remove.mutate()} />
       </div>
+      <TaskFacts task={task} />
 
-      <Conversation className="min-h-0 flex-1">
-        <ConversationContent className="px-0">
-          {turns.length === 0 && task.prompt && (
-            <Message from="user">
-              <MessageContent>{task.prompt}</MessageContent>
-            </Message>
-          )}
-          <SetupProgress task={task} />
-          {turns.map((turn) => (
-            <TurnView key={turn.key} turn={turn} actions={actions} />
-          ))}
-          {unseen.map((item) => (
-            <Message key={`sent-${item.place}`} from="user">
-              <MessageContent>{item.text}</MessageContent>
-            </Message>
-          ))}
-          {progress && <ProgressView progress={progress} />}
-          {busy && (
-            <Shimmer className="font-mono text-xs">
-              {unseen.length ? 'Starting the agent' : 'Working'}
-            </Shimmer>
-          )}
-        </ConversationContent>
-      </Conversation>
+      <Tabs
+        value={shown}
+        onValueChange={(next) => {
+          const found = taskTabs.find((t) => t === next)
 
-      {problem && (
-        <Notice tone="danger" title="That did not go through">
-          {problem}
-        </Notice>
-      )}
-      {task.ship && (
-        <ShipNotice
-          approval={task.ship}
-          fix={(reason) =>
-            reply.mutate(
-              `Shipping this task did not go through: ${reason} Find the cause, fix it on this branch, and say what you changed.`,
+          if (found) {
+            void navigate(
+              taskTo(task.project.name, task.id, found === 'conversation' ? undefined : found),
             )
           }
-        />
-      )}
-      {previewNote && (
-        <Notice tone="info" title="Preview on its way">
-          {previewNote}
-        </Notice>
-      )}
-
-      {task.failure ? (
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex-1 text-sm text-muted-foreground">
-            This task cannot continue. A new task starts over with the same prompt.
-          </span>
-          <Button disabled={restart.isPending} onClick={() => restart.mutate(undefined)}>
-            Start a new task
-          </Button>
-        </div>
-      ) : task.status === 'queued' ? (
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex-1 text-sm text-muted-foreground">
-            Every slot on this project's machine is busy. This task starts when one frees
-            {task.queued_ahead ? `, after ${task.queued_ahead} more` : ''}.
-          </span>
-          {turns.length === 0 && (
-            <Button
-              variant="outline"
-              disabled={restart.isPending}
-              onClick={() => restart.mutate('own')}
-            >
-              Run on its own machine
-            </Button>
-          )}
-          <Button variant="ghost" disabled={stop.isPending} onClick={() => stop.mutate()}>
-            Cancel
-          </Button>
-        </div>
-      ) : (
-        <PromptInputProvider>
-          <PromptInput className="mb-6" onSubmit={submitting(reply.mutateAsync, true)}>
-            <PromptInputBody>
-              <PromptInputTextarea placeholder="Reply to continue this task…" />
-            </PromptInputBody>
-            <PromptInputFooter>
-              <PromptInputTools>
-                <span className="text-xs text-muted-foreground">
-                  Sends to the agent working on this task.
+        }}
+        className="min-h-0 flex-1"
+      >
+        <TabsList>
+          {shownTabs.map((id) => (
+            <TabsTrigger key={id} value={id}>
+              {taskTabTitle[id]}
+              {id === 'changes' && changedFiles > 0 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {plural(changedFiles, 'file')}
                 </span>
-              </PromptInputTools>
-              <PromptInputSubmit
-                status={
-                  task.status === 'working'
-                    ? 'streaming'
-                    : reply.isPending
-                      ? 'submitted'
-                      : undefined
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="conversation" className="mt-2 flex min-h-0 flex-col gap-4">
+          <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-4">
+            <Conversation className="min-h-0 flex-1">
+              <ConversationContent className="px-0">
+                {turns.length === 0 && task.prompt && (
+                  <Message from="user">
+                    <MessageContent>{task.prompt}</MessageContent>
+                  </Message>
+                )}
+                <SetupProgress task={task} />
+                {turns.map((turn) => (
+                  <TurnView key={turn.key} turn={turn} actions={actions} />
+                ))}
+                {unseen.map((item) => (
+                  <Message key={`sent-${item.place}`} from="user">
+                    <MessageContent>{item.text}</MessageContent>
+                  </Message>
+                ))}
+                {progress && <ProgressView progress={progress} />}
+                {busy && (
+                  <Shimmer className="text-xs">
+                    {unseen.length ? 'Starting the agent' : 'Working'}
+                  </Shimmer>
+                )}
+              </ConversationContent>
+            </Conversation>
+
+            {problem && (
+              <Notice tone="danger" title="That did not go through">
+                {problem}
+              </Notice>
+            )}
+            {task.ship && (
+              <ShipNotice
+                approval={task.ship}
+                fix={(reason) =>
+                  reply.mutate(
+                    `Shipping this task did not go through: ${reason} Find the cause, fix it on this branch, and say what you changed.`,
+                  )
                 }
-                onStop={() => stop.mutate()}
               />
-            </PromptInputFooter>
-          </PromptInput>
-        </PromptInputProvider>
-      )}
+            )}
+            {previewNote && (
+              <Notice tone="info" title="Preview deploying">
+                {previewNote}
+              </Notice>
+            )}
+
+            {task.failure ? (
+              <div className="mb-6 flex items-center gap-3">
+                <span className="flex-1 text-sm text-muted-foreground">
+                  A new task starts over with the same prompt.
+                </span>
+                <Button disabled={restart.isPending} onClick={() => restart.mutate(task.isolated)}>
+                  Start a new task
+                </Button>
+              </div>
+            ) : task.status === 'queued' ? (
+              <div className="mb-6 flex items-center justify-end gap-3">
+                {turns.length === 0 && (
+                  <Button
+                    variant="outline"
+                    disabled={restart.isPending}
+                    onClick={() => restart.mutate(true)}
+                  >
+                    Run on its own
+                  </Button>
+                )}
+                <Button variant="ghost" disabled={stop.isPending} onClick={() => stop.mutate()}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <PromptInputProvider>
+                <PromptInput className="mb-6" onSubmit={submitting(reply.mutateAsync, true)}>
+                  <PromptInputBody>
+                    <PromptInputTextarea
+                      placeholder={
+                        turns.length === 0 && !task.prompt
+                          ? 'Prompt'
+                          : 'Reply to continue this task…'
+                      }
+                    />
+                  </PromptInputBody>
+                  <PromptInputFooter>
+                    <PromptInputTools />
+                    <PromptInputSubmit
+                      status={
+                        task.status === 'working'
+                          ? 'streaming'
+                          : reply.isPending
+                            ? 'submitted'
+                            : undefined
+                      }
+                      onStop={() => stop.mutate()}
+                    />
+                  </PromptInputFooter>
+                </PromptInput>
+              </PromptInputProvider>
+            )}
+          </div>
+        </TabsContent>
+        <TabsContent value="changes" className="mt-2">
+          <TaskChanges turns={turns} project={task.project.name} task={task.id} />
+        </TabsContent>
+        {owned && (
+          <TabsContent value="terminal" className="mt-2 pb-6">
+            <TaskTerminal task={task.id} />
+          </TabsContent>
+        )}
+        <TabsContent value="files" className="mt-2">
+          <TaskFiles project={task.project.name} task={task.id} place={place} />
+        </TabsContent>
+      </Tabs>
     </div>
+  )
+}
+
+const taskTabTitle: Record<TaskTab, string> = {
+  conversation: 'Conversation',
+  changes: 'Changes',
+  terminal: 'Terminal',
+  files: 'Files',
+}
+
+function useOwned(task: Task) {
+  const { data: me } = useQuery(meQuery)
+
+  return !!me && me.actor.id === task.owner.id
+}
+
+function useOwnerName(task: Task) {
+  const { data: me } = useQuery(meQuery)
+  const mine = !!me && me.actor.id === task.owner.id
+  const { data: members } = useQuery({
+    ...membersQuery,
+    enabled: !!me && !mine,
+    retry: false,
+  })
+
+  if (!me) {
+    return null
+  }
+
+  return mine
+    ? 'You'
+    : (members?.items.find((member) => member.user_id === task.owner.id)?.name ?? blank)
+}
+
+function TaskFacts({ task }: { task: Task }) {
+  const by = useOwnerName(task)
+  const facts: [string, ReactNode][] = [
+    ['Agent', agentLabel(task.agent)],
+    ['Model', task.model ? modelLabel(task.model) : blank],
+    ['Started', shortAgo(task.created_at)],
+    ['By', by ?? blank],
+    ['Branch', <Code key="branch">{task.branch}</Code>],
+    [
+      'Preview',
+      task.preview ? (
+        <Link
+          key="preview"
+          {...placeTo(task.project.name, task.preview.name)}
+          className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline"
+        >
+          <entityIcon.preview className="size-3.5 text-muted-foreground" aria-hidden />
+          {task.preview.name}
+        </Link>
+      ) : (
+        <span key="preview" className="text-muted-foreground">
+          none
+        </span>
+      ),
+    ],
+  ]
+
+  return (
+    <dl className="flex flex-wrap gap-x-6 gap-y-2" data-testid="task-facts">
+      {facts.map(([label, value]) => (
+        <div key={label} className="min-w-0">
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="truncate text-sm">{value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -916,17 +948,17 @@ const storeProjectSecret = (project: string, name: string, value: string) =>
       ),
   )
 
-function FixComposer({ target }: { target: FixTarget | null }) {
+function FixComposer({ project, target }: { project: string; target: FixTarget | null }) {
   const prefill = useFixPrefill(target)
 
   if (!target) {
-    return <LiveComposer project={null} />
+    return <LiveComposer project={project} />
   }
 
   if (!prefill) {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <Shimmer className="font-mono text-xs">Reading what failed</Shimmer>
+        <Shimmer className="text-xs">Reading what failed</Shimmer>
       </div>
     )
   }
@@ -961,18 +993,14 @@ function FirstProject() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-8">
       <h1 className="font-display text-2xl">Start with a project</h1>
-      <p className="max-w-prose text-sm text-muted-foreground">
-        Every task works inside a project: its repositories, environment variables, apps and
-        machine. Create the first project, add its first app in Ship, then come back here and ask an
-        agent to build.
-      </p>
+      <p className="max-w-prose text-sm text-muted-foreground">Tasks run inside a project.</p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setCreating(true)}>
           <Folder /> Create a project
         </Button>
         <Button asChild variant="outline">
-          <Link to="/projects">
-            <Rocket /> Open Ship
+          <Link to="/">
+            <Rocket /> Open projects
           </Link>
         </Button>
       </div>
@@ -992,7 +1020,7 @@ function RepositoryHint({ github }: { github: MyRepositories['github'] | undefin
       <Link to="/account" className="font-medium text-foreground underline underline-offset-4">
         {github === 'reconnect' ? 'Connect GitHub again' : 'Connect GitHub'}
       </Link>{' '}
-      in Your account to pick from the repositories you can reach, or paste a URL.
+      to pick a repository, or paste a URL.
     </p>
   )
 }
@@ -1013,6 +1041,8 @@ function Composer({
   const [repository, setRepository] = useState(prefill?.repository ?? '')
   const reachable = useQuery(myRepositoriesQuery)
   const [secret, setSecret] = useState('')
+  const [title, setTitle] = useState('')
+  const [isolated, setIsolated] = useState(false)
   const [blocked, setBlocked] = useState<Blocked | null>(null)
   const preset = workspaceAgents[agent]
   const url = repositoryUrl(repository)
@@ -1118,7 +1148,8 @@ function Composer({
             repository: url!,
             agent,
             model: model || undefined,
-            prompt,
+            ...taskBrief(prompt, title),
+            isolated,
           },
           idempotency(),
         ),
@@ -1130,12 +1161,7 @@ function Composer({
       void queries.invalidateQueries({
         queryKey: ['tasks'],
       })
-      void navigate({
-        to: '/build/$task',
-        params: {
-          task: task.id,
-        },
-      })
+      void navigate(taskTo(task.project.name, task.id))
     },
     onError: (error) => {
       setSecret('')
@@ -1145,7 +1171,7 @@ function Composer({
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-8">
-      <h1 className="font-display text-2xl">What should we build?</h1>
+      <h1 className="font-display text-2xl">New task</h1>
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="live-project">Project</Label>
@@ -1190,7 +1216,6 @@ function Composer({
               type="button"
               size="xs"
               variant={url?.toLowerCase() === value.toLowerCase() ? 'secondary' : 'outline'}
-              className="font-mono"
               aria-pressed={url?.toLowerCase() === value.toLowerCase()}
               onClick={() => setRepository(value)}
             >
@@ -1206,19 +1231,19 @@ function Composer({
           title={
             asking === 'key'
               ? admin
-                ? `${chosen} has no ${preset.keyLabel}`
-                : `You have no ${preset.keyLabel}`
+                ? `No ${preset.keyLabel} in this project`
+                : `No ${preset.keyLabel}`
               : `${githubTokenLabel} needed`
           }
         >
           <span className="flex flex-col gap-2">
             {asking === 'key'
               ? admin
-                ? `${preset.keyHelp} Stationly stores it as a secret environment variable of the project.`
-                : `${preset.keyHelp} Stationly stores it as your own secret key; only your tasks use it.`
+                ? `${preset.keyHelp} Saved as a secret environment variable.`
+                : `${preset.keyHelp} Saved as your own key.`
               : admin
-                ? githubTokenHelp(chosen, repositoryName(url ?? repository))
-                : 'Stationly cannot read this repository. Connect GitHub in Your account with an account that can, or ask an admin for a project token.'}
+                ? githubTokenHelp
+                : 'Stationly cannot read this repository. Connect GitHub, or ask an admin for a token.'}
             {(asking === 'key' || admin) && (
               <form
                 className="flex items-end gap-2"
@@ -1251,7 +1276,7 @@ function Composer({
             {save.isError && <span>{failureText(save.error)}</span>}
             {waitingKey && (
               <span>
-                Saved. It reaches the project once an admin approves the change to production.{' '}
+                Saved. Waits for an admin’s approval.{' '}
                 <Link
                   to="/approvals/$approval"
                   params={{
@@ -1272,12 +1297,22 @@ function Composer({
         </Notice>
       )}
       <PromptInputProvider initialInput={prefill?.prompt}>
-        <PromptInput onSubmit={submitting(start.mutateAsync, ready)}>
+        <PromptInput
+          id="new-task"
+          onSubmit={async ({ text }) => {
+            if (!ready || (!text.trim() && !title.trim())) {
+              throw new Error('Nothing to send yet')
+            }
+
+            await start.mutateAsync(text)
+            setTitle('')
+          }}
+        >
           <PromptInputBody>
-            <PromptInputTextarea placeholder="Describe the task. An agent works on it on a new branch and shows you what it changed." />
+            <PromptInputTextarea placeholder="Describe the task (optional)" />
           </PromptInputBody>
           <PromptInputFooter>
-            <PromptInputTools>
+            <PromptInputTools className="flex-wrap">
               <PromptInputSelect
                 value={agent}
                 onValueChange={(next) => {
@@ -1310,6 +1345,14 @@ function Composer({
                   </PromptInputSelectContent>
                 </PromptInputSelect>
               )}
+              <CheckboxField
+                id="new-task-isolated"
+                checked={isolated}
+                onCheckedChange={setIsolated}
+                label="Run on its own"
+                className="px-2"
+                labelClassName="whitespace-nowrap"
+              />
             </PromptInputTools>
             <PromptInputSubmit
               disabled={!ready || start.isPending}
@@ -1317,13 +1360,36 @@ function Composer({
             />
           </PromptInputFooter>
         </PromptInput>
+        <PromptlessTitle value={title} onChange={setTitle} />
       </PromptInputProvider>
-      <p className="text-sm text-muted-foreground">
-        {keyMissing
-          ? `Add ${admin ? `${chosen}’s` : 'your'} ${preset.keyLabel} above before you start a task.`
-          : `Runs in project ${chosen || 'none yet'} on a new branch, on the project's machine. Anything that needs approval is stopped and shown to you.`}
-      </p>
+      {keyMissing && (
+        <p className="text-sm text-muted-foreground">Add the {preset.keyLabel} above to start.</p>
+      )}
     </div>
+  )
+}
+
+const titleLimit = 120
+
+function PromptlessTitle({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const prompt = usePromptInputController().textInput.value
+
+  if (prompt.trim()) {
+    return null
+  }
+
+  return (
+    <Field id="new-task-title" label="Title">
+      <Input
+        id="new-task-title"
+        form="new-task"
+        required
+        maxLength={titleLimit}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Names the task and its branch"
+      />
+    </Field>
   )
 }
 

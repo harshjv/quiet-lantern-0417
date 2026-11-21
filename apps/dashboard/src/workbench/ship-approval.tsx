@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ExternalLink, Rocket, X } from 'lucide-react'
 import { useState } from 'react'
 
+import { Code } from '@/components/code'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Approval, Deployment } from '@/lib/api'
@@ -27,12 +28,12 @@ export const shipProblem = (approval: ShipApproval) =>
   approval.status === 'rejected' ? approval.reason : (approval.ship?.reason ?? null)
 
 export const shipStatusText: Record<ShipState, string> = {
-  pushing: 'Pushing the branch and opening the pull request',
-  open: 'Waiting for an admin to approve',
+  pushing: 'Opening the pull request',
+  open: 'Waiting for approval',
   rejected: 'Not shipped',
   merged: 'Merged',
   failed: 'Ship it did not finish',
-  superseded: 'Replaced; ship again to ask anew',
+  superseded: 'Replaced',
 }
 
 export type ShipTone = 'info' | 'warning' | 'danger' | 'success'
@@ -52,27 +53,27 @@ const mergedOutcome = (
 ): { title: string; tone: ShipTone } => {
   if (!loaded || deployments.length === 0) {
     return {
-      title: 'Merged; production starts deploying when GitHub sends the push',
+      title: 'Merged, waiting for the push',
       tone: 'info',
     }
   }
 
   if (deployments.some((d) => d.status === 'failed' || d.status === 'cancelled')) {
     return {
-      title: 'Merged, but the production deploy did not finish',
+      title: 'Merged, deploy failed',
       tone: 'danger',
     }
   }
 
   if (deployments.some((d) => isInFlight(d.status))) {
     return {
-      title: 'Merged; production is deploying',
+      title: 'Merged, deploying',
       tone: 'info',
     }
   }
 
   return {
-    title: 'Merged and live in production',
+    title: 'Merged, in production',
     tone: 'success',
   }
 }
@@ -133,9 +134,7 @@ export function PullRequestLink({ approval }: { approval: ShipApproval }) {
 
 function HeadSha({ approval }: { approval: ShipApproval }) {
   return approval.ship?.head_sha ? (
-    <span className="font-mono text-xs text-muted-foreground">
-      at {approval.ship.head_sha.slice(0, 7)}
-    </span>
+    <Code className="text-xs">{approval.ship.head_sha.slice(0, 7)}</Code>
   ) : null
 }
 
@@ -163,7 +162,7 @@ export function ShipDecision({ approval }: { approval: ShipApproval }) {
           className="w-64"
           autoFocus
           value={reason}
-          placeholder="Why not, for the task's owner"
+          placeholder="Reason"
           aria-label="Reason"
           onChange={(event) => setReason(event.target.value)}
           onKeyDown={(event) => {

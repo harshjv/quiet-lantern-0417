@@ -28,8 +28,6 @@ import {
   appId,
   connect,
   isId,
-  machineId,
-  machineRef,
   previewId,
   projectId,
   projectRef,
@@ -52,7 +50,7 @@ type Shape =
 
 type Input = Record<string, unknown>
 
-type Target = 'project' | 'preview' | 'app' | 'machine'
+type Target = 'project' | 'preview' | 'app'
 
 export type Generated = { endpoint: Endpoint; path: string[] }
 
@@ -413,15 +411,13 @@ const optionsOf = (
   ]
 }
 
-const selected = (run: Run, target: 'app' | 'machine') =>
-  target === 'machine'
-    ? machineRef(run)
-    : need(run.selection[target], {
-        what: 'App',
-        flag: `--${target} <id or name>`,
-      })
+const selected = (run: Run, target: 'app') =>
+  need(run.selection[target], {
+    what: 'App',
+    flag: `--${target} <id or name>`,
+  })
 
-const scoped = async (run: Run, entity: 'app' | 'machine', ref: string) =>
+const scoped = async (run: Run, entity: 'app', ref: string) =>
   isId(entity, ref)
     ? ref
     : [await projectRef(run), ...(run.selection.preview ? [run.selection.preview] : []), ref].join(
@@ -439,7 +435,6 @@ const paths: Record<Target, (run: Run) => Promise<string>> = {
     return isId('target', ref) ? ref : `${await projectRef(run)}/${ref}`
   },
   app: async (run) => scoped(run, 'app', await selected(run, 'app')),
-  machine: async (run) => scoped(run, 'machine', await selected(run, 'machine')),
 }
 
 const ids: Record<Target, (run: Run) => Promise<string>> = {
@@ -450,7 +445,6 @@ const ids: Record<Target, (run: Run) => Promise<string>> = {
   },
   preview: async (run) => (await previewId(run)) ?? '',
   app: appId,
-  machine: async (run) => machineId(run, await selected(run, 'machine')),
 }
 
 export const targetId = (run: Run, target: Target) => ids[target](run)
@@ -701,11 +695,7 @@ const commandOf = (word: string, { endpoint }: Generated, reserved: Set<string>)
   const pathParameters = parameters.filter((p) => p.in === 'path')
   const contextual = pathParameters.map((p) => p.name).filter(isTarget)
   const last = pathParameters.at(-1)?.name
-  const named = pathParameters.some((p) => p.name === 'machine')
-    ? 'machine'
-    : last !== undefined && isTarget(last) && path.endsWith(`/{${last}}`)
-      ? last
-      : null
+  const named = last !== undefined && isTarget(last) && path.endsWith(`/{${last}}`) ? last : null
   const command = new Command(word).description(summary)
 
   if (contextual.length) {

@@ -12,16 +12,14 @@ export const variableNamePattern = inputPattern(environmentVariableNamePattern)
 
 export const variableNameTitle = 'Upper case letters, digits and underscores'
 
-export const secretNote =
-  'Secret values are write-only. No endpoint returns them, including to you.'
+export const secretNote = 'Write-only: nothing returns it, not even to you.'
 
 export const noValueLabel = 'No value here'
 
 export const hasNoValue = (variable: Pick<EnvironmentVariable, 'kind' | 'head_version'>) =>
   variable.kind === 'secret' && !variable.head_version
 
-export const buildNote =
-  'Build-time environment variables reach the Dockerfile as BuildKit secrets: read one with RUN --mount=type=secret,id=KEY. They never become build arguments or image layers.'
+export const buildNote = 'Read it in the Dockerfile as a BuildKit secret.'
 
 export const referencePlaceholder = '${{db.HOST}}'
 
@@ -53,12 +51,6 @@ export const toVariableInput = ({ name, kind, value, build, injection }: Variabl
         injection,
       }
     : {}),
-  ...valueOf(kind, value),
-})
-
-export const toMachineVariableInput = ({ name, kind, value }: VariableEntry) => ({
-  name,
-  kind,
   ...valueOf(kind, value),
 })
 

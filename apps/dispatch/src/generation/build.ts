@@ -8,7 +8,6 @@ import {
   DesiredDeployment,
   DesiredEnvironment,
   DesiredSandbox,
-  DesiredSandboxSnapshot,
   DesiredService,
   DesiredVolume,
   Generation,
@@ -28,7 +27,6 @@ import {
   domain,
   ipam_allocation,
   machine,
-  machine_snapshot,
   project,
   server,
   station_generation,
@@ -266,8 +264,7 @@ export const targetIssue = (
   }
 }
 
-export type ExcludedObject =
-  'network' | 'app' | 'deployment' | 'volume' | 'route' | 'machine' | 'machine_snapshot'
+export type ExcludedObject = 'network' | 'app' | 'deployment' | 'volume' | 'route' | 'machine'
 
 export type Exclusion = {
   object: ExcludedObject
@@ -289,14 +286,11 @@ const objectKeys: Record<ExcludedObject, (id: string) => string> = {
   volume: (id) => `/volumes/${id}`,
   route: (id) => `/gateway/routes/${id}`,
   machine: (id) => `/sandboxes/${id}`,
-  machine_snapshot: (id) => `/sandbox_snapshots/${id}`,
 }
 
 export const objectAt = (path: string): { object: ExcludedObject; id: string } | null => {
   const m =
-    /^\/(environments|services|deployments|volumes|gateway\/routes|sandboxes|sandbox_snapshots)\/([^/]+)/.exec(
-      path,
-    )
+    /^\/(environments|services|deployments|volumes|gateway\/routes|sandboxes)\/([^/]+)/.exec(path)
 
   if (!m) {
     return null
@@ -310,7 +304,6 @@ export const objectAt = (path: string): { object: ExcludedObject; id: string } |
       volumes: 'volume',
       'gateway/routes': 'route',
       sandboxes: 'machine',
-      sandbox_snapshots: 'machine_snapshot',
     } as const
   )[m[1] as 'environments']
 
@@ -698,9 +691,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       env_digest: destroy ? envDigest([]) : machineEnv(db, row.id).env_digest,
       network: row.network,
       egress: row.egress,
-      disk: {
-        from: row.disk_from ?? null,
-      },
       reach:
         row.network === 'environment' && !destroy
           ? vips.filter((v) => v.target_id === row.target_id && v.app_id).map((v) => v.id)
@@ -723,44 +713,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
 
     if (doc) {
       machineDocs[row.id] = doc
-    }
-  }
-
-  const snapshotDocs: Record<
-    string,
-    { hash: string; sandbox_id: string; status: 'active' | 'destroy' }
-  > = {}
-
-  if (machineCapable) {
-    for (const snap of db
-      .select()
-      .from(machine_snapshot)
-      .where(eq(machine_snapshot.server_id, stationId))
-      .orderBy(asc(machine_snapshot.id))
-      .all()) {
-      if (snap.status === 'failed') {
-        continue
-      }
-
-      const doc = guarded(
-        'machine_snapshot',
-        snap.id,
-        previous?.sandbox_snapshots?.[snap.id],
-        () => {
-          const built = hashed({
-            sandbox_id: snap.machine_id,
-            status: snap.status === 'deleting' ? ('destroy' as const) : ('active' as const),
-          })
-
-          conform(DesiredSandboxSnapshot, built, keyOf('machine_snapshot', snap.id))
-
-          return built
-        },
-      )
-
-      if (doc) {
-        snapshotDocs[snap.id] = doc
-      }
     }
   }
 
@@ -1040,7 +992,6 @@ export const buildContent = (db: Db, stationId: string, skip: Skip = new Map()):
       ...(machineCapable
         ? {
             sandboxes: machineDocs,
-            sandbox_snapshots: snapshotDocs,
           }
         : {}),
     },

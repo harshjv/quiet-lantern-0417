@@ -1,0 +1,331 @@
+import { FitAddon } from '@xterm/addon-fit'
+import { Terminal } from '@xterm/xterm'
+
+import '@xterm/xterm/css/xterm.css'
+
+import { Copy, Loader2, RotateCw } from 'lucide-react'
+import { useTheme } from 'next-themes'
+import { useEffect, useRef, useState } from 'react'
+
+import { ErrorState } from '@/components/page'
+import { Button } from '@/components/ui/button'
+import { ApiFailure, failureText } from '@/lib/api'
+import { sentence } from '@/lib/labels'
+import { attachUrl, outputFrame, stdinFrame } from '@/lib/terminal'
+import { cn } from '@/lib/utils'
+
+type Phase = 'starting' | 'connecting' | 'live' | 'ended' | 'error'
+
+type Control =
+  | { type: 'attached' }
+  | { type: 'exit'; status: string; exit_code: number | null; reason: string }
+  | { type: 'error'; code: string; explanation: string }
+
+const themes = {
+  light: {
+    background: '#fafafa',
+    foreground: '#18181b',
+    cursor: '#18181b',
+    cursorAccent: '#fafafa',
+    selectionBackground: '#bfdbfe',
+    brightBlack: '#71717a',
+  },
+  dark: {
+    background: '#09090b',
+    foreground: '#e4e4e7',
+    cursor: '#e4e4e7',
+    cursorAccent: '#09090b',
+    selectionBackground: '#1e3a8a',
+    brightBlack: '#a1a1aa',
+  },
+}
+
+const muted = (text: string) => `\r\n\x1b[90m${text}\x1b[0m\r\n`
+
+type OpenShell = (starting: () => boolean) => Promise<{ attach_url: string }>
+
+export function ShellTerminal({
+  shellKey,
+  open: openShell,
+}: {
+  shellKey: string
+  open: OpenShell
+}) {
+  const { resolvedTheme } = useTheme()
+  const container = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
+  const socketRef = useRef<WebSocket | null>(null)
+  const [phase, setPhase] = useState<Phase>('connecting')
+  const [detail, setDetail] = useState('')
+  const [failure, setFailure] = useState<unknown>(null)
+  const [epoch, setEpoch] = useState(0)
+  const [copied, setCopied] = useState(false)
+  const palette = resolvedTheme === 'dark' ? themes.dark : themes.light
+  const openRef = useRef(openShell)
+
+  useEffect(() => {
+    openRef.current = openShell
+  })
+
+  useEffect(() => {
+    const node = container.current
+
+    if (!node) {
+      return
+    }
+
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      fontSize: 13,
+      scrollback: 5000,
+    })
+    const fit = new FitAddon()
+
+    term.loadAddon(fit)
+    term.open(node)
+    fit.fit()
+    termRef.current = term
+    term.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type === 'keydown' &&
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 'c' &&
+        term.hasSelection()
+      ) {
+        void navigator.clipboard.writeText(term.getSelection())
+
+        return false
+      }
+
+      return true
+    })
+    const input = term.onData((data) => {
+      const socket = socketRef.current
+
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(stdinFrame(data))
+      }
+    })
+    const resized = term.onResize(({ rows, cols }) => {
+      const socket = socketRef.current
+
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(
+          JSON.stringify({
+            type: 'resize',
+            rows,
+            cols,
+          }),
+        )
+      }
+    })
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      if (frame) {
+        cancelAnimationFrame(frame)
+      }
+
+      frame = requestAnimationFrame(() => {
+        frame = 0
+
+        if (node.clientWidth > 0 && node.clientHeight > 0) {
+          fit.fit()
+        }
+      })
+    })
+
+    observer.observe(node)
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame)
+      }
+
+      observer.disconnect()
+      input.dispose()
+      resized.dispose()
+      term.dispose()
+      termRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.theme = palette
+    }
+  }, [palette])
+
+  useEffect(() => {
+    const term = termRef.current
+
+    if (!term) {
+      return
+    }
+
+    let cancelled = false
+    let finished = false
+    let socket: WebSocket | null = null
+    const finish = (next: Phase, text: string) => {
+      if (finished) {
+        return
+      }
+
+      finished = true
+      setPhase(next)
+      setDetail(text)
+      term.write(muted(text))
+    }
+    const open = async () => {
+      setPhase('connecting')
+      setDetail('')
+      setFailure(null)
+
+      try {
+        const shell = await openRef.current(() => {
+          if (!cancelled) {
+            setPhase('starting')
+          }
+
+          return !cancelled
+        })
+
+        if (cancelled) {
+          return
+        }
+
+        setPhase('connecting')
+        socket = new WebSocket(
+          attachUrl(shell.attach_url, window.location.origin, {
+            rows: term.rows,
+            cols: term.cols,
+          }),
+        )
+        socket.binaryType = 'arraybuffer'
+        socketRef.current = socket
+
+        socket.onmessage = (message) => {
+          if (typeof message.data === 'string') {
+            const control = JSON.parse(message.data) as Control
+
+            if (control.type === 'attached') {
+              setPhase('live')
+              term.focus()
+            } else if (control.type === 'exit') {
+              finish(
+                'ended',
+                control.exit_code === null
+                  ? `Session ended: ${sentence(control.reason).toLowerCase()}.`
+                  : `Session ended with exit code ${control.exit_code}.`,
+              )
+            } else if (control.type === 'error') {
+              setFailure(
+                new ApiFailure(503, {
+                  code: control.code,
+                  explanation: control.explanation,
+                  fix: 'Reconnect to open a new shell.',
+                }),
+              )
+              finish('error', 'Couldn’t attach to the shell.')
+            }
+
+            return
+          }
+
+          term.write(outputFrame(message.data as ArrayBuffer).bytes)
+        }
+
+        socket.onclose = () => finish('ended', 'Connection closed.')
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        setFailure(error)
+        finish('error', failureText(error))
+      }
+    }
+    const timer = window.setTimeout(() => void open(), 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+
+      if (socket) {
+        socket.onclose = null
+        socket.close()
+      }
+
+      socketRef.current = null
+    }
+  }, [shellKey, epoch])
+
+  const reconnect = () => {
+    termRef.current?.write(muted('Starting a new shell'))
+    setEpoch((e) => e + 1)
+  }
+
+  const copy = () => {
+    const term = termRef.current
+
+    if (!term?.hasSelection()) {
+      return
+    }
+
+    void navigator.clipboard.writeText(term.getSelection()).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+        <span className="text-sm font-medium">Terminal</span>
+        <span
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+          role="status"
+          data-testid="terminal-state"
+          data-phase={phase}
+        >
+          {(phase === 'connecting' || phase === 'starting') && (
+            <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />
+          )}
+          {phase === 'live' && (
+            <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+          )}
+          {phase === 'starting'
+            ? 'starting'
+            : phase === 'connecting'
+              ? 'connecting'
+              : phase === 'live'
+                ? 'connected'
+                : detail}
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button type="button" variant="ghost" size="sm" onClick={copy}>
+            <Copy /> {copied ? 'Copied' : 'Copy selection'}
+          </Button>
+          {(phase === 'ended' || phase === 'error') && (
+            <Button type="button" size="sm" onClick={reconnect}>
+              <RotateCw /> Reconnect
+            </Button>
+          )}
+        </div>
+      </div>
+      {phase === 'error' && failure !== null && (
+        <div className="p-3">
+          <ErrorState error={failure} title="Couldn’t open the terminal" />
+        </div>
+      )}
+      <div
+        ref={container}
+        data-testid="terminal"
+        className={cn('h-[26rem] p-2 sm:h-[32rem]')}
+        style={{
+          backgroundColor: palette.background,
+        }}
+      />
+    </div>
+  )
+}

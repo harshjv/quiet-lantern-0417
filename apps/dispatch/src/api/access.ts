@@ -1,5 +1,12 @@
 import type { Principal } from '../auth/principal.ts'
-import { anyTarget, atLeast, levelAt, type Level, type Target } from '../auth/scopes.ts'
+import {
+  anyTarget,
+  atLeast,
+  isInstanceAdmin,
+  levelAt,
+  type Level,
+  type Target,
+} from '../auth/scopes.ts'
 
 import { fail } from './errors.ts'
 
@@ -98,3 +105,18 @@ export const authorize = (principal: Principal, target: Target, level: Level) =>
 }
 
 export const seesTarget = (principal: Principal, target: Target) => can(principal, target, 'read')
+
+export const personOf = (principal: Principal) =>
+  principal.token_kind === 'session' || principal.token_kind === 'personal'
+    ? principal.user_id
+    : null
+
+type OwnedTask = { owner: { id: string | null }; project_id: string }
+
+export const ownsTask = (principal: Principal, row: OwnedTask) =>
+  personOf(principal) !== null &&
+  row.owner.id === personOf(principal) &&
+  seesProject(principal, row.project_id)
+
+export const seesTask = (principal: Principal, row: OwnedTask) =>
+  isInstanceAdmin(principal.scopes) || ownsTask(principal, row)

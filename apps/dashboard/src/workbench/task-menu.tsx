@@ -1,6 +1,7 @@
 import { Copy, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
+import { Code } from '@/components/code'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,9 +48,8 @@ export function TaskMenu({ branch, remove }: { branch: string; remove: () => voi
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this task?</AlertDialogTitle>
             <AlertDialogDescription>
-              The conversation, the machine&apos;s working copy and the task&apos;s preview go away
-              for good. The <code className="font-mono text-xs">{branch}</code> branch and anything
-              already in production stay.
+              Deletes the conversation, files and preview for good. The{' '}
+              <Code className="text-xs">{branch}</Code> branch and production stay.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

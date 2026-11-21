@@ -279,9 +279,10 @@ test('the step header counts distinct steps and times the running one', () => {
     step('cutover', 'pending'),
   ]
 
-  assert.equal(
-    stepProgress(steps, new Date('2026-11-10T00:00:12Z')),
-    'Step 3 of 4 · Health check · 12 s',
-  )
+  assert.deepEqual(stepProgress(steps, new Date('2026-11-10T00:00:12Z')), {
+    position: 'Step 3 of 4',
+    name: 'Health check',
+    elapsed: '12 s',
+  })
   assert.equal(stepProgress([step('pull', 'done')]), null)
 })

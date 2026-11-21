@@ -71,7 +71,7 @@ const ownerOf = (db: Db, machineId: string) =>
       owner: task.owner,
     })
     .from(task)
-    .where(and(eq(task.machine_id, machineId), eq(task.machine, 'own')))
+    .where(and(eq(task.machine_id, machineId), eq(task.isolated, true)))
     .get()?.owner.id ?? null
 
 const memberCredentials = (db: Db, box: MachineRow): Proxied[] =>

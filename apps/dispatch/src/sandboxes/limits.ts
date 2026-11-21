@@ -120,7 +120,7 @@ export const requireQuota = (
     return fail(
       'MACHINE_QUOTA_EXCEEDED',
       `Server ${st.name} allows ${text(allowed)} for ${limit}; ${text(used)} ${limit === 'memory_bytes' ? 'is' : 'are'} used and this change needs ${text(requested)} more.`,
-      `Delete or stop a machine on ${st.name}, or ask an instance admin to raise machine_limits.${limit} with sly servers update ${st.name} --machine-limits ${limit}=<n>.`,
+      `Delete a task on ${st.name}, or ask an instance admin to raise machine_limits.${limit} with sly servers update ${st.name} --machine-limits ${limit}=<n>.`,
       {
         server: st.id,
         limit,
@@ -164,8 +164,8 @@ export const requireDiskRoom = (st: StationRow) => {
 
   fail(
     'MACHINE_DISK_FULL',
-    `Server ${st.name}'s machine filesystem has ${free} bytes free, below the ${floor} byte floor for new disks, snapshots and forks.`,
-    `Delete machines or snapshots, or grow the machine filesystem with sly machines grow-storage ${st.name} --size-bytes <size>.`,
+    `Server ${st.name}'s task storage has ${free} bytes free, below the ${floor} byte floor for a new task's disk.`,
+    `Delete tasks, or grow task storage with sly servers grow-task-storage ${st.name} --size-bytes <size>.`,
     {
       server: st.id,
       free_bytes: free,

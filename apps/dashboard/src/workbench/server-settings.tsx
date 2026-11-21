@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Package } from 'lucide-react'
 
 import { ComponentsTable } from '@/components/release-section'
-import { MachineRuntimeSection } from '@/components/sandbox-runtime'
+import { TaskRuntimeSection } from '@/components/task-runtime'
 import {
   Sheet,
   SheetContent,
@@ -15,7 +15,7 @@ import { inventoryQuery } from '@/lib/queries'
 import { Notice, Section } from './parts'
 import { versionSkewText, type ServerView } from './server-data'
 import { Limits, Placement } from './server-placement'
-import { MachineStorage, RemoveServer } from './server-storage'
+import { RemoveServer, TaskStorage } from './server-storage'
 
 function Components({ server }: { server: ServerView }) {
   const { data } = useQuery(inventoryQuery)
@@ -40,13 +40,13 @@ function Health({ server }: { server: ServerView }) {
       {server.version_skew !== 'ok' && (
         <Notice
           tone={server.version_skew === 'unsupported' ? 'danger' : 'warning'}
-          title={`${server.name} runs a different stationd`}
+          title="Different stationd version"
         >
           {versionSkewText[server.version_skew]}
         </Notice>
       )}
       {failure && (
-        <Notice tone="danger" title={`${server.name} refused its configuration`}>
+        <Notice tone="danger" title="Configuration refused">
           {failure.explanation} {failure.fix}
         </Notice>
       )}
@@ -67,7 +67,7 @@ export function ServerSheet({
         <SheetHeader>
           <SheetTitle className="font-display text-lg">{server.name}</SheetTitle>
           <SheetDescription className="flex flex-wrap gap-x-3">
-            {[server.os, server.arch, server.hosts_dispatch ? 'Runs this instance' : null]
+            {[server.os, server.arch, server.hosts_dispatch ? 'Runs Dispatch' : null]
               .filter(Boolean)
               .map((fact) => (
                 <span key={fact}>{fact}</span>
@@ -78,8 +78,8 @@ export function ServerSheet({
           <Health server={server} />
           <Placement server={server} />
           <Limits server={server} />
-          <MachineRuntimeSection station={server} />
-          <MachineStorage server={server} />
+          <TaskRuntimeSection station={server} />
+          <TaskStorage server={server} />
           <Components server={server} />
           {!server.hosts_dispatch && (
             <RemoveServer server={server} onRemoved={() => onOpenChange(false)} />

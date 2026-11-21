@@ -147,11 +147,11 @@ export const shellExit = (id: string, exit: RunExit | null) => {
   return exit.status === 'succeeded' ? exitCodes.ok : exitCodes.api
 }
 
-export type ForwardEvents = { control?: (message: string) => void; unopened?: () => void }
+export type ForwardEvents = { control?: (message: string) => void }
 
 export const forwardPort = async (
   run: Run,
-  machineId: string,
+  taskId: string,
   remote: number,
   localPort: number | undefined,
   events: ForwardEvents = {},
@@ -160,7 +160,7 @@ export const forwardPort = async (
   const relay = async (socket: Socket) => {
     connections.add(socket)
     socket.on('error', () => socket.destroy())
-    const url = attachUrl(run, `/v1/machines/${machineId}/forward`)
+    const url = attachUrl(run, `/v1/tasks/${taskId}/forward`)
 
     url.searchParams.set('port', String(remote))
     const ws = await openSocket(run, url)
@@ -201,13 +201,7 @@ export const forwardPort = async (
 
     ws.onclose = () => socket.end()
 
-    ws.onerror = () => {
-      socket.destroy()
-
-      if (!open) {
-        events.unopened?.()
-      }
-    }
+    ws.onerror = () => socket.destroy()
 
     socket.on('data', (chunk: Buffer) => (open ? ws.send(framed(chunk)) : queued.push(chunk)))
     socket.on('close', () => {
@@ -241,7 +235,6 @@ export const forwardPort = async (
     })
 
   return {
-    server,
     address: `127.0.0.1:${bound}`,
     close,
   }

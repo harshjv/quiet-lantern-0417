@@ -22,9 +22,9 @@ import (
 
 const observedUpdateEvery = 5 * time.Second
 
-var observedMaps = []string{"components", "environments", "services", "deployments", "volumes", "runs", "workshops", "system_targets", "sandboxes", "sandbox_snapshots", "sandbox_bases"}
+var observedMaps = []string{"components", "environments", "services", "deployments", "volumes", "runs", "workshops", "system_targets", "sandboxes", "sandbox_bases"}
 
-var hashedMaps = []string{"environments", "services", "deployments", "volumes", "workshops", "system_targets", "sandboxes", "sandbox_snapshots"}
+var hashedMaps = []string{"environments", "services", "deployments", "volumes", "workshops", "system_targets", "sandboxes"}
 
 func canonicalHash(obj map[string]any) (string, error) {
 	stripped := make(map[string]any, len(obj))

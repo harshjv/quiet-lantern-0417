@@ -5,7 +5,7 @@ import { agentLabel } from '@stationly/protocol'
 import { attentionText } from '@/lib/agent-session'
 import type { Task as LiveTask } from '@/lib/api'
 import { shortAgo } from '@/lib/format'
-import { projectsQuery, tasksQuery } from '@/lib/queries'
+import { projectsQuery, projectTasksQuery, tasksQuery } from '@/lib/queries'
 import type { Tone } from '@/lib/tone'
 
 export type Project = { id: string; name: string }
@@ -18,6 +18,7 @@ export type Task = {
   project: string
   state: TaskState
   reason: string
+  detail: string | null
   age: string
 }
 
@@ -40,26 +41,26 @@ const liveState: Record<LiveTask['status'], TaskState> = {
   stopped: 'failed',
 }
 
-const reasonOf = (task: LiveTask) => {
+const reasonOf = (task: LiveTask): [string, string | null] => {
   switch (task.status) {
     case 'queued':
-      return task.queued_ahead ? `Queued, ${task.queued_ahead} ahead` : 'Queued, next to start'
+      return ['Queued', task.queued_ahead ? `${task.queued_ahead} ahead` : 'Next to start']
     case 'setting_up':
-      return 'Setting up'
+      return ['Setting up', null]
     case 'working':
-      return `Working with ${agentLabel(task.agent)}`
+      return ['Working', agentLabel(task.agent)]
     case 'waiting':
-      return task.attention ? attentionText[task.attention.kind] : 'Waiting on you'
+      return [task.attention ? attentionText[task.attention.kind] : 'Waiting on you', null]
     case 'finished':
       return task.ship?.status === 'approved'
-        ? 'Shipped'
+        ? ['Shipped', null]
         : task.ship?.status === 'waiting'
-          ? 'Shipping, waiting for approval'
-          : 'Finished, waiting for your reply'
+          ? ['Shipping', 'Waiting for approval']
+          : ['Finished', task.prompt === null ? null : 'Waiting for your reply']
     case 'failed':
-      return task.failure ? 'Setup failed' : 'Turn failed'
+      return [task.failure ? 'Setup failed' : 'Turn failed', null]
     case 'stopped':
-      return 'Stopped'
+      return ['Stopped', null]
   }
 }
 
@@ -68,12 +69,13 @@ export const asRow = (task: LiveTask): Task => ({
   title: task.title,
   project: task.project.name,
   state: liveState[task.status],
-  reason: reasonOf(task),
+  reason: reasonOf(task)[0],
+  detail: reasonOf(task)[1],
   age: shortAgo(task.last_event_at ?? task.created_at),
 })
 
-export function useTaskRows(): Task[] {
-  const { data } = useQuery(tasksQuery)
+export function useTaskRows(project?: string): Task[] {
+  const { data } = useQuery(project ? projectTasksQuery(project) : tasksQuery)
 
   return (data?.items ?? []).map(asRow)
 }

@@ -2838,9 +2838,6 @@ type DesiredSandbox struct {
 	// DesiredState corresponds to the JSON schema field "desired_state".
 	DesiredState DesiredState `json:"desired_state"`
 
-	// Disk corresponds to the JSON schema field "disk".
-	Disk SandboxDisk `json:"disk"`
-
 	// Docker corresponds to the JSON schema field "docker".
 	Docker bool `json:"docker"`
 
@@ -2931,77 +2928,6 @@ func (j *DesiredSandboxImage) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type DesiredSandboxSnapshot struct {
-	// Hash corresponds to the JSON schema field "hash".
-	Hash string `json:"hash"`
-
-	// SandboxId corresponds to the JSON schema field "sandbox_id".
-	SandboxId string `json:"sandbox_id"`
-
-	// Status corresponds to the JSON schema field "status".
-	Status DesiredSandboxSnapshotStatus `json:"status"`
-}
-
-type DesiredSandboxSnapshotStatus string
-
-const DesiredSandboxSnapshotStatusActive DesiredSandboxSnapshotStatus = "active"
-const DesiredSandboxSnapshotStatusDestroy DesiredSandboxSnapshotStatus = "destroy"
-
-var enumValues_DesiredSandboxSnapshotStatus = []interface{}{
-	"active",
-	"destroy",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *DesiredSandboxSnapshotStatus) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_DesiredSandboxSnapshotStatus {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_DesiredSandboxSnapshotStatus, v)
-	}
-	*j = DesiredSandboxSnapshotStatus(v)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *DesiredSandboxSnapshot) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["hash"]; raw != nil && !ok {
-		return fmt.Errorf("field hash in DesiredSandboxSnapshot: required")
-	}
-	if _, ok := raw["sandbox_id"]; raw != nil && !ok {
-		return fmt.Errorf("field sandbox_id in DesiredSandboxSnapshot: required")
-	}
-	if _, ok := raw["status"]; raw != nil && !ok {
-		return fmt.Errorf("field status in DesiredSandboxSnapshot: required")
-	}
-	type Plain DesiredSandboxSnapshot
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if matched, _ := regexp.MatchString(`^sha256:[0-9a-f]{64}$`, string(plain.Hash)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "Hash", `^sha256:[0-9a-f]{64}$`)
-	}
-	if matched, _ := regexp.MatchString(`^sbx_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.SandboxId)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "SandboxId", `^sbx_[0-9A-HJKMNP-TV-Z]{26}$`)
-	}
-	*j = DesiredSandboxSnapshot(plain)
-	return nil
-}
-
 type DesiredSandboxStatus string
 
 const DesiredSandboxStatusActive DesiredSandboxStatus = "active"
@@ -3045,9 +2971,6 @@ func (j *DesiredSandbox) UnmarshalJSON(value []byte) error {
 	}
 	if _, ok := raw["desired_state"]; raw != nil && !ok {
 		return fmt.Errorf("field desired_state in DesiredSandbox: required")
-	}
-	if _, ok := raw["disk"]; raw != nil && !ok {
-		return fmt.Errorf("field disk in DesiredSandbox: required")
 	}
 	if _, ok := raw["docker"]; raw != nil && !ok {
 		return fmt.Errorf("field docker in DesiredSandbox: required")
@@ -6010,9 +5933,6 @@ type Generation struct {
 	// Resolution corresponds to the JSON schema field "resolution".
 	Resolution *GenerationResolution `json:"resolution"`
 
-	// SandboxSnapshots corresponds to the JSON schema field "sandbox_snapshots".
-	SandboxSnapshots GenerationSandboxSnapshots `json:"sandbox_snapshots,omitempty,omitzero"`
-
 	// Sandboxes corresponds to the JSON schema field "sandboxes".
 	Sandboxes GenerationSandboxes `json:"sandboxes,omitempty,omitzero"`
 
@@ -6241,8 +6161,6 @@ func (j *GenerationResult) UnmarshalJSON(value []byte) error {
 	*j = GenerationResult(plain)
 	return nil
 }
-
-type GenerationSandboxSnapshots map[string]DesiredSandboxSnapshot
 
 type GenerationSandboxes map[string]DesiredSandbox
 
@@ -9139,9 +9057,6 @@ type Observed struct {
 	// SandboxBases corresponds to the JSON schema field "sandbox_bases".
 	SandboxBases ObservedSandboxBases `json:"sandbox_bases,omitempty,omitzero"`
 
-	// SandboxSnapshots corresponds to the JSON schema field "sandbox_snapshots".
-	SandboxSnapshots ObservedSandboxSnapshots `json:"sandbox_snapshots,omitempty,omitzero"`
-
 	// Sandboxes corresponds to the JSON schema field "sandboxes".
 	Sandboxes ObservedSandboxes `json:"sandboxes,omitempty,omitzero"`
 
@@ -9997,71 +9912,6 @@ func (j *ObservedSandboxDisk) UnmarshalJSON(value []byte) error {
 
 type ObservedSandboxRunscVersion *string
 
-type ObservedSandboxSnapshot struct {
-	// AppliedHash corresponds to the JSON schema field "applied_hash".
-	AppliedHash ObservedSandboxSnapshotAppliedHash `json:"applied_hash"`
-
-	// BlockedBy corresponds to the JSON schema field "blocked_by".
-	BlockedBy *string `json:"blocked_by,omitempty,omitzero"`
-
-	// ExclusiveBytes corresponds to the JSON schema field "exclusive_bytes".
-	ExclusiveBytes int `json:"exclusive_bytes"`
-
-	// Failure corresponds to the JSON schema field "failure".
-	Failure *ErrorBody `json:"failure,omitempty,omitzero"`
-
-	// ReferencedBytes corresponds to the JSON schema field "referenced_bytes".
-	ReferencedBytes int `json:"referenced_bytes"`
-
-	// Result corresponds to the JSON schema field "result".
-	Result ObjectResult `json:"result"`
-
-	// TakenAt corresponds to the JSON schema field "taken_at".
-	TakenAt ObservedSandboxSnapshotTakenAt `json:"taken_at"`
-}
-
-type ObservedSandboxSnapshotAppliedHash *string
-
-type ObservedSandboxSnapshotTakenAt *string
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ObservedSandboxSnapshot) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["applied_hash"]; raw != nil && !ok {
-		return fmt.Errorf("field applied_hash in ObservedSandboxSnapshot: required")
-	}
-	if _, ok := raw["exclusive_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field exclusive_bytes in ObservedSandboxSnapshot: required")
-	}
-	if _, ok := raw["referenced_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field referenced_bytes in ObservedSandboxSnapshot: required")
-	}
-	if _, ok := raw["result"]; raw != nil && !ok {
-		return fmt.Errorf("field result in ObservedSandboxSnapshot: required")
-	}
-	if _, ok := raw["taken_at"]; raw != nil && !ok {
-		return fmt.Errorf("field taken_at in ObservedSandboxSnapshot: required")
-	}
-	type Plain ObservedSandboxSnapshot
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if 0 > plain.ExclusiveBytes {
-		return fmt.Errorf("field %s: must be >= %v", "exclusive_bytes", 0)
-	}
-	if 0 > plain.ReferencedBytes {
-		return fmt.Errorf("field %s: must be >= %v", "referenced_bytes", 0)
-	}
-	*j = ObservedSandboxSnapshot(plain)
-	return nil
-}
-
-type ObservedSandboxSnapshots map[string]ObservedSandboxSnapshot
-
 type ObservedSandboxStartedAt *string
 
 type ObservedSandboxStopAt *string
@@ -10335,9 +10185,6 @@ type ObservedUpdateBody struct {
 	// SandboxBases corresponds to the JSON schema field "sandbox_bases".
 	SandboxBases ObservedUpdateBodySandboxBases `json:"sandbox_bases,omitempty,omitzero"`
 
-	// SandboxSnapshots corresponds to the JSON schema field "sandbox_snapshots".
-	SandboxSnapshots ObservedUpdateBodySandboxSnapshots `json:"sandbox_snapshots,omitempty,omitzero"`
-
 	// Sandboxes corresponds to the JSON schema field "sandboxes".
 	Sandboxes ObservedUpdateBodySandboxes `json:"sandboxes,omitempty,omitzero"`
 
@@ -10366,8 +10213,6 @@ type ObservedUpdateBodyEnvironments map[string]ObservedEnvironment
 type ObservedUpdateBodyRuns map[string]ObservedRun
 
 type ObservedUpdateBodySandboxBases map[string]ObservedSandboxBase
-
-type ObservedUpdateBodySandboxSnapshots map[string]ObservedSandboxSnapshot
 
 type ObservedUpdateBodySandboxes map[string]ObservedSandbox
 
@@ -13414,6 +13259,10 @@ type RunStartBody struct {
 	// Kind corresponds to the JSON schema field "kind".
 	Kind RunKind `json:"kind"`
 
+	// false keeps a machine run's output out of the log store; it reaches only the
+	// attached stream
+	Record *bool `json:"record,omitempty,omitzero"`
+
 	// Rows corresponds to the JSON schema field "rows".
 	Rows RunStartBodyRows `json:"rows"`
 
@@ -13791,147 +13640,6 @@ func (j *SandboxCapability) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type SandboxDisk struct {
-	// From corresponds to the JSON schema field "from".
-	From *SandboxDiskFrom `json:"from"`
-}
-
-type SandboxDiskFrom struct {
-	// SandboxId corresponds to the JSON schema field "sandbox_id".
-	SandboxId *string `json:"sandbox_id,omitempty,omitzero"`
-
-	// SnapshotId corresponds to the JSON schema field "snapshot_id".
-	SnapshotId *string `json:"snapshot_id,omitempty,omitzero"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxDiskFrom) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	var sandboxDiskFrom_0 SandboxDiskFrom_0
-	var errs []error
-	if err := sandboxDiskFrom_0.UnmarshalJSON(value); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) == 1 {
-		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
-	}
-	type Plain SandboxDiskFrom
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	*j = SandboxDiskFrom(plain)
-	return nil
-}
-
-type SandboxDiskSource struct {
-	// SandboxId corresponds to the JSON schema field "sandbox_id".
-	SandboxId *string `json:"sandbox_id,omitempty,omitzero"`
-
-	// SnapshotId corresponds to the JSON schema field "snapshot_id".
-	SnapshotId *string `json:"snapshot_id,omitempty,omitzero"`
-}
-
-type SandboxDiskSource_0 struct {
-	// SnapshotId corresponds to the JSON schema field "snapshot_id".
-	SnapshotId string `json:"snapshot_id"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxDiskSource_0) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["snapshot_id"]; raw != nil && !ok {
-		return fmt.Errorf("field snapshot_id in SandboxDiskSource_0: required")
-	}
-	type Plain SandboxDiskSource_0
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if matched, _ := regexp.MatchString(`^sbs_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.SnapshotId)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "SnapshotId", `^sbs_[0-9A-HJKMNP-TV-Z]{26}$`)
-	}
-	*j = SandboxDiskSource_0(plain)
-	return nil
-}
-
-type SandboxDiskSource_1 struct {
-	// SandboxId corresponds to the JSON schema field "sandbox_id".
-	SandboxId string `json:"sandbox_id"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxDiskSource_1) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["sandbox_id"]; raw != nil && !ok {
-		return fmt.Errorf("field sandbox_id in SandboxDiskSource_1: required")
-	}
-	type Plain SandboxDiskSource_1
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if matched, _ := regexp.MatchString(`^sbx_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.SandboxId)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "SandboxId", `^sbx_[0-9A-HJKMNP-TV-Z]{26}$`)
-	}
-	*j = SandboxDiskSource_1(plain)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxDiskSource) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	var sandboxDiskSource_0 SandboxDiskSource_0
-	var sandboxDiskSource_1 SandboxDiskSource_1
-	var errs []error
-	if err := sandboxDiskSource_0.UnmarshalJSON(value); err != nil {
-		errs = append(errs, err)
-	}
-	if err := sandboxDiskSource_1.UnmarshalJSON(value); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) == 2 {
-		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
-	}
-	type Plain SandboxDiskSource
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	*j = SandboxDiskSource(plain)
-	return nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxDisk) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["from"]; raw != nil && !ok {
-		return fmt.Errorf("field from in SandboxDisk: required")
-	}
-	type Plain SandboxDisk
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	*j = SandboxDisk(plain)
-	return nil
-}
-
 type SandboxEgress struct {
 	// Domains corresponds to the JSON schema field "domains".
 	Domains []SandboxEgressDomain `json:"domains"`
@@ -14221,181 +13929,6 @@ func (j *SandboxSize) UnmarshalJSON(value []byte) error {
 		return fmt.Errorf("field %s: must be >= %v", "memory_bytes", 1)
 	}
 	*j = SandboxSize(plain)
-	return nil
-}
-
-type SandboxSnapshotReportStatus string
-
-const SandboxSnapshotReportStatusDeleted SandboxSnapshotReportStatus = "deleted"
-const SandboxSnapshotReportStatusFailed SandboxSnapshotReportStatus = "failed"
-const SandboxSnapshotReportStatusReady SandboxSnapshotReportStatus = "ready"
-
-var enumValues_SandboxSnapshotReportStatus = []interface{}{
-	"ready",
-	"failed",
-	"deleted",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxSnapshotReportStatus) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_SandboxSnapshotReportStatus {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_SandboxSnapshotReportStatus, v)
-	}
-	*j = SandboxSnapshotReportStatus(v)
-	return nil
-}
-
-type SandboxSnapshotStatusBody struct {
-	// ExclusiveBytes corresponds to the JSON schema field "exclusive_bytes".
-	ExclusiveBytes int `json:"exclusive_bytes"`
-
-	// Failure corresponds to the JSON schema field "failure".
-	Failure *SandboxSnapshotStatusBodyFailure `json:"failure"`
-
-	// ReferencedBytes corresponds to the JSON schema field "referenced_bytes".
-	ReferencedBytes int `json:"referenced_bytes"`
-
-	// Seq corresponds to the JSON schema field "seq".
-	Seq int `json:"seq"`
-
-	// SnapshotId corresponds to the JSON schema field "snapshot_id".
-	SnapshotId string `json:"snapshot_id"`
-
-	// Status corresponds to the JSON schema field "status".
-	Status SandboxSnapshotReportStatus `json:"status"`
-
-	// TakenAt corresponds to the JSON schema field "taken_at".
-	TakenAt SandboxSnapshotStatusBodyTakenAt `json:"taken_at"`
-}
-
-type SandboxSnapshotStatusBodyFailure struct {
-	// Code corresponds to the JSON schema field "code".
-	Code string `json:"code"`
-
-	// Details corresponds to the JSON schema field "details".
-	Details DiagnosisDetails `json:"details,omitempty,omitzero"`
-
-	// DiffFromLastGood corresponds to the JSON schema field "diff_from_last_good".
-	DiffFromLastGood *DiagnosisDiffFromLastGood `json:"diff_from_last_good,omitempty,omitzero"`
-
-	// Entity corresponds to the JSON schema field "entity".
-	Entity *DiagnosisEntity `json:"entity,omitempty,omitzero"`
-
-	// Events corresponds to the JSON schema field "events".
-	Events []DiagnosisEventsElem `json:"events,omitempty,omitzero"`
-
-	// ExitCode corresponds to the JSON schema field "exit_code".
-	ExitCode DiagnosisExitCode `json:"exit_code,omitempty,omitzero"`
-
-	// Fixes corresponds to the JSON schema field "fixes".
-	Fixes []DiagnosisFixesElem `json:"fixes,omitempty,omitzero"`
-
-	// Guard corresponds to the JSON schema field "guard".
-	Guard *DiagnosisGuard `json:"guard,omitempty,omitzero"`
-
-	// Health corresponds to the JSON schema field "health".
-	Health *DiagnosisHealth `json:"health,omitempty,omitzero"`
-
-	// Logs corresponds to the JSON schema field "logs".
-	Logs *DiagnosisLogs `json:"logs,omitempty,omitzero"`
-
-	// Network corresponds to the JSON schema field "network".
-	Network *DiagnosisNetwork `json:"network,omitempty,omitzero"`
-
-	// OomKilled corresponds to the JSON schema field "oom_killed".
-	OomKilled *bool `json:"oom_killed,omitempty,omitzero"`
-
-	// Phase corresponds to the JSON schema field "phase".
-	Phase DiagnosisPhase `json:"phase"`
-
-	// Resources corresponds to the JSON schema field "resources".
-	Resources *DiagnosisResources `json:"resources,omitempty,omitzero"`
-
-	// Summary corresponds to the JSON schema field "summary".
-	Summary string `json:"summary"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxSnapshotStatusBodyFailure) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	var sandboxSnapshotStatusBodyFailure_0 SandboxSnapshotStatusBodyFailure_0
-	var errs []error
-	if err := sandboxSnapshotStatusBodyFailure_0.UnmarshalJSON(value); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) == 1 {
-		return fmt.Errorf("all validators failed: %s", errors.Join(errs...))
-	}
-	type Plain SandboxSnapshotStatusBodyFailure
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	*j = SandboxSnapshotStatusBodyFailure(plain)
-	return nil
-}
-
-type SandboxSnapshotStatusBodyTakenAt *string
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *SandboxSnapshotStatusBody) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["exclusive_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field exclusive_bytes in SandboxSnapshotStatusBody: required")
-	}
-	if _, ok := raw["failure"]; raw != nil && !ok {
-		return fmt.Errorf("field failure in SandboxSnapshotStatusBody: required")
-	}
-	if _, ok := raw["referenced_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field referenced_bytes in SandboxSnapshotStatusBody: required")
-	}
-	if _, ok := raw["seq"]; raw != nil && !ok {
-		return fmt.Errorf("field seq in SandboxSnapshotStatusBody: required")
-	}
-	if _, ok := raw["snapshot_id"]; raw != nil && !ok {
-		return fmt.Errorf("field snapshot_id in SandboxSnapshotStatusBody: required")
-	}
-	if _, ok := raw["status"]; raw != nil && !ok {
-		return fmt.Errorf("field status in SandboxSnapshotStatusBody: required")
-	}
-	if _, ok := raw["taken_at"]; raw != nil && !ok {
-		return fmt.Errorf("field taken_at in SandboxSnapshotStatusBody: required")
-	}
-	type Plain SandboxSnapshotStatusBody
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if 0 > plain.ExclusiveBytes {
-		return fmt.Errorf("field %s: must be >= %v", "exclusive_bytes", 0)
-	}
-	if 0 > plain.ReferencedBytes {
-		return fmt.Errorf("field %s: must be >= %v", "referenced_bytes", 0)
-	}
-	if 0 > plain.Seq {
-		return fmt.Errorf("field %s: must be >= %v", "seq", 0)
-	}
-	if matched, _ := regexp.MatchString(`^sbs_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.SnapshotId)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "SnapshotId", `^sbs_[0-9A-HJKMNP-TV-Z]{26}$`)
-	}
-	*j = SandboxSnapshotStatusBody(plain)
 	return nil
 }
 
@@ -16365,7 +15898,6 @@ type UnknownObjectKind string
 const UnknownObjectKindContainer UnknownObjectKind = "container"
 const UnknownObjectKindNetwork UnknownObjectKind = "network"
 const UnknownObjectKindSandboxDisk UnknownObjectKind = "sandbox_disk"
-const UnknownObjectKindSandboxSnapshot UnknownObjectKind = "sandbox_snapshot"
 const UnknownObjectKindVolume UnknownObjectKind = "volume"
 
 var enumValues_UnknownObjectKind = []interface{}{
@@ -16373,7 +15905,6 @@ var enumValues_UnknownObjectKind = []interface{}{
 	"network",
 	"volume",
 	"sandbox_disk",
-	"sandbox_snapshot",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -16637,204 +16168,6 @@ func (j *VolumeBackupDeleteBody) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type RunStatusBodyFailure_0 = Diagnosis
-
-const VolumeOwnerStation VolumeOwner = "station"
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *WorkshopCache) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["max_used_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field max_used_bytes in WorkshopCache: required")
-	}
-	if _, ok := raw["min_free_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field min_free_bytes in WorkshopCache: required")
-	}
-	if _, ok := raw["reserved_bytes"]; raw != nil && !ok {
-		return fmt.Errorf("field reserved_bytes in WorkshopCache: required")
-	}
-	type Plain WorkshopCache
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if 0 > plain.MaxUsedBytes {
-		return fmt.Errorf("field %s: must be >= %v", "max_used_bytes", 0)
-	}
-	if 0 > plain.MinFreeBytes {
-		return fmt.Errorf("field %s: must be >= %v", "min_free_bytes", 0)
-	}
-	if 0 > plain.ReservedBytes {
-		return fmt.Errorf("field %s: must be >= %v", "reserved_bytes", 0)
-	}
-	*j = WorkshopCache(plain)
-	return nil
-}
-
-type WorkshopCache struct {
-	// MaxUsedBytes corresponds to the JSON schema field "max_used_bytes".
-	MaxUsedBytes int `json:"max_used_bytes"`
-
-	// MinFreeBytes corresponds to the JSON schema field "min_free_bytes".
-	MinFreeBytes int `json:"min_free_bytes"`
-
-	// ReservedBytes corresponds to the JSON schema field "reserved_bytes".
-	ReservedBytes int `json:"reserved_bytes"`
-}
-
-type WorkshopBuildPolicy struct {
-	// Generation corresponds to the JSON schema field "generation".
-	Generation int `json:"generation"`
-
-	// PolicyId corresponds to the JSON schema field "policy_id".
-	PolicyId string `json:"policy_id"`
-}
-
-const VolumeOwnerService VolumeOwner = "service"
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *VolumeOwner) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_VolumeOwner {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VolumeOwner, v)
-	}
-	*j = VolumeOwner(v)
-	return nil
-}
-
-var enumValues_VolumeOwner = []interface{}{
-	"service",
-	"station",
-}
-
-type VolumeOwner string
-
-type DesiredStationSandboxNetwork_0 = SandboxNetworkDesired
-
-type DomainProbeResultBodyFailure_0 = ErrorBody
-
-type ReleaseComponentPlatforms_0 = ReleasePlatforms
-
-type PlatformMirrorReleaseManifest_0 = ReleaseManifest
-
-type PlatformVerifyReleaseResultFailure_0 = ErrorBody
-
-type LockfileGrypeDb_0 = LockfileGrypeDb
-
-type PlatformVerifyResultFailure_0 = ErrorBody
-
-type ObservedRunFailure_0 = Diagnosis
-
-type StationCapabilitiesSandboxes_0 = SandboxCapability
-
-type RegistryDeleteResultError_0 = ErrorBody
-
-type ObservedDeploymentFailure_0 = Diagnosis
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *WorkshopBuildPolicy) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["generation"]; raw != nil && !ok {
-		return fmt.Errorf("field generation in WorkshopBuildPolicy: required")
-	}
-	if _, ok := raw["policy_id"]; raw != nil && !ok {
-		return fmt.Errorf("field policy_id in WorkshopBuildPolicy: required")
-	}
-	type Plain WorkshopBuildPolicy
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if 0 > plain.Generation {
-		return fmt.Errorf("field %s: must be >= %v", "generation", 0)
-	}
-	if matched, _ := regexp.MatchString(`^fwp_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.PolicyId)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "PolicyId", `^fwp_[0-9A-HJKMNP-TV-Z]{26}$`)
-	}
-	*j = WorkshopBuildPolicy(plain)
-	return nil
-}
-
-type DesiredServiceCurrent_0 = CurrentDeployment
-
-type SandboxDiskFrom_0 = SandboxDiskSource
-
-type DesiredDeploymentCancel_0 = DeploymentCancel
-
-type DeploymentFinishedBodyFailure_0 = Diagnosis
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *VolumeMount) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["mount_path"]; raw != nil && !ok {
-		return fmt.Errorf("field mount_path in VolumeMount: required")
-	}
-	if _, ok := raw["volume_id"]; raw != nil && !ok {
-		return fmt.Errorf("field volume_id in VolumeMount: required")
-	}
-	type Plain VolumeMount
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
-	}
-	if matched, _ := regexp.MatchString(`^vol_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.VolumeId)); !matched {
-		return fmt.Errorf("field %s pattern match: must match %s", "VolumeId", `^vol_[0-9A-HJKMNP-TV-Z]{26}$`)
-	}
-	*j = VolumeMount(plain)
-	return nil
-}
-
-type VolumeMount struct {
-	// MountPath corresponds to the JSON schema field "mount_path".
-	MountPath string `json:"mount_path"`
-
-	// VolumeId corresponds to the JSON schema field "volume_id".
-	VolumeId string `json:"volume_id"`
-}
-
-type GenerationResolution_0 = DriftResolution
-
-type ContainerSpecSecretsOwner_0 = SecretsOwner
-
-type ContainerSpecSchedule_0 = Schedule
-
-type ContainerSpecHealth_0 = HealthCheck
-
-type ContainerSpecGpu_0 = GpuRequest
-
-type RootSocketSetupResultLitestream_0 = RootSocketSetupLitestream
-
-type RootSocketSetupResultLockfile_0 = RootSocketSetupLockfile
-
-type ComponentStatusBodyFailure_0 = ErrorBody
-
-type BuildStartBodyRailpack_0 = RailpackOverrides
-
-type SandboxStatusBodyFailure_0 = Diagnosis
-
-type BuildResultBodyFailure_0 = Diagnosis
-
-type SandboxSnapshotStatusBodyFailure_0 = Diagnosis
-
 type VolumeBackupDeleteItem struct {
 	// Objects corresponds to the JSON schema field "objects".
 	Objects BackupObjects `json:"objects"`
@@ -16873,11 +16206,39 @@ func (j *VolumeBackupDeleteItem) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type RunRowFailure_0 = Diagnosis
+type VolumeBackupDeleteResult struct {
+	// Error corresponds to the JSON schema field "error".
+	Error *VolumeBackupDeleteResultError `json:"error"`
 
-type ObservedRouteProbe_0 = ObservedRouteProbe
+	// SnapshotId corresponds to the JSON schema field "snapshot_id".
+	SnapshotId string `json:"snapshot_id"`
 
-type VolumeBackupDeleteResultError_0 = ErrorBody
+	// Status corresponds to the JSON schema field "status".
+	Status VolumeBackupDeleteStatus `json:"status"`
+}
+
+type VolumeBackupDeleteResultBody struct {
+	// Items corresponds to the JSON schema field "items".
+	Items []VolumeBackupDeleteResult `json:"items"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VolumeBackupDeleteResultBody) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["items"]; raw != nil && !ok {
+		return fmt.Errorf("field items in VolumeBackupDeleteResultBody: required")
+	}
+	type Plain VolumeBackupDeleteResultBody
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	*j = VolumeBackupDeleteResultBody(plain)
+	return nil
+}
 
 type VolumeBackupDeleteResultError struct {
 	// Code corresponds to the JSON schema field "code".
@@ -16916,49 +16277,6 @@ func (j *VolumeBackupDeleteResultError) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type VolumeBackupDeleteStatus string
-
-var enumValues_VolumeBackupDeleteStatus = []interface{}{
-	"deleted",
-	"absent",
-	"failed",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *VolumeBackupDeleteStatus) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_VolumeBackupDeleteStatus {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VolumeBackupDeleteStatus, v)
-	}
-	*j = VolumeBackupDeleteStatus(v)
-	return nil
-}
-
-const VolumeBackupDeleteStatusDeleted VolumeBackupDeleteStatus = "deleted"
-const VolumeBackupDeleteStatusAbsent VolumeBackupDeleteStatus = "absent"
-const VolumeBackupDeleteStatusFailed VolumeBackupDeleteStatus = "failed"
-
-type VolumeBackupDeleteResult struct {
-	// Error corresponds to the JSON schema field "error".
-	Error *VolumeBackupDeleteResultError `json:"error"`
-
-	// SnapshotId corresponds to the JSON schema field "snapshot_id".
-	SnapshotId string `json:"snapshot_id"`
-
-	// Status corresponds to the JSON schema field "status".
-	Status VolumeBackupDeleteStatus `json:"status"`
-}
-
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *VolumeBackupDeleteResult) UnmarshalJSON(value []byte) error {
 	var raw map[string]interface{}
@@ -16986,30 +16304,72 @@ func (j *VolumeBackupDeleteResult) UnmarshalJSON(value []byte) error {
 	return nil
 }
 
-type VolumeBackupDeleteResultBody struct {
-	// Items corresponds to the JSON schema field "items".
-	Items []VolumeBackupDeleteResult `json:"items"`
+type VolumeBackupDeleteStatus string
+
+const VolumeBackupDeleteStatusAbsent VolumeBackupDeleteStatus = "absent"
+const VolumeBackupDeleteStatusDeleted VolumeBackupDeleteStatus = "deleted"
+const VolumeBackupDeleteStatusFailed VolumeBackupDeleteStatus = "failed"
+
+var enumValues_VolumeBackupDeleteStatus = []interface{}{
+	"deleted",
+	"absent",
+	"failed",
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *VolumeBackupDeleteResultBody) UnmarshalJSON(value []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(value, &raw); err != nil {
+func (j *VolumeBackupDeleteStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
 		return err
 	}
-	if _, ok := raw["items"]; raw != nil && !ok {
-		return fmt.Errorf("field items in VolumeBackupDeleteResultBody: required")
+	var ok bool
+	for _, expected := range enumValues_VolumeBackupDeleteStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
 	}
-	type Plain VolumeBackupDeleteResultBody
-	var plain Plain
-	if err := json.Unmarshal(value, &plain); err != nil {
-		return err
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VolumeBackupDeleteStatus, v)
 	}
-	*j = VolumeBackupDeleteResultBody(plain)
+	*j = VolumeBackupDeleteStatus(v)
 	return nil
 }
 
-type VolumeBackupResultBodyFailure_0 = ErrorBody
+type VolumeBackupResultBody struct {
+	// ArchiveBytes corresponds to the JSON schema field "archive_bytes".
+	ArchiveBytes int `json:"archive_bytes"`
+
+	// Consistent corresponds to the JSON schema field "consistent".
+	Consistent bool `json:"consistent"`
+
+	// Failure corresponds to the JSON schema field "failure".
+	Failure *VolumeBackupResultBodyFailure `json:"failure"`
+
+	// FinishedAt corresponds to the JSON schema field "finished_at".
+	FinishedAt string `json:"finished_at"`
+
+	// Objects corresponds to the JSON schema field "objects".
+	Objects BackupObjects `json:"objects"`
+
+	// Sha256 corresponds to the JSON schema field "sha256".
+	Sha256 VolumeBackupResultBodySha256 `json:"sha256"`
+
+	// SizeBytes corresponds to the JSON schema field "size_bytes".
+	SizeBytes int `json:"size_bytes"`
+
+	// SnapshotId corresponds to the JSON schema field "snapshot_id".
+	SnapshotId string `json:"snapshot_id"`
+
+	// StartedAt corresponds to the JSON schema field "started_at".
+	StartedAt string `json:"started_at"`
+
+	// Status corresponds to the JSON schema field "status".
+	Status VolumeBackupStatus `json:"status"`
+
+	// VolumeId corresponds to the JSON schema field "volume_id".
+	VolumeId string `json:"volume_id"`
+}
 
 type VolumeBackupResultBodyFailure struct {
 	// Code corresponds to the JSON schema field "code".
@@ -17049,71 +16409,6 @@ func (j *VolumeBackupResultBodyFailure) UnmarshalJSON(value []byte) error {
 }
 
 type VolumeBackupResultBodySha256 *string
-
-type VolumeBackupStatus string
-
-var enumValues_VolumeBackupStatus = []interface{}{
-	"complete",
-	"failed",
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *VolumeBackupStatus) UnmarshalJSON(value []byte) error {
-	var v string
-	if err := json.Unmarshal(value, &v); err != nil {
-		return err
-	}
-	var ok bool
-	for _, expected := range enumValues_VolumeBackupStatus {
-		if reflect.DeepEqual(v, expected) {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VolumeBackupStatus, v)
-	}
-	*j = VolumeBackupStatus(v)
-	return nil
-}
-
-const VolumeBackupStatusComplete VolumeBackupStatus = "complete"
-const VolumeBackupStatusFailed VolumeBackupStatus = "failed"
-
-type VolumeBackupResultBody struct {
-	// ArchiveBytes corresponds to the JSON schema field "archive_bytes".
-	ArchiveBytes int `json:"archive_bytes"`
-
-	// Consistent corresponds to the JSON schema field "consistent".
-	Consistent bool `json:"consistent"`
-
-	// Failure corresponds to the JSON schema field "failure".
-	Failure *VolumeBackupResultBodyFailure `json:"failure"`
-
-	// FinishedAt corresponds to the JSON schema field "finished_at".
-	FinishedAt string `json:"finished_at"`
-
-	// Objects corresponds to the JSON schema field "objects".
-	Objects BackupObjects `json:"objects"`
-
-	// Sha256 corresponds to the JSON schema field "sha256".
-	Sha256 VolumeBackupResultBodySha256 `json:"sha256"`
-
-	// SizeBytes corresponds to the JSON schema field "size_bytes".
-	SizeBytes int `json:"size_bytes"`
-
-	// SnapshotId corresponds to the JSON schema field "snapshot_id".
-	SnapshotId string `json:"snapshot_id"`
-
-	// StartedAt corresponds to the JSON schema field "started_at".
-	StartedAt string `json:"started_at"`
-
-	// Status corresponds to the JSON schema field "status".
-	Status VolumeBackupStatus `json:"status"`
-
-	// VolumeId corresponds to the JSON schema field "volume_id".
-	VolumeId string `json:"volume_id"`
-}
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *VolumeBackupResultBody) UnmarshalJSON(value []byte) error {
@@ -17180,6 +16475,237 @@ func (j *VolumeBackupResultBody) UnmarshalJSON(value []byte) error {
 	*j = VolumeBackupResultBody(plain)
 	return nil
 }
+
+type VolumeBackupStatus string
+
+const VolumeBackupStatusComplete VolumeBackupStatus = "complete"
+const VolumeBackupStatusFailed VolumeBackupStatus = "failed"
+
+type RunRowFailure_0 = Diagnosis
+
+type DesiredStationSandboxNetwork_0 = SandboxNetworkDesired
+
+type RegistryDeleteResultError_0 = ErrorBody
+
+type SandboxStatusBodyFailure_0 = Diagnosis
+
+type ObservedRunFailure_0 = Diagnosis
+
+type StationCapabilitiesSandboxes_0 = SandboxCapability
+
+type ObservedDeploymentFailure_0 = Diagnosis
+
+type RootSocketSetupResultLitestream_0 = RootSocketSetupLitestream
+
+type DesiredServiceCurrent_0 = CurrentDeployment
+
+type ReleaseComponentPlatforms_0 = ReleasePlatforms
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkshopCache) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["max_used_bytes"]; raw != nil && !ok {
+		return fmt.Errorf("field max_used_bytes in WorkshopCache: required")
+	}
+	if _, ok := raw["min_free_bytes"]; raw != nil && !ok {
+		return fmt.Errorf("field min_free_bytes in WorkshopCache: required")
+	}
+	if _, ok := raw["reserved_bytes"]; raw != nil && !ok {
+		return fmt.Errorf("field reserved_bytes in WorkshopCache: required")
+	}
+	type Plain WorkshopCache
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.MaxUsedBytes {
+		return fmt.Errorf("field %s: must be >= %v", "max_used_bytes", 0)
+	}
+	if 0 > plain.MinFreeBytes {
+		return fmt.Errorf("field %s: must be >= %v", "min_free_bytes", 0)
+	}
+	if 0 > plain.ReservedBytes {
+		return fmt.Errorf("field %s: must be >= %v", "reserved_bytes", 0)
+	}
+	*j = WorkshopCache(plain)
+	return nil
+}
+
+type WorkshopCache struct {
+	// MaxUsedBytes corresponds to the JSON schema field "max_used_bytes".
+	MaxUsedBytes int `json:"max_used_bytes"`
+
+	// MinFreeBytes corresponds to the JSON schema field "min_free_bytes".
+	MinFreeBytes int `json:"min_free_bytes"`
+
+	// ReservedBytes corresponds to the JSON schema field "reserved_bytes".
+	ReservedBytes int `json:"reserved_bytes"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *WorkshopBuildPolicy) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["generation"]; raw != nil && !ok {
+		return fmt.Errorf("field generation in WorkshopBuildPolicy: required")
+	}
+	if _, ok := raw["policy_id"]; raw != nil && !ok {
+		return fmt.Errorf("field policy_id in WorkshopBuildPolicy: required")
+	}
+	type Plain WorkshopBuildPolicy
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if 0 > plain.Generation {
+		return fmt.Errorf("field %s: must be >= %v", "generation", 0)
+	}
+	if matched, _ := regexp.MatchString(`^fwp_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.PolicyId)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "PolicyId", `^fwp_[0-9A-HJKMNP-TV-Z]{26}$`)
+	}
+	*j = WorkshopBuildPolicy(plain)
+	return nil
+}
+
+type ObservedRouteProbe_0 = ObservedRouteProbe
+
+type WorkshopBuildPolicy struct {
+	// Generation corresponds to the JSON schema field "generation".
+	Generation int `json:"generation"`
+
+	// PolicyId corresponds to the JSON schema field "policy_id".
+	PolicyId string `json:"policy_id"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VolumeOwner) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_VolumeOwner {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VolumeOwner, v)
+	}
+	*j = VolumeOwner(v)
+	return nil
+}
+
+const VolumeOwnerService VolumeOwner = "service"
+const VolumeOwnerStation VolumeOwner = "station"
+
+type LockfileGrypeDb_0 = LockfileGrypeDb
+
+var enumValues_VolumeBackupStatus = []interface{}{
+	"complete",
+	"failed",
+}
+
+type RootSocketSetupResultLockfile_0 = RootSocketSetupLockfile
+
+type DesiredDeploymentCancel_0 = DeploymentCancel
+
+type RunStatusBodyFailure_0 = Diagnosis
+
+type DomainProbeResultBodyFailure_0 = ErrorBody
+
+var enumValues_VolumeOwner = []interface{}{
+	"service",
+	"station",
+}
+
+type BuildResultBodyFailure_0 = Diagnosis
+
+type BuildStartBodyRailpack_0 = RailpackOverrides
+
+type ComponentStatusBodyFailure_0 = ErrorBody
+
+type ContainerSpecGpu_0 = GpuRequest
+
+type ContainerSpecHealth_0 = HealthCheck
+
+type VolumeOwner string
+
+type ContainerSpecSchedule_0 = Schedule
+
+type VolumeBackupResultBodyFailure_0 = ErrorBody
+
+type GenerationResolution_0 = DriftResolution
+
+type ContainerSpecSecretsOwner_0 = SecretsOwner
+
+type VolumeMount struct {
+	// MountPath corresponds to the JSON schema field "mount_path".
+	MountPath string `json:"mount_path"`
+
+	// VolumeId corresponds to the JSON schema field "volume_id".
+	VolumeId string `json:"volume_id"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VolumeMount) UnmarshalJSON(value []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["mount_path"]; raw != nil && !ok {
+		return fmt.Errorf("field mount_path in VolumeMount: required")
+	}
+	if _, ok := raw["volume_id"]; raw != nil && !ok {
+		return fmt.Errorf("field volume_id in VolumeMount: required")
+	}
+	type Plain VolumeMount
+	var plain Plain
+	if err := json.Unmarshal(value, &plain); err != nil {
+		return err
+	}
+	if matched, _ := regexp.MatchString(`^vol_[0-9A-HJKMNP-TV-Z]{26}$`, string(plain.VolumeId)); !matched {
+		return fmt.Errorf("field %s pattern match: must match %s", "VolumeId", `^vol_[0-9A-HJKMNP-TV-Z]{26}$`)
+	}
+	*j = VolumeMount(plain)
+	return nil
+}
+
+type VolumeBackupDeleteResultError_0 = ErrorBody
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *VolumeBackupStatus) UnmarshalJSON(value []byte) error {
+	var v string
+	if err := json.Unmarshal(value, &v); err != nil {
+		return err
+	}
+	var ok bool
+	for _, expected := range enumValues_VolumeBackupStatus {
+		if reflect.DeepEqual(v, expected) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return fmt.Errorf("invalid value (expected one of %#v): %#v", enumValues_VolumeBackupStatus, v)
+	}
+	*j = VolumeBackupStatus(v)
+	return nil
+}
+
+type DeploymentFinishedBodyFailure_0 = Diagnosis
+
+type PlatformMirrorReleaseManifest_0 = ReleaseManifest
+
+type PlatformVerifyResultFailure_0 = ErrorBody
+
+type PlatformVerifyReleaseResultFailure_0 = ErrorBody
 
 type VolumeRestoreAcceptedBody struct {
 	// VolumeId corresponds to the JSON schema field "volume_id".

@@ -1,14 +1,12 @@
-import type { App, Approval, AppStatus, DeploymentStatus, Machine, MachineStatus } from '@/lib/api'
+import type { App, Approval, AppStatus, DeploymentStatus } from '@/lib/api'
 import {
   approvalStatus,
   appStatus,
   appStatusReason,
   deploymentStatus,
-  machineReason,
-  machineStatus,
   type Status,
 } from '@/lib/labels'
-import { isInFlight, isTransient } from '@/lib/status'
+import { isInFlight } from '@/lib/status'
 import { toneBadge, toneDot } from '@/lib/tone'
 import { cn } from '@/lib/utils'
 
@@ -88,23 +86,4 @@ export function DeploymentStatusBadge({ status }: { status: DeploymentStatus }) 
 
 export function ApprovalStatusBadge({ status }: { status: Approval['status'] }) {
   return <StatusBadge status={approvalStatus[status]} />
-}
-
-export function MachineStatusBadge({
-  status,
-  reason,
-}: {
-  status: MachineStatus
-  reason?: Machine['status_reason']
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <StatusBadge status={machineStatus[status]} busy={isTransient(status)} />
-      {reason && status !== 'running' && (
-        <span className="hidden text-xs text-muted-foreground sm:inline">
-          {machineReason[reason]}
-        </span>
-      )}
-    </span>
-  )
 }

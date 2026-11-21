@@ -195,6 +195,36 @@ const files = execFileSync(
   .split('\0')
   .filter((file) => file && !skipped.some((pattern) => pattern.test(file)))
 
+const dashboardSource = /^apps\/dashboard\/src\/.*\.tsx?$/
+const codeText = /\bfont-mono\b|<(code|pre)\b/
+const codeHome = 'apps/dashboard/src/components/code.tsx'
+const codeViews: { file: string; reason: string }[] = [
+  {
+    file: codeHome,
+    reason: 'the code components: Code, Command, CommandBlock, Snippet, CodeInput, Output',
+  },
+  {
+    file: 'apps/dashboard/src/components/log-viewer.tsx',
+    reason: 'a log view',
+  },
+  {
+    file: 'apps/dashboard/src/workbench/task-files.tsx',
+    reason: 'a file view',
+  },
+  {
+    file: 'apps/dashboard/src/workbench/task-changes.tsx',
+    reason: 'a diff view',
+  },
+  {
+    file: 'apps/dashboard/src/components/ai-elements/code-block.tsx',
+    reason: 'the AI Elements code block, kept as the registry ships it',
+  },
+  {
+    file: 'apps/dashboard/src/components/ai-elements/tool.tsx',
+    reason: 'the AI Elements tool call, kept as the registry ships it',
+  },
+]
+
 const excepted = (file: string, constant: Constant) =>
   exceptions.some((e) => e.file === file && e.constant === constant.name)
 
@@ -225,6 +255,20 @@ for (const file of files) {
       }
     }
   })
+}
+
+for (const file of files.filter(
+  (f) => dashboardSource.test(f) && !codeViews.some((view) => view.file === f),
+)) {
+  readFileSync(file, 'utf8')
+    .split('\n')
+    .forEach((line, index) => {
+      if (codeText.test(line)) {
+        problems.push(
+          `${file}:${index + 1}: mono text outside the code components; use one from ${codeHome}, or a sans class for words`,
+        )
+      }
+    })
 }
 
 if (problems.length) {

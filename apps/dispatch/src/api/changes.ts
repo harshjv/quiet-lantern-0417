@@ -13,7 +13,6 @@ import {
   environment_variable,
   ipam_allocation,
   machine,
-  machine_snapshot,
   run,
   secret_value,
   target,
@@ -40,7 +39,7 @@ import { applyStationField, stationFields, type StationField } from './station-f
 export type Store = Pick<Deps, 'db' | 'keyring'>
 
 export type Entity =
-  | 'machine_storage'
+  | 'task_storage'
   | 'app'
   | 'app_port'
   | 'volume'
@@ -392,15 +391,6 @@ export const removePreview = (db: Db, previewId: string) => {
     })
   }
 
-  db.update(machine_snapshot)
-    .set({
-      status: 'deleting',
-    })
-    .where(and(eq(machine_snapshot.target_id, row.id), ne(machine_snapshot.status, 'failed')))
-    .run()
-  db.delete(machine_snapshot)
-    .where(and(eq(machine_snapshot.target_id, row.id), eq(machine_snapshot.status, 'failed')))
-    .run()
   let retainUntil: Date | null = null
 
   for (const svc of db
@@ -654,7 +644,7 @@ const applyChanges = (
           break
         }
 
-        case 'machine_storage':
+        case 'task_storage':
           grows.push({
             server_id: parent!,
             size_bytes: Number(after.size_bytes),

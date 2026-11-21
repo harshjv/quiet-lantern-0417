@@ -23,7 +23,7 @@ func TestMessageCapabilitiesMatchTheVersionSkewTable(t *testing.T) {
 			MessageNetworkInspect, MessageNetworkInspectResult, MessageNetworkProbe, MessageNetworkProbeResult,
 			MessageDnsLog, MessageDnsLogResult,
 		},
-		CapabilitySandboxV1: {MessageSandboxStatus, MessageSandboxSnapshotStatus, MessageSandboxStorageGrow, MessageSandboxStorageGrown},
+		CapabilitySandboxV1: {MessageSandboxStatus, MessageSandboxStorageGrow, MessageSandboxStorageGrown},
 		CapabilityGuardV1:   {MessageGuardAck, MessageFlowRollup},
 		CapabilityScanV1:    {MessageScanStart, MessageScanAccepted, MessageScanResult},
 	}

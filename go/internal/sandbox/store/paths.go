@@ -8,15 +8,14 @@ import (
 )
 
 const (
-	dirBases     = "bases"
-	dirDisks     = "disks"
-	dirSnapshots = "snapshots"
-	dirPartial   = "partial"
-	dirLogs      = "logs"
-	maxNameLen   = 200
+	dirBases   = "bases"
+	dirDisks   = "disks"
+	dirPartial = "partial"
+	dirLogs    = "logs"
+	maxNameLen = 200
 )
 
-var subvolumeKinds = []string{dirBases, dirDisks, dirSnapshots, dirPartial}
+var subvolumeKinds = []string{dirBases, dirDisks, dirPartial}
 
 func validName(name string) bool {
 	if name == "" || len(name) > maxNameLen || name[0] == '.' || name[0] == '-' {
@@ -44,12 +43,10 @@ func isKind(kind string) bool {
 
 func (f FS) BasePath(name string) string    { return filepath.Join(f.Mount, dirBases, name) }
 func (f FS) DiskPath(id string) string      { return filepath.Join(f.Mount, dirDisks, id) }
-func (f FS) SnapshotPath(id string) string  { return filepath.Join(f.Mount, dirSnapshots, id) }
 func (f FS) LogDir(id string) string        { return filepath.Join(f.Mount, dirLogs, id) }
 func (f FS) partialPath(name string) string { return filepath.Join(f.Mount, dirPartial, name) }
 func (f FS) BaseExists(name string) bool    { return validName(name) && isDir(f.BasePath(name)) }
 func (f FS) DiskExists(id string) bool      { return validName(id) && isDir(f.DiskPath(id)) }
-func (f FS) SnapshotExists(id string) bool  { return validName(id) && isDir(f.SnapshotPath(id)) }
 func (f FS) partialExists(name string) bool { return isDir(f.partialPath(name)) }
 
 func isDir(path string) bool {

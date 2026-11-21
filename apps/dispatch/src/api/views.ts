@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 
-import { appStatusValues } from '@stationly/protocol'
+import { appStatusValues, type Observed } from '@stationly/protocol'
 
 import type { Db } from '../db/client.ts'
 import {
@@ -16,28 +16,26 @@ import {
   domain,
   environment_variable,
   event,
-  machine,
-  machine_snapshot,
   notification_channel,
   run,
   secret_value,
+  server,
   station_generation,
   target,
+  task,
   token,
   volume,
   volume_snapshot,
 } from '../db/schema.ts'
 import { effectiveHealth, type StoredHealth } from '../generation/health.ts'
-import { deleteAt, retentionSeconds } from '../sandboxes/lifecycle.ts'
 import { machineMemory } from '../sandboxes/limits.ts'
 import { machineRuntimeAdvice } from '../sandboxes/runtime.ts'
-import { workspaceSetupOf } from '../sandboxes/setup-failure.ts'
 import type { EnvSnapshot } from '../secrets/deploy.ts'
-import { SecretsError } from '../secrets/errors.ts'
 import { valueBytes } from '../secrets/keyring.ts'
 import { parseValue } from '../secrets/reference.ts'
-import { isSecret, leaves, Resolver } from '../secrets/resolve.ts'
+import { leaves } from '../secrets/resolve.ts'
 import { storedBytes } from '../secrets/variables.ts'
+import { projectMachine, taskSlotsOf } from '../tasks/machine.ts'
 import { snapshotView } from '../volumes/backups.ts'
 
 import { approvalItem } from './approval-view.ts'
@@ -85,21 +83,8 @@ type AuditRow = typeof audit_event.$inferSelect
 type SecretValueRow = typeof secret_value.$inferSelect
 type BuildRow = typeof build.$inferSelect
 type RunRow = typeof run.$inferSelect
-type MachineRow = typeof machine.$inferSelect
-type MachineSnapshotRow = typeof machine_snapshot.$inferSelect
 type EventRow = typeof event.$inferSelect
 type ChannelRow = typeof notification_channel.$inferSelect
-
-const countMachines = (db: Db, targets: string[], where: SQL) =>
-  targets.length
-    ? (db
-        .select({
-          n: count(),
-        })
-        .from(machine)
-        .where(and(inArray(machine.target_id, targets), where))
-        .get()?.n ?? 0)
-    : 0
 
 export const exportsOf = (db: Db, svc: AppRow) => {
   const host = `${svc.name}.internal`
@@ -142,7 +127,7 @@ export const sourceView = (source: Record<string, unknown>) =>
       }
     : source
 
-export const createViews = (db: Db) => {
+export const createViews = (db: Db, observedOf: (serverId: string) => Observed | undefined) => {
   const waitingApprovals = (projectId: string) =>
     db
       .select({
@@ -736,17 +721,69 @@ export const createViews = (db: Db) => {
       .orderBy(desc(target.id))
       .all()
 
+  const targetIdsOf = (projectId: string) =>
+    db
+      .select({
+        id: target.id,
+      })
+      .from(target)
+      .where(eq(target.project_id, projectId))
+      .all()
+      .map((e) => e.id)
+
+  const serversOf = (row: ProjectRow) => {
+    const targetIds = targetIdsOf(row.id)
+    const appServers = targetIds.length
+      ? db
+          .selectDistinct({
+            id: app.server_id,
+          })
+          .from(app)
+          .where(inArray(app.target_id, targetIds))
+          .all()
+          .map((e) => e.id)
+      : []
+    const machineServer = projectMachine(db, row)?.server_id
+    const ids = [...new Set(machineServer ? [...appServers, machineServer] : appServers)]
+
+    if (!ids.length) {
+      return []
+    }
+
+    return db
+      .select()
+      .from(server)
+      .where(inArray(server.id, ids))
+      .orderBy(asc(server.name))
+      .all()
+      .map((st) => {
+        const memory = machineMemory(db, st)
+        const tunnel = observedOf(st.id)?.gateway.tunnel
+
+        return {
+          id: st.id,
+          name: st.name,
+          status: st.status,
+          last_seen_at: iso(st.last_seen_at),
+          memory: {
+            used: memory.used,
+            total: memory.limit ?? st.resources?.memory_bytes ?? null,
+          },
+          tunnel: tunnel
+            ? {
+                configured: tunnel.configured,
+                ready: tunnel.ready,
+                connections: tunnel.connections,
+              }
+            : null,
+        }
+      })
+  }
+
   const projectView: View<ProjectRow, typeof shapes.Project> = {
     schema: shapes.Project,
     full: (row) => {
-      const targetIds = db
-        .select({
-          id: target.id,
-        })
-        .from(target)
-        .where(eq(target.project_id, row.id))
-        .all()
-        .map((e) => e.id)
+      const targetIds = targetIdsOf(row.id)
       const apps = targetIds.length
         ? db
             .select({
@@ -774,8 +811,14 @@ export const createViews = (db: Db) => {
         waiting_approvals: waitingApprovals(row.id),
         app_count: apps.length,
         status_counts,
-        machine_count: countMachines(db, targetIds, isNull(machine.workspace)),
-        workspace_count: countMachines(db, targetIds, isNotNull(machine.workspace)),
+        task_count:
+          db
+            .select({
+              n: count(),
+            })
+            .from(task)
+            .where(eq(task.project_id, row.id))
+            .get()?.n ?? 0,
       }
     },
     summary: [
@@ -785,8 +828,7 @@ export const createViews = (db: Db) => {
       'waiting_approvals',
       'app_count',
       'status_counts',
-      'machine_count',
-      'workspace_count',
+      'task_count',
     ],
     expand: {
       previews: (row, sub) => projectAll(previewView, previewsOf(row.id), sub),
@@ -808,6 +850,9 @@ export const createViews = (db: Db) => {
             .all(),
           sub,
         ),
+      servers: (row) => serversOf(row),
+      task_slots: (row) => taskSlotsOf(db, row),
+      task_egress: (row) => projectMachine(db, row)?.egress ?? null,
     },
   }
 
@@ -1005,172 +1050,6 @@ export const createViews = (db: Db) => {
     },
   }
 
-  const machineSnapshotView: View<MachineSnapshotRow, typeof shapes.MachineSnapshot> = {
-    schema: shapes.MachineSnapshot,
-    full: (row) => ({
-      ...stamps(row),
-      machine_id: row.machine_id,
-      ...placeOf(row.target_id),
-      server_id: row.server_id,
-      name: row.name,
-      runtime: row.runtime,
-      status: row.status,
-      source_state: row.source_state,
-      taken_at: iso(row.taken_at),
-      exclusive_bytes: row.exclusive_bytes,
-      referenced_bytes: row.referenced_bytes,
-    }),
-    summary: [
-      'id',
-      'machine_id',
-      'project_id',
-      'preview_id',
-      'server_id',
-      'name',
-      'runtime',
-      'status',
-      'source_state',
-      'taken_at',
-      'exclusive_bytes',
-      'referenced_bytes',
-    ],
-    expand: {
-      image: (row) => row.image,
-      size: (row) => row.size,
-      failure: (row) => row.failure,
-    },
-  }
-
-  const machineVariables = (row: MachineRow) => {
-    const resolver = Resolver.forMachine(db, row.id)
-
-    return resolver.machineVariables().map((v) => {
-      try {
-        const node = resolver.resolveMachine(v)
-
-        return {
-          name: v.name,
-          kind: v.kind,
-          reference: v.reference,
-          secret: isSecret(node),
-          sources: leaves(node).map((leaf) =>
-            leaf.kind === 'value'
-              ? {
-                  from: leaf.from,
-                  name: leaf.key,
-                  version: leaf.version,
-                }
-              : {
-                  from: 'export',
-                  name: leaf.key,
-                },
-          ),
-          error: null,
-        }
-      } catch (error) {
-        if (!(error instanceof SecretsError)) {
-          throw error
-        }
-
-        return {
-          name: v.name,
-          kind: v.kind,
-          reference: v.reference,
-          secret: v.kind === 'secret',
-          sources: [],
-          error: {
-            code: error.code,
-            explanation: error.message,
-          },
-        }
-      }
-    })
-  }
-
-  const machineView: View<MachineRow, typeof shapes.Machine> = {
-    schema: shapes.Machine,
-    full: (row) => ({
-      ...stamps(row),
-      ...placeOf(row.target_id),
-      server_id: row.server_id,
-      name: row.name,
-      status: row.status,
-      status_reason: row.status_reason,
-      desired_state: row.desired_state,
-      image: row.image,
-      size: row.size,
-      runtime: row.runtime,
-      network: row.network,
-      docker: row.docker,
-      egress: {
-        mode: row.egress.mode,
-      },
-      ttl_s: row.ttl_s,
-      stop_at: iso(row.stop_at),
-      delete_at: iso(deleteAt(row, retentionSeconds(db))),
-      address: row.address,
-      disk_used_bytes: row.disk_used_bytes,
-      forked_from: row.forked_from,
-      workspace: workspaceSetupOf(db, row),
-      exit_code: row.exit_code,
-      started_at: iso(row.started_at),
-      stopped_at: iso(row.stopped_at),
-    }),
-    summary: [
-      'id',
-      'project_id',
-      'preview_id',
-      'server_id',
-      'name',
-      'status',
-      'status_reason',
-      'desired_state',
-      'image',
-      'size',
-      'runtime',
-      'network',
-      'docker',
-      'egress.mode',
-      'ttl_s',
-      'stop_at',
-      'delete_at',
-      'address',
-      'disk_used_bytes',
-      'forked_from',
-      'workspace',
-      'created_at',
-    ],
-    expand: {
-      egress: (row) => row.egress,
-      failure: (row) => row.failure,
-      command: (row) => row.command,
-      snapshots: (row, sub) =>
-        projectAll(
-          machineSnapshotView,
-          db
-            .select()
-            .from(machine_snapshot)
-            .where(eq(machine_snapshot.machine_id, row.id))
-            .orderBy(desc(machine_snapshot.id))
-            .all(),
-          sub,
-        ),
-      runs: (row, sub) =>
-        projectAll(
-          runView,
-          db
-            .select()
-            .from(run)
-            .where(eq(run.machine_id, row.id))
-            .orderBy(desc(run.id))
-            .limit(20)
-            .all(),
-          sub,
-        ),
-      environment_variables: (row) => machineVariables(row),
-    },
-  }
-
   const eventView: View<EventRow, typeof shapes.Event> = {
     schema: shapes.Event,
     full: (row) => ({
@@ -1246,8 +1125,6 @@ export const createViews = (db: Db) => {
     audit: auditView,
     build: buildView,
     run: runView,
-    machine: machineView,
-    machineSnapshot: machineSnapshotView,
     event: eventView,
     channel: channelView,
     edges: edgesOf,

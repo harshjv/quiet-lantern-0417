@@ -105,7 +105,6 @@ const (
 	MessageVolumeBackupResult       = "volume.backup.result"
 	MessageVolumeRestoreResult      = "volume.restore.result"
 	MessageSandboxStatus            = "sandbox.status"
-	MessageSandboxSnapshotStatus    = "sandbox.snapshot.status"
 	MessageBuildStart               = "build.start"
 	MessageBuildAccepted            = "build.accepted"
 	MessageBuildCancel              = "build.cancel"
@@ -208,7 +207,6 @@ var MessageBodies = map[string]func() any{
 	MessageVolumeBackupResult:       func() any { return new(VolumeBackupResultBody) },
 	MessageVolumeRestoreResult:      func() any { return new(VolumeRestoreResultBody) },
 	MessageSandboxStatus:            func() any { return new(SandboxStatusBody) },
-	MessageSandboxSnapshotStatus:    func() any { return new(SandboxSnapshotStatusBody) },
 	MessageBuildStart:               func() any { return new(BuildStartBody) },
 	MessageBuildAccepted:            func() any { return new(BuildRefBody) },
 	MessageBuildCancel:              func() any { return new(BuildRefBody) },
@@ -285,7 +283,6 @@ var MessageCapabilities = map[string]Capability{
 	MessageVolumeBackupResult:       CapabilityVolumesV1,
 	MessageVolumeRestoreResult:      CapabilityVolumesV1,
 	MessageSandboxStatus:            CapabilitySandboxV1,
-	MessageSandboxSnapshotStatus:    CapabilitySandboxV1,
 	MessageLogsFollow:               CapabilityLogsFollow,
 	MessageMetricsSubscribe:         CapabilityMetricsV1,
 	MessageMetricsSample:            CapabilityMetricsV1,

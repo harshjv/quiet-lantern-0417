@@ -18,7 +18,7 @@ import { createViews } from './views.ts'
 
 export const createKit = (deps: Deps) => {
   const principal = principalCache(deps.db, deps.auth)
-  const views = createViews(deps.db)
+  const views = createViews(deps.db, deps.stations.observedOf)
   const operations = routeMeta(deps.db, principal)
 
   return {

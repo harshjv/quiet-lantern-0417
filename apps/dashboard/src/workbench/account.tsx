@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearch } from '@tanstack/react-router'
 import { GitBranch, KeyRound, LogOut } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 
+import { Code, CommandBlock } from '@/components/code'
 import { Rows } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -61,7 +62,7 @@ function KeyRow({ name, set }: { name: string; set: boolean }) {
       tone={set ? 'neutral' : 'warning'}
       title={
         <>
-          <span className="font-mono text-sm">{name}</span>
+          <Code>{name}</Code>
           <StatusPill tone={set ? 'success' : 'neutral'}>{set ? 'Set' : 'Not set'}</StatusPill>
         </>
       }
@@ -113,6 +114,10 @@ function KeyRow({ name, set }: { name: string; set: boolean }) {
   )
 }
 
+const keyCommands: Partial<Record<string, string>> = {
+  CLAUDE_CODE_OAUTH_TOKEN: 'claude setup-token',
+}
+
 function LiveKeys() {
   const keys = useQuery({
     queryKey: ['me', 'keys'],
@@ -120,13 +125,20 @@ function LiveKeys() {
   })
 
   return (
-    <Section
-      title="Your keys"
-      note="Your tasks use your own key when you set one, and the project's key otherwise. Nobody else's task uses yours."
-    >
+    <Section title="Your keys" note="Only your tasks use these, before the project's key.">
       <ItemList>
         {(keys.data?.items ?? []).map((k) => (
-          <KeyRow key={k.name} name={k.name} set={k.set} />
+          <Fragment key={k.name}>
+            {keyCommands[k.name] && (
+              <div className="px-4 py-3">
+                <CommandBlock
+                  commands={keyCommands[k.name]!}
+                  caption="Run in your terminal, then paste the token below"
+                />
+              </div>
+            )}
+            <KeyRow name={k.name} set={k.set} />
+          </Fragment>
         ))}
       </ItemList>
     </Section>
@@ -145,9 +157,7 @@ function GitHubConnection() {
     select: (search) => search.github === 'failed',
   })
   const [problem, setProblem] = useState<string | null>(() =>
-    failed
-      ? 'GitHub did not finish connecting. Try again, or ask an admin to check the GitHub App.'
-      : null,
+    failed ? 'GitHub did not finish connecting. Try again, or ask an admin.' : null,
   )
   const linked = accounts.data?.find((entry) => entry.providerId === 'github')
   const connect = async () => {
@@ -162,7 +172,7 @@ function GitHubConnection() {
       setProblem(
         authMessage(
           result.error,
-          `GitHub sign-in is not set up for this team. An admin connects the GitHub App, and adds ${window.location.origin}/auth/callback/github as a callback URL in its settings on GitHub.`,
+          `GitHub sign-in is not set up. An admin adds ${window.location.origin}/auth/callback/github as the GitHub App's callback URL.`,
         ),
       )
     }
@@ -184,15 +194,19 @@ function GitHubConnection() {
   }
 
   return (
-    <Section
-      title="GitHub"
-      note="Sign in with GitHub, and pick repositories you can reach when you start a task. Tasks still push with the project's token for now."
-    >
+    <Section title="GitHub" note="Pick from your repositories when you start a task.">
       <ItemList>
         <ItemRow
           icon={GitBranch}
           tone={linked ? 'neutral' : 'warning'}
-          title={linked ? 'GitHub is connected' : 'GitHub is not connected'}
+          title={
+            <>
+              GitHub
+              <StatusPill tone={linked ? 'success' : 'neutral'}>
+                {linked ? 'Connected' : 'Not connected'}
+              </StatusPill>
+            </>
+          }
           meta={
             linked
               ? [
@@ -201,7 +215,11 @@ function GitHubConnection() {
                     text:
                       repositories.data?.github === 'reconnect'
                         ? 'GitHub refused the token; connect again'
-                        : `${plural(repositories.data?.items.length ?? 0, 'repository', 'repositories')} you can reach`,
+                        : plural(
+                            repositories.data?.items.length ?? 0,
+                            'repository',
+                            'repositories',
+                          ),
                   },
                 ]
               : []
@@ -244,10 +262,7 @@ function GitHubApp() {
   const apps = connection.data.apps
 
   return (
-    <Section
-      title="GitHub App"
-      note="Stationly reads, pushes and opens pull requests through this App, on the repositories it is installed on. Install it only where tasks should ship."
-    >
+    <Section title="GitHub App" note="Install it only where tasks should ship.">
       <ItemList>
         {apps.length === 0 ? (
           <ItemRow
@@ -286,7 +301,7 @@ function GitHubApp() {
                         kind: 'files',
                         text:
                           app.installation.repository_selection === 'all'
-                            ? 'Every repository of the account'
+                            ? 'All repositories'
                             : 'Selected repositories',
                       },
                     ]
@@ -356,7 +371,7 @@ export function Account() {
 
   return (
     <Page title="Your account" actions={<SignOut />}>
-      <p className="-mt-6 font-mono text-sm text-muted-foreground">{user.email}</p>
+      <p className="-mt-6 text-sm text-muted-foreground">{user.email}</p>
       {needsEnrollment && <EnrollPrompt />}
       <Passkeys />
       <Totp enabled={Boolean(user.twoFactorEnabled)} />

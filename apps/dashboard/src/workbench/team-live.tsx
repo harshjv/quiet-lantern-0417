@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, MoreHorizontal, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 
+import { CodeInput } from '@/components/code'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +29,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import {
@@ -42,7 +42,7 @@ import {
 import { api, failureText, idempotency, unwrap } from '@/lib/api'
 import { sessionQuery } from '@/lib/auth'
 import { shortAgo } from '@/lib/format'
-import { projectsQuery } from '@/lib/queries'
+import { membersQuery, projectsQuery } from '@/lib/queries'
 
 import { Notice, Page, Section } from './parts'
 
@@ -56,11 +56,6 @@ type MemberRow = {
   projects: string[]
   joined_at: string
   removed_at: string | null
-}
-
-const membersQuery = {
-  queryKey: ['members'],
-  queryFn: () => unwrap(api.v1.members.get()),
 }
 
 const invitesQuery = {
@@ -170,15 +165,13 @@ function InviteDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Invite someone</DialogTitle>
-          <DialogDescription>
-            The link works once and expires in 7 days. It is shown only now.
-          </DialogDescription>
+          <DialogDescription>Works once, expires in 7 days. Shown only now.</DialogDescription>
         </DialogHeader>
         {url ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor="invite-link">Invite link</Label>
             <div className="flex gap-2">
-              <Input id="invite-link" readOnly value={url} className="font-mono text-xs" />
+              <CodeInput id="invite-link" readOnly value={url} className="text-xs" />
               <Button
                 variant="outline"
                 size="icon"
@@ -245,8 +238,8 @@ function AccessDialog({ member, onClose }: { member: MemberRow | null; onClose: 
     <Dialog open={member !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{member?.name}&apos;s access</DialogTitle>
-          <DialogDescription>Changes apply to their next request.</DialogDescription>
+          <DialogTitle>Access for {member?.name}</DialogTitle>
+          <DialogDescription>Applies to their next request.</DialogDescription>
         </DialogHeader>
         <RolePicker value={role} onChange={setRole} />
         {role === 'member' && <ProjectPicker value={projects} onChange={setProjects} />}
@@ -329,10 +322,6 @@ export function LiveTeam() {
         ) : null
       }
     >
-      <p className="text-sm text-muted-foreground">
-        Admins see every project and task. A member works only in their projects and sees only their
-        own tasks.
-      </p>
       <Section title="Members">
         <Table>
           <TableHeader>
@@ -430,8 +419,7 @@ export function LiveTeam() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {removing?.name} from the team?</AlertDialogTitle>
             <AlertDialogDescription>
-              They are signed out everywhere and their running tasks stop. Their tasks and branches
-              stay, for an admin to keep or delete.
+              Signs them out and stops their running tasks. Their tasks and branches stay.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {remove.error && (

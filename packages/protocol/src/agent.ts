@@ -42,9 +42,9 @@ export const taskStatusValues = [
 
 export type TaskStatusValue = (typeof taskStatusValues)[number]
 
-export const taskMachineValues = ['project', 'own'] as const
+export const workspaceKindValues = ['project', 'own'] as const
 
-export type TaskMachineValue = (typeof taskMachineValues)[number]
+export type WorkspaceKindValue = (typeof workspaceKindValues)[number]
 
 export const taskSlotMemoryBytes = 2 * 1024 ** 3
 
@@ -53,6 +53,14 @@ export const taskSlotsDefault = 2
 export const taskPortRange = {
   first: 3000,
   last: 3099,
+} as const
+
+export const taskFileKindValues = ['file', 'directory', 'symlink', 'other'] as const
+
+export const taskFileLimits = {
+  contentBytes: 256 * 1024,
+  entries: 1000,
+  pathBytes: 4096,
 } as const
 
 export const taskWorktreeRoot = '/home/agent/tasks'
@@ -424,3 +432,5 @@ export const AgentRunnerExit = Type.Object(
 )
 
 export const agentPromptLimit = 32768
+
+export const taskTitleLimit = 120

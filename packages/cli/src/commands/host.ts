@@ -684,6 +684,12 @@ export const hostCommands = (program: Program) => {
             `${JSON.stringify(
               {
                 ...result,
+                hostnames: wait?.ok
+                  ? {
+                      ...result.hostnames,
+                      status: 'active',
+                    }
+                  : result.hostnames,
                 tunnel: wait,
               },
               null,

@@ -24,8 +24,7 @@ const total = (projects: Project[], count: (project: Project) => number) =>
 
 export const guideProgress = <T extends GuideToken>(input: GuideInput<T>) => {
   const healthy = total(input.projects, (p) => p.status_counts.healthy)
-  const machines = total(input.projects, (p) => p.machine_count)
-  const workspaces = total(input.projects, (p) => p.workspace_count)
+  const tasks = total(input.projects, (p) => p.task_count)
   const used = input.tokens?.find((token) => token.last_used_at)
   const secured =
     input.totp || Boolean(input.passkeys)
@@ -38,16 +37,14 @@ export const guideProgress = <T extends GuideToken>(input: GuideInput<T>) => {
     healthy,
     deploying: total(input.projects, (p) => p.status_counts.deploying),
     apps: total(input.projects, (p) => p.app_count),
-    machines,
-    workspaces,
+    tasks,
     used,
     waiting: input.tokens?.find((token) => !token.last_used_at),
     done: {
       secure: secured,
       project: input.projects.length > 0,
       app: healthy > 0,
-      machine: machines > 0,
-      workspace: workspaces > 0,
+      task: tasks > 0,
       agent: input.tokens ? Boolean(used) : undefined,
     },
   }

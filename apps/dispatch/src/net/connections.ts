@@ -3,8 +3,8 @@ import { inArray } from 'drizzle-orm'
 
 import type { MessageBody } from '@stationly/protocol'
 
-import type { MachineRedaction, Redaction } from '../api/redaction.ts'
-import type { MachineConnections, NetworkConnections } from '../api/shapes.ts'
+import type { Redaction } from '../api/redaction.ts'
+import type { NetworkConnections } from '../api/shapes.ts'
 import type { ActorValue } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
 import { app, machine } from '../db/schema.ts'
@@ -12,8 +12,6 @@ import { app, machine } from '../db/schema.ts'
 export type StationSample = MessageBody<'network.sample.result'>['samples'][number]
 
 export type ConnectionsDoc = Static<typeof NetworkConnections>
-
-export type MachineConnectionsDoc = Static<typeof MachineConnections>
 
 export type Direction = 'in' | 'out'
 
@@ -86,44 +84,6 @@ const shapeConnections = (
         peer,
       }
     })
-
-export const shapeMachineSample = (
-  ctx: ShapeContext & { machineRedaction: MachineRedaction },
-  s: StationSample,
-  row: { id: string; name: string },
-  direction?: Direction,
-): MachineConnectionsDoc => {
-  const peers = new Set(
-    s.connections.flatMap((c) => (c.peer.service_id ? [c.peer.service_id] : [])),
-  )
-  const boxes = new Set(
-    s.connections.flatMap((c) => (c.peer.sandbox_id ? [c.peer.sandbox_id] : [])),
-  )
-  const redact = ctx.machineRedaction([row.id], ctx.actor, ctx.requestId)
-
-  return {
-    machine: {
-      id: row.id,
-      name: row.name,
-    },
-    at: s.at,
-    conntrack: s.conntrack,
-    connections: shapeConnections(
-      s,
-      namesOf(ctx.db, peers),
-      machineNamesOf(ctx.db, boxes),
-      direction,
-    ),
-    refused: s.refused,
-    refused_truncated: s.refused_truncated,
-    untrusted: {
-      source: 'resolver answers' as const,
-      names: Object.fromEntries(
-        Object.entries(s.names).map(([address, name]) => [address, redact(name)]),
-      ),
-    },
-  }
-}
 
 export const shapeSamples = (
   ctx: ShapeContext,

@@ -230,5 +230,29 @@
   {
     "at": "errors.json#/warnings/SEALED_VALUE_MISSING",
     "reason": "Layer 3 renames key to environment variable and sealed to secret everywhere, the API, sly and the Manifest included; installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/DesiredSandbox/properties/disk",
+    "reason": "26-tasks.md Layer 7 removes machine snapshots and forks with the rest of the machine surface; stationd and Dispatch ship together and installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Generation/properties/sandbox_snapshots",
+    "reason": "26-tasks.md Layer 7 removes machine snapshots and forks with the rest of the machine surface; stationd and Dispatch ship together and installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/Observed/properties/sandbox_snapshots",
+    "reason": "26-tasks.md Layer 7 removes machine snapshots and forks with the rest of the machine surface; stationd and Dispatch ship together and installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/UnknownObjectKind",
+    "reason": "26-tasks.md Layer 7 removes machine snapshots and forks with the rest of the machine surface; stationd and Dispatch ship together and installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "protocol.json#/$defs/ObservedUpdateBody/properties/sandbox_snapshots",
+    "reason": "26-tasks.md Layer 7 removes machine snapshots and forks with the rest of the machine surface; stationd and Dispatch ship together and installations are reinstalled, not upgraded"
+  },
+  {
+    "at": "messages.json#/sandbox.snapshot.status",
+    "reason": "26-tasks.md Layer 7 removes machine snapshots and forks with the rest of the machine surface; stationd and Dispatch ship together and installations are reinstalled, not upgraded"
   }
 ]

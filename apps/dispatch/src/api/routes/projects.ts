@@ -14,10 +14,12 @@ import {
   project,
   secret_value,
   target,
+  task,
   vex_statement,
   virtual_ip,
   volume,
 } from '../../db/schema.ts'
+import { requestDeletion } from '../../sandboxes/lifecycle.ts'
 import { seesProject } from '../access.ts'
 import { supersedeWaiting } from '../changes.ts'
 import { audit } from '../context.ts'
@@ -297,22 +299,20 @@ export const projectRoutes = (kit: Kit) => {
               .where(inArray(app.target_id, envIds))
               .all()
           : []
-        const boxes = envIds.length
-          ? db
-              .select({
-                id: machine.id,
-                name: machine.name,
-              })
-              .from(machine)
-              .where(and(inArray(machine.target_id, envIds), ne(machine.status, 'deleting')))
-              .all()
-          : []
+        const tasks = db
+          .select({
+            id: task.id,
+            name: task.title,
+          })
+          .from(task)
+          .where(eq(task.project_id, row.id))
+          .all()
 
-        if (others.length || apps.length || boxes.length) {
+        if (others.length || apps.length || tasks.length) {
           fail(
             'DELETE_HAS_DEPENDENTS',
-            `Project ${row.name} still has previews, apps or machines.`,
-            'Delete every preview, every app and every machine first.',
+            `Project ${row.name} still has previews, apps or tasks.`,
+            'Delete every preview, every app and every task first.',
             {
               dependents: [
                 ...others.map((e) => ({
@@ -325,17 +325,32 @@ export const projectRoutes = (kit: Kit) => {
                   id: s.id,
                   name: s.name,
                 })),
-                ...boxes.map((b) => ({
-                  entity: 'machine',
-                  id: b.id,
-                  name: b.name,
+                ...tasks.map((t) => ({
+                  entity: 'task',
+                  id: t.id,
+                  name: t.name,
                 })),
               ],
             },
           )
         }
 
+        const computers = envIds.length
+          ? db
+              .select()
+              .from(machine)
+              .where(and(inArray(machine.target_id, envIds), ne(machine.status, 'deleting')))
+              .all()
+          : []
+
         db.transaction((tx) => {
+          for (const box of computers) {
+            requestDeletion(tx, box, {
+              actor: call.principal.actor,
+              reason: 'user',
+            })
+          }
+
           const vars = tx
             .select({
               id: environment_variable.id,
@@ -384,6 +399,10 @@ export const projectRoutes = (kit: Kit) => {
             },
           )
         })
+
+        for (const server of new Set(computers.map((box) => box.server_id))) {
+          kit.deps.stations.reconcile(server)
+        }
 
         return {
           deleted: true as const,

@@ -1,8 +1,9 @@
 import { OctagonX } from 'lucide-react'
 
-import { Code } from '@/components/code'
+import { Code, Output } from '@/components/code'
 import { Disclosure } from '@/components/disclosure'
 import { FixList } from '@/components/fix'
+import { Name } from '@/components/name'
 import { KeyValue } from '@/components/page'
 import type { Diagnosis } from '@/lib/api'
 import type { FixContext } from '@/lib/fixes'
@@ -16,13 +17,12 @@ const stepName = (step: string) =>
   step in deploymentStep ? deploymentStep[step as keyof typeof deploymentStep] : sentence(step)
 
 const healthText = (health: NonNullable<Diagnosis['health']>) =>
-  [
-    health.type.toUpperCase(),
-    health.path,
-    health.port ? `on port ${health.port}` : null,
-    `· ${sentence(health.result).toLowerCase()}`,
-    health.attempts ? `after ${health.attempts} tries` : null,
-  ]
+  [health.type.toUpperCase(), health.path, health.port ? `on port ${health.port}` : null]
+    .filter(Boolean)
+    .join(' ')
+
+const healthResult = (health: NonNullable<Diagnosis['health']>) =>
+  [sentence(health.result), health.attempts ? `after ${health.attempts} tries` : null]
     .filter(Boolean)
     .join(' ')
 
@@ -43,6 +43,7 @@ const facts = (diagnosis: Diagnosis) =>
           : null,
       ],
       ['Health check', diagnosis.health ? healthText(diagnosis.health) : null],
+      ['Health result', diagnosis.health ? healthResult(diagnosis.health) : null],
       [
         'Listening on',
         diagnosis.network
@@ -61,7 +62,9 @@ function Changes({ diff }: { diff: NonNullable<Diagnosis['diff_from_last_good']>
           Source <Code>{shortSha(diff.source.from_sha) ?? 'none'}</Code> to{' '}
           <Code>{shortSha(diff.source.to_sha) ?? 'none'}</Code>
           {diff.source.files_changed != null && diff.source.files_changed > 0 && (
-            <span className="text-muted-foreground"> · {diff.source.files_changed} files</span>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {plural(diff.source.files_changed, 'file')}
+            </span>
           )}
         </li>
       )}
@@ -119,29 +122,21 @@ export function DiagnosisPanel({
         <OctagonX className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 space-y-1">
           <h2 className="text-sm font-semibold">
-            {context.subject.name} {diagnosisFailed[diagnosis.phase]}
+            <Name kind="app">{context.subject.name}</Name> {diagnosisFailed[diagnosis.phase]}
           </h2>
           <p className="text-sm">{diagnosis.summary}</p>
         </div>
       </div>
       <div className="space-y-3 px-4 py-4">
         <FixList fixes={fixes} context={context} />
-        <Disclosure
-          title="Details"
-          summary={details
-            .slice(1)
-            .map(([, value]) => value)
-            .join(' · ')}
-        >
+        <Disclosure title="Details">
           <div className="space-y-4">
             <KeyValue items={details} />
             {diagnosis.events && diagnosis.events.length > 0 && (
               <ol className="flex flex-wrap gap-1.5 text-xs" aria-label="Timeline">
                 {diagnosis.events.map((e, i) => (
                   <li key={i} className="rounded border px-1.5 py-0.5">
-                    <span className="font-mono text-muted-foreground tabular-nums">
-                      {clock(e.at)}
-                    </span>{' '}
+                    <span className="text-muted-foreground tabular-nums">{clock(e.at)}</span>{' '}
                     {stepName(e.step)} {sentence(e.status).toLowerCase()}
                   </li>
                 ))}
@@ -163,13 +158,9 @@ export function DiagnosisPanel({
             summary={`${diagnosis.logs.untrusted.source}${diagnosis.logs.truncated ? ', cut short' : ''}`}
             defaultOpen={fixes.length === 0}
           >
-            <pre
-              className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 font-mono text-[0.75rem] leading-5 whitespace-pre-wrap"
-              tabIndex={0}
-              aria-label="Log lines"
-            >
+            <Output tabIndex={0} aria-label="Log lines">
               {diagnosis.logs.untrusted.text || 'The container wrote no log lines.'}
-            </pre>
+            </Output>
           </Disclosure>
         )}
       </div>

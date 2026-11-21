@@ -1,8 +1,4 @@
-import { Type } from '@sinclair/typebox'
-
-import { tokenLevelValues } from './domain.ts'
 import { networkLayout } from './network.ts'
-import { StringEnum } from './primitives.ts'
 import { releaseConfig } from './release-config.ts'
 
 export const workspaceAgentValues = ['claude', 'codex'] as const
@@ -208,31 +204,6 @@ export const workspaceEgress = (agent: WorkspaceAgent) => ({
   domains: [...workspaceAgents[agent].domains, ...workspaceSharedDomains],
 })
 
-export const MachineWorkspaceInput = Type.Object(
-  {
-    agent: StringEnum(workspaceAgentValues, {
-      description: 'The agent CLI to install: claude or codex',
-    }),
-    repository: Type.String({
-      pattern: '^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)+$',
-      description: 'The https git URL to clone into /workspaces/<repository>',
-    }),
-    branch: Type.Optional(
-      Type.String({
-        pattern: '^[A-Za-z0-9._/-]+$',
-        maxLength: 255,
-        description: 'The branch or tag to check out after the clone',
-      }),
-    ),
-    level: Type.Optional(
-      StringEnum(tokenLevelValues, {
-        description: "The level of the workspace's token on its project (default deploy)",
-      }),
-    ),
-  },
-  {
-    additionalProperties: false,
-    description:
-      'Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token',
-  },
-)
+export const repositoryUrlPattern = '^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)+$'
+
+export const repositoryShorthand = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/

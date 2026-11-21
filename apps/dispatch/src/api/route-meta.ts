@@ -182,6 +182,5 @@ export const routeMeta = (
     secret_value: onEntity(targets.secret_value),
     approval: onEntity(targets.approval),
     machine: onEntity(targets.machine),
-    machine_snapshot: onEntity(targets.machine_snapshot),
   })
 }

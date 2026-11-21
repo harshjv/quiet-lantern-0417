@@ -20,7 +20,7 @@ import { decryptLeaf, storedBytes } from '../secrets/variables.ts'
 import { audit, type Call } from './context.ts'
 import { fail } from './errors.ts'
 import type { Kit } from './kit.ts'
-import { previewIdOf, type AppContext, type MachineContext } from './lookup.ts'
+import { previewIdOf, type AppContext } from './lookup.ts'
 import { definitionOf, EnvironmentVariableKind, Export } from './shapes.ts'
 import { exportsOf } from './views.ts'
 
@@ -44,7 +44,7 @@ export const ResolvedPart = Type.Recursive(
             Type.Union([
               Type.Object(
                 {
-                  scope: StringEnum(['project', 'global', 'app', 'machine']),
+                  scope: StringEnum(['project', 'global', 'app']),
                   app_id: Type.Optional(NStr),
                   target: Type.Optional(StringEnum(targetKindValues)),
                   name: Type.String(),
@@ -72,7 +72,7 @@ export const ResolvedPart = Type.Recursive(
               ),
               Type.Object(
                 {
-                  scope: StringEnum(['app', 'machine']),
+                  scope: Type.Literal('app'),
                   app_id: NStr,
                   name: NStr,
                   environment_variable_id: Type.String(),
@@ -131,19 +131,6 @@ export const ResolvedVariable = Type.Object(
   },
 )
 
-export const MachineResolved = Type.Object(
-  {
-    machine_id: Type.String(),
-    project_id: Type.String(),
-    preview_id: NStr,
-    environment_variables: Type.Array(ResolvedVariable),
-  },
-  {
-    title: 'MachineResolved',
-    additionalProperties: false,
-  },
-)
-
 export const Resolved = Type.Object(
   {
     app_id: Type.String(),
@@ -161,8 +148,7 @@ export const Resolved = Type.Object(
 
 type Hop = Record<string, unknown>
 
-type Subject =
-  { kind: 'app'; ctx: AppContext; compareWith?: string } | { kind: 'machine'; ctx: MachineContext }
+type Subject = { kind: 'app'; ctx: AppContext; compareWith?: string }
 
 const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { admin: boolean }) => {
   const { db, keyring } = kit.deps
@@ -199,9 +185,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
       ? 'project'
       : leaf.from === 'global'
         ? 'global'
-        : leaf.from === 'machine'
-          ? 'machine'
-          : 'app'
+        : 'app'
     const pinnedVersion = compared
       ? (pinned.get(`${leaf.environment_variable_id}:${leaf.target}`) ?? null)
       : null
@@ -273,7 +257,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
 
     const row = variableRow(node.environment_variable_id)
     const hop: Hop = {
-      scope: row?.scope === 'machine' ? 'machine' : 'app',
+      scope: 'app',
       app_id: row?.app_id ?? null,
       name: row?.name ?? null,
       environment_variable_id: node.environment_variable_id,
@@ -295,21 +279,12 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
   }
 
   const decrypted: string[] = []
-  const owner =
-    subject.kind === 'app'
-      ? {
-          entity: 'app',
-          id: subject.ctx.app.id,
-        }
-      : {
-          entity: 'machine',
-          id: subject.ctx.machine.id,
-        }
-  const resolver =
-    subject.kind === 'app'
-      ? Resolver.forApp(db, subject.ctx.app.id)
-      : Resolver.forMachine(db, subject.ctx.machine.id)
-  const listed = subject.kind === 'app' ? resolver.appVariables() : resolver.machineVariables()
+  const owner = {
+    entity: 'app',
+    id: subject.ctx.app.id,
+  }
+  const resolver = Resolver.forApp(db, subject.ctx.app.id)
+  const listed = resolver.appVariables()
   const variables = listed.map((v) => {
     const base = {
       name: v.name,
@@ -322,7 +297,7 @@ const describeVariables = (kit: Kit, call: Call, subject: Subject, options: { ad
     let node: SourceNode
 
     try {
-      node = subject.kind === 'app' ? resolver.resolve(v) : resolver.resolveMachine(v)
+      node = resolver.resolve(v)
     } catch (error) {
       if (!(error instanceof SecretsError)) {
         throw error
@@ -436,23 +411,3 @@ export const resolvedView = (
     exports: exportsOf(kit.deps.db, ctx.app),
   }
 }
-
-export const machineResolvedView = (
-  kit: Kit,
-  call: Call,
-  ctx: MachineContext,
-  options: { admin: boolean },
-) => ({
-  machine_id: ctx.machine.id,
-  project_id: ctx.project.id,
-  preview_id: previewIdOf(ctx.target_row),
-  environment_variables: describeVariables(
-    kit,
-    call,
-    {
-      kind: 'machine',
-      ctx,
-    },
-    options,
-  ).environment_variables,
-})

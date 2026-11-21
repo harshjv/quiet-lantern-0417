@@ -34,7 +34,7 @@ const nouns: Record<string, string> = {
   network_probe: 'test connection',
   lockfile: 'release',
   server: 'server',
-  machine_storage: 'machine storage',
+  task_storage: 'task storage',
 }
 
 const verbs = {
@@ -72,7 +72,7 @@ const labels: Record<string, string> = {
   trigger: 'Trigger',
   type: 'Type',
   reference: 'Reference',
-  injection: 'Injected as',
+  injection: 'Read as',
   build: 'At build time',
   target: 'Value for',
   status: 'Status',
@@ -172,12 +172,12 @@ export const formatValue = (key: string, value: unknown, names: Names, entity?: 
   return Object.entries(data)
     .filter(([inner, item]) => !blank(item) && !internal.has(inner))
     .map(([inner, item]) => `${fieldLabel(inner)} ${formatValue(inner, item, names, entity)}`)
-    .join(' · ')
+    .join(', ')
 }
 
 const secretValue = (data: Data) =>
   typeof data.value_length === 'number'
-    ? `Hidden · ${plural(data.value_length, 'byte')}${typeof data.version === 'number' ? ` · version ${data.version}` : ''}`
+    ? `Secret, ${plural(data.value_length, 'byte')}${typeof data.version === 'number' ? `, version ${data.version}` : ''}`
     : null
 
 const visible = ([key, value]: [string, unknown]) =>

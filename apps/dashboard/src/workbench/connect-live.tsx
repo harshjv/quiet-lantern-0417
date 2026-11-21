@@ -35,10 +35,6 @@ const levels = Object.keys(level) as Level[]
 
 const tab = (id: McpClient) => (id === 'generic' ? 'Other' : mcpClient[id])
 
-const named = (id: McpClient) => (id === 'generic' ? 'your MCP client' : mcpClient[id])
-
-const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
-
 const tokenTargets: Record<TokenTarget, string> = {
   '*': 'Production and previews',
   production: 'Production',
@@ -70,7 +66,7 @@ function Step({
       {!last && <span className="absolute top-8 bottom-0 left-3.5 w-px bg-border" aria-hidden />}
       <span
         className={cn(
-          'flex size-7 shrink-0 items-center justify-center border bg-background font-mono text-xs tabular-nums',
+          'flex size-7 shrink-0 items-center justify-center border bg-background text-xs tabular-nums',
           done && tonePanel.success,
         )}
       >
@@ -126,13 +122,12 @@ function ConnectionStatus({ id }: { id: McpClient }) {
     refetchInterval: (query) => (tokenOf(query.state.data, id)?.last_used_at ? false : 3000),
   })
   const token = tokenOf(tokens.data, id)
-  const who = named(id)
 
   if (token?.last_used_at) {
     return (
       <p role="status" className="flex items-center gap-2 text-sm">
         <CircleCheck className={cn('size-4', toneText.success)} aria-hidden />
-        <span className="font-medium">{capital(who)} is connected</span>
+        <span className="font-medium">Connected</span>
         <span className="text-muted-foreground">
           Last call <Time value={token.last_used_at} live />
         </span>
@@ -143,9 +138,7 @@ function ConnectionStatus({ id }: { id: McpClient }) {
   return (
     <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="size-4 animate-spin" aria-hidden />
-      {token
-        ? `${capital(who)} has its token. Waiting for its first call…`
-        : `Waiting for ${who} to connect…`}
+      {token ? 'Token issued, waiting for the first call' : 'Waiting to connect'}
     </p>
   )
 }
@@ -157,8 +150,8 @@ function Revoke({ token }: { token: Token }) {
     <RevokeToken
       token={token}
       title={`Disconnect ${name}?`}
-      description={`Stationly revokes its token, so ${name} loses access at once. Run sly mcp install again to reconnect it.`}
-      revoked={`${name} disconnected`}
+      description="Revokes its token at once. Run sly mcp install to reconnect."
+      revoked={`Disconnected ${name}`}
     />
   )
 }
@@ -185,11 +178,7 @@ function ConnectedAgents({ projects, shown }: { projects: Project[]; shown: McpC
   }
 
   if (tokens.data.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No agents connected yet. An agent appears here once you run sly mcp install for it.
-      </p>
-    )
+    return <p className="text-sm text-muted-foreground">No agents connected</p>
   }
 
   return (
@@ -267,14 +256,14 @@ function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
         <Step
           number={1}
           title="Install sly on the agent’s computer"
-          description="Skip this if sly version already works there."
+          description="Skip if sly is already installed."
         >
           <CommandBlock commands={installSly} caption="Run on the agent’s computer" />
         </Step>
         <Step
           number={2}
           title="Sign in"
-          description="sly opens this dashboard. Approve the sign-in with your passkey or authenticator code."
+          description="Approve the sign-in with your passkey or authenticator code."
         >
           <CommandBlock commands={commands.login(origin)} caption="Run on the agent’s computer" />
         </Step>
@@ -348,9 +337,7 @@ function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
                     setup[c].inRepository ? 'Run in your repository' : 'Run on the agent’s computer'
                   }
                 />
-                <p className="text-sm text-muted-foreground">
-                  {setup[c].after} The token stays in sly’s credentials file.
-                </p>
+                <p className="text-sm text-muted-foreground">{setup[c].after}</p>
                 {setup[c].follow && (
                   <CommandBlock commands={setup[c].follow} caption="Run on the agent’s computer" />
                 )}
@@ -365,8 +352,7 @@ function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
             ))}
           </Tabs>
           <p className="text-xs text-muted-foreground">
-            Stationly marks logs, DNS names and machine output as untrusted when it sends them to
-            your agent. Your agent should treat them as data.
+            Logs, DNS names and task output reach your agent marked untrusted.
           </p>
         </Step>
         <Step number={4} title="Check that it works" last done={connected}>
@@ -375,10 +361,7 @@ function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
         </Step>
       </ol>
 
-      <Section
-        title="Connected agents"
-        note="Each agent has its own token. Revoke one to cut its access at once."
-      >
+      <Section title="Connected agents">
         <ConnectedAgents projects={projects} shown={id} />
       </Section>
 
@@ -388,8 +371,7 @@ function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
             <div className="flex flex-col gap-0.5">
               <h3 className="text-sm font-medium">Agents with a shell and no MCP</h3>
               <p className="text-sm text-muted-foreground">
-                Create a token with the access above and pass it to sly as environment variables.
-                sly prints the key once.
+                Pass a token to sly as environment variables. Shown once.
               </p>
             </div>
             <CommandBlock
@@ -411,8 +393,7 @@ function Setup({ projects, origin }: { projects: Project[]; origin: string }) {
           <div className="flex flex-col gap-0.5">
             <h3 className="text-sm font-medium">Clients without a shell</h3>
             <p className="text-sm text-muted-foreground">
-              Not supported yet. sly mcp runs on the agent’s computer, so the client needs to start
-              local commands.
+              Not supported yet: sly mcp starts local commands.
             </p>
           </div>
         </div>
@@ -428,10 +409,6 @@ export function LiveConnect() {
 
   return (
     <Page title="Connect an agent">
-      <p className="-mt-6 max-w-prose text-sm text-muted-foreground">
-        Your agent deploys, reads logs and runs machines through the same API as this dashboard,
-        with its own token limited to the project and access you pick.
-      </p>
       {error ? (
         <Notice tone="danger" title="Couldn’t load agent setup">
           {failureText(error)}

@@ -1,64 +1,45 @@
-import { linkOptions, useMatches, useParams, useSearch } from '@tanstack/react-router'
+import { useMatches, useParams, type LinkOptions } from '@tanstack/react-router'
 
-import { placeTo } from '@/lib/links'
-import { z } from '@/lib/zod'
+import { observeTo, projectTo, shipTo, tasksTo } from '@/lib/links'
 
-export type Mode = 'build' | 'ship' | 'observe' | 'outside'
+export type View = 'overview' | 'build' | 'ship' | 'observe'
 
-export const projectSearch = z.object({
-  project: z.string().optional().catch(undefined),
-})
+export type Mode = View | 'home' | 'outside'
+
+export const views: View[] = ['overview', 'build', 'ship', 'observe']
+
+export const isView = (mode: Mode): mode is View => views.includes(mode as View)
 
 export const useMode = () =>
   useMatches({
     select: (matches): Mode =>
-      matches.findLast((match) => match.staticData.mode)?.staticData.mode ?? 'build',
+      matches.findLast((match) => match.staticData.mode)?.staticData.mode ?? 'home',
   })
 
-export const useProject = () => {
-  const params = useParams({
+export const useProject = () =>
+  useParams({
     strict: false,
-  })
-  const search = useSearch({
-    strict: false,
-  })
-  const loaded = useMatches({
-    select: (matches) =>
-      matches.findLast((match) => match.loaderData?.project)?.loaderData?.project,
+    select: (params) => params.project ?? null,
   })
 
-  return params.project ?? search.project ?? loaded ?? null
-}
+export const inProject =
+  (to: (project: string) => LinkOptions) =>
+  (project: string | null): LinkOptions =>
+    project
+      ? to(project)
+      : {
+          to: '/',
+        }
 
-export const modeHome = (mode: Mode, project: string | null) => {
-  const search = {
-    project: project ?? undefined,
-  }
-
-  switch (mode) {
+export const viewTo = (view: View, project: string) => {
+  switch (view) {
+    case 'overview':
+      return projectTo(project)
     case 'build':
-      return linkOptions({
-        to: '/build',
-        search,
-      })
+      return tasksTo(project)
     case 'ship':
-      return project
-        ? placeTo(project, null)
-        : linkOptions({
-            to: '/projects',
-          })
+      return shipTo(project)
     case 'observe':
-      return linkOptions({
-        to: '/observe/{-$tab}',
-        params: {
-          tab: undefined,
-        },
-        search,
-      })
-    case 'outside':
-      return linkOptions({
-        to: '/inbox',
-        search,
-      })
+      return observeTo(project)
   }
 }

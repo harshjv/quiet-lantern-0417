@@ -2,11 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpCircle } from 'lucide-react'
 import { useState } from 'react'
 
+import { CodeInput } from '@/components/code'
 import { Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
-import { Mono } from '@/components/page'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { api, idempotency, send, type Inventory, type Station } from '@/lib/api'
 import { plural } from '@/lib/format'
 import { useApiMutation } from '@/lib/mutation'
@@ -104,7 +103,7 @@ export function UpgradeProgress({
       {upgrade.steps.length > 0 && (
         <Checklist
           steps={upgrade.steps.map((step) => ({
-            label: `${step.component} on ${serverName(step.server)}, ${step.from.version} to ${step.to.version}`,
+            label: `${step.component} on ${serverName(step.server)} from ${step.from.version} to ${step.to.version}`,
             state: stepState[step.status],
           }))}
         />
@@ -116,9 +115,13 @@ export function UpgradeProgress({
 function PlanView({ plan }: { plan: Plan }) {
   return (
     <div className="flex flex-col gap-3 text-sm">
-      <p>
-        From <Mono>v{plan.release.from}</Mono> to <Mono>v{plan.release.to}</Mono>,{' '}
-        {plural(plan.changes.length, 'change')}.
+      <p className="flex flex-wrap items-baseline gap-2">
+        <span className="font-medium">
+          v{plan.release.from} to v{plan.release.to}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {plural(plan.changes.length, 'change')}
+        </span>
       </p>
       {plan.changes.length > 0 && (
         <ol className="flex flex-col gap-1 border p-3">
@@ -128,7 +131,8 @@ function PlanView({ plan }: { plan: Plan }) {
                 {change.order}
               </span>
               <span className="min-w-0 flex-1">
-                <Mono>{change.component}</Mono> {change.from.version} to {change.to.version}
+                <span className="font-medium">{change.component}</span> {change.from.version} to{' '}
+                {change.to.version}
                 <span className="block text-xs text-muted-foreground">{change.procedure}</span>
               </span>
             </li>
@@ -141,9 +145,9 @@ function PlanView({ plan }: { plan: Plan }) {
         </p>
       )}
       {plan.release.changelog && (
-        <pre className="max-h-48 overflow-auto border bg-muted p-3 text-xs whitespace-pre-wrap">
+        <div className="max-h-48 overflow-auto border p-3 text-xs whitespace-pre-wrap">
           {plan.release.changelog}
-        </pre>
+        </div>
       )}
     </div>
   )
@@ -187,12 +191,7 @@ function UpgradeDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void
     invalidate: ['stations'],
     waiting: (wanted) => `The upgrade to v${wanted}`,
     success: (body, wanted) =>
-      body.id === null
-        ? `Stationly already runs v${wanted}`
-        : {
-            title: `Upgrading to v${wanted}`,
-            description: 'Each component restarts in turn. Follow it in the Release section.',
-          },
+      body.id === null ? `Stationly already runs v${wanted}` : `Upgrading to v${wanted}`,
     onSuccess: () => {
       refresh()
       onOpenChange(false)
@@ -208,8 +207,8 @@ function UpgradeDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void
       title={plan ? `Upgrade to v${plan.release.to}` : 'Upgrade Stationly'}
       description={
         plan
-          ? 'Every server checked the release signature. Stationly takes a backup first and reverts a step that fails.'
-          : 'Name a published release. Stationly checks its signature on every server and shows the plan before anything changes.'
+          ? 'Signature checked on every server. Backs up first, reverts a failed step.'
+          : 'Name a published release. Nothing changes before you see the plan.'
       }
       error={check.errorText ?? apply.errorText}
       submitLabel={plan ? `Upgrade to v${plan.release.to}` : 'Check release'}
@@ -233,21 +232,14 @@ function UpgradeDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void
         <Field
           id="upgrade-version"
           label="Version"
-          hint={
-            offered.length > 0
-              ? undefined
-              : releases && !releases.enabled
-                ? 'Release checks are off, so type the version from the release notes.'
-                : 'Type the version from the release notes, such as 0.1.4.'
-          }
+          hint={offered.length > 0 ? undefined : 'Type the version from the release notes.'}
         >
-          <Input
+          <CodeInput
             id="upgrade-version"
             required
             value={version}
             onChange={(e) => setVersion(e.target.value)}
             placeholder="0.1.4"
-            className="font-mono"
           />
           {offered.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">

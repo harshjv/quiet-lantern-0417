@@ -62,21 +62,3 @@ export const requireHumanToWiden = (
     })
   }
 }
-
-export const requireHumanToEnter = (
-  db: Db,
-  principal: Principal,
-  row: typeof machine.$inferSelect,
-) => {
-  const held = workspaceHeldBy(db, principal)
-
-  requireHumanToWiden(
-    principal,
-    held,
-    held &&
-      held.id !== row.id &&
-      (!egressWithin(row.egress, held.egress) || row.network !== 'isolated' || row.docker)
-      ? 'cannot run anything in another machine with wider egress than its own, on its production or preview network or with docker'
-      : null,
-  )
-}

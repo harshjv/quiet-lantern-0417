@@ -10,8 +10,8 @@ import { manifestCommands } from './commands/manifest.ts'
 import { mcpCommands } from './commands/mcp.ts'
 import { networkCommands } from './commands/network.ts'
 import { platformCommands } from './commands/platform.ts'
-import { machineCommands } from './commands/sandbox.ts'
 import { appCommands } from './commands/service.ts'
+import { taskCommands } from './commands/tasks.ts'
 import { variableCommands } from './commands/variables.ts'
 import { volumeCommands } from './commands/volumes.ts'
 import { version } from './env.ts'
@@ -32,7 +32,7 @@ export const handWrittenProgram = () => {
   mcpCommands(program)
   hostCommands(program)
   adminHostCommands(program)
-  machineCommands(program)
+  taskCommands(program)
 
   program
     .command('version')

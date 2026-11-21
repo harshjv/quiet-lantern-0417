@@ -59,11 +59,7 @@ const groupsFor = (event: EventRow): Group[] => {
     return ['deployments']
   }
 
-  if (event.type.startsWith('machine.')) {
-    return ['machines']
-  }
-
-  if (event.type.startsWith('task.')) {
+  if (event.type.startsWith('task.') || event.type.startsWith('machine.')) {
     return ['tasks']
   }
 

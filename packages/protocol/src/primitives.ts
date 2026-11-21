@@ -57,7 +57,6 @@ export const idPrefixes = {
   platform_upgrade: 'pup',
   message: 'msg',
   machine: 'sbx',
-  machine_snapshot: 'sbs',
   task: 'tsk',
   conversation: 'cnv',
   invite: 'inv',

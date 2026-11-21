@@ -19,7 +19,6 @@ export const setupFailure = (input: {
   tail: readonly string[]
   repository: string
   branch: string | null
-  project: string
 }): SetupFailure => {
   const repository = repositoryName(input.repository)
   const next = 'Start a new task.'
@@ -29,7 +28,7 @@ export const setupFailure = (input: {
       return input.tail.some((line) => credentialsAsked.test(line))
         ? {
             title: `Could not clone ${repository}.`,
-            advice: `GitHub asked for credentials, so the repository is private or does not exist. Add a GitHub token to project ${input.project} and start a new task.`,
+            advice: 'Private or missing repository. Add a GitHub token, then start a new task.',
             needsToken: true,
           }
         : {

@@ -1,10 +1,6 @@
 const errorPattern = /\b(error|fatal|panic|exception|traceback)\b|npm ERR!/i
 
-export type LogSelector =
-  | { deployment: string }
-  | { build: string }
-  | { app: string }
-  | { machine: string; role: 'init' | 'runtime' }
+export type LogSelector = { deployment: string } | { build: string } | { app: string }
 
 export const logTail = 500
 

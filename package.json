@@ -15,6 +15,7 @@
     "db:generate": "pnpm --filter @stationly/dispatch db:generate",
     "check:catalog": "node scripts/check-catalog.ts",
     "check:literals": "node scripts/check-literals.ts",
+    "check:copy": "node scripts/check-copy.ts",
     "check:shared": "node scripts/check-shared.ts",
     "check:compat": "node scripts/check-protocol-compat.ts",
     "lint": "oxlint apps packages scripts installer/lib",

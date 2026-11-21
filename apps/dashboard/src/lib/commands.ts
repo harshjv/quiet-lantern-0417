@@ -110,16 +110,6 @@ export const commands = {
     sly('domains', 'add', port ?? '<port-id>', '--hostname', '<hostname>'),
   setMachineRuntime: (station: string) =>
     sly('servers', 'update', station, '--default-machine-runtime', '<runtime>'),
-  startMachine: (scope: Scope, machine: string) =>
-    sly(...scoped(scope), '--machine', machine, 'machines', 'start'),
-  machineShell: (scope: Scope, name: string) => sly('machines', 'shell', name, ...scoped(scope)),
-  createMachine: (scope: Scope) =>
-    sly(...scoped(scope), 'machines', 'create', '<name>', '--ttl-s', '2h'),
-  snapshotMachine: (scope: Scope, machine: string) =>
-    sly(...scoped(scope), '--machine', machine, 'machines', 'snapshot'),
-  setMachineVariable: (machine: string) => sly('--machine', machine, 'env', 'set', 'KEY=value'),
-  forward: (machine: string, port: number) =>
-    sly('--machine', machine, 'machines', 'forward', String(port)),
 } as const
 
 export const tools = [
@@ -137,16 +127,11 @@ export const tools = [
   'start_app',
   'rollback',
   'probe_network',
-  'start_machine',
-  'update_machine',
   'set_app_environment_variables',
   'set_project_environment_variables',
   'add_domain',
   'update_server',
   'update_app',
-  'create_machine',
-  'snapshot_machine',
-  'set_machine_environment_variables',
 ] as const
 
 export type Tool = (typeof tools)[number]

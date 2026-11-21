@@ -108,7 +108,7 @@ export function OutsideScreen({ page: id }: { page: Page }) {
     return (
       <PageFrame title={page.title}>
         <Notice tone="info" title={`Only an admin sees ${page.title.toLowerCase()}`}>
-          Ask an admin of this team if you need something here.
+          Ask an admin if you need something here.
         </Notice>
       </PageFrame>
     )
@@ -120,7 +120,7 @@ export function OutsideScreen({ page: id }: { page: Page }) {
 }
 
 export function OutsideNav() {
-  const count = useInboxCount()
+  const count = useInboxCount(null)
   const { pages: shown } = useVisiblePages()
   const matchRoute = useMatchRoute()
   const active = (page: (typeof pages)[number]) =>
@@ -148,7 +148,7 @@ export function OutsideNav() {
                 </Link>
               </SidebarMenuButton>
               {p.id === 'inbox' && count > 0 && (
-                <SidebarMenuBadge className={`font-mono ${toneText.warning}`}>
+                <SidebarMenuBadge className={`tabular-nums ${toneText.warning}`}>
                   {count}
                 </SidebarMenuBadge>
               )}

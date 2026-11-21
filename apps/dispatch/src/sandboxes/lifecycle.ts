@@ -1,18 +1,11 @@
 import type { Static } from '@sinclair/typebox'
-import { and, count, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 
 import { runActiveStatuses, type Actor, type MessageBody, type Observed } from '@stationly/protocol'
 
 import type { Principal } from '../auth/principal.ts'
 import type { Db } from '../db/client.ts'
-import {
-  environment_variable,
-  machine,
-  machine_snapshot,
-  run,
-  secret_value,
-  server,
-} from '../db/schema.ts'
+import { environment_variable, machine, run, secret_value, server } from '../db/schema.ts'
 import { readSetting } from '../db/settings.ts'
 import type { Log } from '../log.ts'
 import { every } from '../schedule.ts'
@@ -102,15 +95,6 @@ export const deleteAt = (
     ? new Date(row.stopped_at.getTime() + retention * 1000)
     : null
 
-export const snapshotsKept = (db: Db, machineId: string) =>
-  db
-    .select({
-      n: count(),
-    })
-    .from(machine_snapshot)
-    .where(and(eq(machine_snapshot.machine_id, machineId), ne(machine_snapshot.status, 'deleting')))
-    .get()?.n ?? 0
-
 const dropVariables = (db: Db, machineId: string) => {
   const ids = db
     .select({
@@ -145,7 +129,7 @@ export const requestDeletion = (
   by: { actor: ActorValue; reason: 'user' | 'retention' | 'preview' },
 ) => {
   if (row.status === 'deleting') {
-    return snapshotsKept(db, row.id)
+    return
   }
 
   db.transaction((tx) => {
@@ -169,13 +153,9 @@ export const requestDeletion = (
     endRuns(tdb, row.id)
     revokeWorkspaceToken(tdb, row, by.actor)
   })
-
-  return snapshotsKept(db, row.id)
 }
 
 export const removeMachine = (db: Db, row: MachineRow) => {
-  const kept = snapshotsKept(db, row.id)
-
   db.transaction((tx) => {
     const tdb = tx as unknown as Db
 
@@ -184,7 +164,6 @@ export const removeMachine = (db: Db, row: MachineRow) => {
     tdb.delete(machine).where(eq(machine.id, row.id)).run()
     emitEvent(tdb, 'machine.deleted', machineSubject(row), {
       machine: row.id,
-      snapshots_kept: kept,
       actor: row.deletion?.actor ?? systemActor,
       reason: row.deletion?.reason ?? 'user',
     })
@@ -251,7 +230,6 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
           target: row.target_id,
           server: row.server_id,
           reason,
-          forked_from: row.forked_from,
           stop_at: row.stop_at?.toISOString() ?? null,
         })
       }
@@ -328,45 +306,6 @@ export const applyStatus = (db: Db, stationId: string, body: MessageBody<'sandbo
   }
 }
 
-export const applySnapshotStatus = (
-  db: Db,
-  stationId: string,
-  body: MessageBody<'sandbox.snapshot.status'>,
-) => {
-  const row = db
-    .select()
-    .from(machine_snapshot)
-    .where(eq(machine_snapshot.id, body.snapshot_id))
-    .get()
-
-  if (!row || row.server_id !== stationId) {
-    return false
-  }
-
-  if (body.status === 'deleted') {
-    db.delete(machine_snapshot).where(eq(machine_snapshot.id, row.id)).run()
-
-    return true
-  }
-
-  if (row.status === 'deleting') {
-    return false
-  }
-
-  db.update(machine_snapshot)
-    .set({
-      status: body.status,
-      taken_at: date(body.taken_at) ?? row.taken_at,
-      exclusive_bytes: body.exclusive_bytes,
-      referenced_bytes: body.referenced_bytes,
-      failure: body.failure,
-    })
-    .where(eq(machine_snapshot.id, row.id))
-    .run()
-
-  return true
-}
-
 export const ingestObservedMachines = (db: Db, stationId: string, observed: Observed) => {
   const capabilities = observed.station.capabilities
   const st = db
@@ -402,27 +341,6 @@ export const ingestObservedMachines = (db: Db, stationId: string, observed: Obse
           disk_used_bytes: seen.disk.referenced_bytes,
         })
         .where(eq(machine.id, id))
-        .run()
-    }
-  }
-
-  for (const [id, seen] of Object.entries(observed.sandbox_snapshots ?? {})) {
-    const row = db.select().from(machine_snapshot).where(eq(machine_snapshot.id, id)).get()
-
-    if (!row || row.server_id !== stationId) {
-      continue
-    }
-
-    if (
-      row.referenced_bytes !== seen.referenced_bytes ||
-      row.exclusive_bytes !== seen.exclusive_bytes
-    ) {
-      db.update(machine_snapshot)
-        .set({
-          referenced_bytes: seen.referenced_bytes,
-          exclusive_bytes: seen.exclusive_bytes,
-        })
-        .where(eq(machine_snapshot.id, id))
         .run()
     }
   }

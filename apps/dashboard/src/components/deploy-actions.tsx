@@ -1,14 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Loader2, RefreshCw, TriangleAlert, Undo2 } from 'lucide-react'
+import { Loader2, TriangleAlert, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 
+import { CodeInput } from '@/components/code'
 import { Confirm } from '@/components/confirm'
 import { Field } from '@/components/field'
 import { FormDialog } from '@/components/form-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   api,
   ApiFailure,
@@ -166,11 +166,6 @@ export function DeployButton({ app, shortcut }: { app: App; shortcut?: boolean }
         </Button>
       }
       title={`Deploy ${app.name}`}
-      description={
-        repo
-          ? `Stationly builds the source and rolls it out to ${app.name}.`
-          : `Stationly rolls this image out to ${app.name}.`
-      }
       error={mutation.errorText}
       submitLabel={`Deploy ${app.name}`}
       pending={mutation.isPending}
@@ -178,7 +173,7 @@ export function DeployButton({ app, shortcut }: { app: App; shortcut?: boolean }
       onSubmit={() => mutation.mutate()}
     >
       <Field id="deploy-ref" label={repo ? 'Commit, branch or tag (optional)' : 'Image'}>
-        <Input
+        <CodeInput
           id="deploy-ref"
           required={!repo}
           value={ref}
@@ -188,30 +183,9 @@ export function DeployButton({ app, shortcut }: { app: App; shortcut?: boolean }
               ? (app.source as { branch: string }).branch
               : 'nginx:1.27'
           }
-          className="font-mono"
         />
       </Field>
     </FormDialog>
-  )
-}
-
-export function RedeployButton({ app }: { app: App }) {
-  const mutation = useRedeploy(app, 'Redeploy')
-
-  if (!app.current_deployment_id) {
-    return null
-  }
-
-  return (
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={() => mutation.mutate()}
-      disabled={mutation.isPending}
-    >
-      {mutation.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-      Redeploy
-    </Button>
   )
 }
 
@@ -345,11 +319,7 @@ export function StaleBanner({ app }: { app: App }) {
                 {r.explanation}
               </p>
             ))}
-            {rolling && (
-              <p className="mb-0!">
-                Deployment #{rolling.number} is rolling out. This notice goes away when it’s active.
-              </p>
-            )}
+            {rolling && <p className="mb-0!">Deployment #{rolling.number} rolling out</p>}
           </AlertDescription>
         </div>
       </div>

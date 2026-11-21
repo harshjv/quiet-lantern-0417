@@ -4,9 +4,9 @@ import type { MessageBody } from '@stationly/protocol'
 
 import { audit, type Call, type Deps } from '../api/context.ts'
 import { ApiError } from '../api/errors.ts'
-import type { AppRow, MachineRow } from '../api/lookup.ts'
+import type { AppRow } from '../api/lookup.ts'
 import { stationError } from '../api/routes/runs.ts'
-import type { MachineNetworkProbe, NetworkProbe } from '../api/shapes.ts'
+import type { NetworkProbe } from '../api/shapes.ts'
 import type { ActorValue } from '../auth/principal.ts'
 import { StationRequestError } from '../station/server.ts'
 
@@ -18,8 +18,6 @@ export type ProbeRequest = {
 }
 
 export type ProbeDoc = Static<typeof NetworkProbe>
-
-export type MachineProbeDoc = Static<typeof MachineNetworkProbe>
 
 type ProbeReply = MessageBody<'network.probe.result'>
 
@@ -106,12 +104,7 @@ export const shapeProbe = (name: string, r: ProbeReply): ProbeDoc => ({
   ...probeFields(r),
 })
 
-export const shapeMachineProbe = (name: string, r: ProbeReply): MachineProbeDoc => ({
-  machine: name,
-  ...probeFields(r),
-})
-
-type Source = { entity: 'app' | 'machine'; id: string; name: string; server_id: string }
+type Source = { entity: 'app'; id: string; name: string; server_id: string }
 
 const askProbe = async (deps: Pick<Deps, 'stations'>, source: Source, probe: ProbeRequest) => {
   const reply = await deps.stations
@@ -226,23 +219,4 @@ export const sendProbe = async (
   auditProbe(deps, call, source, probe, r, requestedBy)
 
   return shapeProbe(svc.name, r)
-}
-
-export const sendMachineProbe = async (
-  deps: Pick<Deps, 'db' | 'stations'>,
-  call: Call,
-  box: MachineRow,
-  probe: ProbeRequest,
-) => {
-  const source: Source = {
-    entity: 'machine',
-    id: box.id,
-    name: box.name,
-    server_id: box.server_id,
-  }
-  const r = await askProbe(deps, source, probe)
-
-  auditProbe(deps, call, source, probe, r, null)
-
-  return shapeMachineProbe(box.name, r)
 }

@@ -4,6 +4,7 @@ import { ArrowLeft, Rocket } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { Actor } from '@/components/actor'
+import { Code } from '@/components/code'
 import { ChangeDiff } from '@/components/diff'
 import { KeyValue } from '@/components/page'
 import { DeploymentStatusBadge } from '@/components/status'
@@ -19,7 +20,7 @@ import {
 } from '@/lib/changes'
 import { changeSummary, plural, shortSha, stamp } from '@/lib/format'
 import { approvalSource, approvalStatus } from '@/lib/labels'
-import { placeTo } from '@/lib/links'
+import { placeTo, taskTo } from '@/lib/links'
 import { approvalQuery, deploymentQuery } from '@/lib/queries'
 
 import { ApproveButton, RejectDialog, useDecider, useDecision } from './approval-actions'
@@ -134,7 +135,7 @@ function Deployments({ ids }: { ids: string[] }) {
   )
 }
 
-function Ship({ approval }: { approval: Approval }) {
+function Ship({ approval, project }: { approval: Approval; project: string | undefined }) {
   const status = useShipStatus(approval)
   const problem = shipProblem(approval)
 
@@ -144,16 +145,10 @@ function Ship({ approval }: { approval: Approval }) {
         tone={problem && status.state !== 'merged' ? 'danger' : status.tone}
         title={status.title}
         action={
-          approval.task_id && (
+          approval.task_id &&
+          project && (
             <Button asChild size="sm" variant="ghost">
-              <Link
-                to="/build/$task"
-                params={{
-                  task: approval.task_id,
-                }}
-              >
-                Open task
-              </Link>
+              <Link {...taskTo(project, approval.task_id)}>Open task</Link>
             </Button>
           )
         }
@@ -167,8 +162,8 @@ function Ship({ approval }: { approval: Approval }) {
               <PullRequestLink approval={approval} />
             )}
             {approval.ship?.merge_sha && (
-              <span className="font-mono text-xs text-muted-foreground">
-                merged as {shortSha(approval.ship.merge_sha)}
+              <span className="text-xs text-muted-foreground">
+                Merged <Code className="text-xs">{shortSha(approval.ship.merge_sha)}</Code>
               </span>
             )}
           </span>
@@ -198,24 +193,22 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
         </StatusPill>
         <Scope approval={a} names={names} places={places} />
         <span>
-          Requested by <Actor actor={a.requested_by} /> through {approvalSource[a.source]}
+          <Actor actor={a.requested_by} />
+          <span className="ml-1.5 text-xs">{approvalSource[a.source]}</span>
         </span>
         <Time value={a.created_at} />
-        {a.self_approved && <span>Approved by the requester</span>}
-        <span className="font-mono text-xs">{a.id}</span>
+        {a.self_approved && <span>Self-approved</span>}
+        <Code className="text-xs">{a.id}</Code>
       </div>
 
       {a.status === 'waiting' && decider.loaded && !decider.human && (
         <Notice tone="warning" title="Only a person can decide on this change">
-          You’re signed in with a token. Tokens can’t approve or reject changes to production.
+          Sign in as yourself; tokens can’t approve or reject.
         </Notice>
       )}
 
       {a.status === 'waiting' && decider.human && !decider.can && (
-        <Notice tone="info" title="Waiting for an admin">
-          An admin of {a.project_id ? 'this project’s production' : 'the team'} approves or rejects
-          this change. You can read it here in the meantime.
-        </Notice>
+        <Notice tone="info" title="Waiting for an admin" />
       )}
 
       {a.status === 'rejected' && a.reason && !task && (
@@ -230,7 +223,7 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
         </Notice>
       )}
 
-      {task && <Ship approval={a} />}
+      {task && <Ship approval={a} project={a.project_id ? names.get(a.project_id) : undefined} />}
 
       {!task && (
         <KeyValue
@@ -249,14 +242,11 @@ function ApprovalBody({ approvalId }: { approvalId: string }) {
       {deployments.length > 0 && <Deployments ids={deployments} />}
 
       {!task && (
-        <Section
-          title="Changes"
-          note="Stationly applies them in this order, all or nothing. Values of environment variables stay hidden: a new value shows only its length and version."
-        >
+        <Section title="Changes" note="Applied in this order, all or nothing.">
           {a.changes && a.changes.length > 0 ? (
             <ChangeDiff changes={a.changes} names={names} />
           ) : (
-            <p className="text-sm text-muted-foreground">This approval has no changes.</p>
+            <p className="text-sm text-muted-foreground">No changes</p>
           )}
         </Section>
       )}

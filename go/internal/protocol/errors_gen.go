@@ -217,12 +217,11 @@ var ErrorCatalog = map[ErrorCode]ErrorDefinition{
 type WarningCode string
 
 const (
-	WarningCodeSharesStatefulApp              WarningCode = "SHARES_STATEFUL_APP"
-	WarningCodeStaleSecretVersions            WarningCode = "STALE_SECRET_VERSIONS"
-	WarningCodeDowntimeExpected               WarningCode = "DOWNTIME_EXPECTED"
-	WarningCodeBackupStopsApp                 WarningCode = "BACKUP_STOPS_APP"
-	WarningCodeSecretValueMissing             WarningCode = "SECRET_VALUE_MISSING"
-	WarningCodeSourcePolling                  WarningCode = "SOURCE_POLLING"
-	WarningCodeMachineRestartRequired         WarningCode = "MACHINE_RESTART_REQUIRED"
-	WarningCodeMachineSnapshotCrashConsistent WarningCode = "MACHINE_SNAPSHOT_CRASH_CONSISTENT"
+	WarningCodeSharesStatefulApp      WarningCode = "SHARES_STATEFUL_APP"
+	WarningCodeStaleSecretVersions    WarningCode = "STALE_SECRET_VERSIONS"
+	WarningCodeDowntimeExpected       WarningCode = "DOWNTIME_EXPECTED"
+	WarningCodeBackupStopsApp         WarningCode = "BACKUP_STOPS_APP"
+	WarningCodeSecretValueMissing     WarningCode = "SECRET_VALUE_MISSING"
+	WarningCodeSourcePolling          WarningCode = "SOURCE_POLLING"
+	WarningCodeMachineRestartRequired WarningCode = "MACHINE_RESTART_REQUIRED"
 )

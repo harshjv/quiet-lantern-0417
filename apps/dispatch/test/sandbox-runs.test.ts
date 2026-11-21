@@ -3,32 +3,31 @@ import { after, before, describe, test } from 'node:test'
 
 import { eq } from 'drizzle-orm'
 
+import { machineExecLimits, workspaceEnv } from '@stationly/protocol'
+
 import { waitForRun } from '../src/api/runs.ts'
 import { newId } from '../src/db/ids.ts'
-import { machine, run } from '../src/db/schema.ts'
+import { run } from '../src/db/schema.ts'
+import { requestDeletion, stopMachine, systemActor } from '../src/sandboxes/lifecycle.ts'
 
-import { mintToken, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
+import { startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
-import { FakeRegistry } from './helpers/registry.ts'
 import {
-  createApp,
   createMachine,
   createPreview,
   createProject,
+  machineRowOf,
   pinPlatform,
-  placed,
   rows,
   waitForMachine,
 } from './helpers/seed.ts'
 
 let h: Dispatch
-let registry: FakeRegistry
 let station: FakeStation
 let project: any
 let envId: string
-let deployToken: string
-let readToken: string
 let boxId: string
+let setupRunId: string
 
 const api = (method: string, path: string, body?: unknown, token = h.admin.token) =>
   h.call(method, path, {
@@ -37,13 +36,39 @@ const api = (method: string, path: string, body?: unknown, token = h.admin.token
   })
 
 const secret = 'ghp_projectsecret0123456789'
-const secretValue = 'secret-value-0123456789abcdef'
-const plain = 'plain-literal-value-98765'
+const rotated = 'ghp_rotatedsecret9876543210'
+
+const plantRun = (machineId: string, values: Partial<typeof run.$inferInsert> = {}) => {
+  const id = newId('run')
+
+  h.db
+    .insert(run)
+    .values({
+      id,
+      app_id: null,
+      machine_id: machineId,
+      deployment_id: null,
+      kind: 'exec',
+      command: ['bash'],
+      status: 'queued',
+      log_ref: `logs/${id}`,
+      tty: false,
+      ...values,
+    })
+    .run()
+
+  return id
+}
+
+const deliveryOf = (machineId: string) =>
+  station.waitFor(
+    () =>
+      station.secrets.filter((s) => s.target.sandbox_id === machineId && s.values.GH_TOKEN).at(-1),
+    8000,
+    'the machine delivery',
+  )
 
 before(async () => {
-  registry = FakeRegistry.install()
-  registry.publish('nginx:1.27')
-  registry.publish('alpine:3.20')
   h = await startDispatch()
   pinPlatform(h, {
     machines: true,
@@ -55,414 +80,134 @@ before(async () => {
   })
   project = await createProject(h, 'alpha')
   envId = (await createPreview(h, 'alpha', 'dev')).id
-  deployToken = await mintToken(
-    h,
-    [
+  const projectVars = await api('PATCH', `/v1/projects/alpha/environment-variables`, {
+    target: 'preview',
+    set: [
       {
-        project_id: project.id,
-        target: '*',
-        level: 'deploy',
+        name: 'GH_TOKEN',
+        kind: 'secret',
+        value: secret,
       },
     ],
-    'deployer',
-  )
-  readToken = await mintToken(
-    h,
-    [
-      {
-        project_id: project.id,
-        target: '*',
-        level: 'read',
-      },
-    ],
-    'reader',
-  )
+  })
+
+  assert.equal(projectVars.status, 200, projectVars.text)
   const box = await createMachine(h, envId, {
     name: 'worker',
   })
 
   boxId = box.id
+  setupRunId = box.workspace!.setup_run_id
   await waitForMachine(h, boxId, 'running')
 })
 
 after(async () => {
   await h.close()
-  registry.restore()
 })
 
-const exec = (body: Record<string, unknown>, token = h.admin.token, id = boxId) =>
-  api('POST', `/v1/machines/${id}/exec`, body, token)
+describe('machine runs', () => {
+  test('the workspace setup run goes through stationd and its output is untrusted and redacted', async () => {
+    const delivery = await deliveryOf(boxId)
+    const key = delivery.values[workspaceEnv.token]!
+    const reply = await api('GET', `/v1/runs/${setupRunId}?wait_s=5`)
 
-const dump = () =>
-  JSON.stringify([
-    rows(h, 'select * from run'),
-    rows(h, 'select * from audit_event'),
-    rows(h, 'select * from event'),
-    rows(h, 'select * from approval'),
-  ])
-
-describe('exec', () => {
-  test('a command runs through stationd and returns its run with untrusted output', async () => {
-    const reply = await exec({
-      command: ['echo', 'hello'],
-      cwd: '/root',
-      user: 'agent',
-      timeout_s: 900,
-    })
-
-    assert.equal(reply.status, 201, reply.text)
+    assert.equal(reply.status, 200, reply.text)
     const body = reply.body
 
-    assert.equal(body.kind, 'exec')
-    assert.equal(body.machine_id, boxId)
-    assert.equal(body.app_id, null)
-    assert.equal(body.deployment_id, null)
-    assert.equal(body.status, 'succeeded')
-    assert.equal(body.exit_code, 0)
-    assert.deepEqual(body.output.untrusted.source, 'machine exec output')
-    assert.match(body.output.untrusted.text, /^stdout: \$ echo hello\n/)
-    assert.equal(body.output.truncated, false)
-    const sent = station.received.filter(
-      (m) => m.type === 'run.start' && (m.body as any).run_id === body.id,
-    )[0]!.body as any
+    assert.deepEqual(
+      [body.kind, body.machine_id, body.app_id, body.deployment_id, body.status, body.exit_code],
+      ['exec', boxId, null, null, 'succeeded', 0],
+    )
+    assert.equal(body.output.untrusted.source, 'machine exec output')
+    assert.match(body.output.untrusted.text, /^stdout: \$ /)
+    const text = body.output.untrusted.text
+
+    for (const value of [key, secret]) {
+      assert.ok(!text.includes(value), `${value} leaked: ${text}`)
+    }
+
+    assert.match(text, /\[redacted:GH_TOKEN\]/)
+    assert.match(text, new RegExp(`\\[redacted:${workspaceEnv.token}\\]`))
+    const sent = station.received.find(
+      (m) => m.type === 'run.start' && (m.body as any).run_id === setupRunId,
+    )!.body as any
 
     assert.deepEqual(
-      [
-        sent.service_id,
-        sent.deployment_id,
-        sent.sandbox_id,
-        sent.kind,
-        sent.user,
-        sent.cwd,
-        sent.timeout_s,
-        sent.attach,
-        sent.tty,
-      ],
-      [null, null, boxId, 'exec', 'agent', '/root', 900, false, false],
+      [sent.service_id, sent.deployment_id, sent.sandbox_id, sent.kind, sent.attach, sent.tty],
+      [null, null, boxId, 'exec', false, false],
     )
-    const again = await api('GET', `/v1/runs/${body.id}?wait_s=1`)
+    const logs = await api('GET', `/v1/logs?run=${setupRunId}&tail=50`)
 
-    assert.equal(again.body.status, 'succeeded')
-    assert.match(again.body.output.untrusted.text, /echo hello/)
-  })
-
-  test('a non-zero exit fails the run with EXIT_NONZERO and a diagnosis', async () => {
-    const reply = await exec({
-      command: ['false'],
-    })
-
-    assert.equal(reply.body.status, 'failed')
-    assert.equal(reply.body.exit_code, 1)
-    assert.equal(reply.body.failure.code, 'EXIT_NONZERO')
-    const diagnosis = await api('GET', `/v1/runs/${reply.body.id}/diagnosis`)
-
-    assert.equal(diagnosis.status, 200, diagnosis.text)
-    assert.equal(diagnosis.body.entity.id, reply.body.id)
-  })
-
-  test('a machine that is not running refuses exec and shells with MACHINE_NOT_RUNNING naming start_machine', async () => {
-    const cold = await createMachine(h, envId, {
-      name: 'cold',
-      start: false,
-    })
-
-    for (const [path, body] of [
-      [
-        `/v1/machines/${cold.id}/exec`,
-        {
-          command: ['true'],
-        },
-      ],
-      [`/v1/machines/${cold.id}/shells`, {}],
-    ] as const) {
-      const reply = await api('POST', path, body)
-
-      assert.equal(reply.status, 409)
-      assert.equal(reply.body.error.code, 'MACHINE_NOT_RUNNING')
-      assert.equal(reply.body.error.details.status, 'stopped')
-      assert.match(reply.body.error.fix, /start_machine/)
-    }
-  })
-
-  test('env values reach stationd in a run delivery and are never stored, logged or audited', async () => {
-    const value = 'exec-env-secret-5566778899'
-    const reply = await exec({
-      command: ['printenv'],
-      env: {
-        EXEC_SECRET: value,
-        CI: '1',
-      },
-      wait_s: 10,
-    })
-
-    assert.equal(reply.status, 201, reply.text)
-    const delivery = station.secrets.find((s) => s.target.run_id === reply.body.id)!
-
-    assert.equal(delivery.purpose, 'run')
-    assert.deepEqual(delivery.values, {
-      EXEC_SECRET: value,
-      CI: '1',
-    })
-    assert.ok(!dump().includes(value))
-    const audit = rows<{ after: string }>(
-      h,
-      "select after from audit_event where action = 'machine.exec'",
-    ).at(-1)!
-
-    assert.deepEqual(JSON.parse(audit.after).env_keys, ['CI', 'EXEC_SECRET'])
-  })
-
-  test('env over 64 KiB and stdin over 256 KiB are refused', async () => {
-    const bigEnv = await exec({
-      command: ['true'],
-      env: {
-        BIG: 'x'.repeat(65 * 1024),
-      },
-    })
-
-    assert.equal(bigEnv.status, 400)
-    assert.equal(bigEnv.body.error.details.issues[0].path, '/env')
-    const bigStdin = await exec({
-      command: ['true'],
-      stdin: Buffer.alloc(257 * 1024).toString('base64url'),
-    })
-
-    assert.equal(bigStdin.status, 400)
-    assert.equal(bigStdin.body.error.details.issues[0].path, '/stdin')
-    const ok = await exec({
-      command: ['cat'],
-      stdin: Buffer.from('from stdin').toString('base64url'),
-    })
-
-    assert.match(ok.body.output.untrusted.text, /stdin: from stdin/)
-  })
-
-  test('wait_s 0 returns the run without output and a later read with wait_s returns it', async () => {
-    const reply = await exec({
-      command: ['sleepless'],
-      wait_s: 0,
-    })
-
-    assert.equal(reply.status, 201)
-    assert.equal(reply.body.output, undefined)
-    assert.ok(['queued', 'running', 'succeeded'].includes(reply.body.status))
-    const later = await api('GET', `/v1/runs/${reply.body.id}?wait_s=5`)
-
-    assert.equal(later.body.status, 'succeeded')
-    assert.ok(later.body.output.untrusted.text.length > 0)
+    assert.equal(logs.status, 200, logs.text)
+    assert.ok(!logs.text.includes(secret) && !logs.text.includes(key))
+    assert.match(logs.text, /\[redacted:/)
   })
 
   test('deadline_at is when the run is killed for its timeout, and null for a run without one', async () => {
-    const timed = await exec({
-      command: ['echo', 'timed'],
-      timeout_s: 900,
-    })
-    const plain = await exec({
-      command: ['echo', 'plain'],
-    })
     const read = async (id: string) =>
       (await api('GET', `/v1/runs/${id}?fields=created_at,started_at,deadline_at`)).body
-    const deadline = (body: any, seconds: number) =>
-      new Date(Date.parse(body.started_at ?? body.created_at) + seconds * 1000).toISOString()
-    const timedRun = await read(timed.body.id)
-    const plainRun = await read(plain.body.id)
+    const setup = await read(setupRunId)
 
-    assert.equal(timedRun.deadline_at, deadline(timedRun, 900))
-    assert.equal(plainRun.deadline_at, deadline(plainRun, 1800))
-    const id = newId('run')
+    assert.equal(
+      setup.deadline_at,
+      new Date(
+        Date.parse(setup.started_at ?? setup.created_at) +
+          machineExecLimits.timeoutS.default * 1000,
+      ).toISOString(),
+    )
+    const id = plantRun(boxId, {
+      kind: 'one_off',
+      command: ['migrate'],
+      status: 'running',
+    })
 
-    h.db
-      .insert(run)
-      .values({
-        id,
-        app_id: null,
-        machine_id: boxId,
-        deployment_id: null,
-        kind: 'one_off',
-        command: ['migrate'],
-        status: 'running',
-        log_ref: `logs/${id}`,
-        tty: false,
-      })
-      .run()
     assert.equal((await read(id)).deadline_at, null)
   })
 
-  test('attach = true returns a queued run with attach_url and the shell reuses the run row', async () => {
-    const attached = await exec({
-      command: ['bash'],
-      attach: true,
-    })
-
-    assert.equal(attached.body.status, 'queued')
-    assert.equal(attached.body.attach_url, `/v1/runs/${attached.body.id}/attach`)
-    assert.equal(attached.body.output, undefined)
-    const shell = await api('POST', `/v1/machines/${boxId}/shells`, {
-      user: 'agent',
-      cwd: '/home/agent',
-    })
-
-    assert.equal(shell.status, 201, shell.text)
-    assert.deepEqual(
-      [shell.body.kind, shell.body.tty, shell.body.machine_id, shell.body.status],
-      ['shell', true, boxId, 'queued'],
-    )
-    assert.deepEqual(shell.body.command, ['/bin/bash', '-l'])
-    assert.equal(shell.body.attach_url, `/v1/runs/${shell.body.id}/attach`)
-    const plainBox = await createMachine(h, envId, {
-      name: 'alpine-shell',
-      image: {
-        ref: 'alpine:3.20',
+  test('a failed machine run has a diagnosis', async () => {
+    const id = plantRun(boxId, {
+      command: ['false'],
+      status: 'failed',
+      exit_code: 1,
+      failure: {
+        phase: 'run',
+        code: 'EXIT_NONZERO',
+        summary: 'exited 1',
       },
     })
+    const diagnosis = await api('GET', `/v1/runs/${id}/diagnosis`)
 
-    await waitForMachine(h, plainBox.id, 'running')
-    const alpineShell = await api('POST', `/v1/machines/${plainBox.id}/shells`, {})
-
-    assert.deepEqual(alpineShell.body.command, ['/bin/sh'])
-    const queued = rows<{ n: number }>(
-      h,
-      "select count(*) as n from run where id = ? and status = 'queued'",
-      shell.body.id,
-    )[0]!.n
-
-    assert.equal(queued, 1)
+    assert.equal(diagnosis.status, 200, diagnosis.text)
+    assert.equal(diagnosis.body.entity.id, id)
+    assert.equal(diagnosis.body.code, 'EXIT_NONZERO')
   })
 
-  test('at most 16 runs are active in a machine at once', async () => {
-    const box = await createMachine(h, envId, {
-      name: 'busy',
-    })
-
-    await waitForMachine(h, box.id, 'running')
-    const planted = Array.from(
-      {
-        length: 16,
-      },
-      () => newId('run'),
-    )
-
-    for (const id of planted) {
-      h.db
-        .insert(run)
-        .values({
-          id,
-          app_id: null,
-          machine_id: box.id,
-          deployment_id: null,
-          kind: 'exec',
-          command: ['sleep'],
-          status: 'running',
-          log_ref: `logs/${id}`,
-          tty: false,
-        })
-        .run()
-    }
-
-    const reply = await exec(
-      {
-        command: ['true'],
-      },
-      h.admin.token,
-      box.id,
-    )
-
-    assert.equal(reply.status, 429)
-    assert.equal(reply.body.error.code, 'RATE_LIMITED')
-    h.db
-      .update(run)
-      .set({
-        status: 'cancelled',
-      })
-      .where(eq(run.machine_id, box.id))
-      .run()
-    assert.equal(
-      (
-        await exec(
-          {
-            command: ['true'],
-          },
-          h.admin.token,
-          box.id,
-        )
-      ).status,
-      201,
-    )
-  })
-
-  test('the run list filters by kind and status, and a run is cancellable through the common route', async () => {
-    const listed = await api('GET', `/v1/machines/${boxId}/runs?kind=exec&status=succeeded`)
-
-    assert.equal(listed.status, 200)
-    assert.ok(listed.body.items.length >= 3)
-    assert.ok(
-      listed.body.items.every(
-        (r: any) => r.kind === 'exec' && r.status === 'succeeded' && r.machine_id === boxId,
-      ),
-    )
-    const queued = (
-      await exec({
-        command: ['bash'],
-        attach: true,
-      })
-    ).body
-    const cancelled = await api('POST', `/v1/runs/${queued.id}/cancel`)
+  test('a queued machine run is cancellable through the common route', async () => {
+    const id = plantRun(boxId)
+    const cancelled = await api('POST', `/v1/runs/${id}/cancel`)
 
     assert.equal(cancelled.status, 200, cancelled.text)
     assert.equal(cancelled.body.status, 'cancelled')
   })
 
-  test('a missing run or machine is NOT_FOUND on the shared run paths', async () => {
+  test('a missing run is NOT_FOUND on the shared run paths', async () => {
     const missing = newId('run')
 
-    for (const path of [
-      `/v1/runs/${missing}`,
-      `/v1/runs/${missing}?wait_s=2`,
-      `/v1/machines/${newId('machine')}/runs`,
-    ]) {
+    for (const path of [`/v1/runs/${missing}`, `/v1/runs/${missing}?wait_s=2`]) {
       const reply = await api('GET', path)
 
       assert.equal(reply.status, 404, path)
       assert.equal(reply.body.error.code, 'NOT_FOUND')
     }
 
-    const queued = (
-      await exec({
-        command: ['bash'],
-        attach: true,
-      })
-    ).body
-    const waiting = waitForRun(h.db, queued.id, 5, new AbortController().signal)
+    const queued = plantRun(boxId)
+    const waiting = waitForRun(h.db, queued, 5, new AbortController().signal)
 
-    h.db.delete(run).where(eq(run.id, queued.id)).run()
+    h.db.delete(run).where(eq(run.id, queued)).run()
     await assert.rejects(waiting, {
       code: 'NOT_FOUND',
-      message: `run ${queued.id} does not exist or is not visible to this credential.`,
+      message: `run ${queued} does not exist or is not visible to this credential.`,
     })
-  })
-
-  test('read access cannot run commands, deploy access can', async () => {
-    const refused = await exec(
-      {
-        command: ['true'],
-      },
-      readToken,
-    )
-
-    assert.equal(refused.status, 403)
-    assert.equal(refused.body.error.code, 'FORBIDDEN_SCOPE')
-    assert.equal(
-      (
-        await exec(
-          {
-            command: ['true'],
-          },
-          deployToken,
-        )
-      ).status,
-      201,
-    )
-    assert.equal((await api('GET', `/v1/machines/${boxId}/runs`, undefined, readToken)).status, 200)
   })
 
   test('stopping a machine cancels its queued and running runs', async () => {
@@ -471,137 +216,32 @@ describe('exec', () => {
     })
 
     await waitForMachine(h, box.id, 'running')
-    const queued = (
-      await exec(
-        {
-          command: ['bash'],
-          attach: true,
-        },
-        h.admin.token,
-        box.id,
-      )
-    ).body
+    const queued = plantRun(box.id)
 
-    await api('POST', `/v1/machines/${box.id}/stop`)
+    stopMachine(h.db, machineRowOf(h, box.id))
     await waitForMachine(h, box.id, 'stopped')
-    assert.equal((await api('GET', `/v1/runs/${queued.id}`)).body.status, 'cancelled')
+    assert.equal((await api('GET', `/v1/runs/${queued}`)).body.status, 'cancelled')
   })
 })
 
 describe('environment variables', () => {
-  const set = (body: unknown, token = h.admin.token, id = boxId) =>
-    api('PATCH', `/v1/machines/${id}/environment-variables`, body, token)
-
-  before(async () => {
-    const projectVars = await api('PATCH', `/v1/projects/alpha/environment-variables`, {
-      target: 'preview',
-      set: [
-        {
-          name: 'GH_TOKEN',
-          kind: 'secret',
-          value: secret,
-        },
-      ],
-    })
-
-    assert.equal(projectVars.status, 200, projectVars.text)
-  })
-
-  test('literal, secret and reference environment variables are set, delivered to stationd as purpose sandbox and never listed with values', async () => {
-    const reply = await set({
-      set: [
-        {
-          name: 'PLAIN',
-          kind: 'literal',
-          value: plain,
-        },
-        {
-          name: 'OWN_SEALED',
-          kind: 'secret',
-          value: secretValue,
-        },
-        {
-          name: 'GH_TOKEN',
-          kind: 'reference',
-          reference: '${{project.GH_TOKEN}}',
-        },
-        {
-          name: 'GENERATED',
-          kind: 'literal',
-          reference: '${{secret(32)}}',
-        },
-      ],
-    })
-
-    assert.equal(reply.status, 200, reply.text)
-    assert.deepEqual(reply.body.environment_variables.map((v: any) => v.name).sort(), [
-      'GENERATED',
-      'GH_TOKEN',
-      'OWN_SEALED',
-      'PLAIN',
-    ])
-    assert.ok(
-      reply.body.environment_variables.every(
-        (v: any) => v.scope === 'machine' && v.injection === 'env' && v.build === false,
-      ),
+  test('workspace variables are machine rows delivered to stationd as purpose sandbox with the project reference resolved', async () => {
+    const names = rows<{ name: string; scope: string }>(
+      h,
+      'select name, scope from environment_variable where machine_id = ?',
+      boxId,
     )
-    const full = (await api('GET', `/v1/machines/${boxId}/environment-variables?fields=machine_id`))
-      .body.items
 
-    assert.ok(full.every((v: any) => v.machine_id === boxId))
-    const delivery = await station.waitFor(
-      () =>
-        station.secrets.filter((s) => s.target.sandbox_id === boxId && s.values.GH_TOKEN).at(-1),
-      8000,
-      'the machine delivery',
-    )
+    assert.ok(names.every((v) => v.scope === 'machine'))
+    assert.ok(names.some((v) => v.name === workspaceEnv.token))
+    assert.ok(names.some((v) => v.name === 'GH_TOKEN'))
+    const delivery = await deliveryOf(boxId)
 
     assert.equal(delivery.purpose, 'sandbox')
-    assert.equal(delivery.values.PLAIN, plain)
-    assert.equal(delivery.values.OWN_SEALED, secretValue)
     assert.equal(delivery.values.GH_TOKEN, secret)
-    assert.ok(delivery.values.GENERATED!.length >= 32)
-    const listed = await api('GET', `/v1/machines/${boxId}/environment-variables?fields=*`)
-
-    assert.equal(listed.status, 200)
-    assert.equal(listed.body.items.length, 4)
-    assert.ok(listed.body.items.every((v: any) => v.value === null))
-    assert.ok(
-      !listed.text.includes(secret) &&
-        !listed.text.includes(secretValue) &&
-        !listed.text.includes(plain),
-    )
-  })
-
-  test('the resolved view shows sources for a project reference and a value only to admin, never for secret ones', async () => {
-    const resolved = (await api('GET', `/v1/machines/${boxId}/environment-variables/resolved`)).body
-
-    assert.equal(resolved.machine_id, boxId)
-    const byKey = Object.fromEntries(resolved.environment_variables.map((v: any) => [v.name, v]))
-
-    assert.equal(byKey.PLAIN.value, plain)
-    assert.equal(byKey.OWN_SEALED.secret, true)
-    assert.equal(byKey.OWN_SEALED.value, undefined)
-    assert.equal(byKey.GH_TOKEN.value, undefined)
-    assert.equal(byKey.GH_TOKEN.secret, true)
-    assert.equal(byKey.GH_TOKEN.parts[0].chain[0].scope, 'project')
-    assert.equal(byKey.GH_TOKEN.parts[0].chain[0].name, 'GH_TOKEN')
-    const asDeployer = (
-      await api(
-        'GET',
-        `/v1/machines/${boxId}/environment-variables/resolved`,
-        undefined,
-        deployToken,
-      )
-    ).body
-
-    assert.ok(asDeployer.environment_variables.every((v: any) => v.value === undefined))
-    assert.ok(!JSON.stringify(asDeployer).includes(plain))
-    const expanded = (await api('GET', `/v1/machines/${boxId}?fields=environment_variables`)).body
-      .environment_variables
-
-    assert.ok(expanded.some((v: any) => v.name === 'GH_TOKEN' && v.secret === true))
-    assert.ok(!JSON.stringify(expanded).includes(secret))
+    assert.equal(delivery.values[workspaceEnv.project], project.id)
+    assert.equal(delivery.values[workspaceEnv.preview], envId)
+    assert.ok(delivery.values[workspaceEnv.token]!.length > 0)
   })
 
   test('a changed referenced project value is delivered again and the generation env_digest follows it', async () => {
@@ -609,7 +249,6 @@ describe('environment variables', () => {
       await station.waitForGeneration((d) => d.sandboxes?.[boxId]?.env_digest !== undefined)
     ).sandboxes![boxId]!.env_digest
     const deliveries = station.secrets.filter((s) => s.target.sandbox_id === boxId).length
-    const next = 'ghp_rotatedsecret9876543210'
 
     assert.equal(
       (
@@ -619,7 +258,7 @@ describe('environment variables', () => {
             {
               name: 'GH_TOKEN',
               kind: 'secret',
-              value: next,
+              value: rotated,
             },
           ],
         })
@@ -632,7 +271,7 @@ describe('environment variables', () => {
         station.secrets
           .filter((s) => s.target.sandbox_id === boxId)
           .slice(deliveries)
-          .find((s) => s.values.GH_TOKEN === next),
+          .find((s) => s.values.GH_TOKEN === rotated),
       8000,
       'the rotated delivery',
     )
@@ -654,239 +293,25 @@ describe('environment variables', () => {
     assert.equal(after.sandboxes![boxId]!.env_digest, delivery.digest)
   })
 
-  test('exec output and logs are redacted with the machine environment variable values', async () => {
-    const reply = await exec({
-      command: ['env'],
+  test('requesting deletion of a machine deletes its environment variable rows', async () => {
+    const box = await createMachine(h, envId, {
+      name: 'with-variables',
     })
 
-    assert.equal(reply.status, 201)
-    const text = reply.body.output.untrusted.text
-
-    assert.ok(!text.includes(plain) || text.includes('[redacted:'))
-
-    for (const value of [secretValue, 'ghp_rotatedsecret9876543210']) {
-      assert.ok(!text.includes(value), `${value} leaked: ${text}`)
-    }
-
-    assert.match(text, /\[redacted:OWN_SEALED\]/)
-    const logs = await api('GET', `/v1/logs?run=${reply.body.id}&tail=50`)
-
-    assert.equal(logs.status, 200, logs.text)
-    assert.ok(!logs.text.includes(secretValue))
-    assert.match(logs.text, /\[redacted:/)
-  })
-
-  test('a reference to an app, an unresolved reference and an ungranted global are refused with their codes', async () => {
-    await createApp(h, envId, {
-      name: 'web',
-      ref: 'nginx:1.27',
-      ports: [
-        {
-          port: 80,
-        },
-      ],
+    assert.ok(rows(h, 'select id from environment_variable where machine_id = ?', box.id).length)
+    requestDeletion(h.db, machineRowOf(h, box.id), {
+      actor: systemActor,
+      reason: 'user',
     })
-    const app = await set({
-      set: [
-        {
-          name: 'WEB_PORT',
-          kind: 'reference',
-          reference: '${{web.PORT}}',
-        },
-      ],
-    })
-
-    assert.equal(app.status, 400)
-    assert.equal(app.body.error.code, 'VALIDATION_FAILED')
-    assert.equal(app.body.error.details.issues[0].path, '/set/0/reference')
-    const unresolved = await set({
-      set: [
-        {
-          name: 'NOPE',
-          kind: 'reference',
-          reference: '${{project.NOPE}}',
-        },
-      ],
-    })
-
-    assert.equal(unresolved.status, 422)
-    assert.equal(unresolved.body.error.code, 'ENVIRONMENT_VARIABLE_UNRESOLVED')
     assert.equal(
-      (
-        await api('PATCH', '/v1/global-environment-variables', {
-          set: [
-            {
-              name: 'ORG_KEY',
-              kind: 'secret',
-              value: 'org-key-0123456789',
-            },
-          ],
-        })
-      ).status,
-      200,
-    )
-    const ungranted = await set({
-      set: [
-        {
-          name: 'ORG_KEY',
-          kind: 'reference',
-          reference: '${{global.ORG_KEY}}',
-        },
-      ],
-    })
-
-    assert.equal(ungranted.status, 403)
-    assert.equal(ungranted.body.error.code, 'ENVIRONMENT_VARIABLE_NOT_GRANTED')
-    const key = (await api('GET', '/v1/global-environment-variables')).body.items.find(
-      (v: any) => v.name === 'ORG_KEY',
-    )
-
-    assert.equal(
-      (
-        await api('POST', `/v1/environment-variables/${key.id}/grants`, {
-          project_id: project.id,
-        })
-      ).status,
-      201,
-    )
-    const granted = await set({
-      set: [
-        {
-          name: 'ORG_KEY',
-          kind: 'reference',
-          reference: '${{global.ORG_KEY}}',
-        },
-      ],
-    })
-
-    assert.equal(granted.status, 200, granted.text)
-    const deferred = await set({
-      set: [
-        {
-          name: 'LATER',
-          kind: 'reference',
-          reference: '${{project.LATER}}',
-        },
-      ],
-      allow_unresolved: true,
-    })
-
-    assert.equal(deferred.status, 200, deferred.text)
-    assert.equal(
-      (
-        await set({
-          unset: ['LATER', 'ORG_KEY'],
-        })
-      ).status,
-      200,
-    )
-  })
-
-  test('a secret environment variable needs admin and a deploy token sets literals and references only', async () => {
-    const secretByDeployer = await set(
-      {
-        set: [
-          {
-            name: 'DEPLOYER_SEALED',
-            kind: 'secret',
-            value: 'whatever-0123456789',
-          },
-        ],
-      },
-      deployToken,
-    )
-
-    assert.equal(secretByDeployer.status, 403)
-    assert.equal(secretByDeployer.body.error.code, 'FORBIDDEN_SCOPE')
-    assert.equal(
-      (
-        await set(
-          {
-            set: [
-              {
-                name: 'DEPLOYER_LITERAL',
-                kind: 'literal',
-                value: 'ok',
-              },
-            ],
-          },
-          deployToken,
-        )
-      ).status,
-      200,
-    )
-    const asReader = await set(
-      {
-        set: [
-          {
-            name: 'READER',
-            kind: 'literal',
-            value: 'no',
-          },
-        ],
-      },
-      readToken,
-    )
-
-    assert.equal(asReader.status, 403)
-  })
-
-  test('deleting the machine deletes its environment variable rows and a fork starts with none', async () => {
-    const fork = await createMachine(h, envId, {
-      name: 'key-fork',
-      from: {
-        machine: boxId,
-      },
-      start: false,
-    })
-
-    assert.equal(
-      rows(h, 'select id from environment_variable where machine_id = ?', fork.id).length,
+      rows(h, 'select id from environment_variable where machine_id = ?', box.id).length,
       0,
     )
-    const withVariables = await createMachine(h, envId, {
-      name: 'created-with-keys',
-      start: false,
-      environment_variables: [
-        {
-          name: 'TOKEN',
-          kind: 'reference',
-          reference: '${{project.GH_TOKEN}}',
-        },
-      ],
-    })
-
-    assert.equal(
-      rows(h, 'select id from environment_variable where machine_id = ?', withVariables.id).length,
-      1,
-    )
-    const unresolved = await api('POST', placed(h, envId, `machines`), {
-      name: 'bad-keys',
-      environment_variables: [
-        {
-          name: 'X',
-          kind: 'reference',
-          reference: '${{project.MISSING}}',
-        },
-      ],
-    })
-
-    assert.equal(unresolved.status, 422)
-    assert.equal(rows(h, "select id from machine where name = 'bad-keys'").length, 0)
-    assert.equal((await api('DELETE', `/v1/machines/${withVariables.id}`)).status, 200)
-    assert.equal(
-      rows(h, 'select id from environment_variable where machine_id = ?', withVariables.id).length,
-      0,
-    )
-    assert.equal(
-      h.db.select().from(machine).where(eq(machine.id, withVariables.id)).get()?.status ??
-        'deleting',
-      'deleting',
-    )
+    assert.equal(machineRowOf(h, box.id)?.status ?? 'deleting', 'deleting')
   })
 })
 
-describe('logs, metrics and network', () => {
+describe('logs', () => {
   test('GET /v1/logs reads the init and runtime log of a machine', async () => {
     const init = await api('GET', `/v1/logs?machine=${boxId}`)
 
@@ -912,60 +337,5 @@ describe('logs, metrics and network', () => {
     const two = await api('GET', `/v1/logs?machine=${boxId}&run=run_01ARZ3NDEKTSV4RRFFQ69G5FAV`)
 
     assert.equal(two.status, 400)
-  })
-
-  test('metrics, connections and the DNS log come from the station with the machine form of each request', async () => {
-    const metrics = await api('GET', `/v1/machines/${boxId}/metrics`)
-
-    assert.equal(metrics.status, 200, metrics.text)
-    assert.equal(metrics.body.machine_id, boxId)
-    assert.equal(metrics.body.disk_limit_bytes, 21474836480)
-    const connections = await api('GET', `/v1/machines/${boxId}/connections?direction=out`)
-
-    assert.equal(connections.status, 200, connections.text)
-    assert.deepEqual(connections.body.machine, {
-      id: boxId,
-      name: 'worker',
-    })
-    assert.equal(connections.body.refused[0].path, 'domain_not_allowed')
-    assert.equal(connections.body.untrusted.source, 'resolver answers')
-    const dns = await api('GET', `/v1/machines/${boxId}/dns-log?tail=10`)
-
-    assert.equal(dns.status, 200, dns.text)
-    assert.equal(dns.body.untrusted.source, 'resolver log')
-    assert.equal(
-      dns.body.untrusted.entries.find((e: any) => e.refused === 'domain_not_allowed').name,
-      'evil.example',
-    )
-    const asked = station.received
-      .filter((m) => ['metrics.sample', 'network.sample', 'dns.log'].includes(m.type))
-      .map((m) => m.body as any)
-
-    assert.ok(asked.some((b) => b.sandbox_ids?.[0] === boxId))
-    assert.ok(asked.some((b) => b.sandbox_id === boxId))
-  })
-
-  test('metrics of a stopped machine are a documented error and an offline station is SERVER_OFFLINE', async () => {
-    const cold = await createMachine(h, envId, {
-      name: 'cold-metrics',
-      start: false,
-    })
-
-    assert.equal((await api('GET', `/v1/machines/${cold.id}/metrics`)).status, 404)
-    const idle = await startFakeStation(h, 'station-away', {
-      machines: {},
-    })
-    const away = await createMachine(h, envId, {
-      name: 'away-box',
-      server_id: 'station-away',
-      start: false,
-    })
-
-    await idle.close()
-    await idle.waitFor(() => !h.deps.stations.isConnected(idle.stationId), 5000, 'disconnect')
-    const reply = await api('GET', `/v1/machines/${away.id}/metrics`)
-
-    assert.equal(reply.status, 503)
-    assert.equal(reply.body.error.code, 'SERVER_OFFLINE')
   })
 })

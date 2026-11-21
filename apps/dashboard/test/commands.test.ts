@@ -67,7 +67,6 @@ const built: Record<keyof typeof commands, string[]> = {
   deploy: [commands.deploy(app)],
   startApp: [commands.startApp(app)],
   rollback: [commands.rollback(app, 'dep_01')],
-  machineShell: [commands.machineShell(scope, 'dev')],
   setMemory: [commands.setMemory(app, 1073741824)],
   setHealth: [commands.setHealth(app, 3000), commands.setHealth(app, null)],
   logs: [commands.logs(app, 'dep_01', null), commands.logs(app, 'dep_01', 'bld_01')],
@@ -76,11 +75,6 @@ const built: Record<keyof typeof commands, string[]> = {
   setProjectVariable: [commands.setProjectVariable(scope)],
   addDomain: [commands.addDomain('spt_01'), commands.addDomain(null)],
   setMachineRuntime: [commands.setMachineRuntime('home')],
-  startMachine: [commands.startMachine(scope, 'web-sbx')],
-  createMachine: [commands.createMachine(scope)],
-  snapshotMachine: [commands.snapshotMachine(scope, 'web-sbx')],
-  setMachineVariable: [commands.setMachineVariable('sbx_01')],
-  forward: [commands.forward('sbx_01', 3000)],
 }
 
 const samples: Record<string, string> = {

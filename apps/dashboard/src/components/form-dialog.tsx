@@ -27,7 +27,7 @@ export function FormError({ id, children }: { id?: string; children: ReactNode }
 
 type FormProps = {
   title: ReactNode
-  description: ReactNode
+  description?: ReactNode
   notice?: ReactNode
   also?: ReactNode
   error?: ReactNode
@@ -63,7 +63,7 @@ export function DialogForm({
     <form onSubmit={submit} className="flex flex-col gap-4" autoComplete="off">
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+        {description && <DialogDescription>{description}</DialogDescription>}
       </DialogHeader>
       {notice}
       {typeof error === 'string' ? <FormError>{error}</FormError> : error}
@@ -103,11 +103,18 @@ export function FormDialog({
   size?: keyof typeof sizes
   hideWhilePending?: boolean
 }) {
+  const withoutDescription = form.description
+    ? {}
+    : {
+        'aria-describedby': undefined,
+      }
+
   return (
     <Dialog open={open && !(hideWhilePending && form.pending)} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent
         className={cn(dialogScroll, size && sizes[size])}
+        {...withoutDescription}
         onOpenAutoFocus={(event) => {
           const field = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
             'form input:not([type=hidden]), form textarea, form [role=combobox]',

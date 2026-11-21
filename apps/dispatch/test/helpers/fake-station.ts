@@ -23,8 +23,6 @@ type SandboxDoc = {
   reach: string[]
 }
 
-type SandboxSnapshotDoc = { hash: string; sandbox_id: string; status: 'active' | 'destroy' }
-
 type Doc = {
   number: number
   hash: string
@@ -55,7 +53,6 @@ type Doc = {
     sandbox_network?: { bridge_name: string; subnet: string; gateway: string } | null
   }
   sandboxes?: Record<string, SandboxDoc>
-  sandbox_snapshots?: Record<string, SandboxSnapshotDoc>
 }
 
 type RouteConfig = {
@@ -251,7 +248,6 @@ export class FakeStation {
   >()
   readonly machineRuns = new Map<string, string[]>()
   readonly forwarded: { sandbox_id: string; port: number; data: string[] }[] = []
-  private readonly snapshotsTaken = new Map<string, string>()
   private readonly machineEnvs = new Map<string, Record<string, string>>()
   private readonly runEnvs = new Map<string, Record<string, string>>()
   private readonly forwardStreams = new Map<
@@ -705,24 +701,6 @@ export class FakeStation {
           ]
         }),
       ),
-      sandbox_snapshots: Object.fromEntries(
-        Object.entries(doc.sandbox_snapshots ?? {}).flatMap(([id, snap]) =>
-          this.snapshotsTaken.has(id)
-            ? [
-                [
-                  id,
-                  {
-                    applied_hash: snap.hash,
-                    result: 'ok',
-                    taken_at: this.snapshotsTaken.get(id),
-                    referenced_bytes: 734003200,
-                    exclusive_bytes: 1048576,
-                  },
-                ],
-              ]
-            : [],
-        ),
-      ),
       sandbox_bases: {},
     }
   }
@@ -797,32 +775,6 @@ export class FakeStation {
         })
       } else if (current.status === 'running') {
         current.stop_at = box.stop_at
-      }
-    }
-
-    for (const [id, snap] of Object.entries(doc.sandbox_snapshots ?? {})) {
-      if (snap.status === 'destroy') {
-        this.snapshotsTaken.delete(id)
-        this.record('sandbox.snapshot.status', {
-          snapshot_id: id,
-          status: 'deleted',
-          taken_at: null,
-          exclusive_bytes: 0,
-          referenced_bytes: 0,
-          failure: null,
-        })
-      } else if (!this.snapshotsTaken.has(id) && !this.config.machines.hold) {
-        const takenAt = now()
-
-        this.snapshotsTaken.set(id, takenAt)
-        this.record('sandbox.snapshot.status', {
-          snapshot_id: id,
-          status: 'ready',
-          taken_at: takenAt,
-          exclusive_bytes: 1048576,
-          referenced_bytes: 734003200,
-          failure: null,
-        })
       }
     }
   }

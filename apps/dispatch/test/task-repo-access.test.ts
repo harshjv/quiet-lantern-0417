@@ -16,11 +16,10 @@ import { setupCommand } from '../src/sandboxes/workspace.ts'
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import {
   approveWaiting,
-  createMachine,
   createPreview,
   createProject,
   pinPlatform,
-  placed,
+  tryCreateMachine,
   waitForMachine,
 } from './helpers/seed.ts'
 
@@ -63,14 +62,11 @@ const asAdmin = (method: string, path: string, body?: unknown) =>
     body,
   })
 
-const create = (name: string, repository: string, extra: Record<string, unknown> = {}) =>
-  asAdmin('POST', placed(h, envId, `machines`), {
+const create = (name: string, repository: string, targetId = envId) =>
+  tryCreateMachine(h, targetId, {
     name,
-    workspace: {
-      agent: 'claude',
-      repository,
-    },
-    ...extra,
+    repository,
+    repositoryReadable: false,
   })
 
 const setToken = (value: string, projectId = project.id, target = 'preview') =>
@@ -191,35 +187,13 @@ describe('the repository check at workspace create', () => {
     assert.equal(JSON.stringify(h.db.select().from(audit_event).all()).includes(guarded), false)
   })
 
-  test('a GH_TOKEN in the body counts as the project token', async () => {
-    const reply = await create('secret-four', 'https://github.com/acme/other', {
-      environment_variables: [
-        {
-          name: 'GH_TOKEN',
-          kind: 'secret',
-          value: guarded,
-        },
-      ],
-    })
-
-    assert.equal(reply.status, 422, reply.text)
-    assert.equal(reply.body.error.code, 'REPO_ACCESS_DENIED')
-    assert.equal(seen.at(-1)!.token, guarded)
-  })
-
   test('a project token set only for production is not read inside a preview', async () => {
     const beta = await createProject(h, 'beta')
     const stored = await approveWaiting(h, await setToken(guarded, beta.id, 'production'))
 
     assert.equal(stored.status, 200, stored.text)
     const pv = await createPreview(h, 'beta', 'pv')
-    const reply = await asAdmin('POST', placed(h, pv.id, `machines`), {
-      name: 'in-preview',
-      workspace: {
-        agent: 'claude',
-        repository: privateUrl,
-      },
-    })
+    const reply = await create('in-preview', privateUrl, pv.id)
 
     assert.equal(reply.status, 422, reply.text)
     assert.equal(reply.body.error.code, 'REPO_ACCESS_REQUIRED')
@@ -235,24 +209,10 @@ describe('the repository check at workspace create', () => {
 })
 
 describe('workspace size', () => {
-  test('a workspace gets 2 GiB and a plain machine 4 GiB', async () => {
+  test('a workspace gets 2 GiB', async () => {
     const workspace = await create('sized', publicUrl)
-    const plain = await createMachine(h, envId, {
-      name: 'plain',
-    })
 
     assert.equal(workspace.body.size.memory_bytes, 2 * gibibyte)
-    assert.equal(plain.size.memory_bytes, 4 * gibibyte)
-  })
-
-  test('the body can still ask for more', async () => {
-    const reply = await create('big', publicUrl, {
-      size: {
-        memory_bytes: 3 * gibibyte,
-      },
-    })
-
-    assert.equal(reply.body.size.memory_bytes, 3 * gibibyte)
   })
 })
 
@@ -424,24 +384,6 @@ describe('idle stop', () => {
         },
         later(600),
       ).includes(id),
-      false,
-    )
-  })
-
-  test('a plain machine is left to its time to live', async () => {
-    const plain = await createMachine(h, envId, {
-      name: 'plain-idle',
-    })
-
-    await waitForMachine(h, plain.id, 'running')
-    assert.equal(
-      runIdleStop(
-        {
-          db: h.db,
-          stations: statuses(),
-        },
-        later(600),
-      ).includes(plain.id),
       false,
     )
   })

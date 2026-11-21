@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { KeyRound, Loader2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
-import { Code } from '@/components/code'
+import { Code, CodeInput } from '@/components/code'
 import { CheckboxField, Field } from '@/components/field'
 import { Logo } from '@/components/logo'
 import { SixDigitCode } from '@/components/six-digit-code'
@@ -108,7 +108,7 @@ function Login() {
       setError(
         authMessage(
           result.error,
-          'GitHub sign-in is not set up yet, or your GitHub account is not connected. Sign in with your password, then connect GitHub from Your account.',
+          'GitHub sign-in is not set up for you. Sign in with your password, then connect GitHub in Your account.',
         ),
       )
     }
@@ -265,8 +265,7 @@ function Login() {
               </form>
               {!passkeys && (
                 <p className="text-xs text-muted-foreground">
-                  Passkeys need the dashboard hostname over HTTPS. On this address sign in with your
-                  password and TOTP code.
+                  Passkeys need the dashboard hostname over HTTPS. Use your password and TOTP here.
                 </p>
               )}
             </>
@@ -274,13 +273,12 @@ function Login() {
             <form className="space-y-4" onSubmit={(e) => void withCode(e)}>
               {backup ? (
                 <Field id="backup" label="Backup code">
-                  <Input
+                  <CodeInput
                     id="backup"
                     autoComplete="one-time-code"
                     required
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    className="font-mono"
                   />
                 </Field>
               ) : (

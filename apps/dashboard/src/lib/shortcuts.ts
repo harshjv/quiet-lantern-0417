@@ -87,7 +87,7 @@ export const shortcuts = {
   },
   create: {
     keys: ['c'],
-    label: 'Create a project, app or machine',
+    label: 'Create a project or app',
     place: 'Lists',
   },
   deploy: {

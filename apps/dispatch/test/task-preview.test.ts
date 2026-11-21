@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm'
 
 import { workspaceEnv } from '@stationly/protocol'
 
-import { app } from '../src/db/schema.ts'
+import { app, task } from '../src/db/schema.ts'
 
 import { localOrigin, startDispatch, startFakeStation, type Dispatch } from './helpers/dispatch.ts'
 import type { FakeStation } from './helpers/fake-station.ts'
@@ -40,6 +40,8 @@ const appIn = (targetId: string, name: string) =>
     .from(app)
     .where(and(eq(app.target_id, targetId), eq(app.name, name)))
     .get()!
+
+const taskRow = (id: string) => h.db.select().from(task).where(eq(task.id, id)).get()!
 
 const patchApp = (appId: string) =>
   h.call('PATCH', `/v1/apps/${appId}`, {
@@ -104,11 +106,11 @@ before(async () => {
     repository,
     agent: 'claude',
     prompt: 'Make the button blue',
-    machine: 'own',
+    isolated: true,
   })
 
   assert.equal(created.status, 202, created.text)
-  await waitForMachine(h, created.body.machine.id, 'running')
+  await waitForMachine(h, taskRow(created.body.id).machine_id, 'running')
 
   const deployed = await asHuman('POST', `/v1/tasks/${created.body.id}/preview`)
 

@@ -1,9 +1,8 @@
 import {
+  Blocks,
   Bot,
   Box,
   Braces,
-  Camera,
-  Container,
   FolderGit2,
   Globe,
   Inbox,
@@ -16,11 +15,10 @@ import {
 
 export const entityIcon = {
   project: FolderGit2,
+  task: Blocks,
   preview: Layers,
   app: Box,
   deployment: Rocket,
-  machine: Container,
-  snapshot: Camera,
   domain: Globe,
   agent: Bot,
   conversation: MessagesSquare,

@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Clock, Settings, TriangleAlert } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
+import { CodeInput } from '@/components/code'
 import { Confirm } from '@/components/confirm'
 import { CheckboxField, Field, Suffixed } from '@/components/field'
 import { FormDialog, FormError } from '@/components/form-dialog'
@@ -118,7 +119,7 @@ function ProjectSettingsForm({ project }: { project: string }) {
           .patch(changesOf(saved, draft), idempotency()),
       ),
     invalidate: ['projects'],
-    success: () => `${data.name} settings saved`,
+    success: () => 'Settings saved',
   })
 
   return (
@@ -126,11 +127,7 @@ function ProjectSettingsForm({ project }: { project: string }) {
       <Section
         icon={Settings}
         title="Project settings"
-        note={
-          admin
-            ? 'These apply to the whole project, production and previews.'
-            : 'Only an admin of this project changes its settings.'
-        }
+        note={admin ? undefined : 'Only an admin changes these.'}
       >
         <form
           className="flex max-w-xl flex-col gap-4 border bg-card p-4"
@@ -145,12 +142,11 @@ function ProjectSettingsForm({ project }: { project: string }) {
               label="Manifest path"
               hint="Where the Manifest lives in the connected repository."
             >
-              <Input
+              <CodeInput
                 id="project-manifest"
                 value={draft.manifest}
                 onChange={(event) => set('manifest', event.target.value)}
                 placeholder="stationly.yaml"
-                className="font-mono"
               />
             </Field>
             <Field
@@ -173,7 +169,7 @@ function ProjectSettingsForm({ project }: { project: string }) {
             <Field
               id="project-retention"
               label="Images kept per app"
-              hint="Older images go, except those of running deployments. Rolling back needs the image."
+              hint="Older images go, except running ones. Rollback needs the image."
             >
               <Input
                 id="project-retention"
@@ -234,11 +230,11 @@ function DeleteProject({ id, name }: { id: string; name: string }) {
           .delete(undefined, idempotency()),
       ),
     invalidate: ['projects'],
-    success: () => `${name} deleted`,
+    success: () => `Deleted ${name}`,
     onSuccess: () => {
       setOpen(false)
       void navigate({
-        to: '/projects',
+        to: '/',
       })
     },
   })
@@ -246,7 +242,7 @@ function DeleteProject({ id, name }: { id: string; name: string }) {
   return (
     <DangerZone
       title="Delete this project"
-      text="Deletes the project, its production and its environment variables. It must have no previews, apps or machines left."
+      text="Deletes production and its environment variables. Delete previews, apps and tasks first."
     >
       <FormDialog
         open={open}
@@ -264,7 +260,7 @@ function DeleteProject({ id, name }: { id: string; name: string }) {
           </Button>
         }
         title={`Delete ${name}?`}
-        description="This cannot be undone. Delete its previews, apps and machines first."
+        description="This cannot be undone. Delete its previews, apps and tasks first."
         error={remove.errorText}
         submitLabel="Delete project"
         submitVariant="destructive"
@@ -279,7 +275,6 @@ function DeleteProject({ id, name }: { id: string; name: string }) {
             onChange={(event) => setTyped(event.target.value)}
             autoComplete="off"
             spellCheck={false}
-            className="font-mono"
           />
         </Field>
       </FormDialog>
@@ -327,7 +322,9 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
       ),
     invalidate: ['previews'],
     success: () =>
-      lifetime === 'never' ? `${preview.name} no longer expires` : `${preview.name} expiry set`,
+      lifetime === 'never'
+        ? `Removed the expiry of ${preview.name}`
+        : `Set the expiry of ${preview.name}`,
   })
   const navigate = useNavigate()
   const remove = useApiMutation({
@@ -340,8 +337,8 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
           .delete(undefined, idempotency()),
       ),
     invalidate: ['previews'],
-    success: () => `${preview.name} deleted`,
-    onSuccess: () => void navigate(placeTo(place.projectName, null, 'previews')),
+    success: () => `Deleted ${preview.name}`,
+    onSuccess: () => void navigate(placeTo(place.projectName, null)),
   })
 
   return (
@@ -357,10 +354,10 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
           <p className="text-sm">
             {preview.expires_at ? (
               <>
-                Stationly deletes this preview at <Time value={preview.expires_at} />.
+                Expires <Time value={preview.expires_at} />
               </>
             ) : (
-              'This preview never expires.'
+              'Never expires'
             )}
           </p>
           <Field id="preview-lifetime" label="Expires">
@@ -387,7 +384,7 @@ export function PreviewSettings({ place, preview }: { place: PlaceView; preview:
       </Section>
       <DangerZone
         title="Delete this preview"
-        text="Deletes its apps and its network. Its volumes are kept for a while. Delete its machines first."
+        text="Deletes its apps and its network. Its volumes are kept for a while. Delete its tasks first."
       >
         <Confirm
           title={`Delete ${preview.name}?`}

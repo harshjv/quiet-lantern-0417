@@ -259,7 +259,7 @@ test('status labels follow the spec and a stuck working status goes stale after 
   const now = new Date('2026-11-12T10:10:00Z')
   const at = (minutes: number) => new Date(now.getTime() - minutes * 60_000).toISOString()
 
-  assert.equal(agentStatusView(null).label, 'No session yet')
+  assert.equal(agentStatusView(null).label, 'No conversation yet')
   assert.equal(
     agentStatusView({
       status: 'waiting',
@@ -279,7 +279,7 @@ test('status labels follow the spec and a stuck working status goes stale after 
       status: 'ready',
       last_event_at: at(0),
     }).label,
-    'Finished, waiting for your reply',
+    'Finished',
   )
   assert.equal(
     agentStatusView({

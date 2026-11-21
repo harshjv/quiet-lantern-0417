@@ -16,12 +16,6 @@ const space: Space = {
       name: 'api',
     },
   ],
-  machines: [
-    {
-      id: 'sbx_try',
-      name: 'try',
-    },
-  ],
   deployments: [
     {
       id: 'dep_13',
@@ -72,21 +66,16 @@ test('entities carry where they live and link by id', () => {
     value: 'shop/production',
     label: 'shop / production',
     to: {
-      to: '/projects/$project/{-$tab}',
+      to: '/p/$project',
       params: {
         project: 'shop',
+      },
+      search: {
         tab: undefined,
       },
     },
   })
   assert.equal(found.apps[0].hint, 'shop / production')
-  assert.deepEqual(found.machines[0].to, {
-    to: '/machines/$machine/{-$tab}',
-    params: {
-      machine: 'sbx_try',
-      tab: undefined,
-    },
-  })
 })
 
 test('deployments are named after their app and skip unknown apps', () => {
@@ -120,11 +109,6 @@ const pages: Page[] = [
       app: 'web',
     },
   },
-  {
-    kind: 'machine',
-    scope,
-    machine: 'try',
-  },
 ]
 
 test('every page has a sly command', () => {
@@ -133,15 +117,14 @@ test('every page has a sly command', () => {
   }
 })
 
-test('pages name their app, preview or machine in the command', () => {
+test('pages name their app or preview in the command', () => {
   const app = pageText(pages[3])
 
   assert.match(app.command, /--app web/)
   assert.match(app.prompt ?? '', /web in the staging preview of shop/)
   assert.match(pageText(pages[2]).command, /--preview staging/)
-  assert.match(pageText(pages[4]).command, /--machine try/)
 })
 
 test('the page project comes from its scope', () => {
-  assert.deepEqual(pages.map(pageProject), [null, 'shop', 'shop', 'shop', 'shop'])
+  assert.deepEqual(pages.map(pageProject), [null, 'shop', 'shop', 'shop'])
 })

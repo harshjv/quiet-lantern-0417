@@ -9,9 +9,9 @@ import { idPrefixes, type IdEntity } from '@stationly/protocol'
 
 import { currentInstance, normalizeInstance, readCredentials, type Credentials } from './config.ts'
 import { apiUrlEnv, env, previewEnv, projectEnv, tokenEnv, version } from './env.ts'
-import { apiFailure, inputRequired, notFound, notLoggedIn } from './errors.ts'
+import { apiFailure, notFound, notLoggedIn } from './errors.ts'
 import { createHttp, waitingHttp } from './http.ts'
-import { choose, interactive, need } from './prompt.ts'
+import { need } from './prompt.ts'
 
 export type Globals = {
   json?: boolean
@@ -20,7 +20,6 @@ export type Globals = {
   project?: string
   preview?: string
   app?: string
-  machine?: string
 }
 
 export type Context = {
@@ -59,7 +58,6 @@ export type Selection = {
   project?: string
   preview?: string
   app?: string
-  machine?: string
 }
 
 export type Client = { http: KyInstance; api: ApiClient }
@@ -159,7 +157,6 @@ export const connectWith = (
       project: globals.project ?? defaults.project,
       preview: globals.preview ?? defaults.preview,
       app: globals.app ?? defaults.app,
-      machine: globals.machine,
     },
     credentials,
     userAgent: agent,
@@ -291,7 +288,7 @@ export const previewId = async (
   return slugId(run, await projectRef(run), 'previews', ref)
 }
 
-const inTarget = async (run: Run, collection: 'apps' | 'machines', ref: string) => {
+const inTarget = async (run: Run, collection: 'apps', ref: string) => {
   const preview = run.selection.preview
 
   return slugId(
@@ -311,63 +308,6 @@ export const appId = async (run: Run): Promise<string> => {
 
   return isId('app', ref) ? ref : inTarget(run, 'apps', ref)
 }
-
-export const machineRef = async (run: Run): Promise<string> => {
-  const given = run.selection.machine
-
-  if (given !== undefined && given !== '') {
-    return given
-  }
-
-  if (!interactive()) {
-    throw inputRequired('Machine', '--machine <id or name>, or the machine as an argument')
-  }
-
-  const { items } = (
-    await send(
-      run.api.v1
-        .projects({
-          project: await projectRef(run),
-        })
-        .machines.get({
-          query: {
-            preview: await previewId(run),
-          },
-        }),
-    )
-  ).data
-
-  if (items.length === 0) {
-    throw notFound(
-      run.selection.preview ? 'This preview has no machines.' : 'Production has no machines.',
-      'Create one with sly machines create <name>.',
-    )
-  }
-
-  return choose(
-    'Which machine?',
-    items.map((item) => ({
-      value: item.name,
-      label: item.name,
-      hint: item.status,
-    })),
-    items[0]!.name,
-  )
-}
-
-export const withMachine = (run: Run, machine: string | undefined): Run =>
-  machine === undefined
-    ? run
-    : {
-        ...run,
-        selection: {
-          ...run.selection,
-          machine,
-        },
-      }
-
-export const machineId = async (run: Run, ref: string) =>
-  isId('machine', ref) ? ref : inTarget(run, 'machines', ref)
 
 export const portId = async (run: Run, app: string, port: number) =>
   found(

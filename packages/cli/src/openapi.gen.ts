@@ -17171,5828 +17171,6 @@ export const openApiDocument = {
         }
       }
     },
-    "/v1/projects/{project}/machines": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "list_machines",
-        "summary": "List the machines of production or a preview",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "Items per page (default 50, at most 200)",
-              "anyOf": [
-                {
-                  "format": "numeric",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "Items per page (default 50, at most 200)",
-                  "type": "number"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "The next_cursor of the previous page",
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          },
-          {
-            "name": "preview",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "A preview by id or name; production when omitted",
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One or more of creating, starting, running, stopping, stopped, failed, deleting, comma separated",
-              "type": "string"
-            }
-          },
-          {
-            "name": "server",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Only machines on this server, by id or name",
-              "type": "string"
-            }
-          },
-          {
-            "name": "network",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "isolated",
-                "environment"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Machine"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "create_machine",
-        "summary": "Create a machine, or fork one from a snapshot or a live machine disk with from",
-        "description": "Create a machine, or fork one from a snapshot or a live machine disk with from. A workspace token needs a human actor to create a machine with wider egress than its own workspace, on its production or preview network, or with docker.",
-        "x-stationly": {
-          "level": "deploy",
-          "human_for_workspace_token": "create a machine with wider egress than its own workspace, on its production or preview network, or with docker",
-          "cli": {
-            "args": [
-              "name"
-            ]
-          }
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "preview",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "A preview by id or name; production when omitted",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "Unique in the environment; generated from the id by default",
-                    "type": "string"
-                  },
-                  "image": {
-                    "additionalProperties": false,
-                    "description": "ref=<image>; the toolchain image by default",
-                    "type": "object",
-                    "required": [
-                      "ref"
-                    ],
-                    "properties": {
-                      "ref": {
-                        "minLength": 1,
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "from": {
-                    "description": "Fork the disk of machine=<machine> or snapshot=<snapshot id>",
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "machine"
-                        ],
-                        "properties": {
-                          "machine": {
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        }
-                      },
-                      {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "snapshot"
-                        ],
-                        "properties": {
-                          "snapshot": {
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  "server_id": {
-                    "minLength": 1,
-                    "description": "The server to place it on; a machine never moves",
-                    "type": "string"
-                  },
-                  "runtime": {
-                    "title": "SandboxRuntime",
-                    "const": "gvisor",
-                    "type": "string"
-                  },
-                  "command": {
-                    "description": "Overrides the image's entrypoint and command for the init process",
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ],
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "size": {
-                    "additionalProperties": false,
-                    "description": "cpu_millis, memory_bytes and disk_bytes; the disk only grows",
-                    "type": "object",
-                    "properties": {
-                      "cpu_millis": {
-                        "minimum": 100,
-                        "type": "integer"
-                      },
-                      "memory_bytes": {
-                        "minimum": 67108864,
-                        "type": "integer"
-                      },
-                      "disk_bytes": {
-                        "minimum": 1073741824,
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "network": {
-                    "type": "string",
-                    "enum": [
-                      "isolated",
-                      "environment"
-                    ]
-                  },
-                  "docker": {
-                    "description": "Start dockerd inside at boot (default false)",
-                    "type": "boolean"
-                  },
-                  "egress": {
-                    "additionalProperties": false,
-                    "description": "Outbound traffic: mode open or allowlist, with the allowed domains",
-                    "type": "object",
-                    "required": [
-                      "mode"
-                    ],
-                    "properties": {
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "open",
-                          "allowlist"
-                        ]
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "domain"
-                          ],
-                          "properties": {
-                            "domain": {
-                              "minLength": 1,
-                              "maxLength": 253,
-                              "type": "string"
-                            },
-                            "wildcard": {
-                              "type": "boolean"
-                            },
-                            "ports": {
-                              "type": "array",
-                              "items": {
-                                "minimum": 1,
-                                "maximum": 65535,
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  },
-                  "environment_variables": {
-                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
-                    "type": "array",
-                    "items": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "kind"
-                      ],
-                      "properties": {
-                        "name": {
-                          "pattern": "^[A-Z_][A-Z0-9_]*$",
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "literal",
-                            "reference",
-                            "secret"
-                          ]
-                        },
-                        "value": {
-                          "type": "string"
-                        },
-                        "reference": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  },
-                  "workspace": {
-                    "additionalProperties": false,
-                    "description": "Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
-                    "type": "object",
-                    "required": [
-                      "agent",
-                      "repository"
-                    ],
-                    "properties": {
-                      "agent": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex"
-                        ]
-                      },
-                      "repository": {
-                        "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)+$",
-                        "description": "The https git URL to clone into /workspaces/<repository>",
-                        "type": "string"
-                      },
-                      "branch": {
-                        "pattern": "^[A-Za-z0-9._/-]+$",
-                        "maxLength": 255,
-                        "description": "The branch or tag to check out after the clone",
-                        "type": "string"
-                      },
-                      "level": {
-                        "type": "string",
-                        "enum": [
-                          "read",
-                          "deploy",
-                          "admin"
-                        ]
-                      }
-                    }
-                  },
-                  "start": {
-                    "description": "Start it once created (default true)",
-                    "type": "boolean"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "Unique in the environment; generated from the id by default",
-                    "type": "string"
-                  },
-                  "image": {
-                    "additionalProperties": false,
-                    "description": "ref=<image>; the toolchain image by default",
-                    "type": "object",
-                    "required": [
-                      "ref"
-                    ],
-                    "properties": {
-                      "ref": {
-                        "minLength": 1,
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "from": {
-                    "description": "Fork the disk of machine=<machine> or snapshot=<snapshot id>",
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "machine"
-                        ],
-                        "properties": {
-                          "machine": {
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        }
-                      },
-                      {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "snapshot"
-                        ],
-                        "properties": {
-                          "snapshot": {
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  "server_id": {
-                    "minLength": 1,
-                    "description": "The server to place it on; a machine never moves",
-                    "type": "string"
-                  },
-                  "runtime": {
-                    "title": "SandboxRuntime",
-                    "const": "gvisor",
-                    "type": "string"
-                  },
-                  "command": {
-                    "description": "Overrides the image's entrypoint and command for the init process",
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ],
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "size": {
-                    "additionalProperties": false,
-                    "description": "cpu_millis, memory_bytes and disk_bytes; the disk only grows",
-                    "type": "object",
-                    "properties": {
-                      "cpu_millis": {
-                        "minimum": 100,
-                        "type": "integer"
-                      },
-                      "memory_bytes": {
-                        "minimum": 67108864,
-                        "type": "integer"
-                      },
-                      "disk_bytes": {
-                        "minimum": 1073741824,
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "network": {
-                    "type": "string",
-                    "enum": [
-                      "isolated",
-                      "environment"
-                    ]
-                  },
-                  "docker": {
-                    "description": "Start dockerd inside at boot (default false)",
-                    "type": "boolean"
-                  },
-                  "egress": {
-                    "additionalProperties": false,
-                    "description": "Outbound traffic: mode open or allowlist, with the allowed domains",
-                    "type": "object",
-                    "required": [
-                      "mode"
-                    ],
-                    "properties": {
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "open",
-                          "allowlist"
-                        ]
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "domain"
-                          ],
-                          "properties": {
-                            "domain": {
-                              "minLength": 1,
-                              "maxLength": 253,
-                              "type": "string"
-                            },
-                            "wildcard": {
-                              "type": "boolean"
-                            },
-                            "ports": {
-                              "type": "array",
-                              "items": {
-                                "minimum": 1,
-                                "maximum": 65535,
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  },
-                  "environment_variables": {
-                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
-                    "type": "array",
-                    "items": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "kind"
-                      ],
-                      "properties": {
-                        "name": {
-                          "pattern": "^[A-Z_][A-Z0-9_]*$",
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "literal",
-                            "reference",
-                            "secret"
-                          ]
-                        },
-                        "value": {
-                          "type": "string"
-                        },
-                        "reference": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  },
-                  "workspace": {
-                    "additionalProperties": false,
-                    "description": "Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
-                    "type": "object",
-                    "required": [
-                      "agent",
-                      "repository"
-                    ],
-                    "properties": {
-                      "agent": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex"
-                        ]
-                      },
-                      "repository": {
-                        "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)+$",
-                        "description": "The https git URL to clone into /workspaces/<repository>",
-                        "type": "string"
-                      },
-                      "branch": {
-                        "pattern": "^[A-Za-z0-9._/-]+$",
-                        "maxLength": 255,
-                        "description": "The branch or tag to check out after the clone",
-                        "type": "string"
-                      },
-                      "level": {
-                        "type": "string",
-                        "enum": [
-                          "read",
-                          "deploy",
-                          "admin"
-                        ]
-                      }
-                    }
-                  },
-                  "start": {
-                    "description": "Start it once created (default true)",
-                    "type": "boolean"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "Unique in the environment; generated from the id by default",
-                    "type": "string"
-                  },
-                  "image": {
-                    "additionalProperties": false,
-                    "description": "ref=<image>; the toolchain image by default",
-                    "type": "object",
-                    "required": [
-                      "ref"
-                    ],
-                    "properties": {
-                      "ref": {
-                        "minLength": 1,
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "from": {
-                    "description": "Fork the disk of machine=<machine> or snapshot=<snapshot id>",
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "machine"
-                        ],
-                        "properties": {
-                          "machine": {
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        }
-                      },
-                      {
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "snapshot"
-                        ],
-                        "properties": {
-                          "snapshot": {
-                            "minLength": 1,
-                            "type": "string"
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  "server_id": {
-                    "minLength": 1,
-                    "description": "The server to place it on; a machine never moves",
-                    "type": "string"
-                  },
-                  "runtime": {
-                    "title": "SandboxRuntime",
-                    "const": "gvisor",
-                    "type": "string"
-                  },
-                  "command": {
-                    "description": "Overrides the image's entrypoint and command for the init process",
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ],
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "size": {
-                    "additionalProperties": false,
-                    "description": "cpu_millis, memory_bytes and disk_bytes; the disk only grows",
-                    "type": "object",
-                    "properties": {
-                      "cpu_millis": {
-                        "minimum": 100,
-                        "type": "integer"
-                      },
-                      "memory_bytes": {
-                        "minimum": 67108864,
-                        "type": "integer"
-                      },
-                      "disk_bytes": {
-                        "minimum": 1073741824,
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "network": {
-                    "type": "string",
-                    "enum": [
-                      "isolated",
-                      "environment"
-                    ]
-                  },
-                  "docker": {
-                    "description": "Start dockerd inside at boot (default false)",
-                    "type": "boolean"
-                  },
-                  "egress": {
-                    "additionalProperties": false,
-                    "description": "Outbound traffic: mode open or allowlist, with the allowed domains",
-                    "type": "object",
-                    "required": [
-                      "mode"
-                    ],
-                    "properties": {
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "open",
-                          "allowlist"
-                        ]
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "domain"
-                          ],
-                          "properties": {
-                            "domain": {
-                              "minLength": 1,
-                              "maxLength": 253,
-                              "type": "string"
-                            },
-                            "wildcard": {
-                              "type": "boolean"
-                            },
-                            "ports": {
-                              "type": "array",
-                              "items": {
-                                "minimum": 1,
-                                "maximum": 65535,
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  },
-                  "environment_variables": {
-                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
-                    "type": "array",
-                    "items": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "kind"
-                      ],
-                      "properties": {
-                        "name": {
-                          "pattern": "^[A-Z_][A-Z0-9_]*$",
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "literal",
-                            "reference",
-                            "secret"
-                          ]
-                        },
-                        "value": {
-                          "type": "string"
-                        },
-                        "reference": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  },
-                  "workspace": {
-                    "additionalProperties": false,
-                    "description": "Make the machine a workspace: no time to live, the agent installed, the repository cloned and sly signed in with its own token",
-                    "type": "object",
-                    "required": [
-                      "agent",
-                      "repository"
-                    ],
-                    "properties": {
-                      "agent": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex"
-                        ]
-                      },
-                      "repository": {
-                        "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)+$",
-                        "description": "The https git URL to clone into /workspaces/<repository>",
-                        "type": "string"
-                      },
-                      "branch": {
-                        "pattern": "^[A-Za-z0-9._/-]+$",
-                        "maxLength": 255,
-                        "description": "The branch or tag to check out after the clone",
-                        "type": "string"
-                      },
-                      "level": {
-                        "type": "string",
-                        "enum": [
-                          "read",
-                          "deploy",
-                          "admin"
-                        ]
-                      }
-                    }
-                  },
-                  "start": {
-                    "description": "Start it once created (default true)",
-                    "type": "boolean"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Response for status 201",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineCreated"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "get_machine",
-        "summary": "Get a machine",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "update_machine",
-        "summary": "Change a machine: ttl_s extends from now, egress and disk size apply at once, the rest at the next start",
-        "description": "Change a machine: ttl_s extends from now, egress and disk size apply at once, the rest at the next start. A workspace token needs a human actor to widen egress, move a machine to its production or preview network or turn docker on.",
-        "x-stationly": {
-          "level": "deploy",
-          "human_for_workspace_token": "widen egress, move a machine to its production or preview network or turn docker on"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "description": "Overrides the image's entrypoint and command for the init process",
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ],
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "size": {
-                    "additionalProperties": false,
-                    "description": "cpu_millis, memory_bytes and disk_bytes; the disk only grows",
-                    "type": "object",
-                    "properties": {
-                      "cpu_millis": {
-                        "minimum": 100,
-                        "type": "integer"
-                      },
-                      "memory_bytes": {
-                        "minimum": 67108864,
-                        "type": "integer"
-                      },
-                      "disk_bytes": {
-                        "minimum": 1073741824,
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "network": {
-                    "type": "string",
-                    "enum": [
-                      "isolated",
-                      "environment"
-                    ]
-                  },
-                  "docker": {
-                    "description": "Start dockerd inside at boot (default false)",
-                    "type": "boolean"
-                  },
-                  "egress": {
-                    "additionalProperties": false,
-                    "description": "Outbound traffic: mode open or allowlist, with the allowed domains",
-                    "type": "object",
-                    "required": [
-                      "mode"
-                    ],
-                    "properties": {
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "open",
-                          "allowlist"
-                        ]
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "domain"
-                          ],
-                          "properties": {
-                            "domain": {
-                              "minLength": 1,
-                              "maxLength": 253,
-                              "type": "string"
-                            },
-                            "wildcard": {
-                              "type": "boolean"
-                            },
-                            "ports": {
-                              "type": "array",
-                              "items": {
-                                "minimum": 1,
-                                "maximum": 65535,
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "description": "Overrides the image's entrypoint and command for the init process",
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ],
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "size": {
-                    "additionalProperties": false,
-                    "description": "cpu_millis, memory_bytes and disk_bytes; the disk only grows",
-                    "type": "object",
-                    "properties": {
-                      "cpu_millis": {
-                        "minimum": 100,
-                        "type": "integer"
-                      },
-                      "memory_bytes": {
-                        "minimum": 67108864,
-                        "type": "integer"
-                      },
-                      "disk_bytes": {
-                        "minimum": 1073741824,
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "network": {
-                    "type": "string",
-                    "enum": [
-                      "isolated",
-                      "environment"
-                    ]
-                  },
-                  "docker": {
-                    "description": "Start dockerd inside at boot (default false)",
-                    "type": "boolean"
-                  },
-                  "egress": {
-                    "additionalProperties": false,
-                    "description": "Outbound traffic: mode open or allowlist, with the allowed domains",
-                    "type": "object",
-                    "required": [
-                      "mode"
-                    ],
-                    "properties": {
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "open",
-                          "allowlist"
-                        ]
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "domain"
-                          ],
-                          "properties": {
-                            "domain": {
-                              "minLength": 1,
-                              "maxLength": 253,
-                              "type": "string"
-                            },
-                            "wildcard": {
-                              "type": "boolean"
-                            },
-                            "ports": {
-                              "type": "array",
-                              "items": {
-                                "minimum": 1,
-                                "maximum": 65535,
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "description": "Overrides the image's entrypoint and command for the init process",
-                    "minItems": 1,
-                    "type": [
-                      "array",
-                      "null"
-                    ],
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "size": {
-                    "additionalProperties": false,
-                    "description": "cpu_millis, memory_bytes and disk_bytes; the disk only grows",
-                    "type": "object",
-                    "properties": {
-                      "cpu_millis": {
-                        "minimum": 100,
-                        "type": "integer"
-                      },
-                      "memory_bytes": {
-                        "minimum": 67108864,
-                        "type": "integer"
-                      },
-                      "disk_bytes": {
-                        "minimum": 1073741824,
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "network": {
-                    "type": "string",
-                    "enum": [
-                      "isolated",
-                      "environment"
-                    ]
-                  },
-                  "docker": {
-                    "description": "Start dockerd inside at boot (default false)",
-                    "type": "boolean"
-                  },
-                  "egress": {
-                    "additionalProperties": false,
-                    "description": "Outbound traffic: mode open or allowlist, with the allowed domains",
-                    "type": "object",
-                    "required": [
-                      "mode"
-                    ],
-                    "properties": {
-                      "mode": {
-                        "type": "string",
-                        "enum": [
-                          "open",
-                          "allowlist"
-                        ]
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "additionalProperties": false,
-                          "type": "object",
-                          "required": [
-                            "domain"
-                          ],
-                          "properties": {
-                            "domain": {
-                              "minLength": 1,
-                              "maxLength": 253,
-                              "type": "string"
-                            },
-                            "wildcard": {
-                              "type": "boolean"
-                            },
-                            "ports": {
-                              "type": "array",
-                              "items": {
-                                "minimum": 1,
-                                "maximum": 65535,
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineCreated"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "delete_machine",
-        "summary": "Delete a machine and its disk; its snapshots stay",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineDeleted"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/start": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "start_machine",
-        "summary": "Start a stopped machine; ttl_s replaces the stored one",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "ttl_s": {
-                    "minimum": 60,
-                    "maximum": 2592000,
-                    "description": "Time to live after each start (default 3600 s)",
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/stop": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "stop_machine",
-        "summary": "Stop a machine and keep its disk",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/exec": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "machine_exec",
-        "summary": "Run a command in a running machine and wait up to wait_s for it; env values are never stored",
-        "description": "Run a command in a running machine and wait up to wait_s for it; env values are never stored. A workspace token needs a human actor to run a command in another machine with wider egress than its own workspace, on its production or preview network or with docker.",
-        "x-stationly": {
-          "level": "deploy",
-          "human_for_workspace_token": "run a command in another machine with wider egress than its own workspace, on its production or preview network or with docker",
-          "cli": false
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "command"
-                ],
-                "properties": {
-                  "command": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "cwd": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "user": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "env": {
-                    "type": "object",
-                    "patternProperties": {
-                      "^[A-Za-z_][A-Za-z0-9_]*$": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "stdin": {
-                    "pattern": "^[A-Za-z0-9_-]*$",
-                    "maxLength": 349526,
-                    "type": "string"
-                  },
-                  "timeout_s": {
-                    "minimum": 1,
-                    "maximum": 86400,
-                    "type": "integer"
-                  },
-                  "attach": {
-                    "type": "boolean"
-                  },
-                  "wait_s": {
-                    "minimum": 0,
-                    "maximum": 10,
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "command"
-                ],
-                "properties": {
-                  "command": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "cwd": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "user": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "env": {
-                    "type": "object",
-                    "patternProperties": {
-                      "^[A-Za-z_][A-Za-z0-9_]*$": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "stdin": {
-                    "pattern": "^[A-Za-z0-9_-]*$",
-                    "maxLength": 349526,
-                    "type": "string"
-                  },
-                  "timeout_s": {
-                    "minimum": 1,
-                    "maximum": 86400,
-                    "type": "integer"
-                  },
-                  "attach": {
-                    "type": "boolean"
-                  },
-                  "wait_s": {
-                    "minimum": 0,
-                    "maximum": 10,
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "command"
-                ],
-                "properties": {
-                  "command": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "cwd": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "user": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "env": {
-                    "type": "object",
-                    "patternProperties": {
-                      "^[A-Za-z_][A-Za-z0-9_]*$": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "stdin": {
-                    "pattern": "^[A-Za-z0-9_-]*$",
-                    "maxLength": 349526,
-                    "type": "string"
-                  },
-                  "timeout_s": {
-                    "minimum": 1,
-                    "maximum": 86400,
-                    "type": "integer"
-                  },
-                  "attach": {
-                    "type": "boolean"
-                  },
-                  "wait_s": {
-                    "minimum": 0,
-                    "maximum": 10,
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Response for status 201",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineExec"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/shells": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "open_machine_shell",
-        "summary": "Create a shell run in a machine; attach to it over the WebSocket at attach_url",
-        "description": "Create a shell run in a machine; attach to it over the WebSocket at attach_url. A workspace token needs a human actor to open a shell in another machine with wider egress than its own workspace, on its production or preview network or with docker.",
-        "x-stationly": {
-          "level": "deploy",
-          "human_for_workspace_token": "open a shell in another machine with wider egress than its own workspace, on its production or preview network or with docker",
-          "mcp": false,
-          "cli": false
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "user": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "cwd": {
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "user": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "cwd": {
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "user": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "cwd": {
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Response for status 201",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineShell"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/runs": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "list_machine_runs",
-        "summary": "List the runs of a machine",
-        "x-stationly": {
-          "level": "read",
-          "mcp": false
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "Items per page (default 50, at most 200)",
-              "anyOf": [
-                {
-                  "format": "numeric",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "Items per page (default 50, at most 200)",
-                  "type": "number"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "The next_cursor of the previous page",
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          },
-          {
-            "name": "kind",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One or more of pre_deploy, cron, one_off, shell, hook, exec, comma separated",
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One or more of queued, running, succeeded, failed, skipped, cancelled, comma separated",
-              "type": "string"
-            }
-          },
-          {
-            "name": "since",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "From this time on: an RFC 3339 time, or a duration back from now such as 15m or 24h",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Run"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/metrics": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "get_machine_metrics",
-        "summary": "Latest live metrics sample of a machine",
-        "x-stationly": {
-          "level": "read",
-          "mcp": false
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineMetricSample"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/environment-variables": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "list_machine_environment_variables",
-        "summary": "List the environment variables of a machine; values are never listed",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/EnvironmentVariable"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "set_machine_environment_variables",
-        "summary": "Set and unset a machine's environment variables; references to project and global environment variables keep values out of the agent's hands",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "set": {
-                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
-                    "type": "array",
-                    "items": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "kind"
-                      ],
-                      "properties": {
-                        "name": {
-                          "pattern": "^[A-Z_][A-Z0-9_]*$",
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "literal",
-                            "reference",
-                            "secret"
-                          ]
-                        },
-                        "value": {
-                          "type": "string"
-                        },
-                        "reference": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  },
-                  "unset": {
-                    "description": "Environment variables to remove",
-                    "type": "array",
-                    "items": {
-                      "pattern": "^[A-Z_][A-Z0-9_]*$",
-                      "type": "string"
-                    }
-                  },
-                  "allow_unresolved": {
-                    "description": "Accept a reference whose target does not exist yet (default false)",
-                    "type": "boolean"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "set": {
-                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
-                    "type": "array",
-                    "items": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "kind"
-                      ],
-                      "properties": {
-                        "name": {
-                          "pattern": "^[A-Z_][A-Z0-9_]*$",
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "literal",
-                            "reference",
-                            "secret"
-                          ]
-                        },
-                        "value": {
-                          "type": "string"
-                        },
-                        "reference": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  },
-                  "unset": {
-                    "description": "Environment variables to remove",
-                    "type": "array",
-                    "items": {
-                      "pattern": "^[A-Z_][A-Z0-9_]*$",
-                      "type": "string"
-                    }
-                  },
-                  "allow_unresolved": {
-                    "description": "Accept a reference whose target does not exist yet (default false)",
-                    "type": "boolean"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "set": {
-                    "description": "Environment variables to set: name, kind (literal, reference or secret), and value or reference",
-                    "type": "array",
-                    "items": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "name",
-                        "kind"
-                      ],
-                      "properties": {
-                        "name": {
-                          "pattern": "^[A-Z_][A-Z0-9_]*$",
-                          "type": "string"
-                        },
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "literal",
-                            "reference",
-                            "secret"
-                          ]
-                        },
-                        "value": {
-                          "type": "string"
-                        },
-                        "reference": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  },
-                  "unset": {
-                    "description": "Environment variables to remove",
-                    "type": "array",
-                    "items": {
-                      "pattern": "^[A-Z_][A-Z0-9_]*$",
-                      "type": "string"
-                    }
-                  },
-                  "allow_unresolved": {
-                    "description": "Accept a reference whose target does not exist yet (default false)",
-                    "type": "boolean"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineEnvironmentVariablesOutcome"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/environment-variables/resolved": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "get_machine_resolved_environment_variables",
-        "summary": "The resolved environment variables of a machine with their sources; a value only with admin and never a secret one",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "MachineResolved",
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "machine_id",
-                    "project_id",
-                    "preview_id",
-                    "environment_variables"
-                  ],
-                  "properties": {
-                    "machine_id": {
-                      "type": "string"
-                    },
-                    "project_id": {
-                      "type": "string"
-                    },
-                    "preview_id": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "environment_variables": {
-                      "type": "array",
-                      "items": {
-                        "title": "ResolvedVariable",
-                        "additionalProperties": false,
-                        "type": "object",
-                        "required": [
-                          "name",
-                          "environment_variable_id",
-                          "kind",
-                          "reference",
-                          "injection",
-                          "build",
-                          "secret",
-                          "stale",
-                          "error"
-                        ],
-                        "properties": {
-                          "name": {
-                            "type": "string"
-                          },
-                          "environment_variable_id": {
-                            "type": "string"
-                          },
-                          "kind": {
-                            "$ref": "#/components/schemas/EnvironmentVariableKind"
-                          },
-                          "reference": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "injection": {
-                            "type": "string",
-                            "enum": [
-                              "env",
-                              "file"
-                            ]
-                          },
-                          "build": {
-                            "type": "boolean"
-                          },
-                          "secret": {
-                            "type": "boolean"
-                          },
-                          "stale": {
-                            "type": "boolean"
-                          },
-                          "parts": {
-                            "type": "array",
-                            "items": {
-                              "$id": "ResolvedPart",
-                              "anyOf": [
-                                {
-                                  "additionalProperties": false,
-                                  "type": "object",
-                                  "required": [
-                                    "text"
-                                  ],
-                                  "properties": {
-                                    "text": {
-                                      "type": "string"
-                                    }
-                                  }
-                                },
-                                {
-                                  "additionalProperties": false,
-                                  "type": "object",
-                                  "required": [
-                                    "ref",
-                                    "chain"
-                                  ],
-                                  "properties": {
-                                    "ref": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
-                                    },
-                                    "chain": {
-                                      "type": "array",
-                                      "items": {
-                                        "anyOf": [
-                                          {
-                                            "additionalProperties": false,
-                                            "type": "object",
-                                            "required": [
-                                              "scope",
-                                              "name",
-                                              "environment_variable_id",
-                                              "kind",
-                                              "secret_value_id",
-                                              "version",
-                                              "pinned_version"
-                                            ],
-                                            "properties": {
-                                              "scope": {
-                                                "type": "string",
-                                                "enum": [
-                                                  "project",
-                                                  "global",
-                                                  "app",
-                                                  "machine"
-                                                ]
-                                              },
-                                              "app_id": {
-                                                "type": [
-                                                  "string",
-                                                  "null"
-                                                ]
-                                              },
-                                              "target": {
-                                                "type": "string",
-                                                "enum": [
-                                                  "production",
-                                                  "preview"
-                                                ]
-                                              },
-                                              "name": {
-                                                "type": "string"
-                                              },
-                                              "environment_variable_id": {
-                                                "type": "string"
-                                              },
-                                              "kind": {
-                                                "type": "string",
-                                                "enum": [
-                                                  "literal",
-                                                  "reference",
-                                                  "secret"
-                                                ]
-                                              },
-                                              "secret_value_id": {
-                                                "type": "string"
-                                              },
-                                              "version": {
-                                                "type": "integer"
-                                              },
-                                              "bytes": {
-                                                "type": [
-                                                  "integer",
-                                                  "null"
-                                                ]
-                                              },
-                                              "pinned_version": {
-                                                "type": [
-                                                  "integer",
-                                                  "null"
-                                                ]
-                                              }
-                                            }
-                                          },
-                                          {
-                                            "additionalProperties": false,
-                                            "type": "object",
-                                            "required": [
-                                              "scope",
-                                              "app_id",
-                                              "key",
-                                              "value"
-                                            ],
-                                            "properties": {
-                                              "scope": {
-                                                "const": "export",
-                                                "type": "string"
-                                              },
-                                              "app_id": {
-                                                "type": "string"
-                                              },
-                                              "key": {
-                                                "type": "string"
-                                              },
-                                              "value": {
-                                                "type": "string"
-                                              }
-                                            }
-                                          },
-                                          {
-                                            "additionalProperties": false,
-                                            "type": "object",
-                                            "required": [
-                                              "scope",
-                                              "app_id",
-                                              "name",
-                                              "environment_variable_id",
-                                              "kind",
-                                              "reference"
-                                            ],
-                                            "properties": {
-                                              "scope": {
-                                                "type": "string",
-                                                "enum": [
-                                                  "app",
-                                                  "machine"
-                                                ]
-                                              },
-                                              "app_id": {
-                                                "type": [
-                                                  "string",
-                                                  "null"
-                                                ]
-                                              },
-                                              "name": {
-                                                "type": [
-                                                  "string",
-                                                  "null"
-                                                ]
-                                              },
-                                              "environment_variable_id": {
-                                                "type": "string"
-                                              },
-                                              "kind": {
-                                                "const": "reference",
-                                                "type": "string"
-                                              },
-                                              "reference": {
-                                                "type": "string"
-                                              },
-                                              "parts": {
-                                                "type": "array",
-                                                "items": {
-                                                  "$ref": "ResolvedPart"
-                                                }
-                                              }
-                                            }
-                                          }
-                                        ]
-                                      }
-                                    }
-                                  }
-                                }
-                              ]
-                            }
-                          },
-                          "secret_value_id": {
-                            "type": "string"
-                          },
-                          "version": {
-                            "type": "integer"
-                          },
-                          "bytes": {
-                            "type": [
-                              "integer",
-                              "null"
-                            ]
-                          },
-                          "pinned_version": {
-                            "type": [
-                              "integer",
-                              "null"
-                            ]
-                          },
-                          "error": {
-                            "additionalProperties": false,
-                            "type": [
-                              "object",
-                              "null"
-                            ],
-                            "required": [
-                              "code",
-                              "explanation"
-                            ],
-                            "properties": {
-                              "code": {
-                                "type": "string"
-                              },
-                              "explanation": {
-                                "type": "string"
-                              }
-                            }
-                          },
-                          "value": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/connections": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "get_machine_connections",
-        "summary": "Live connections and refused attempts of a machine; one sample",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "direction",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "in",
-                "out"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineConnections"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/dns-log": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "get_machine_dns_log",
-        "summary": "The machine's recent DNS queries from the resolver's ring, newest first, as untrusted data",
-        "x-stationly": {
-          "level": "read",
-          "cli": {
-            "render": "dns-log"
-          }
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "tail",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "The last N queries (default 50, at most 200)",
-              "anyOf": [
-                {
-                  "format": "numeric",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "The last N queries (default 50, at most 200)",
-                  "type": "number"
-                }
-              ]
-            }
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minLength": 1,
-              "maxLength": 253,
-              "description": "Only names containing this, ignoring case",
-              "type": "string"
-            }
-          },
-          {
-            "name": "rcode",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minLength": 1,
-              "maxLength": 16,
-              "description": "Only answers with this response code, such as NXDOMAIN",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DnsLog"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/network/probe": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "probe_machine_network",
-        "summary": "Ask the machine's resolver as the machine, or judge one TCP handshake with the machine ruleset and send it from the server when the ruleset accepts the destination",
-        "x-stationly": {
-          "level": "deploy",
-          "cli": {
-            "render": "probe"
-          }
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "to"
-                ],
-                "properties": {
-                  "to": {
-                    "minLength": 1,
-                    "maxLength": 260,
-                    "description": "An app, a <name>.internal, or a host or address with :port",
-                    "type": "string"
-                  },
-                  "port": {
-                    "minimum": 1,
-                    "maximum": 65535,
-                    "description": "The target port; the target's only declared port by default",
-                    "anyOf": [
-                      {
-                        "format": "integer",
-                        "default": 0,
-                        "type": "string"
-                      },
-                      {
-                        "minimum": 1,
-                        "maximum": 65535,
-                        "description": "The target port; the target's only declared port by default",
-                        "type": "integer"
-                      }
-                    ]
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "tcp",
-                      "dns"
-                    ]
-                  },
-                  "timeout_s": {
-                    "minimum": 1,
-                    "maximum": 10,
-                    "description": "How long to wait for the answer (default 3 s)",
-                    "anyOf": [
-                      {
-                        "format": "integer",
-                        "default": 0,
-                        "type": "string"
-                      },
-                      {
-                        "minimum": 1,
-                        "maximum": 10,
-                        "description": "How long to wait for the answer (default 3 s)",
-                        "type": "integer"
-                      }
-                    ]
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "to"
-                ],
-                "properties": {
-                  "to": {
-                    "minLength": 1,
-                    "maxLength": 260,
-                    "description": "An app, a <name>.internal, or a host or address with :port",
-                    "type": "string"
-                  },
-                  "port": {
-                    "minimum": 1,
-                    "maximum": 65535,
-                    "description": "The target port; the target's only declared port by default",
-                    "anyOf": [
-                      {
-                        "format": "integer",
-                        "default": 0,
-                        "type": "string"
-                      },
-                      {
-                        "minimum": 1,
-                        "maximum": 65535,
-                        "description": "The target port; the target's only declared port by default",
-                        "type": "integer"
-                      }
-                    ]
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "tcp",
-                      "dns"
-                    ]
-                  },
-                  "timeout_s": {
-                    "minimum": 1,
-                    "maximum": 10,
-                    "description": "How long to wait for the answer (default 3 s)",
-                    "anyOf": [
-                      {
-                        "format": "integer",
-                        "default": 0,
-                        "type": "string"
-                      },
-                      {
-                        "minimum": 1,
-                        "maximum": 10,
-                        "description": "How long to wait for the answer (default 3 s)",
-                        "type": "integer"
-                      }
-                    ]
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "to"
-                ],
-                "properties": {
-                  "to": {
-                    "minLength": 1,
-                    "maxLength": 260,
-                    "description": "An app, a <name>.internal, or a host or address with :port",
-                    "type": "string"
-                  },
-                  "port": {
-                    "minimum": 1,
-                    "maximum": 65535,
-                    "description": "The target port; the target's only declared port by default",
-                    "anyOf": [
-                      {
-                        "format": "integer",
-                        "default": 0,
-                        "type": "string"
-                      },
-                      {
-                        "minimum": 1,
-                        "maximum": 65535,
-                        "description": "The target port; the target's only declared port by default",
-                        "type": "integer"
-                      }
-                    ]
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "tcp",
-                      "dns"
-                    ]
-                  },
-                  "timeout_s": {
-                    "minimum": 1,
-                    "maximum": 10,
-                    "description": "How long to wait for the answer (default 3 s)",
-                    "anyOf": [
-                      {
-                        "format": "integer",
-                        "default": 0,
-                        "type": "string"
-                      },
-                      {
-                        "minimum": 1,
-                        "maximum": 10,
-                        "description": "How long to wait for the answer (default 3 s)",
-                        "type": "integer"
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineNetworkProbe"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machines/{machine}/snapshots": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "snapshot_machine",
-        "summary": "Take a read-only copy of a machine's disk; files on the disk, credentials included, are copied into every snapshot and fork",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "Unique in the environment when set",
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "Unique in the environment when set",
-                    "type": "string"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-                    "description": "Unique in the environment when set",
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Response for status 201",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineSnapshotCreated"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "list_machine_snapshots",
-        "summary": "List the snapshots of a machine",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "machine",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "Items per page (default 50, at most 200)",
-              "anyOf": [
-                {
-                  "format": "numeric",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "Items per page (default 50, at most 200)",
-                  "type": "number"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "The next_cursor of the previous page",
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One or more of creating, ready, failed, deleting, comma separated",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/MachineSnapshot"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/projects/{project}/machine-snapshots": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "list_project_machine_snapshots",
-        "summary": "List the machine snapshots of production or a preview",
-        "x-stationly": {
-          "level": "read"
-        },
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "description": "Items per page (default 50, at most 200)",
-              "anyOf": [
-                {
-                  "format": "numeric",
-                  "default": 0,
-                  "type": "string"
-                },
-                {
-                  "minimum": 1,
-                  "maximum": 200,
-                  "description": "Items per page (default 50, at most 200)",
-                  "type": "number"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "The next_cursor of the previous page",
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          },
-          {
-            "name": "preview",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "A preview by id or name; production when omitted",
-              "type": "string"
-            }
-          },
-          {
-            "name": "machine",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "One or more of creating, ready, failed, deleting, comma separated",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/MachineSnapshot"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/machine-snapshots/{id}": {
-      "get": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "get_machine_snapshot",
-        "summary": "Get a machine snapshot",
-        "x-stationly": {
-          "level": "read",
-          "mcp": false
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "fields",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Fields to add to the summary, comma separated: a,b,c.d, or * for every field",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineSnapshot"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "delete_machine_snapshot",
-        "summary": "Delete a machine snapshot",
-        "x-stationly": {
-          "level": "deploy"
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MachineSnapshotDeleted"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/servers/{server}/machine-storage/grow": {
-      "post": {
-        "tags": [
-          "machines"
-        ],
-        "operationId": "grow_machine_storage",
-        "summary": "Grow a server's machine filesystem to size_bytes while machines run; needs approval for a non-human actor under platform.protected",
-        "x-stationly": {
-          "level": "instance admin"
-        },
-        "parameters": [
-          {
-            "name": "server",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "size_bytes"
-                ],
-                "properties": {
-                  "size_bytes": {
-                    "minimum": 1,
-                    "description": "The new size of the machine filesystem; it only grows",
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "size_bytes"
-                ],
-                "properties": {
-                  "size_bytes": {
-                    "minimum": 1,
-                    "description": "The new size of the machine filesystem; it only grows",
-                    "type": "integer"
-                  }
-                }
-              }
-            },
-            "multipart/form-data": {
-              "schema": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "size_bytes"
-                ],
-                "properties": {
-                  "size_bytes": {
-                    "minimum": 1,
-                    "description": "The new size of the machine filesystem; it only grows",
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Response for status 200",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StorageGrown"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "Response for status 202",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApprovalDetail"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Response for status 400",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Response for status 401",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Response for status 403",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Response for status 404",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Response for status 409",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Response for status 410",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Response for status 422",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Response for status 429",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Response for status 500",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Response for status 503",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "Response for status 507",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/machines/{machine}/agent/inbox": {
       "get": {
         "tags": [
@@ -27319,6 +21497,15 @@ export const openApiDocument = {
               "description": "Include archived tasks",
               "type": "boolean"
             }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only the tasks of this project, by id or name",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -27449,7 +21636,7 @@ export const openApiDocument = {
           "tasks"
         ],
         "operationId": "create_task",
-        "summary": "Start a task: a workspace of its own, a branch and a first prompt; the agent starts once the workspace is set up. Needs a human actor",
+        "summary": "Start a task: a branch, a working copy and, with a prompt, the agent's first turn once it is set up. Without a prompt the task is finished after setup and its first reply starts the agent. Needs a human actor",
         "x-stationly": {
           "level": "any",
           "mcp": false,
@@ -27469,8 +21656,7 @@ export const openApiDocument = {
                 "required": [
                   "project",
                   "repository",
-                  "agent",
-                  "prompt"
+                  "agent"
                 ],
                 "properties": {
                   "project": {
@@ -27478,11 +21664,11 @@ export const openApiDocument = {
                     "type": "string"
                   },
                   "preview": {
-                    "description": "A preview, by id or name, for the task's own machine to join; production by default",
+                    "description": "A preview, by id or name, for a task on its own to join; production by default",
                     "type": "string"
                   },
                   "repository": {
-                    "description": "An https git URL",
+                    "description": "An https git URL, or owner/name for a GitHub repository",
                     "type": "string"
                   },
                   "base_branch": {
@@ -27504,16 +21690,18 @@ export const openApiDocument = {
                   "prompt": {
                     "minLength": 1,
                     "maxLength": 32768,
+                    "description": "The agent's first prompt; without it the task waits for its first reply",
                     "type": "string"
                   },
-                  "machine": {
-                    "default": "project",
-                    "description": "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
-                    "type": "string",
-                    "enum": [
-                      "project",
-                      "own"
-                    ]
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "description": "The task's name, required without a prompt; the prompt's first line by default",
+                    "type": "string"
+                  },
+                  "isolated": {
+                    "description": "true runs the task on a computer of its own; false (the default) shares the project's computer, in a worktree of its own",
+                    "type": "boolean"
                   }
                 }
               }
@@ -27524,8 +21712,7 @@ export const openApiDocument = {
                 "required": [
                   "project",
                   "repository",
-                  "agent",
-                  "prompt"
+                  "agent"
                 ],
                 "properties": {
                   "project": {
@@ -27533,11 +21720,11 @@ export const openApiDocument = {
                     "type": "string"
                   },
                   "preview": {
-                    "description": "A preview, by id or name, for the task's own machine to join; production by default",
+                    "description": "A preview, by id or name, for a task on its own to join; production by default",
                     "type": "string"
                   },
                   "repository": {
-                    "description": "An https git URL",
+                    "description": "An https git URL, or owner/name for a GitHub repository",
                     "type": "string"
                   },
                   "base_branch": {
@@ -27559,16 +21746,18 @@ export const openApiDocument = {
                   "prompt": {
                     "minLength": 1,
                     "maxLength": 32768,
+                    "description": "The agent's first prompt; without it the task waits for its first reply",
                     "type": "string"
                   },
-                  "machine": {
-                    "default": "project",
-                    "description": "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
-                    "type": "string",
-                    "enum": [
-                      "project",
-                      "own"
-                    ]
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "description": "The task's name, required without a prompt; the prompt's first line by default",
+                    "type": "string"
+                  },
+                  "isolated": {
+                    "description": "true runs the task on a computer of its own; false (the default) shares the project's computer, in a worktree of its own",
+                    "type": "boolean"
                   }
                 }
               }
@@ -27579,8 +21768,7 @@ export const openApiDocument = {
                 "required": [
                   "project",
                   "repository",
-                  "agent",
-                  "prompt"
+                  "agent"
                 ],
                 "properties": {
                   "project": {
@@ -27588,11 +21776,11 @@ export const openApiDocument = {
                     "type": "string"
                   },
                   "preview": {
-                    "description": "A preview, by id or name, for the task's own machine to join; production by default",
+                    "description": "A preview, by id or name, for a task on its own to join; production by default",
                     "type": "string"
                   },
                   "repository": {
-                    "description": "An https git URL",
+                    "description": "An https git URL, or owner/name for a GitHub repository",
                     "type": "string"
                   },
                   "base_branch": {
@@ -27614,16 +21802,18 @@ export const openApiDocument = {
                   "prompt": {
                     "minLength": 1,
                     "maxLength": 32768,
+                    "description": "The agent's first prompt; without it the task waits for its first reply",
                     "type": "string"
                   },
-                  "machine": {
-                    "default": "project",
-                    "description": "project (the default) runs the task on the project's shared machine in its own worktree; own gives it a machine of its own",
-                    "type": "string",
-                    "enum": [
-                      "project",
-                      "own"
-                    ]
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "description": "The task's name, required without a prompt; the prompt's first line by default",
+                    "type": "string"
+                  },
+                  "isolated": {
+                    "description": "true runs the task on a computer of its own; false (the default) shares the project's computer, in a worktree of its own",
+                    "type": "boolean"
                   }
                 }
               }
@@ -27912,7 +22102,7 @@ export const openApiDocument = {
           "tasks"
         ],
         "operationId": "delete_task",
-        "summary": "Delete a task, its workspace and its conversations; the branch on GitHub stays. Needs a human actor",
+        "summary": "Delete a task, its working copy and its conversations; the branch on GitHub stays. Needs a human actor",
         "x-stationly": {
           "level": "any",
           "mcp": false,
@@ -29042,6 +23232,482 @@ export const openApiDocument = {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentInterruptAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}/shells": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "open_task_shell",
+        "summary": "Open a shell in a task's worktree as the task's owner, who alone may; attach to it over the WebSocket at attach_url",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": false
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Response for status 201",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskShell"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}/files": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "list_task_files",
+        "summary": "List a directory of a task's worktree, directories first, without following symlinks; for the task's owner or an admin",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "files"
+            ],
+            "args": [
+              "task"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 4096,
+              "pattern": "^[^\\x00]*$",
+              "description": "A path relative to the task's worktree; the worktree itself by default",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDirectory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{task}/files/content": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "operationId": "read_task_file",
+        "summary": "Read a file of a task's worktree, its first 256 KiB; a path that leaves the worktree, symlinks included, is refused. For the task's owner or an admin",
+        "x-stationly": {
+          "level": "any",
+          "mcp": false,
+          "cli": {
+            "path": [
+              "tasks",
+              "read"
+            ],
+            "args": [
+              "task"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "maxLength": 4096,
+              "pattern": "^[^\\x00]*$",
+              "description": "A path relative to the task's worktree; the worktree itself by default",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskFile"
                 }
               }
             }
@@ -36327,8 +30993,7 @@ export const openApiDocument = {
                                                 "enum": [
                                                   "project",
                                                   "global",
-                                                  "app",
-                                                  "machine"
+                                                  "app"
                                                 ]
                                               },
                                               "app_id": {
@@ -36416,11 +31081,8 @@ export const openApiDocument = {
                                             ],
                                             "properties": {
                                               "scope": {
-                                                "type": "string",
-                                                "enum": [
-                                                  "app",
-                                                  "machine"
-                                                ]
+                                                "const": "app",
+                                                "type": "string"
                                               },
                                               "app_id": {
                                                 "type": [
@@ -40916,6 +35578,219 @@ export const openApiDocument = {
                       "type": "boolean"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Response for status 400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Response for status 401",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Response for status 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Response for status 404",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Response for status 409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Response for status 410",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Response for status 422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Response for status 429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Response for status 500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Response for status 503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "Response for status 507",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/servers/{server}/task-storage/grow": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "grow_task_storage",
+        "summary": "Grow a server's task storage to size_bytes while tasks run; needs approval for a non-human actor under platform.protected",
+        "x-stationly": {
+          "level": "instance admin",
+          "cli": {
+            "path": [
+              "servers",
+              "grow-task-storage"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "name": "server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "size_bytes"
+                ],
+                "properties": {
+                  "size_bytes": {
+                    "minimum": 1,
+                    "description": "The new size of task storage; it only grows",
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "size_bytes"
+                ],
+                "properties": {
+                  "size_bytes": {
+                    "minimum": 1,
+                    "description": "The new size of task storage; it only grows",
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "size_bytes"
+                ],
+                "properties": {
+                  "size_bytes": {
+                    "minimum": 1,
+                    "description": "The new size of task storage; it only grows",
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response for status 200",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageGrown"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Response for status 202",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDetail"
                 }
               }
             }
@@ -48531,6 +43406,111 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/StatusCounts"
       },
+      "ProjectServer": {
+        "title": "ProjectServer",
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "last_seen_at",
+          "memory",
+          "tunnel"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enrolling",
+              "online",
+              "offline",
+              "asleep"
+            ]
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "memory": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "used",
+              "total"
+            ],
+            "properties": {
+              "used": {
+                "type": "integer"
+              },
+              "total": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          },
+          "tunnel": {
+            "additionalProperties": false,
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "configured",
+              "ready",
+              "connections"
+            ],
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "connections": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "$id": "#/components/schemas/ProjectServer"
+      },
+      "TaskSlots": {
+        "title": "TaskSlots",
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "server_id",
+          "total",
+          "busy",
+          "queued"
+        ],
+        "properties": {
+          "server_id": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "busy": {
+            "type": "integer"
+          },
+          "queued": {
+            "type": "integer"
+          }
+        },
+        "$id": "#/components/schemas/TaskSlots"
+      },
       "Project": {
         "title": "Project",
         "additionalProperties": false,
@@ -48542,8 +43522,7 @@ export const openApiDocument = {
           "waiting_approvals",
           "app_count",
           "status_counts",
-          "machine_count",
-          "workspace_count"
+          "task_count"
         ],
         "properties": {
           "id": {
@@ -48594,10 +43573,7 @@ export const openApiDocument = {
           "status_counts": {
             "$ref": "#/components/schemas/StatusCounts"
           },
-          "machine_count": {
-            "type": "integer"
-          },
-          "workspace_count": {
+          "task_count": {
             "type": "integer"
           },
           "previews": {
@@ -48622,6 +43598,68 @@ export const openApiDocument = {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EnvironmentVariable"
+            }
+          },
+          "servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectServer"
+            }
+          },
+          "task_slots": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSlots"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "task_egress": {
+            "additionalProperties": false,
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "mode",
+              "domains"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "allowlist"
+                ]
+              },
+              "domains": {
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "domain",
+                    "wildcard",
+                    "ports"
+                  ],
+                  "properties": {
+                    "domain": {
+                      "type": "string"
+                    },
+                    "wildcard": {
+                      "type": "boolean"
+                    },
+                    "ports": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         },
@@ -51800,133 +46838,6 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/NetworkProbe"
       },
-      "MachineNetworkProbe": {
-        "title": "MachineNetworkProbe",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "machine",
-          "kind",
-          "to",
-          "port",
-          "at"
-        ],
-        "properties": {
-          "machine": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "tcp",
-              "dns"
-            ]
-          },
-          "to": {
-            "type": "string"
-          },
-          "port": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "dns": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "rcode",
-              "answers",
-              "ms"
-            ],
-            "properties": {
-              "rcode": {
-                "type": "string"
-              },
-              "answers": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "ms": {
-                "type": "number"
-              }
-            }
-          },
-          "tcp": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "address",
-              "result",
-              "ms"
-            ],
-            "properties": {
-              "address": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "result": {
-                "type": "string",
-                "enum": [
-                  "connected",
-                  "refused",
-                  "rejected",
-                  "timeout",
-                  "no_route",
-                  "no_answer"
-                ]
-              },
-              "ms": {
-                "type": "number"
-              }
-            }
-          },
-          "verdict": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "verdict",
-              "path"
-            ],
-            "properties": {
-              "verdict": {
-                "type": "string",
-                "enum": [
-                  "accept",
-                  "drop",
-                  "reject"
-                ]
-              },
-              "path": {
-                "type": "string",
-                "enum": [
-                  "same_environment",
-                  "resolver",
-                  "loopback",
-                  "host_address",
-                  "other_environment",
-                  "cloud_metadata",
-                  "private_range",
-                  "public_internet",
-                  "no_switch_target",
-                  "sandbox_inbound",
-                  "domain_not_allowed",
-                  "credentials_proxy",
-                  "credential_quic"
-                ]
-              }
-            }
-          },
-          "at": {
-            "type": "string"
-          }
-        },
-        "$id": "#/components/schemas/MachineNetworkProbe"
-      },
       "DnsLog": {
         "title": "DnsLog",
         "additionalProperties": false,
@@ -52010,245 +46921,6 @@ export const openApiDocument = {
           }
         },
         "$id": "#/components/schemas/DnsLog"
-      },
-      "MachineSize": {
-        "title": "SandboxSize",
-        "type": "object",
-        "required": [
-          "cpu_millis",
-          "memory_bytes",
-          "disk_bytes"
-        ],
-        "properties": {
-          "cpu_millis": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "memory_bytes": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "disk_bytes": {
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "$id": "#/components/schemas/MachineSize"
-      },
-      "MachineStatus": {
-        "type": "string",
-        "enum": [
-          "creating",
-          "starting",
-          "running",
-          "stopping",
-          "stopped",
-          "failed",
-          "deleting"
-        ]
-      },
-      "MachineImage": {
-        "title": "MachineImage",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "ref",
-          "digest"
-        ],
-        "properties": {
-          "ref": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "digest": {
-            "type": "string"
-          }
-        },
-        "$id": "#/components/schemas/MachineImage"
-      },
-      "MachineEgressDomain": {
-        "title": "SandboxEgressDomain",
-        "type": "object",
-        "required": [
-          "domain",
-          "wildcard",
-          "ports"
-        ],
-        "properties": {
-          "domain": {
-            "type": "string"
-          },
-          "wildcard": {
-            "type": "boolean"
-          },
-          "ports": {
-            "type": "array",
-            "items": {
-              "minimum": 1,
-              "maximum": 65535,
-              "type": "integer"
-            }
-          }
-        },
-        "$id": "#/components/schemas/MachineEgressDomain"
-      },
-      "MachineSnapshot": {
-        "title": "MachineSnapshot",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "machine_id",
-          "project_id",
-          "preview_id",
-          "server_id",
-          "name",
-          "runtime",
-          "status",
-          "source_state",
-          "taken_at",
-          "exclusive_bytes",
-          "referenced_bytes"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "machine_id": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "preview_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "runtime": {
-            "const": "gvisor",
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "creating",
-              "ready",
-              "failed",
-              "deleting"
-            ]
-          },
-          "source_state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "stopped"
-            ]
-          },
-          "taken_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "exclusive_bytes": {
-            "type": "integer"
-          },
-          "referenced_bytes": {
-            "type": "integer"
-          },
-          "image": {
-            "$ref": "#/components/schemas/MachineImage"
-          },
-          "size": {
-            "$ref": "#/components/schemas/MachineSize"
-          },
-          "failure": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Diagnosis"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "$id": "#/components/schemas/MachineSnapshot"
-      },
-      "MachineMetricSample": {
-        "title": "MachineMetricSample",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "machine_id",
-          "container_id",
-          "at",
-          "cpu_pct",
-          "memory_bytes",
-          "memory_limit_bytes",
-          "net_rx_bps",
-          "net_tx_bps",
-          "blk_read_bps",
-          "blk_write_bps"
-        ],
-        "properties": {
-          "machine_id": {
-            "type": "string"
-          },
-          "container_id": {
-            "type": "string"
-          },
-          "at": {
-            "type": "string"
-          },
-          "cpu_pct": {
-            "type": "number"
-          },
-          "memory_bytes": {
-            "type": "integer"
-          },
-          "memory_limit_bytes": {
-            "type": "integer"
-          },
-          "net_rx_bps": {
-            "type": "integer"
-          },
-          "net_tx_bps": {
-            "type": "integer"
-          },
-          "blk_read_bps": {
-            "type": "integer"
-          },
-          "blk_write_bps": {
-            "type": "integer"
-          },
-          "disk_used_bytes": {
-            "type": "integer"
-          },
-          "disk_limit_bytes": {
-            "type": "integer"
-          }
-        },
-        "$id": "#/components/schemas/MachineMetricSample"
       },
       "AgentEvent": {
         "description": "One stored event of a task's conversation; seq is the task cursor",
@@ -53691,7 +48363,7 @@ export const openApiDocument = {
           "branch",
           "agent",
           "model",
-          "machine",
+          "isolated",
           "port",
           "ship",
           "preview",
@@ -53778,28 +48450,8 @@ export const openApiDocument = {
               "null"
             ]
           },
-          "machine": {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "kind"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "project",
-                  "own"
-                ]
-              }
-            }
+          "isolated": {
+            "type": "boolean"
           },
           "port": {
             "type": [
@@ -54015,6 +48667,122 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/AgentInputAccepted"
       },
+      "TaskDirectory": {
+        "title": "TaskDirectory",
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "untrusted",
+          "truncated"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "untrusted": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "source",
+              "entries"
+            ],
+            "properties": {
+              "source": {
+                "const": "task worktree",
+                "type": "string"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "kind",
+                    "size",
+                    "modified_at"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "file",
+                        "directory",
+                        "symlink",
+                        "other"
+                      ]
+                    },
+                    "size": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "modified_at": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "$id": "#/components/schemas/TaskDirectory"
+      },
+      "TaskFile": {
+        "title": "TaskFile",
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "size",
+          "binary",
+          "truncated",
+          "untrusted"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "binary": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "untrusted": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "source",
+              "text"
+            ],
+            "properties": {
+              "source": {
+                "const": "task worktree",
+                "type": "string"
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "$id": "#/components/schemas/TaskFile"
+      },
       "TaskDeleted": {
         "additionalProperties": false,
         "type": "object",
@@ -54052,1186 +48820,6 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/TaskPage"
       },
-      "Machine": {
-        "title": "Machine",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "created_at",
-          "project_id",
-          "preview_id",
-          "server_id",
-          "name",
-          "status",
-          "status_reason",
-          "desired_state",
-          "image",
-          "size",
-          "runtime",
-          "network",
-          "docker",
-          "egress",
-          "ttl_s",
-          "stop_at",
-          "delete_at",
-          "address",
-          "disk_used_bytes",
-          "forked_from",
-          "workspace"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "preview_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/MachineStatus"
-          },
-          "status_reason": {
-            "anyOf": [
-              {
-                "const": "user",
-                "type": "string"
-              },
-              {
-                "const": "ttl",
-                "type": "string"
-              },
-              {
-                "const": "exited",
-                "type": "string"
-              },
-              {
-                "const": "oom",
-                "type": "string"
-              },
-              {
-                "const": "created_stopped",
-                "type": "string"
-              },
-              {
-                "const": "station_restart",
-                "type": "string"
-              },
-              {
-                "const": "idle",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "desired_state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "stopped"
-            ]
-          },
-          "image": {
-            "$ref": "#/components/schemas/MachineImage"
-          },
-          "size": {
-            "$ref": "#/components/schemas/MachineSize"
-          },
-          "runtime": {
-            "const": "gvisor",
-            "type": "string"
-          },
-          "network": {
-            "type": "string",
-            "enum": [
-              "isolated",
-              "environment"
-            ]
-          },
-          "docker": {
-            "type": "boolean"
-          },
-          "egress": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "mode"
-            ],
-            "properties": {
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "open",
-                  "allowlist"
-                ]
-              },
-              "domains": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/MachineEgressDomain"
-                }
-              }
-            }
-          },
-          "ttl_s": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "stop_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "delete_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "address": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "disk_used_bytes": {
-            "type": "integer"
-          },
-          "forked_from": {
-            "additionalProperties": false,
-            "type": [
-              "object",
-              "null"
-            ],
-            "required": [
-              "machine_id",
-              "snapshot_id"
-            ],
-            "properties": {
-              "machine_id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "snapshot_id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            }
-          },
-          "workspace": {
-            "additionalProperties": false,
-            "type": [
-              "object",
-              "null"
-            ],
-            "required": [
-              "agent",
-              "repository",
-              "branch",
-              "path",
-              "level",
-              "token_id",
-              "setup_run_id",
-              "setup"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "project",
-                  "own"
-                ]
-              },
-              "agent": {
-                "type": "string",
-                "enum": [
-                  "claude",
-                  "codex"
-                ]
-              },
-              "repository": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "branch": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "path": {
-                "type": "string"
-              },
-              "level": {
-                "type": "string",
-                "enum": [
-                  "read",
-                  "deploy",
-                  "admin"
-                ]
-              },
-              "token_id": {
-                "type": "string"
-              },
-              "setup_run_id": {
-                "type": "string"
-              },
-              "task_branch": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "setup": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "state",
-                  "step"
-                ],
-                "properties": {
-                  "state": {
-                    "type": "string",
-                    "enum": [
-                      "pending",
-                      "succeeded",
-                      "failed"
-                    ]
-                  },
-                  "step": {
-                    "anyOf": [
-                      {
-                        "const": "agent",
-                        "type": "string"
-                      },
-                      {
-                        "const": "config",
-                        "type": "string"
-                      },
-                      {
-                        "const": "git_auth",
-                        "type": "string"
-                      },
-                      {
-                        "const": "clone",
-                        "type": "string"
-                      },
-                      {
-                        "const": "checkout",
-                        "type": "string"
-                      },
-                      {
-                        "const": "branch",
-                        "type": "string"
-                      },
-                      {
-                        "const": "worktree",
-                        "type": "string"
-                      },
-                      {
-                        "const": "toolchain",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          },
-          "command": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "exit_code": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "failure": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Diagnosis"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "started_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "stopped_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "snapshots": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/MachineSnapshot"
-            }
-          },
-          "runs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Run"
-            }
-          },
-          "metrics": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MachineMetricSample"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "environment_variables": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "patternProperties": {
-                "^(.*)$": {}
-              }
-            }
-          }
-        },
-        "$id": "#/components/schemas/Machine"
-      },
-      "MachineCreated": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "created_at",
-          "project_id",
-          "preview_id",
-          "server_id",
-          "name",
-          "status",
-          "status_reason",
-          "desired_state",
-          "image",
-          "size",
-          "runtime",
-          "network",
-          "docker",
-          "egress",
-          "ttl_s",
-          "stop_at",
-          "delete_at",
-          "address",
-          "disk_used_bytes",
-          "forked_from",
-          "workspace",
-          "warnings"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "preview_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/MachineStatus"
-          },
-          "status_reason": {
-            "anyOf": [
-              {
-                "const": "user",
-                "type": "string"
-              },
-              {
-                "const": "ttl",
-                "type": "string"
-              },
-              {
-                "const": "exited",
-                "type": "string"
-              },
-              {
-                "const": "oom",
-                "type": "string"
-              },
-              {
-                "const": "created_stopped",
-                "type": "string"
-              },
-              {
-                "const": "station_restart",
-                "type": "string"
-              },
-              {
-                "const": "idle",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "desired_state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "stopped"
-            ]
-          },
-          "image": {
-            "$ref": "#/components/schemas/MachineImage"
-          },
-          "size": {
-            "$ref": "#/components/schemas/MachineSize"
-          },
-          "runtime": {
-            "const": "gvisor",
-            "type": "string"
-          },
-          "network": {
-            "type": "string",
-            "enum": [
-              "isolated",
-              "environment"
-            ]
-          },
-          "docker": {
-            "type": "boolean"
-          },
-          "egress": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "mode"
-            ],
-            "properties": {
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "open",
-                  "allowlist"
-                ]
-              },
-              "domains": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/MachineEgressDomain"
-                }
-              }
-            }
-          },
-          "ttl_s": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "stop_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "delete_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "address": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "disk_used_bytes": {
-            "type": "integer"
-          },
-          "forked_from": {
-            "additionalProperties": false,
-            "type": [
-              "object",
-              "null"
-            ],
-            "required": [
-              "machine_id",
-              "snapshot_id"
-            ],
-            "properties": {
-              "machine_id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "snapshot_id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            }
-          },
-          "workspace": {
-            "additionalProperties": false,
-            "type": [
-              "object",
-              "null"
-            ],
-            "required": [
-              "agent",
-              "repository",
-              "branch",
-              "path",
-              "level",
-              "token_id",
-              "setup_run_id",
-              "setup"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "project",
-                  "own"
-                ]
-              },
-              "agent": {
-                "type": "string",
-                "enum": [
-                  "claude",
-                  "codex"
-                ]
-              },
-              "repository": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "branch": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "path": {
-                "type": "string"
-              },
-              "level": {
-                "type": "string",
-                "enum": [
-                  "read",
-                  "deploy",
-                  "admin"
-                ]
-              },
-              "token_id": {
-                "type": "string"
-              },
-              "setup_run_id": {
-                "type": "string"
-              },
-              "task_branch": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "setup": {
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                  "state",
-                  "step"
-                ],
-                "properties": {
-                  "state": {
-                    "type": "string",
-                    "enum": [
-                      "pending",
-                      "succeeded",
-                      "failed"
-                    ]
-                  },
-                  "step": {
-                    "anyOf": [
-                      {
-                        "const": "agent",
-                        "type": "string"
-                      },
-                      {
-                        "const": "config",
-                        "type": "string"
-                      },
-                      {
-                        "const": "git_auth",
-                        "type": "string"
-                      },
-                      {
-                        "const": "clone",
-                        "type": "string"
-                      },
-                      {
-                        "const": "checkout",
-                        "type": "string"
-                      },
-                      {
-                        "const": "branch",
-                        "type": "string"
-                      },
-                      {
-                        "const": "worktree",
-                        "type": "string"
-                      },
-                      {
-                        "const": "toolchain",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          },
-          "command": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "exit_code": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "failure": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Diagnosis"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "started_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "stopped_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "snapshots": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/MachineSnapshot"
-            }
-          },
-          "runs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Run"
-            }
-          },
-          "metrics": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MachineMetricSample"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "environment_variables": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "patternProperties": {
-                "^(.*)$": {}
-              }
-            }
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Warning"
-            }
-          }
-        },
-        "$id": "#/components/schemas/MachineCreated"
-      },
-      "MachineDeleted": {
-        "title": "MachineDeleted",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "deleted",
-          "snapshots_kept"
-        ],
-        "properties": {
-          "deleted": {
-            "const": true,
-            "type": "boolean"
-          },
-          "snapshots_kept": {
-            "type": "integer"
-          }
-        },
-        "$id": "#/components/schemas/MachineDeleted"
-      },
-      "MachineSnapshotCreated": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "machine_id",
-          "project_id",
-          "preview_id",
-          "server_id",
-          "name",
-          "runtime",
-          "status",
-          "source_state",
-          "taken_at",
-          "exclusive_bytes",
-          "referenced_bytes",
-          "warnings"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "machine_id": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string"
-          },
-          "preview_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "runtime": {
-            "const": "gvisor",
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "creating",
-              "ready",
-              "failed",
-              "deleting"
-            ]
-          },
-          "source_state": {
-            "type": "string",
-            "enum": [
-              "running",
-              "stopped"
-            ]
-          },
-          "taken_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "exclusive_bytes": {
-            "type": "integer"
-          },
-          "referenced_bytes": {
-            "type": "integer"
-          },
-          "image": {
-            "$ref": "#/components/schemas/MachineImage"
-          },
-          "size": {
-            "$ref": "#/components/schemas/MachineSize"
-          },
-          "failure": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Diagnosis"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Warning"
-            }
-          }
-        },
-        "$id": "#/components/schemas/MachineSnapshotCreated"
-      },
-      "MachineConnections": {
-        "title": "MachineConnections",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "machine",
-          "at",
-          "conntrack",
-          "connections",
-          "refused",
-          "refused_truncated",
-          "untrusted"
-        ],
-        "properties": {
-          "machine": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "id",
-              "name"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            }
-          },
-          "at": {
-            "type": "string"
-          },
-          "conntrack": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "entries",
-              "truncated",
-              "stale",
-              "lossy",
-              "accounting",
-              "timestamps"
-            ],
-            "properties": {
-              "entries": {
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              },
-              "truncated": {
-                "type": "boolean"
-              },
-              "stale": {
-                "type": "boolean"
-              },
-              "lossy": {
-                "type": "boolean"
-              },
-              "accounting": {
-                "type": "boolean"
-              },
-              "timestamps": {
-                "type": "boolean"
-              }
-            }
-          },
-          "connections": {
-            "type": "array",
-            "items": {
-              "additionalProperties": false,
-              "type": "object",
-              "required": [
-                "direction",
-                "peer",
-                "port",
-                "protocol",
-                "flows",
-                "established",
-                "bytes_out",
-                "bytes_in",
-                "bps_out",
-                "bps_in",
-                "counters_age_s",
-                "oldest_s"
-              ],
-              "properties": {
-                "direction": {
-                  "type": "string",
-                  "enum": [
-                    "in",
-                    "out"
-                  ]
-                },
-                "peer": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "kind"
-                  ],
-                  "properties": {
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "service",
-                        "sandbox",
-                        "resolver",
-                        "gateway",
-                        "station",
-                        "internet",
-                        "public",
-                        "address",
-                        "other"
-                      ]
-                    },
-                    "app": {
-                      "type": "string"
-                    },
-                    "app_id": {
-                      "type": "string"
-                    },
-                    "machine": {
-                      "type": "string"
-                    },
-                    "machine_id": {
-                      "type": "string"
-                    },
-                    "deployment_id": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "address": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "port": {
-                  "type": "integer"
-                },
-                "protocol": {
-                  "type": "string",
-                  "enum": [
-                    "tcp",
-                    "udp"
-                  ]
-                },
-                "flows": {
-                  "type": "integer"
-                },
-                "established": {
-                  "type": "integer"
-                },
-                "bytes_out": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "bytes_in": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "bps_out": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "bps_in": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "counters_age_s": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "oldest_s": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                }
-              }
-            }
-          },
-          "refused": {
-            "type": "array",
-            "items": {
-              "additionalProperties": false,
-              "type": "object",
-              "required": [
-                "path",
-                "address",
-                "port",
-                "protocol",
-                "count",
-                "expires_in_s"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "enum": [
-                    "host_address",
-                    "other_environment",
-                    "cloud_metadata",
-                    "private_range",
-                    "no_switch_target",
-                    "sandbox_inbound",
-                    "domain_not_allowed",
-                    "credential_quic"
-                  ]
-                },
-                "address": {
-                  "type": "string"
-                },
-                "port": {
-                  "type": "integer"
-                },
-                "protocol": {
-                  "type": "string",
-                  "enum": [
-                    "tcp",
-                    "udp",
-                    "icmp",
-                    "other"
-                  ]
-                },
-                "count": {
-                  "type": "integer"
-                },
-                "expires_in_s": {
-                  "type": "integer"
-                }
-              }
-            }
-          },
-          "refused_truncated": {
-            "type": "boolean"
-          },
-          "untrusted": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "source",
-              "names"
-            ],
-            "properties": {
-              "source": {
-                "const": "resolver answers",
-                "type": "string"
-              },
-              "names": {
-                "type": "object",
-                "patternProperties": {
-                  "^(.*)$": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "$id": "#/components/schemas/MachineConnections"
-      },
       "StorageGrown": {
         "title": "StorageGrown",
         "additionalProperties": false,
@@ -55250,127 +48838,7 @@ export const openApiDocument = {
         },
         "$id": "#/components/schemas/StorageGrown"
       },
-      "MachineExec": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "app_id",
-          "machine_id",
-          "deployment_id",
-          "kind",
-          "command",
-          "status",
-          "exit_code",
-          "started_at",
-          "finished_at"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "app_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "machine_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "deployment_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "pre_deploy",
-              "cron",
-              "one_off",
-              "shell",
-              "hook",
-              "exec"
-            ]
-          },
-          "command": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "succeeded",
-              "failed",
-              "skipped",
-              "cancelled"
-            ]
-          },
-          "exit_code": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "tty": {
-            "type": "boolean"
-          },
-          "log_ref": {
-            "type": "string"
-          },
-          "started_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "finished_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "deadline_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "failure": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Diagnosis"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "output": {
-            "$ref": "#/components/schemas/MachineRunOutput"
-          },
-          "attach_url": {
-            "type": "string"
-          }
-        },
-        "$id": "#/components/schemas/MachineExec"
-      },
-      "MachineShell": {
+      "TaskShell": {
         "additionalProperties": false,
         "type": "object",
         "required": [
@@ -55490,39 +48958,7 @@ export const openApiDocument = {
             "type": "string"
           }
         },
-        "$id": "#/components/schemas/MachineShell"
-      },
-      "MachineEnvironmentVariablesOutcome": {
-        "title": "MachineEnvironmentVariablesOutcome",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "environment_variables"
-        ],
-        "properties": {
-          "environment_variables": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EnvironmentVariable"
-            }
-          }
-        },
-        "$id": "#/components/schemas/MachineEnvironmentVariablesOutcome"
-      },
-      "MachineSnapshotDeleted": {
-        "title": "MachineSnapshotDeleted",
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "deleted"
-        ],
-        "properties": {
-          "deleted": {
-            "const": true,
-            "type": "boolean"
-          }
-        },
-        "$id": "#/components/schemas/MachineSnapshotDeleted"
+        "$id": "#/components/schemas/TaskShell"
       },
       "Invite": {
         "additionalProperties": false,

@@ -12,7 +12,6 @@ import { SixDigitCode } from '@/components/six-digit-code'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { authClient, authMessage, passkeysAvailable, passkeysQuery } from '@/lib/auth'
-import { commands } from '@/lib/commands'
 import { shortAgo } from '@/lib/format'
 import { done, useApiMutation } from '@/lib/mutation'
 
@@ -35,12 +34,8 @@ export function useNeedsEnrollment(totp: boolean) {
 export function EnrollPrompt() {
   return (
     <Notice tone="warning" title="Add a passkey or TOTP">
-      <span className="inline">
-        Add one before you approve <Code>{commands.login()}</Code> or connect an agent.{' '}
-        {passkeysAvailable()
-          ? 'Either one protects this account beyond the password.'
-          : 'Passkeys don’t work on this address, so set up TOTP.'}
-      </span>
+      Needed before you approve a sly sign-in or connect an agent.
+      {!passkeysAvailable() && ' Passkeys don’t work on this address; use TOTP.'}
     </Notice>
   )
 }
@@ -133,10 +128,7 @@ export function Passkeys() {
       return done(null)
     },
     invalidate: ['auth'],
-    success: () => ({
-      title: 'Passkey added',
-      description: 'It signs you in on its own, without the password.',
-    }),
+    success: () => 'Passkey added',
     onSuccess: () => setName(''),
     failure: () => 'add the passkey',
   })
@@ -149,12 +141,11 @@ export function Passkeys() {
     <Section
       icon={KeyRound}
       title="Passkeys"
-      note={`A passkey signs you in on its own. You also use it to approve ${commands.login()} and agents that connect.`}
+      note="Signs you in and approves sly sign-ins and agents."
     >
       {!available ? (
         <p className="text-sm text-muted-foreground">
-          Passkeys need the dashboard’s own hostname over HTTPS. Open it there to add one, or use
-          TOTP on this address.
+          Passkeys need the dashboard’s own hostname over HTTPS. Use TOTP here.
         </p>
       ) : (
         <>
@@ -204,21 +195,18 @@ function TotpSetup({
       <div className="flex flex-col gap-4 sm:flex-row">
         <QrCode value={setup.uri} label="TOTP enrollment QR code" />
         <div className="flex min-w-0 flex-col gap-3 text-sm">
-          <p>Scan the code with your authenticator app, or enter the key by hand.</p>
+          <p>Scan with your authenticator app, or enter the key by hand.</p>
           <p>
             <Code copy={setup.secret}>{setup.secret}</Code>
           </p>
           <div>
             <p className="font-medium">Backup codes</p>
-            <p className="text-muted-foreground">
-              Save them now. Each one signs you in once without the app.
-            </p>
-            <ul
-              className="mt-2 grid grid-cols-2 gap-1 font-mono text-xs"
-              data-testid="backup-codes"
-            >
+            <p className="text-muted-foreground">Save them now. Each one works once.</p>
+            <ul className="mt-2 grid grid-cols-2 gap-1 text-xs" data-testid="backup-codes">
               {setup.backupCodes.map((c) => (
-                <li key={c}>{c}</li>
+                <li key={c}>
+                  <Code className="text-xs">{c}</Code>
+                </li>
               ))}
             </ul>
           </div>
@@ -315,9 +303,7 @@ export function Totp({ enabled }: { enabled: boolean }) {
 
     setSetup(null)
     await refresh()
-    toast.success('TOTP is on', {
-      description: 'Password sign-in now asks for a code.',
-    })
+    toast.success('TOTP is on')
 
     return true
   }
@@ -329,7 +315,7 @@ export function Totp({ enabled }: { enabled: boolean }) {
       facts={
         <StatusPill tone={enabled ? 'success' : 'neutral'}>{enabled ? 'On' : 'Off'}</StatusPill>
       }
-      note="Once it’s on, password sign-in asks for a six-digit code. It works on every address, SSH forwards included."
+      note="Password sign-in asks for a six-digit code, on every address."
     >
       {error && (
         <Notice tone="danger" title="TOTP didn’t change">

@@ -43,6 +43,9 @@ jobs:
       - name: Known constants appear only in their home
         run: pnpm check:literals
 
+      - name: Every dashboard page stays within its word budget
+        run: pnpm check:copy
+
       - name: Every computation both sides run is pinned by one vector file
         run: pnpm check:shared
 

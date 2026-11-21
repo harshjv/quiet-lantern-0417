@@ -16,11 +16,6 @@ const label = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/
 const parsesAsDomain = (domain: string) =>
   domain.length <= 253 && domain.split('.').every((part) => label.test(part))
 
-export const openEgress = (): Egress => ({
-  mode: 'open',
-  domains: [],
-})
-
 export const normalizeEgress = (input: EgressInput, path = '/egress'): Egress => {
   const issues: { path: string; message: string }[] = []
   const domains = (input.domains ?? []).map((entry, i) => {

@@ -244,6 +244,7 @@ func (s *Station) startSandboxRun(ctx context.Context, m dispatch.Message, b pro
 	rr := &runRecord{
 		ID: b.RunId, SandboxID: id, EnvID: s.plan.Generation.Sandboxes[id].EnvironmentId, Kind: b.Kind, Command: b.Command,
 		Status: protocol.RunStatusQueued, LogRef: sandboxRunLogRef(id, b.RunId), CreatedAt: *stamp(now), Detail: map[string]any{"actor": b.Actor}, Requested: true,
+		Unrecorded: b.Record != nil && !*b.Record,
 	}
 	s.runs[rr.ID] = rr
 	tty := b.Tty
@@ -301,6 +302,9 @@ func (s *Station) pumpSandboxRun(ctx context.Context, rr *runRecord, se *sbxExec
 	w := s.logs.Single(rr.LogRef, runLogCap)
 	sink := func(stream string) *lineSink {
 		return &lineSink{emit: func(_ time.Time, text string) {
+			if rr.Unrecorded {
+				return
+			}
 			_ = w.Write(time.Now(), sandboxRunRole, stream, redactor.Redact(text))
 		}}
 	}

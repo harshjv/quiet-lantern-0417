@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Server, Settings2 } from 'lucide-react'
 
+import { Code } from '@/components/code'
+import { Name } from '@/components/name'
 import { Rows } from '@/components/page'
 import { Failure } from '@/components/panel'
 import { ReleaseSection } from '@/components/release-section'
@@ -32,9 +34,7 @@ function Meter({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <span className="font-mono text-xs tracking-wider text-muted-foreground uppercase">
-        {label}
-      </span>
+      <span className="text-xs tracking-wider text-muted-foreground uppercase">{label}</span>
       <span className="text-sm tabular-nums">{value}</span>
       {used !== undefined && total !== undefined && (
         <Progress value={share(used, total)} aria-label={`${label} ${value}`} className="h-1" />
@@ -59,7 +59,7 @@ function Usage({ server }: { server: ServerView }) {
       <Meter label="CPU" value={`${Number((resources.cpu_millis / 1000).toFixed(2))} vCPU`} />
       <Meter label="Memory" value={bytes(resources.memory_bytes)} />
       <Meter
-        label="Machine memory"
+        label="Task memory"
         value={
           memory.limit === null ? `${bytes(memory.used)} used` : usedOf(memory.used, memory.limit)
         }
@@ -73,8 +73,8 @@ function Usage({ server }: { server: ServerView }) {
         total={resources.disk_bytes}
       />
       <Meter
-        label="Machine slots"
-        value={`Up to ${limits.max_running} running, ${limits.max_machines} in all`}
+        label="Task slots"
+        value={`${limits.max_running} running, ${limits.max_machines} in all`}
       />
     </div>
   )
@@ -110,12 +110,14 @@ function ServerRow({ server, onOpen }: { server: ServerView; onOpen: () => void 
         tone={trouble ? 'danger' : status.tone}
         title={
           <>
-            <span className="truncate">{server.name}</span>
+            <Name kind="server" chip={false}>
+              {server.name}
+            </Name>
             <StatusPill tone={status.tone}>{status.label}</StatusPill>
             {server.draining && <StatusPill tone="warning">Draining</StatusPill>}
             {trouble && <StatusPill tone="danger">Needs a look</StatusPill>}
             {server.hosts_dispatch && (
-              <span className="text-xs font-normal text-muted-foreground">runs this instance</span>
+              <span className="text-xs font-normal text-muted-foreground">Runs Dispatch</span>
             )}
           </>
         }
@@ -158,12 +160,7 @@ function ServerList() {
   return (
     <>
       <ReleaseSection stations={servers} />
-      <Section
-        icon={Server}
-        title="Servers"
-        count={data ? servers.length : undefined}
-        note="The hosts that run your apps and machines."
-      >
+      <Section icon={Server} title="Servers" count={data ? servers.length : undefined}>
         {error ? (
           <Failure
             error={error}
@@ -182,11 +179,11 @@ function ServerList() {
               </Button>
             }
           >
-            No server has the id {openId}. It may have been removed.
+            No server has the id <Code>{openId}</Code>.
           </Notice>
         ) : servers.length === 0 ? (
           <Notice tone="info" title="No servers yet" action={<AddServer />}>
-            Add a server to run apps and machines on it.
+            Add a server to run apps and tasks on it.
           </Notice>
         ) : (
           <ItemList>
@@ -216,7 +213,7 @@ export function LiveServers() {
     return (
       <Page title="Servers">
         <Notice tone="info" title="Only admins manage servers">
-          Ask an admin of your team to add a server or change one.
+          Ask an admin to add or change a server.
         </Notice>
       </Page>
     )

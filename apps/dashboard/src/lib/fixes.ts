@@ -1,7 +1,6 @@
 import type { ErrorCode, RemedyCode } from '@stationly/protocol'
 import { bytesText } from '@stationly/protocol/format'
 
-import type { NetworkMap } from './api.ts'
 import { commands, scopeLabel, type AppScope, type Scope } from './commands.ts'
 
 export type Fix = {
@@ -14,7 +13,7 @@ export type Fix = {
 }
 
 export type Subject = {
-  kind: 'app' | 'machine'
+  kind: 'app'
   id: string
   name: string
 }
@@ -48,10 +47,6 @@ export type Run = {
       tool: 'update_app'
       app: string
       body: Record<string, unknown>
-    }
-  | {
-      tool: 'start_machine'
-      machine: string
     }
 )
 
@@ -121,21 +116,6 @@ const startApp: Remedy = {
   }),
   command: ({ target }) => commands.startApp(target.scope),
 }
-
-const startMachine: Remedy = {
-  ask: ({ target }) => `start the machine ${target.name}`,
-  button: ({ target }) => ({
-    label: `Start ${target.name}`,
-    run: {
-      tool: 'start_machine',
-      name: target.name,
-      machine: target.id,
-    },
-  }),
-  command: ({ target, context }) => commands.startMachine(context, target.name),
-}
-
-const starter = ({ target }: Input) => (target.kind === 'machine' ? startMachine : startApp)
 
 const logsCommand = ({ target, context }: Input) =>
   context.deployment
@@ -225,11 +205,7 @@ export const remedies: Record<RemedyCode, Remedy> = {
       `read the diagnosis of ${target.name}’s failed deployment, correct the setting it names and deploy again`,
   },
   DEPLOY_TARGET: deployTarget,
-  START_TARGET: {
-    ask: (i) => starter(i).ask(i),
-    button: (i) => starter(i).button!(i),
-    command: (i) => starter(i).command!(i),
-  },
+  START_TARGET: startApp,
   BIND_ALL_INTERFACES: {
     ask: ({ target }) =>
       `make ${target.name} listen on 0.0.0.0 instead of localhost and redeploy it`,
@@ -277,12 +253,11 @@ export const remedies: Record<RemedyCode, Remedy> = {
     },
   },
   ALLOW_DOMAIN: {
-    ask: ({ context }) =>
-      `add the destination to the machine ${context.subject.name}’s outbound allowlist`,
+    ask: ({ context }) => `add the destination to ${context.subject.name}’s allowed domains`,
   },
   JOIN_ENVIRONMENT: {
     ask: ({ context }) =>
-      `move the machine ${context.subject.name} onto its network so it can reach apps`,
+      `move ${context.subject.name} onto its environment’s network so it can reach apps`,
   },
 }
 
@@ -290,13 +265,12 @@ const isRemedy = (code: string): code is RemedyCode => Object.hasOwn(remedies, c
 
 const targetOf = (fix: Fix, context: FixContext): Target => {
   const input = fix.action?.input ?? {}
-  const machine = text(input.machine)
-  const id = text(input.app) ?? machine ?? context.subject.id
+  const id = text(input.app) ?? context.subject.id
   const name =
     id === context.subject.id ? context.subject.name : (context.names?.[id] ?? context.subject.name)
 
   return {
-    kind: machine ? 'machine' : id === context.subject.id ? context.subject.kind : 'app',
+    kind: 'app',
     id,
     name,
     scope: {
@@ -343,64 +317,8 @@ export const planFix = (fix: Fix, context: FixContext): FixPlan => {
   }
 }
 
-type Finding = NetworkMap['warnings'][number]
-type FindingCode = Finding['code']
-type MapApp = NetworkMap['apps'][number]
-
-export const findingRemedy: Record<FindingCode, RemedyCode | null> = {
-  SWITCH_NO_TARGET: 'DEPLOY_TARGET',
-  SWITCH_PENDING: 'WAIT_FOR_APPLY',
-  SWITCH_MISMATCH: 'WAIT_FOR_APPLY',
-  NAME_NOT_IN_NETWORK: 'USE_INTERNAL_NAME',
-  PATH_BLOCKED: null,
-  DOMAIN_NOT_ALLOWED: 'ALLOW_DOMAIN',
-  TARGET_NOT_RUNNING: 'DEPLOY_TARGET',
-  TARGET_UNHEALTHY: 'CHECK_HEALTH_PATH',
-  NOT_LISTENING: 'USE_DECLARED_PORT',
-  LISTENING_LOOPBACK_ONLY: 'BIND_ALL_INTERFACES',
-  PORT_NOT_DECLARED: 'DECLARE_PORT',
-  DOMAIN_NOT_ACTIVE: 'ADD_TUNNEL_ROUTE',
-  ROUTE_NOT_APPLIED: 'WAIT_FOR_APPLY',
-  TUNNEL_NOT_READY: null,
-  SERVER_STALE: null,
-}
-
-const startable = (code: RemedyCode, app: MapApp): RemedyCode =>
-  code === 'DEPLOY_TARGET' && app.status === 'stopped' ? 'START_TARGET' : code
-
-export const findingPlan = (finding: Finding, apps: MapApp[], scope: Scope): FixPlan | null => {
-  const code = findingRemedy[finding.code]
-
-  if (!code) {
-    return null
-  }
-
-  const details = finding.details ?? {}
-  const app = apps.find((s) => s.name === details.app)
-
-  if (!app) {
-    return null
-  }
-
-  return planFix(
-    {
-      code: startable(code, app),
-      text: finding.explanation,
-    },
-    {
-      ...scope,
-      subject: {
-        kind: 'app',
-        id: app.id,
-        name: app.name,
-      },
-    },
-  )
-}
-
 export const errorRemedy: Partial<Record<ErrorCode, RemedyCode>> = {
   NO_CURRENT_DEPLOYMENT: 'DEPLOY_TARGET',
-  MACHINE_NOT_RUNNING: 'START_TARGET',
 }
 
 const isErrorCode = (code: string): code is ErrorCode => Object.hasOwn(errorRemedy, code)

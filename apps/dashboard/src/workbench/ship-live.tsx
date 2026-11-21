@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { AlsoWith } from '@/components/code'
 import { GetStarted, useGetStarted } from '@/components/get-started'
+import { Name } from '@/components/name'
 import { NewProject } from '@/components/new-project'
 import { EmptyState, ErrorState, Rows } from '@/components/page'
 import { AppStatusDot } from '@/components/status'
@@ -13,7 +14,7 @@ import type { AppStatus, Project } from '@/lib/api'
 import { commands } from '@/lib/commands'
 import { byName, plural } from '@/lib/format'
 import { appStatus } from '@/lib/labels'
-import { appTo, placeTo } from '@/lib/links'
+import { appTo, newTaskTo, placeTo } from '@/lib/links'
 import { projectsQuery } from '@/lib/queries'
 import { useShortcut } from '@/lib/shortcuts'
 
@@ -38,7 +39,7 @@ export function AllProjects() {
 
   return (
     <Page
-      title="Ship"
+      title="Projects"
       actions={
         <Button size="sm" onClick={() => setCreating(true)}>
           <Plus /> New project
@@ -72,7 +73,7 @@ function Overview({ projects, onCreate }: { projects: Project[]; onCreate: () =>
           <EmptyState
             icon={Folder}
             title="Create your first project"
-            description="A project is one product: its apps, their production and previews, its keys and its tasks. Create one, then add its first app."
+            description="One product: its apps, previews, environment variables and tasks."
             action={
               <Button size="sm" onClick={onCreate}>
                 <Plus /> New project
@@ -152,21 +153,18 @@ function FailedDeploys() {
     <Notice
       key={live.app.id}
       tone="danger"
-      title={`${live.app.name}: the last deploy failed`}
+      title={
+        <>
+          Last deploy failed <Name kind="app">{live.app.name}</Name>
+        </>
+      }
       action={
         <>
           <Button asChild size="sm" variant="outline">
-            <Link {...appTo(live.app.id)}>Open</Link>
+            <Link {...appTo(live.place.project.name, live.app.id)}>Open</Link>
           </Button>
           <Button asChild size="sm">
-            <Link
-              to="/build/new"
-              search={{
-                fix: fixOf(live),
-              }}
-            >
-              Fix with an agent
-            </Link>
+            <Link {...newTaskTo(live.place.project.name, fixOf(live))}>Fix with an agent</Link>
           </Button>
         </>
       }
@@ -182,9 +180,7 @@ function Production() {
   return (
     <Section icon={Box} title="Production" count={apps.length}>
       {apps.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No apps in production yet. Open a project to add one.
-        </p>
+        <p className="text-sm text-muted-foreground">No apps in production</p>
       ) : (
         <ItemList>
           {apps.map((live) => {
@@ -199,7 +195,7 @@ function Production() {
                 title={
                   <>
                     <Link
-                      {...appTo(live.app.id)}
+                      {...appTo(live.place.project.name, live.app.id)}
                       className="truncate underline-offset-4 hover:underline"
                     >
                       {live.app.name}
@@ -231,7 +227,7 @@ function Production() {
                 ]}
                 action={
                   <Button asChild size="sm" variant="outline">
-                    <Link {...appTo(live.app.id)}>Open</Link>
+                    <Link {...appTo(live.place.project.name, live.app.id)}>Open</Link>
                   </Button>
                 }
               />
@@ -249,10 +245,7 @@ function Previews() {
   return (
     <Section icon={GitBranch} title="Previews" count={previews.length}>
       {previews.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No previews. Make a preview from a task or a project, or open a pull request on a
-          connected repository.
-        </p>
+        <p className="text-sm text-muted-foreground">No previews</p>
       ) : (
         <ItemList>
           {previews.map((place) => {

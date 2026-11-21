@@ -1,12 +1,10 @@
 import type { CallToolResult } from '@modelcontextprotocol/server'
 
 import type { LocalContext, LocalTool } from '@stationly/mcp'
-import { portRange } from '@stationly/protocol'
 
 import { Exit } from './errors.ts'
 import { connectWith, tokenCredentials } from './kit.ts'
 import { uploadSource } from './push.ts'
-import { forwardPort } from './sockets.ts'
 
 const result = (body: unknown, isError = false): CallToolResult => ({
   ...(isError
@@ -38,7 +36,6 @@ const idOf = async (context: LocalContext, tool: string, args: Record<string, un
 
 export const localTools = (instance: string, token: string, userAgent: string): LocalTool[] => {
   const run = connectWith({}, tokenCredentials(instance, token), {}, userAgent)
-  const forwards = new Map<string, Promise<{ address: string; close: () => Promise<void> }>>()
 
   const pushLocalSource: LocalTool = {
     name: 'push_local_source',
@@ -110,90 +107,5 @@ export const localTools = (instance: string, token: string, userAgent: string): 
     },
   }
 
-  const forwardMachinePort: LocalTool = {
-    name: 'forward_machine_port',
-    title: 'Forward a machine port',
-    description:
-      'Listen on 127.0.0.1 of the machine running sly mcp and forward to a port of a running machine, for previews. The listener lasts until the stdio server exits or the machine stops, and a second call for the same machine and port returns the same listener.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        machine: {
-          type: 'string',
-          minLength: 1,
-          description:
-            'An id, or the names project/machine, or project/preview/machine in a preview',
-        },
-        port: {
-          type: 'integer',
-          ...portRange,
-          description: 'Port inside the machine',
-        },
-        local_port: {
-          type: 'integer',
-          minimum: 0,
-          maximum: 65535,
-          description: 'Local port; default the machine port when free, 0 for any',
-        },
-      },
-      required: ['machine', 'port'],
-      additionalProperties: false,
-    },
-    annotations: {
-      title: 'Forward a machine port',
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    run: async (args, context) => {
-      const machine = await idOf(context, 'get_machine', {
-        machine: args.machine,
-      })
-
-      if (machine.refused) {
-        return machine.refused
-      }
-
-      const port = args.port as number
-      const key = `${machine.id}:${port}`
-      const stopIfGone = async () => {
-        const current = await run.api.v1
-          .machines({
-            machine: machine.id,
-          })
-          .get({
-            query: {},
-          })
-
-        if (current.data?.status === 'running') {
-          return
-        }
-
-        forwards.delete(key)
-        await (await listener).close()
-      }
-      const listener =
-        forwards.get(key) ??
-        forwardPort(run, machine.id, port, args.local_port as number | undefined, {
-          unopened: () => void stopIfGone(),
-        }).then((forward) => {
-          forward.server.unref()
-
-          return forward
-        })
-
-      forwards.set(key, listener)
-      const forward = await listener.catch((error) => {
-        forwards.delete(key)
-        throw error
-      })
-
-      return result({
-        local_address: forward.address,
-      })
-    },
-  }
-
-  return [pushLocalSource, forwardMachinePort]
+  return [pushLocalSource]
 }

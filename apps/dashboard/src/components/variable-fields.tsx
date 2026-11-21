@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react'
 
+import { CodeInput, CodeTextarea } from '@/components/code'
 import { Hint } from '@/components/field'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -9,9 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { variableKind } from '@/lib/labels'
-import { cn } from '@/lib/utils'
 import {
   buildNote,
   referencePlaceholder,
@@ -25,21 +23,19 @@ import {
 export function VariableNameInput({
   value,
   onValueChange,
-  className,
   ...props
-}: Omit<ComponentProps<typeof Input>, 'value' | 'onChange' | 'pattern' | 'title'> & {
+}: Omit<ComponentProps<typeof CodeInput>, 'value' | 'onChange' | 'pattern' | 'title'> & {
   value: string
   onValueChange: (value: string) => void
 }) {
   return (
-    <Input
+    <CodeInput
       required
       {...props}
       value={value}
       onChange={(e) => onValueChange(e.target.value.toUpperCase())}
       pattern={variableNamePattern}
       title={variableNameTitle}
-      className={cn('font-mono', className)}
     />
   )
 }
@@ -97,13 +93,12 @@ export function VariableValueInput({
     'aria-label': label,
     required: true,
     value,
-    className: cn('font-mono', className),
-    spellCheck: false,
+    className,
   }
 
   if (kind === 'literal' && multiline) {
     return (
-      <Textarea
+      <CodeTextarea
         {...shared}
         rows={3}
         onChange={(e) => onValueChange(e.target.value)}
@@ -113,7 +108,7 @@ export function VariableValueInput({
   }
 
   return (
-    <Input
+    <CodeInput
       {...shared}
       type={kind === 'secret' ? 'password' : 'text'}
       autoComplete={kind === 'secret' ? 'new-password' : 'off'}
